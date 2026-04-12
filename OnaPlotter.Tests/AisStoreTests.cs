@@ -85,7 +85,7 @@ public class AisStoreTests
         var snap1 = store.GetVessels();
         var snap2 = store.GetVessels();
 
-        await Assert.That(snap2).IsSameAs(snap1);
+        await Assert.That(snap2).IsSameReferenceAs(snap1);
     }
 
     [Test]
@@ -100,7 +100,7 @@ public class AisStoreTests
         store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.speedOverGround", sog);
         var snap2 = store.GetVessels();
 
-        await Assert.That(snap2).IsNotSameAs(snap1);
+        await Assert.That(snap2).IsNotSameReferenceAs(snap1);
     }
 
     [Test]
