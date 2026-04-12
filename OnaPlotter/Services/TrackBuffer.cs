@@ -4,6 +4,10 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services;
 
+/// <summary>
+/// Thread-safe ring buffer that stores recent vessel track points for map trails
+/// and wind rose history. Old points are silently overwritten when capacity is reached.
+/// </summary>
 public sealed class TrackBuffer
 {
     private readonly Lock _lock = new();

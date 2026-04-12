@@ -1,7 +1,9 @@
 @inherits LayoutComponentBase
 @using OnaPlotter.Services
+@using Microsoft.JSInterop
 @inject SignalkClient SignalkClient
-@implements IDisposable
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <div class="page">
     <div class="sidebar">
@@ -10,9 +12,9 @@
 
     <main>
         <div class="top-row px-4">
-            <span class="connection-status">
-                <span class="connection-dot @(SignalkClient.IsConnected ? "connected" : "disconnected")"></span>
-                @(SignalkClient.IsConnected ? "Connected" : "Disconnected")
+            <span class="connection-status @ConnectionClass" title="@ConnectionTooltip">
+                <span class="connection-dot @DotClass"></span>
+                @ConnectionLabel
             </span>
         </div>
 
@@ -23,18 +25,138 @@
 </div>
 
 @code {
+    private IJSObjectReference? audioModule;
+    private System.Threading.Timer? staleCheckTimer;
+    private volatile bool wasDisconnected;
+    private volatile bool wasStale;
+
+    private string ConnectionClass => SignalkClient.IsConnected
+        ? (SignalkClient.IsDataStale ? "stale" : "")
+        : "disconnected";
+
+    private string DotClass => SignalkClient.IsConnected
+        ? (SignalkClient.IsDataStale ? "stale" : "connected")
+        : "disconnected";
+
+    private string ConnectionLabel => SignalkClient.IsConnected
+        ? (SignalkClient.IsDataStale ? "No Data" : "Connected")
+        : "Disconnected";
+
+    private string ConnectionTooltip => SignalkClient.IsConnected
+        ? (SignalkClient.IsDataStale ? "Connected but no data received for 5+ seconds" : "Receiving data")
+        : "WebSocket connection lost";
+
     protected override void OnInitialized()
     {
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
+        SignalkClient.OnDataChanged += HandleDataChanged;
+
+        // Periodically check for stale data (every 2 seconds).
+        staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
+        }
     }
 
     private async void HandleConnectionChanged()
     {
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await UpdateAlarmAsync();
+            });
+        }
+        catch (ObjectDisposedException) { }
     }
 
-    public void Dispose()
+    private async void HandleDataChanged()
+    {
+        // When data arrives and we were in a stale state, clear the warning and refresh.
+        if (!wasStale) return;
+
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                wasStale = false;
+                StateHasChanged();
+                await StopAlarmAsync();
+            });
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task CheckStaleAsync()
+    {
+        bool isStale = SignalkClient.IsDataStale;
+        if (isStale == wasStale) return;
+
+        wasStale = isStale;
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task UpdateAlarmAsync()
+    {
+        if (audioModule is null) return;
+
+        try
+        {
+            if (!SignalkClient.IsConnected)
+            {
+                if (!wasDisconnected)
+                {
+                    wasDisconnected = true;
+                    await audioModule.InvokeVoidAsync("startAlarm", 3000);
+                }
+            }
+            else
+            {
+                if (wasDisconnected)
+                {
+                    wasDisconnected = false;
+                    await StopAlarmAsync();
+                }
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task StopAlarmAsync()
+    {
+        if (audioModule is null) return;
+        try
+        {
+            await audioModule.InvokeVoidAsync("stopAlarm");
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
     {
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
+        SignalkClient.OnDataChanged -= HandleDataChanged;
+        if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
+        if (audioModule is not null)
+        {
+            try
+            {
+                await audioModule.InvokeVoidAsync("stopAlarm");
+                await audioModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
     }
 }

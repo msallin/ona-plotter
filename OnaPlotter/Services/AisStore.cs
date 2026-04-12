@@ -5,6 +5,11 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services;
 
+/// <summary>
+/// Thread-safe store for AIS vessel targets received from SignalK.
+/// Maintains a snapshot cache that is rebuilt only when data changes,
+/// and prunes stale entries that haven't been seen for 10 minutes.
+/// </summary>
 public sealed class AisStore
 {
     private readonly ConcurrentDictionary<string, AisVessel> _vessels = new();

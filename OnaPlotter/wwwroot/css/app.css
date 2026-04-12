@@ -553,3 +553,96 @@ h2 {
     border-color: rgba(59, 130, 246, 0.5);
     color: var(--sk-text);
 }
+
+/* ===== Connection Status: Stale Data Warning ===== */
+
+.connection-status {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.82rem;
+    transition: color 0.3s ease;
+}
+
+.connection-status.stale {
+    color: var(--sk-orange);
+}
+
+.connection-status.stale .connection-dot {
+    animation: stale-pulse 1.5s ease-in-out infinite;
+}
+
+.connection-status.disconnected {
+    color: var(--sk-red);
+}
+
+.connection-dot.stale {
+    background-color: var(--sk-orange);
+}
+
+@keyframes stale-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* ===== Route Info HUD Panel ===== */
+
+.hud-route {
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.route-panel {
+    min-width: 140px;
+}
+
+.route-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 14px;
+    margin-top: 4px;
+}
+
+.route-value {
+    font-size: 1.1rem !important;
+}
+
+.night-mode .route-panel {
+    background: rgba(30, 5, 5, 0.92);
+}
+
+/* ===== Anchor Alarm HUD Panel ===== */
+
+.hud-anchor {
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+@media (max-width: 600px) {
+    .hud-anchor { bottom: 80px; }
+}
+
+.anchor-panel {
+    min-width: 120px;
+}
+
+.anchor-info-row {
+    display: flex;
+    gap: 14px;
+    margin-top: 4px;
+}
+
+.anchor-alarm {
+    border: 1px solid rgba(239, 68, 68, 0.6) !important;
+    animation: anchor-alert 1s ease-in-out infinite;
+}
+
+@keyframes anchor-alert {
+    0%, 100% { background: rgba(60, 10, 10, 0.85); }
+    50% { background: rgba(120, 20, 20, 0.9); }
+}
+
+.night-mode .anchor-panel {
+    background: rgba(30, 5, 5, 0.92);
+}

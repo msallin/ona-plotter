@@ -6,6 +6,10 @@ using System.Text.Json.Serialization;
 
 namespace OnaPlotter.Models;
 
+/// <summary>
+/// DTO for a chart resource from the SignalK charts API, describing a tile
+/// layer with its coverage bounds, zoom range, and tile URL template.
+/// </summary>
 public sealed class SignalkChart
 {
     [JsonPropertyName("identifier")]

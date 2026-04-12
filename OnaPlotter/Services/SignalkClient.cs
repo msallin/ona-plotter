@@ -8,6 +8,12 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services;
 
+/// <summary>
+/// Maintains a persistent WebSocket connection to a SignalK server, receives
+/// delta messages, and distributes parsed navigation/AIS data to the shared
+/// <see cref="NavigationData"/>, <see cref="TrackBuffer"/>, and <see cref="AisStore"/>.
+/// Automatically reconnects with exponential backoff on connection loss.
+/// </summary>
 public sealed class SignalkClient : IAsyncDisposable
 {
     private readonly NavigationData _data;
@@ -32,7 +38,24 @@ public sealed class SignalkClient : IAsyncDisposable
         "navigation.headingTrue",
         "environment.depth.belowTransducer",
         "environment.wind.angleApparent",
-        "environment.wind.speedApparent"
+        "environment.wind.speedApparent",
+        // Anchor alarm plugin (sbender9/signalk-anchoralarm-plugin)
+        "navigation.anchor.position",
+        "navigation.anchor.maxRadius",
+        "navigation.anchor.currentRadius",
+        // Active course / route info
+        "navigation.courseGreatCircle.activeRoute.href",
+        "navigation.courseGreatCircle.activeRoute.name",
+        "navigation.courseGreatCircle.nextPoint.position",
+        "navigation.courseGreatCircle.nextPoint.distance",
+        "navigation.courseGreatCircle.nextPoint.bearingTrue",
+        "navigation.courseGreatCircle.nextPoint.timeToGo",
+        "navigation.courseGreatCircle.nextPoint.velocityMadeGood",
+        "navigation.courseRhumbline.nextPoint.position",
+        "navigation.courseRhumbline.nextPoint.distance",
+        "navigation.courseRhumbline.nextPoint.bearingTrue",
+        "navigation.courseRhumbline.nextPoint.timeToGo",
+        "navigation.courseRhumbline.nextPoint.velocityMadeGood"
     ];
 
     private static readonly string[] AisPaths =
@@ -65,6 +88,19 @@ public sealed class SignalkClient : IAsyncDisposable
 
     public NavigationData Data => _data;
     public bool IsConnected { get; private set; }
+
+    /// <summary>
+    /// UTC ticks of the last websocket message received (any type, including heartbeats).
+    /// Uses <see cref="Interlocked"/> for thread-safe cross-thread reads.
+    /// </summary>
+    private long _lastMessageTicks;
+
+    /// <summary>
+    /// Returns true when the websocket is open but no message has arrived
+    /// for more than 5 seconds.
+    /// </summary>
+    public bool IsDataStale => IsConnected
+        && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > 5 * TimeSpan.TicksPerSecond;
 
     public SignalkClient(IConfiguration configuration, ILogger<SignalkClient> logger, TrackBuffer track, AisStore ais)
     {
@@ -164,6 +200,7 @@ public sealed class SignalkClient : IAsyncDisposable
 
     private void ProcessMessage(string json)
     {
+        Interlocked.Exchange(ref _lastMessageTicks, DateTime.UtcNow.Ticks);
         OnRawMessage?.Invoke(json);
 
         try
@@ -231,6 +268,53 @@ public sealed class SignalkClient : IAsyncDisposable
                         changed = true;
                     }
                     continue;
+                }
+
+                // Anchor position from signalk-anchoralarm-plugin.
+                if (val.Path == "navigation.anchor.position" && val.Value is JsonElement anchorEl)
+                {
+                    if (anchorEl.ValueKind == JsonValueKind.Object
+                        && anchorEl.TryGetProperty("latitude", out var aLat)
+                        && anchorEl.TryGetProperty("longitude", out var aLon)
+                        && aLat.ValueKind == JsonValueKind.Number
+                        && aLon.ValueKind == JsonValueKind.Number)
+                    {
+                        _data.ApplyAnchorPosition(aLat.GetDouble(), aLon.GetDouble());
+                        changed = true;
+                    }
+                    else if (anchorEl.ValueKind == JsonValueKind.Null)
+                    {
+                        _data.ClearAnchor();
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                // Course next-point position (lat/lon object).
+                if ((val.Path == "navigation.courseGreatCircle.nextPoint.position"
+                    || val.Path == "navigation.courseRhumbline.nextPoint.position")
+                    && val.Value is JsonElement wpEl
+                    && wpEl.ValueKind == JsonValueKind.Object)
+                {
+                    if (wpEl.TryGetProperty("latitude", out var wpLat)
+                        && wpEl.TryGetProperty("longitude", out var wpLon)
+                        && wpLat.ValueKind == JsonValueKind.Number
+                        && wpLon.ValueKind == JsonValueKind.Number)
+                    {
+                        _data.ApplyCourseNextPointPosition(wpLat.GetDouble(), wpLon.GetDouble());
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                // String-valued paths (route href, route name).
+                if (val.Value is JsonElement strEl && strEl.ValueKind == JsonValueKind.String)
+                {
+                    if (_data.ApplyString(val.Path, strEl.GetString()))
+                    {
+                        changed = true;
+                        continue;
+                    }
                 }
 
                 if (_data.Apply(val.Path, val.Value))
