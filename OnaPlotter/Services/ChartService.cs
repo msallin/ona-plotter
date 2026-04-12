@@ -6,6 +6,10 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services;
 
+/// <summary>
+/// HTTP client for the SignalK REST API. Fetches available chart layers, saved
+/// routes, server-side position track history, and discovers available data paths.
+/// </summary>
 public sealed class ChartService
 {
     private readonly HttpClient _http;

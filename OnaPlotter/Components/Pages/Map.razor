@@ -334,10 +334,12 @@
         && Data.AnchorCurrentRadius > Data.AnchorMaxRadius;
 
     private string AnchorAlarmClass => AnchorDragging ? "anchor-alarm" : "";
-    private string AnchorDistClass => AnchorDragging ? "depth-danger" : "depth-ok";
+    private string AnchorDistClass => AnchorDragging ? "depth-danger"
+        : Data.AnchorCurrentRadius is not null ? "depth-ok" : "";
 
     // Track whether we've already drawn the server anchor on the map.
     private bool serverAnchorDrawn;
+    private double lastPushedAnchorRadius;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -647,11 +649,13 @@
                 await module.InvokeVoidAsync("setAnchor",
                     Data.AnchorLatitude, Data.AnchorLongitude, radius);
                 serverAnchorDrawn = true;
+                lastPushedAnchorRadius = radius;
             }
-            else
+            else if (Math.Abs(radius - lastPushedAnchorRadius) > 0.1)
             {
-                // Update radius if changed.
+                // Only update JS if radius actually changed.
                 await module.InvokeVoidAsync("updateAnchorRadius", radius);
+                lastPushedAnchorRadius = radius;
             }
         }
         else if (serverAnchorDrawn)

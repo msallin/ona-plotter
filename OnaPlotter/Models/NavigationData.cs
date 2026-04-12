@@ -4,6 +4,11 @@
 
 namespace OnaPlotter.Models;
 
+/// <summary>
+/// Thread-safe, strongly-typed navigation state populated from SignalK delta updates.
+/// All values use SI units per the SignalK spec (radians, m/s, meters).
+/// Display conversion (knots, degrees, etc.) happens in the UI layer.
+/// </summary>
 public sealed class NavigationData
 {
     private readonly Lock _lock = new();
@@ -60,10 +65,6 @@ public sealed class NavigationData
                 case "navigation.courseOverGroundTrue":
                     CourseOverGround = value;
                     break;
-                case "navigation.position":
-                    // Position arrives as { "latitude": ..., "longitude": ... }
-                    // Handled separately in ApplyPosition.
-                    return false;
                 case "navigation.headingTrue":
                     Heading = value;
                     break;

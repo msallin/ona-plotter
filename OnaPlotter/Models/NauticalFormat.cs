@@ -3,6 +3,10 @@
 
 namespace OnaPlotter.Models;
 
+/// <summary>
+/// Nautical formatting utilities. Converts decimal degrees to the DD°MM.MMM'
+/// notation used by sailors (e.g. 47.390933 → 47°23.456'N).
+/// </summary>
 public static class NauticalFormat
 {
     public static string FormatLat(double? deg)

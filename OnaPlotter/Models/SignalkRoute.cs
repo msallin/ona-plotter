@@ -6,6 +6,10 @@ using System.Text.Json.Serialization;
 
 namespace OnaPlotter.Models;
 
+/// <summary>
+/// DTO for a saved route from the SignalK resources API, containing
+/// a GeoJSON LineString geometry and optional metadata (name, distance).
+/// </summary>
 public sealed class SignalkRoute
 {
     public string Id { get; set; } = "";

@@ -27,8 +27,8 @@
 @code {
     private IJSObjectReference? audioModule;
     private System.Threading.Timer? staleCheckTimer;
-    private bool wasDisconnected;
-    private bool wasStale;
+    private volatile bool wasDisconnected;
+    private volatile bool wasStale;
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -65,17 +65,23 @@
 
     private async void HandleConnectionChanged()
     {
-        await InvokeAsync(async () =>
+        try
         {
-            StateHasChanged();
-            await UpdateAlarmAsync();
-        });
+            await InvokeAsync(async () =>
+            {
+                StateHasChanged();
+                await UpdateAlarmAsync();
+            });
+        }
+        catch (ObjectDisposedException) { }
     }
 
     private async void HandleDataChanged()
     {
-        // When data arrives and we were in a stale state, clear the alarm and refresh.
-        if (wasStale)
+        // When data arrives and we were in a stale state, clear the warning and refresh.
+        if (!wasStale) return;
+
+        try
         {
             await InvokeAsync(async () =>
             {
@@ -84,20 +90,20 @@
                 await StopAlarmAsync();
             });
         }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task CheckStaleAsync()
     {
         bool isStale = SignalkClient.IsDataStale;
-        if (isStale != wasStale)
+        if (isStale == wasStale) return;
+
+        wasStale = isStale;
+        try
         {
-            wasStale = isStale;
-            await InvokeAsync(async () =>
-            {
-                StateHasChanged();
-                await UpdateAlarmAsync();
-            });
+            await InvokeAsync(StateHasChanged);
         }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task UpdateAlarmAsync()

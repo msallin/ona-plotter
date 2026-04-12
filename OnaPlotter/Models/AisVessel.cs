@@ -4,6 +4,10 @@ using System.Text.Json;
 
 namespace OnaPlotter.Models;
 
+/// <summary>
+/// Mutable state for a single AIS target vessel, populated from SignalK delta
+/// updates for non-self vessel contexts. Tracks position, identity, and motion.
+/// </summary>
 public sealed class AisVessel
 {
     public string Context { get; }
