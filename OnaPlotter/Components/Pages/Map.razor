@@ -75,6 +75,65 @@
         </div>
     </div>
 
+    @* === HUD: Route Info (only visible when an active course exists) === *@
+    @if (Data.HasActiveCourse)
+    {
+        <div class="hud hud-route">
+            <div class="hud-panel route-panel">
+                <div class="hud-label">
+                    @(Data.ActiveRouteName ?? "Active Route")
+                </div>
+                <div class="route-info-grid">
+                    <div>
+                        <div class="hud-label">DTW</div>
+                        <div class="hud-value route-value">@FormatNm(Data.CourseNextPointDistance)<span class="hud-unit">nm</span></div>
+                    </div>
+                    <div>
+                        <div class="hud-label">BRG</div>
+                        <div class="hud-value route-value">@FormatDeg(Data.CourseNextPointBearing)<span class="hud-unit">&deg;</span></div>
+                    </div>
+                    @if (Data.CourseNextPointVmg is not null)
+                    {
+                        <div>
+                            <div class="hud-label">VMG</div>
+                            <div class="hud-value route-value">@FormatKnots(Data.CourseNextPointVmg)<span class="hud-unit">kn</span></div>
+                        </div>
+                    }
+                    @if (Data.CourseNextPointTimeToGo is not null)
+                    {
+                        <div>
+                            <div class="hud-label">TTG</div>
+                            <div class="hud-value route-value">@FormatTimeToGo(Data.CourseNextPointTimeToGo)</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    @* === HUD: Anchor Info (when server-side anchor alarm is active) === *@
+    @if (Data.AnchorActive)
+    {
+        <div class="hud hud-anchor">
+            <div class="hud-panel anchor-panel @AnchorAlarmClass">
+                <div class="hud-label">Anchor Watch</div>
+                <div class="anchor-info-row">
+                    <div>
+                        <div class="hud-label">Dist</div>
+                        <div class="hud-value route-value @AnchorDistClass">@FormatMeters(Data.AnchorCurrentRadius)</div>
+                    </div>
+                    @if (Data.AnchorMaxRadius is not null)
+                    {
+                        <div>
+                            <div class="hud-label">Radius</div>
+                            <div class="hud-value route-value">@FormatMeters(Data.AnchorMaxRadius)</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
     @* === Control Bar === *@
     <div class="map-controls">
         <button class="map-btn @(follow ? "active" : "")" @onclick="ToggleFollow" title="Keyboard: F">
@@ -83,8 +142,8 @@
         <button class="map-btn @(nightMode ? "active" : "")" @onclick="ToggleNightMode" title="Keyboard: N">
             Night
         </button>
-        <button class="map-btn @(anchorActive ? "active" : "")" @onclick="ToggleAnchor" title="Keyboard: A">
-            @(anchorActive ? "Anchored" : "Anchor")
+        <button class="map-btn @(AnchorButtonActive ? "active" : "")" @onclick="ToggleAnchor" title="Keyboard: A">
+            @(AnchorButtonActive ? "Anchored" : "Anchor")
         </button>
         <button class="map-btn mob-btn @(mobActive ? "active" : "")" @onclick="ToggleMob" title="Keyboard: M">
             MOB
@@ -187,7 +246,7 @@
     private bool follow = true;
     private bool nightMode;
     private bool mobActive;
-    private bool anchorActive;
+    private bool anchorManualActive;
     private bool mapInitialized;
     private bool chartPanelOpen;
     private bool fullscreen;
@@ -264,6 +323,21 @@
         < 8 => "depth-warn",
         _ => "depth-ok"
     };
+
+    // Anchor state: server anchor takes priority over manual.
+    private bool AnchorButtonActive => Data.AnchorActive || anchorManualActive;
+
+    // Anchor alarm: red when current radius exceeds max radius.
+    private bool AnchorDragging => Data.AnchorActive
+        && Data.AnchorCurrentRadius is not null
+        && Data.AnchorMaxRadius is not null
+        && Data.AnchorCurrentRadius > Data.AnchorMaxRadius;
+
+    private string AnchorAlarmClass => AnchorDragging ? "anchor-alarm" : "";
+    private string AnchorDistClass => AnchorDragging ? "depth-danger" : "depth-ok";
+
+    // Track whether we've already drawn the server anchor on the map.
+    private bool serverAnchorDrawn;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -372,7 +446,9 @@
     private string lastHudKey = "";
 
     private string BuildHudKey() =>
-        $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}";
+        $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}" +
+        $"|{Data.CourseNextPointDistance:F0}|{Data.CourseNextPointBearing:F2}|{Data.CourseNextPointVmg:F2}|{Data.CourseNextPointTimeToGo:F0}" +
+        $"|{Data.AnchorCurrentRadius:F1}|{Data.AnchorMaxRadius:F1}|{Data.AnchorLatitude:F6}";
 
     private async void HandleDataChanged()
     {
@@ -395,6 +471,9 @@
                 prevLat = Data.Latitude;
                 prevLon = Data.Longitude;
             }
+
+            // Sync server-side anchor alarm to map visualization.
+            await SyncServerAnchorAsync();
 
             // Only re-render Blazor component if HUD values actually changed.
             var hudKey = BuildHudKey();
@@ -531,15 +610,55 @@
     {
         if (module is null) return;
 
-        if (!anchorActive && Data.Latitude is not null && Data.Longitude is not null)
+        // If server-side anchor is active, the button is read-only (controlled by SignalK plugin).
+        if (Data.AnchorActive) return;
+
+        if (!anchorManualActive && Data.Latitude is not null && Data.Longitude is not null)
         {
             await module.InvokeVoidAsync("setAnchor", Data.Latitude, Data.Longitude, 30);
-            anchorActive = true;
+            anchorManualActive = true;
         }
-        else if (anchorActive)
+        else if (anchorManualActive)
         {
             await module.InvokeVoidAsync("clearAnchor");
-            anchorActive = false;
+            anchorManualActive = false;
+        }
+    }
+
+    /// <summary>
+    /// Syncs anchor alarm state from SignalK server to the map.
+    /// When the server provides anchor data, it overrides the manual anchor watch.
+    /// </summary>
+    private async Task SyncServerAnchorAsync()
+    {
+        if (module is null) return;
+
+        if (Data.AnchorActive)
+        {
+            double radius = Data.AnchorMaxRadius ?? 30;
+            if (!serverAnchorDrawn)
+            {
+                // Server anchor just appeared — draw it and disable manual.
+                if (anchorManualActive)
+                {
+                    await module.InvokeVoidAsync("clearAnchor");
+                    anchorManualActive = false;
+                }
+                await module.InvokeVoidAsync("setAnchor",
+                    Data.AnchorLatitude, Data.AnchorLongitude, radius);
+                serverAnchorDrawn = true;
+            }
+            else
+            {
+                // Update radius if changed.
+                await module.InvokeVoidAsync("updateAnchorRadius", radius);
+            }
+        }
+        else if (serverAnchorDrawn)
+        {
+            // Server anchor was raised — clear from map.
+            await module.InvokeVoidAsync("clearAnchor");
+            serverAnchorDrawn = false;
         }
     }
 
@@ -590,6 +709,30 @@
     {
         if (m is null) return "--";
         return m.Value.ToString("F1");
+    }
+
+    private static string FormatNm(double? meters)
+    {
+        if (meters is null) return "--";
+        double nm = meters.Value / 1852.0;
+        return nm < 10 ? nm.ToString("F2") : nm.ToString("F1");
+    }
+
+    private static string FormatMeters(double? m)
+    {
+        if (m is null) return "--";
+        return m.Value < 1000
+            ? $"{m.Value:F0}m"
+            : $"{(m.Value / 1852.0):F2}nm";
+    }
+
+    private static string FormatTimeToGo(double? seconds)
+    {
+        if (seconds is null) return "--";
+        var ts = TimeSpan.FromSeconds(seconds.Value);
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h{ts.Minutes:D2}m";
+        return $"{ts.Minutes}m{ts.Seconds:D2}s";
     }
 
     /// <summary>

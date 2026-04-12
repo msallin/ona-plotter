@@ -500,6 +500,10 @@ export function clearAnchor() {
     if (anchorCircle) { map.removeLayer(anchorCircle); anchorCircle = null; }
 }
 
+export function updateAnchorRadius(radiusM) {
+    if (anchorCircle) anchorCircle.setRadius(radiusM);
+}
+
 // --- Night Mode ---
 
 export function setNightMode(enabled) {
