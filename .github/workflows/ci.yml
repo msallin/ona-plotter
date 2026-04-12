@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore OnaPlotter.slnx
+
+      - name: Build
+        run: dotnet build OnaPlotter.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test OnaPlotter.slnx --no-build --configuration Release --verbosity normal
