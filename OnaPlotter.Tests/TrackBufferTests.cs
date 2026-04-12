@@ -39,7 +39,7 @@ public class TrackBufferTests
         buf.Add(MakePoint(3, 30));
 
         var snap = buf.GetSnapshot();
-        await Assert.That(snap).HasCount().EqualTo(3);
+        await Assert.That(snap.Length).IsEqualTo(3);
         await Assert.That(snap[0].Latitude).IsEqualTo(1);
         await Assert.That(snap[1].Latitude).IsEqualTo(2);
         await Assert.That(snap[2].Latitude).IsEqualTo(3);
@@ -55,7 +55,7 @@ public class TrackBufferTests
         buf.Add(MakePoint(4, 0)); // overwrites point 1
 
         var snap = buf.GetSnapshot();
-        await Assert.That(snap).HasCount().EqualTo(3);
+        await Assert.That(snap.Length).IsEqualTo(3);
         await Assert.That(snap[0].Latitude).IsEqualTo(2); // oldest surviving
         await Assert.That(snap[1].Latitude).IsEqualTo(3);
         await Assert.That(snap[2].Latitude).IsEqualTo(4); // newest
@@ -79,7 +79,7 @@ public class TrackBufferTests
             buf.Add(MakePoint(i, 0));
 
         var snap = buf.GetSnapshot();
-        await Assert.That(snap).HasCount().EqualTo(3);
+        await Assert.That(snap.Length).IsEqualTo(3);
         await Assert.That(snap[0].Latitude).IsEqualTo(5);
         await Assert.That(snap[1].Latitude).IsEqualTo(6);
         await Assert.That(snap[2].Latitude).IsEqualTo(7);
@@ -108,7 +108,7 @@ public class TrackBufferTests
         buf.Add(MakePoint(2, 0));
         var snap2 = buf.GetSnapshot();
 
-        await Assert.That(snap1).HasCount().EqualTo(1);
-        await Assert.That(snap2).HasCount().EqualTo(2);
+        await Assert.That(snap1.Length).IsEqualTo(1);
+        await Assert.That(snap2.Length).IsEqualTo(2);
     }
 }

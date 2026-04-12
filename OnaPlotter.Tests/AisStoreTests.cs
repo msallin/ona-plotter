@@ -41,7 +41,7 @@ public class AisStoreTests
 
         await Assert.That(store.Count).IsEqualTo(1);
         var vessels = store.GetVessels();
-        await Assert.That(vessels).HasCount().EqualTo(1);
+        await Assert.That(vessels.Length).IsEqualTo(1);
         await Assert.That(vessels[0].Name).IsEqualTo("TestVessel");
     }
 
@@ -59,7 +59,7 @@ public class AisStoreTests
         store.Apply(ctx2, "name", name);
 
         var vessels = store.GetVessels();
-        await Assert.That(vessels).HasCount().EqualTo(1);
+        await Assert.That(vessels.Length).IsEqualTo(1);
         await Assert.That(vessels[0].Context).IsEqualTo(ctx1);
     }
 
@@ -85,7 +85,7 @@ public class AisStoreTests
         var snap1 = store.GetVessels();
         var snap2 = store.GetVessels();
 
-        await Assert.That(snap2).IsSameReferenceAs(snap1);
+        await Assert.That(snap2).IsSameAs(snap1);
     }
 
     [Test]
@@ -100,7 +100,7 @@ public class AisStoreTests
         store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.speedOverGround", sog);
         var snap2 = store.GetVessels();
 
-        await Assert.That(snap2).IsNotSameReferenceAs(snap1);
+        await Assert.That(snap2).IsNotSameAs(snap1);
     }
 
     [Test]
