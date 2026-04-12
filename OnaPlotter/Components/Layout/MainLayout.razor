@@ -1,0 +1,40 @@
+@inherits LayoutComponentBase
+@using OnaPlotter.Services
+@inject SignalkClient SignalkClient
+@implements IDisposable
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <span class="connection-status">
+                <span class="connection-dot @(SignalkClient.IsConnected ? "connected" : "disconnected")"></span>
+                @(SignalkClient.IsConnected ? "Connected" : "Disconnected")
+            </span>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        SignalkClient.OnConnectionChanged += HandleConnectionChanged;
+    }
+
+    private async void HandleConnectionChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
+    }
+}

@@ -1,0 +1,123 @@
+@* Reusable circular instrument gauge with animated needle, tick marks, and digital readout. *@
+
+<div class="text-center">
+    <svg viewBox="0 0 @Size @Size" width="@SizePx" height="@SizePx">
+        @* Background arc *@
+        <path d="@ArcPath(0, 1)" fill="none" stroke="#333" stroke-width="@TrackWidth" stroke-linecap="round" />
+
+        @* Color zones *@
+        @if (Zones is not null)
+        {
+            @foreach (var zone in Zones)
+            {
+                double startFrac = Math.Clamp((zone.Min - Min) / Range, 0, 1);
+                double endFrac = Math.Clamp((zone.Max - Min) / Range, 0, 1);
+                <path d="@ArcPath(startFrac, endFrac)" fill="none" stroke="@zone.Color"
+                      stroke-width="@TrackWidth" stroke-linecap="butt" opacity="0.4" />
+            }
+        }
+
+        @* Tick marks and labels *@
+        @foreach (var tick in ticks)
+        {
+            double frac = (tick - Min) / Range;
+            double angle = StartAngle + frac * SweepAngle;
+            double rad = angle * Math.PI / 180;
+            double outerR = Radius + TrackWidth / 2 + 2;
+            double innerR = Radius + TrackWidth / 2 - 6;
+            double labelR = Radius + TrackWidth / 2 + 16;
+            double lx = Cx + Math.Cos(rad) * labelR;
+            double ly = Cy + Math.Sin(rad) * labelR;
+
+            <line x1="@(Cx + Math.Cos(rad) * innerR)" y1="@(Cy + Math.Sin(rad) * innerR)"
+                  x2="@(Cx + Math.Cos(rad) * outerR)" y2="@(Cy + Math.Sin(rad) * outerR)"
+                  stroke="#999" stroke-width="1.5" />
+            @SvgText(lx, ly, tick.ToString(TickFormat), "#ccc", 11)
+        }
+
+        @* Needle *@
+        @{
+            double valueFrac = Math.Clamp((ClampedValue - Min) / Range, 0, 1);
+            double needleAngle = StartAngle + valueFrac * SweepAngle;
+            double needleRad = needleAngle * Math.PI / 180;
+            double needleLen = Radius - 10;
+            double nx = Cx + Math.Cos(needleRad) * needleLen;
+            double ny = Cy + Math.Sin(needleRad) * needleLen;
+        }
+        <line x1="@Cx" y1="@Cy" x2="@nx" y2="@ny"
+              stroke="#e53935" stroke-width="2.5" stroke-linecap="round"
+              style="transition: all 0.3s ease-out;" />
+        <circle cx="@Cx" cy="@Cy" r="5" fill="#e53935" />
+
+        @* Digital readout *@
+        @SvgText(Cx, Cy + 35, DisplayValue, "#fff", 22, "bold")
+        @SvgText(Cx, Cy + 55, Unit, "#999", 12)
+    </svg>
+    <div class="text-muted small mt-1">@Label</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public double Min { get; set; }
+    [Parameter, EditorRequired] public double Max { get; set; }
+    [Parameter, EditorRequired] public string Unit { get; set; } = "";
+    [Parameter] public double? Value { get; set; }
+    [Parameter] public string ValueFormat { get; set; } = "F1";
+    [Parameter] public string TickFormat { get; set; } = "F0";
+    [Parameter] public int TickCount { get; set; } = 6;
+    [Parameter] public List<GaugeZone>? Zones { get; set; }
+
+    // Gauge geometry: 270-degree sweep starting from bottom-left.
+    private const double Size = 220;
+    private const double Cx = Size / 2;
+    private const double Cy = Size / 2;
+    private const double Radius = 70;
+    private const double TrackWidth = 12;
+    private const double StartAngle = 135;  // degrees (from 3 o'clock)
+    private const double SweepAngle = 270;
+    private string SizePx => "220";
+
+    private double Range => Max - Min;
+    private double ClampedValue => Value is null ? Min : Math.Clamp(Value.Value, Min, Max);
+    private string DisplayValue => Value is null ? "--" : Value.Value.ToString(ValueFormat);
+
+    private double[] ticks
+    {
+        get
+        {
+            if (TickCount < 2) return [Min, Max];
+            var result = new double[TickCount + 1];
+            for (int i = 0; i <= TickCount; i++)
+                result[i] = Min + Range * i / TickCount;
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Renders an SVG text element as raw markup, avoiding Razor's <text> directive conflict.
+    /// </summary>
+    private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize, string? fontWeight = null)
+    {
+        string weight = fontWeight is not null ? $" font-weight=\"{fontWeight}\"" : "";
+        return new MarkupString(
+            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\"{weight} " +
+            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+
+    /// <summary>
+    /// Builds an SVG arc path between two fractional positions (0..1) on the gauge.
+    /// </summary>
+    private string ArcPath(double startFrac, double endFrac)
+    {
+        double a1 = (StartAngle + startFrac * SweepAngle) * Math.PI / 180;
+        double a2 = (StartAngle + endFrac * SweepAngle) * Math.PI / 180;
+        double x1 = Cx + Math.Cos(a1) * Radius;
+        double y1 = Cy + Math.Sin(a1) * Radius;
+        double x2 = Cx + Math.Cos(a2) * Radius;
+        double y2 = Cy + Math.Sin(a2) * Radius;
+        int largeArc = (endFrac - startFrac) * SweepAngle > 180 ? 1 : 0;
+        return $"M {x1} {y1} A {Radius} {Radius} 0 {largeArc} 1 {x2} {y2}";
+    }
+
+    public record GaugeZone(double Min, double Max, string Color);
+}

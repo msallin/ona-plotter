@@ -1,0 +1,555 @@
+/* Dark nautical theme for SignalK Viewer. */
+
+:root {
+    --sk-bg: #1a1d23;
+    --sk-surface: #242830;
+    --sk-surface-hover: #2c313a;
+    --sk-border: #363b44;
+    --sk-text: #e0e0e0;
+    --sk-text-muted: #8a919c;
+    --sk-accent: #3b82f6;
+    --sk-accent-dim: #2563eb;
+    --sk-green: #22c55e;
+    --sk-red: #ef4444;
+    --sk-orange: #f59e0b;
+}
+
+html, body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    background-color: var(--sk-bg);
+    color: var(--sk-text);
+}
+
+a, .btn-link {
+    color: var(--sk-accent);
+}
+
+.btn-primary {
+    color: #fff;
+    background-color: var(--sk-accent-dim);
+    border-color: var(--sk-accent-dim);
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+    box-shadow: 0 0 0 0.1rem var(--sk-bg), 0 0 0 0.25rem var(--sk-accent);
+}
+
+.content {
+    padding-top: 1.1rem;
+}
+
+h1:focus {
+    outline: none;
+}
+
+h2 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: var(--sk-text);
+}
+
+/* Data cards */
+.card {
+    background-color: var(--sk-surface);
+    border: 1px solid var(--sk-border);
+    transition: background-color 0.15s ease;
+}
+
+.card:hover {
+    background-color: var(--sk-surface-hover);
+}
+
+.card .display-6 {
+    font-size: 2rem;
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+}
+
+.card .card-subtitle {
+    color: var(--sk-text-muted) !important;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+}
+
+/* Override Bootstrap text-muted */
+.text-muted {
+    color: var(--sk-text-muted) !important;
+}
+
+/* Connection status indicator */
+.connection-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+.connection-dot.connected { background-color: var(--sk-green); }
+.connection-dot.disconnected { background-color: var(--sk-red); }
+
+/* Form controls in dark theme */
+.form-check-input {
+    background-color: var(--sk-surface);
+    border-color: var(--sk-border);
+}
+.form-check-input:checked {
+    background-color: var(--sk-accent);
+    border-color: var(--sk-accent);
+}
+
+/* Buttons */
+.btn-outline-secondary {
+    color: var(--sk-text-muted);
+    border-color: var(--sk-border);
+}
+.btn-outline-secondary:hover {
+    color: var(--sk-text);
+    background-color: var(--sk-surface-hover);
+    border-color: var(--sk-text-muted);
+}
+.btn-outline-danger {
+    color: var(--sk-red);
+    border-color: var(--sk-border);
+}
+.btn-outline-danger:hover {
+    color: #fff;
+    background-color: var(--sk-red);
+}
+
+.blazor-error-boundary {
+    background: var(--sk-red);
+    padding: 1rem;
+    color: white;
+}
+
+.blazor-error-boundary::after {
+    content: "An unhandled error has occurred."
+}
+
+/* ===== Chartplotter HUD ===== */
+
+.map-container {
+    position: relative;
+    height: calc(100vh - 100px);
+    width: 100%;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.map-container #mapDiv {
+    height: 100%;
+    width: 100%;
+}
+
+/* Fullscreen: fill entire screen, override border-radius */
+.map-container.map-fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+    z-index: 9999;
+}
+
+.map-container:fullscreen {
+    border-radius: 0;
+}
+
+/* HUD panels: translucent overlays on the map */
+.hud {
+    position: absolute;
+    z-index: 800;
+    pointer-events: none;
+    font-family: 'Helvetica Neue', Helvetica, sans-serif;
+}
+
+.hud-panel {
+    background: rgba(15, 17, 22, 0.82);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    padding: 8px 14px;
+    color: #fff;
+    pointer-events: none; /* Let touch pass through to map for panning */
+    user-select: none;
+}
+
+.hud-top-left { top: 12px; left: 12px; }
+.hud-top-right { top: 12px; right: 56px; }
+.hud-bottom-left { bottom: 60px; left: 12px; }
+.hud-bottom-right { bottom: 60px; right: 12px; }
+
+.hud-value {
+    font-size: 1.6rem;
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.hud-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.5);
+}
+
+.hud-unit {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.4);
+    margin-left: 3px;
+}
+
+/* Position display in HUD */
+.hud-position {
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255,255,255,0.4);
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    letter-spacing: 0.02em;
+}
+.night-mode .hud-position { color: rgba(255,130,130,0.4); }
+
+/* Depth color states */
+.depth-ok { color: #22c55e; }
+.depth-warn { color: #f59e0b; }
+.depth-danger { color: #ef4444; }
+
+/* Wind arrow in HUD */
+.wind-arrow {
+    transition: transform 0.3s ease-out;
+}
+
+/* Night mode: red tint on HUD, high opacity for readability */
+.night-mode .hud-panel {
+    background: rgba(30, 5, 5, 0.92);
+    color: #ffcccc;
+}
+.night-mode .hud-label { color: rgba(255,130,130,0.6); }
+.night-mode .hud-unit { color: rgba(255,130,130,0.5); }
+.night-mode .hud-value { color: #ffdddd; }
+
+/* ===== Map Control Bar ===== */
+
+.map-controls {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 800;
+    display: flex;
+    gap: 6px;
+    pointer-events: auto;
+    touch-action: manipulation; /* Prevent double-tap zoom on control buttons */
+}
+
+.map-btn {
+    background: rgba(15, 17, 22, 0.82);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.7);
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.map-btn:hover {
+    background: rgba(30, 34, 44, 0.9);
+    color: #fff;
+    border-color: rgba(255,255,255,0.2);
+}
+
+.map-btn.active {
+    background: rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #fff;
+}
+
+.map-btn.mob-btn {
+    background: rgba(60, 10, 10, 0.85);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.map-btn.mob-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    color: #fff;
+}
+
+.map-btn.mob-btn.active {
+    background: rgba(239, 68, 68, 0.5);
+    border-color: #ef4444;
+    color: #fff;
+    animation: mob-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes mob-glow {
+    0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.3); }
+    50% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
+}
+
+/* MOB pulsing marker */
+.mob-icon .mob-pulse {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ef4444;
+    animation: mob-ping 1.2s ease-out infinite;
+}
+
+@keyframes mob-ping {
+    0% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* Night mode button */
+.night-mode .map-btn {
+    background: rgba(30, 5, 5, 0.85);
+    color: #ff9999;
+    border-color: rgba(255,100,100,0.15);
+}
+.night-mode .map-btn:hover {
+    color: #ffcccc;
+}
+.night-mode .map-btn.active {
+    background: rgba(180, 40, 40, 0.3);
+    border-color: rgba(180, 40, 40, 0.5);
+}
+
+/* Leaflet popup overrides for dark theme */
+.leaflet-popup-content-wrapper {
+    background: rgba(20, 23, 30, 0.92) !important;
+    color: #e0e0e0 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 3px 14px rgba(0,0,0,0.4) !important;
+}
+.leaflet-popup-tip {
+    background: rgba(20, 23, 30, 0.92) !important;
+}
+.leaflet-popup-content {
+    margin: 10px 14px !important;
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+}
+
+/* Bearing/distance tooltip */
+.bearing-tooltip {
+    background: rgba(167, 139, 250, 0.85) !important;
+    border: none !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    padding: 3px 8px !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+}
+.bearing-tooltip::before { display: none !important; }
+
+.mob-tooltip {
+    background: rgba(239, 68, 68, 0.85) !important;
+    border: none !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    padding: 3px 8px !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+}
+.mob-tooltip::before { display: none !important; }
+
+/* Compass rose (tiny heading indicator) */
+.compass-rose {
+    transition: transform 0.3s ease-out;
+}
+
+/* Touch-friendly: larger tap targets (48px min per WCAG) */
+@media (pointer: coarse) {
+    .map-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 10px 16px;
+        font-size: 0.85rem;
+    }
+    .map-btn.mob-btn {
+        min-width: 60px;
+        font-size: 0.9rem;
+    }
+    .map-controls { gap: 8px; }
+    .hud-panel { padding: 10px 16px; }
+    .hud-value { font-size: 1.8rem; }
+    .chart-item {
+        padding: 10px 0;
+        font-size: 0.9rem;
+    }
+    .chart-item input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+    }
+    .layer-search {
+        padding: 10px 12px;
+        font-size: 0.9rem;
+    }
+    .section-toggle {
+        padding: 6px 0;
+        font-size: 0.8rem;
+    }
+}
+
+/* Mobile responsive: stack for small screens */
+@media (max-width: 600px) {
+    .hud-bottom-left { bottom: 80px; }
+    .hud-bottom-right { bottom: 80px; }
+    .hud-top-right { right: 12px; }
+    .map-controls { flex-wrap: wrap; justify-content: center; }
+    .hud-value { font-size: 1.3rem; }
+}
+
+/* Chart picker panel */
+.chart-panel {
+    position: absolute;
+    bottom: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 800;
+    background: rgba(15, 17, 22, 0.92);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-width: 220px;
+    max-width: 340px;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+
+.chart-panel-header {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 8px;
+}
+
+.chart-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--sk-text);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.chart-item:last-child { border-bottom: none; }
+
+.chart-item input[type="checkbox"] {
+    accent-color: var(--sk-accent);
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.chart-name {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chart-desc {
+    font-size: 0.7rem;
+    color: var(--sk-text-muted);
+}
+
+.night-mode .chart-panel {
+    background: rgba(30, 5, 5, 0.92);
+}
+
+/* Layer search input */
+.layer-search {
+    width: 100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    color: var(--sk-text);
+    margin-bottom: 8px;
+    outline: none;
+}
+.layer-search::placeholder { color: var(--sk-text-muted); }
+.layer-search:focus { border-color: var(--sk-accent); }
+
+/* Section toggle headers */
+.section-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+}
+.section-toggle:hover { color: var(--sk-text); }
+
+.toggle-arrow {
+    font-size: 0.6rem;
+    width: 10px;
+    text-align: center;
+    opacity: 0.5;
+}
+
+.section-count {
+    font-size: 0.65rem;
+    opacity: 0.5;
+    margin-left: auto;
+}
+
+.chart-item-body {
+    min-width: 0;
+    flex: 1;
+}
+
+/* AIS name labels on map */
+.ais-label {
+    background: rgba(15, 17, 22, 0.75) !important;
+    border: none !important;
+    color: #d4d4d8 !important;
+    font-size: 10px !important;
+    padding: 1px 5px !important;
+    border-radius: 3px !important;
+    box-shadow: none !important;
+    white-space: nowrap !important;
+}
+.ais-label::before { display: none !important; }
+
+/* Hide AIS labels at low zoom to avoid clutter */
+.leaflet-zoom-anim .ais-label { transition: opacity 0.2s; }
+
+/* Raw stream path filter chips */
+.path-chip {
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid var(--sk-border);
+    background: transparent;
+    color: var(--sk-text-muted);
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.path-chip:hover {
+    border-color: var(--sk-text-muted);
+}
+.path-chip.active {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: var(--sk-text);
+}

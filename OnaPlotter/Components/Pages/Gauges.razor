@@ -1,0 +1,102 @@
+@* Instrument gauge page with circular SVG gauges for key navigation values. *@
+
+@page "/gauges"
+@using OnaPlotter.Services
+@using OnaPlotter.Components.Gauges
+@using static OnaPlotter.Components.Gauges.CircularGauge
+@implements IDisposable
+@inject SignalkClient SignalkClient
+
+<PageTitle>Gauges</PageTitle>
+
+<h2>Instruments</h2>
+
+<div class="row g-4 justify-content-center">
+    <div class="col-auto">
+        <CircularGauge Label="Speed Over Ground"
+                       Value="@SogKn" Min="0" Max="15" Unit="kn"
+                       TickCount="5" ValueFormat="F1"
+                       Zones="@sogZones" />
+    </div>
+    <div class="col-auto">
+        <CircularGauge Label="Heading"
+                       Value="@HeadingDeg" Min="0" Max="360" Unit="deg"
+                       TickCount="8" ValueFormat="F0" TickFormat="F0"
+                       Zones="@headingZones" />
+    </div>
+    <div class="col-auto">
+        <CircularGauge Label="Depth"
+                       Value="@Data.Depth" Min="0" Max="50" Unit="m"
+                       TickCount="5" ValueFormat="F1"
+                       Zones="@depthZones" />
+    </div>
+    <div class="col-auto">
+        <CircularGauge Label="Wind Speed"
+                       Value="@WindSpeedKn" Min="0" Max="40" Unit="kn"
+                       TickCount="4" ValueFormat="F1"
+                       Zones="@windSpeedZones" />
+    </div>
+    <div class="col-auto">
+        <CircularGauge Label="Wind Angle"
+                       Value="@WindAngleDeg" Min="-180" Max="180" Unit="deg"
+                       TickCount="6" ValueFormat="F0" TickFormat="F0" />
+    </div>
+</div>
+
+@code {
+    private const double MsToKnots = 1.94384;
+    private const double RadToDeg = 180.0 / Math.PI;
+
+    private Models.NavigationData Data => SignalkClient.Data;
+
+    private double? SogKn => Data.SpeedOverGround is not null ? Data.SpeedOverGround * MsToKnots : null;
+    private double? HeadingDeg => Data.Heading is not null ? Data.Heading * RadToDeg : null;
+    private double? WindSpeedKn => Data.WindSpeedApparent is not null ? Data.WindSpeedApparent * MsToKnots : null;
+    private double? WindAngleDeg => Data.WindAngleApparent is not null ? Data.WindAngleApparent * RadToDeg : null;
+
+    // Color zones: green = normal, yellow = caution, red = danger.
+    private static readonly List<GaugeZone> sogZones =
+    [
+        new(0, 8, "#4CAF50"),
+        new(8, 12, "#FFC107"),
+        new(12, 15, "#F44336")
+    ];
+
+    private static readonly List<GaugeZone> depthZones =
+    [
+        new(0, 3, "#F44336"),
+        new(3, 8, "#FFC107"),
+        new(8, 50, "#4CAF50")
+    ];
+
+    private static readonly List<GaugeZone> windSpeedZones =
+    [
+        new(0, 15, "#4CAF50"),
+        new(15, 25, "#FFC107"),
+        new(25, 40, "#F44336")
+    ];
+
+    // Heading: no danger zones, just quadrant shading.
+    private static readonly List<GaugeZone> headingZones =
+    [
+        new(0, 90, "#4CAF50"),
+        new(90, 180, "#2196F3"),
+        new(180, 270, "#FF9800"),
+        new(270, 360, "#9C27B0")
+    ];
+
+    protected override void OnInitialized()
+    {
+        SignalkClient.OnDataChanged += HandleDataChanged;
+    }
+
+    private async void HandleDataChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        SignalkClient.OnDataChanged -= HandleDataChanged;
+    }
+}

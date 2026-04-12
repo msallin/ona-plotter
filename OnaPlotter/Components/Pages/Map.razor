@@ -1,0 +1,621 @@
+@* Chartplotter: live map with HUD instruments, AIS targets, MOB, anchor watch. *@
+
+@page "/map"
+@using OnaPlotter.Services
+@using OnaPlotter.Models
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject SignalkClient SignalkClient
+@inject TrackBuffer TrackBuffer
+@inject AisStore AisStore
+@inject ChartService ChartService
+@inject IJSRuntime JS
+
+<PageTitle>Map</PageTitle>
+
+<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "")"
+     @onfullscreenchange="OnFullscreenChange">
+    <div id="mapDiv"></div>
+
+    @* === HUD: Top-Left — Speed, Course & Position === *@
+    <div class="hud hud-top-left">
+        <div class="hud-panel">
+            <div class="hud-label">SOG</div>
+            <div class="hud-value">@FormatKnots(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
+            <div class="hud-label" style="margin-top:4px;">COG</div>
+            <div class="hud-value">@FormatDeg(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
+            <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
+        </div>
+    </div>
+
+    @* === HUD: Top-Right — Wind === *@
+    <div class="hud hud-top-right">
+        <div class="hud-panel" style="text-align:center;">
+            <div class="hud-label">Apparent Wind</div>
+            @if (Data.WindSpeedApparent is not null)
+            {
+                <svg width="48" height="48" viewBox="-24 -24 48 48" class="wind-arrow"
+                     style="transform: rotate(@WindAngleDegStr);" role="img" aria-label="Wind direction">
+                    <circle cx="0" cy="0" r="22" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+                    <polygon points="0,-20 4,-8 0,-12 -4,-8" fill="#3b82f6" stroke="none"/>
+                </svg>
+                <div class="hud-value" style="font-size:1.2rem;">@FormatKnots(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
+            }
+            else
+            {
+                <div style="color: rgba(255,255,255,0.25); font-size:0.8rem; padding: 8px 0;">--</div>
+            }
+        </div>
+    </div>
+
+    @* === HUD: Bottom-Left — Depth === *@
+    <div class="hud hud-bottom-left">
+        <div class="hud-panel">
+            <div class="hud-label">Depth</div>
+            <div class="hud-value @DepthClass">@FormatDepth(Data.Depth)<span class="hud-unit">m</span></div>
+        </div>
+    </div>
+
+    @* === HUD: Bottom-Right — Heading Compass === *@
+    <div class="hud hud-bottom-right">
+        <div class="hud-panel" style="text-align:center;">
+            <div class="hud-label">HDG</div>
+            <svg width="52" height="52" viewBox="-26 -26 52 52">
+                <circle cx="0" cy="0" r="24" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+                @SvgTextMarkup(0, -18, "N", "rgba(255,255,255,0.5)", 7)
+                @SvgTextMarkup(18, 0, "E", "rgba(255,255,255,0.3)", 7)
+                @SvgTextMarkup(0, 19, "S", "rgba(255,255,255,0.3)", 7)
+                @SvgTextMarkup(-18, 0, "W", "rgba(255,255,255,0.3)", 7)
+                <line x1="0" y1="0" x2="@HeadingX" y2="@HeadingY"
+                      stroke="#3b82f6" stroke-width="2" stroke-linecap="round"
+                      class="compass-rose" />
+                <circle cx="0" cy="0" r="2.5" fill="#3b82f6"/>
+            </svg>
+            <div class="hud-value" style="font-size:1.1rem;">@FormatDeg(Data.Heading)<span class="hud-unit">&deg;</span></div>
+        </div>
+    </div>
+
+    @* === Control Bar === *@
+    <div class="map-controls">
+        <button class="map-btn @(follow ? "active" : "")" @onclick="ToggleFollow" title="Keyboard: F">
+            @(follow ? "Following" : "Follow")
+        </button>
+        <button class="map-btn @(nightMode ? "active" : "")" @onclick="ToggleNightMode" title="Keyboard: N">
+            Night
+        </button>
+        <button class="map-btn @(anchorActive ? "active" : "")" @onclick="ToggleAnchor" title="Keyboard: A">
+            @(anchorActive ? "Anchored" : "Anchor")
+        </button>
+        <button class="map-btn mob-btn @(mobActive ? "active" : "")" @onclick="ToggleMob" title="Keyboard: M">
+            MOB
+        </button>
+        <button class="map-btn" @onclick="ZoomToTrack" title="Keyboard: T">Fit Track</button>
+        <button class="map-btn" @onclick="ToggleFullscreen" title="Keyboard: Escape to exit">
+            @(fullscreen ? "Exit" : "Fullscreen")
+        </button>
+        <button class="map-btn @(chartPanelOpen ? "active" : "")" @onclick="() => chartPanelOpen = !chartPanelOpen">
+            Layers
+        </button>
+    </div>
+
+    @* === Layers Panel === *@
+    @if (chartPanelOpen)
+    {
+        <div class="chart-panel">
+            @if (availableCharts.Count + availableRoutes.Count > 6)
+            {
+                <input type="text" class="layer-search" placeholder="Filter..."
+                       @oninput="OnLayerFilterInput" />
+            }
+
+            @if (FilteredCharts.Any())
+            {
+                <div class="chart-panel-header section-toggle" @onclick="() => chartsExpanded = !chartsExpanded">
+                    <span class="toggle-arrow">@(chartsExpanded ? "v" : ">")</span>
+                    Charts <span class="section-count">@FilteredCharts.Count()</span>
+                </div>
+                @if (chartsExpanded)
+                {
+                    @foreach (var chart in FilteredCharts)
+                    {
+                        <label class="chart-item">
+                            <input type="checkbox" checked="@enabledCharts.Contains(chart.Identifier)"
+                                   @onchange="(e) => ToggleChart(chart, (bool)(e.Value ?? false))" />
+                            <div class="chart-item-body">
+                                <div class="chart-name">@chart.Name</div>
+                                @if (chart.Description is not null)
+                                {
+                                    <div class="chart-desc">@chart.Description</div>
+                                }
+                                @if (chart.MinZoom is not null || chart.MaxZoom is not null)
+                                {
+                                    <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
+                                }
+                            </div>
+                        </label>
+                    }
+                }
+            }
+
+            @if (FilteredRoutes.Any())
+            {
+                <div class="chart-panel-header section-toggle" @onclick="() => routesExpanded = !routesExpanded">
+                    <span class="toggle-arrow">@(routesExpanded ? "v" : ">")</span>
+                    Routes <span class="section-count">@FilteredRoutes.Count()</span>
+                </div>
+                @if (routesExpanded)
+                {
+                    @foreach (var route in FilteredRoutes)
+                    {
+                        <label class="chart-item">
+                            <input type="checkbox" checked="@enabledRoutes.Contains(route.Id)"
+                                   @onchange="(e) => ToggleRoute(route, (bool)(e.Value ?? false))" />
+                            <div class="chart-item-body">
+                                <div class="chart-name">@(route.Name ?? route.Id[..8])</div>
+                                @if (route.Distance is not null)
+                                {
+                                    <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
+                                }
+                            </div>
+                        </label>
+                    }
+                }
+            }
+
+            <div class="chart-panel-header section-toggle" @onclick="() => trackExpanded = !trackExpanded">
+                <span class="toggle-arrow">@(trackExpanded ? "v" : ">")</span>
+                Track History
+            </div>
+            @if (trackExpanded)
+            {
+                <label class="chart-item">
+                    <input type="checkbox" checked="@serverTrackVisible"
+                           @onchange="ToggleServerTrack" />
+                    <div class="chart-item-body">
+                        <div class="chart-name">Server Track (24h)</div>
+                        <div class="chart-desc">Position history from SignalK</div>
+                    </div>
+                </label>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IJSObjectReference? module;
+    private DotNetObjectReference<Map>? dotNetRef;
+    private bool follow = true;
+    private bool nightMode;
+    private bool mobActive;
+    private bool anchorActive;
+    private bool mapInitialized;
+    private bool chartPanelOpen;
+    private bool fullscreen;
+    private double? prevLat, prevLon;
+    private System.Threading.Timer? aisTimer;
+    private List<SignalkChart> availableCharts = [];
+    private List<SignalkRoute> availableRoutes = [];
+    private readonly HashSet<string> enabledCharts = [];
+    private readonly HashSet<string> enabledRoutes = [];
+    private bool serverTrackVisible;
+    private bool chartsExpanded = true;
+    private bool routesExpanded = true;
+    private bool trackExpanded = true;
+    private string layerFilter = "";
+    private double? viewWest, viewSouth, viewEast, viewNorth;
+
+    private void OnLayerFilterInput(ChangeEventArgs e) => layerFilter = e.Value?.ToString() ?? "";
+
+    private IEnumerable<SignalkChart> FilteredCharts
+    {
+        get
+        {
+            IEnumerable<SignalkChart> list = availableCharts;
+            if (!string.IsNullOrEmpty(layerFilter))
+                list = list.Where(c => c.Name.Contains(layerFilter, StringComparison.OrdinalIgnoreCase));
+            if (viewWest is not null)
+                list = list.Where(ChartIntersectsViewport);
+            return list;
+        }
+    }
+
+    private IEnumerable<SignalkRoute> FilteredRoutes
+    {
+        get
+        {
+            IEnumerable<SignalkRoute> list = availableRoutes;
+            if (!string.IsNullOrEmpty(layerFilter))
+                list = list.Where(r => (r.Name ?? r.Id).Contains(layerFilter, StringComparison.OrdinalIgnoreCase));
+            if (viewWest is not null)
+                list = list.Where(RouteIntersectsViewport);
+            return list;
+        }
+    }
+
+    private const double MsToKnots = 1.94384;
+    private const double RadToDeg = 180.0 / Math.PI;
+
+    private NavigationData Data => SignalkClient.Data;
+
+    // Heading compass needle endpoint. Sticky: keeps last known heading if data drops.
+    private double? lastHeading;
+    private double HeadingRad
+    {
+        get
+        {
+            if (Data.Heading is not null) lastHeading = Data.Heading;
+            return lastHeading ?? 0;
+        }
+    }
+    private string HeadingX => (Math.Sin(HeadingRad) * 16).ToString("F1");
+    private string HeadingY => (-Math.Cos(HeadingRad) * 16).ToString("F1");
+
+    // Wind arrow rotation.
+    private string WindAngleDegStr =>
+        Data.WindAngleApparent is not null
+            ? $"{(Data.WindAngleApparent.Value * RadToDeg):F0}deg"
+            : "0deg";
+
+    // Depth warning class.
+    private string DepthClass => Data.Depth switch
+    {
+        null => "",
+        < 3 => "depth-danger",
+        < 8 => "depth-warn",
+        _ => "depth-ok"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
+        dotNetRef = DotNetObjectReference.Create(this);
+
+        double lat = Data.Latitude ?? 0;
+        double lon = Data.Longitude ?? 0;
+        int zoom = Data.Latitude is not null ? 14 : 3;
+
+        await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef);
+        mapInitialized = true;
+
+        // Load existing track as speed-colored segments.
+        var points = TrackBuffer.GetSnapshot();
+        if (points.Length > 0)
+        {
+            var jsPoints = points.Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 }).ToArray();
+            await module.InvokeVoidAsync("setColoredTrack", (object)jsPoints);
+            prevLat = points[^1].Latitude;
+            prevLon = points[^1].Longitude;
+        }
+
+        // Load available charts and routes from SignalK server.
+        availableCharts = await ChartService.GetChartsAsync();
+        availableRoutes = await ChartService.GetRoutesAsync();
+        StateHasChanged();
+
+        SignalkClient.OnDataChanged += HandleDataChanged;
+        aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, 1000, 3000);
+
+        await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
+    }
+
+    [JSInvokable]
+    public async Task OnKeyShortcut(string key)
+    {
+        switch (key)
+        {
+            case "m": await ToggleMob(); break;
+            case "n": await ToggleNightMode(); break;
+            case "f": await ToggleFollow(); break;
+            case "a": await ToggleAnchor(); break;
+            case "t": await ZoomToTrack(); break;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void OnMapBoundsChanged(double west, double south, double east, double north)
+    {
+        viewWest = west;
+        viewSouth = south;
+        viewEast = east;
+        viewNorth = north;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    // Charts without bounds are always shown. Otherwise AABB intersection test.
+    private bool ChartIntersectsViewport(SignalkChart chart)
+    {
+        if (chart.Bounds is null || chart.Bounds.Length < 4) return true;
+
+        double cWest = chart.Bounds[0], cSouth = chart.Bounds[1];
+        double cEast = chart.Bounds[2], cNorth = chart.Bounds[3];
+
+        return !(cEast < viewWest || cWest > viewEast || cNorth < viewSouth || cSouth > viewNorth);
+    }
+
+    // Compute route bounding box from GeoJSON coordinates, then AABB intersection.
+    private bool RouteIntersectsViewport(SignalkRoute route)
+    {
+        if (route.Feature?.Geometry is null) return true;
+
+        double minLat = double.MaxValue, maxLat = double.MinValue;
+        double minLon = double.MaxValue, maxLon = double.MinValue;
+
+        try
+        {
+            foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+            {
+                var arr = new double[2];
+                int i = 0;
+                foreach (var val in point.EnumerateArray())
+                {
+                    if (i < 2) arr[i++] = val.GetDouble();
+                }
+                double lon = arr[0], lat = arr[1]; // GeoJSON [lon, lat]
+                if (lat < minLat) minLat = lat;
+                if (lat > maxLat) maxLat = lat;
+                if (lon < minLon) minLon = lon;
+                if (lon > maxLon) maxLon = lon;
+            }
+        }
+        catch
+        {
+            return true;
+        }
+
+        return !(maxLon < viewWest || minLon > viewEast || maxLat < viewSouth || minLat > viewNorth);
+    }
+
+    // Cached HUD values for change detection. Only re-render when these actually change.
+    private string lastHudKey = "";
+
+    private string BuildHudKey() =>
+        $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}";
+
+    private async void HandleDataChanged()
+    {
+        if (!mapInitialized || module is null) return;
+
+        try
+        {
+            if (Data.Latitude is not null && Data.Longitude is not null)
+            {
+                await module.InvokeVoidAsync("updatePosition",
+                    Data.Latitude, Data.Longitude, Data.Heading,
+                    Data.CourseOverGround, Data.SpeedOverGround);
+
+                if (prevLat is not null && prevLon is not null)
+                {
+                    await module.InvokeVoidAsync("addColoredTrackPoint",
+                        Data.Latitude, Data.Longitude, Data.SpeedOverGround,
+                        prevLat, prevLon);
+                }
+                prevLat = Data.Latitude;
+                prevLon = Data.Longitude;
+            }
+
+            // Only re-render Blazor component if HUD values actually changed.
+            var hudKey = BuildHudKey();
+            if (hudKey != lastHudKey)
+            {
+                lastHudKey = hudKey;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task PushAisTargets()
+    {
+        if (!mapInitialized || module is null) return;
+        try
+        {
+            var vessels = AisStore.GetVessels();
+            var jsVessels = vessels.Select(v => new
+            {
+                context = v.Context, name = v.Name, mmsi = v.Mmsi,
+                lat = v.Latitude!.Value, lon = v.Longitude!.Value,
+                headingRad = v.Heading, cogRad = v.CourseOverGround,
+                sogMs = v.SpeedOverGround, shipType = v.ShipType
+            }).ToArray();
+            await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task ToggleFollow()
+    {
+        follow = !follow;
+        if (module is not null)
+            await module.InvokeVoidAsync("setFollow", follow);
+    }
+
+    private async Task ToggleChart(SignalkChart chart, bool enabled)
+    {
+        if (module is null) return;
+
+        var tileUrl = chart.GetTileUrl();
+        if (tileUrl is null) return;
+
+        if (enabled)
+        {
+            await module.InvokeVoidAsync("addChartLayer",
+                chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18, 0.8,
+                chart.Bounds);
+            enabledCharts.Add(chart.Identifier);
+        }
+        else
+        {
+            await module.InvokeVoidAsync("removeChartLayer", chart.Identifier);
+            enabledCharts.Remove(chart.Identifier);
+        }
+    }
+
+    private async Task ToggleRoute(SignalkRoute route, bool enabled)
+    {
+        if (module is null || route.Feature?.Geometry is null) return;
+
+        if (enabled)
+        {
+            // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
+            var coords = new List<double[]>();
+            foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+            {
+                var arr = new double[2];
+                int i = 0;
+                foreach (var val in point.EnumerateArray())
+                {
+                    if (i < 2) arr[i++] = val.GetDouble();
+                }
+                coords.Add([arr[1], arr[0]]); // [lat, lon]
+            }
+
+            await module.InvokeVoidAsync("addRoute", route.Id, route.Name, coords.ToArray());
+            enabledRoutes.Add(route.Id);
+        }
+        else
+        {
+            await module.InvokeVoidAsync("removeRoute", route.Id);
+            enabledRoutes.Remove(route.Id);
+        }
+    }
+
+    private async Task ToggleServerTrack(ChangeEventArgs e)
+    {
+        serverTrackVisible = (bool)(e.Value ?? false);
+        if (module is null) return;
+
+        if (serverTrackVisible)
+        {
+            var points = await ChartService.GetServerTrackAsync("1d", "1m");
+            if (points is not null && points.Length > 0)
+                await module.InvokeVoidAsync("setServerTrack", (object)points);
+            else
+                serverTrackVisible = false;
+        }
+        else
+        {
+            await module.InvokeVoidAsync("clearServerTrack");
+        }
+    }
+
+    private async Task ToggleNightMode()
+    {
+        nightMode = !nightMode;
+        if (module is not null)
+            await module.InvokeVoidAsync("setNightMode", nightMode);
+    }
+
+    private async Task ToggleMob()
+    {
+        if (module is null) return;
+
+        if (!mobActive && Data.Latitude is not null && Data.Longitude is not null)
+        {
+            await module.InvokeVoidAsync("setMob", Data.Latitude, Data.Longitude);
+            mobActive = true;
+        }
+        else if (mobActive)
+        {
+            await module.InvokeVoidAsync("clearMob");
+            mobActive = false;
+        }
+        // No position available: do nothing, don't toggle state.
+    }
+
+    private async Task ToggleAnchor()
+    {
+        if (module is null) return;
+
+        if (!anchorActive && Data.Latitude is not null && Data.Longitude is not null)
+        {
+            await module.InvokeVoidAsync("setAnchor", Data.Latitude, Data.Longitude, 30);
+            anchorActive = true;
+        }
+        else if (anchorActive)
+        {
+            await module.InvokeVoidAsync("clearAnchor");
+            anchorActive = false;
+        }
+    }
+
+    private async Task ZoomToTrack()
+    {
+        if (module is not null)
+            await module.InvokeVoidAsync("zoomToTrack");
+    }
+
+    private async Task ToggleFullscreen()
+    {
+        fullscreen = !fullscreen;
+        if (fullscreen)
+            await JS.InvokeVoidAsync("eval", "document.querySelector('.map-container').requestFullscreen()");
+        else
+            await JS.InvokeVoidAsync("eval", "document.exitFullscreen()");
+    }
+
+    private void OnFullscreenChange()
+    {
+        // Sync state when user exits fullscreen with Escape.
+        _ = InvokeAsync(async () =>
+        {
+            var isFs = await JS.InvokeAsync<bool>("eval", "!!document.fullscreenElement");
+            if (fullscreen != isFs)
+            {
+                fullscreen = isFs;
+                StateHasChanged();
+            }
+        });
+    }
+
+    private static string FormatKnots(double? ms)
+    {
+        if (ms is null) return "--";
+        return (ms.Value * MsToKnots).ToString("F1");
+    }
+
+    private static string FormatDeg(double? rad)
+    {
+        if (rad is null) return "--";
+        double deg = rad.Value * RadToDeg;
+        if (deg < 0) deg += 360;
+        return deg.ToString("F0");
+    }
+
+    private static string FormatDepth(double? m)
+    {
+        if (m is null) return "--";
+        return m.Value.ToString("F1");
+    }
+
+    /// <summary>
+    /// Renders SVG text as MarkupString to avoid Razor's text directive conflict.
+    /// </summary>
+    private static MarkupString SvgTextMarkup(double x, double y, string content, string fill, int fontSize)
+    {
+        return new MarkupString(
+            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\" " +
+            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        SignalkClient.OnDataChanged -= HandleDataChanged;
+        if (aisTimer is not null) await aisTimer.DisposeAsync();
+        if (module is not null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("disableKeyboardShortcuts");
+                await module.InvokeVoidAsync("dispose");
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
+        dotNetRef?.Dispose();
+    }
+}

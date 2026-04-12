@@ -1,0 +1,89 @@
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 3.5rem;
+    height: 2.5rem;
+    color: white;
+    position: absolute;
+    top: 0.5rem;
+    right: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem;
+}
+
+.navbar-toggler:checked ~ .nav-scrollable {
+    display: block;
+}
+
+.top-row {
+    height: 3rem;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+.navbar-brand {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.nav-icon {
+    display: inline-block;
+    width: 1.5rem;
+    text-align: center;
+    font-size: 1rem;
+    opacity: 0.7;
+}
+
+::deep .nav-item {
+    font-size: 0.85rem;
+    padding-bottom: 0.3rem;
+}
+
+::deep .nav-item:first-of-type {
+    padding-top: 1rem;
+}
+
+::deep .nav-link {
+    color: rgba(255, 255, 255, 0.6);
+    border-radius: 4px;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+::deep .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+}
+
+::deep .nav-link.active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+::deep .nav-link.active .nav-icon {
+    opacity: 1;
+}
+
+.nav-scrollable {
+    display: none;
+}
+
+@media (max-width: 640.98px) {
+    .nav-scrollable {
+        display: none;
+    }
+}
+
+@media (min-width: 641px) {
+    .navbar-toggler {
+        display: none;
+    }
+
+    .nav-scrollable {
+        display: block;
+        height: calc(100vh - 3rem);
+        overflow-y: auto;
+    }
+}

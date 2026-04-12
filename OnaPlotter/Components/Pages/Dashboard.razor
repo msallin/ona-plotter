@@ -1,0 +1,155 @@
+@* Live navigation dashboard displaying SignalK data. *@
+
+@page "/"
+@using OnaPlotter.Services
+@using OnaPlotter.Models
+@implements IDisposable
+@inject SignalkClient SignalkClient
+
+<PageTitle>SignalK Dashboard</PageTitle>
+
+@if (Data.LastTimestamp is null)
+{
+    <div class="text-muted mb-4" style="opacity: 0.6;">Waiting for data from SignalK server...</div>
+}
+
+<h2>Navigation</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">SOG</h6>
+                <p class="card-text display-6">@FormatSpeed(Data.SpeedOverGround)</p>
+                <small class="text-muted">kn</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">COG</h6>
+                <p class="card-text display-6">@FormatDegrees(Data.CourseOverGround)</p>
+                <small class="text-muted">deg</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">Heading</h6>
+                <p class="card-text display-6">@FormatDegrees(Data.Heading)</p>
+                <small class="text-muted">deg</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h2>Position</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">Latitude</h6>
+                <p class="card-text display-6" style="font-size:1.5rem;">@NauticalFormat.FormatLat(Data.Latitude)</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">Longitude</h6>
+                <p class="card-text display-6" style="font-size:1.5rem;">@NauticalFormat.FormatLon(Data.Longitude)</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h2>Environment</h2>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">Depth</h6>
+                <p class="card-text display-6">@FormatDecimal(Data.Depth, "F1")</p>
+                <small class="text-muted">m</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">Wind Angle</h6>
+                <p class="card-text display-6">@FormatDegrees(Data.WindAngleApparent)</p>
+                <small class="text-muted">apparent</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">Wind Speed</h6>
+                <p class="card-text display-6">@FormatSpeed(Data.WindSpeedApparent)</p>
+                <small class="text-muted">kn</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (Data.LastTimestamp is not null)
+{
+    <p class="text-muted" style="font-size: 0.75rem;">Last update: @Data.LastTimestamp</p>
+}
+
+@code {
+    private Models.NavigationData Data => SignalkClient.Data;
+
+    // SignalK uses m/s; 1 m/s = 1.94384 knots.
+    private const double MsToKnots = 1.94384;
+
+    // SignalK uses radians.
+    private const double RadToDeg = 180.0 / Math.PI;
+
+    protected override void OnInitialized()
+    {
+        SignalkClient.OnDataChanged += HandleDataChanged;
+    }
+
+    private async void HandleDataChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatSpeed(double? ms)
+    {
+        if (ms is null) return "--";
+        return (ms.Value * MsToKnots).ToString("F1");
+    }
+
+    private static string FormatDegrees(double? rad)
+    {
+        if (rad is null) return "--";
+        double deg = rad.Value * RadToDeg;
+        if (deg < 0) deg += 360;
+        return deg.ToString("F0");
+    }
+
+    private static string FormatCoord(double? deg)
+    {
+        if (deg is null) return "--";
+        return deg.Value.ToString("F5");
+    }
+
+    private static string FormatDecimal(double? val, string format)
+    {
+        if (val is null) return "--";
+        return val.Value.ToString(format);
+    }
+
+    public void Dispose()
+    {
+        SignalkClient.OnDataChanged -= HandleDataChanged;
+    }
+}

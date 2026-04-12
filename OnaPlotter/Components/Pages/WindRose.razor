@@ -1,0 +1,213 @@
+@* Polar plot of apparent wind angle vs speed from track history. *@
+
+@page "/wind"
+@using OnaPlotter.Services
+@using OnaPlotter.Models
+@implements IDisposable
+@inject SignalkClient SignalkClient
+@inject TrackBuffer TrackBuffer
+
+<PageTitle>Wind Rose</PageTitle>
+
+<h2>Wind Rose</h2>
+<p class="text-muted">Apparent wind angle vs. speed. Color indicates wind speed.</p>
+
+<div class="d-flex flex-wrap gap-4 align-items-start">
+    <svg viewBox="0 0 @Size @Size" width="@Size" height="@Size" style="background: var(--sk-surface); border-radius: 6px;">
+        @* Background circles *@
+        @for (int i = 1; i <= RingCount; i++)
+        {
+            double r = i * ringSpacing;
+            <circle cx="@Cx" cy="@Cy" r="@r" fill="none" stroke="#444" stroke-width="0.5" />
+        }
+
+        @* Compass direction lines and labels *@
+        @foreach (var deg in compassDegrees)
+        {
+            double rad = deg * Math.PI / 180.0;
+            double x1 = Cx + Math.Sin(rad) * 20;
+            double y1 = Cy - Math.Cos(rad) * 20;
+            double x2 = Cx + Math.Sin(rad) * MaxRadius;
+            double y2 = Cy - Math.Cos(rad) * MaxRadius;
+            double lx = Cx + Math.Sin(rad) * (MaxRadius + 14);
+            double ly = Cy - Math.Cos(rad) * (MaxRadius + 14);
+            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2" stroke="#555" stroke-width="0.5" />
+            @SvgText(lx, ly, CompassLabel(deg), "#aaa", 11)
+        }
+
+        @* Speed ring labels (knots) *@
+        @for (int i = 1; i <= RingCount; i++)
+        {
+            double r = i * ringSpacing;
+            double kn = i * speedPerRing;
+            @SvgText(Cx + 2, Cy - r - 2, $"{kn:F0} kn", "#666", 9, anchor: "start")
+        }
+
+        @* Historical wind data points *@
+        @foreach (var pt in windPoints)
+        {
+            <circle cx="@pt.X" cy="@pt.Y" r="2.5" fill="@pt.Color" opacity="0.6" />
+        }
+
+        @* Current wind arrow *@
+        @if (currentWind is not null)
+        {
+            double rad = currentWind.Value.Angle;
+            double speedFrac = Math.Min(currentWind.Value.SpeedKn / MaxSpeedKn, 1.0);
+            double len = speedFrac * MaxRadius;
+            double tipX = Cx + Math.Sin(rad) * len;
+            double tipY = Cy - Math.Cos(rad) * len;
+            <line x1="@Cx" y1="@Cy" x2="@tipX" y2="@tipY"
+                  stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+            <circle cx="@tipX" cy="@tipY" r="4" fill="#fff" />
+        }
+    </svg>
+
+    @* Legend *@
+    <div>
+        <h6 class="text-muted">Speed (kn)</h6>
+        <svg width="30" height="180">
+            <defs>
+                <linearGradient id="speedGrad" x1="0" y1="1" x2="0" y2="0">
+                    <stop offset="0%" stop-color="#2196F3" />
+                    <stop offset="50%" stop-color="#FFEB3B" />
+                    <stop offset="100%" stop-color="#F44336" />
+                </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="16" height="180" fill="url(#speedGrad)" rx="2" />
+            @SvgText(20, 12, $"{MaxSpeedKn:F0}", "currentColor", 10, anchor: "start")
+            @SvgText(20, 95, $"{MaxSpeedKn / 2:F0}", "currentColor", 10, anchor: "start")
+            @SvgText(20, 178, "0", "currentColor", 10, anchor: "start")
+        </svg>
+    </div>
+</div>
+
+@if (currentWind is not null)
+{
+    <p class="mt-3">
+        Current: <strong>@currentWind.Value.SpeedKn.ToString("F1") kn</strong>
+        at <strong>@((currentWind.Value.Angle * 180 / Math.PI).ToString("F0"))&deg;</strong> apparent
+    </p>
+}
+
+@code {
+    private const int Size = 420;
+    private const double Cx = Size / 2.0;
+    private const double Cy = Size / 2.0;
+    private const double MaxRadius = 170;
+    private const int RingCount = 5;
+    private const double MaxSpeedKn = 30;
+    private const double MsToKnots = 1.94384;
+
+    private readonly double ringSpacing = MaxRadius / RingCount;
+    private readonly double speedPerRing = MaxSpeedKn / RingCount;
+    private static readonly int[] compassDegrees = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
+
+    private List<WindPoint> windPoints = [];
+    private (double Angle, double SpeedKn)? currentWind;
+    private int lastProcessedCount;
+
+    protected override void OnInitialized()
+    {
+        RefreshData(fullRebuild: true);
+        TrackBuffer.OnTrackUpdated += HandleTrackUpdated;
+    }
+
+    private async void HandleTrackUpdated()
+    {
+        RefreshData(fullRebuild: false);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshData(bool fullRebuild)
+    {
+        var points = TrackBuffer.GetSnapshot();
+
+        if (fullRebuild || points.Length < lastProcessedCount)
+        {
+            // Full rebuild on first load or if buffer wrapped.
+            var result = new List<WindPoint>(points.Length);
+            foreach (var pt in points)
+                AddWindPoint(result, pt);
+            windPoints = result;
+        }
+        else if (points.Length > lastProcessedCount)
+        {
+            // Incremental: only process new points.
+            for (int i = lastProcessedCount; i < points.Length; i++)
+                AddWindPoint(windPoints, points[i]);
+        }
+
+        lastProcessedCount = points.Length;
+
+        var data = SignalkClient.Data;
+        if (data.WindAngleApparent is not null && data.WindSpeedApparent is not null)
+            currentWind = (data.WindAngleApparent.Value, data.WindSpeedApparent.Value * MsToKnots);
+        else
+            currentWind = null;
+    }
+
+    private void AddWindPoint(List<WindPoint> list, TrackPoint pt)
+    {
+        if (pt.WindAngleApparent is null || pt.WindSpeedApparent is null)
+            return;
+
+        double angle = pt.WindAngleApparent.Value;
+        double speedKn = pt.WindSpeedApparent.Value * MsToKnots;
+        double frac = Math.Min(speedKn / MaxSpeedKn, 1.0);
+        double r = frac * MaxRadius;
+
+        double x = Cx + Math.Sin(angle) * r;
+        double y = Cy - Math.Cos(angle) * r;
+        list.Add(new WindPoint(x, y, SpeedColor(frac)));
+    }
+
+    /// <summary>
+    /// Renders an SVG text element as raw markup, avoiding Razor's &lt;text&gt; directive conflict.
+    /// </summary>
+    private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize,
+        string? fontWeight = null, string anchor = "middle")
+    {
+        string weight = fontWeight is not null ? $" font-weight=\"{fontWeight}\"" : "";
+        return new MarkupString(
+            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\"{weight} " +
+            $"text-anchor=\"{anchor}\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+
+    /// <summary>
+    /// Interpolates blue -> yellow -> red based on 0..1 fraction.
+    /// </summary>
+    private static string SpeedColor(double frac)
+    {
+        frac = Math.Clamp(frac, 0, 1);
+        int r, g, b;
+        if (frac < 0.5)
+        {
+            double t = frac * 2;
+            r = (int)(0x21 + t * (0xFF - 0x21));
+            g = (int)(0x96 + t * (0xEB - 0x96));
+            b = (int)(0xF3 + t * (0x3B - 0xF3));
+        }
+        else
+        {
+            double t = (frac - 0.5) * 2;
+            r = (int)(0xFF + t * (0xF4 - 0xFF));
+            g = (int)(0xEB + t * (0x43 - 0xEB));
+            b = (int)(0x3B + t * (0x36 - 0x3B));
+        }
+        return $"rgb({r},{g},{b})";
+    }
+
+    private static string CompassLabel(int deg) => deg switch
+    {
+        0 => "N", 90 => "E", 180 => "S", 270 => "W",
+        _ => deg.ToString()
+    };
+
+    public void Dispose()
+    {
+        TrackBuffer.OnTrackUpdated -= HandleTrackUpdated;
+    }
+
+    private readonly record struct WindPoint(double X, double Y, string Color);
+}

@@ -1,0 +1,197 @@
+@* Live raw delta stream from SignalK. Shows the most recent messages as they arrive. *@
+
+@page "/raw"
+@using OnaPlotter.Services
+@implements IDisposable
+@inject SignalkClient SignalkClient
+@inject ChartService ChartService
+
+<PageTitle>Raw Stream</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Raw Stream</h2>
+    <div>
+        <button class="btn btn-sm btn-outline-secondary me-2" @onclick="TogglePause">
+            @(paused ? "Resume" : "Pause")
+        </button>
+        <button class="btn btn-sm btn-outline-danger" @onclick="Clear">Clear</button>
+    </div>
+</div>
+
+@* Path filter *@
+<div class="mb-3 p-3 rounded" style="background: var(--sk-surface); border: 1px solid var(--sk-border);">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span style="font-size: 0.8rem; color: var(--sk-text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
+            Path Filter
+        </span>
+        <div>
+            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="SelectDefaults">Defaults</button>
+            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="SelectAll">All</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="SelectNone">None</button>
+        </div>
+    </div>
+
+    @if (availablePaths.Count == 0)
+    {
+        <span class="text-muted" style="font-size:0.8rem;">Loading paths...</span>
+    }
+    else
+    {
+        <div style="max-height: 200px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 4px;">
+            @foreach (var path in availablePaths)
+            {
+                var isSelected = selectedPaths.Contains(path);
+                <span class="path-chip @(isSelected ? "active" : "")"
+                      @onclick="() => TogglePath(path)">
+                    @path
+                </span>
+            }
+        </div>
+    }
+</div>
+
+<div class="font-monospace small p-3 rounded" style="max-height: 80vh; overflow-y: auto; background: var(--sk-surface); color: var(--sk-text);">
+    @if (snapshot.Length == 0)
+    {
+        <span class="text-muted">Waiting for data...</span>
+    }
+    else
+    {
+        @foreach (var msg in snapshot)
+        {
+            <div class="mb-1 pb-1" style="border-bottom: 1px solid var(--sk-border);">@msg</div>
+        }
+    }
+</div>
+
+@code {
+    private const int MaxMessages = 200;
+
+    // Pre-allocated circular buffer. No per-message allocation.
+    private readonly string[] buffer = new string[MaxMessages];
+    private int head;  // Next write position.
+    private int count;
+    private string[] snapshot = [];
+    private bool paused;
+    private int renderSkip;
+
+    private List<string> availablePaths = [];
+    private readonly HashSet<string> selectedPaths = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        SignalkClient.OnRawMessage += HandleRawMessage;
+
+        availablePaths = await ChartService.GetAvailablePathsAsync();
+
+        // Default selection: the core paths the app subscribes to.
+        foreach (var p in SignalkClient.CoreSelfPaths)
+            selectedPaths.Add(p);
+    }
+
+    private async void HandleRawMessage(string json)
+    {
+        if (paused) return;
+
+        // Filter: only show messages containing at least one selected path.
+        if (selectedPaths.Count > 0 && !MessageMatchesFilter(json))
+            return;
+
+        // Write into circular buffer.
+        buffer[head] = json;
+        head = (head + 1) % MaxMessages;
+        if (count < MaxMessages) count++;
+
+        // Throttle: only rebuild snapshot every 5th message to reduce GC pressure.
+        if (++renderSkip < 5) return;
+        renderSkip = 0;
+
+        // Build snapshot in reverse order (newest first).
+        var snap = new string[count];
+        for (int i = 0; i < count; i++)
+        {
+            int idx = (head - 1 - i + MaxMessages) % MaxMessages;
+            snap[i] = buffer[idx];
+        }
+
+        await InvokeAsync(() =>
+        {
+            snapshot = snap;
+            StateHasChanged();
+        });
+    }
+
+    private bool MessageMatchesFilter(string json)
+    {
+        foreach (var path in selectedPaths)
+        {
+            if (json.Contains(path, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
+    private async void TogglePath(string path)
+    {
+        if (selectedPaths.Contains(path))
+        {
+            selectedPaths.Remove(path);
+            // If it was an extra subscription, unsubscribe from the server.
+            if (!SignalkClient.CoreSelfPaths.Contains(path))
+                await SignalkClient.UnsubscribeExtraPathAsync(path);
+        }
+        else
+        {
+            selectedPaths.Add(path);
+            // If it's not a core path, subscribe on the server so data arrives.
+            if (!SignalkClient.CoreSelfPaths.Contains(path))
+                await SignalkClient.SubscribeExtraPathAsync(path);
+        }
+        Clear();
+    }
+
+    private async void SelectDefaults()
+    {
+        // Unsubscribe any extras.
+        foreach (var path in selectedPaths.Except(SignalkClient.CoreSelfPaths).ToList())
+            await SignalkClient.UnsubscribeExtraPathAsync(path);
+
+        selectedPaths.Clear();
+        foreach (var p in SignalkClient.CoreSelfPaths)
+            selectedPaths.Add(p);
+        Clear();
+    }
+
+    private async void SelectAll()
+    {
+        foreach (var path in availablePaths)
+        {
+            if (selectedPaths.Add(path) && !SignalkClient.CoreSelfPaths.Contains(path))
+                await SignalkClient.SubscribeExtraPathAsync(path);
+        }
+        Clear();
+    }
+
+    private async void SelectNone()
+    {
+        foreach (var path in selectedPaths.Except(SignalkClient.CoreSelfPaths).ToList())
+            await SignalkClient.UnsubscribeExtraPathAsync(path);
+
+        selectedPaths.Clear();
+        Clear();
+    }
+
+    private void TogglePause() => paused = !paused;
+
+    private void Clear()
+    {
+        head = 0;
+        count = 0;
+        snapshot = [];
+    }
+
+    public void Dispose()
+    {
+        SignalkClient.OnRawMessage -= HandleRawMessage;
+    }
+}
