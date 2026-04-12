@@ -5,110 +5,114 @@ namespace OnaPlotter.Tests;
 
 public class AisStoreTests
 {
-    private readonly AisStore _store = new();
-
-    [Fact]
-    public void Empty_CountIsZero()
+    [Test]
+    public async Task Empty_CountIsZero()
     {
-        Assert.Equal(0, _store.Count);
+        var store = new AisStore();
+        await Assert.That(store.Count).IsEqualTo(0);
     }
 
-    [Fact]
-    public void Empty_GetVessels_ReturnsEmpty()
+    [Test]
+    public async Task Empty_GetVessels_ReturnsEmpty()
     {
-        Assert.Empty(_store.GetVessels());
+        var store = new AisStore();
+        await Assert.That(store.GetVessels()).IsEmpty();
     }
 
-    [Fact]
-    public void Apply_NewContext_CreatesVessel()
+    [Test]
+    public async Task Apply_NewContext_CreatesVessel()
     {
+        var store = new AisStore();
         var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        _store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos);
-        Assert.Equal(1, _store.Count);
+        store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos);
+        await Assert.That(store.Count).IsEqualTo(1);
     }
 
-    [Fact]
-    public void Apply_SameContext_UpdatesExistingVessel()
+    [Test]
+    public async Task Apply_SameContext_UpdatesExistingVessel()
     {
+        var store = new AisStore();
         var ctx = "vessels.urn:mrn:imo:mmsi:222222222";
         var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        _store.Apply(ctx, "navigation.position", pos);
+        store.Apply(ctx, "navigation.position", pos);
 
         var name = JsonSerializer.SerializeToElement("TestVessel");
-        _store.Apply(ctx, "name", name);
+        store.Apply(ctx, "name", name);
 
-        Assert.Equal(1, _store.Count);
-        var vessels = _store.GetVessels();
-        Assert.Single(vessels);
-        Assert.Equal("TestVessel", vessels[0].Name);
+        await Assert.That(store.Count).IsEqualTo(1);
+        var vessels = store.GetVessels();
+        await Assert.That(vessels).HasCount().EqualTo(1);
+        await Assert.That(vessels[0].Name).IsEqualTo("TestVessel");
     }
 
-    [Fact]
-    public void GetVessels_OnlyReturnsVesselsWithPosition()
+    [Test]
+    public async Task GetVessels_OnlyReturnsVesselsWithPosition()
     {
+        var store = new AisStore();
         var ctx1 = "vessels.urn:mrn:imo:mmsi:111111111";
         var ctx2 = "vessels.urn:mrn:imo:mmsi:222222222";
 
-        // ctx1: has position
         var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        _store.Apply(ctx1, "navigation.position", pos);
+        store.Apply(ctx1, "navigation.position", pos);
 
-        // ctx2: no position, only name
         var name = JsonSerializer.SerializeToElement("NoPosition");
-        _store.Apply(ctx2, "name", name);
+        store.Apply(ctx2, "name", name);
 
-        var vessels = _store.GetVessels();
-        Assert.Single(vessels);
-        Assert.Equal(ctx1, vessels[0].Context);
+        var vessels = store.GetVessels();
+        await Assert.That(vessels).HasCount().EqualTo(1);
+        await Assert.That(vessels[0].Context).IsEqualTo(ctx1);
     }
 
-    [Fact]
-    public void Apply_ExtractsMmsiFromContext()
+    [Test]
+    public async Task Apply_ExtractsMmsiFromContext()
     {
+        var store = new AisStore();
         var ctx = "vessels.urn:mrn:imo:mmsi:333333333";
         var pos = JsonSerializer.SerializeToElement(new { latitude = 1.0, longitude = 2.0 });
-        _store.Apply(ctx, "navigation.position", pos);
+        store.Apply(ctx, "navigation.position", pos);
 
-        var vessels = _store.GetVessels();
-        Assert.Equal("333333333", vessels[0].Mmsi);
+        var vessels = store.GetVessels();
+        await Assert.That(vessels[0].Mmsi).IsEqualTo("333333333");
     }
 
-    [Fact]
-    public void GetVessels_ReturnsCachedSnapshot()
+    [Test]
+    public async Task GetVessels_ReturnsCachedSnapshot()
     {
+        var store = new AisStore();
         var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        _store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos);
+        store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos);
 
-        var snap1 = _store.GetVessels();
-        var snap2 = _store.GetVessels();
+        var snap1 = store.GetVessels();
+        var snap2 = store.GetVessels();
 
-        // Should be same reference when no changes occurred.
-        Assert.Same(snap1, snap2);
+        await Assert.That(snap2).IsSameReferenceAs(snap1);
     }
 
-    [Fact]
-    public void GetVessels_RefreshesCacheAfterUpdate()
+    [Test]
+    public async Task GetVessels_RefreshesCacheAfterUpdate()
     {
+        var store = new AisStore();
         var pos1 = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        _store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos1);
-        var snap1 = _store.GetVessels();
+        store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos1);
+        var snap1 = store.GetVessels();
 
         var sog = JsonSerializer.SerializeToElement(3.5);
-        _store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.speedOverGround", sog);
-        var snap2 = _store.GetVessels();
+        store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.speedOverGround", sog);
+        var snap2 = store.GetVessels();
 
-        Assert.NotSame(snap1, snap2);
+        await Assert.That(snap2).IsNotSameReferenceAs(snap1);
     }
 
-    [Fact]
-    public void Apply_RaisesOnAisUpdated()
+    [Test]
+    public async Task Apply_RaisesOnAisUpdated()
     {
+        var store = new AisStore();
         int raised = 0;
-        _store.OnAisUpdated += () => raised++;
+        store.OnAisUpdated += () => raised++;
 
         var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        _store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos);
+        store.Apply("vessels.urn:mrn:imo:mmsi:111111111", "navigation.position", pos);
 
-        Assert.Equal(1, raised);
+        await Assert.That(raised).IsEqualTo(1);
     }
 }

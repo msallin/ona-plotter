@@ -4,80 +4,79 @@ namespace OnaPlotter.Tests;
 
 public class NauticalFormatTests
 {
-    [Fact]
-    public void FormatLat_Null_ReturnsDashes()
+    [Test]
+    public async Task FormatLat_Null_ReturnsDashes()
     {
-        Assert.Equal("--", NauticalFormat.FormatLat(null));
+        await Assert.That(NauticalFormat.FormatLat(null)).IsEqualTo("--");
     }
 
-    [Fact]
-    public void FormatLon_Null_ReturnsDashes()
+    [Test]
+    public async Task FormatLon_Null_ReturnsDashes()
     {
-        Assert.Equal("--", NauticalFormat.FormatLon(null));
+        await Assert.That(NauticalFormat.FormatLon(null)).IsEqualTo("--");
     }
 
-    [Fact]
-    public void FormatLat_Positive_HasNorthHemisphere()
+    [Test]
+    public async Task FormatLat_Positive_HasNorthHemisphere()
     {
         string result = NauticalFormat.FormatLat(47.390933);
-        Assert.EndsWith("N", result);
-        Assert.StartsWith("47\u00b0", result);
+        await Assert.That(result).EndsWith("N");
+        await Assert.That(result).StartsWith("47\u00b0");
     }
 
-    [Fact]
-    public void FormatLat_Negative_HasSouthHemisphere()
+    [Test]
+    public async Task FormatLat_Negative_HasSouthHemisphere()
     {
         string result = NauticalFormat.FormatLat(-33.8688);
-        Assert.EndsWith("S", result);
+        await Assert.That(result).EndsWith("S");
     }
 
-    [Fact]
-    public void FormatLon_Positive_HasEastHemisphere()
+    [Test]
+    public async Task FormatLon_Positive_HasEastHemisphere()
     {
         string result = NauticalFormat.FormatLon(8.54);
-        Assert.EndsWith("E", result);
+        await Assert.That(result).EndsWith("E");
     }
 
-    [Fact]
-    public void FormatLon_Negative_HasWestHemisphere()
+    [Test]
+    public async Task FormatLon_Negative_HasWestHemisphere()
     {
         string result = NauticalFormat.FormatLon(-122.4194);
-        Assert.EndsWith("W", result);
+        await Assert.That(result).EndsWith("W");
     }
 
-    [Theory]
-    [InlineData(47.390933, "47\u00b023.456'N")]
-    public void FormatLat_KnownValue_CorrectDDMM(double deg, string expected)
+    [Test]
+    [Arguments(47.390933, "47\u00b023.456'N")]
+    public async Task FormatLat_KnownValue_CorrectDDMM(double deg, string expected)
     {
-        Assert.Equal(expected, NauticalFormat.FormatLat(deg));
+        await Assert.That(NauticalFormat.FormatLat(deg)).IsEqualTo(expected);
     }
 
-    [Fact]
-    public void FormatLon_ThreeDigitDegrees()
+    [Test]
+    public async Task FormatLon_ThreeDigitDegrees()
     {
-        // Longitude degrees should be zero-padded to 3 digits.
         string result = NauticalFormat.FormatLon(8.0);
-        Assert.StartsWith("008\u00b0", result);
+        await Assert.That(result).StartsWith("008\u00b0");
     }
 
-    [Fact]
-    public void FormatPosition_BothNull_ReturnsDashes()
+    [Test]
+    public async Task FormatPosition_BothNull_ReturnsDashes()
     {
-        Assert.Equal("--", NauticalFormat.FormatPosition(null, null));
+        await Assert.That(NauticalFormat.FormatPosition(null, null)).IsEqualTo("--");
     }
 
-    [Fact]
-    public void FormatPosition_OneNull_ReturnsDashes()
+    [Test]
+    public async Task FormatPosition_OneNull_ReturnsDashes()
     {
-        Assert.Equal("--", NauticalFormat.FormatPosition(47.0, null));
-        Assert.Equal("--", NauticalFormat.FormatPosition(null, 8.0));
+        await Assert.That(NauticalFormat.FormatPosition(47.0, null)).IsEqualTo("--");
+        await Assert.That(NauticalFormat.FormatPosition(null, 8.0)).IsEqualTo("--");
     }
 
-    [Fact]
-    public void FormatPosition_ValidValues_ContainsBothParts()
+    [Test]
+    public async Task FormatPosition_ValidValues_ContainsBothParts()
     {
         string result = NauticalFormat.FormatPosition(47.0, 8.0);
-        Assert.Contains("N", result);
-        Assert.Contains("E", result);
+        await Assert.That(result).Contains("N");
+        await Assert.That(result).Contains("E");
     }
 }

@@ -8,30 +8,30 @@ public class TrackBufferTests
     private static TrackPoint MakePoint(double lat, double lon, double? sog = null) =>
         new(DateTime.UtcNow, lat, lon, sog, null, null, null, null);
 
-    [Fact]
-    public void Empty_CountIsZero()
+    [Test]
+    public async Task Empty_CountIsZero()
     {
         var buf = new TrackBuffer();
-        Assert.Equal(0, buf.Count);
+        await Assert.That(buf.Count).IsEqualTo(0);
     }
 
-    [Fact]
-    public void Empty_SnapshotIsEmpty()
+    [Test]
+    public async Task Empty_SnapshotIsEmpty()
     {
         var buf = new TrackBuffer();
-        Assert.Empty(buf.GetSnapshot());
+        await Assert.That(buf.GetSnapshot()).IsEmpty();
     }
 
-    [Fact]
-    public void Add_IncrementsCount()
+    [Test]
+    public async Task Add_IncrementsCount()
     {
         var buf = new TrackBuffer();
         buf.Add(MakePoint(47, 8));
-        Assert.Equal(1, buf.Count);
+        await Assert.That(buf.Count).IsEqualTo(1);
     }
 
-    [Fact]
-    public void Add_MultiplePoints_AllRetrievable()
+    [Test]
+    public async Task Add_MultiplePoints_AllRetrievable()
     {
         var buf = new TrackBuffer(100);
         buf.Add(MakePoint(1, 10));
@@ -39,14 +39,14 @@ public class TrackBufferTests
         buf.Add(MakePoint(3, 30));
 
         var snap = buf.GetSnapshot();
-        Assert.Equal(3, snap.Length);
-        Assert.Equal(1, snap[0].Latitude);
-        Assert.Equal(2, snap[1].Latitude);
-        Assert.Equal(3, snap[2].Latitude);
+        await Assert.That(snap).HasCount().EqualTo(3);
+        await Assert.That(snap[0].Latitude).IsEqualTo(1);
+        await Assert.That(snap[1].Latitude).IsEqualTo(2);
+        await Assert.That(snap[2].Latitude).IsEqualTo(3);
     }
 
-    [Fact]
-    public void RingBuffer_WrapsAround_OldestFirst()
+    [Test]
+    public async Task RingBuffer_WrapsAround_OldestFirst()
     {
         var buf = new TrackBuffer(capacity: 3);
         buf.Add(MakePoint(1, 0));
@@ -55,38 +55,38 @@ public class TrackBufferTests
         buf.Add(MakePoint(4, 0)); // overwrites point 1
 
         var snap = buf.GetSnapshot();
-        Assert.Equal(3, snap.Length);
-        Assert.Equal(2, snap[0].Latitude); // oldest surviving
-        Assert.Equal(3, snap[1].Latitude);
-        Assert.Equal(4, snap[2].Latitude); // newest
+        await Assert.That(snap).HasCount().EqualTo(3);
+        await Assert.That(snap[0].Latitude).IsEqualTo(2); // oldest surviving
+        await Assert.That(snap[1].Latitude).IsEqualTo(3);
+        await Assert.That(snap[2].Latitude).IsEqualTo(4); // newest
     }
 
-    [Fact]
-    public void RingBuffer_CountCapsAtCapacity()
+    [Test]
+    public async Task RingBuffer_CountCapsAtCapacity()
     {
         var buf = new TrackBuffer(capacity: 5);
         for (int i = 0; i < 20; i++)
             buf.Add(MakePoint(i, 0));
 
-        Assert.Equal(5, buf.Count);
+        await Assert.That(buf.Count).IsEqualTo(5);
     }
 
-    [Fact]
-    public void RingBuffer_DoubleWrap_CorrectOrder()
+    [Test]
+    public async Task RingBuffer_DoubleWrap_CorrectOrder()
     {
         var buf = new TrackBuffer(capacity: 3);
         for (int i = 1; i <= 7; i++)
             buf.Add(MakePoint(i, 0));
 
         var snap = buf.GetSnapshot();
-        Assert.Equal(3, snap.Length);
-        Assert.Equal(5, snap[0].Latitude);
-        Assert.Equal(6, snap[1].Latitude);
-        Assert.Equal(7, snap[2].Latitude);
+        await Assert.That(snap).HasCount().EqualTo(3);
+        await Assert.That(snap[0].Latitude).IsEqualTo(5);
+        await Assert.That(snap[1].Latitude).IsEqualTo(6);
+        await Assert.That(snap[2].Latitude).IsEqualTo(7);
     }
 
-    [Fact]
-    public void Add_RaisesOnTrackUpdated()
+    [Test]
+    public async Task Add_RaisesOnTrackUpdated()
     {
         var buf = new TrackBuffer();
         int raised = 0;
@@ -95,11 +95,11 @@ public class TrackBufferTests
         buf.Add(MakePoint(1, 1));
         buf.Add(MakePoint(2, 2));
 
-        Assert.Equal(2, raised);
+        await Assert.That(raised).IsEqualTo(2);
     }
 
-    [Fact]
-    public void Snapshot_IsIndependentCopy()
+    [Test]
+    public async Task Snapshot_IsIndependentCopy()
     {
         var buf = new TrackBuffer(10);
         buf.Add(MakePoint(1, 0));
@@ -108,7 +108,7 @@ public class TrackBufferTests
         buf.Add(MakePoint(2, 0));
         var snap2 = buf.GetSnapshot();
 
-        Assert.Single(snap1);
-        Assert.Equal(2, snap2.Length);
+        await Assert.That(snap1).HasCount().EqualTo(1);
+        await Assert.That(snap2).HasCount().EqualTo(2);
     }
 }

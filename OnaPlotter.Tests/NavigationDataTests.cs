@@ -5,205 +5,223 @@ namespace OnaPlotter.Tests;
 
 public class NavigationDataTests
 {
-    private readonly NavigationData _nav = new();
-
-    [Theory]
-    [InlineData("navigation.speedOverGround", 3.5)]
-    [InlineData("navigation.courseOverGroundTrue", 1.2)]
-    [InlineData("navigation.headingTrue", 0.78)]
-    [InlineData("environment.depth.belowTransducer", 12.4)]
-    [InlineData("environment.wind.angleApparent", -0.5)]
-    [InlineData("environment.wind.speedApparent", 7.2)]
-    public void Apply_RecognizedPath_ReturnsTrue(string path, double value)
+    [Test]
+    [Arguments("navigation.speedOverGround", 3.5)]
+    [Arguments("navigation.courseOverGroundTrue", 1.2)]
+    [Arguments("navigation.headingTrue", 0.78)]
+    [Arguments("environment.depth.belowTransducer", 12.4)]
+    [Arguments("environment.wind.angleApparent", -0.5)]
+    [Arguments("environment.wind.speedApparent", 7.2)]
+    public async Task Apply_RecognizedPath_ReturnsTrue(string path, double value)
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(value);
-        Assert.True(_nav.Apply(path, je));
+        await Assert.That(nav.Apply(path, je)).IsTrue();
     }
 
-    [Fact]
-    public void Apply_UnknownPath_ReturnsFalse()
+    [Test]
+    public async Task Apply_UnknownPath_ReturnsFalse()
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(1.0);
-        Assert.False(_nav.Apply("some.unknown.path", je));
+        await Assert.That(nav.Apply("some.unknown.path", je)).IsFalse();
     }
 
-    [Fact]
-    public void Apply_SpeedOverGround_SetsProperty()
+    [Test]
+    public async Task Apply_SpeedOverGround_SetsProperty()
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(5.14);
-        _nav.Apply("navigation.speedOverGround", je);
-        Assert.Equal(5.14, _nav.SpeedOverGround);
+        nav.Apply("navigation.speedOverGround", je);
+        await Assert.That(nav.SpeedOverGround).IsEqualTo(5.14);
     }
 
-    [Fact]
-    public void Apply_NullValue_ReturnsFalse()
+    [Test]
+    public async Task Apply_NullValue_ReturnsFalse()
     {
-        Assert.False(_nav.Apply("navigation.speedOverGround", null));
-        Assert.Null(_nav.SpeedOverGround);
+        var nav = new NavigationData();
+        await Assert.That(nav.Apply("navigation.speedOverGround", null)).IsFalse();
+        await Assert.That(nav.SpeedOverGround).IsNull();
     }
 
-    [Fact]
-    public void Apply_StringValue_ReturnsFalse()
+    [Test]
+    public async Task Apply_StringValue_ReturnsFalse()
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement("not a number");
-        Assert.False(_nav.Apply("navigation.speedOverGround", je));
+        await Assert.That(nav.Apply("navigation.speedOverGround", je)).IsFalse();
     }
 
-    [Fact]
-    public void ApplyPosition_SetsLatLon()
+    [Test]
+    public async Task ApplyPosition_SetsLatLon()
     {
-        _nav.ApplyPosition(47.39, 8.54);
-        Assert.Equal(47.39, _nav.Latitude);
-        Assert.Equal(8.54, _nav.Longitude);
+        var nav = new NavigationData();
+        nav.ApplyPosition(47.39, 8.54);
+        await Assert.That(nav.Latitude).IsEqualTo(47.39);
+        await Assert.That(nav.Longitude).IsEqualTo(8.54);
     }
 
-    [Fact]
-    public void Apply_NavigationPosition_ReturnsFalse_HandledSeparately()
+    [Test]
+    public async Task Apply_NavigationPosition_ReturnsFalse_HandledSeparately()
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
-        Assert.False(_nav.Apply("navigation.position", je));
+        await Assert.That(nav.Apply("navigation.position", je)).IsFalse();
     }
 
     // --- Anchor properties ---
 
-    [Fact]
-    public void AnchorActive_FalseByDefault()
+    [Test]
+    public async Task AnchorActive_FalseByDefault()
     {
-        Assert.False(_nav.AnchorActive);
+        var nav = new NavigationData();
+        await Assert.That(nav.AnchorActive).IsFalse();
     }
 
-    [Fact]
-    public void ApplyAnchorPosition_SetsAnchorActiveTrue()
+    [Test]
+    public async Task ApplyAnchorPosition_SetsAnchorActiveTrue()
     {
-        _nav.ApplyAnchorPosition(47.39, 8.54);
-        Assert.True(_nav.AnchorActive);
-        Assert.Equal(47.39, _nav.AnchorLatitude);
-        Assert.Equal(8.54, _nav.AnchorLongitude);
+        var nav = new NavigationData();
+        nav.ApplyAnchorPosition(47.39, 8.54);
+        await Assert.That(nav.AnchorActive).IsTrue();
+        await Assert.That(nav.AnchorLatitude).IsEqualTo(47.39);
+        await Assert.That(nav.AnchorLongitude).IsEqualTo(8.54);
     }
 
-    [Fact]
-    public void ClearAnchor_ResetsAllAnchorProperties()
+    [Test]
+    public async Task ClearAnchor_ResetsAllAnchorProperties()
     {
-        _nav.ApplyAnchorPosition(47.39, 8.54);
-        var je = JsonSerializer.SerializeToElement(30.0);
-        _nav.Apply("navigation.anchor.maxRadius", je);
-        var je2 = JsonSerializer.SerializeToElement(12.5);
-        _nav.Apply("navigation.anchor.currentRadius", je2);
+        var nav = new NavigationData();
+        nav.ApplyAnchorPosition(47.39, 8.54);
+        nav.Apply("navigation.anchor.maxRadius", JsonSerializer.SerializeToElement(30.0));
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(12.5));
 
-        _nav.ClearAnchor();
+        nav.ClearAnchor();
 
-        Assert.False(_nav.AnchorActive);
-        Assert.Null(_nav.AnchorLatitude);
-        Assert.Null(_nav.AnchorLongitude);
-        Assert.Null(_nav.AnchorMaxRadius);
-        Assert.Null(_nav.AnchorCurrentRadius);
+        await Assert.That(nav.AnchorActive).IsFalse();
+        await Assert.That(nav.AnchorLatitude).IsNull();
+        await Assert.That(nav.AnchorLongitude).IsNull();
+        await Assert.That(nav.AnchorMaxRadius).IsNull();
+        await Assert.That(nav.AnchorCurrentRadius).IsNull();
     }
 
-    [Fact]
-    public void Apply_AnchorMaxRadius_SetsProperty()
+    [Test]
+    public async Task Apply_AnchorMaxRadius_SetsProperty()
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(25.0);
-        Assert.True(_nav.Apply("navigation.anchor.maxRadius", je));
-        Assert.Equal(25.0, _nav.AnchorMaxRadius);
+        await Assert.That(nav.Apply("navigation.anchor.maxRadius", je)).IsTrue();
+        await Assert.That(nav.AnchorMaxRadius).IsEqualTo(25.0);
     }
 
-    [Fact]
-    public void Apply_AnchorCurrentRadius_SetsProperty()
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_SetsProperty()
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(18.3);
-        Assert.True(_nav.Apply("navigation.anchor.currentRadius", je));
-        Assert.Equal(18.3, _nav.AnchorCurrentRadius);
+        await Assert.That(nav.Apply("navigation.anchor.currentRadius", je)).IsTrue();
+        await Assert.That(nav.AnchorCurrentRadius).IsEqualTo(18.3);
     }
 
     // --- Course properties ---
 
-    [Fact]
-    public void HasActiveCourse_FalseByDefault()
+    [Test]
+    public async Task HasActiveCourse_FalseByDefault()
     {
-        Assert.False(_nav.HasActiveCourse);
+        var nav = new NavigationData();
+        await Assert.That(nav.HasActiveCourse).IsFalse();
     }
 
-    [Fact]
-    public void ApplyCourseNextPointPosition_SetsActiveCourseTrue()
+    [Test]
+    public async Task ApplyCourseNextPointPosition_SetsActiveCourseTrue()
     {
-        _nav.ApplyCourseNextPointPosition(48.0, 9.0);
-        Assert.True(_nav.HasActiveCourse);
-        Assert.Equal(48.0, _nav.CourseNextPointLatitude);
-        Assert.Equal(9.0, _nav.CourseNextPointLongitude);
+        var nav = new NavigationData();
+        nav.ApplyCourseNextPointPosition(48.0, 9.0);
+        await Assert.That(nav.HasActiveCourse).IsTrue();
+        await Assert.That(nav.CourseNextPointLatitude).IsEqualTo(48.0);
+        await Assert.That(nav.CourseNextPointLongitude).IsEqualTo(9.0);
     }
 
-    [Theory]
-    [InlineData("navigation.courseGreatCircle.nextPoint.distance")]
-    [InlineData("navigation.courseRhumbline.nextPoint.distance")]
-    public void Apply_CourseDistance_SetsProperty(string path)
+    [Test]
+    [Arguments("navigation.courseGreatCircle.nextPoint.distance")]
+    [Arguments("navigation.courseRhumbline.nextPoint.distance")]
+    public async Task Apply_CourseDistance_SetsProperty(string path)
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(5000.0);
-        Assert.True(_nav.Apply(path, je));
-        Assert.Equal(5000.0, _nav.CourseNextPointDistance);
+        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.CourseNextPointDistance).IsEqualTo(5000.0);
     }
 
-    [Theory]
-    [InlineData("navigation.courseGreatCircle.nextPoint.bearingTrue")]
-    [InlineData("navigation.courseRhumbline.nextPoint.bearingTrue")]
-    public void Apply_CourseBearing_SetsProperty(string path)
+    [Test]
+    [Arguments("navigation.courseGreatCircle.nextPoint.bearingTrue")]
+    [Arguments("navigation.courseRhumbline.nextPoint.bearingTrue")]
+    public async Task Apply_CourseBearing_SetsProperty(string path)
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(1.57);
-        Assert.True(_nav.Apply(path, je));
-        Assert.Equal(1.57, _nav.CourseNextPointBearing);
+        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.CourseNextPointBearing).IsEqualTo(1.57);
     }
 
-    [Theory]
-    [InlineData("navigation.courseGreatCircle.nextPoint.timeToGo")]
-    [InlineData("navigation.courseRhumbline.nextPoint.timeToGo")]
-    public void Apply_CourseTimeToGo_SetsProperty(string path)
+    [Test]
+    [Arguments("navigation.courseGreatCircle.nextPoint.timeToGo")]
+    [Arguments("navigation.courseRhumbline.nextPoint.timeToGo")]
+    public async Task Apply_CourseTimeToGo_SetsProperty(string path)
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(3600.0);
-        Assert.True(_nav.Apply(path, je));
-        Assert.Equal(3600.0, _nav.CourseNextPointTimeToGo);
+        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.CourseNextPointTimeToGo).IsEqualTo(3600.0);
     }
 
-    [Theory]
-    [InlineData("navigation.courseGreatCircle.nextPoint.velocityMadeGood")]
-    [InlineData("navigation.courseRhumbline.nextPoint.velocityMadeGood")]
-    public void Apply_CourseVmg_SetsProperty(string path)
+    [Test]
+    [Arguments("navigation.courseGreatCircle.nextPoint.velocityMadeGood")]
+    [Arguments("navigation.courseRhumbline.nextPoint.velocityMadeGood")]
+    public async Task Apply_CourseVmg_SetsProperty(string path)
     {
+        var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(2.8);
-        Assert.True(_nav.Apply(path, je));
-        Assert.Equal(2.8, _nav.CourseNextPointVmg);
+        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.CourseNextPointVmg).IsEqualTo(2.8);
     }
 
     // --- ApplyString ---
 
-    [Theory]
-    [InlineData("navigation.courseGreatCircle.activeRoute.href", "/resources/routes/abc")]
-    [InlineData("navigation.courseRhumbline.activeRoute.href", "/resources/routes/xyz")]
-    public void ApplyString_RouteHref_SetsProperty(string path, string value)
+    [Test]
+    [Arguments("navigation.courseGreatCircle.activeRoute.href", "/resources/routes/abc")]
+    [Arguments("navigation.courseRhumbline.activeRoute.href", "/resources/routes/xyz")]
+    public async Task ApplyString_RouteHref_SetsProperty(string path, string value)
     {
-        Assert.True(_nav.ApplyString(path, value));
-        Assert.Equal(value, _nav.ActiveRouteHref);
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyString(path, value)).IsTrue();
+        await Assert.That(nav.ActiveRouteHref).IsEqualTo(value);
     }
 
-    [Theory]
-    [InlineData("navigation.courseGreatCircle.activeRoute.name", "To harbor")]
-    [InlineData("navigation.courseRhumbline.activeRoute.name", "Sunday sail")]
-    public void ApplyString_RouteName_SetsProperty(string path, string value)
+    [Test]
+    [Arguments("navigation.courseGreatCircle.activeRoute.name", "To harbor")]
+    [Arguments("navigation.courseRhumbline.activeRoute.name", "Sunday sail")]
+    public async Task ApplyString_RouteName_SetsProperty(string path, string value)
     {
-        Assert.True(_nav.ApplyString(path, value));
-        Assert.Equal(value, _nav.ActiveRouteName);
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyString(path, value)).IsTrue();
+        await Assert.That(nav.ActiveRouteName).IsEqualTo(value);
     }
 
-    [Fact]
-    public void ApplyString_UnknownPath_ReturnsFalse()
+    [Test]
+    public async Task ApplyString_UnknownPath_ReturnsFalse()
     {
-        Assert.False(_nav.ApplyString("some.unknown", "value"));
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyString("some.unknown", "value")).IsFalse();
     }
 
     // --- Timestamp ---
 
-    [Fact]
-    public void SetTimestamp_SetsProperty()
+    [Test]
+    public async Task SetTimestamp_SetsProperty()
     {
-        _nav.SetTimestamp("2025-01-01T00:00:00Z");
-        Assert.Equal("2025-01-01T00:00:00Z", _nav.LastTimestamp);
+        var nav = new NavigationData();
+        nav.SetTimestamp("2025-01-01T00:00:00Z");
+        await Assert.That(nav.LastTimestamp).IsEqualTo("2025-01-01T00:00:00Z");
     }
 }
