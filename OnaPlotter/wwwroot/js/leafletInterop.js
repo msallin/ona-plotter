@@ -208,6 +208,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
                 touch.clientX - mapEl.getBoundingClientRect().left,
                 touch.clientY - mapEl.getBoundingClientRect().top
             ]);
+            // Haptic feedback if available (iOS, Android).
+            if (navigator.vibrate) navigator.vibrate(30);
             showContextMenu(latlng);
             longPressTimer = null;
         }, 500);

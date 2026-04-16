@@ -262,6 +262,21 @@
         </div>
     }
 
+    @* === Quick Chart Switcher (visible when layers panel is closed) === *@
+    @if (!chartPanelOpen && availableCharts.Count > 0)
+    {
+        <div class="chart-quick-bar">
+            @foreach (var chart in availableCharts.Take(6))
+            {
+                bool active = enabledCharts.Contains(chart.Identifier);
+                <button class="chart-quick-chip @(active ? "active" : "")"
+                        @onclick="() => ToggleChart(chart, !active)">
+                    @chart.Name
+                </button>
+            }
+        </div>
+    }
+
     @* === Layers Panel === *@
     @if (chartPanelOpen)
     {
@@ -1184,18 +1199,42 @@
     private async Task ToggleFullscreen()
     {
         fullscreen = !fullscreen;
+        // Use native Fullscreen API where supported (desktop), fall back to CSS-only (iOS).
         if (fullscreen)
-            await JS.InvokeVoidAsync("eval", "document.querySelector('.map-container').requestFullscreen()");
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval",
+                    "var el=document.querySelector('.map-container');" +
+                    "if(el.requestFullscreen)el.requestFullscreen();" +
+                    "else if(el.webkitRequestFullscreen)el.webkitRequestFullscreen();");
+            }
+            catch { /* CSS fallback handles it. */ }
+        }
         else
-            await JS.InvokeVoidAsync("eval", "document.exitFullscreen()");
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval",
+                    "if(document.exitFullscreen)document.exitFullscreen();" +
+                    "else if(document.webkitExitFullscreen)document.webkitExitFullscreen();");
+            }
+            catch { /* CSS fallback handles it. */ }
+        }
+        // Leaflet needs a size recalculation after fullscreen change.
+        if (module is not null)
+        {
+            await Task.Delay(100);
+            await module.InvokeVoidAsync("eval", "if(window._onaMap)window._onaMap.invalidateSize()");
+        }
     }
 
     private void OnFullscreenChange()
     {
-        // Sync state when user exits fullscreen with Escape.
         _ = InvokeAsync(async () =>
         {
-            var isFs = await JS.InvokeAsync<bool>("eval", "!!document.fullscreenElement");
+            var isFs = await JS.InvokeAsync<bool>("eval",
+                "!!(document.fullscreenElement||document.webkitFullscreenElement)");
             if (fullscreen != isFs)
             {
                 fullscreen = isFs;
