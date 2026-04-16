@@ -13,6 +13,7 @@ let followBoat = true;
 let northUp = true;
 let nightMode = false;
 let dotNetRef = null;
+let suppressMoveEnd = false;  // Suppress moveend during programmatic panTo.
 
 // AIS state.
 const aisMarkers = {};
@@ -149,11 +150,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     map.on('dblclick', () => clearBearingLine());
 
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.
+    // Debounced: skip events caused by programmatic panTo (follow mode) and coalesce
+    // rapid user interactions into a single callback.
+    let boundsTimer = null;
     map.on('moveend', () => {
-        if (!dotNetRef) return;
-        const b = map.getBounds();
-        dotNetRef.invokeMethodAsync('OnMapBoundsChanged',
-            b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+        if (!dotNetRef || suppressMoveEnd) return;
+        clearTimeout(boundsTimer);
+        boundsTimer = setTimeout(() => {
+            const b = map.getBounds();
+            dotNetRef.invokeMethodAsync('OnMapBoundsChanged',
+                b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+        }, 300);
     });
 }
 
@@ -169,7 +176,12 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     if (end) boatVector.setLatLngs([[lat, lon], end]);
     else boatVector.setLatLngs([]);
 
-    if (followBoat) map.panTo([lat, lon], { animate: true, duration: 0.5 });
+    if (followBoat) {
+        suppressMoveEnd = true;
+        map.panTo([lat, lon], { animate: true, duration: 0.5 });
+        // Re-enable after the pan animation completes.
+        setTimeout(() => { suppressMoveEnd = false; }, 600);
+    }
 
     // Update MOB line if active.
     if (mobMarker) {
@@ -230,6 +242,8 @@ export function addColoredTrackPoint(lat, lon, sogMs, prevLat, prevLon) {
     if (pendingTrackPoints.length >= 10) flushTrackPoints();
 }
 
+const MAX_TRACK_SEGMENTS = 1000;
+
 export function flushTrackPoints() {
     if (!trackLayer || pendingTrackPoints.length === 0) return;
     for (const [lat, lon, sogMs, pLat, pLon] of pendingTrackPoints) {
@@ -238,6 +252,15 @@ export function flushTrackPoints() {
         }).addTo(trackLayer);
     }
     pendingTrackPoints = [];
+
+    // Prune oldest segments to prevent unbounded DOM growth.
+    const layers = trackLayer.getLayers();
+    if (layers.length > MAX_TRACK_SEGMENTS) {
+        const excess = layers.length - MAX_TRACK_SEGMENTS;
+        for (let i = 0; i < excess; i++) {
+            trackLayer.removeLayer(layers[i]);
+        }
+    }
 }
 
 export function updateAisTargets(vessels) {

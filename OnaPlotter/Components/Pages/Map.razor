@@ -167,11 +167,11 @@
                        @oninput="OnLayerFilterInput" />
             }
 
-            @if (FilteredCharts.Any())
+            @if (FilteredCharts.Length > 0)
             {
                 <div class="chart-panel-header section-toggle" @onclick="() => chartsExpanded = !chartsExpanded">
                     <span class="toggle-arrow">@(chartsExpanded ? "v" : ">")</span>
-                    Charts <span class="section-count">@FilteredCharts.Count()</span>
+                    Charts <span class="section-count">@FilteredCharts.Length</span>
                 </div>
                 @if (chartsExpanded)
                 {
@@ -196,11 +196,11 @@
                 }
             }
 
-            @if (FilteredRoutes.Any())
+            @if (FilteredRoutes.Length > 0)
             {
                 <div class="chart-panel-header section-toggle" @onclick="() => routesExpanded = !routesExpanded">
                     <span class="toggle-arrow">@(routesExpanded ? "v" : ">")</span>
-                    Routes <span class="section-count">@FilteredRoutes.Count()</span>
+                    Routes <span class="section-count">@FilteredRoutes.Length</span>
                 </div>
                 @if (routesExpanded)
                 {
@@ -263,32 +263,39 @@
     private string layerFilter = "";
     private double? viewWest, viewSouth, viewEast, viewNorth;
 
-    private void OnLayerFilterInput(ChangeEventArgs e) => layerFilter = e.Value?.ToString() ?? "";
+    // Cached filtered lists, rebuilt only when inputs change.
+    private SignalkChart[] cachedFilteredCharts = [];
+    private SignalkRoute[] cachedFilteredRoutes = [];
+    private string lastFilterKey = "";
 
-    private IEnumerable<SignalkChart> FilteredCharts
+    private SignalkChart[] FilteredCharts => cachedFilteredCharts;
+    private SignalkRoute[] FilteredRoutes => cachedFilteredRoutes;
+
+    // Pre-computed route bounding boxes (avoids re-parsing GeoJSON on every filter).
+    private readonly Dictionary<string, (double MinLat, double MaxLat, double MinLon, double MaxLon)?> routeBounds = [];
+
+    private void OnLayerFilterInput(ChangeEventArgs e)
     {
-        get
-        {
-            IEnumerable<SignalkChart> list = availableCharts;
-            if (!string.IsNullOrEmpty(layerFilter))
-                list = list.Where(c => c.Name.Contains(layerFilter, StringComparison.OrdinalIgnoreCase));
-            if (viewWest is not null)
-                list = list.Where(ChartIntersectsViewport);
-            return list;
-        }
+        layerFilter = e.Value?.ToString() ?? "";
+        RebuildFilteredLayers();
     }
 
-    private IEnumerable<SignalkRoute> FilteredRoutes
+    private void RebuildFilteredLayers()
     {
-        get
-        {
-            IEnumerable<SignalkRoute> list = availableRoutes;
-            if (!string.IsNullOrEmpty(layerFilter))
-                list = list.Where(r => (r.Name ?? r.Id).Contains(layerFilter, StringComparison.OrdinalIgnoreCase));
-            if (viewWest is not null)
-                list = list.Where(RouteIntersectsViewport);
-            return list;
-        }
+        // Build a cache key from the inputs that affect filtering.
+        var key = $"{layerFilter}|{viewWest:F4}|{viewSouth:F4}|{viewEast:F4}|{viewNorth:F4}|{availableCharts.Count}|{availableRoutes.Count}";
+        if (key == lastFilterKey) return;
+        lastFilterKey = key;
+
+        cachedFilteredCharts = availableCharts
+            .Where(c => (string.IsNullOrEmpty(layerFilter) || c.Name.Contains(layerFilter, StringComparison.OrdinalIgnoreCase))
+                     && ChartIntersectsViewport(c))
+            .ToArray();
+
+        cachedFilteredRoutes = availableRoutes
+            .Where(r => (string.IsNullOrEmpty(layerFilter) || (r.Name ?? r.Id).Contains(layerFilter, StringComparison.OrdinalIgnoreCase))
+                     && RouteIntersectsViewport(r))
+            .ToArray();
     }
 
     private const double MsToKnots = 1.94384;
@@ -368,6 +375,8 @@
         // Load available charts and routes from SignalK server.
         availableCharts = await ChartService.GetChartsAsync();
         availableRoutes = await ChartService.GetRoutesAsync();
+        PrecomputeRouteBounds();
+        RebuildFilteredLayers();
         StateHasChanged();
 
         SignalkClient.OnDataChanged += HandleDataChanged;
@@ -397,7 +406,10 @@
         viewSouth = south;
         viewEast = east;
         viewNorth = north;
-        _ = InvokeAsync(StateHasChanged);
+        RebuildFilteredLayers();
+        // Only re-render if the layer panel is actually open.
+        if (chartPanelOpen)
+            _ = InvokeAsync(StateHasChanged);
     }
 
     // Charts without bounds are always shown. Otherwise AABB intersection test.
@@ -411,37 +423,48 @@
         return !(cEast < viewWest || cWest > viewEast || cNorth < viewSouth || cSouth > viewNorth);
     }
 
-    // Compute route bounding box from GeoJSON coordinates, then AABB intersection.
+    // Uses pre-computed bounding box (computed once when routes are loaded).
     private bool RouteIntersectsViewport(SignalkRoute route)
     {
-        if (route.Feature?.Geometry is null) return true;
+        if (viewWest is null) return true;
+        if (!routeBounds.TryGetValue(route.Id, out var bbox) || bbox is null) return true;
 
-        double minLat = double.MaxValue, maxLat = double.MinValue;
-        double minLon = double.MaxValue, maxLon = double.MinValue;
+        return !(bbox.Value.MaxLon < viewWest || bbox.Value.MinLon > viewEast
+              || bbox.Value.MaxLat < viewSouth || bbox.Value.MinLat > viewNorth);
+    }
 
-        try
+    // Pre-compute bounding boxes for all routes (called once after loading).
+    private void PrecomputeRouteBounds()
+    {
+        routeBounds.Clear();
+        foreach (var route in availableRoutes)
         {
-            foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+            if (route.Feature?.Geometry is null) { routeBounds[route.Id] = null; continue; }
+            try
             {
-                var arr = new double[2];
-                int i = 0;
-                foreach (var val in point.EnumerateArray())
+                double minLat = double.MaxValue, maxLat = double.MinValue;
+                double minLon = double.MaxValue, maxLon = double.MinValue;
+                foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
                 {
-                    if (i < 2) arr[i++] = val.GetDouble();
+                    var arr = new double[2];
+                    int i = 0;
+                    foreach (var val in point.EnumerateArray())
+                    {
+                        if (i < 2) arr[i++] = val.GetDouble();
+                    }
+                    double lon = arr[0], lat = arr[1];
+                    if (lat < minLat) minLat = lat;
+                    if (lat > maxLat) maxLat = lat;
+                    if (lon < minLon) minLon = lon;
+                    if (lon > maxLon) maxLon = lon;
                 }
-                double lon = arr[0], lat = arr[1]; // GeoJSON [lon, lat]
-                if (lat < minLat) minLat = lat;
-                if (lat > maxLat) maxLat = lat;
-                if (lon < minLon) minLon = lon;
-                if (lon > maxLon) maxLon = lon;
+                routeBounds[route.Id] = (minLat, maxLat, minLon, maxLon);
+            }
+            catch
+            {
+                routeBounds[route.Id] = null;
             }
         }
-        catch
-        {
-            return true;
-        }
-
-        return !(maxLon < viewWest || minLon > viewEast || maxLat < viewSouth || minLat > viewNorth);
     }
 
     // Cached HUD values for change detection. Only re-render when these actually change.
