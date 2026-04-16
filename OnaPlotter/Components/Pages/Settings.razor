@@ -1,0 +1,104 @@
+@* Settings: configurable alarm thresholds and preferences. *@
+
+@page "/settings"
+@using OnaPlotter.Services
+@inject AppSettingsService AppSettings
+
+<PageTitle>Settings</PageTitle>
+
+<h2>Settings</h2>
+
+<div class="row g-4" style="max-width: 600px;">
+
+    <div class="col-12">
+        <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Alarms</h5>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Depth Alarm</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.5" min="0" max="50"
+                           value="@AppSettings.DepthAlarmThreshold"
+                           @onchange="(e) => OnDepthChanged(e)" />
+                    <span class="input-group-text">m</span>
+                </div>
+                <small class="text-muted">Alert when depth is below this value.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">CPA Alarm</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.1" min="0" max="5"
+                           value="@AppSettings.CpaAlarmThreshold"
+                           @onchange="(e) => OnCpaChanged(e)" />
+                    <span class="input-group-text">nm</span>
+                </div>
+                <small class="text-muted">Alert when a vessel is closer than this.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Wind Shift Alarm</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="5" min="5" max="90"
+                           value="@AppSettings.WindShiftAlarmThreshold"
+                           @onchange="(e) => OnWindShiftChanged(e)" />
+                    <span class="input-group-text">deg / 5min</span>
+                </div>
+                <small class="text-muted">Alert when TWD shifts more than this in 5 minutes.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 mt-3">
+        <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Display</h5>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" checked="@AppSettings.NightMode"
+                           @onchange="(e) => OnNightModeChanged(e)" />
+                    <label class="form-check-label">Night Mode</label>
+                </div>
+                <small class="text-muted">Red-shifted display for night vision.</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private async Task OnDepthChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
+            await AppSettings.SetDepthAlarmThresholdAsync(val);
+    }
+
+    private async Task OnCpaChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
+            await AppSettings.SetCpaAlarmThresholdAsync(val);
+    }
+
+    private async Task OnWindShiftChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 5)
+            await AppSettings.SetWindShiftAlarmThresholdAsync(val);
+    }
+
+    private async Task OnNightModeChanged(ChangeEventArgs e)
+    {
+        bool val = (bool)(e.Value ?? false);
+        await AppSettings.SetNightModeAsync(val);
+    }
+}

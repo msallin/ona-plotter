@@ -1,17 +1,18 @@
-/* Dark nautical theme for SignalK Viewer. */
+/* Dark nautical theme for OnaPlotter. */
 
 :root {
-    --sk-bg: #1a1d23;
-    --sk-surface: #242830;
-    --sk-surface-hover: #2c313a;
-    --sk-border: #363b44;
-    --sk-text: #e0e0e0;
-    --sk-text-muted: #8a919c;
-    --sk-accent: #3b82f6;
-    --sk-accent-dim: #2563eb;
-    --sk-green: #22c55e;
-    --sk-red: #ef4444;
-    --sk-orange: #f59e0b;
+    --sk-bg: #0f1117;
+    --sk-surface: #1a1e28;
+    --sk-surface-hover: #242a36;
+    --sk-border: #2e3440;
+    --sk-text: #e2e8f0;
+    --sk-text-muted: #94a3b8;
+    --sk-accent: #60a5fa;
+    --sk-accent-dim: #3b82f6;
+    --sk-green: #4ade80;
+    --sk-red: #f87171;
+    --sk-orange: #fbbf24;
+    --sk-cyan: #22d3ee;
 }
 
 html, body {
@@ -168,13 +169,14 @@ h2 {
 }
 
 .hud-panel {
-    background: rgba(15, 17, 22, 0.82);
-    backdrop-filter: blur(6px);
-    border-radius: 8px;
+    background: rgba(10, 12, 18, 0.9);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
     padding: 8px 14px;
     color: #fff;
-    pointer-events: none; /* Let touch pass through to map for panning */
+    pointer-events: none;
     user-select: none;
+    border: 1px solid rgba(255,255,255,0.06);
 }
 
 .hud-top-left { top: 12px; left: 12px; }
@@ -215,9 +217,24 @@ h2 {
 .night-mode .hud-position { color: rgba(255,130,130,0.4); }
 
 /* Depth color states */
-.depth-ok { color: #22c55e; }
-.depth-warn { color: #f59e0b; }
-.depth-danger { color: #ef4444; }
+.depth-ok { color: var(--sk-green); }
+.depth-warn { color: var(--sk-orange); }
+.depth-danger { color: var(--sk-red); font-weight: 700; animation: value-pulse 0.8s ease-in-out infinite; }
+
+.xte-ok { color: var(--sk-green); }
+.xte-warn { color: var(--sk-orange); }
+.xte-danger { color: var(--sk-red); font-weight: 700; }
+
+/* Subtle pulse for critical values */
+@keyframes value-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Smooth value transitions */
+.hud-value {
+    transition: color 0.3s ease;
+}
 
 /* Wind arrow in HUD */
 .wind-arrow {
@@ -507,6 +524,43 @@ html {
     overscroll-behavior: none;
 }
 
+/* ===== Forms (Settings page) ===== */
+
+.form-control, .input-group-text {
+    background: var(--sk-surface);
+    border-color: var(--sk-border);
+    color: var(--sk-text);
+}
+.form-control:focus {
+    background: var(--sk-surface-hover);
+    border-color: var(--sk-accent);
+    color: var(--sk-text);
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+}
+.form-label {
+    color: var(--sk-text);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+.form-check-input {
+    background-color: var(--sk-surface);
+    border-color: var(--sk-border);
+}
+.form-check-input:checked {
+    background-color: var(--sk-accent);
+    border-color: var(--sk-accent);
+}
+
+/* ===== Dashboard ===== */
+
+.dash-card-primary {
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+.dash-card-primary .card-body {
+    padding: 1rem 0.5rem;
+}
+
 /* ===== Alarm Banner ===== */
 
 .alarm-banner {
@@ -576,13 +630,25 @@ html {
     background: var(--sk-bg);
 }
 
-/* Mobile responsive: stack for small screens */
+/* Mobile responsive: stack HUD and controls for small screens */
 @media (max-width: 600px) {
-    .hud-bottom-left { bottom: 80px; }
-    .hud-bottom-right { bottom: 80px; }
-    .hud-top-right { right: 12px; }
-    .map-controls { flex-wrap: wrap; justify-content: center; }
-    .hud-value { font-size: 1.3rem; }
+    .hud-bottom-left { bottom: 80px; left: 8px; }
+    .hud-bottom-right { bottom: 80px; right: 8px; }
+    .hud-top-left { top: 8px; left: 8px; }
+    .hud-top-right { top: 8px; right: 8px; }
+    .map-controls { flex-wrap: wrap; justify-content: center; gap: 4px; }
+    .hud-value { font-size: 1.2rem; }
+    .hud-label { font-size: 0.55rem; }
+    .hud-panel { padding: 6px 10px; border-radius: 8px; }
+    .hud-route { max-width: 280px; }
+    .hud-anchor { max-width: 200px; }
+    .hud-autopilot { bottom: 80px; right: 8px; }
+}
+
+/* Tablet landscape: slightly tighter HUD */
+@media (min-width: 601px) and (max-width: 1024px) {
+    .hud-panel { padding: 8px 12px; }
+    .hud-value { font-size: 1.4rem; }
 }
 
 /* Chart picker panel */

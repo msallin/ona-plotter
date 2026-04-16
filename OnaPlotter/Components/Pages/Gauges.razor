@@ -67,35 +67,35 @@
     private double? TrueWindSpeedKn => Data.WindSpeedTrue is not null ? Data.WindSpeedTrue * MsToKnots : null;
     private double? TrueWindAngleDeg => Data.WindAngleTrue is not null ? Data.WindAngleTrue * RadToDeg : null;
 
-    // Color zones: green = normal, yellow = caution, red = danger.
+    // Color zones: unified with CSS vars (green=safe, orange=caution, red=danger).
     private static readonly List<GaugeZone> sogZones =
     [
-        new(0, 8, "#4CAF50"),
-        new(8, 12, "#FFC107"),
-        new(12, 15, "#F44336")
+        new(0, 8, "#4ade80"),
+        new(8, 12, "#fbbf24"),
+        new(12, 15, "#f87171")
     ];
 
     private static readonly List<GaugeZone> depthZones =
     [
-        new(0, 3, "#F44336"),
-        new(3, 8, "#FFC107"),
-        new(8, 50, "#4CAF50")
+        new(0, 3, "#f87171"),
+        new(3, 8, "#fbbf24"),
+        new(8, 50, "#4ade80")
     ];
 
     private static readonly List<GaugeZone> windSpeedZones =
     [
-        new(0, 15, "#4CAF50"),
-        new(15, 25, "#FFC107"),
-        new(25, 40, "#F44336")
+        new(0, 15, "#4ade80"),
+        new(15, 25, "#fbbf24"),
+        new(25, 40, "#f87171")
     ];
 
-    // Heading: no danger zones, just quadrant shading.
+    // Heading: compass quadrant shading (muted, informational only).
     private static readonly List<GaugeZone> headingZones =
     [
-        new(0, 90, "#4CAF50"),
-        new(90, 180, "#2196F3"),
-        new(180, 270, "#FF9800"),
-        new(270, 360, "#9C27B0")
+        new(0, 90, "#4ade80"),
+        new(90, 180, "#60a5fa"),
+        new(180, 270, "#fbbf24"),
+        new(270, 360, "#c084fc")
     ];
 
     protected override void OnInitialized()

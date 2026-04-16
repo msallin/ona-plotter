@@ -61,8 +61,8 @@
         : "disconnected";
 
     private string ConnectionLabel => SignalkClient.IsConnected
-        ? (SignalkClient.IsDataStale ? "No Data" : "Connected")
-        : "Disconnected";
+        ? (SignalkClient.IsDataStale ? "Stale" : "Live")
+        : "Offline";
 
     private string ConnectionTooltip => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "Connected but no data received for 5+ seconds" : "Receiving data")
