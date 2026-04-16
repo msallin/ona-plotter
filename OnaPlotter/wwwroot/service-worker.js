@@ -1,7 +1,7 @@
 // Service worker for OnaPlotter PWA.
 // Caches the app shell for faster loads; network-first for API calls.
 
-const CACHE_NAME = 'ona-plotter-v1';
+const CACHE_NAME = 'ona-plotter-v2';
 // Use relative URLs so the worker works both at root and under a subpath
 // (SignalK webapp serves at /signalk-onaplotter/).
 const SCOPE = self.registration ? self.registration.scope : self.location.href;
@@ -31,6 +31,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
+    // Only handle GET requests for same-origin resources.
+    // Cross-origin (OSM tiles, OpenSeaMap, unpkg.com, MarineTraffic links) must pass
+    // through untouched: the browser sends proper Referer headers that some servers
+    // (like OSM) require per their usage policy. Intercepting them breaks those requests.
+    if (event.request.method !== 'GET' || url.origin !== self.location.origin) {
+        return;
+    }
+
     // Network-first for SignalK API calls and WebSocket upgrades.
     // Match /signalk/ and /signalk/v* paths exactly (not webapp names like /signalk-onaplotter).
     if (url.pathname === '/signalk' || url.pathname.startsWith('/signalk/')
@@ -39,7 +47,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Cache-first for app shell, network-first for everything else.
+    // Cache-first for app shell, network fallback otherwise.
     event.respondWith(
         caches.match(event.request).then((cached) => {
             const fetchPromise = fetch(event.request).then((response) => {

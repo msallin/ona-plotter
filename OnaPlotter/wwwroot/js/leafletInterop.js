@@ -150,13 +150,15 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '&copy; OSM'
+        attribution: '&copy; OpenStreetMap contributors',
+        referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
 
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenSeaMap',
-        opacity: 0.8
+        opacity: 0.8,
+        referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
 
     trackLayer = L.layerGroup().addTo(map);

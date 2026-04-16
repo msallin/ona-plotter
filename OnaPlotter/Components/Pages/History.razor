@@ -79,8 +79,8 @@
             (function() {
                 if (window._historyMap) window._historyMap.remove();
                 var m = L.map('historyMapDiv', { zoomControl: true }).setView([47.4, 8.5], 10);
-                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OSM' }).addTo(m);
-                L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.8 }).addTo(m);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors', referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(m);
+                L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.8, referrerPolicy: 'strict-origin-when-cross-origin' }).addTo(m);
                 window._historyMap = m;
                 window._historyMarker = null;
                 window._historyTrack = null;
