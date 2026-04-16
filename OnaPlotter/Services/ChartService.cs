@@ -272,5 +272,173 @@ public sealed class ChartService
         }
     }
 
+    // --- Route CRUD ---
+
+    public async Task<bool> SaveRouteAsync(string name, double[][] coordsLatLon)
+    {
+        try
+        {
+            var geoJsonCoords = coordsLatLon.Select(c => new[] { c[1], c[0] }).ToArray();
+            var body = new
+            {
+                name,
+                feature = new
+                {
+                    type = "Feature",
+                    geometry = new { type = "LineString", coordinates = geoJsonCoords }
+                }
+            };
+            var url = $"{_baseUrl}/signalk/v2/api/resources/routes";
+            var response = await _http.PostAsJsonAsync(url, body);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Route save returned {Status}", response.StatusCode);
+                return false;
+            }
+            _logger.LogInformation("Saved route '{Name}' with {Count} waypoints", name, coordsLatLon.Length);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to save route '{Name}'", name);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteRouteAsync(string id)
+    {
+        try
+        {
+            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/resources/routes/{id}");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete route {Id}", id);
+            return false;
+        }
+    }
+
+    // --- Waypoint CRUD ---
+
+    public async Task<List<SignalkWaypoint>> GetWaypointsAsync()
+    {
+        try
+        {
+            var url = $"{_baseUrl}/signalk/v2/api/resources/waypoints";
+            var response = await _http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return [];
+
+            var json = await response.Content.ReadAsStringAsync();
+            var dict = JsonSerializer.Deserialize<Dictionary<string, SignalkWaypoint>>(json);
+            if (dict is null) return [];
+
+            var waypoints = new List<SignalkWaypoint>();
+            foreach (var (key, wp) in dict)
+            {
+                wp.Id = key;
+                if (wp.Feature?.Geometry?.Coordinates.ValueKind == JsonValueKind.Array)
+                {
+                    var arr = new double[2];
+                    int i = 0;
+                    foreach (var val in wp.Feature.Geometry.Coordinates.EnumerateArray())
+                    {
+                        if (i < 2) arr[i++] = val.GetDouble();
+                    }
+                    wp.Longitude = arr[0];
+                    wp.Latitude = arr[1];
+                }
+                waypoints.Add(wp);
+            }
+            return waypoints;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch waypoints");
+            return [];
+        }
+    }
+
+    public async Task<string?> CreateWaypointAsync(string name, double lat, double lon)
+    {
+        try
+        {
+            var body = new
+            {
+                name,
+                feature = new
+                {
+                    type = "Feature",
+                    geometry = new { type = "Point", coordinates = new[] { lon, lat } }
+                }
+            };
+            var url = $"{_baseUrl}/signalk/v2/api/resources/waypoints";
+            var response = await _http.PostAsJsonAsync(url, body);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Waypoint create returned {Status}", response.StatusCode);
+                return null;
+            }
+            var result = await response.Content.ReadAsStringAsync();
+            return result.Trim('"');
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to create waypoint '{Name}'", name);
+            return null;
+        }
+    }
+
+    public async Task<bool> DeleteWaypointAsync(string id)
+    {
+        try
+        {
+            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/resources/waypoints/{id}");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete waypoint {Id}", id);
+            return false;
+        }
+    }
+
+    // --- Course Navigation API ---
+
+    public async Task<bool> SetCourseDestinationAsync(string waypointId)
+    {
+        try
+        {
+            var body = new { href = $"/resources/waypoints/{waypointId}" };
+            var url = $"{_baseUrl}/signalk/v2/api/navigation/course/destination";
+            var response = await _http.PutAsJsonAsync(url, body);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Set course destination returned {Status}", response.StatusCode);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to set course destination");
+            return false;
+        }
+    }
+
+    public async Task<bool> ClearCourseAsync()
+    {
+        try
+        {
+            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/navigation/course");
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clear course");
+            return false;
+        }
+    }
+
     public string BaseUrl => _baseUrl;
 }

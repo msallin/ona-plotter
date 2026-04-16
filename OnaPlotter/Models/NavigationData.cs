@@ -21,6 +21,9 @@ public sealed class NavigationData
     public double? Depth { get; private set; }
     public double? WindAngleApparent { get; private set; }
     public double? WindSpeedApparent { get; private set; }
+    public double? WindAngleTrue { get; private set; }       // TWA (radians, -PI to PI relative to bow)
+    public double? WindSpeedTrue { get; private set; }       // TWS (m/s)
+    public double? WindDirectionTrue { get; private set; }   // TWD (radians, 0 to 2PI from north)
     public string? LastTimestamp { get; private set; }
 
     // Anchor alarm data (from signalk-anchoralarm-plugin)
@@ -80,6 +83,15 @@ public sealed class NavigationData
                     break;
                 case "environment.wind.speedApparent":
                     WindSpeedApparent = value;
+                    break;
+                case "environment.wind.angleTrueWater":
+                    WindAngleTrue = value;
+                    break;
+                case "environment.wind.speedTrue":
+                    WindSpeedTrue = value;
+                    break;
+                case "environment.wind.directionTrue":
+                    WindDirectionTrue = value;
                     break;
                 case "navigation.anchor.maxRadius":
                     AnchorMaxRadius = value;

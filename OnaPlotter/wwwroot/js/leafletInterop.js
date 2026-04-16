@@ -37,6 +37,12 @@ let courseLineLeg = null;       // Polyline: previous WP to next WP
 let courseLineBearing = null;   // Polyline: boat to next WP
 let courseLineXte = null;       // Polyline: XTE perpendicular tick
 
+// Laylines.
+let laylineStarboard = null;    // Green polyline from boat
+let laylinePort = null;         // Red polyline from boat
+let laylineWpStarboard = null;  // Green polyline from waypoint (dimmer)
+let laylineWpPort = null;       // Red polyline from waypoint (dimmer)
+
 // Bearing/distance tool.
 let bearingLine = null;
 let bearingLabel = null;
@@ -151,12 +157,30 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
     boatVector = L.polyline([], { color: '#3b82f6', weight: 2, dashArray: '8,5' }).addTo(map);
 
-    // Map click -> bearing/distance line.
+    // Map click: in route edit mode, add waypoint; otherwise, bearing/distance line.
     map.on('click', (e) => {
+        if (routeEditMode) {
+            addEditWaypoint(e.latlng.lat, e.latlng.lng);
+            return;
+        }
         if (!dotNetRef) return;
+        // Dismiss context menu on any click.
+        dotNetRef.invokeMethodAsync('OnDismissContextMenu');
         drawBearingLine(e.latlng.lat, e.latlng.lng);
     });
     map.on('dblclick', () => clearBearingLine());
+
+    // Right-click context menu -> callback to Blazor.
+    map.on('contextmenu', (e) => {
+        e.originalEvent.preventDefault();
+        if (routeEditMode || !dotNetRef) return;
+        const pt = map.latLngToContainerPoint(e.latlng);
+        const sz = map.getSize();
+        // Clamp so menu (approx 170x120px) stays within the map container.
+        const x = Math.min(pt.x, sz.x - 175);
+        const y = Math.min(pt.y, sz.y - 125);
+        dotNetRef.invokeMethodAsync('OnMapContextMenu', e.latlng.lat, e.latlng.lng, Math.max(x, 5), Math.max(y, 5));
+    });
 
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.
     // Debounced: skip events caused by programmatic panTo (follow mode) and coalesce
@@ -690,6 +714,156 @@ export function clearCourseLine() {
     if (courseLineXte && map) { map.removeLayer(courseLineXte); courseLineXte = null; }
 }
 
+// --- Route Editing ---
+
+let routeEditMode = false;
+let routeEditLayer = null;
+let routeEditCoords = [];
+let routeEditMarkers = [];
+let routeEditLine = null;
+
+function makeEditWpIcon(num) {
+    return L.divIcon({
+        className: 'edit-wp-icon',
+        html: `<div class="edit-wp-circle">${num}</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+}
+
+function redrawEditLine() {
+    if (!routeEditLine && routeEditCoords.length >= 2) {
+        routeEditLine = L.polyline(routeEditCoords, {
+            color: '#a78bfa', weight: 2.5, opacity: 0.8, dashArray: '8,6'
+        }).addTo(routeEditLayer);
+    } else if (routeEditLine) {
+        routeEditLine.setLatLngs(routeEditCoords);
+    }
+}
+
+function addEditWaypoint(lat, lon) {
+    const idx = routeEditCoords.length;
+    routeEditCoords.push([lat, lon]);
+
+    const marker = L.marker([lat, lon], {
+        icon: makeEditWpIcon(idx + 1),
+        draggable: true,
+        zIndexOffset: 800
+    }).addTo(routeEditLayer);
+
+    marker.on('drag', (e) => {
+        const ll = e.target.getLatLng();
+        routeEditCoords[idx] = [ll.lat, ll.lng];
+        redrawEditLine();
+    });
+
+    routeEditMarkers.push(marker);
+    redrawEditLine();
+}
+
+export function startRouteEdit() {
+    stopRouteEdit();
+    routeEditMode = true;
+    routeEditLayer = L.layerGroup().addTo(map);
+}
+
+export function stopRouteEdit() {
+    routeEditMode = false;
+    if (routeEditLayer && map) map.removeLayer(routeEditLayer);
+    routeEditLayer = null;
+    routeEditCoords = [];
+    routeEditMarkers = [];
+    routeEditLine = null;
+}
+
+export function getEditRouteCoords() {
+    return routeEditCoords;
+}
+
+// --- Waypoint Markers ---
+
+const waypointMarkers = {};
+
+export function addWaypointMarker(id, lat, lon, name) {
+    if (!map || waypointMarkers[id]) return;
+    const marker = L.circleMarker([lat, lon], {
+        radius: 6, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1, weight: 2
+    }).addTo(map);
+    marker.bindTooltip(name || id.substring(0, 8), {
+        permanent: false, direction: 'right', offset: [10, 0],
+        className: 'bearing-tooltip'
+    });
+    waypointMarkers[id] = marker;
+}
+
+export function removeWaypointMarker(id) {
+    if (waypointMarkers[id] && map) {
+        map.removeLayer(waypointMarkers[id]);
+        delete waypointMarkers[id];
+    }
+}
+
+// --- Laylines ---
+
+// Draw port/starboard laylines from boat position (and optionally from waypoint).
+// twdRad = true wind direction (radians, FROM north). twaRad = true wind angle (radians, absolute).
+export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
+    if (!map) return;
+
+    const lineLen = 5 * 1852; // 5 nm in meters
+    const absTwa = Math.abs(twaRad);
+
+    // Boat sails INTO the wind: TWD + PI gives the "to" direction, +/- TWA gives tack angles.
+    const stbdBrg = twdRad + Math.PI - absTwa;
+    const portBrg = twdRad + Math.PI + absTwa;
+
+    const stbdEnd = destPoint(boatLat, boatLon, stbdBrg, lineLen);
+    const portEnd = destPoint(boatLat, boatLon, portBrg, lineLen);
+
+    if (laylineStarboard) laylineStarboard.setLatLngs([[boatLat, boatLon], stbdEnd]);
+    else {
+        laylineStarboard = L.polyline([[boatLat, boatLon], stbdEnd], {
+            color: '#22c55e', weight: 2, opacity: 0.7, dashArray: '10,6'
+        }).addTo(map);
+    }
+
+    if (laylinePort) laylinePort.setLatLngs([[boatLat, boatLon], portEnd]);
+    else {
+        laylinePort = L.polyline([[boatLat, boatLon], portEnd], {
+            color: '#ef4444', weight: 2, opacity: 0.7, dashArray: '10,6'
+        }).addTo(map);
+    }
+
+    // Waypoint laylines (from waypoint back toward the wind).
+    if (wpLat != null && wpLon != null) {
+        const wpStbdEnd = destPoint(wpLat, wpLon, stbdBrg + Math.PI, lineLen);
+        const wpPortEnd = destPoint(wpLat, wpLon, portBrg + Math.PI, lineLen);
+
+        if (laylineWpStarboard) laylineWpStarboard.setLatLngs([[wpLat, wpLon], wpStbdEnd]);
+        else {
+            laylineWpStarboard = L.polyline([[wpLat, wpLon], wpStbdEnd], {
+                color: '#22c55e', weight: 1.5, opacity: 0.35, dashArray: '6,6'
+            }).addTo(map);
+        }
+        if (laylineWpPort) laylineWpPort.setLatLngs([[wpLat, wpLon], wpPortEnd]);
+        else {
+            laylineWpPort = L.polyline([[wpLat, wpLon], wpPortEnd], {
+                color: '#ef4444', weight: 1.5, opacity: 0.35, dashArray: '6,6'
+            }).addTo(map);
+        }
+    } else {
+        if (laylineWpStarboard && map) { map.removeLayer(laylineWpStarboard); laylineWpStarboard = null; }
+        if (laylineWpPort && map) { map.removeLayer(laylineWpPort); laylineWpPort = null; }
+    }
+}
+
+export function clearLaylines() {
+    if (laylineStarboard && map) { map.removeLayer(laylineStarboard); laylineStarboard = null; }
+    if (laylinePort && map) { map.removeLayer(laylinePort); laylinePort = null; }
+    if (laylineWpStarboard && map) { map.removeLayer(laylineWpStarboard); laylineWpStarboard = null; }
+    if (laylineWpPort && map) { map.removeLayer(laylineWpPort); laylineWpPort = null; }
+}
+
 // --- Keyboard shortcuts ---
 
 let keyHandler = null;
@@ -700,7 +874,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         // Skip if user is typing in an input.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         const key = e.key.toLowerCase();
-        if ('mfnat'.includes(key) && key.length === 1) {
+        if ('mfnatl'.includes(key) && key.length === 1) {
             e.preventDefault();
             dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key);
         }
@@ -734,6 +908,11 @@ export function dispose() {
     anchorMarker = null; anchorCircle = null;
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
+    laylineStarboard = null; laylinePort = null;
+    laylineWpStarboard = null; laylineWpPort = null;
+    routeEditMode = false; routeEditLayer = null;
+    routeEditCoords = []; routeEditMarkers = []; routeEditLine = null;
+    for (const id of Object.keys(waypointMarkers)) delete waypointMarkers[id];
     for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
     dotNetRef = null;

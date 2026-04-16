@@ -31,19 +31,31 @@
     @* === HUD: Top-Right — Wind === *@
     <div class="hud hud-top-right">
         <div class="hud-panel" style="text-align:center;">
-            <div class="hud-label">Apparent Wind</div>
+            <div class="hud-label">AWA / AWS</div>
             @if (Data.WindSpeedApparent is not null)
             {
                 <svg width="48" height="48" viewBox="-24 -24 48 48" class="wind-arrow"
-                     style="transform: rotate(@WindAngleDegStr);" role="img" aria-label="Wind direction">
+                     style="transform: rotate(@WindAngleDegStr);" role="img" aria-label="Apparent wind">
                     <circle cx="0" cy="0" r="22" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
                     <polygon points="0,-20 4,-8 0,-12 -4,-8" fill="#3b82f6" stroke="none"/>
                 </svg>
-                <div class="hud-value" style="font-size:1.2rem;">@FormatKnots(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
+                <div class="hud-value" style="font-size:1.1rem;">@FormatKnots(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
             }
             else
             {
-                <div style="color: rgba(255,255,255,0.25); font-size:0.8rem; padding: 8px 0;">--</div>
+                <div style="color: rgba(255,255,255,0.25); font-size:0.8rem; padding: 4px 0;">--</div>
+            }
+            @if (Data.WindSpeedTrue is not null)
+            {
+                <div style="margin-top:4px; border-top:1px solid rgba(255,255,255,0.1); padding-top:4px;">
+                    <div class="hud-label">TWA / TWS</div>
+                    <svg width="36" height="36" viewBox="-18 -18 36 36" class="wind-arrow"
+                         style="transform: rotate(@TrueWindAngleDegStr);" role="img" aria-label="True wind">
+                        <circle cx="0" cy="0" r="16" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                        <polygon points="0,-14 3,-6 0,-9 -3,-6" fill="#22c55e" stroke="none"/>
+                    </svg>
+                    <div class="hud-value" style="font-size:1rem;">@FormatKnots(Data.WindSpeedTrue)<span class="hud-unit">kn</span></div>
+                </div>
             }
         </div>
     </div>
@@ -163,10 +175,55 @@
         <button class="map-btn" @onclick="ToggleFullscreen" title="Keyboard: Escape to exit">
             @(fullscreen ? "Exit" : "Fullscreen")
         </button>
+        <button class="map-btn @(laylinesVisible ? "active" : "")" @onclick="ToggleLaylines" title="Keyboard: L">
+            Laylines
+        </button>
+        @if (!routeEditMode)
+        {
+            <button class="map-btn" @onclick="StartRouteEdit">New Route</button>
+        }
         <button class="map-btn @(chartPanelOpen ? "active" : "")" @onclick="() => chartPanelOpen = !chartPanelOpen">
             Layers
         </button>
     </div>
+
+    @* === Route Editing Bar === *@
+    @if (routeEditMode)
+    {
+        <div class="route-edit-bar">
+            <input type="text" class="route-name-input" placeholder="Route name..."
+                   @bind="routeEditName" @bind:event="oninput" />
+            <button class="map-btn active" @onclick="SaveRoute">Save</button>
+            <button class="map-btn" @onclick="CancelRouteEdit">Cancel</button>
+        </div>
+    }
+
+    @* === Context Menu (right-click) === *@
+    @if (contextMenuVisible)
+    {
+        <div class="map-context-menu" style="left:@(contextMenuX)px; top:@(contextMenuY)px;">
+            <button class="ctx-menu-item" @onclick="CreateWaypointHere">Create Waypoint</button>
+            <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
+            @if (Data.HasActiveCourse)
+            {
+                <button class="ctx-menu-item ctx-menu-danger" @onclick="StopNavigation">Stop Navigation</button>
+            }
+        </div>
+    }
+
+    @* === Waypoint Name Dialog === *@
+    @if (waypointDialogVisible)
+    {
+        <div class="waypoint-dialog">
+            <div class="hud-label" style="margin-bottom:8px;">Create Waypoint</div>
+            <input type="text" class="route-name-input" placeholder="Waypoint name..."
+                   @bind="newWaypointName" @bind:event="oninput" />
+            <div style="display:flex; gap:6px; margin-top:8px;">
+                <button class="map-btn active" @onclick="SaveWaypoint">Save</button>
+                <button class="map-btn" @onclick="() => waypointDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    }
 
     @* === Layers Panel === *@
     @if (chartPanelOpen)
@@ -232,6 +289,27 @@
                 }
             }
 
+            @if (loadedWaypoints.Count > 0)
+            {
+                <div class="chart-panel-header section-toggle" @onclick="() => waypointsExpanded = !waypointsExpanded">
+                    <span class="toggle-arrow">@(waypointsExpanded ? "v" : ">")</span>
+                    Waypoints <span class="section-count">@loadedWaypoints.Count</span>
+                </div>
+                @if (waypointsExpanded)
+                {
+                    @foreach (var wp in loadedWaypoints)
+                    {
+                        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+                            <div class="chart-item-body">
+                                <div class="chart-name">@(wp.Name ?? wp.Id[..8])</div>
+                            </div>
+                            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                                    @onclick="() => NavigateToWaypoint(wp)">Go</button>
+                        </div>
+                    }
+                }
+            }
+
             <div class="chart-panel-header section-toggle" @onclick="() => trackExpanded = !trackExpanded">
                 <span class="toggle-arrow">@(trackExpanded ? "v" : ">")</span>
                 Track History
@@ -268,6 +346,19 @@
     private double[][]? activeRouteCoords;
     private bool courseLineDrawn;
     private double? lastNextWpLat, lastNextWpLon;
+    private bool laylinesVisible;
+    private int laylinesSkip;  // Throttle: update laylines every 5th position fix.
+    // Route editing state.
+    private bool routeEditMode;
+    private string routeEditName = "";
+    // Context menu and waypoint state.
+    private bool contextMenuVisible;
+    private double contextMenuLat, contextMenuLon;
+    private double contextMenuX, contextMenuY;
+    private bool waypointDialogVisible;
+    private string newWaypointName = "";
+    private List<SignalkWaypoint> loadedWaypoints = [];
+    private bool waypointsExpanded = true;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     private readonly HashSet<string> enabledCharts = [];
@@ -338,6 +429,11 @@
             ? $"{(Data.WindAngleApparent.Value * RadToDeg):F0}deg"
             : "0deg";
 
+    private string TrueWindAngleDegStr =>
+        Data.WindAngleTrue is not null
+            ? $"{(Data.WindAngleTrue.Value * RadToDeg):F0}deg"
+            : "0deg";
+
     // Depth warning class.
     private string DepthClass => Data.Depth switch
     {
@@ -391,9 +487,17 @@
         // Load available charts and routes from SignalK server.
         availableCharts = await ChartService.GetChartsAsync();
         availableRoutes = await ChartService.GetRoutesAsync();
+        loadedWaypoints = await ChartService.GetWaypointsAsync();
         PrecomputeRouteBounds();
         RebuildFilteredLayers();
         StateHasChanged();
+
+        // Draw waypoint markers on the map.
+        foreach (var wp in loadedWaypoints)
+        {
+            if (wp.Latitude is not null && wp.Longitude is not null)
+                await module.InvokeVoidAsync("addWaypointMarker", wp.Id, wp.Latitude, wp.Longitude, wp.Name);
+        }
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, 1000, 3000);
@@ -411,6 +515,7 @@
             case "f": await ToggleFollow(); break;
             case "a": await ToggleAnchor(); break;
             case "t": await ZoomToTrack(); break;
+            case "l": await ToggleLaylines(); break;
         }
         await InvokeAsync(StateHasChanged);
     }
@@ -487,7 +592,7 @@
     private string lastHudKey = "";
 
     private string BuildHudKey() =>
-        $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}" +
+        $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}|{Data.WindAngleTrue:F3}|{Data.WindSpeedTrue:F2}|{Data.WindDirectionTrue:F3}" +
         $"|{Data.CourseNextPointDistance:F0}|{Data.CourseNextPointBearing:F2}|{Data.CourseNextPointVmg:F2}|{Data.CourseNextPointTimeToGo:F0}" +
         $"|{Data.AnchorCurrentRadius:F1}|{Data.AnchorMaxRadius:F1}|{Data.AnchorLatitude:F6}" +
         $"|{Data.CrossTrackError:F1}|{Data.ActiveRouteHref}";
@@ -521,13 +626,15 @@
             await SyncActiveRouteAsync();
 
             // Update course line (boat-to-WP, leg line, XTE).
-            if (Data.HasActiveCourse && Data.Latitude is not null && Data.Longitude is not null)
+            // Snapshot nullable values to locals to avoid race with concurrent updates.
+            var wpLat = Data.CourseNextPointLatitude;
+            var wpLon = Data.CourseNextPointLongitude;
+            if (wpLat is not null && wpLon is not null && Data.Latitude is not null && Data.Longitude is not null)
             {
                 await module.InvokeVoidAsync("setCourseLine",
                     Data.Latitude, Data.Longitude,
-                    Data.CourseNextPointLatitude, Data.CourseNextPointLongitude,
-                    Data.HasPreviousPoint ? Data.CoursePreviousPointLatitude : null,
-                    Data.HasPreviousPoint ? Data.CoursePreviousPointLongitude : null,
+                    wpLat, wpLon,
+                    Data.CoursePreviousPointLatitude, Data.CoursePreviousPointLongitude,
                     Data.CrossTrackError);
                 courseLineDrawn = true;
             }
@@ -535,6 +642,24 @@
             {
                 await module.InvokeVoidAsync("clearCourseLine");
                 courseLineDrawn = false;
+            }
+
+            // Push laylines when visible and TWD is available (throttled: every 5th fix).
+            if (laylinesVisible && Data.WindDirectionTrue is not null
+                && Data.Latitude is not null && Data.Longitude is not null
+                && ++laylinesSkip >= 5)
+            {
+                laylinesSkip = 0;
+                double twa = Data.WindAngleTrue is not null
+                    ? Math.Abs(Data.WindAngleTrue.Value)
+                    : 45.0 * Math.PI / 180.0; // default 45 degrees
+
+                await module.InvokeVoidAsync("setLaylines",
+                    Data.Latitude, Data.Longitude,
+                    Data.WindDirectionTrue,
+                    twa,
+                    Data.HasActiveCourse ? Data.CourseNextPointLatitude : null,
+                    Data.HasActiveCourse ? Data.CourseNextPointLongitude : null);
             }
 
             // Only re-render Blazor component if HUD values actually changed.
@@ -573,6 +698,115 @@
         follow = !follow;
         if (module is not null)
             await module.InvokeVoidAsync("setFollow", follow);
+    }
+
+    private async Task ToggleLaylines()
+    {
+        laylinesVisible = !laylinesVisible;
+        if (!laylinesVisible && module is not null)
+            await module.InvokeVoidAsync("clearLaylines");
+    }
+
+    // --- Route Editing ---
+
+    private async Task StartRouteEdit()
+    {
+        routeEditMode = true;
+        routeEditName = "";
+        if (module is not null)
+            await module.InvokeVoidAsync("startRouteEdit");
+    }
+
+    private async Task CancelRouteEdit()
+    {
+        routeEditMode = false;
+        if (module is not null)
+            await module.InvokeVoidAsync("stopRouteEdit");
+    }
+
+    private async Task SaveRoute()
+    {
+        if (module is null) return;
+        var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
+        if (coords is null || coords.Length < 2)
+        {
+            routeEditMode = false;
+            await module.InvokeVoidAsync("stopRouteEdit");
+            return;
+        }
+        string name = string.IsNullOrWhiteSpace(routeEditName) ? $"Route {DateTime.Now:HH:mm}" : routeEditName;
+        bool ok = await ChartService.SaveRouteAsync(name, coords);
+        if (ok)
+        {
+            availableRoutes = await ChartService.GetRoutesAsync();
+            PrecomputeRouteBounds();
+            RebuildFilteredLayers();
+        }
+        routeEditMode = false;
+        await module.InvokeVoidAsync("stopRouteEdit");
+    }
+
+    // --- Context Menu & Waypoints ---
+
+    [JSInvokable]
+    public async Task OnMapContextMenu(double lat, double lon, double px, double py)
+    {
+        contextMenuLat = lat;
+        contextMenuLon = lon;
+        contextMenuX = px;
+        contextMenuY = py;
+        contextMenuVisible = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void OnDismissContextMenu()
+    {
+        if (contextMenuVisible)
+        {
+            contextMenuVisible = false;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void CreateWaypointHere()
+    {
+        contextMenuVisible = false;
+        waypointDialogVisible = true;
+        newWaypointName = "";
+    }
+
+    private async Task SaveWaypoint()
+    {
+        waypointDialogVisible = false;
+        string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
+        string? id = await ChartService.CreateWaypointAsync(name, contextMenuLat, contextMenuLon);
+        if (id is not null && module is not null)
+        {
+            await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
+            loadedWaypoints = await ChartService.GetWaypointsAsync();
+        }
+    }
+
+    private async Task NavigateHere()
+    {
+        contextMenuVisible = false;
+        string name = $"GoTo {DateTime.Now:HH:mm}";
+        string? id = await ChartService.CreateWaypointAsync(name, contextMenuLat, contextMenuLon);
+        if (id is not null)
+            await ChartService.SetCourseDestinationAsync(id);
+    }
+
+    private async Task StopNavigation()
+    {
+        contextMenuVisible = false;
+        await ChartService.ClearCourseAsync();
+    }
+
+    private async Task NavigateToWaypoint(SignalkWaypoint wp)
+    {
+        if (wp.Latitude is not null && wp.Longitude is not null)
+            await ChartService.SetCourseDestinationAsync(wp.Id);
     }
 
     private async Task ToggleChart(SignalkChart chart, bool enabled)
@@ -890,6 +1124,7 @@
             {
                 await module.InvokeVoidAsync("clearActiveRoute");
                 await module.InvokeVoidAsync("clearCourseLine");
+                await module.InvokeVoidAsync("clearLaylines");
                 await module.InvokeVoidAsync("disableKeyboardShortcuts");
                 await module.InvokeVoidAsync("dispose");
                 await module.DisposeAsync();

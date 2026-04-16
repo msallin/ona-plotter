@@ -10,4 +10,6 @@ public sealed record TrackPoint(
     double? CourseOverGround,
     double? Heading,
     double? WindAngleApparent,
-    double? WindSpeedApparent);
+    double? WindSpeedApparent,
+    double? WindAngleTrue,
+    double? WindSpeedTrue);

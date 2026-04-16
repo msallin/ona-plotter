@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ona-plotter",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "OnaPlotter"],
+      "port": 5282
+    }
+  ]
+}

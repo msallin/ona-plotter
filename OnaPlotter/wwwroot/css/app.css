@@ -625,6 +625,133 @@ h2 {
     background: rgba(30, 5, 5, 0.92);
 }
 
+/* ===== Route Editing ===== */
+
+.route-edit-bar {
+    position: absolute;
+    bottom: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 800;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    background: rgba(15, 17, 22, 0.92);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    padding: 8px 12px;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+}
+
+.route-name-input {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    color: var(--sk-text);
+    width: 150px;
+    outline: none;
+}
+.route-name-input:focus { border-color: var(--sk-accent); }
+
+.edit-wp-icon { background: none !important; border: none !important; }
+.edit-wp-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #a78bfa;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #fff;
+    box-shadow: 0 0 4px rgba(0,0,0,0.4);
+}
+
+/* ===== Map Context Menu ===== */
+
+.map-context-menu {
+    position: absolute;
+    z-index: 900;
+    background: rgba(15, 17, 22, 0.95);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 4px 0;
+    min-width: 160px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.ctx-menu-item {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    background: none;
+    border: none;
+    color: var(--sk-text);
+    font-size: 0.82rem;
+    text-align: left;
+    cursor: pointer;
+}
+.ctx-menu-item:hover { background: rgba(255,255,255,0.08); }
+.ctx-menu-danger { color: var(--sk-red); }
+
+/* ===== Waypoint Dialog ===== */
+
+.waypoint-dialog {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 900;
+    background: rgba(15, 17, 22, 0.95);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    padding: 16px 20px;
+    min-width: 220px;
+}
+
+/* ===== SailSteer Display ===== */
+
+.sailsteer-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1rem;
+}
+
+.sailsteer-container svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.sailsteer-compass {
+    transition: transform 0.3s ease-out;
+}
+
+.sailsteer-label {
+    font-size: 11px;
+    fill: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.sailsteer-value {
+    font-size: 18px;
+    fill: #fff;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.sailsteer-unit {
+    font-size: 10px;
+    fill: rgba(255,255,255,0.35);
+}
+
 /* ===== Active Route Navigation ===== */
 
 /* Next waypoint pulsing marker */

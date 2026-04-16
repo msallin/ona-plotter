@@ -41,6 +41,17 @@
                        Value="@WindAngleDeg" Min="-180" Max="180" Unit="deg"
                        TickCount="6" ValueFormat="F0" TickFormat="F0" />
     </div>
+    <div class="col-auto">
+        <CircularGauge Label="True Wind Speed"
+                       Value="@TrueWindSpeedKn" Min="0" Max="40" Unit="kn"
+                       TickCount="4" ValueFormat="F1"
+                       Zones="@windSpeedZones" />
+    </div>
+    <div class="col-auto">
+        <CircularGauge Label="True Wind Angle"
+                       Value="@TrueWindAngleDeg" Min="-180" Max="180" Unit="deg"
+                       TickCount="6" ValueFormat="F0" TickFormat="F0" />
+    </div>
 </div>
 
 @code {
@@ -53,6 +64,8 @@
     private double? HeadingDeg => Data.Heading is not null ? Data.Heading * RadToDeg : null;
     private double? WindSpeedKn => Data.WindSpeedApparent is not null ? Data.WindSpeedApparent * MsToKnots : null;
     private double? WindAngleDeg => Data.WindAngleApparent is not null ? Data.WindAngleApparent * RadToDeg : null;
+    private double? TrueWindSpeedKn => Data.WindSpeedTrue is not null ? Data.WindSpeedTrue * MsToKnots : null;
+    private double? TrueWindAngleDeg => Data.WindAngleTrue is not null ? Data.WindAngleTrue * RadToDeg : null;
 
     // Color zones: green = normal, yellow = caution, red = danger.
     private static readonly List<GaugeZone> sogZones =

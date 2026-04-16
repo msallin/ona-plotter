@@ -1,0 +1,200 @@
+@* SailSteer: circular compass display combining wind, heading, COG, laylines, and waypoint bearing.
+   Inspired by B&G SailSteer. Compass rotates opposite to heading so the boat always points up. *@
+
+@page "/sailsteer"
+@using OnaPlotter.Services
+@using OnaPlotter.Models
+@implements IDisposable
+@inject SignalkClient SignalkClient
+
+<PageTitle>SailSteer</PageTitle>
+
+<div class="sailsteer-container">
+    <svg viewBox="0 0 500 500" width="500" height="500" xmlns="http://www.w3.org/2000/svg">
+
+        @* === Data readouts (fixed, do not rotate) === *@
+        @Txt(70, 32, "TWA", "sailsteer-label")
+        @Txt(70, 54, FormatDeg(Data.WindAngleTrue), "sailsteer-value")
+        @Txt(70, 68, "true", "sailsteer-unit")
+
+        @Txt(430, 32, "AWA", "sailsteer-label")
+        @Txt(430, 54, FormatDeg(Data.WindAngleApparent), "sailsteer-value")
+        @Txt(430, 68, "app", "sailsteer-unit")
+
+        @Txt(32, 178, "TWS", "sailsteer-label")
+        @Txt(32, 200, FormatKn(Data.WindSpeedTrue), "sailsteer-value")
+
+        @Txt(32, 308, "AWS", "sailsteer-label")
+        @Txt(32, 330, FormatKn(Data.WindSpeedApparent), "sailsteer-value")
+
+        @Txt(468, 178, "SOG", "sailsteer-label")
+        @Txt(468, 200, FormatKn(Data.SpeedOverGround), "sailsteer-value")
+
+        @Txt(468, 308, "VMG", "sailsteer-label")
+        @Txt(468, 330, FormatKn(Data.CourseNextPointVmg), "sailsteer-value")
+
+        @Txt(70, 440, "HDG", "sailsteer-label")
+        @Txt(70, 462, $"{FormatDeg(Data.Heading)}\u00b0", "sailsteer-value")
+
+        @Txt(430, 440, "COG", "sailsteer-label")
+        @Txt(430, 462, $"{FormatDeg(Data.CourseOverGround)}\u00b0", "sailsteer-value")
+
+        @* === Lubber line (fixed, always points up = ship's heading reference) === *@
+        <line x1="250" y1="250" x2="250" y2="52" stroke="#ef4444" stroke-width="2.5" opacity="0.8" />
+
+        @* === Rotating compass group === *@
+        <g class="sailsteer-compass" transform="rotate(@CompassRotation, 250, 250)">
+
+            @* Outer compass ring *@
+            <circle cx="250" cy="250" r="@R" fill="none" stroke="#444" stroke-width="2" />
+            <circle cx="250" cy="250" r="@((int)(R - 20))" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
+
+            @* Tick marks every 10 degrees, labels every 30 *@
+            @for (int deg = 0; deg < 360; deg += 10)
+            {
+                double rad = deg * Math.PI / 180.0;
+                bool major = deg % 30 == 0;
+                double innerR = major ? R - 14 : R - 8;
+                double lx1 = Cx + Math.Sin(rad) * innerR;
+                double ly1 = Cy - Math.Cos(rad) * innerR;
+                double lx2 = Cx + Math.Sin(rad) * R;
+                double ly2 = Cy - Math.Cos(rad) * R;
+                <line x1="@F(lx1)" y1="@F(ly1)" x2="@F(lx2)" y2="@F(ly2)"
+                      stroke="@(major ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)")"
+                      stroke-width="@(major ? "1.5" : "1")" />
+                @if (major)
+                {
+                    double tx = Cx + Math.Sin(rad) * (R + 16);
+                    double ty = Cy - Math.Cos(rad) * (R + 16);
+                    string label = deg switch { 0 => "N", 90 => "E", 180 => "S", 270 => "W", _ => deg.ToString() };
+                    string fill = deg switch { 0 => "#ef4444", 90 or 180 or 270 => "rgba(255,255,255,0.7)", _ => "rgba(255,255,255,0.4)" };
+                    int fs = deg % 90 == 0 ? 13 : 10;
+                    string fw = deg % 90 == 0 ? "700" : "400";
+                    @SvgTxt(tx, ty, label, fill, fs, fw)
+                }
+            }
+
+            @* === True Wind Direction indicator === *@
+            @if (Data.WindDirectionTrue is not null)
+            {
+                double twdDeg = Data.WindDirectionTrue.Value * RadToDeg;
+                <g transform="rotate(@F(twdDeg), 250, 250)">
+                    <polygon points="250,@F(Cy - R + 5) 244,@F(Cy - R - 12) 256,@F(Cy - R - 12)"
+                             fill="#3b82f6" opacity="0.9" />
+                    @SvgTxt(250, Cy - R - 18, "TWD", "#3b82f6", 10, "600")
+                </g>
+            }
+
+            @* === Layline ticks on compass ring === *@
+            @if (Data.WindDirectionTrue is not null && Data.WindAngleTrue is not null)
+            {
+                double twdD = Data.WindDirectionTrue.Value * RadToDeg;
+                double twaD = Math.Abs(Data.WindAngleTrue.Value) * RadToDeg;
+                double stbdDeg = twdD + 180 - twaD;
+                double portDeg = twdD + 180 + twaD;
+                double lr = R - 6;
+                <g transform="rotate(@F(stbdDeg), 250, 250)">
+                    <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
+                          stroke="#22c55e" stroke-width="3" stroke-linecap="round" />
+                </g>
+                <g transform="rotate(@F(portDeg), 250, 250)">
+                    <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
+                          stroke="#ef4444" stroke-width="3" stroke-linecap="round" />
+                </g>
+            }
+
+            @* === COG line (orange dashed) === *@
+            @if (Data.CourseOverGround is not null)
+            {
+                double cogLen = 150;
+                if (Data.SpeedOverGround is not null)
+                    cogLen = Math.Min(Math.Max(Data.SpeedOverGround.Value * MsToKnots * 15, 40), 160);
+                double cogX = Cx + Math.Sin(Data.CourseOverGround.Value) * cogLen;
+                double cogY = Cy - Math.Cos(Data.CourseOverGround.Value) * cogLen;
+                <line x1="250" y1="250" x2="@F(cogX)" y2="@F(cogY)"
+                      stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />
+            }
+
+            @* === Waypoint bearing line (cyan) === *@
+            @if (Data.HasActiveCourse && Data.CourseNextPointBearing is not null)
+            {
+                double wpX = Cx + Math.Sin(Data.CourseNextPointBearing.Value) * (R - 20);
+                double wpY = Cy - Math.Cos(Data.CourseNextPointBearing.Value) * (R - 20);
+                <line x1="250" y1="250" x2="@F(wpX)" y2="@F(wpY)"
+                      stroke="#06b6d4" stroke-width="2.5" opacity="0.9" />
+                <g transform="rotate(@F(Data.CourseNextPointBearing.Value * RadToDeg), 250, 250)">
+                    <polygon points="250,@F(Cy - R + 24) 245,@F(Cy - R + 36) 255,@F(Cy - R + 36)"
+                             fill="#06b6d4" opacity="0.9" />
+                </g>
+            }
+
+        </g>
+
+        @* === Boat icon at center (fixed, always points up) === *@
+        <g transform="translate(250, 250)">
+            <polygon points="0,-20 6,14 0,8 -6,14" fill="rgba(255,255,255,0.8)" stroke="#fff" stroke-width="0.8" />
+        </g>
+
+    </svg>
+</div>
+
+@code {
+    private const double Cx = 250;
+    private const double Cy = 250;
+    private const double R = 195;
+    private const double MsToKnots = 1.94384;
+    private const double RadToDeg = 180.0 / Math.PI;
+
+    private NavigationData Data => SignalkClient.Data;
+
+    private string CompassRotation
+    {
+        get
+        {
+            double deg = Data.Heading is not null ? -Data.Heading.Value * RadToDeg : 0;
+            return deg.ToString("F1");
+        }
+    }
+
+    private static string F(double v) => v.ToString("F1");
+
+    // Razor treats <text> as a directive; use MarkupString for SVG text elements.
+    private static MarkupString Txt(double x, double y, string content, string cls) =>
+        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" class=\"{cls}\" text-anchor=\"middle\">{Esc(content)}</text>");
+
+    private static MarkupString SvgTxt(double x, double y, string content, string fill, int fontSize, string fontWeight) =>
+        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" fill=\"{fill}\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
+            $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
+
+    private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);
+
+    private static string FormatKn(double? ms)
+    {
+        if (ms is null) return "--";
+        return (ms.Value * MsToKnots).ToString("F1");
+    }
+
+    private static string FormatDeg(double? rad)
+    {
+        if (rad is null) return "--";
+        double deg = rad.Value * RadToDeg;
+        if (deg < 0) deg += 360;
+        return deg.ToString("F0");
+    }
+
+    protected override void OnInitialized()
+    {
+        SignalkClient.OnDataChanged += HandleDataChanged;
+    }
+
+    private async void HandleDataChanged()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose()
+    {
+        SignalkClient.OnDataChanged -= HandleDataChanged;
+    }
+}

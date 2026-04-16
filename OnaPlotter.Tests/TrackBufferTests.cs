@@ -6,7 +6,7 @@ namespace OnaPlotter.Tests;
 public class TrackBufferTests
 {
     private static TrackPoint MakePoint(double lat, double lon, double? sog = null) =>
-        new(DateTime.UtcNow, lat, lon, sog, null, null, null, null);
+        new(DateTime.UtcNow, lat, lon, sog, null, null, null, null, null, null);
 
     [Test]
     public async Task Empty_CountIsZero()

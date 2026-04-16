@@ -92,7 +92,34 @@
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-2 text-muted">Wind Speed</h6>
                 <p class="card-text display-6">@FormatSpeed(Data.WindSpeedApparent)</p>
-                <small class="text-muted">kn</small>
+                <small class="text-muted">kn apparent</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">TWA</h6>
+                <p class="card-text display-6">@FormatDegrees(Data.WindAngleTrue)</p>
+                <small class="text-muted">true</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">TWS</h6>
+                <p class="card-text display-6">@FormatSpeed(Data.WindSpeedTrue)</p>
+                <small class="text-muted">kn true</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-2 text-muted">TWD</h6>
+                <p class="card-text display-6">@FormatDegrees(Data.WindDirectionTrue)</p>
+                <small class="text-muted">from</small>
             </div>
         </div>
     </div>

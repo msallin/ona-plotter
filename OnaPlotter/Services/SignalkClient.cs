@@ -39,6 +39,9 @@ public sealed class SignalkClient : IAsyncDisposable
         "environment.depth.belowTransducer",
         "environment.wind.angleApparent",
         "environment.wind.speedApparent",
+        "environment.wind.angleTrueWater",
+        "environment.wind.speedTrue",
+        "environment.wind.directionTrue",
         // Anchor alarm plugin (sbender9/signalk-anchoralarm-plugin)
         "navigation.anchor.position",
         "navigation.anchor.maxRadius",
@@ -367,7 +370,9 @@ public sealed class SignalkClient : IAsyncDisposable
                     _data.CourseOverGround,
                     _data.Heading,
                     _data.WindAngleApparent,
-                    _data.WindSpeedApparent));
+                    _data.WindSpeedApparent,
+                    _data.WindAngleTrue,
+                    _data.WindSpeedTrue));
             }
 
             OnDataChanged?.Invoke();
