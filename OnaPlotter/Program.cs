@@ -13,6 +13,7 @@ builder.Services.AddSingleton<AisStore>();
 builder.Services.AddSingleton<ChartService>();
 builder.Services.AddSingleton<SignalkClient>();
 builder.Services.AddSingleton<AppSettingsService>();
+builder.Services.AddSingleton<PolarService>();
 
 var host = builder.Build();
 

@@ -6,6 +6,7 @@
 @implements IDisposable
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
+@inject PolarService Polar
 
 <PageTitle>Wind Rose</PageTitle>
 
@@ -47,6 +48,39 @@
         @foreach (var pt in windPoints)
         {
             <circle cx="@pt.X" cy="@pt.Y" r="2.5" fill="@pt.Color" opacity="0.6" />
+        }
+
+        @* Polar curve overlay (when polar loaded and TWS available) *@
+        @if (Polar.HasPolar && SignalkClient.Data.WindSpeedTrue is not null)
+        {
+            double twsKn = SignalkClient.Data.WindSpeedTrue.Value * MsToKnots;
+            var curve = Polar.GetPolarCurve(twsKn);
+            if (curve.Length > 0)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var (twa, spd) in curve)
+                {
+                    double angleRad = twa * Math.PI / 180.0;
+                    double frac = Math.Min(spd / MaxSpeedKn, 1.0);
+                    double r = frac * MaxRadius;
+                    double px = Cx + Math.Sin(angleRad) * r;
+                    double py = Cy - Math.Cos(angleRad) * r;
+                    if (sb.Length > 0) sb.Append(' ');
+                    sb.Append($"{px:F1},{py:F1}");
+                }
+                // Mirror for port side (negative angles).
+                for (int i = curve.Length - 1; i >= 0; i--)
+                {
+                    double angleRad = -curve[i].Twa * Math.PI / 180.0;
+                    double frac = Math.Min(curve[i].Speed / MaxSpeedKn, 1.0);
+                    double r = frac * MaxRadius;
+                    double px = Cx + Math.Sin(angleRad) * r;
+                    double py = Cy - Math.Cos(angleRad) * r;
+                    sb.Append($" {px:F1},{py:F1}");
+                }
+                <polyline fill="none" stroke="#22d3ee" stroke-width="2" opacity="0.7"
+                          stroke-dasharray="4,3" points="@sb.ToString()" />
+            }
         }
 
         @* Current wind arrow *@
@@ -170,10 +204,11 @@
     private const int WpPlotH = WpHeight - WpPad - 20;
     private List<TwdSample> twdHistory = [];
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         RefreshData(fullRebuild: true);
         TrackBuffer.OnTrackUpdated += HandleTrackUpdated;
+        await Polar.InitializeAsync();
     }
 
     private async void HandleTrackUpdated()

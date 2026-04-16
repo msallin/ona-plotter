@@ -219,6 +219,9 @@
         {
             <button class="map-btn" @onclick="StartRouteEdit">New Route</button>
         }
+        <button class="map-btn @(raceTimerActive ? "active" : "")" @onclick="ToggleRaceTimer" title="Keyboard: R">
+            @(raceTimerActive ? FormatRaceTimer() : "Race")
+        </button>
         <button class="map-btn @(chartPanelOpen ? "active" : "")" @onclick="() => chartPanelOpen = !chartPanelOpen">
             Layers
         </button>
@@ -441,6 +444,10 @@
     private string newWaypointName = "";
     private List<SignalkWaypoint> loadedWaypoints = [];
     private bool waypointsExpanded = true;
+    // Race timer.
+    private bool raceTimerActive;
+    private DateTime raceTimerTarget;
+    private System.Threading.Timer? raceTimer;
     private bool weatherExpanded;
     private bool weatherOverlayVisible;
     private List<SignalkChart> availableCharts = [];
@@ -613,6 +620,7 @@
             case "t": await ZoomToTrack(); break;
             case "l": await ToggleLaylines(); break;
             case "o": await CycleMapOrientation(); break;
+            case "r": ToggleRaceTimer(); break;
         }
         await InvokeAsync(StateHasChanged);
     }
@@ -962,6 +970,40 @@
         {
             await module.InvokeVoidAsync("clearWeatherOverlay");
         }
+    }
+
+    // --- Race Timer ---
+
+    private void ToggleRaceTimer()
+    {
+        if (raceTimerActive)
+        {
+            // Stop timer.
+            raceTimerActive = false;
+            raceTimer?.Dispose();
+            raceTimer = null;
+        }
+        else
+        {
+            // Start 5-minute countdown.
+            raceTimerActive = true;
+            raceTimerTarget = DateTime.UtcNow.AddMinutes(5);
+            raceTimer = new System.Threading.Timer(_ => _ = RaceTimerTick(), null, 0, 1000);
+        }
+    }
+
+    private async Task RaceTimerTick()
+    {
+        if (!raceTimerActive) return;
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private string FormatRaceTimer()
+    {
+        var remaining = raceTimerTarget - DateTime.UtcNow;
+        if (remaining.TotalSeconds <= 0) return "GO!";
+        return $"{(int)remaining.TotalMinutes}:{remaining.Seconds:D2}";
     }
 
     // --- GPX Import/Export ---
@@ -1334,6 +1376,7 @@
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
         if (aisTimer is not null) await aisTimer.DisposeAsync();
+        if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (module is not null)
         {
             try

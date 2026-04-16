@@ -925,6 +925,33 @@ html {
     transform-origin: center center;
 }
 
+/* ===== History Playback Controls ===== */
+
+.history-controls {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 800;
+    background: rgba(10, 12, 18, 0.92);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 16px;
+    border: 1px solid rgba(255,255,255,0.06);
+    min-width: 320px;
+    max-width: 90%;
+}
+
+.history-controls .form-range {
+    accent-color: var(--sk-accent);
+}
+
+/* ===== Race Timer Button ===== */
+
+.map-btn.active:has(+ .map-btn) {
+    /* Generic: no extra style needed */
+}
+
 /* ===== Quick Chart Switcher ===== */
 
 .chart-quick-bar {

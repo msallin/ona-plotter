@@ -1,0 +1,188 @@
+@* History playback: replay past track data on the map. *@
+
+@page "/history"
+@using OnaPlotter.Services
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+@inject ChartService ChartService
+@inject IJSRuntime JS
+
+<PageTitle>History</PageTitle>
+
+<div class="map-container" style="height: calc(100vh - 120px);">
+    <div id="historyMapDiv" style="width:100%; height:100%;"></div>
+
+    @* Playback controls *@
+    <div class="history-controls">
+        <div class="d-flex align-items-center gap-3">
+            <select class="form-select form-select-sm" style="width:auto; background:var(--sk-surface); color:var(--sk-text); border-color:var(--sk-border);"
+                    @onchange="OnTimespanChanged">
+                <option value="1h">Last 1 hour</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="1d" selected>Last 24 hours</option>
+                <option value="3d">Last 3 days</option>
+                <option value="7d">Last 7 days</option>
+            </select>
+            <button class="map-btn" @onclick="LoadTrack">Load</button>
+        </div>
+
+        @if (trackPoints is not null && trackPoints.Length > 0)
+        {
+            <div class="mt-2">
+                <input type="range" class="form-range" min="0" max="@(trackPoints.Length - 1)"
+                       value="@playbackIndex" @oninput="OnScrub" style="width:100%;" />
+                <div class="d-flex justify-content-between" style="font-size:0.75rem; color:var(--sk-text-muted);">
+                    <span>@FormatTime(0)</span>
+                    <span style="font-size:0.9rem; color:var(--sk-text);">@CurrentTimeLabel</span>
+                    <span>@FormatTime(trackPoints.Length - 1)</span>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-1">
+                <button class="map-btn" @onclick="PlayPause">@(playing ? "Pause" : "Play")</button>
+                <button class="map-btn" @onclick="() => StepBy(-10)">&lt;&lt;</button>
+                <button class="map-btn" @onclick="() => StepBy(-1)">&lt;</button>
+                <button class="map-btn" @onclick="() => StepBy(1)">&gt;</button>
+                <button class="map-btn" @onclick="() => StepBy(10)">&gt;&gt;</button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IJSObjectReference? module;
+    private double[][] ? trackPoints;  // [lat, lon] pairs
+    private int playbackIndex;
+    private string selectedTimespan = "1d";
+    private bool playing;
+    private System.Threading.Timer? playTimer;
+
+    private string CurrentTimeLabel =>
+        trackPoints is not null && playbackIndex < trackPoints.Length
+            ? $"Point {playbackIndex + 1} / {trackPoints.Length}"
+            : "--";
+
+    private string FormatTime(int index)
+    {
+        if (trackPoints is null || index >= trackPoints.Length) return "--";
+        // The track API doesn't return timestamps per point, so we show relative position.
+        double pct = trackPoints.Length > 1 ? (double)index / (trackPoints.Length - 1) * 100 : 0;
+        return $"{pct:F0}%";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
+
+        // Initialize a simple map (no boat marker, no live data).
+        await JS.InvokeVoidAsync("eval", @"
+            (function() {
+                if (window._historyMap) window._historyMap.remove();
+                var m = L.map('historyMapDiv', { zoomControl: true }).setView([47.4, 8.5], 10);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OSM' }).addTo(m);
+                L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 19, opacity: 0.8 }).addTo(m);
+                window._historyMap = m;
+                window._historyMarker = null;
+                window._historyTrack = null;
+            })()
+        ");
+    }
+
+    private void OnTimespanChanged(ChangeEventArgs e)
+    {
+        selectedTimespan = e.Value?.ToString() ?? "1d";
+    }
+
+    private async Task LoadTrack()
+    {
+        trackPoints = await ChartService.GetServerTrackAsync(selectedTimespan, "30s");
+        playbackIndex = 0;
+        playing = false;
+        playTimer?.Dispose();
+        playTimer = null;
+
+        if (trackPoints is not null && trackPoints.Length > 0)
+        {
+            // Draw full track on the history map.
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m) return;
+                    if (window._historyTrack) m.removeLayer(window._historyTrack);
+                    var coords = {System.Text.Json.JsonSerializer.Serialize(trackPoints)};
+                    window._historyTrack = L.polyline(coords, {{ color: '#94a3b8', weight: 2, opacity: 0.5 }}).addTo(m);
+                    m.fitBounds(window._historyTrack.getBounds(), {{ padding: [40, 40] }});
+                    // Place marker at first point.
+                    if (window._historyMarker) m.removeLayer(window._historyMarker);
+                    window._historyMarker = L.circleMarker(coords[0], {{ radius: 8, color: '#60a5fa', fillColor: '#60a5fa', fillOpacity: 1, weight: 2 }}).addTo(m);
+                }})()
+            ");
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnScrub(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int idx))
+        {
+            playbackIndex = idx;
+            await MoveMarker();
+        }
+    }
+
+    private void PlayPause()
+    {
+        playing = !playing;
+        if (playing)
+        {
+            playTimer = new System.Threading.Timer(async _ =>
+            {
+                if (!playing || trackPoints is null) return;
+                playbackIndex = Math.Min(playbackIndex + 1, trackPoints.Length - 1);
+                if (playbackIndex >= trackPoints.Length - 1) playing = false;
+                await MoveMarker();
+                try { await InvokeAsync(StateHasChanged); }
+                catch (ObjectDisposedException) { }
+            }, null, 0, 200);
+        }
+        else
+        {
+            playTimer?.Dispose();
+            playTimer = null;
+        }
+    }
+
+    private void StepBy(int delta)
+    {
+        if (trackPoints is null) return;
+        playbackIndex = Math.Clamp(playbackIndex + delta, 0, trackPoints.Length - 1);
+        _ = MoveMarker();
+    }
+
+    private async Task MoveMarker()
+    {
+        if (trackPoints is null || playbackIndex >= trackPoints.Length) return;
+        var pt = trackPoints[playbackIndex];
+        await JS.InvokeVoidAsync("eval", $@"
+            (function() {{
+                var m = window._historyMap;
+                if (!m || !window._historyMarker) return;
+                window._historyMarker.setLatLng([{pt[0]}, {pt[1]}]);
+            }})()
+        ");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        playing = false;
+        if (playTimer is not null) await playTimer.DisposeAsync();
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                if(window._historyMap){window._historyMap.remove();window._historyMap=null;}
+            ");
+        }
+        catch { /* Ignore on disconnect. */ }
+        if (module is not null) await module.DisposeAsync();
+    }
+}

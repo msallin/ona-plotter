@@ -1019,7 +1019,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         // Skip if user is typing in an input.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         const key = e.key.toLowerCase();
-        if ('mfnatlo'.includes(key) && key.length === 1) {
+        if ('mfnatlor'.includes(key) && key.length === 1) {
             e.preventDefault();
             dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key);
         }

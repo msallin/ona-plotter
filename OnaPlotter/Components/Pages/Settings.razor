@@ -3,6 +3,7 @@
 @page "/settings"
 @using OnaPlotter.Services
 @inject AppSettingsService AppSettings
+@inject PolarService Polar
 
 <PageTitle>Settings</PageTitle>
 
@@ -60,6 +61,38 @@
     </div>
 
     <div class="col-12 mt-3">
+        <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Performance</h5>
+    </div>
+
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Boat Polars</label>
+                @if (Polar.HasPolar)
+                {
+                    <p class="text-muted" style="font-size:0.8rem;">
+                        Polar loaded: @Polar.TwaValues.Length TWA rows, @Polar.TwsValues.Length TWS columns
+                        (TWS @Polar.TwsValues[0]-@Polar.TwsValues[^1] kn)
+                    </p>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="ClearPolar">Remove Polar</button>
+                }
+                else
+                {
+                    <p class="text-muted" style="font-size:0.8rem;">
+                        Upload a CSV polar file. Format: first column = TWA (degrees), header row = TWS (knots), cells = target speed (knots).
+                    </p>
+                }
+                <div class="mt-2">
+                    <label class="btn btn-sm btn-outline-secondary" style="cursor:pointer;">
+                        Upload Polar CSV
+                        <InputFile OnChange="HandlePolarUpload" Accept=".csv,.txt,.pol" style="display:none;" />
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 mt-3">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Display</h5>
     </div>
 
@@ -100,5 +133,31 @@
     {
         bool val = (bool)(e.Value ?? false);
         await AppSettings.SetNightModeAsync(val);
+    }
+
+    private async Task HandlePolarUpload(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: 1024 * 1024));
+            string csv = await reader.ReadToEndAsync();
+            await Polar.ImportAsync(csv);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Console.Error.WriteLine($"Polar import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ClearPolar()
+    {
+        await Polar.ClearAsync();
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Polar.InitializeAsync();
     }
 }

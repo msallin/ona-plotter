@@ -5,6 +5,7 @@
 @using OnaPlotter.Models
 @implements IDisposable
 @inject SignalkClient SignalkClient
+@inject PolarService Polar
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -49,6 +50,33 @@
         </div>
     </div>
 </div>
+
+@* === Polar Performance (when polar loaded and true wind available) === *@
+@if (Polar.HasPolar && PolarPerformancePct is not null)
+{
+    <div class="row g-3 mb-4">
+        <div class="col-md-4 col-sm-6">
+            <div class="card dash-card-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
+                    <p class="card-text @PerfClass" style="font-size:3rem; font-weight:700; margin:0;">
+                        @((PolarPerformancePct.Value * 100).ToString("F0"))%
+                    </p>
+                    <small class="text-muted">of polar target</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">Target BSP</h6>
+                    <p class="card-text display-6">@TargetSpeedKn</p>
+                    <small class="text-muted">kn</small>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 
 @* === Wind: apparent + true side by side === *@
 <h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">Wind</h6>
@@ -202,6 +230,41 @@
     private const double MsToKnots = 1.94384;
     private const double RadToDeg = 180.0 / Math.PI;
 
+    // Polar performance.
+    private double? PolarPerformancePct
+    {
+        get
+        {
+            if (!Polar.HasPolar || Data.SpeedOverGround is null
+                || Data.WindAngleTrue is null || Data.WindSpeedTrue is null)
+                return null;
+            double sogKn = Data.SpeedOverGround.Value * MsToKnots;
+            double twaDeg = Data.WindAngleTrue.Value * RadToDeg;
+            double twsKn = Data.WindSpeedTrue.Value * MsToKnots;
+            return Polar.GetPerformance(sogKn, twaDeg, twsKn);
+        }
+    }
+
+    private string TargetSpeedKn
+    {
+        get
+        {
+            if (!Polar.HasPolar || Data.WindAngleTrue is null || Data.WindSpeedTrue is null) return "--";
+            double twaDeg = Data.WindAngleTrue.Value * RadToDeg;
+            double twsKn = Data.WindSpeedTrue.Value * MsToKnots;
+            var target = Polar.GetTargetSpeed(twaDeg, twsKn);
+            return target is not null ? target.Value.ToString("F1") : "--";
+        }
+    }
+
+    private string PerfClass => PolarPerformancePct switch
+    {
+        null => "",
+        >= 0.95 => "depth-ok",    // green: at or above target
+        >= 0.80 => "depth-warn",  // yellow: acceptable
+        _ => "depth-danger"       // red: well below target
+    };
+
     private string DepthClass => Data.Depth switch
     {
         null => "",
@@ -218,9 +281,10 @@
         _ => "xte-danger"
     };
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         SignalkClient.OnDataChanged += HandleDataChanged;
+        await Polar.InitializeAsync();
     }
 
     private async void HandleDataChanged()
