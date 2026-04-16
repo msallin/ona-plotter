@@ -28,6 +28,14 @@ let seaBaseLayer = null;
 const routeLayers = {};  // keyed by route ID
 let serverTrackLayer = null;
 
+// Active route navigation.
+let activeRouteLayer = null;   // L.layerGroup: full route polyline + waypoint markers
+let activeRouteCoords = null;  // [[lat, lon], ...] cached for WP index lookup
+let nextWpMarker = null;       // Pulsing marker at next waypoint
+let courseLineLeg = null;       // Polyline: previous WP to next WP
+let courseLineBearing = null;   // Polyline: boat to next WP
+let courseLineXte = null;       // Polyline: XTE perpendicular tick
+
 // Bearing/distance tool.
 let bearingLine = null;
 let bearingLabel = null;
@@ -517,6 +525,154 @@ export function clearServerTrack() {
     if (serverTrackLayer && map) { map.removeLayer(serverTrackLayer); serverTrackLayer = null; }
 }
 
+// --- Active Route Navigation ---
+
+const activeWpIcon = L.divIcon({
+    className: 'active-wp-icon',
+    html: '<div class="active-wp-pulse"></div>',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+});
+
+function findClosestWaypointIndex(coords, lat, lon) {
+    let minDist = Infinity;
+    let idx = 0;
+    for (let i = 0; i < coords.length; i++) {
+        const d = haversineMeters(lat, lon, coords[i][0], coords[i][1]);
+        if (d < minDist) { minDist = d; idx = i; }
+    }
+    return idx;
+}
+
+// Draw the full active route polyline with numbered waypoint markers.
+// Highlights the next waypoint and dims passed ones.
+export function setActiveRoute(coords, nextWpLat, nextWpLon) {
+    clearActiveRoute();
+    if (!map || !coords || coords.length < 2) return;
+
+    activeRouteCoords = coords;
+    const wpIdx = findClosestWaypointIndex(coords, nextWpLat, nextWpLon);
+    activeRouteLayer = L.layerGroup().addTo(map);
+
+    // Full route polyline.
+    L.polyline(coords, {
+        color: '#06b6d4', weight: 3, opacity: 0.8
+    }).addTo(activeRouteLayer);
+
+    // Waypoint markers.
+    for (let i = 0; i < coords.length; i++) {
+        const isPassed = i < wpIdx;
+        const isNext = i === wpIdx;
+        const radius = isNext ? 0 : (isPassed ? 3 : 5);
+
+        if (!isNext) {
+            const dot = L.circleMarker(coords[i], {
+                radius,
+                color: '#06b6d4',
+                fillColor: isPassed ? '#64748b' : '#06b6d4',
+                fillOpacity: isPassed ? 0.35 : 1,
+                weight: isPassed ? 1 : 1.5,
+                opacity: isPassed ? 0.35 : 1
+            });
+            dot.bindTooltip(`${i + 1}`, {
+                permanent: false,
+                direction: 'right',
+                offset: [8, 0],
+                className: 'route-wp-tooltip'
+            });
+            dot.addTo(activeRouteLayer);
+        }
+    }
+
+    // Pulsing marker at the next waypoint.
+    nextWpMarker = L.marker(coords[wpIdx], {
+        icon: activeWpIcon,
+        zIndexOffset: 900
+    }).addTo(activeRouteLayer);
+    nextWpMarker.bindTooltip(`WP ${wpIdx + 1}`, {
+        permanent: true,
+        direction: 'right',
+        offset: [14, 0],
+        className: 'route-wp-tooltip'
+    });
+}
+
+export function clearActiveRoute() {
+    if (activeRouteLayer && map) { map.removeLayer(activeRouteLayer); }
+    activeRouteLayer = null;
+    activeRouteCoords = null;
+    nextWpMarker = null;
+}
+
+// Update only the active waypoint highlight (lightweight, no full redraw).
+export function updateActiveWaypoint(nextWpLat, nextWpLon) {
+    if (!activeRouteCoords || !map) return;
+    // Full redraw is simplest and still fast for typical route sizes (<50 WPs).
+    setActiveRoute(activeRouteCoords, nextWpLat, nextWpLon);
+}
+
+// Draw/update course line: leg line, bearing line, XTE tick.
+// Called on every position update when an active course exists.
+export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters) {
+    if (!map) return;
+
+    // Leg line: previous WP to next WP.
+    if (prevLat != null && prevLon != null) {
+        const legCoords = [[prevLat, prevLon], [wpLat, wpLon]];
+        if (courseLineLeg) {
+            courseLineLeg.setLatLngs(legCoords);
+        } else {
+            courseLineLeg = L.polyline(legCoords, {
+                color: '#fff', weight: 2, opacity: 0.25, dashArray: '10,8'
+            }).addTo(map);
+        }
+    } else if (courseLineLeg) {
+        map.removeLayer(courseLineLeg);
+        courseLineLeg = null;
+    }
+
+    // Bearing line: boat to next WP.
+    const brgCoords = [[boatLat, boatLon], [wpLat, wpLon]];
+    if (courseLineBearing) {
+        courseLineBearing.setLatLngs(brgCoords);
+    } else {
+        courseLineBearing = L.polyline(brgCoords, {
+            color: '#06b6d4', weight: 2, opacity: 0.7, dashArray: '6,4'
+        }).addTo(map);
+    }
+
+    // XTE perpendicular tick at boat position.
+    if (xteMeters != null && prevLat != null && prevLon != null) {
+        const absXte = Math.abs(xteMeters);
+        const xteColor = absXte < 50 ? '#22c55e' : absXte < 200 ? '#f59e0b' : '#ef4444';
+        // Perpendicular to the leg bearing.
+        const legBrg = bearingDeg(prevLat, prevLon, wpLat, wpLon) * RAD;
+        const perpBrg = xteMeters > 0 ? legBrg + Math.PI / 2 : legBrg - Math.PI / 2;
+        // Visual length: actual XTE capped at 200m for display.
+        const tickLen = Math.min(absXte, 200);
+        const tickEnd = destPoint(boatLat, boatLon, perpBrg, tickLen);
+        const xteCoords = [[boatLat, boatLon], tickEnd];
+
+        if (courseLineXte) {
+            courseLineXte.setLatLngs(xteCoords);
+            courseLineXte.setStyle({ color: xteColor });
+        } else {
+            courseLineXte = L.polyline(xteCoords, {
+                color: xteColor, weight: 3, opacity: 0.9
+            }).addTo(map);
+        }
+    } else if (courseLineXte) {
+        map.removeLayer(courseLineXte);
+        courseLineXte = null;
+    }
+}
+
+export function clearCourseLine() {
+    if (courseLineLeg && map) { map.removeLayer(courseLineLeg); courseLineLeg = null; }
+    if (courseLineBearing && map) { map.removeLayer(courseLineBearing); courseLineBearing = null; }
+    if (courseLineXte && map) { map.removeLayer(courseLineXte); courseLineXte = null; }
+}
+
 // --- Keyboard shortcuts ---
 
 let keyHandler = null;
@@ -559,6 +715,8 @@ export function dispose() {
     bearingLine = null; bearingLabel = null;
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
     anchorMarker = null; anchorCircle = null;
+    activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
+    courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
     for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
     dotNetRef = null;

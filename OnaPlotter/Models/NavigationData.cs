@@ -39,7 +39,11 @@ public sealed class NavigationData
     public double? CourseNextPointBearing { get; private set; }
     public double? CourseNextPointTimeToGo { get; private set; }
     public double? CourseNextPointVmg { get; private set; }
+    public double? CrossTrackError { get; private set; }
+    public double? CoursePreviousPointLatitude { get; private set; }
+    public double? CoursePreviousPointLongitude { get; private set; }
     public bool HasActiveCourse => CourseNextPointLatitude is not null && CourseNextPointLongitude is not null;
+    public bool HasPreviousPoint => CoursePreviousPointLatitude is not null && CoursePreviousPointLongitude is not null;
 
     /// <summary>
     /// Applies a single SignalK path/value pair to the navigation state.
@@ -99,6 +103,10 @@ public sealed class NavigationData
                 case "navigation.courseRhumbline.nextPoint.velocityMadeGood":
                     CourseNextPointVmg = value;
                     break;
+                case "navigation.courseGreatCircle.crossTrackError":
+                case "navigation.courseRhumbline.crossTrackError":
+                    CrossTrackError = value;
+                    break;
                 default:
                     return false;
             }
@@ -153,6 +161,36 @@ public sealed class NavigationData
         {
             CourseNextPointLatitude = latitude;
             CourseNextPointLongitude = longitude;
+        }
+    }
+
+    public void ApplyCoursePreviousPointPosition(double latitude, double longitude)
+    {
+        lock (_lock)
+        {
+            CoursePreviousPointLatitude = latitude;
+            CoursePreviousPointLongitude = longitude;
+        }
+    }
+
+    /// <summary>
+    /// Resets all course/route fields when a route is deactivated.
+    /// </summary>
+    public void ClearCourse()
+    {
+        lock (_lock)
+        {
+            ActiveRouteHref = null;
+            ActiveRouteName = null;
+            CourseNextPointLatitude = null;
+            CourseNextPointLongitude = null;
+            CourseNextPointDistance = null;
+            CourseNextPointBearing = null;
+            CourseNextPointTimeToGo = null;
+            CourseNextPointVmg = null;
+            CrossTrackError = null;
+            CoursePreviousPointLatitude = null;
+            CoursePreviousPointLongitude = null;
         }
     }
 

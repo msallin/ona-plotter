@@ -167,6 +167,58 @@ public sealed class ChartService
     }
 
     /// <summary>
+    /// Fetches route coordinates by the activeRoute href from SignalK.
+    /// The href is typically "/resources/routes/{uuid}" or just a UUID.
+    /// Returns [lat, lon] pairs suitable for Leaflet, or null on failure.
+    /// </summary>
+    public async Task<double[][]?> GetRouteCoordinatesAsync(string href)
+    {
+        try
+        {
+            // Extract route UUID from href.
+            // Formats: "/resources/routes/{uuid}", "/signalk/v2/api/resources/routes/{uuid}", or just "{uuid}".
+            string routeId = href;
+            const string marker = "/resources/routes/";
+            int idx = href.LastIndexOf(marker, StringComparison.Ordinal);
+            if (idx >= 0)
+                routeId = href[(idx + marker.Length)..];
+
+            var url = $"{_baseUrl}/signalk/v2/api/resources/routes/{routeId}";
+            var response = await _http.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Route fetch for {Href} returned {Status}", href, response.StatusCode);
+                return null;
+            }
+
+            var route = await response.Content.ReadFromJsonAsync<SignalkRoute>();
+            if (route?.Feature?.Geometry?.Coordinates.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var coords = new List<double[]>();
+            foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+            {
+                var arr = new double[2];
+                int i = 0;
+                foreach (var val in point.EnumerateArray())
+                {
+                    if (i < 2) arr[i++] = val.GetDouble();
+                }
+                coords.Add([arr[1], arr[0]]); // GeoJSON [lon, lat] -> Leaflet [lat, lon]
+            }
+
+            _logger.LogInformation("Fetched active route with {Count} waypoints", coords.Count);
+            return [.. coords];
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch route for href {Href}", href);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Fetches all available SignalK paths for the own vessel from the REST API.
     /// Walks the JSON tree from /signalk/v1/api/vessels/self and returns dotted path
     /// strings for every leaf that has a "value" property.

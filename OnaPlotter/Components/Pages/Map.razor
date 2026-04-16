@@ -106,6 +106,13 @@
                             <div class="hud-value route-value">@FormatTimeToGo(Data.CourseNextPointTimeToGo)</div>
                         </div>
                     }
+                    @if (Data.CrossTrackError is not null)
+                    {
+                        <div>
+                            <div class="hud-label">XTE</div>
+                            <div class="hud-value route-value @XteClass">@FormatXte(Data.CrossTrackError)<span class="hud-unit">@XteSideLabel</span></div>
+                        </div>
+                    }
                 </div>
             </div>
         </div>
@@ -252,6 +259,11 @@
     private bool fullscreen;
     private double? prevLat, prevLon;
     private System.Threading.Timer? aisTimer;
+    // Active route navigation state.
+    private string? lastActiveRouteHref;
+    private double[][]? activeRouteCoords;
+    private bool courseLineDrawn;
+    private double? lastNextWpLat, lastNextWpLon;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     private readonly HashSet<string> enabledCharts = [];
@@ -473,7 +485,8 @@
     private string BuildHudKey() =>
         $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}" +
         $"|{Data.CourseNextPointDistance:F0}|{Data.CourseNextPointBearing:F2}|{Data.CourseNextPointVmg:F2}|{Data.CourseNextPointTimeToGo:F0}" +
-        $"|{Data.AnchorCurrentRadius:F1}|{Data.AnchorMaxRadius:F1}|{Data.AnchorLatitude:F6}";
+        $"|{Data.AnchorCurrentRadius:F1}|{Data.AnchorMaxRadius:F1}|{Data.AnchorLatitude:F6}" +
+        $"|{Data.CrossTrackError:F1}|{Data.ActiveRouteHref}";
 
     private async void HandleDataChanged()
     {
@@ -499,6 +512,26 @@
 
             // Sync server-side anchor alarm to map visualization.
             await SyncServerAnchorAsync();
+
+            // Sync active route visualization.
+            await SyncActiveRouteAsync();
+
+            // Update course line (boat-to-WP, leg line, XTE).
+            if (Data.HasActiveCourse && Data.Latitude is not null && Data.Longitude is not null)
+            {
+                await module.InvokeVoidAsync("setCourseLine",
+                    Data.Latitude, Data.Longitude,
+                    Data.CourseNextPointLatitude, Data.CourseNextPointLongitude,
+                    Data.HasPreviousPoint ? Data.CoursePreviousPointLatitude : null,
+                    Data.HasPreviousPoint ? Data.CoursePreviousPointLongitude : null,
+                    Data.CrossTrackError);
+                courseLineDrawn = true;
+            }
+            else if (courseLineDrawn)
+            {
+                await module.InvokeVoidAsync("clearCourseLine");
+                courseLineDrawn = false;
+            }
 
             // Only re-render Blazor component if HUD values actually changed.
             var hudKey = BuildHudKey();
@@ -689,6 +722,44 @@
         }
     }
 
+    /// <summary>
+    /// Detects changes to the active route href and fetches/draws the route on the map.
+    /// </summary>
+    private async Task SyncActiveRouteAsync()
+    {
+        if (module is null) return;
+
+        var currentHref = Data.ActiveRouteHref;
+
+        if (currentHref == lastActiveRouteHref) return;
+
+        // Route changed or deactivated: clear previous.
+        if (lastActiveRouteHref is not null)
+        {
+            await module.InvokeVoidAsync("clearActiveRoute");
+            await module.InvokeVoidAsync("clearCourseLine");
+            activeRouteCoords = null;
+            courseLineDrawn = false;
+        }
+
+        lastActiveRouteHref = currentHref;
+
+        // Route activated: fetch and draw.
+        if (!string.IsNullOrEmpty(currentHref))
+        {
+            activeRouteCoords = await ChartService.GetRouteCoordinatesAsync(currentHref);
+            if (activeRouteCoords is not null && activeRouteCoords.Length > 0)
+            {
+                await module.InvokeVoidAsync("setActiveRoute",
+                    (object)activeRouteCoords,
+                    Data.CourseNextPointLatitude ?? 0,
+                    Data.CourseNextPointLongitude ?? 0);
+                lastNextWpLat = Data.CourseNextPointLatitude;
+                lastNextWpLon = Data.CourseNextPointLongitude;
+            }
+        }
+    }
+
     private async Task ZoomToTrack()
     {
         if (module is not null)
@@ -762,6 +833,29 @@
         return $"{ts.Minutes}m{ts.Seconds:D2}s";
     }
 
+    private static string FormatXte(double? meters)
+    {
+        if (meters is null) return "--";
+        double abs = Math.Abs(meters.Value);
+        return abs < 1000 ? $"{abs:F0}m" : $"{(abs / 1852.0):F2}nm";
+    }
+
+    // XTE port/starboard label. SignalK convention: positive = starboard.
+    private string XteSideLabel => Data.CrossTrackError switch
+    {
+        > 0 => " S",
+        < 0 => " P",
+        _ => ""
+    };
+
+    private string XteClass => Data.CrossTrackError switch
+    {
+        null => "",
+        var xte when Math.Abs(xte.Value) < 50 => "xte-ok",
+        var xte when Math.Abs(xte.Value) < 200 => "xte-warn",
+        _ => "xte-danger"
+    };
+
     /// <summary>
     /// Renders SVG text as MarkupString to avoid Razor's text directive conflict.
     /// </summary>
@@ -780,6 +874,8 @@
         {
             try
             {
+                await module.InvokeVoidAsync("clearActiveRoute");
+                await module.InvokeVoidAsync("clearCourseLine");
                 await module.InvokeVoidAsync("disableKeyboardShortcuts");
                 await module.InvokeVoidAsync("dispose");
                 await module.DisposeAsync();

@@ -55,7 +55,12 @@ public sealed class SignalkClient : IAsyncDisposable
         "navigation.courseRhumbline.nextPoint.distance",
         "navigation.courseRhumbline.nextPoint.bearingTrue",
         "navigation.courseRhumbline.nextPoint.timeToGo",
-        "navigation.courseRhumbline.nextPoint.velocityMadeGood"
+        "navigation.courseRhumbline.nextPoint.velocityMadeGood",
+        // Cross-track error and previous waypoint
+        "navigation.courseGreatCircle.crossTrackError",
+        "navigation.courseRhumbline.crossTrackError",
+        "navigation.courseGreatCircle.previousPoint.position",
+        "navigation.courseRhumbline.previousPoint.position"
     ];
 
     private static readonly string[] AisPaths =
@@ -307,6 +312,23 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
+                // Course previous-point position (lat/lon object).
+                if ((val.Path == "navigation.courseGreatCircle.previousPoint.position"
+                    || val.Path == "navigation.courseRhumbline.previousPoint.position")
+                    && val.Value is JsonElement prevWpEl
+                    && prevWpEl.ValueKind == JsonValueKind.Object)
+                {
+                    if (prevWpEl.TryGetProperty("latitude", out var prevWpLat)
+                        && prevWpEl.TryGetProperty("longitude", out var prevWpLon)
+                        && prevWpLat.ValueKind == JsonValueKind.Number
+                        && prevWpLon.ValueKind == JsonValueKind.Number)
+                    {
+                        _data.ApplyCoursePreviousPointPosition(prevWpLat.GetDouble(), prevWpLon.GetDouble());
+                        changed = true;
+                    }
+                    continue;
+                }
+
                 // String-valued paths (route href, route name).
                 if (val.Value is JsonElement strEl && strEl.ValueKind == JsonValueKind.String)
                 {
@@ -315,6 +337,17 @@ public sealed class SignalkClient : IAsyncDisposable
                         changed = true;
                         continue;
                     }
+                }
+
+                // Route deactivation: href arrives as null.
+                if ((val.Path == "navigation.courseGreatCircle.activeRoute.href"
+                    || val.Path == "navigation.courseRhumbline.activeRoute.href")
+                    && (val.Value is null
+                        || (val.Value is JsonElement nullEl && nullEl.ValueKind == JsonValueKind.Null)))
+                {
+                    _data.ClearCourse();
+                    changed = true;
+                    continue;
                 }
 
                 if (_data.Apply(val.Path, val.Value))
