@@ -353,6 +353,20 @@ h2 {
 }
 .bearing-tooltip::before { display: none !important; }
 
+/* COG vector time/distance label */
+.vector-label {
+    background: rgba(59, 130, 246, 0.75) !important;
+    border: none !important;
+    color: #fff !important;
+    font-size: 10px !important;
+    font-weight: 500 !important;
+    padding: 1px 5px !important;
+    border-radius: 3px !important;
+    box-shadow: none !important;
+    white-space: nowrap !important;
+}
+.vector-label::before { display: none !important; }
+
 .mob-tooltip {
     background: rgba(239, 68, 68, 0.85) !important;
     border: none !important;

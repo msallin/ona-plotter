@@ -105,6 +105,10 @@
                             <div class="hud-label">TTG</div>
                             <div class="hud-value route-value">@FormatTimeToGo(Data.CourseNextPointTimeToGo)</div>
                         </div>
+                        <div>
+                            <div class="hud-label">ETA</div>
+                            <div class="hud-value route-value">@FormatEta(Data.CourseNextPointTimeToGo)</div>
+                        </div>
                     }
                     @if (Data.CrossTrackError is not null)
                     {
@@ -831,6 +835,16 @@
         if (ts.TotalHours >= 1)
             return $"{(int)ts.TotalHours}h{ts.Minutes:D2}m";
         return $"{ts.Minutes}m{ts.Seconds:D2}s";
+    }
+
+    private static string FormatEta(double? ttgSeconds)
+    {
+        if (ttgSeconds is null) return "--";
+        var eta = DateTime.Now.AddSeconds(ttgSeconds.Value);
+        // Show date if ETA is tomorrow or later.
+        return eta.Date == DateTime.Today
+            ? eta.ToString("HH:mm")
+            : eta.ToString("dd.MM HH:mm");
     }
 
     private static string FormatXte(double? meters)

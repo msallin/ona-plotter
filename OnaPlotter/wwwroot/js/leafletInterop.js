@@ -8,6 +8,7 @@ import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
 let map = null;
 let boatMarker = null;
 let boatVector = null;
+let vectorLabel = null;  // Time/distance label at end of COG vector.
 let trackLayer = null;
 let followBoat = true;
 let northUp = true;
@@ -181,8 +182,24 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     rotateMarker(boatMarker, headingRad ?? cogRad);
 
     const end = vectorEnd(lat, lon, cogRad, sogMs);
-    if (end) boatVector.setLatLngs([[lat, lon], end]);
-    else boatVector.setLatLngs([]);
+    if (end) {
+        boatVector.setLatLngs([[lat, lon], end]);
+        // Label at vector tip: time and distance.
+        const distNm = (sogMs * VECTOR_MINUTES * 60) * NM_PER_METER;
+        const label = `${VECTOR_MINUTES}min / ${distNm.toFixed(1)}nm`;
+        if (vectorLabel) {
+            vectorLabel.setLatLng(end);
+            vectorLabel.setContent(label);
+        } else {
+            vectorLabel = L.tooltip({
+                permanent: true, direction: 'right', offset: [6, 0],
+                className: 'vector-label'
+            }).setLatLng(end).setContent(label).addTo(map);
+        }
+    } else {
+        boatVector.setLatLngs([]);
+        if (vectorLabel) { map.removeLayer(vectorLabel); vectorLabel = null; }
+    }
 
     if (followBoat) {
         suppressMoveEnd = true;
@@ -707,7 +724,7 @@ export function zoomToTrack() {
 
 export function dispose() {
     if (map) { map.remove(); map = null; }
-    boatMarker = null; boatVector = null; trackLayer = null;
+    boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
     osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
     for (const id of Object.keys(chartLayers)) delete chartLayers[id];
     for (const id of Object.keys(routeLayers)) delete routeLayers[id];
