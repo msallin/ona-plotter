@@ -116,19 +116,23 @@ public sealed class SignalkClient : IAsyncDisposable
     public bool IsDataStale => IsConnected
         && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > 5 * TimeSpan.TicksPerSecond;
 
-    public SignalkClient(IConfiguration configuration, ILogger<SignalkClient> logger, TrackBuffer track, AisStore ais)
+    public SignalkClient(IConfiguration configuration, ILogger<SignalkClient> logger,
+        TrackBuffer track, AisStore ais, Microsoft.AspNetCore.Components.NavigationManager nav)
     {
         _logger = logger;
         _data = new NavigationData();
         _track = track;
         _ais = ais;
 
-        string serverUrl = configuration["SignalK:ServerUrl"]
-            ?? throw new InvalidOperationException("SignalK:ServerUrl is not configured.");
+        string? configured = configuration["SignalK:ServerUrl"];
+        // If config is empty or "auto", derive the server from the page location.
+        // This makes the app work when served as a SignalK webapp on the same server.
+        string serverUrl = string.IsNullOrWhiteSpace(configured) || configured == "auto"
+            ? nav.BaseUri
+            : configured;
 
-        // Convert http(s) URL to ws(s) and append the stream path.
-        // subscribe=none: we send explicit subscription messages after connecting.
         var baseUri = new Uri(serverUrl);
+        // Ignore any webapp subpath: SignalK stream is always at /signalk/v1/stream on the root.
         string wsScheme = baseUri.Scheme == "https" ? "wss" : "ws";
         _wsUri = new Uri($"{wsScheme}://{baseUri.Host}:{baseUri.Port}/signalk/v1/stream?subscribe=none");
         _selfContext = "";

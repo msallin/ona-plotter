@@ -2,11 +2,14 @@
 // Caches the app shell for faster loads; network-first for API calls.
 
 const CACHE_NAME = 'ona-plotter-v1';
+// Use relative URLs so the worker works both at root and under a subpath
+// (SignalK webapp serves at /signalk-onaplotter/).
+const SCOPE = self.registration ? self.registration.scope : self.location.href;
 const APP_SHELL = [
-    '/',
-    '/css/app.css',
-    '/favicon.svg',
-    '/manifest.json'
+    SCOPE,
+    new URL('css/app.css', SCOPE).toString(),
+    new URL('favicon.svg', SCOPE).toString(),
+    new URL('manifest.json', SCOPE).toString()
 ];
 
 self.addEventListener('install', (event) => {
@@ -28,8 +31,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // Network-first for API calls and WebSocket upgrades.
-    if (url.pathname.startsWith('/signalk') || event.request.mode === 'websocket') {
+    // Network-first for SignalK API calls and WebSocket upgrades.
+    // Match /signalk/ and /signalk/v* paths exactly (not webapp names like /signalk-onaplotter).
+    if (url.pathname === '/signalk' || url.pathname.startsWith('/signalk/')
+        || event.request.mode === 'websocket') {
         event.respondWith(fetch(event.request));
         return;
     }

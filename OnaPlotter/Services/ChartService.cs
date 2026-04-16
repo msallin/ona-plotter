@@ -16,14 +16,21 @@ public sealed class ChartService
     private readonly string _baseUrl;
     private readonly ILogger<ChartService> _logger;
 
-    public ChartService(IConfiguration configuration, HttpClient http, ILogger<ChartService> logger)
+    public ChartService(IConfiguration configuration, HttpClient http, ILogger<ChartService> logger,
+        Microsoft.AspNetCore.Components.NavigationManager nav)
     {
         _http = http;
         _logger = logger;
 
-        _baseUrl = configuration["SignalK:ServerUrl"]
-            ?? throw new InvalidOperationException("SignalK:ServerUrl is not configured.");
-        _baseUrl = _baseUrl.TrimEnd('/');
+        string? configured = configuration["SignalK:ServerUrl"];
+        string url = string.IsNullOrWhiteSpace(configured) || configured == "auto"
+            ? nav.BaseUri
+            : configured;
+
+        // Strip webapp subpath (e.g. /signalk-onaplotter/) when served from SignalK server.
+        // The SignalK REST API is always at /signalk/ on the root.
+        var uri = new Uri(url);
+        _baseUrl = $"{uri.Scheme}://{uri.Host}:{uri.Port}";
     }
 
     /// <summary>

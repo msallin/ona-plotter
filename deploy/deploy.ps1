@@ -1,0 +1,99 @@
+#!/usr/bin/env pwsh
+# Builds OnaPlotter as a SignalK webapp and deploys it to pi@openplotter.local.
+#
+# Usage:
+#   pwsh ./deploy/deploy.ps1                # default target: pi@openplotter.local
+#   pwsh ./deploy/deploy.ps1 -Host user@host # custom target
+#   pwsh ./deploy/deploy.ps1 -SkipBuild     # skip dotnet publish (reuse prior build)
+
+param(
+    [string]$SshTarget = "pi@openplotter.local",
+    [string]$WebappName = "signalk-onaplotter",
+    [switch]$SkipBuild
+)
+
+$ErrorActionPreference = "Stop"
+
+# Resolve paths relative to repo root.
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$ProjectPath = Join-Path $RepoRoot "OnaPlotter/OnaPlotter.csproj"
+$PublishDir = Join-Path $RepoRoot "deploy/publish"
+$WwwRootSrc = Join-Path $PublishDir "wwwroot"
+$StagingDir = Join-Path $RepoRoot "deploy/staging"
+$PackageJsonTemplate = Join-Path $PSScriptRoot "package.json.template"
+
+# 1. Build & publish Release.
+if (-not $SkipBuild) {
+    Write-Host "Publishing Release build..." -ForegroundColor Cyan
+    if (Test-Path $PublishDir) { Remove-Item -Recurse -Force $PublishDir }
+    dotnet publish $ProjectPath -c Release -o $PublishDir
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
+}
+
+if (-not (Test-Path $WwwRootSrc)) {
+    throw "Expected publish output at $WwwRootSrc but it does not exist."
+}
+
+# 2. Patch index.html <base href="/"> to "/{WebappName}/" for subpath serving.
+$IndexHtml = Join-Path $WwwRootSrc "index.html"
+$content = Get-Content $IndexHtml -Raw
+$patched = $content -replace '<base href="/" />', "<base href=""/$WebappName/"" />"
+Set-Content -Path $IndexHtml -Value $patched -NoNewline
+Write-Host "Patched <base href> to /$WebappName/" -ForegroundColor Green
+
+# 2b. Set appsettings.json ServerUrl to "auto" so the deployed app uses the
+#     page origin (the SignalK server hosting it), not a hardcoded dev URL.
+$AppSettings = Join-Path $WwwRootSrc "appsettings.json"
+Set-Content -Path $AppSettings -Value '{ "SignalK": { "ServerUrl": "auto" } }'
+Write-Host "Set ServerUrl to 'auto' for deployed build" -ForegroundColor Green
+
+# 3. Prepare staging folder with SignalK webapp layout:
+#    signalk-onaplotter/
+#      package.json
+#      public/  <- wwwroot contents
+Write-Host "Staging SignalK webapp bundle..." -ForegroundColor Cyan
+if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
+$WebappStaging = Join-Path $StagingDir $WebappName
+New-Item -ItemType Directory -Path $WebappStaging -Force | Out-Null
+
+# Read version from csproj (fallback to timestamp).
+$csproj = Get-Content $ProjectPath -Raw
+$versionMatch = [regex]::Match($csproj, '<Version>([^<]+)</Version>')
+$version = if ($versionMatch.Success) { $versionMatch.Groups[1].Value } else { (Get-Date -Format "1.0.yyyyMMdd.HHmm") }
+
+# Write package.json from template.
+$pkgJson = Get-Content $PackageJsonTemplate -Raw
+$pkgJson = $pkgJson -replace '__VERSION__', $version
+Set-Content -Path (Join-Path $WebappStaging "package.json") -Value $pkgJson
+
+# Copy wwwroot -> public/
+Copy-Item -Recurse -Path $WwwRootSrc -Destination (Join-Path $WebappStaging "public")
+
+Write-Host "Staged at $WebappStaging" -ForegroundColor Green
+
+# 4. SCP to SignalK node_modules.
+$RemotePath = "~/.signalk/node_modules/$WebappName"
+Write-Host "Deploying to $SshTarget : $RemotePath ..." -ForegroundColor Cyan
+
+# Create remote directory (wipe old install).
+ssh $SshTarget "rm -rf $RemotePath && mkdir -p $RemotePath"
+if ($LASTEXITCODE -ne 0) { throw "ssh mkdir failed" }
+
+# Copy staging contents.
+# Use scp -r for the whole folder; rsync would be nicer but might not be installed.
+scp -r "$WebappStaging/*" "${SshTarget}:$RemotePath/"
+if ($LASTEXITCODE -ne 0) { throw "scp failed" }
+
+Write-Host ""
+Write-Host "============================================" -ForegroundColor Green
+Write-Host "  Deployed OnaPlotter v$version" -ForegroundColor Green
+Write-Host "============================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "To finish:"
+Write-Host "  1. Restart SignalK server:"
+Write-Host "     ssh $SshTarget 'sudo systemctl restart signalk'"
+Write-Host "     (or via the OpenPlotter UI)"
+Write-Host ""
+Write-Host "  2. Open: http://openplotter.local:3000/$WebappName/"
+Write-Host "     (or from the SignalK Webapps admin page)"
+Write-Host ""

@@ -1,0 +1,15 @@
+{
+  "name": "signalk-onaplotter",
+  "version": "__VERSION__",
+  "description": "OnaPlotter: Blazor WASM chartplotter webapp for SignalK",
+  "main": "public/index.html",
+  "keywords": [
+    "signalk-webapp",
+    "signalk-category-instruments"
+  ],
+  "license": "MIT",
+  "signalk": {
+    "appIcon": "public/favicon.svg",
+    "displayName": "OnaPlotter"
+  }
+}

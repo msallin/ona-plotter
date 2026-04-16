@@ -20,3 +20,5 @@ Thumbs.db
 
 ## Build outputs
 publish/
+deploy/publish/
+deploy/staging/
