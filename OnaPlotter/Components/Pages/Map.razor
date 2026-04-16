@@ -773,7 +773,7 @@
             var vessels = AisStore.GetVessels();
             var jsVessels = vessels.Select(v => new
             {
-                context = v.Context, name = v.Name, mmsi = v.Mmsi,
+                context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
                 lat = v.Latitude!.Value, lon = v.Longitude!.Value,
                 headingRad = v.Heading, cogRad = v.CourseOverGround,
                 sogMs = v.SpeedOverGround, shipType = v.ShipType

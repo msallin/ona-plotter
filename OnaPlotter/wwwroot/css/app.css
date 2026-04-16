@@ -326,43 +326,75 @@ h2 {
 
 /* Leaflet popup overrides for dark theme */
 .leaflet-popup-content-wrapper {
-    background: rgba(20, 23, 30, 0.92) !important;
-    color: #e0e0e0 !important;
-    border-radius: 8px !important;
-    box-shadow: 0 3px 14px rgba(0,0,0,0.4) !important;
+    background: rgba(15, 18, 25, 0.95) !important;
+    color: #e2e8f0 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+    backdrop-filter: blur(8px);
 }
 .leaflet-popup-tip {
-    background: rgba(20, 23, 30, 0.92) !important;
+    background: rgba(15, 18, 25, 0.95) !important;
 }
 .leaflet-popup-content {
-    margin: 10px 14px !important;
+    margin: 12px 16px !important;
     font-size: 12px !important;
     line-height: 1.5 !important;
 }
 
+/* AIS popup structure */
+.ais-popup-content { line-height: 1.4; }
+.ais-popup-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 2px;
+}
+.ais-popup-type {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 6px;
+}
+.ais-popup-table {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: collapse;
+}
+.ais-popup-table td {
+    padding: 1px 0;
+}
+.ais-popup-table td:first-child {
+    color: rgba(255,255,255,0.4);
+    width: 40px;
+    font-size: 11px;
+}
+.ais-popup-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Bearing/distance tooltip */
 .bearing-tooltip {
-    background: rgba(167, 139, 250, 0.85) !important;
-    border: none !important;
-    color: #fff !important;
+    background: rgba(30, 34, 44, 0.9) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    color: #e2e8f0 !important;
     font-size: 12px !important;
-    font-weight: 600 !important;
-    padding: 3px 8px !important;
-    border-radius: 4px !important;
-    box-shadow: none !important;
+    font-weight: 500 !important;
+    padding: 4px 10px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
 }
 .bearing-tooltip::before { display: none !important; }
 
 /* COG vector time/distance label */
 .vector-label {
-    background: rgba(59, 130, 246, 0.75) !important;
-    border: none !important;
-    color: #fff !important;
+    background: rgba(30, 34, 44, 0.85) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    color: #93c5fd !important;
     font-size: 10px !important;
     font-weight: 500 !important;
-    padding: 1px 5px !important;
-    border-radius: 3px !important;
-    box-shadow: none !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important;
     white-space: nowrap !important;
 }
 .vector-label::before { display: none !important; }
@@ -660,13 +692,13 @@ html {
 
 /* AIS name labels on map */
 .ais-label {
-    background: rgba(15, 17, 22, 0.75) !important;
+    background: rgba(15, 18, 25, 0.8) !important;
     border: none !important;
-    color: #d4d4d8 !important;
-    font-size: 10px !important;
-    padding: 1px 5px !important;
-    border-radius: 3px !important;
-    box-shadow: none !important;
+    color: #cbd5e1 !important;
+    font-size: 11px !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
     white-space: nowrap !important;
 }
 .ais-label::before { display: none !important; }

@@ -66,11 +66,16 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 
 // --- Icons ---
 
-function makeBoatSvg(fill, size) {
+// Boat icon: clean chevron shape, subtle drop shadow for depth.
+function makeBoatSvg(fill, size, isOwn) {
     const s = size || 28;
     const h = s / 2;
-    return `<svg width="${s}" height="${s}" viewBox="-${h} -${h} ${s} ${s}">
-              <polygon points="0,-${h-3} ${h-7},${h-5} 0,${h-9} -${h-7},${h-5}" fill="${fill}" stroke="#fff" stroke-width="1.5"/>
+    // Sleek arrow shape: pointed bow, tapered stern with notch.
+    const outline = isOwn
+        ? `stroke="#fff" stroke-width="1.2" stroke-linejoin="round"`
+        : `stroke="rgba(255,255,255,0.5)" stroke-width="0.8" stroke-linejoin="round"`;
+    return `<svg width="${s}" height="${s}" viewBox="-${h} -${h} ${s} ${s}" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))">
+              <polygon points="0,-${h-2} ${h-6},${h-4} 0,${h-8} -${h-6},${h-4}" fill="${fill}" ${outline} opacity="${isOwn ? 1 : 0.9}"/>
             </svg>`;
 }
 
@@ -78,21 +83,21 @@ function makeIcon(html, size) {
     return L.divIcon({ className: 'boat-icon', html, iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
 
-const selfIcon = makeIcon(makeBoatSvg('#3b82f6', 28), 28);
+const selfIcon = makeIcon(makeBoatSvg('#60a5fa', 30, true), 30);
 
-// AIS colors by vessel type category.
+// AIS colors: muted, harmonious palette. Readable against dark map tiles.
 const AIS_COLORS = {
-    cargo: '#4ade80',     // green
-    tanker: '#f97316',    // orange
-    passenger: '#a78bfa', // purple
-    fishing: '#facc15',   // yellow
-    sailing: '#38bdf8',   // light blue
-    pleasure: '#38bdf8',
-    tug: '#fb923c',       // orange-light
-    military: '#ef4444',  // red
-    sar: '#ef4444',
-    default: '#f59e0b',   // amber
-    danger: '#ef4444'     // red for CPA danger
+    cargo: '#86efac',     // soft green
+    tanker: '#fdba74',    // warm peach
+    passenger: '#c4b5fd', // soft violet
+    fishing: '#fde68a',   // pale gold
+    sailing: '#7dd3fc',   // sky blue
+    pleasure: '#7dd3fc',
+    tug: '#fed7aa',       // light sand
+    military: '#fca5a5',  // muted red
+    sar: '#fca5a5',
+    default: '#d4d4d8',   // neutral gray (less garish than amber)
+    danger: '#f87171'     // warm red for CPA danger
 };
 
 function aisColor(shipType, isDanger) {
@@ -109,7 +114,7 @@ function aisColor(shipType, isDanger) {
 const aisIconCache = {};
 function getAisIcon(color) {
     if (!aisIconCache[color]) {
-        aisIconCache[color] = makeIcon(makeBoatSvg(color, 22), 22);
+        aisIconCache[color] = makeIcon(makeBoatSvg(color, 24, false), 24);
     }
     return aisIconCache[color];
 }
@@ -156,20 +161,23 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     trackLayer = L.layerGroup().addTo(map);
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
-    boatVector = L.polyline([], { color: '#3b82f6', weight: 2, dashArray: '8,5' }).addTo(map);
+    boatVector = L.polyline([], { color: '#93c5fd', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
 
-    // Map click: in route edit mode, add waypoint; otherwise, bearing/distance line.
+    // Map click: in route edit mode, add waypoint. Otherwise just dismiss menus.
     map.on('click', (e) => {
         if (routeEditMode) {
             addEditWaypoint(e.latlng.lat, e.latlng.lng);
             return;
         }
-        if (!dotNetRef) return;
-        // Dismiss context menu on any click.
-        dotNetRef.invokeMethodAsync('OnDismissContextMenu');
-        drawBearingLine(e.latlng.lat, e.latlng.lng);
+        if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu');
+        clearBearingLine();
     });
-    map.on('dblclick', () => clearBearingLine());
+    // Double-click: toggle bearing/distance measurement line.
+    map.on('dblclick', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (bearingLine) clearBearingLine();
+        else drawBearingLine(e.latlng.lat, e.latlng.lng);
+    });
 
     // Right-click (desktop) and long-press (touch) -> context menu callback to Blazor.
     function showContextMenu(latlng) {
@@ -391,33 +399,55 @@ export function updateAisTargets(vessels) {
             aisLabels[v.context].setContent(esc(displayName));
         }
 
-        // Popup with full info.
-        const name = esc(v.name || 'Unknown');
-        const mmsi = esc(v.mmsi || '---');
-        const sog = v.sogMs != null ? (v.sogMs * 1.94384).toFixed(1) + ' kn' : '---';
-        const cog = v.cogRad != null ? (v.cogRad * DEG).toFixed(0) + '&deg;' : '---';
-        const type = esc(v.shipType || '');
+        // Rich popup with vessel details and external lookup links.
+        const name = esc(v.name || '');
+        const mmsi = v.mmsi || '';
+        const callsign = v.callsign ? esc(v.callsign) : '';
+        const sog = v.sogMs != null ? (v.sogMs * 1.94384).toFixed(1) : '--';
+        const cogDeg = v.cogRad != null ? (v.cogRad * DEG).toFixed(0) : '--';
+        const hdgDeg = v.headingRad != null ? (v.headingRad * DEG).toFixed(0) : '--';
+        const type = v.shipType ? esc(v.shipType) : '';
         const dist = haversineMeters(selfLat, selfLon, v.lat, v.lon) * NM_PER_METER;
+        const brg = bearingDeg(selfLat, selfLon, v.lat, v.lon);
 
-        let cpaText = '';
+        // Display name: prefer name, fall back to callsign, then MMSI.
+        const displayTitle = name || (callsign ? callsign : (mmsi ? `MMSI ${esc(mmsi)}` : 'Unknown'));
+
+        let cpaHtml = '';
         if (cpaInfo && cpaInfo.tcpa > 0) {
-            const cpaCls = isDanger ? 'color:#ef4444;font-weight:bold' : '';
-            cpaText = `<div style="${cpaCls};margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.1)">` +
-                       `CPA ${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</div>`;
+            const cls = isDanger ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
+            cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
+        }
+
+        // External lookup links (free, no API key needed).
+        const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
+        const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?mmsi=${esc(mmsi)}` : '';
+
+        let linksHtml = '';
+        if (mmsi) {
+            linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:10px">` +
+                `<a href="${mtUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">MarineTraffic</a>` +
+                `<a href="${vfUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">VesselFinder</a>` +
+                `</div>`;
         }
 
         marker.bindPopup(
-            `<div style="line-height:1.6">` +
-            `<b style="font-size:13px">${name}</b>` +
-            (type ? ` <span style="opacity:0.5;font-size:11px">${type}</span>` : '') +
-            `<br><span style="opacity:0.5">MMSI ${mmsi}</span>` +
-            `<div style="display:flex;gap:12px;margin-top:2px">` +
-              `<span>SOG ${sog}</span><span>COG ${cog}</span>` +
-            `</div>` +
-            `<div style="opacity:0.7">${dist.toFixed(2)} nm away</div>` +
-            cpaText +
+            `<div class="ais-popup-content">` +
+            `<div class="ais-popup-title">${displayTitle}</div>` +
+            (type ? `<div class="ais-popup-type">${type}</div>` : '') +
+            `<table class="ais-popup-table">` +
+              (mmsi ? `<tr><td>MMSI</td><td>${esc(mmsi)}</td></tr>` : '') +
+              (callsign ? `<tr><td>Call</td><td>${callsign}</td></tr>` : '') +
+              `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
+              `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
+              `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
+              `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
+              `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
+              cpaHtml +
+            `</table>` +
+            linksHtml +
             `</div>`,
-            { closeButton: false, maxWidth: 240, className: 'ais-popup' }
+            { closeButton: false, maxWidth: 280, className: 'ais-popup' }
         );
 
         // Course vector.
@@ -457,7 +487,7 @@ function drawBearingLine(lat, lon) {
     const brg = bearingDeg(selfLat, selfLon, lat, lon);
 
     bearingLine = L.polyline([[selfLat, selfLon], [lat, lon]], {
-        color: '#a78bfa', weight: 2, dashArray: '6,6', opacity: 0.8
+        color: '#e2e8f0', weight: 1.5, dashArray: '8,6', opacity: 0.7
     }).addTo(map);
 
     bearingLabel = L.tooltip({ permanent: true, direction: 'center', className: 'bearing-tooltip' })
