@@ -309,7 +309,7 @@ public sealed class ChartService
     {
         try
         {
-            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/resources/routes/{id}");
+            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/resources/routes/{Uri.EscapeDataString(id)}");
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -393,7 +393,7 @@ public sealed class ChartService
     {
         try
         {
-            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/resources/waypoints/{id}");
+            var response = await _http.DeleteAsync($"{_baseUrl}/signalk/v2/api/resources/waypoints/{Uri.EscapeDataString(id)}");
             return response.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -436,6 +436,40 @@ public sealed class ChartService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to clear course");
+            return false;
+        }
+    }
+
+    // --- Autopilot API ---
+
+    public async Task<bool> SetAutopilotStateAsync(string state)
+    {
+        try
+        {
+            var body = new { value = state };
+            var url = $"{_baseUrl}/signalk/v2/api/vessels/self/steering/autopilot/state";
+            var response = await _http.PutAsJsonAsync(url, body);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to set autopilot state to {State}", state);
+            return false;
+        }
+    }
+
+    public async Task<bool> AdjustAutopilotHeadingAsync(double deltaDeg)
+    {
+        try
+        {
+            var body = new { value = deltaDeg * Math.PI / 180.0 }; // Convert to radians
+            var url = $"{_baseUrl}/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";
+            var response = await _http.PutAsJsonAsync(url, body);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to adjust autopilot heading by {Delta} deg", deltaDeg);
             return false;
         }
     }

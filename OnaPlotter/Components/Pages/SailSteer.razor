@@ -147,6 +147,8 @@
 
     private NavigationData Data => SignalkClient.Data;
 
+    // Rotate compass opposite to heading so the boat always appears to point up.
+    // With heading 90 (east), compass rotates -90 so "E" aligns with the lubber line.
     private string CompassRotation
     {
         get

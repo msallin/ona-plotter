@@ -90,6 +90,58 @@
     </p>
 }
 
+@* === Windplot: TWD over time to identify wind shifts === *@
+@if (twdHistory.Count > 1)
+{
+    <h4 class="mt-4">Wind Direction (TWD) History</h4>
+    <p class="text-muted" style="font-size:0.8rem;">Last @WindplotMinutes minutes. Green line = mean TWD.</p>
+    <svg viewBox="0 0 @WpWidth @WpHeight" width="@WpWidth" height="@WpHeight"
+         style="background: var(--sk-surface); border-radius: 6px;">
+        @* Y-axis labels (degrees) *@
+        @{
+            double twdMin = twdHistory.Min(t => t.Deg);
+            double twdMax = twdHistory.Max(t => t.Deg);
+            double twdRange = Math.Max(twdMax - twdMin, 20); // min 20 degree range
+            double twdMid = (twdMin + twdMax) / 2;
+            twdMin = twdMid - twdRange / 2 - 5;
+            twdMax = twdMid + twdRange / 2 + 5;
+            double meanTwd = twdHistory.Average(t => t.Deg);
+            DateTime oldest = twdHistory[0].Time;
+            DateTime newest = twdHistory[^1].Time;
+            double timeSpan = Math.Max((newest - oldest).TotalSeconds, 1);
+        }
+
+        @* Grid lines *@
+        @for (int i = 0; i <= 4; i++)
+        {
+            double y = WpPad + (WpPlotH * i / 4.0);
+            double deg = twdMax - (twdMax - twdMin) * i / 4.0;
+            <line x1="@WpPad" y1="@F(y)" x2="@(WpWidth - 10)" y2="@F(y)" stroke="#333" stroke-width="0.5" />
+            @SvgText(WpPad - 4, y, $"{deg:F0}", "#666", 9, anchor: "end")
+        }
+
+        @* Mean TWD line *@
+        @{
+            double meanY = WpPad + WpPlotH * (1 - (meanTwd - twdMin) / (twdMax - twdMin));
+        }
+        <line x1="@WpPad" y1="@F(meanY)" x2="@(WpWidth - 10)" y2="@F(meanY)"
+              stroke="#22c55e" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7" />
+
+        @* TWD data line *@
+        <polyline fill="none" stroke="#3b82f6" stroke-width="1.5" opacity="0.9"
+                  points="@TwdPolylinePoints(twdMin, twdMax, oldest, timeSpan)" />
+
+        @* Time axis labels *@
+        @for (int i = 0; i <= 3; i++)
+        {
+            double x = WpPad + (WpPlotW * i / 3.0);
+            double secs = timeSpan * i / 3.0;
+            string label = $"-{(int)((timeSpan - secs) / 60)}m";
+            @SvgText(x, WpHeight - 4, label, "#666", 9)
+        }
+    </svg>
+}
+
 @code {
     private const int Size = 420;
     private const double Cx = Size / 2.0;
@@ -106,6 +158,17 @@
     private List<WindPoint> windPoints = [];
     private (double Angle, double SpeedKn)? currentWind;
     private int lastProcessedCount;
+
+    // Windplot: TWD over time for shift detection.
+    // Capped at MaxTwdSamples to prevent unbounded growth.
+    private const int WindplotMinutes = 30;
+    private const int MaxTwdSamples = 1800; // 30 min at 1 sample/sec
+    private const int WpWidth = 420;
+    private const int WpHeight = 180;
+    private const int WpPad = 40;
+    private const int WpPlotW = WpWidth - WpPad - 10;
+    private const int WpPlotH = WpHeight - WpPad - 20;
+    private List<TwdSample> twdHistory = [];
 
     protected override void OnInitialized()
     {
@@ -145,6 +208,19 @@
             currentWind = (data.WindAngleApparent.Value, data.WindSpeedApparent.Value * MsToKnots);
         else
             currentWind = null;
+
+        // Update TWD history for windplot.
+        if (data.WindDirectionTrue is not null)
+        {
+            double twdDeg = data.WindDirectionTrue.Value * 180.0 / Math.PI;
+            if (twdDeg < 0) twdDeg += 360;
+            twdHistory.Add(new TwdSample(DateTime.UtcNow, twdDeg));
+            // Prune: time-based and hard cap.
+            var cutoff = DateTime.UtcNow.AddMinutes(-WindplotMinutes);
+            twdHistory.RemoveAll(s => s.Time < cutoff);
+            if (twdHistory.Count > MaxTwdSamples)
+                twdHistory.RemoveRange(0, twdHistory.Count - MaxTwdSamples);
+        }
     }
 
     private void AddWindPoint(List<WindPoint> list, TrackPoint pt)
@@ -209,5 +285,22 @@
         TrackBuffer.OnTrackUpdated -= HandleTrackUpdated;
     }
 
+    private static string F(double v) => v.ToString("F1");
+
+    private string TwdPolylinePoints(double twdMin, double twdMax, DateTime oldest, double timeSpanSecs)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var s in twdHistory)
+        {
+            double t = (s.Time - oldest).TotalSeconds;
+            double x = WpPad + WpPlotW * (t / timeSpanSecs);
+            double y = WpPad + WpPlotH * (1 - (s.Deg - twdMin) / (twdMax - twdMin));
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append($"{x:F1},{y:F1}");
+        }
+        return sb.ToString();
+    }
+
     private readonly record struct WindPoint(double X, double Y, string Color);
+    private readonly record struct TwdSample(DateTime Time, double Deg);
 }

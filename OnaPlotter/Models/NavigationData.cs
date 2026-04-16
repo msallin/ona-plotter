@@ -48,6 +48,14 @@ public sealed class NavigationData
     public bool HasActiveCourse => CourseNextPointLatitude is not null && CourseNextPointLongitude is not null;
     public bool HasPreviousPoint => CoursePreviousPointLatitude is not null && CoursePreviousPointLongitude is not null;
 
+    // Autopilot state
+    public string? AutopilotState { get; private set; }        // "standby", "auto", "route", "wind"
+    public double? AutopilotTargetHeading { get; private set; } // radians
+
+    // Tidal current
+    public double? CurrentSet { get; private set; }   // Direction current flows TO (radians)
+    public double? CurrentDrift { get; private set; }  // Speed of current (m/s)
+
     /// <summary>
     /// Applies a single SignalK path/value pair to the navigation state.
     /// Returns true if the value was recognized and applied.
@@ -118,6 +126,15 @@ public sealed class NavigationData
                 case "navigation.courseGreatCircle.crossTrackError":
                 case "navigation.courseRhumbline.crossTrackError":
                     CrossTrackError = value;
+                    break;
+                case "steering.autopilot.target.headingTrue":
+                    AutopilotTargetHeading = value;
+                    break;
+                case "environment.current.setTrue":
+                    CurrentSet = value;
+                    break;
+                case "environment.current.drift":
+                    CurrentDrift = value;
                     break;
                 default:
                     return false;
@@ -223,6 +240,9 @@ public sealed class NavigationData
                 case "navigation.courseGreatCircle.activeRoute.name":
                 case "navigation.courseRhumbline.activeRoute.name":
                     ActiveRouteName = value;
+                    break;
+                case "steering.autopilot.state":
+                    AutopilotState = value;
                     break;
                 default:
                     return false;

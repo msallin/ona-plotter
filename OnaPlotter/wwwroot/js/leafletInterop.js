@@ -11,7 +11,8 @@ let boatVector = null;
 let vectorLabel = null;  // Time/distance label at end of COG vector.
 let trackLayer = null;
 let followBoat = true;
-let northUp = true;
+let mapOrientation = 'north'; // 'north', 'course', 'head'
+let currentRotationDeg = 0;
 let nightMode = false;
 let dotNetRef = null;
 let suppressMoveEnd = false;  // Suppress moveend during programmatic panTo.
@@ -228,8 +229,14 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     if (followBoat) {
         suppressMoveEnd = true;
         map.panTo([lat, lon], { animate: true, duration: 0.5 });
-        // Re-enable after the pan animation completes.
         setTimeout(() => { suppressMoveEnd = false; }, 600);
+    }
+
+    // Apply map rotation for course-up / head-up modes.
+    if (mapOrientation === 'course' && cogRad != null) {
+        applyMapRotation(cogRad * DEG);
+    } else if (mapOrientation === 'head' && headingRad != null) {
+        applyMapRotation(headingRad * DEG);
     }
 
     // Update MOB line if active.
@@ -318,6 +325,7 @@ export function updateAisTargets(vessels) {
 
     for (const v of vessels) {
         seen.add(v.context);
+        if (v.lat == null || v.lon == null || !isFinite(v.lat) || !isFinite(v.lon)) continue;
 
         const cpaInfo = computeCpa(selfLat, selfLon, selfCogRad, selfSogMs,
                                     v.lat, v.lon, v.cogRad, v.sogMs);
@@ -803,6 +811,76 @@ export function removeWaypointMarker(id) {
     }
 }
 
+// --- Weather Overlay ---
+
+let weatherLayer = null;
+
+// Add OpenWeatherMap wind speed overlay. Requires a free API key from openweathermap.org.
+// Tile URL: https://tile.openweathermap.org/map/{layer}/{z}/{x}/{y}.png?appid={key}
+export function setWeatherOverlay(tileUrl) {
+    clearWeatherOverlay();
+    if (!map || !tileUrl) return;
+    weatherLayer = L.tileLayer(tileUrl, {
+        maxZoom: 15,
+        opacity: 0.5,
+        attribution: '&copy; OpenWeatherMap'
+    }).addTo(map);
+    weatherLayer.setZIndex(40); // Below chart layers (50) but above base map.
+}
+
+export function clearWeatherOverlay() {
+    if (weatherLayer && map) { map.removeLayer(weatherLayer); weatherLayer = null; }
+}
+
+// --- File I/O helpers (GPX import/export) ---
+
+export function triggerFileDownload(filename, content) {
+    const blob = new Blob([content], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// --- Tidal Current Arrow ---
+
+let currentArrow = null;
+let currentLabel = null;
+
+export function setCurrentArrow(boatLat, boatLon, setRad, driftMs) {
+    if (!map) return;
+    const driftKn = driftMs * 1.94384;
+    // Arrow length proportional to drift, min 200m, max 2000m visual.
+    const arrowLen = Math.min(Math.max(driftMs * 600, 200), 2000);
+    const endPt = destPoint(boatLat, boatLon, setRad, arrowLen);
+
+    if (currentArrow) {
+        currentArrow.setLatLngs([[boatLat, boatLon], endPt]);
+    } else {
+        currentArrow = L.polyline([[boatLat, boatLon], endPt], {
+            color: '#a78bfa', weight: 3, opacity: 0.8
+        }).addTo(map);
+    }
+
+    const labelText = `${driftKn.toFixed(1)}kn`;
+    if (currentLabel) {
+        currentLabel.setLatLng(endPt);
+        currentLabel.setContent(labelText);
+    } else {
+        currentLabel = L.tooltip({
+            permanent: true, direction: 'right', offset: [6, 0],
+            className: 'bearing-tooltip'
+        }).setLatLng(endPt).setContent(labelText).addTo(map);
+    }
+}
+
+export function clearCurrentArrow() {
+    if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
+    if (currentLabel && map) { map.removeLayer(currentLabel); currentLabel = null; }
+}
+
 // --- Laylines ---
 
 // Draw port/starboard laylines from boat position (and optionally from waypoint).
@@ -874,7 +952,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         // Skip if user is typing in an input.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         const key = e.key.toLowerCase();
-        if ('mfnatl'.includes(key) && key.length === 1) {
+        if ('mfnatlo'.includes(key) && key.length === 1) {
             e.preventDefault();
             dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key);
         }
@@ -889,6 +967,40 @@ export function disableKeyboardShortcuts() {
 // --- Controls ---
 
 export function setFollow(follow) { followBoat = follow; }
+
+// Map orientation: 'north' (default), 'course' (rotates to COG), 'head' (rotates to heading).
+export function setMapOrientation(mode) {
+    mapOrientation = mode;
+    if (mode === 'north') {
+        applyMapRotation(0);
+    }
+    // For 'course' and 'head', rotation is applied in updatePosition.
+}
+
+function applyMapRotation(deg) {
+    if (!map) return;
+    currentRotationDeg = deg;
+    const container = map.getContainer();
+    container.style.transform = deg === 0 ? '' : `rotate(${-deg}deg)`;
+    container.style.transformOrigin = 'center center';
+    // Counter-rotate labels/tooltips so they stay upright.
+    const style = document.getElementById('map-rotation-style');
+    if (deg === 0) {
+        if (style) style.remove();
+    } else {
+        const css = `.leaflet-tooltip, .leaflet-popup, .ais-label, .vector-label, .route-wp-tooltip, .bearing-tooltip { transform: rotate(${deg}deg) !important; }`;
+        if (style) {
+            style.textContent = css;
+        } else {
+            const el = document.createElement('style');
+            el.id = 'map-rotation-style';
+            el.textContent = css;
+            document.head.appendChild(el);
+        }
+    }
+    // Invalidate map size after rotation.
+    map.invalidateSize();
+}
 
 export function zoomToTrack() {
     if (!trackLayer || !map) return;
@@ -910,6 +1022,8 @@ export function dispose() {
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
     laylineStarboard = null; laylinePort = null;
     laylineWpStarboard = null; laylineWpPort = null;
+    currentArrow = null; currentLabel = null;
+    weatherLayer = null;
     routeEditMode = false; routeEditLayer = null;
     routeEditCoords = []; routeEditMarkers = []; routeEditLine = null;
     for (const id of Object.keys(waypointMarkers)) delete waypointMarkers[id];

@@ -63,7 +63,13 @@ public sealed class SignalkClient : IAsyncDisposable
         "navigation.courseGreatCircle.crossTrackError",
         "navigation.courseRhumbline.crossTrackError",
         "navigation.courseGreatCircle.previousPoint.position",
-        "navigation.courseRhumbline.previousPoint.position"
+        "navigation.courseRhumbline.previousPoint.position",
+        // Autopilot
+        "steering.autopilot.state",
+        "steering.autopilot.target.headingTrue",
+        // Tidal current
+        "environment.current.setTrue",
+        "environment.current.drift"
     ];
 
     private static readonly string[] AisPaths =
@@ -245,6 +251,11 @@ public sealed class SignalkClient : IAsyncDisposable
         catch (JsonException)
         {
             // Ignore malformed messages.
+        }
+        catch (Exception ex)
+        {
+            // Don't let a single bad message crash the receive loop.
+            _logger.LogWarning(ex, "Error processing SignalK message");
         }
     }
 
@@ -448,7 +459,8 @@ public sealed class SignalkClient : IAsyncDisposable
         {
             if (_ws is null || _ws.State != WebSocketState.Open) return;
             var bytes = Encoding.UTF8.GetBytes(json);
-            await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+            var ct = _cts?.Token ?? CancellationToken.None;
+            await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, ct);
         }
         finally
         {

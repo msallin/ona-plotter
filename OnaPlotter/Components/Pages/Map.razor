@@ -157,10 +157,46 @@
         </div>
     }
 
+    @* === HUD: Autopilot Panel === *@
+    @if (Data.AutopilotState is not null)
+    {
+        <div class="hud hud-autopilot">
+            <div class="hud-panel autopilot-panel @(Data.AutopilotState != "standby" ? "ap-engaged" : "")">
+                <div class="hud-label">Autopilot</div>
+                <div class="ap-state">@(Data.AutopilotState?.ToUpperInvariant() ?? "--")</div>
+                @if (Data.AutopilotTargetHeading is not null)
+                {
+                    <div class="hud-value route-value" style="font-size:1.1rem;">
+                        @FormatDeg(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span>
+                    </div>
+                }
+                <div class="ap-controls">
+                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(-10)'>-10</button>
+                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(-1)'>-1</button>
+                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(1)'>+1</button>
+                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(10)'>+10</button>
+                </div>
+                <div class="ap-modes">
+                    <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
+                            @onclick='() => ChartService.SetAutopilotStateAsync("standby")'>Stby</button>
+                    <button class="ap-mode-btn @(Data.AutopilotState == "auto" ? "active" : "")"
+                            @onclick='() => ChartService.SetAutopilotStateAsync("auto")'>Auto</button>
+                    <button class="ap-mode-btn @(Data.AutopilotState == "wind" ? "active" : "")"
+                            @onclick='() => ChartService.SetAutopilotStateAsync("wind")'>Wind</button>
+                    <button class="ap-mode-btn @(Data.AutopilotState == "route" ? "active" : "")"
+                            @onclick='() => ChartService.SetAutopilotStateAsync("route")'>Route</button>
+                </div>
+            </div>
+        </div>
+    }
+
     @* === Control Bar === *@
     <div class="map-controls">
         <button class="map-btn @(follow ? "active" : "")" @onclick="ToggleFollow" title="Keyboard: F">
             @(follow ? "Following" : "Follow")
+        </button>
+        <button class="map-btn" @onclick="CycleMapOrientation" title="Keyboard: O">
+            @mapOrientationLabel
         </button>
         <button class="map-btn @(nightMode ? "active" : "")" @onclick="ToggleNightMode" title="Keyboard: N">
             Night
@@ -325,6 +361,34 @@
                     </div>
                 </label>
             }
+
+            <div class="chart-panel-header section-toggle" @onclick="() => weatherExpanded = !weatherExpanded">
+                <span class="toggle-arrow">@(weatherExpanded ? "v" : ">")</span>
+                Weather Overlay
+            </div>
+            @if (weatherExpanded)
+            {
+                <label class="chart-item">
+                    <input type="checkbox" checked="@weatherOverlayVisible"
+                           @onchange="ToggleWeatherOverlay" />
+                    <div class="chart-item-body">
+                        <div class="chart-name">Wind Speed (OWM)</div>
+                        <div class="chart-desc">OpenWeatherMap wind overlay</div>
+                    </div>
+                </label>
+            }
+
+            <div class="chart-panel-header" style="margin-top:8px; border-top:1px solid var(--sk-border); padding-top:8px;">
+                <div style="display:flex; gap:6px;">
+                    <label class="map-btn" style="font-size:0.7rem; cursor:pointer; padding:3px 8px;">
+                        Import GPX
+                        <InputFile OnChange="HandleGpxImport" Accept=".gpx" style="display:none;" />
+                    </label>
+                    <button class="map-btn" style="font-size:0.7rem; padding:3px 8px;" @onclick="ExportGpx">
+                        Export GPX
+                    </button>
+                </div>
+            </div>
         </div>
     }
 </div>
@@ -348,6 +412,8 @@
     private double? lastNextWpLat, lastNextWpLon;
     private bool laylinesVisible;
     private int laylinesSkip;  // Throttle: update laylines every 5th position fix.
+    private string mapOrientation = "north"; // "north", "course", "head"
+    private string mapOrientationLabel = "N-Up";
     // Route editing state.
     private bool routeEditMode;
     private string routeEditName = "";
@@ -359,6 +425,8 @@
     private string newWaypointName = "";
     private List<SignalkWaypoint> loadedWaypoints = [];
     private bool waypointsExpanded = true;
+    private bool weatherExpanded;
+    private bool weatherOverlayVisible;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     private readonly HashSet<string> enabledCharts = [];
@@ -516,6 +584,7 @@
             case "a": await ToggleAnchor(); break;
             case "t": await ZoomToTrack(); break;
             case "l": await ToggleLaylines(); break;
+            case "o": await CycleMapOrientation(); break;
         }
         await InvokeAsync(StateHasChanged);
     }
@@ -644,6 +713,15 @@
                 courseLineDrawn = false;
             }
 
+            // Update tidal current arrow when data available.
+            if (Data.CurrentSet is not null && Data.CurrentDrift is not null
+                && Data.CurrentDrift > 0.05 // Only show if drift > ~0.1 kn
+                && Data.Latitude is not null && Data.Longitude is not null)
+            {
+                await module.InvokeVoidAsync("setCurrentArrow",
+                    Data.Latitude, Data.Longitude, Data.CurrentSet, Data.CurrentDrift);
+            }
+
             // Push laylines when visible and TWD is available (throttled: every 5th fix).
             if (laylinesVisible && Data.WindDirectionTrue is not null
                 && Data.Latitude is not null && Data.Longitude is not null
@@ -698,6 +776,24 @@
         follow = !follow;
         if (module is not null)
             await module.InvokeVoidAsync("setFollow", follow);
+    }
+
+    private async Task CycleMapOrientation()
+    {
+        mapOrientation = mapOrientation switch
+        {
+            "north" => "course",
+            "course" => "head",
+            _ => "north"
+        };
+        mapOrientationLabel = mapOrientation switch
+        {
+            "course" => "C-Up",
+            "head" => "H-Up",
+            _ => "N-Up"
+        };
+        if (module is not null)
+            await module.InvokeVoidAsync("setMapOrientation", mapOrientation);
     }
 
     private async Task ToggleLaylines()
@@ -807,6 +903,70 @@
     {
         if (wp.Latitude is not null && wp.Longitude is not null)
             await ChartService.SetCourseDestinationAsync(wp.Id);
+    }
+
+    private async Task ToggleWeatherOverlay(ChangeEventArgs e)
+    {
+        weatherOverlayVisible = (bool)(e.Value ?? false);
+        if (module is null) return;
+
+        if (weatherOverlayVisible)
+        {
+            // OpenWeatherMap free tier tile URL. Users can set their own key in appsettings.
+            // Default: wind_new layer. Without an API key the tiles will return 401.
+            var owmKey = ""; // TODO: read from configuration if available
+            if (!string.IsNullOrEmpty(owmKey))
+            {
+                var url = $"https://tile.openweathermap.org/map/wind_new/{{z}}/{{x}}/{{y}}.png?appid={owmKey}";
+                await module.InvokeVoidAsync("setWeatherOverlay", url);
+            }
+            else
+            {
+                // Fallback: use RainViewer (free, no key needed) for precipitation radar.
+                await module.InvokeVoidAsync("setWeatherOverlay",
+                    "https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png");
+            }
+        }
+        else
+        {
+            await module.InvokeVoidAsync("clearWeatherOverlay");
+        }
+    }
+
+    // --- GPX Import/Export ---
+
+    private async Task HandleGpxImport(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024));
+            string xml = await reader.ReadToEndAsync();
+            var data = GpxService.Parse(xml);
+
+            foreach (var route in data.Routes)
+                await ChartService.SaveRouteAsync(route.Name, route.Coords);
+
+            foreach (var wp in data.Waypoints)
+                await ChartService.CreateWaypointAsync(wp.Name, wp.Lat, wp.Lon);
+
+            // Refresh lists.
+            availableRoutes = await ChartService.GetRoutesAsync();
+            loadedWaypoints = await ChartService.GetWaypointsAsync();
+            PrecomputeRouteBounds();
+            RebuildFilteredLayers();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            System.Console.Error.WriteLine($"GPX import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ExportGpx()
+    {
+        if (module is null) return;
+        string gpx = GpxService.Export(availableRoutes, loadedWaypoints);
+        await module.InvokeVoidAsync("triggerFileDownload", $"export-{DateTime.Now:yyyyMMdd-HHmm}.gpx", gpx);
     }
 
     private async Task ToggleChart(SignalkChart chart, bool enabled)
@@ -1125,6 +1285,8 @@
                 await module.InvokeVoidAsync("clearActiveRoute");
                 await module.InvokeVoidAsync("clearCourseLine");
                 await module.InvokeVoidAsync("clearLaylines");
+                await module.InvokeVoidAsync("clearCurrentArrow");
+                await module.InvokeVoidAsync("clearWeatherOverlay");
                 await module.InvokeVoidAsync("disableKeyboardShortcuts");
                 await module.InvokeVoidAsync("dispose");
                 await module.DisposeAsync();
