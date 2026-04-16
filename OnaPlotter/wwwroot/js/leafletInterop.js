@@ -171,17 +171,52 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     });
     map.on('dblclick', () => clearBearingLine());
 
-    // Right-click context menu -> callback to Blazor.
-    map.on('contextmenu', (e) => {
-        e.originalEvent.preventDefault();
+    // Right-click (desktop) and long-press (touch) -> context menu callback to Blazor.
+    function showContextMenu(latlng) {
         if (routeEditMode || !dotNetRef) return;
-        const pt = map.latLngToContainerPoint(e.latlng);
+        const pt = map.latLngToContainerPoint(latlng);
         const sz = map.getSize();
-        // Clamp so menu (approx 170x120px) stays within the map container.
         const x = Math.min(pt.x, sz.x - 175);
         const y = Math.min(pt.y, sz.y - 125);
-        dotNetRef.invokeMethodAsync('OnMapContextMenu', e.latlng.lat, e.latlng.lng, Math.max(x, 5), Math.max(y, 5));
+        dotNetRef.invokeMethodAsync('OnMapContextMenu', latlng.lat, latlng.lng, Math.max(x, 5), Math.max(y, 5));
+    }
+
+    map.on('contextmenu', (e) => {
+        e.originalEvent.preventDefault();
+        showContextMenu(e.latlng);
     });
+
+    // Long-press for touch devices (500ms hold without moving >10px).
+    let longPressTimer = null;
+    let longPressStartPt = null;
+    const mapEl = map.getContainer();
+    mapEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        longPressStartPt = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        longPressTimer = setTimeout(() => {
+            const touch = e.touches[0] || e.changedTouches[0];
+            if (!touch) return;
+            const latlng = map.containerPointToLatLng([
+                touch.clientX - mapEl.getBoundingClientRect().left,
+                touch.clientY - mapEl.getBoundingClientRect().top
+            ]);
+            showContextMenu(latlng);
+            longPressTimer = null;
+        }, 500);
+    }, { passive: true });
+    mapEl.addEventListener('touchmove', (e) => {
+        if (longPressTimer && longPressStartPt && e.touches.length === 1) {
+            const dx = e.touches[0].clientX - longPressStartPt.x;
+            const dy = e.touches[0].clientY - longPressStartPt.y;
+            if (dx * dx + dy * dy > 100) { // 10px movement threshold
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        }
+    }, { passive: true });
+    mapEl.addEventListener('touchend', () => {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }, { passive: true });
 
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.
     // Debounced: skip events caused by programmatic panTo (follow mode) and coalesce

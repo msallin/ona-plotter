@@ -12,6 +12,7 @@ builder.Services.AddSingleton<TrackBuffer>();
 builder.Services.AddSingleton<AisStore>();
 builder.Services.AddSingleton<ChartService>();
 builder.Services.AddSingleton<SignalkClient>();
+builder.Services.AddSingleton<AppSettingsService>();
 
 var host = builder.Build();
 

@@ -415,6 +415,133 @@ h2 {
         padding: 6px 0;
         font-size: 0.8rem;
     }
+    /* Autopilot buttons */
+    .ap-btn {
+        min-height: 40px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+    .ap-mode-btn {
+        min-height: 36px;
+        padding: 4px 10px;
+        font-size: 0.75rem;
+    }
+    /* Path filter chips */
+    .path-chip {
+        min-height: 36px;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+    /* Context menu items */
+    .ctx-menu-item {
+        min-height: 44px;
+        padding: 12px 16px;
+        font-size: 0.9rem;
+    }
+    /* Nav links */
+    .nav-item .nav-link {
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+    }
+    /* Chart panel checkboxes */
+    .chart-item input[type="checkbox"] {
+        width: 24px;
+        height: 24px;
+    }
+    /* HUD labels slightly larger */
+    .hud-label { font-size: 0.7rem; }
+}
+
+/* iOS-specific: safe areas, momentum scroll, tap highlight */
+html {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
+    -webkit-tap-highlight-color: transparent;
+}
+
+.hud-panel, .route-panel, .anchor-panel, .autopilot-panel {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.chart-panel, .nav-scrollable {
+    -webkit-overflow-scrolling: touch;
+}
+
+.map-container {
+    overscroll-behavior: none;
+}
+
+/* ===== Alarm Banner ===== */
+
+.alarm-banner {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    text-align: center;
+    cursor: pointer;
+    animation: alarm-flash 1s ease-in-out infinite;
+}
+
+.alarm-danger {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    border-bottom: 2px solid #ef4444;
+}
+
+.alarm-warn {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border-bottom: 2px solid #f59e0b;
+}
+
+@keyframes alarm-flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ===== Global Night Mode ===== */
+/* Red-shifted dark mode for all pages (preserves night vision). */
+.night-mode-global {
+    --sk-bg: #1a0505;
+    --sk-surface: #200808;
+    --sk-surface-hover: #2a0a0a;
+    --sk-border: #3a1515;
+    --sk-text: #ffcccc;
+    --sk-text-muted: #996666;
+    --sk-accent: #cc4444;
+}
+
+.night-mode-global .card {
+    background: var(--sk-surface);
+    border-color: var(--sk-border);
+    color: var(--sk-text);
+}
+
+.night-mode-global .card-subtitle,
+.night-mode-global .text-muted {
+    color: var(--sk-text-muted) !important;
+}
+
+.night-mode-global .btn-outline-secondary {
+    color: var(--sk-text-muted);
+    border-color: var(--sk-border);
+}
+
+.night-mode-global svg circle,
+.night-mode-global svg line {
+    opacity: 0.8;
+}
+
+.night-mode-global .top-row {
+    background: var(--sk-surface);
+    border-color: var(--sk-border);
+}
+
+.night-mode-global .sidebar {
+    background: var(--sk-bg);
 }
 
 /* Mobile responsive: stack for small screens */

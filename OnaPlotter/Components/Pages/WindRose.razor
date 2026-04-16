@@ -13,7 +13,7 @@
 <p class="text-muted">Apparent wind angle vs. speed. Color indicates wind speed.</p>
 
 <div class="d-flex flex-wrap gap-4 align-items-start">
-    <svg viewBox="0 0 @Size @Size" width="@Size" height="@Size" style="background: var(--sk-surface); border-radius: 6px;">
+    <svg viewBox="0 0 @Size @Size" style="max-width:@(Size)px; width:100%; height:auto; background: var(--sk-surface); border-radius: 6px;">
         @* Background circles *@
         @for (int i = 1; i <= RingCount; i++)
         {
@@ -95,8 +95,8 @@
 {
     <h4 class="mt-4">Wind Direction (TWD) History</h4>
     <p class="text-muted" style="font-size:0.8rem;">Last @WindplotMinutes minutes. Green line = mean TWD.</p>
-    <svg viewBox="0 0 @WpWidth @WpHeight" width="@WpWidth" height="@WpHeight"
-         style="background: var(--sk-surface); border-radius: 6px;">
+    <svg viewBox="0 0 @WpWidth @WpHeight"
+         style="max-width:@(WpWidth)px; width:100%; height:auto; background: var(--sk-surface); border-radius: 6px;">
         @* Y-axis labels (degrees) *@
         @{
             double twdMin = twdHistory.Min(t => t.Deg);
