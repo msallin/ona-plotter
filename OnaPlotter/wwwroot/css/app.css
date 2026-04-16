@@ -952,6 +952,39 @@ html {
     /* Generic: no extra style needed */
 }
 
+/* ===== Custom Leaflet Fullscreen Control ===== */
+
+.ona-fs-control {
+    margin-top: 6px !important;
+}
+
+.ona-fs-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    color: #374151;
+    background: #fff;
+    text-decoration: none;
+}
+
+.ona-fs-btn:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+.ona-fs-btn svg {
+    display: block;
+}
+
+@media (pointer: coarse) {
+    .ona-fs-btn {
+        width: 40px;
+        height: 40px;
+    }
+}
+
 /* ===== Quick Chart Switcher ===== */
 
 .chart-quick-bar {
@@ -1019,6 +1052,32 @@ html {
     border-radius: 8px;
     padding: 8px 12px;
     border: 1px solid rgba(167, 139, 250, 0.3);
+    flex-wrap: wrap;
+    max-width: 95%;
+}
+
+.route-edit-hint {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 800;
+    background: rgba(167, 139, 250, 0.2);
+    color: #e0e7ff;
+    backdrop-filter: blur(6px);
+    border-radius: 16px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    border: 1px solid rgba(167, 139, 250, 0.4);
+    pointer-events: none;
+}
+
+.route-edit-stats {
+    font-size: 0.8rem;
+    color: #c4b5fd;
+    font-weight: 500;
+    padding: 0 8px;
+    font-variant-numeric: tabular-nums;
 }
 
 .route-name-input {

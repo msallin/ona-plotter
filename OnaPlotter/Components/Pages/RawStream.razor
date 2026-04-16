@@ -2,9 +2,11 @@
 
 @page "/raw"
 @using OnaPlotter.Services
-@implements IDisposable
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
 @inject SignalkClient SignalkClient
 @inject ChartService ChartService
+@inject IJSRuntime JS
 
 <PageTitle>Raw Stream</PageTitle>
 
@@ -50,7 +52,8 @@
     }
 </div>
 
-<div class="font-monospace small p-3 rounded" style="max-height: 80vh; overflow-y: auto; background: var(--sk-surface); color: var(--sk-text);">
+<div id="rawStreamBox" class="font-monospace small p-3 rounded"
+     style="height: 70vh; overflow-y: auto; background: var(--sk-surface); color: var(--sk-text);">
     @if (snapshot.Length == 0)
     {
         <span class="text-muted">Waiting for data...</span>
@@ -77,6 +80,8 @@
 
     private List<string> availablePaths = [];
     private readonly HashSet<string> selectedPaths = [];
+
+    private bool needsScroll;
 
     protected override async Task OnInitializedAsync()
     {
@@ -106,19 +111,44 @@
         if (++renderSkip < 5) return;
         renderSkip = 0;
 
-        // Build snapshot in reverse order (newest first).
+        // Build snapshot in chronological order (oldest first, newest at bottom).
+        // This is the terminal/log-viewer convention for live streams.
         var snap = new string[count];
+        int startIdx = (head - count + MaxMessages) % MaxMessages;
         for (int i = 0; i < count; i++)
         {
-            int idx = (head - 1 - i + MaxMessages) % MaxMessages;
-            snap[i] = buffer[idx];
+            snap[i] = buffer[(startIdx + i) % MaxMessages];
         }
 
         await InvokeAsync(() =>
         {
             snapshot = snap;
+            needsScroll = true;
             StateHasChanged();
         });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (needsScroll)
+        {
+            needsScroll = false;
+            // Stick to bottom if already near the bottom (<50px). If user scrolled up
+            // to read older messages, don't disturb them.
+            try
+            {
+                await JS.InvokeVoidAsync("eval", @"
+                    (function(){
+                        var el = document.getElementById('rawStreamBox');
+                        if(!el) return;
+                        if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+                            el.scrollTop = el.scrollHeight;
+                        }
+                    })()");
+            }
+            catch (JSDisconnectedException) { }
+            catch (ObjectDisposedException) { }
+        }
     }
 
     private bool MessageMatchesFilter(string json)
@@ -190,8 +220,9 @@
         snapshot = [];
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
         SignalkClient.OnRawMessage -= HandleRawMessage;
+        return ValueTask.CompletedTask;
     }
 }

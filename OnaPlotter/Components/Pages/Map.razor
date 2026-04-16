@@ -209,9 +209,6 @@
             MOB
         </button>
         <button class="map-btn" @onclick="ZoomToTrack" title="Keyboard: T">Fit Track</button>
-        <button class="map-btn" @onclick="ToggleFullscreen" title="Keyboard: Escape to exit">
-            @(fullscreen ? "Exit" : "Fullscreen")
-        </button>
         <button class="map-btn @(laylinesVisible ? "active" : "")" @onclick="ToggleLaylines" title="Keyboard: L">
             Laylines
         </button>
@@ -230,9 +227,14 @@
     @* === Route Editing Bar === *@
     @if (routeEditMode)
     {
+        <div class="route-edit-hint">
+            Tap map to add waypoints. Drag waypoints to reposition.
+        </div>
         <div class="route-edit-bar">
             <input type="text" class="route-name-input" placeholder="Route name..."
                    @bind="routeEditName" @bind:event="oninput" />
+            <span class="route-edit-stats">@routeEditStats</span>
+            <button class="map-btn" @onclick="UndoLastWaypoint" title="Remove last waypoint">Undo</button>
             <button class="map-btn active" @onclick="SaveRoute">Save</button>
             <button class="map-btn" @onclick="CancelRouteEdit">Cancel</button>
         </div>
@@ -329,17 +331,21 @@
                 {
                     @foreach (var route in FilteredRoutes)
                     {
-                        <label class="chart-item">
-                            <input type="checkbox" checked="@enabledRoutes.Contains(route.Id)"
-                                   @onchange="(e) => ToggleRoute(route, (bool)(e.Value ?? false))" />
-                            <div class="chart-item-body">
-                                <div class="chart-name">@(route.Name ?? route.Id[..8])</div>
-                                @if (route.Distance is not null)
-                                {
-                                    <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
-                                }
-                            </div>
-                        </label>
+                        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+                            <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
+                                <input type="checkbox" checked="@enabledRoutes.Contains(route.Id)"
+                                       @onchange="(e) => ToggleRoute(route, (bool)(e.Value ?? false))" />
+                                <div class="chart-item-body">
+                                    <div class="chart-name">@(route.Name ?? route.Id[..8])</div>
+                                    @if (route.Distance is not null)
+                                    {
+                                        <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
+                                    }
+                                </div>
+                            </label>
+                            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                                    @onclick="() => EditRoute(route)" title="Edit route">Edit</button>
+                        </div>
                     }
                 }
             }
@@ -436,6 +442,8 @@
     // Route editing state.
     private bool routeEditMode;
     private string routeEditName = "";
+    private string routeEditStats = "0 WP / 0 nm";
+    private System.Threading.Timer? routeStatsTimer;
     // Context menu and waypoint state.
     private bool contextMenuVisible;
     private double contextMenuLat, contextMenuLon;
@@ -848,15 +856,70 @@
     {
         routeEditMode = true;
         routeEditName = "";
+        routeEditStats = "0 WP / 0 nm";
         if (module is not null)
             await module.InvokeVoidAsync("startRouteEdit");
+        // Poll stats twice a second while editing.
+        routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, 500, 500);
     }
 
     private async Task CancelRouteEdit()
     {
         routeEditMode = false;
+        routeStatsTimer?.Dispose();
+        routeStatsTimer = null;
         if (module is not null)
             await module.InvokeVoidAsync("stopRouteEdit");
+    }
+
+    private async Task UndoLastWaypoint()
+    {
+        if (module is not null)
+            await module.InvokeVoidAsync("undoLastEditWaypoint");
+        await UpdateRouteStats();
+    }
+
+    private async Task EditRoute(SignalkRoute route)
+    {
+        if (module is null || route.Feature?.Geometry is null) return;
+
+        // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
+        var coords = new List<double[]>();
+        foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+        {
+            var arr = new double[2];
+            int i = 0;
+            foreach (var val in point.EnumerateArray())
+            {
+                if (i < 2) arr[i++] = val.GetDouble();
+            }
+            coords.Add([arr[1], arr[0]]);
+        }
+
+        routeEditMode = true;
+        routeEditName = route.Name ?? "";
+        chartPanelOpen = false; // Close layers panel so user can see the map.
+        await module.InvokeVoidAsync("loadRouteForEdit", (object)coords.ToArray());
+        routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, 500, 500);
+        await UpdateRouteStats();
+    }
+
+    private async Task UpdateRouteStats()
+    {
+        if (module is null) return;
+        try
+        {
+            var stats = await module.InvokeAsync<double[]>("getEditRouteStats");
+            if (stats is not null && stats.Length == 2)
+            {
+                int wpCount = (int)stats[0];
+                double nm = stats[1];
+                routeEditStats = $"{wpCount} WP / {nm:F1} nm";
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task SaveRoute()
@@ -866,6 +929,8 @@
         if (coords is null || coords.Length < 2)
         {
             routeEditMode = false;
+            routeStatsTimer?.Dispose();
+            routeStatsTimer = null;
             await module.InvokeVoidAsync("stopRouteEdit");
             return;
         }
@@ -878,6 +943,8 @@
             RebuildFilteredLayers();
         }
         routeEditMode = false;
+        routeStatsTimer?.Dispose();
+        routeStatsTimer = null;
         await module.InvokeVoidAsync("stopRouteEdit");
     }
 
@@ -1377,6 +1444,7 @@
         SignalkClient.OnDataChanged -= HandleDataChanged;
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
+        if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();
         if (module is not null)
         {
             try

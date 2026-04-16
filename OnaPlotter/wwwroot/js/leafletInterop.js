@@ -137,6 +137,58 @@ function rotateMarker(marker, rad) {
     if (svg) svg.style.transform = `rotate(${rad * DEG}deg)`;
 }
 
+// Fullscreen control helpers.
+function fullscreenIconSvg(isFs) {
+    if (isFs) {
+        // "exit fullscreen" icon: four inward-pointing corners
+        return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v4a1 1 0 0 1-1 1H3"/><path d="M21 8h-4a1 1 0 0 1-1-1V3"/><path d="M3 16h4a1 1 0 0 1 1 1v4"/><path d="M16 21v-4a1 1 0 0 1 1-1h4"/></svg>';
+    }
+    // "enter fullscreen" icon: four outward-pointing corners
+    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/></svg>';
+}
+
+function isInFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement
+        || document.querySelector('.map-container.map-fullscreen'));
+}
+
+function syncFsIcon() {
+    if (window._onaFsBtn) window._onaFsBtn.innerHTML = fullscreenIconSvg(isInFullscreen());
+}
+
+function toggleFullscreenFromControl() {
+    const container = document.querySelector('.map-container');
+    if (!container) return;
+    const isFs = isInFullscreen();
+
+    if (!isFs) {
+        // Try native API first (desktop, Android).
+        if (container.requestFullscreen) {
+            container.requestFullscreen().catch(() => cssFsToggle(true));
+        } else if (container.webkitRequestFullscreen) {
+            container.webkitRequestFullscreen();
+            cssFsToggle(true); // iOS uses CSS fallback anyway
+        } else {
+            cssFsToggle(true);
+        }
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        cssFsToggle(false);
+    }
+    setTimeout(() => {
+        if (map) map.invalidateSize();
+        syncFsIcon();
+    }, 200);
+}
+
+function cssFsToggle(on) {
+    const container = document.querySelector('.map-container');
+    if (!container) return;
+    if (on) container.classList.add('map-fullscreen');
+    else container.classList.remove('map-fullscreen');
+}
+
 // ========== EXPORTED FUNCTIONS ==========
 
 export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
@@ -147,6 +199,34 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     // Zoom control in top-right to avoid HUD overlap.
     L.control.zoom({ position: 'topright' }).addTo(map);
+
+    // Custom fullscreen control next to zoom. Uses native API with webkit fallback,
+    // and a CSS-only fallback via a class toggle for iOS Safari.
+    const FullscreenControl = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function () {
+            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control ona-fs-control');
+            const btn = L.DomUtil.create('a', 'ona-fs-btn', container);
+            btn.href = '#';
+            btn.title = 'Fullscreen';
+            btn.setAttribute('role', 'button');
+            btn.setAttribute('aria-label', 'Toggle fullscreen');
+            btn.innerHTML = fullscreenIconSvg(false);
+            L.DomEvent.on(btn, 'click', (e) => {
+                L.DomEvent.preventDefault(e);
+                L.DomEvent.stopPropagation(e);
+                toggleFullscreenFromControl(btn);
+            });
+            L.DomEvent.disableClickPropagation(container);
+            window._onaFsBtn = btn;
+            return container;
+        }
+    });
+    new FullscreenControl().addTo(map);
+
+    // Listen for native fullscreen changes to keep the icon in sync.
+    document.addEventListener('fullscreenchange', syncFsIcon);
+    document.addEventListener('webkitfullscreenchange', syncFsIcon);
 
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -855,6 +935,38 @@ export function stopRouteEdit() {
 
 export function getEditRouteCoords() {
     return routeEditCoords;
+}
+
+export function undoLastEditWaypoint() {
+    if (routeEditCoords.length === 0) return;
+    routeEditCoords.pop();
+    const last = routeEditMarkers.pop();
+    if (last && routeEditLayer) routeEditLayer.removeLayer(last);
+    redrawEditLine();
+}
+
+// Returns [waypointCount, totalDistanceNm]
+export function getEditRouteStats() {
+    const n = routeEditCoords.length;
+    if (n < 2) return [n, 0];
+    let meters = 0;
+    for (let i = 1; i < n; i++) {
+        meters += haversineMeters(
+            routeEditCoords[i-1][0], routeEditCoords[i-1][1],
+            routeEditCoords[i][0], routeEditCoords[i][1]
+        );
+    }
+    return [n, meters * NM_PER_METER];
+}
+
+// Load an existing saved route into edit mode for editing.
+export function loadRouteForEdit(coords) {
+    stopRouteEdit();
+    routeEditMode = true;
+    routeEditLayer = L.layerGroup().addTo(map);
+    for (const c of coords) {
+        addEditWaypoint(c[0], c[1]);
+    }
 }
 
 // --- Waypoint Markers ---
