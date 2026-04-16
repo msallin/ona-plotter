@@ -2,6 +2,7 @@
 @using OnaPlotter.Services
 @using Microsoft.JSInterop
 @inject SignalkClient SignalkClient
+@inject AisStore AisStore
 @inject AppSettingsService Settings
 @inject IJSRuntime JS
 @implements IAsyncDisposable
@@ -159,11 +160,40 @@
             }
         }
 
-        // If no alarm condition, clear.
-        if (activeAlarm is not null
-            && (data.Depth is null || data.Depth >= Settings.DepthAlarmThreshold))
+        // CPA alarm: check AIS targets for dangerous approach.
+        if (data.Latitude is not null && data.Longitude is not null
+            && data.CourseOverGround is not null && data.SpeedOverGround is not null)
         {
-            if (activeAlarm.Title == "SHALLOW")
+            var vessels = AisStore.GetVessels();
+            foreach (var v in vessels)
+            {
+                if (v.Latitude is null || v.Longitude is null
+                    || v.CourseOverGround is null || v.SpeedOverGround is null)
+                    continue;
+
+                // Simple CPA estimate: relative distance closing check.
+                double distNm = HaversineNm(data.Latitude.Value, data.Longitude.Value,
+                    v.Latitude.Value, v.Longitude.Value);
+
+                if (distNm < Settings.CpaAlarmThreshold)
+                {
+                    string name = v.Name ?? v.Mmsi ?? "vessel";
+                    SetAlarm("CPA", $"{name} at {distNm:F2}nm", "danger");
+                    return;
+                }
+            }
+        }
+
+        // Clear alarms when conditions resolve.
+        if (activeAlarm is not null)
+        {
+            bool resolved = activeAlarm.Title switch
+            {
+                "SHALLOW" => data.Depth is null || data.Depth >= Settings.DepthAlarmThreshold,
+                "CPA" => true, // CPA alarm auto-clears if no vessels are close (checked above)
+                _ => false
+            };
+            if (resolved)
             {
                 activeAlarm = null;
                 _ = InvokeAsync(StateHasChanged);
@@ -193,6 +223,18 @@
         alarmAudioActive = false;
         await StopAlarmAsync();
         StateHasChanged();
+    }
+
+    private static double HaversineNm(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6371000;
+        double dLat = (lat2 - lat1) * Math.PI / 180;
+        double dLon = (lon2 - lon1) * Math.PI / 180;
+        double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                   Math.Cos(lat1 * Math.PI / 180) * Math.Cos(lat2 * Math.PI / 180) *
+                   Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        double meters = R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return meters / 1852.0;
     }
 
     private async Task CheckStaleAsync()

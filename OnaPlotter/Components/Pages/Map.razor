@@ -9,6 +9,7 @@
 @inject TrackBuffer TrackBuffer
 @inject AisStore AisStore
 @inject ChartService ChartService
+@inject AppSettingsService Settings
 @inject IJSRuntime JS
 
 <PageTitle>Map</PageTitle>
@@ -396,7 +397,7 @@
 @code {
     private IJSObjectReference? module;
     private DotNetObjectReference<Map>? dotNetRef;
-    private bool follow = true;
+    private bool follow;
     private bool nightMode;
     private bool mobActive;
     private bool anchorManualActive;
@@ -566,6 +567,18 @@
             if (wp.Latitude is not null && wp.Longitude is not null)
                 await module.InvokeVoidAsync("addWaypointMarker", wp.Id, wp.Latitude, wp.Longitude, wp.Name);
         }
+
+        // Restore persisted settings.
+        await Settings.InitializeAsync();
+        follow = Settings.FollowBoat;
+        nightMode = Settings.NightMode;
+        laylinesVisible = Settings.LaylinesVisible;
+        mapOrientation = Settings.MapOrientation;
+        mapOrientationLabel = mapOrientation switch { "course" => "C-Up", "head" => "H-Up", _ => "N-Up" };
+
+        await module.InvokeVoidAsync("setFollow", follow);
+        if (nightMode) await module.InvokeVoidAsync("setNightMode", true);
+        if (mapOrientation != "north") await module.InvokeVoidAsync("setMapOrientation", mapOrientation);
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, 1000, 3000);
@@ -774,6 +787,7 @@
     private async Task ToggleFollow()
     {
         follow = !follow;
+        await Settings.SetFollowBoatAsync(follow);
         if (module is not null)
             await module.InvokeVoidAsync("setFollow", follow);
     }
@@ -792,6 +806,7 @@
             "head" => "H-Up",
             _ => "N-Up"
         };
+        await Settings.SetMapOrientationAsync(mapOrientation);
         if (module is not null)
             await module.InvokeVoidAsync("setMapOrientation", mapOrientation);
     }
@@ -799,6 +814,7 @@
     private async Task ToggleLaylines()
     {
         laylinesVisible = !laylinesVisible;
+        await Settings.SetLaylinesVisibleAsync(laylinesVisible);
         if (!laylinesVisible && module is not null)
             await module.InvokeVoidAsync("clearLaylines");
     }
@@ -1041,6 +1057,7 @@
     private async Task ToggleNightMode()
     {
         nightMode = !nightMode;
+        await Settings.SetNightModeAsync(nightMode);
         if (module is not null)
             await module.InvokeVoidAsync("setNightMode", nightMode);
     }

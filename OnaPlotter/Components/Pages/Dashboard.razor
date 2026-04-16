@@ -6,7 +6,7 @@
 @implements IDisposable
 @inject SignalkClient SignalkClient
 
-<PageTitle>SignalK Dashboard</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
 @if (Data.LastTimestamp is null)
 {
@@ -125,6 +125,65 @@
     </div>
 </div>
 
+@if (Data.HasActiveCourse)
+{
+    <h2>Active Route</h2>
+    <div class="row g-3 mb-4">
+        <div class="col-md-4 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-2 text-muted">@(Data.ActiveRouteName ?? "Route")</h6>
+                    <p class="card-text display-6">@FormatNm(Data.CourseNextPointDistance)</p>
+                    <small class="text-muted">DTG (nm)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-2 text-muted">BRG</h6>
+                    <p class="card-text display-6">@FormatDegrees(Data.CourseNextPointBearing)</p>
+                    <small class="text-muted">deg</small>
+                </div>
+            </div>
+        </div>
+        @if (Data.CourseNextPointVmg is not null)
+        {
+            <div class="col-md-4 col-sm-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="card-subtitle mb-2 text-muted">VMG</h6>
+                        <p class="card-text display-6">@FormatSpeed(Data.CourseNextPointVmg)</p>
+                        <small class="text-muted">kn</small>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (Data.CourseNextPointTimeToGo is not null)
+        {
+            <div class="col-md-4 col-sm-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="card-subtitle mb-2 text-muted">TTG</h6>
+                        <p class="card-text display-6" style="font-size:1.5rem;">@FormatTTG(Data.CourseNextPointTimeToGo)</p>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (Data.CrossTrackError is not null)
+        {
+            <div class="col-md-4 col-sm-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="card-subtitle mb-2 text-muted">XTE</h6>
+                        <p class="card-text display-6">@FormatXte(Data.CrossTrackError)</p>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
 @if (Data.LastTimestamp is not null)
 {
     <p class="text-muted" style="font-size: 0.75rem;">Last update: @Data.LastTimestamp</p>
@@ -167,6 +226,28 @@
     {
         if (deg is null) return "--";
         return deg.Value.ToString("F5");
+    }
+
+    private static string FormatNm(double? meters)
+    {
+        if (meters is null) return "--";
+        double nm = meters.Value / 1852.0;
+        return nm < 10 ? nm.ToString("F2") : nm.ToString("F1");
+    }
+
+    private static string FormatTTG(double? seconds)
+    {
+        if (seconds is null) return "--";
+        var ts = TimeSpan.FromSeconds(seconds.Value);
+        return ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h{ts.Minutes:D2}m" : $"{ts.Minutes}m{ts.Seconds:D2}s";
+    }
+
+    private static string FormatXte(double? meters)
+    {
+        if (meters is null) return "--";
+        double abs = Math.Abs(meters.Value);
+        string side = meters > 0 ? "S" : meters < 0 ? "P" : "";
+        return abs < 1000 ? $"{abs:F0}m {side}" : $"{(abs / 1852.0):F2}nm {side}";
     }
 
     private static string FormatDecimal(double? val, string format)
