@@ -7,6 +7,12 @@ namespace OnaPlotter.Services;
 public interface IAppSettings
 {
     bool NightMode { get; }
+
+    /// <summary>"system" (follow OS prefers-color-scheme), "light", or "dark".
+    /// Independent of <see cref="NightMode"/> which applies a red-shift on top
+    /// of whichever base palette is active.</summary>
+    string Theme { get; }
+
     string MapOrientation { get; }
     bool FollowBoat { get; }
     bool LaylinesVisible { get; }
@@ -28,6 +34,7 @@ public interface IAppSettings
 
     Task InitializeAsync();
     Task SetNightModeAsync(bool value);
+    Task SetThemeAsync(string value);
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);

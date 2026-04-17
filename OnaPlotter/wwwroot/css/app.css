@@ -33,6 +33,39 @@
     --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
+/* === Light theme ===
+   Applied when the user picks "Light" in Settings, or when "System" is
+   chosen and the OS prefers a light color scheme. Scoped to the outer
+   .page wrapper so the map HUD (which lives over chart tiles and needs
+   to stay dark for readability) is unaffected. */
+.page.theme-light,
+.page.theme-system {
+    --sk-bg: #f4f6f8;
+    --sk-surface: #ffffff;
+    --sk-surface-hover: #eef2f6;
+    --sk-border: #d1d5db;
+    --sk-text: #1f2937;
+    --sk-text-muted: #6b7280;
+    --sk-accent: #2563eb;
+    --sk-accent-dim: #1d4ed8;
+}
+
+/* System mode: only flip to light when the OS is in light mode. When the
+   OS is dark (or prefers-color-scheme is not supported), system falls
+   through to the default dark palette. */
+@media (prefers-color-scheme: dark) {
+    .page.theme-system {
+        --sk-bg: #0f1117;
+        --sk-surface: #1a1e28;
+        --sk-surface-hover: #242a36;
+        --sk-border: #2e3440;
+        --sk-text: #e2e8f0;
+        --sk-text-muted: #94a3b8;
+        --sk-accent: #60a5fa;
+        --sk-accent-dim: #3b82f6;
+    }
+}
+
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     background-color: var(--sk-bg);
@@ -1387,6 +1420,13 @@ main:has(.alarm-banner) .hud-top-left {
 }
 
 /* ===== Quick Chart Switcher ===== */
+
+/* On phones the top-centre HUD (wind, route panel) already fights for
+   space with this row. Hide it; the full Layers panel is one tap away
+   via the control bar. */
+@media (max-width: 600px) {
+    .chart-quick-bar { display: none !important; }
+}
 
 .chart-quick-bar {
     position: absolute;

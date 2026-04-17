@@ -115,12 +115,30 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
+                <label class="form-label">Theme</label>
+                <div class="btn-group w-100" role="group" aria-label="Theme">
+                    @foreach (var (val, label) in new[] { ("system", "System"), ("light", "Light"), ("dark", "Dark") })
+                    {
+                        <input type="radio" class="btn-check" id="@($"theme-{val}")" name="theme"
+                               checked="@(AppSettings.Theme == val)"
+                               @onchange="() => OnThemeChanged(val)" />
+                        <label class="btn btn-outline-secondary btn-sm" for="@($"theme-{val}")">@label</label>
+                    }
+                </div>
+                <small class="text-muted d-block mt-1">System follows your device's dark/light preference.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" checked="@AppSettings.NightMode"
                            @onchange="(e) => OnNightModeChanged(e)" />
                     <label class="form-check-label">Night Mode</label>
                 </div>
-                <small class="text-muted">Red-shifted display for night vision.</small>
+                <small class="text-muted">Red-shifted display for night vision. Overlays on any theme.</small>
             </div>
         </div>
     </div>
@@ -156,6 +174,8 @@
         bool val = (bool)(e.Value ?? false);
         await AppSettings.SetNightModeAsync(val);
     }
+
+    private async Task OnThemeChanged(string value) => await AppSettings.SetThemeAsync(value);
 
     private async Task HandlePolarUpload(InputFileChangeEventArgs e)
     {

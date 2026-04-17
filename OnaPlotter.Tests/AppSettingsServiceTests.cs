@@ -107,6 +107,38 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task Theme_DefaultsToSystem()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.Theme).IsEqualTo("system");
+    }
+
+    [Test]
+    public async Task Theme_RoundTrips()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetThemeAsync("light");
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.Theme).IsEqualTo("light");
+    }
+
+    [Test]
+    public async Task Theme_GarbageFallsBackToSystem()
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync("theme", "banana");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.Theme).IsEqualTo("system");
+    }
+
+    [Test]
     public async Task GuardZoneLookahead_RoundTrip()
     {
         var kv = new InMemoryKv();

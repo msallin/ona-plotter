@@ -101,7 +101,10 @@ function makeIcon(html, size) {
     return L.divIcon({ className: 'boat-icon', html, iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
 
-const selfIcon = makeIcon(makeBoatSvg('#60a5fa', 30, true), 30);
+// Magenta stands out against the blue water on OpenSeaMap/OSM tiles and
+// doesn't collide with AIS ship-type palettes (greens/blues) or the reds
+// reserved for MOB and collision alarms.
+const selfIcon = makeIcon(makeBoatSvg('#ec4899', 30, true), 30);
 
 // AIS colors: muted, harmonious palette. Readable against dark map tiles.
 const AIS_COLORS = {
@@ -262,7 +265,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // featureGroup (not layerGroup) so zoomToTrack can call getBounds() on it.
     trackLayer = L.featureGroup().addTo(map);
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
-    boatVector = L.polyline([], { color: '#93c5fd', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
+    boatVector = L.polyline([], { color: '#f9a8d4', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
 
     // Map click: in route edit mode, add waypoint. Otherwise just dismiss menus.
     map.on('click', (e) => {

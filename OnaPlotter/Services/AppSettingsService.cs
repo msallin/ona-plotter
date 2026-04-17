@@ -18,6 +18,7 @@ public sealed class AppSettingsService : IAppSettings
     private bool _initialized;
 
     public bool NightMode { get; private set; }
+    public string Theme { get; private set; } = "system";
     public string MapOrientation { get; private set; } = "north";
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
@@ -43,6 +44,7 @@ public sealed class AppSettingsService : IAppSettings
         {
             if (_initialized) return;
             NightMode = await LoadBool("nightMode", false);
+            Theme = NormalizeTheme(await LoadString("theme"));
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
@@ -66,6 +68,19 @@ public sealed class AppSettingsService : IAppSettings
         await Save("nightMode", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
+
+    public async Task SetThemeAsync(string value)
+    {
+        Theme = NormalizeTheme(value);
+        await Save("theme", Theme);
+        OnSettingsChanged?.Invoke();
+    }
+
+    private static string NormalizeTheme(string? raw) => raw switch
+    {
+        "light" or "dark" or "system" => raw,
+        _ => "system",
+    };
 
     public async Task SetMapOrientationAsync(string value)
     {

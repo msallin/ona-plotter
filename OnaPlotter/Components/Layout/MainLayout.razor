@@ -9,7 +9,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="page @(Settings.NightMode ? "night-mode-global" : "")">
+<div class="page theme-@Settings.Theme @(Settings.NightMode ? "night-mode-global" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -117,9 +117,17 @@
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         SignalkClient.OnDataChanged += HandleDataChanged;
         Toasts.OnChanged += HandleToastsChanged;
+        // Theme changes mutate the class on .page; re-render to apply.
+        Settings.OnSettingsChanged += HandleSettingsChanged;
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
+    }
+
+    private async void HandleSettingsChanged()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     private async void HandleToastsChanged()
@@ -379,6 +387,7 @@
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         SignalkClient.OnDataChanged -= HandleDataChanged;
         Toasts.OnChanged -= HandleToastsChanged;
+        Settings.OnSettingsChanged -= HandleSettingsChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (audioModule is not null)
         {
