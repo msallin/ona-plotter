@@ -80,13 +80,10 @@
     private const int AlarmCheckIntervalMs = 1_000;
     private DateTime lastAlarmCheck = DateTime.MinValue;
 
-    // Auto-mute moored / anchored vessels. If a target's SOG has stayed below
-    // MooredSpeedThresholdMs for MooredHoldSeconds we stop triggering CPA
-    // alarms for it; a harbour tug that drifts 100 m back and forth should
-    // not keep waking the captain.
-    private const double MooredSpeedThresholdMs = 0.26;   // ~0.5 kn
-    private const int MooredHoldSeconds = 120;
-    private readonly Dictionary<string, DateTime> lowSpeedSince = [];
+    // Auto-mute moored / anchored vessels. Lives in its own service so state
+    // can be unit-tested and so cleanup of vessels that leave AIS range is
+    // owned in one place.
+    private readonly MooredVesselTracker moored = new();
 
     /// <param name="TargetKey">Stable identifier (AIS context / MMSI) for
     /// per-target snooze. Null for alarms that don't refer to a single
@@ -226,13 +223,17 @@
             double cpaLimit = Settings.CpaAlarmThreshold;
             double tcpaLimit = Settings.GuardZoneLookaheadMinutes;
 
-            foreach (var v in AisStore.GetVessels())
+            var vessels = AisStore.GetVessels();
+            // Drop moored-tracker state for vessels that have left AIS range.
+            moored.Cleanup(vessels.Select(v => v.Context).ToHashSet());
+
+            foreach (var v in vessels)
             {
                 if (v.Latitude is null || v.Longitude is null
                     || v.CourseOverGround is null || v.SpeedOverGround is null)
                     continue;
 
-                if (IsMoored(v, now)) continue;
+                if (moored.IsMoored(v, now)) continue;
                 if (IsSnoozed(v.Context, now)) continue;
 
                 var cpa = Cpa.Compute(
@@ -287,25 +288,6 @@
         alarmAudioActive = false;
         await StopAlarmAsync();
         StateHasChanged();
-    }
-
-    /// <summary>True once the vessel has held near-zero speed for at least
-    /// MooredHoldSeconds. Transitions from moving to stopped reset the clock.</summary>
-    private bool IsMoored(OnaPlotter.Models.AisVessel v, DateTime now)
-    {
-        string key = v.Context;
-        bool slow = v.SpeedOverGround is not null && v.SpeedOverGround.Value < MooredSpeedThresholdMs;
-        if (!slow)
-        {
-            lowSpeedSince.Remove(key);
-            return false;
-        }
-        if (!lowSpeedSince.TryGetValue(key, out var since))
-        {
-            lowSpeedSince[key] = now;
-            return false;
-        }
-        return (now - since).TotalSeconds >= MooredHoldSeconds;
     }
 
     private void SetAlarm(string title, string message, string severity, string? targetKey = null)

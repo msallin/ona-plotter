@@ -1222,6 +1222,31 @@ main:has(.alarm-banner) .hud-top-left {
     font-size: 1.1rem !important;
 }
 
+.route-stop-btn {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px 10px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.6);
+    color: #fecaca;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.route-stop-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: #ef4444;
+    color: #fff;
+}
+@media (pointer: coarse) {
+    .route-stop-btn { min-height: 40px; padding: 10px; font-size: 0.85rem; }
+}
+
 .night-mode .route-panel {
     background: rgba(30, 5, 5, 0.92);
 }

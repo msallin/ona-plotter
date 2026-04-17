@@ -772,6 +772,12 @@ export function clearGuardZone() {
 
 function drawGuardZone() {
     if (!map) return;
+    // Disabled (radius <= 0) - remove the ring entirely instead of shrinking
+    // it to a zero-radius invisible point we would still reposition every tick.
+    if (guardZoneRadiusNm <= 0) {
+        if (guardZoneRing) { map.removeLayer(guardZoneRing); guardZoneRing = null; }
+        return;
+    }
     const radiusM = guardZoneRadiusNm * 1852;
     if (!guardZoneRing) {
         guardZoneRing = L.circle([selfLat, selfLon], {

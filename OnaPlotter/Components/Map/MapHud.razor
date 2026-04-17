@@ -118,6 +118,10 @@
                     </div>
                 }
             </div>
+            @* Prominent Stop button so the captain (or a renter) can abandon
+               the active route without digging through the right-click menu. *@
+            <button class="route-stop-btn" @onclick="OnStopNavigation"
+                    title="Clear the active destination">Stop Navigation</button>
         </div>
     </div>
 }
@@ -189,6 +193,9 @@
 
     /// <summary>Set when the anchor alarm is dragging outside its max radius.</summary>
     [Parameter] public bool AnchorDragging { get; set; }
+
+    /// <summary>Fired by the Stop Navigation button on the route panel.</summary>
+    [Parameter] public EventCallback OnStopNavigation { get; set; }
 
     private string WindAngleDegStr =>
         Data.WindAngleApparent is not null

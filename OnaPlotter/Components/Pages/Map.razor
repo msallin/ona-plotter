@@ -33,7 +33,8 @@
     </div>
 
     <MapHud Data="Data" Autopilot="AutopilotApi"
-            LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging" />
+            LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
+            OnStopNavigation="StopNavigation" />
 
     <MapControls Follow="follow"
                  OrientationLabel="@mapOrientationLabel"
@@ -880,7 +881,8 @@
     private async Task StopNavigation()
     {
         contextMenuVisible = false;
-        await CourseApi.ClearAsync();
+        try { await CourseApi.ClearAsync(); }
+        catch (Exception ex) { Toasts.Error($"Stop navigation failed: {ex.Message}"); }
     }
 
     private async Task NavigateToWaypoint(SignalkWaypoint wp)
