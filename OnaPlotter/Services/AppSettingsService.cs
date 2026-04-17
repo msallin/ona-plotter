@@ -23,6 +23,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool LaylinesVisible { get; private set; }
     public double DepthAlarmThreshold { get; private set; } = 3.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
+    public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
@@ -47,6 +48,7 @@ public sealed class AppSettingsService : IAppSettings
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 3.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
+            GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
@@ -95,6 +97,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         CpaAlarmThreshold = value;
         await Save("cpaAlarmThreshold", value.ToString("F2", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetGuardZoneLookaheadMinutesAsync(double value)
+    {
+        GuardZoneLookaheadMinutes = value;
+        await Save("guardZoneLookaheadMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

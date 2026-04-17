@@ -34,14 +34,29 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <label class="form-label">CPA Alarm</label>
+                <label class="form-label">Guard Zone (CPA)</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.1" min="0" max="5"
                            value="@AppSettings.CpaAlarmThreshold"
                            @onchange="(e) => OnCpaChanged(e)" />
                     <span class="input-group-text">nm</span>
                 </div>
-                <small class="text-muted">Alert when a vessel is closer than this.</small>
+                <small class="text-muted">Alert when a vessel's projected closest approach is inside this radius.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Guard Zone Lookahead</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="60"
+                           value="@AppSettings.GuardZoneLookaheadMinutes"
+                           @onchange="(e) => OnLookaheadChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Only vessels whose CPA occurs within this window raise the alarm.</small>
             </div>
         </div>
     </div>
@@ -122,6 +137,12 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetCpaAlarmThresholdAsync(val);
+    }
+
+    private async Task OnLookaheadChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 1)
+            await AppSettings.SetGuardZoneLookaheadMinutesAsync(val);
     }
 
     private async Task OnWindShiftChanged(ChangeEventArgs e)

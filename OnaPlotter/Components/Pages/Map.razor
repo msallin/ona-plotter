@@ -350,12 +350,24 @@
         if (nightMode) await module.InvokeVoidAsync("setNightMode", true);
         if (mapOrientation != "north") await module.InvokeVoidAsync("setMapOrientation", mapOrientation);
 
+        await PushGuardZoneAsync();
+        Settings.OnSettingsChanged += HandleSettingsChanged;
+
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
 
         await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
     }
+
+    private async Task PushGuardZoneAsync()
+    {
+        if (module is null) return;
+        await module.InvokeVoidAsync("setGuardZone",
+            Settings.CpaAlarmThreshold, Settings.GuardZoneLookaheadMinutes);
+    }
+
+    private void HandleSettingsChanged() => _ = PushGuardZoneAsync();
 
     [JSInvokable]
     public async Task OnKeyShortcut(string key)
@@ -1116,6 +1128,7 @@
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
+        Settings.OnSettingsChanged -= HandleSettingsChanged;
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();

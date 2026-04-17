@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @using OnaPlotter.Services
+@using OnaPlotter.Utilities
 @using Microsoft.JSInterop
 @inject SignalkClient SignalkClient
 @inject AisStore AisStore
@@ -70,6 +71,14 @@
     // second is plenty for a human alarm.
     private const int AlarmCheckIntervalMs = 1_000;
     private DateTime lastAlarmCheck = DateTime.MinValue;
+
+    // Auto-mute moored / anchored vessels. If a target's SOG has stayed below
+    // MooredSpeedThresholdMs for MooredHoldSeconds we stop triggering CPA
+    // alarms for it; a harbour tug that drifts 100 m back and forth should
+    // not keep waking the captain.
+    private const double MooredSpeedThresholdMs = 0.26;   // ~0.5 kn
+    private const int MooredHoldSeconds = 120;
+    private readonly Dictionary<string, DateTime> lowSpeedSince = [];
 
     private sealed record AlarmInfo(string Title, string Message, string Severity);
 
@@ -192,27 +201,37 @@
             }
         }
 
-        // CPA alarm: check AIS targets for dangerous approach.
+        // Guard-zone alarm: project each AIS target's CPA and raise if it
+        // will enter the configured CPA/TCPA box. Requires own course/speed.
         if (data.Latitude is not null && data.Longitude is not null
             && data.CourseOverGround is not null && data.SpeedOverGround is not null)
         {
-            var vessels = AisStore.GetVessels();
-            foreach (var v in vessels)
+            double cpaLimit = Settings.CpaAlarmThreshold;
+            double tcpaLimit = Settings.GuardZoneLookaheadMinutes;
+
+            foreach (var v in AisStore.GetVessels())
             {
                 if (v.Latitude is null || v.Longitude is null
                     || v.CourseOverGround is null || v.SpeedOverGround is null)
                     continue;
 
-                // Simple CPA estimate: relative distance closing check.
-                double distNm = HaversineNm(data.Latitude.Value, data.Longitude.Value,
-                    v.Latitude.Value, v.Longitude.Value);
+                if (IsMoored(v, now)) continue;
 
-                if (distNm < Settings.CpaAlarmThreshold)
-                {
-                    string name = v.Name ?? v.Mmsi ?? "vessel";
-                    SetAlarm("CPA", $"{name} at {distNm:F2}nm", "danger");
-                    return;
-                }
+                var cpa = Cpa.Compute(
+                    data.Latitude.Value, data.Longitude.Value,
+                    data.CourseOverGround, data.SpeedOverGround,
+                    v.Latitude.Value, v.Longitude.Value,
+                    v.CourseOverGround, v.SpeedOverGround);
+
+                if (cpa is null) continue;
+                if (cpa.Value.CpaNm >= cpaLimit) continue;
+                if (cpa.Value.TcpaMin > tcpaLimit) continue;
+
+                string name = v.Name ?? v.Mmsi ?? "vessel";
+                SetAlarm("CPA",
+                    $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
+                    "danger");
+                return;
             }
         }
 
@@ -222,7 +241,7 @@
             bool resolved = activeAlarm.Title switch
             {
                 "SHALLOW" => data.Depth is null || data.Depth >= Settings.DepthAlarmThreshold,
-                "CPA" => true, // CPA alarm auto-clears if no vessels are close (checked above)
+                "CPA" => true, // auto-clears if nothing matched the loop above
                 _ => false
             };
             if (resolved)
@@ -231,6 +250,25 @@
                 _ = InvokeAsync(StateHasChanged);
             }
         }
+    }
+
+    /// <summary>True once the vessel has held near-zero speed for at least
+    /// MooredHoldSeconds. Transitions from moving to stopped reset the clock.</summary>
+    private bool IsMoored(OnaPlotter.Models.AisVessel v, DateTime now)
+    {
+        string key = v.Context;
+        bool slow = v.SpeedOverGround is not null && v.SpeedOverGround.Value < MooredSpeedThresholdMs;
+        if (!slow)
+        {
+            lowSpeedSince.Remove(key);
+            return false;
+        }
+        if (!lowSpeedSince.TryGetValue(key, out var since))
+        {
+            lowSpeedSince[key] = now;
+            return false;
+        }
+        return (now - since).TotalSeconds >= MooredHoldSeconds;
     }
 
     private void SetAlarm(string title, string message, string severity)
@@ -255,18 +293,6 @@
         alarmAudioActive = false;
         await StopAlarmAsync();
         StateHasChanged();
-    }
-
-    private static double HaversineNm(double lat1, double lon1, double lat2, double lon2)
-    {
-        const double R = 6371000;
-        double dLat = (lat2 - lat1) * Math.PI / 180;
-        double dLon = (lon2 - lon1) * Math.PI / 180;
-        double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
-                   Math.Cos(lat1 * Math.PI / 180) * Math.Cos(lat2 * Math.PI / 180) *
-                   Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
-        double meters = R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return meters / 1852.0;
     }
 
     private async Task CheckStaleAsync()

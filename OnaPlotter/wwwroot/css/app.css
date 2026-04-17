@@ -1580,6 +1580,22 @@ main:has(.alarm-banner) .hud-top-left {
 .xte-warn { color: #f59e0b; }
 .xte-danger { color: #ef4444; }
 
+/* CPA / crossing-situation labels on the map */
+.cpa-label {
+    background: rgba(10, 12, 18, 0.88) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: #fff !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+    white-space: nowrap;
+}
+.cpa-label::before { display: none !important; }
+.cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
+.cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
+
 /* ===== Anchor Alarm HUD Panel ===== */
 
 .hud-anchor {

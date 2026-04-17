@@ -20,6 +20,14 @@ let suppressMoveEnd = false;  // Suppress moveend during programmatic panTo.
 // AIS state.
 const aisMarkers = {};
 const aisVectors = {};
+const aisCpaOwnLines = {};  // polyline from own boat to own-CPA point, per vessel context
+const aisCpaTgtLines = {};  // polyline from target to target-CPA point, per vessel context
+const aisCpaLabels = {};    // tooltip at midpoint labelled CPA / TCPA
+
+// Guard zone: collision-alarm envelope drawn around own boat.
+let guardZoneRing = null;
+let guardZoneRadiusNm = 0.5;    // default matches IAppSettings.CpaAlarmThreshold
+let guardZoneLookaheadMin = 10; // default matches IAppSettings.GuardZoneLookaheadMinutes
 
 // Chart layers from SignalK.
 const chartLayers = {};  // keyed by chart identifier
@@ -333,6 +341,8 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     boatMarker.setLatLng([lat, lon]);
     rotateMarker(boatMarker, headingRad ?? cogRad);
 
+    if (guardZoneRing) guardZoneRing.setLatLng([lat, lon]);
+
     const end = vectorEnd(lat, lon, cogRad, sogMs);
     if (end) {
         boatVector.setLatLngs([[lat, lon], end]);
@@ -456,7 +466,16 @@ export function updateAisTargets(vessels) {
 
         const cpaInfo = computeCpa(selfLat, selfLon, selfCogRad, selfSogMs,
                                     v.lat, v.lon, v.cogRad, v.sogMs);
-        const isDanger = cpaInfo && cpaInfo.cpa < 0.5 && cpaInfo.tcpa < 30 && cpaInfo.tcpa > 0;
+        const isDanger = cpaInfo
+            && cpaInfo.cpa < guardZoneRadiusNm
+            && cpaInfo.tcpa < guardZoneLookaheadMin
+            && cpaInfo.tcpa > 0;
+        // Within 2x the guard zone we draw a yellow warning line; this gives
+        // the captain situational awareness before a red alarm fires.
+        const isWarning = !isDanger && cpaInfo
+            && cpaInfo.cpa < guardZoneRadiusNm * 2
+            && cpaInfo.tcpa < guardZoneLookaheadMin * 2
+            && cpaInfo.tcpa > 0;
         const color = aisColor(v.shipType, isDanger);
         const icon = getAisIcon(color);
 
@@ -548,6 +567,41 @@ export function updateAisTargets(vessels) {
                 vec.setStyle({ color });
             }
         }
+
+        // Crossing-situation lines: draw from each vessel's current position
+        // to its predicted CPA point, plus a label with CPA / TCPA at the
+        // target's CPA dot. Rendered for danger (red) and warning (yellow).
+        if ((isDanger || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
+            const tcpaSec = cpaInfo.tcpa * 60;
+            const ownCpa = destPoint(selfLat, selfLon, selfCogRad, selfSogMs * tcpaSec);
+            const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
+            const lineColor = isDanger ? '#ef4444' : '#f59e0b';
+
+            updateCpaLine(aisCpaOwnLines, v.context, [selfLat, selfLon], ownCpa, lineColor);
+            updateCpaLine(aisCpaTgtLines, v.context, [v.lat, v.lon], tgtCpa, lineColor);
+
+            const midLat = (ownCpa[0] + tgtCpa[0]) / 2;
+            const midLon = (ownCpa[1] + tgtCpa[1]) / 2;
+            const labelText = `${cpaInfo.cpa.toFixed(2)} nm · T-${cpaInfo.tcpa.toFixed(0)}m`;
+            let lbl = aisCpaLabels[v.context];
+            if (!lbl) {
+                lbl = L.tooltip({
+                    permanent: true, direction: 'center',
+                    className: `cpa-label ${isDanger ? 'cpa-danger' : 'cpa-warn'}`
+                }).setLatLng([midLat, midLon]).setContent(labelText).addTo(map);
+                aisCpaLabels[v.context] = lbl;
+            } else {
+                lbl.setLatLng([midLat, midLon]);
+                lbl.setContent(labelText);
+                const el = lbl.getElement();
+                if (el) {
+                    el.classList.toggle('cpa-danger', isDanger);
+                    el.classList.toggle('cpa-warn', !isDanger);
+                }
+            }
+        } else {
+            removeCpaOverlay(v.context);
+        }
     }
 
     // Remove stale markers.
@@ -557,7 +611,62 @@ export function updateAisTargets(vessels) {
             delete aisMarkers[ctx];
             if (aisVectors[ctx]) { map.removeLayer(aisVectors[ctx]); delete aisVectors[ctx]; }
             delete aisLabels[ctx];
+            removeCpaOverlay(ctx);
         }
+    }
+}
+
+function updateCpaLine(store, ctx, from, to, color) {
+    let line = store[ctx];
+    if (!line) {
+        line = L.polyline([from, to], {
+            color, weight: 2, dashArray: '4,4', opacity: 0.9
+        }).addTo(map);
+        store[ctx] = line;
+    } else {
+        line.setLatLngs([from, to]);
+        line.setStyle({ color });
+    }
+}
+
+function removeCpaOverlay(ctx) {
+    if (aisCpaOwnLines[ctx]) { map.removeLayer(aisCpaOwnLines[ctx]); delete aisCpaOwnLines[ctx]; }
+    if (aisCpaTgtLines[ctx]) { map.removeLayer(aisCpaTgtLines[ctx]); delete aisCpaTgtLines[ctx]; }
+    if (aisCpaLabels[ctx]) { map.removeLayer(aisCpaLabels[ctx]); delete aisCpaLabels[ctx]; }
+}
+
+/**
+ * Updates the collision-avoidance thresholds used to colour AIS targets and
+ * draw crossing-situation lines. Also resizes the guard zone ring.
+ * @param radiusNm    CPA threshold (nautical miles)
+ * @param lookaheadMin  TCPA threshold (minutes)
+ */
+export function setGuardZone(radiusNm, lookaheadMin) {
+    guardZoneRadiusNm = radiusNm;
+    guardZoneLookaheadMin = lookaheadMin;
+    drawGuardZone();
+}
+
+export function clearGuardZone() {
+    if (guardZoneRing) { map.removeLayer(guardZoneRing); guardZoneRing = null; }
+}
+
+function drawGuardZone() {
+    if (!map) return;
+    const radiusM = guardZoneRadiusNm * 1852;
+    if (!guardZoneRing) {
+        guardZoneRing = L.circle([selfLat, selfLon], {
+            radius: radiusM,
+            color: '#f59e0b',
+            weight: 1,
+            opacity: 0.5,
+            fillColor: '#f59e0b',
+            fillOpacity: 0.04,
+            interactive: false
+        }).addTo(map);
+    } else {
+        guardZoneRing.setLatLng([selfLat, selfLon]);
+        guardZoneRing.setRadius(radiusM);
     }
 }
 
@@ -1212,5 +1321,9 @@ export function dispose() {
     for (const id of Object.keys(waypointMarkers)) delete waypointMarkers[id];
     for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
+    for (const ctx of Object.keys(aisCpaOwnLines)) delete aisCpaOwnLines[ctx];
+    for (const ctx of Object.keys(aisCpaTgtLines)) delete aisCpaTgtLines[ctx];
+    for (const ctx of Object.keys(aisCpaLabels)) delete aisCpaLabels[ctx];
+    guardZoneRing = null;
     dotNetRef = null;
 }
