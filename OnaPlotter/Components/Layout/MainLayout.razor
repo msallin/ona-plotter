@@ -65,6 +65,12 @@
     private double? lastTwdForShiftCheck;
     private DateTime lastTwdCheckTime = DateTime.MinValue;
 
+    // Debounce alarm evaluation. SignalK deltas can arrive at 3+ Hz; running
+    // the per-vessel CPA loop on every tick is wasted work. One pass per
+    // second is plenty for a human alarm.
+    private const int AlarmCheckIntervalMs = 1_000;
+    private DateTime lastAlarmCheck = DateTime.MinValue;
+
     private sealed record AlarmInfo(string Title, string Message, string Severity);
 
     private string ConnectionClass => SignalkClient.IsConnected
@@ -151,6 +157,10 @@
 
     private void CheckAlarms()
     {
+        var now = DateTime.UtcNow;
+        if ((now - lastAlarmCheck).TotalMilliseconds < AlarmCheckIntervalMs) return;
+        lastAlarmCheck = now;
+
         var data = SignalkClient.Data;
 
         // Depth alarm.
