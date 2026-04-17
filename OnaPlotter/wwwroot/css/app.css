@@ -270,8 +270,13 @@ article.content:has(.map-container) {
     border: 1px solid rgba(255,255,255,0.06);
 }
 
-.hud-top-left { top: 44px; left: 12px; } /* leaves room for the connection chip above */
+.hud-top-left { top: 12px; left: 12px; }
 .hud-top-right { top: 12px; right: 56px; }
+
+/* When the conn-chip is actually rendered (fullscreen), push the left HUD
+   below it so they don't overlap. */
+.map-container.map-fullscreen .hud-top-left,
+.map-container:fullscreen .hud-top-left { top: 44px; }
 .hud-bottom-left { bottom: 60px; left: 12px; }
 .hud-bottom-right { bottom: 60px; right: 12px; }
 
@@ -1684,6 +1689,9 @@ main:has(.alarm-banner) .hud-top-left {
 .vessel-row:hover { background: var(--sk-surface-hover); }
 .vessel-row.vessel-danger { border-left: 3px solid #ef4444; padding-left: 5px; }
 .vessel-row.vessel-warn   { border-left: 3px solid #f59e0b; padding-left: 5px; }
+.vessel-row.vessel-buddy  { border-left: 3px solid #facc15; padding-left: 5px; }
+.vessel-row.vessel-buddy .chart-name { color: #fde68a; }
+.buddy-offline { opacity: 0.6; font-style: italic; }
 
 /* CPA / crossing-situation labels on the map */
 .cpa-label {

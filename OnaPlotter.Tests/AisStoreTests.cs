@@ -66,6 +66,67 @@ public class AisStoreTests
     }
 
     [Test]
+    public async Task UpdateBuddies_TagsExistingVessels()
+    {
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "navigation.position", pos);
+        store.Apply("vessels.urn:mrn:imo:mmsi:222", "navigation.position", pos);
+
+        store.UpdateBuddies(["vessels.urn:mrn:imo:mmsi:111"]);
+
+        var vessels = store.GetVessels();
+        var buddy = vessels.First(v => v.Context.EndsWith("111"));
+        var other = vessels.First(v => v.Context.EndsWith("222"));
+        await Assert.That(buddy.IsBuddy).IsTrue();
+        await Assert.That(other.IsBuddy).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateBuddies_SeedsVesselsCreatedLater()
+    {
+        var store = new AisStore();
+        store.UpdateBuddies(["vessels.urn:mrn:imo:mmsi:333"]);
+
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:333", "navigation.position", pos);
+        store.Apply("vessels.urn:mrn:imo:mmsi:444", "navigation.position", pos);
+
+        var vessels = store.GetVessels();
+        await Assert.That(vessels.First(v => v.Context.EndsWith("333")).IsBuddy).IsTrue();
+        await Assert.That(vessels.First(v => v.Context.EndsWith("444")).IsBuddy).IsFalse();
+    }
+
+    [Test]
+    public async Task UpdateBuddies_RemovesBuddyFlag()
+    {
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:555", "navigation.position", pos);
+        store.UpdateBuddies(["vessels.urn:mrn:imo:mmsi:555"]);
+        await Assert.That(store.GetVessels()[0].IsBuddy).IsTrue();
+
+        // User removed the buddy in the plugin UI; refreshing with an empty
+        // list must un-tag the vessel.
+        store.UpdateBuddies([]);
+        await Assert.That(store.GetVessels()[0].IsBuddy).IsFalse();
+    }
+
+    [Test]
+    public async Task AisVessel_BuddyPathApplied()
+    {
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:666", "navigation.position", pos);
+
+        // Live update via the delta stream: the plugin pushes buddy=true.
+        var buddyTrue = JsonSerializer.SerializeToElement(true);
+        store.Apply("vessels.urn:mrn:imo:mmsi:666", "buddy", buddyTrue);
+
+        await Assert.That(store.GetVessels()[0].IsBuddy).IsTrue();
+    }
+
+    [Test]
     public async Task Apply_SameContext_UpdatesExistingVessel()
     {
         var store = new AisStore();

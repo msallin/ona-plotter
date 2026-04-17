@@ -11,6 +11,8 @@ namespace OnaPlotter.Services;
 public sealed class AisStore
 {
     private readonly ConcurrentDictionary<string, AisVessel> _vessels = new();
+    private readonly HashSet<string> _buddyContexts = new(StringComparer.Ordinal);
+    private readonly Lock _buddyLock = new();
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(2);
 
@@ -30,6 +32,10 @@ public sealed class AisStore
         {
             var v = new AisVessel(ctx);
             v.Mmsi = AisVessel.ExtractMmsi(ctx);
+            lock (_buddyLock)
+            {
+                v.IsBuddy = _buddyContexts.Contains(ctx);
+            }
             return v;
         });
 
@@ -67,6 +73,37 @@ public sealed class AisStore
     }
 
     public int Count => _vessels.Count;
+
+    /// <summary>
+    /// Replaces the buddy-context set and retags every tracked vessel. Fed
+    /// from the REST seed of sbender9/signalk-buddylist-plugin at startup.
+    /// Vessels that join later are tagged on creation in <see cref="Apply"/>.
+    /// </summary>
+    public void UpdateBuddies(IEnumerable<string> buddyContexts)
+    {
+        bool changed = false;
+        lock (_buddyLock)
+        {
+            _buddyContexts.Clear();
+            foreach (var ctx in buddyContexts) _buddyContexts.Add(ctx);
+
+            foreach (var v in _vessels.Values)
+            {
+                bool shouldBe = _buddyContexts.Contains(v.Context);
+                if (v.IsBuddy != shouldBe)
+                {
+                    v.IsBuddy = shouldBe;
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+        {
+            Interlocked.Increment(ref _version);
+            OnAisUpdated?.Invoke();
+        }
+    }
 
     /// <summary>
     /// Overwrites the vessel name, typically from an external enrichment source

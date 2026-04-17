@@ -241,6 +241,7 @@
                     || v.CourseOverGround is null || v.SpeedOverGround is null)
                     continue;
 
+                if (v.IsBuddy) continue;               // buddies are friends, not threats
                 if (moored.IsMoored(v, now)) continue;
                 if (IsSnoozed(v.Context, now)) continue;
 

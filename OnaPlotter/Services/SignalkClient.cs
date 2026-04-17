@@ -83,7 +83,10 @@ public sealed class SignalkClient : IAsyncDisposable
         "name",
         "mmsi",
         "communication.callsignVhf",
-        "design.aisShipType"
+        "design.aisShipType",
+        // Published by sbender9/signalk-buddylist-plugin when installed.
+        // AisVessel.Apply sets IsBuddy; unknown when the plugin is absent.
+        "buddy"
     ];
 
     /// <summary>

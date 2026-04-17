@@ -90,6 +90,44 @@
         }
     }
 
+    @if (Buddies.Count > 0)
+    {
+        <div class="chart-panel-header section-toggle" @onclick="() => BuddiesExpanded = !BuddiesExpanded">
+            <span class="toggle-arrow">@(BuddiesExpanded ? "v" : ">")</span>
+            Buddies <span class="section-count">@Buddies.Count</span>
+        </div>
+        @if (BuddiesExpanded)
+        {
+            @foreach (var buddy in Buddies)
+            {
+                var live = buddy.Mmsi is not null
+                    ? Vessels.FirstOrDefault(v => v.DisplayName?.Contains(buddy.Mmsi) == true
+                                              || v.Context.Contains(buddy.Mmsi))
+                    : null;
+                <div class="chart-item vessel-row vessel-buddy"
+                     @onclick="() => { if (live is not null) OnFocusVessel.InvokeAsync(live.Context); }">
+                    <div class="chart-item-body">
+                        <div class="chart-name">&#x2605; @buddy.Name</div>
+                        <div class="chart-desc">
+                            @if (live?.DistanceNm is not null)
+                            {
+                                <span>@live.DistanceNm.Value.ToString("F1") nm</span>
+                                if (live.SogKn is not null)
+                                {
+                                    <span> · @live.SogKn.Value.ToString("F1") kn</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="buddy-offline">Not in AIS range</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+
     @if (Vessels.Count > 0)
     {
         <div class="chart-panel-header section-toggle" @onclick="() => VesselsExpanded = !VesselsExpanded">
@@ -103,7 +141,7 @@
                 <div class="chart-item vessel-row @VesselRowClass(vessel)"
                      @onclick="() => OnFocusVessel.InvokeAsync(vessel.Context)">
                     <div class="chart-item-body">
-                        <div class="chart-name">@vessel.DisplayName</div>
+                        <div class="chart-name">@(vessel.IsBuddy ? "\u2605 " : "")@vessel.DisplayName</div>
                         <div class="chart-desc">
                             @if (vessel.CpaNm is not null && vessel.TcpaMin is not null)
                             {
@@ -174,6 +212,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> FilteredRoutes { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> LoadedWaypoints { get; set; } = [];
     [Parameter] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
+    [Parameter] public IReadOnlyList<SignalkBuddy> Buddies { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledCharts { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
     [Parameter] public bool ServerTrackVisible { get; set; }
@@ -187,6 +226,7 @@
     private bool ChartsExpanded { get; set; } = true;
     private bool RoutesExpanded { get; set; } = true;
     private bool WaypointsExpanded { get; set; } = true;
+    private bool BuddiesExpanded { get; set; } = true;
     private bool VesselsExpanded { get; set; } = true;
     private bool TrackExpanded { get; set; } = true;
     private bool WeatherExpanded { get; set; }

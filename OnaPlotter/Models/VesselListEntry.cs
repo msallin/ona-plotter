@@ -13,4 +13,5 @@ public sealed record VesselListEntry(
     double? DistanceNm,
     double? BearingDeg,
     double? SogKn,
-    string? ShipType);
+    string? ShipType,
+    bool IsBuddy);

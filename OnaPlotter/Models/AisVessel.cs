@@ -18,6 +18,15 @@ public sealed class AisVessel
     public double? CourseOverGround { get; set; }
     public double? SpeedOverGround { get; set; }
     public string? ShipType { get; set; }
+
+    /// <summary>
+    /// True when the vessel is in the captain's buddy list (populated from
+    /// sbender9/signalk-buddylist-plugin, either via the REST seed at startup
+    /// or the `buddy` path on the delta stream). Buddies are exempt from the
+    /// CPA alarm and get a distinct icon on the map.
+    /// </summary>
+    public bool IsBuddy { get; set; }
+
     public DateTime LastSeen { get; set; }
 
     public AisVessel(string context)
@@ -80,6 +89,17 @@ public sealed class AisVessel
                     ShipType = typeEl.TryGetProperty("name", out var n) ? n.GetString() : typeEl.ToString();
                 else
                     ShipType = rawValue?.ToString();
+                return true;
+
+            case "buddy":
+                bool newBuddy = rawValue switch
+                {
+                    bool b => b,
+                    JsonElement bEl => bEl.ValueKind == JsonValueKind.True,
+                    _ => false
+                };
+                if (newBuddy == IsBuddy) return false;
+                IsBuddy = newBuddy;
                 return true;
 
             default:

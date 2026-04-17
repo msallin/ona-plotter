@@ -16,6 +16,7 @@
 @inject ICourseApi CourseApi
 @inject IAutopilotApi AutopilotApi
 @inject ITrackApi TrackApi
+@inject IBuddyListApi BuddyListApi
 @inject IAppSettings Settings
 @inject IToastService Toasts
 @inject IJSRuntime JS
@@ -125,6 +126,7 @@
                      FilteredRoutes="FilteredRoutes"
                      LoadedWaypoints="loadedWaypoints"
                      Vessels="@BuildVesselList()"
+                     Buddies="loadedBuddies"
                      EnabledCharts="enabledCharts"
                      EnabledRoutes="enabledRoutes"
                      ServerTrackVisible="serverTrackVisible"
@@ -186,6 +188,7 @@
     private bool waypointDialogVisible;
     private string newWaypointName = "";
     private List<SignalkWaypoint> loadedWaypoints = [];
+    private IReadOnlyList<SignalkBuddy> loadedBuddies = [];
     // Race timer.
     private bool raceTimerActive;
     private bool shortcutsVisible;
@@ -269,7 +272,8 @@
                 DistanceNm: distNm,
                 BearingDeg: brgDeg,
                 SogKn: v.SpeedOverGround is not null ? v.SpeedOverGround * Format.MsToKnots : null,
-                ShipType: v.ShipType));
+                ShipType: v.ShipType,
+                IsBuddy: v.IsBuddy));
         }
 
         // TCPA-sorted; non-converging vessels fall to the bottom, sorted by distance.
@@ -423,6 +427,17 @@
         availableCharts = await SafeLoad(() => ChartApi.GetAllAsync(), "charts") ?? [];
         availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? [];
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? [];
+
+        // Optional: buddy-list plugin. Silently no-ops if not installed.
+        // The returned list seeds AisStore so vessels tracked later get
+        // IsBuddy set on creation; live updates still come via the `buddy`
+        // delta path.
+        var buddies = await BuddyListApi.GetAllAsync();
+        if (buddies is not null)
+        {
+            loadedBuddies = buddies;
+            AisStore.UpdateBuddies(buddies.Select(b => $"vessels.{b.Urn}"));
+        }
         PrecomputeRouteBounds();
         RebuildFilteredLayers();
         StateHasChanged();
@@ -698,7 +713,8 @@
                     context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
                     lat = v.Latitude!.Value, lon = v.Longitude!.Value,
                     headingRad = v.Heading, cogRad = v.CourseOverGround,
-                    sogMs = v.SpeedOverGround, shipType = v.ShipType
+                    sogMs = v.SpeedOverGround, shipType = v.ShipType,
+                    buddy = v.IsBuddy
                 }).ToArray();
             await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);
         }

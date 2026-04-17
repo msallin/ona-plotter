@@ -118,10 +118,15 @@ const AIS_COLORS = {
     military: '#fca5a5',  // muted red
     sar: '#fca5a5',
     default: '#d4d4d8',   // neutral gray (less garish than amber)
-    danger: '#f87171'     // warm red for CPA danger
+    danger: '#f87171',    // warm red for CPA danger
+    buddy: '#facc15'      // saturated gold; also gets a star badge
 };
 
-function aisColor(shipType, isDanger) {
+function aisColor(shipType, isDanger, isBuddy) {
+    // Buddy colour overrides everything else. The collision alarm is
+    // skipped for buddies in C#, so we also skip the red-danger tint
+    // here to avoid the "alarm-looking but silent" mismatch.
+    if (isBuddy) return AIS_COLORS.buddy;
     if (isDanger) return AIS_COLORS.danger;
     if (!shipType) return AIS_COLORS.default;
     const t = shipType.toLowerCase();
@@ -504,11 +509,14 @@ export function updateAisTargets(vessels) {
             && cpaInfo.tcpa > 0;
         // Within 2x the guard zone we draw a yellow warning line; this gives
         // the captain situational awareness before a red alarm fires.
-        const isWarning = !isDanger && cpaInfo
+        // Buddies never trigger the danger/warning overlays - they're
+        // intentionally sailing near us and shouldn't paint the map red.
+        const isDangerEff = isDanger && !v.buddy;
+        const isWarning = !isDangerEff && !v.buddy && cpaInfo
             && cpaInfo.cpa < guardZoneRadiusNm * 2
             && cpaInfo.tcpa < guardZoneLookaheadMin * 2
             && cpaInfo.tcpa > 0;
-        const color = aisColor(v.shipType, isDanger);
+        const color = aisColor(v.shipType, isDangerEff, v.buddy);
         const icon = getAisIcon(color);
 
         let marker = aisMarkers[v.context];
@@ -523,8 +531,10 @@ export function updateAisTargets(vessels) {
 
         // Name label visible at zoom >= 12. Prefer resolved external name
         // over raw MMSI so the chart looks clean even for unnamed targets.
+        // Buddies get a star prefix.
         const resolvedName = v.name || (v.mmsi ? vesselNameCache[v.mmsi] : null);
-        const displayName = resolvedName || (v.mmsi ? v.mmsi : null);
+        const baseName = resolvedName || (v.mmsi ? v.mmsi : null);
+        const displayName = baseName ? (v.buddy ? '\u2605 ' + baseName : baseName) : null;
         if (displayName) {
             if (!aisLabels[v.context]) {
                 aisLabels[v.context] = L.tooltip({
@@ -565,10 +575,11 @@ export function updateAisTargets(vessels) {
         if (!name && mmsi && !(mmsi in vesselNameCache)) {
             resolveVesselName(v.context, mmsi);
         }
+        if (v.buddy) displayTitle = '\u2605 ' + displayTitle;
 
         let cpaHtml = '';
         if (cpaInfo && cpaInfo.tcpa > 0) {
-            const cls = isDanger ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
+            const cls = isDangerEff ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
             cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
         }
 
@@ -626,11 +637,13 @@ export function updateAisTargets(vessels) {
         // Crossing-situation lines: draw from each vessel's current position
         // to its predicted CPA point, plus a label with CPA / TCPA at the
         // target's CPA dot. Rendered for danger (red) and warning (yellow).
-        if ((isDanger || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
+        // Buddies never render these - they're exempt from the alarm pipeline
+        // and the red lines would be misleading.
+        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
             const tcpaSec = cpaInfo.tcpa * 60;
             const ownCpa = destPoint(selfLat, selfLon, selfCogRad, selfSogMs * tcpaSec);
             const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
-            const lineColor = isDanger ? '#ef4444' : '#f59e0b';
+            const lineColor = isDangerEff ? '#ef4444' : '#f59e0b';
 
             updateCpaLine(aisCpaOwnLines, v.context, [selfLat, selfLon], ownCpa, lineColor);
             updateCpaLine(aisCpaTgtLines, v.context, [v.lat, v.lon], tgtCpa, lineColor);
@@ -642,7 +655,7 @@ export function updateAisTargets(vessels) {
             if (!lbl) {
                 lbl = L.tooltip({
                     permanent: true, direction: 'center',
-                    className: `cpa-label ${isDanger ? 'cpa-danger' : 'cpa-warn'}`
+                    className: `cpa-label ${isDangerEff ? 'cpa-danger' : 'cpa-warn'}`
                 }).setLatLng([midLat, midLon]).setContent(labelText).addTo(map);
                 aisCpaLabels[v.context] = lbl;
             } else {
@@ -650,8 +663,8 @@ export function updateAisTargets(vessels) {
                 lbl.setContent(labelText);
                 const el = lbl.getElement();
                 if (el) {
-                    el.classList.toggle('cpa-danger', isDanger);
-                    el.classList.toggle('cpa-warn', !isDanger);
+                    el.classList.toggle('cpa-danger', isDangerEff);
+                    el.classList.toggle('cpa-warn', !isDangerEff);
                 }
             }
         } else {
