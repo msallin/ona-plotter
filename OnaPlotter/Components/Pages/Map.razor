@@ -31,11 +31,11 @@
         @ConnLabel
     </div>
 
-    @* === HUD: Top-Left — Speed, Course & Position === *@
+    @* === HUD: Top-Left — Speed (primary), Course & Position === *@
     <div class="hud hud-top-left">
         <div class="hud-panel">
             <div class="hud-label">SOG</div>
-            <div class="hud-value">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
+            <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
             <div class="hud-label" style="margin-top:4px;">COG</div>
             <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
             <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
@@ -262,6 +262,29 @@
             <span class="ctrl-lbl">Layers</span>
         </button>
     </div>
+
+    @* === Keyboard Shortcuts Overlay === *@
+    @if (shortcutsVisible)
+    {
+        <div class="shortcuts-overlay" @onclick="() => shortcutsVisible = false">
+            <div class="shortcuts-card" @onclick:stopPropagation>
+                <h5>Keyboard Shortcuts</h5>
+                <div class="shortcuts-grid">
+                    <kbd>F</kbd><span>Toggle follow</span>
+                    <kbd>O</kbd><span>Cycle orientation</span>
+                    <kbd>N</kbd><span>Night mode</span>
+                    <kbd>A</kbd><span>Anchor watch</span>
+                    <kbd>M</kbd><span>Man overboard</span>
+                    <kbd>T</kbd><span>Fit track</span>
+                    <kbd>L</kbd><span>Laylines</span>
+                    <kbd>R</kbd><span>Race timer</span>
+                    <kbd>?</kbd><span>Show this card</span>
+                    <kbd>Esc</kbd><span>Dismiss</span>
+                </div>
+                <div class="shortcuts-hint">Double-click the map: toggle bearing/distance line. Right-click or long-press: context menu.</div>
+            </div>
+        </div>
+    }
 
     @* === Route Editing Bar === *@
     @if (routeEditMode)
@@ -490,6 +513,7 @@
     private bool waypointsExpanded = true;
     // Race timer.
     private bool raceTimerActive;
+    private bool shortcutsVisible;
     private DateTime raceTimerTarget;
     private System.Threading.Timer? raceTimer;
     private bool weatherExpanded;
@@ -682,6 +706,8 @@
             case "l": await ToggleLaylines(); break;
             case "o": await CycleMapOrientation(); break;
             case "r": ToggleRaceTimer(); break;
+            case "?": shortcutsVisible = !shortcutsVisible; break;
+            case "escape": shortcutsVisible = false; break;
         }
         await InvokeAsync(StateHasChanged);
     }

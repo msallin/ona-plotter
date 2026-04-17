@@ -244,9 +244,15 @@ article.content:has(.map-container) {
 
 .hud-value {
     font-size: 1.6rem;
-    font-weight: 300;
+    font-weight: 500; /* higher weight reads better in sunlight on the helm */
     font-variant-numeric: tabular-nums;
     line-height: 1.1;
+}
+
+/* SOG is the single most important value at the helm - make it dominant. */
+.hud-value.hud-primary {
+    font-size: 2.4rem;
+    font-weight: 600;
 }
 
 .hud-label {
@@ -763,6 +769,66 @@ html {
 
 /* Shift the chip down when an alarm banner is shown so it doesn't collide. */
 main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
+
+/* ===== Keyboard Shortcuts Overlay ===== */
+
+.shortcuts-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-modal);
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shortcuts-card {
+    background: rgba(15, 18, 25, 0.98);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 20px 24px;
+    max-width: 420px;
+    color: var(--sk-text);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.shortcuts-card h5 {
+    margin: 0 0 14px;
+    font-size: 1rem;
+    color: #fff;
+    letter-spacing: 0.02em;
+}
+
+.shortcuts-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 14px;
+    align-items: center;
+    font-size: 0.85rem;
+}
+
+.shortcuts-grid kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 2px 8px;
+    min-width: 28px;
+    text-align: center;
+    color: var(--sk-accent);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.shortcuts-hint {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    font-size: 0.75rem;
+    color: var(--sk-text-muted);
+    line-height: 1.5;
+}
 
 /* ===== Toast Notifications ===== */
 

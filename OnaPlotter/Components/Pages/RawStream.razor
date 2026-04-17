@@ -162,28 +162,25 @@
         return false;
     }
 
-    private async void TogglePath(string path)
+    private async Task TogglePath(string path)
     {
         if (selectedPaths.Contains(path))
         {
             selectedPaths.Remove(path);
-            // If it was an extra subscription, unsubscribe from the server.
             if (!SignalkClient.CoreSelfPaths.Contains(path))
                 await SignalkClient.UnsubscribeExtraPathAsync(path);
         }
         else
         {
             selectedPaths.Add(path);
-            // If it's not a core path, subscribe on the server so data arrives.
             if (!SignalkClient.CoreSelfPaths.Contains(path))
                 await SignalkClient.SubscribeExtraPathAsync(path);
         }
         Clear();
     }
 
-    private async void SelectDefaults()
+    private async Task SelectDefaults()
     {
-        // Unsubscribe any extras.
         foreach (var path in selectedPaths.Except(SignalkClient.CoreSelfPaths).ToList())
             await SignalkClient.UnsubscribeExtraPathAsync(path);
 
@@ -193,7 +190,7 @@
         Clear();
     }
 
-    private async void SelectAll()
+    private async Task SelectAll()
     {
         foreach (var path in availablePaths)
         {
@@ -203,7 +200,7 @@
         Clear();
     }
 
-    private async void SelectNone()
+    private async Task SelectNone()
     {
         foreach (var path in selectedPaths.Except(SignalkClient.CoreSelfPaths).ToList())
             await SignalkClient.UnsubscribeExtraPathAsync(path);

@@ -1133,7 +1133,9 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         // Skip if user is typing in an input.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         const key = e.key.toLowerCase();
-        if ('mfnatlor'.includes(key) && key.length === 1) {
+        const isLetter = 'mfnatlor'.includes(key) && key.length === 1;
+        const isSpecial = key === '?' || key === 'escape';
+        if (isLetter || isSpecial) {
             e.preventDefault();
             dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key);
         }

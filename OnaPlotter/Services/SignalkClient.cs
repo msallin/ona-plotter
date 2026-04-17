@@ -13,6 +13,11 @@ namespace OnaPlotter.Services;
 /// </summary>
 public sealed class SignalkClient : IAsyncDisposable
 {
+    private const int InitialBackoffMs = 1_000;
+    private const int MaxBackoffMs = 30_000;
+    private const int ReceiveBufferBytes = 8 * 1024;
+    private const int StaleDataThresholdSec = 5;
+
     private readonly NavigationData _data;
     private readonly TrackBuffer _track;
     private readonly AisStore _ais;
@@ -111,7 +116,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// for more than 5 seconds.
     /// </summary>
     public bool IsDataStale => IsConnected
-        && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > 5 * TimeSpan.TicksPerSecond;
+        && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
 
     public SignalkClient(OnaPlotter.Services.Api.ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais)
@@ -136,8 +141,7 @@ public sealed class SignalkClient : IAsyncDisposable
 
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
-        int backoffMs = 1000;
-        const int maxBackoffMs = 30_000;
+        int backoffMs = InitialBackoffMs;
 
         while (!ct.IsCancellationRequested)
         {
@@ -150,7 +154,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 _logger.LogInformation("Connected to SignalK");
                 IsConnected = true;
                 OnConnectionChanged?.Invoke();
-                backoffMs = 1000;
+                backoffMs = InitialBackoffMs;
 
                 // Subscribe to the paths the app needs.
                 await SendSubscriptionAsync("vessels.self", SelfPaths);
@@ -158,7 +162,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (_extraPaths.Count > 0)
                     await SendSubscriptionAsync("vessels.self", _extraPaths);
 
-                var buffer = new byte[8192];
+                var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
 
                 while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
@@ -193,7 +197,7 @@ public sealed class SignalkClient : IAsyncDisposable
             try
             {
                 await Task.Delay(backoffMs, ct);
-                backoffMs = Math.Min(backoffMs * 2, maxBackoffMs);
+                backoffMs = Math.Min(backoffMs * 2, MaxBackoffMs);
             }
             catch (OperationCanceledException)
             {
