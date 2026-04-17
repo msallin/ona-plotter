@@ -26,11 +26,16 @@
      @onfullscreenchange="OnFullscreenChange">
     <div id="mapDiv"></div>
 
-    @* === Connection status chip (always visible, including fullscreen). === *@
-    <div class="conn-chip conn-@ConnClass" title="@ConnTooltip">
-        <span class="conn-dot"></span>
-        @ConnLabel
-    </div>
+    @* Connection status chip. The MainLayout top-row already shows this
+       indicator, so we only surface it here when we're in fullscreen mode
+       and the top-row is hidden - otherwise it duplicates. *@
+    @if (fullscreen)
+    {
+        <div class="conn-chip conn-@ConnClass" title="@ConnTooltip">
+            <span class="conn-dot"></span>
+            @ConnLabel
+        </div>
+    }
 
     <MapHud Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
