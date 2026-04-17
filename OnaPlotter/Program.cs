@@ -22,6 +22,7 @@ builder.Services.AddSingleton<AisStore>();
 // UI services.
 builder.Services.AddSingleton<IToastService, ToastService>();
 builder.Services.AddSingleton<IPolarService, PolarService>();
+builder.Services.AddSingleton<IAlarmManager, AlarmManager>();
 
 // SignalK REST API clients (one per concern).
 builder.Services.AddSingleton<ISignalKBaseUrl, SignalKBaseUrl>();

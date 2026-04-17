@@ -1,11 +1,12 @@
 @inherits LayoutComponentBase
+@using OnaPlotter.Models
 @using OnaPlotter.Services
-@using OnaPlotter.Utilities
 @using Microsoft.JSInterop
 @inject SignalkClient SignalkClient
 @inject AisStore AisStore
 @inject IAppSettings Settings
 @inject IToastService Toasts
+@inject IAlarmManager Alarms
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -26,17 +27,20 @@
             </button>
         </div>
 
-        @if (activeAlarm is not null)
+        @{
+            var alarm = Alarms.ActiveAlarm;
+        }
+        @if (alarm is not null)
         {
-            <div class="alarm-banner @(activeAlarm.Severity == "danger" ? "alarm-danger" : "alarm-warn")">
+            <div class="alarm-banner @(alarm.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")">
                 <div class="alarm-body" @onclick="DismissAlarm">
-                    <strong>@activeAlarm.Title</strong> @activeAlarm.Message
+                    <strong>@alarm.Title</strong> @alarm.Message
                 </div>
-                @if (activeAlarm.TargetKey is not null)
+                @if (alarm.TargetKey is not null)
                 {
                     <button class="alarm-snooze" @onclick="SnoozeActiveAlarm"
-                            title="Silence this target for @SnoozeMinutes minutes">
-                        Snooze @SnoozeMinutes m
+                            title="Silence this target for @Alarms.SnoozeDurationMinutes minutes">
+                        Snooze @Alarms.SnoozeDurationMinutes m
                     </button>
                 }
             </div>
@@ -67,34 +71,7 @@
     private System.Threading.Timer? staleCheckTimer;
     private volatile bool wasDisconnected;
     private volatile bool wasStale;
-
-    // Alarm state.
-    private AlarmInfo? activeAlarm;
     private bool alarmAudioActive;
-    private double? lastTwdForShiftCheck;
-    private DateTime lastTwdCheckTime = DateTime.MinValue;
-
-    // Debounce alarm evaluation. SignalK deltas can arrive at 3+ Hz; running
-    // the per-vessel CPA loop on every tick is wasted work. One pass per
-    // second is plenty for a human alarm.
-    private const int AlarmCheckIntervalMs = 1_000;
-    private DateTime lastAlarmCheck = DateTime.MinValue;
-
-    // Auto-mute moored / anchored vessels. Lives in its own service so state
-    // can be unit-tested and so cleanup of vessels that leave AIS range is
-    // owned in one place.
-    private readonly MooredVesselTracker moored = new();
-
-    /// <param name="TargetKey">Stable identifier (AIS context / MMSI) for
-    /// per-target snooze. Null for alarms that don't refer to a single
-    /// vessel, like SHALLOW or WIND SHIFT.</param>
-    private sealed record AlarmInfo(string Title, string Message, string Severity, string? TargetKey = null);
-
-    // Per-target snooze. After the captain acknowledges a specific vessel's
-    // CPA warning it stops firing for this MMSI for SnoozeMinutes. Cleared
-    // on page reload (in-memory only, intentionally).
-    private const int SnoozeMinutes = 10;
-    private readonly Dictionary<string, DateTime> snoozed = [];
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -117,8 +94,8 @@
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         SignalkClient.OnDataChanged += HandleDataChanged;
         Toasts.OnChanged += HandleToastsChanged;
-        // Theme changes mutate the class on .page; re-render to apply.
         Settings.OnSettingsChanged += HandleSettingsChanged;
+        Alarms.OnAlarmChanged += HandleAlarmChanged;
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
@@ -133,6 +110,33 @@
     private async void HandleToastsChanged()
     {
         try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async void HandleAlarmChanged()
+    {
+        // Drive the audio side-effect: ramp up when an alarm becomes active
+        // or its severity changes, stop when it clears.
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                var active = Alarms.ActiveAlarm;
+                if (active is null)
+                {
+                    alarmAudioActive = false;
+                    await StopAlarmAsync();
+                }
+                else if (!alarmAudioActive && audioModule is not null)
+                {
+                    alarmAudioActive = true;
+                    int cadence = active.Severity == AlarmSeverity.Danger ? 1000 : 3000;
+                    try { await audioModule.InvokeVoidAsync("startAlarm", cadence); }
+                    catch (JSDisconnectedException) { }
+                }
+                StateHasChanged();
+            });
+        }
         catch (ObjectDisposedException) { }
     }
 
@@ -159,177 +163,37 @@
             await InvokeAsync(async () =>
             {
                 StateHasChanged();
-                await UpdateAlarmAsync();
+                await UpdateConnectionAlarmAsync();
             });
         }
         catch (ObjectDisposedException) { }
     }
 
-    private async void HandleDataChanged()
+    private void HandleDataChanged()
     {
         try
         {
-            // Clear stale warning when data resumes.
+            // Clear the stale flag as soon as data flows again. The audio
+            // stops via HandleAlarmChanged when AlarmManager resolves.
             if (wasStale)
             {
                 wasStale = false;
-                await InvokeAsync(async () =>
-                {
-                    StateHasChanged();
-                    await StopAlarmAsync();
-                });
+                _ = InvokeAsync(StateHasChanged);
             }
 
-            // Check configurable alarms.
-            CheckAlarms();
+            Alarms.Evaluate(SignalkClient.Data, AisStore.GetVessels(), Settings);
         }
         catch (ObjectDisposedException) { }
     }
 
-    private void CheckAlarms()
+    private async Task DismissAlarm()
     {
-        var now = DateTime.UtcNow;
-        if ((now - lastAlarmCheck).TotalMilliseconds < AlarmCheckIntervalMs) return;
-        lastAlarmCheck = now;
-
-        var data = SignalkClient.Data;
-
-        // Depth alarm.
-        if (data.Depth is not null && data.Depth < Settings.DepthAlarmThreshold)
-        {
-            SetAlarm("SHALLOW", $"Depth {data.Depth:F1}m < {Settings.DepthAlarmThreshold:F1}m", "danger");
-            return;
-        }
-
-        // Wind shift alarm: check if TWD changed more than threshold over 5 minutes.
-        if (data.WindDirectionTrue is not null)
-        {
-            double twdDeg = data.WindDirectionTrue.Value * 180.0 / Math.PI;
-            if (twdDeg < 0) twdDeg += 360;
-
-            if (lastTwdForShiftCheck is null || (DateTime.UtcNow - lastTwdCheckTime).TotalMinutes >= 5)
-            {
-                if (lastTwdForShiftCheck is not null)
-                {
-                    double shift = Math.Abs(twdDeg - lastTwdForShiftCheck.Value);
-                    if (shift > 180) shift = 360 - shift;
-                    if (shift > Settings.WindShiftAlarmThreshold)
-                    {
-                        SetAlarm("WIND SHIFT", $"TWD shifted {shift:F0}\u00b0 in 5 min", "warn");
-                    }
-                }
-                lastTwdForShiftCheck = twdDeg;
-                lastTwdCheckTime = DateTime.UtcNow;
-            }
-        }
-
-        // Guard-zone alarm: project each AIS target's CPA and raise if it
-        // will enter the configured CPA/TCPA box. Requires own course/speed.
-        if (data.Latitude is not null && data.Longitude is not null
-            && data.CourseOverGround is not null && data.SpeedOverGround is not null)
-        {
-            double cpaLimit = Settings.CpaAlarmThreshold;
-            double tcpaLimit = Settings.GuardZoneLookaheadMinutes;
-
-            var vessels = AisStore.GetVessels();
-            // Drop moored-tracker state for vessels that have left AIS range.
-            moored.Cleanup(vessels.Select(v => v.Context).ToHashSet());
-
-            foreach (var v in vessels)
-            {
-                if (v.Latitude is null || v.Longitude is null
-                    || v.CourseOverGround is null || v.SpeedOverGround is null)
-                    continue;
-
-                if (v.IsBuddy) continue;               // buddies are friends, not threats
-                if (moored.IsMoored(v, now)) continue;
-                if (IsSnoozed(v.Context, now)) continue;
-
-                var cpa = Cpa.Compute(
-                    data.Latitude.Value, data.Longitude.Value,
-                    data.CourseOverGround, data.SpeedOverGround,
-                    v.Latitude.Value, v.Longitude.Value,
-                    v.CourseOverGround, v.SpeedOverGround);
-
-                if (cpa is null) continue;
-                if (cpa.Value.CpaNm >= cpaLimit) continue;
-                if (cpa.Value.TcpaMin > tcpaLimit) continue;
-
-                string name = v.Name ?? v.Mmsi ?? "vessel";
-                SetAlarm("CPA",
-                    $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
-                    "danger",
-                    v.Context);
-                return;
-            }
-        }
-
-        // Clear alarms when conditions resolve.
-        if (activeAlarm is not null)
-        {
-            bool resolved = activeAlarm.Title switch
-            {
-                "SHALLOW" => data.Depth is null || data.Depth >= Settings.DepthAlarmThreshold,
-                "CPA" => true, // auto-clears if nothing matched the loop above
-                _ => false
-            };
-            if (resolved)
-            {
-                activeAlarm = null;
-                _ = InvokeAsync(StateHasChanged);
-            }
-        }
-    }
-
-    private bool IsSnoozed(string targetKey, DateTime now)
-    {
-        if (!snoozed.TryGetValue(targetKey, out var until)) return false;
-        if (now < until) return true;
-        snoozed.Remove(targetKey);
-        return false;
+        await Alarms.DismissAsync();
     }
 
     private async Task SnoozeActiveAlarm()
     {
-        if (activeAlarm?.TargetKey is null) return;
-        snoozed[activeAlarm.TargetKey] = DateTime.UtcNow.AddMinutes(SnoozeMinutes);
-        activeAlarm = null;
-        alarmAudioActive = false;
-        await StopAlarmAsync();
-        StateHasChanged();
-    }
-
-    private void SetAlarm(string title, string message, string severity, string? targetKey = null)
-    {
-        // Same target already showing - update message in place, don't re-arm audio.
-        if (activeAlarm?.Title == title && activeAlarm.TargetKey == targetKey)
-        {
-            if (activeAlarm.Message != message)
-            {
-                activeAlarm = activeAlarm with { Message = message };
-                _ = InvokeAsync(StateHasChanged);
-            }
-            return;
-        }
-        activeAlarm = new AlarmInfo(title, message, severity, targetKey);
-        _ = InvokeAsync(async () =>
-        {
-            StateHasChanged();
-            if (audioModule is not null && !alarmAudioActive)
-            {
-                alarmAudioActive = true;
-                try { await audioModule.InvokeVoidAsync("startAlarm", severity == "danger" ? 1000 : 3000); }
-                catch (JSDisconnectedException) { }
-            }
-        });
-    }
-
-    private async Task DismissAlarm()
-    {
-        activeAlarm = null;
-        alarmAudioActive = false;
-        await StopAlarmAsync();
-        StateHasChanged();
+        await Alarms.SnoozeActiveAsync();
     }
 
     private async Task CheckStaleAsync()
@@ -345,7 +209,7 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async Task UpdateAlarmAsync()
+    private async Task UpdateConnectionAlarmAsync()
     {
         if (audioModule is null) return;
 
@@ -389,6 +253,7 @@
         SignalkClient.OnDataChanged -= HandleDataChanged;
         Toasts.OnChanged -= HandleToastsChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
+        Alarms.OnAlarmChanged -= HandleAlarmChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (audioModule is not null)
         {
