@@ -32,6 +32,28 @@ html, body {
     color: var(--sk-text);
 }
 
+/* Blazor error UI: hidden by default, shown by the framework on exception. */
+#blazor-error-ui {
+    display: none;
+    background: rgba(239, 68, 68, 0.95);
+    color: #fff;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 20px;
+    position: fixed;
+    z-index: var(--z-fullscreen);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+}
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 14px;
+    top: 10px;
+    font-size: 1.2rem;
+}
+#blazor-error-ui .reload { color: #fff; text-decoration: underline; margin-left: 10px; }
+
 a, .btn-link {
     color: var(--sk-accent);
 }
@@ -145,10 +167,21 @@ h2 {
 
 .map-container {
     position: relative;
-    height: calc(100vh - 100px);
+    /* Fill viewport minus the sticky top row (~48px). */
+    height: calc(100dvh - 3rem);
     width: 100%;
-    border-radius: 6px;
+    border-radius: 0;
     overflow: hidden;
+}
+
+/* Prevent page scroll when the map page is active (map fills the viewport). */
+body:has(.map-container) {
+    overflow: hidden;
+}
+
+/* Make the map article flush to the edges (no horizontal padding steal). */
+article.content:has(.map-container) {
+    padding: 0 !important;
 }
 
 .map-container #mapDiv {
@@ -1395,13 +1428,13 @@ html {
 /* ===== Anchor Alarm HUD Panel ===== */
 
 .hud-anchor {
-    bottom: 60px;
+    bottom: 100px;
     left: 50%;
     transform: translateX(-50%);
 }
 
 @media (max-width: 600px) {
-    .hud-anchor { bottom: 80px; }
+    .hud-anchor { bottom: 140px; }
 }
 
 .anchor-panel {

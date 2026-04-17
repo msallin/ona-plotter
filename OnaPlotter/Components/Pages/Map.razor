@@ -613,6 +613,16 @@
                 await module.InvokeVoidAsync("addWaypointMarker", wp.Id, wp.Latitude, wp.Longitude, wp.Name);
         }
 
+        // Auto-enable OpenSeaMap-named charts on first load (user preference).
+        foreach (var chart in availableCharts)
+        {
+            if (chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
+                || chart.Name.Contains("sea map", StringComparison.OrdinalIgnoreCase))
+            {
+                await ToggleChart(chart, true);
+            }
+        }
+
         // Restore persisted settings.
         await Settings.InitializeAsync();
         follow = Settings.FollowBoat;
