@@ -232,24 +232,32 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Zoom control in top-right to avoid HUD overlap.
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    // Custom fullscreen control next to zoom. Uses native API with webkit fallback,
-    // and a CSS-only fallback via a class toggle for iOS Safari.
+    // Custom fullscreen control next to zoom. Uses native API with webkit
+    // fallback, and a CSS-only fallback via a class toggle for iOS browsers
+    // (Safari / Firefox / Chrome, all WebKit under the hood).
     const FullscreenControl = L.Control.extend({
         options: { position: 'topright' },
         onAdd: function () {
             const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control ona-fs-control');
-            const btn = L.DomUtil.create('a', 'ona-fs-btn', container);
-            btn.href = '#';
+            // Real <button>, not an anchor. Firefox iOS has quirks with
+            // <a href="#"> inside Leaflet controls where preventDefault
+            // races the page-scroll-to-top behaviour.
+            const btn = L.DomUtil.create('button', 'ona-fs-btn', container);
+            btn.type = 'button';
             btn.title = 'Fullscreen';
-            btn.setAttribute('role', 'button');
             btn.setAttribute('aria-label', 'Toggle fullscreen');
             btn.innerHTML = fullscreenIconSvg(false);
-            L.DomEvent.on(btn, 'click', (e) => {
+            // Bind both click and touchend so iPadOS fires on first tap
+            // without waiting for the synthetic-click fallback.
+            const fire = (e) => {
                 L.DomEvent.preventDefault(e);
                 L.DomEvent.stopPropagation(e);
-                toggleFullscreenFromControl(btn);
-            });
+                toggleFullscreenFromControl();
+            };
+            L.DomEvent.on(btn, 'click', fire);
+            L.DomEvent.on(btn, 'touchend', fire);
             L.DomEvent.disableClickPropagation(container);
+            L.DomEvent.disableScrollPropagation(container);
             window._onaFsBtn = btn;
             return container;
         }
