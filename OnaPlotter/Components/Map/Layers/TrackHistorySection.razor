@@ -1,0 +1,23 @@
+@* Toggle for the 24h server track overlay. *@
+
+<SectionHeader Title="Track History"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    <label class="chart-item">
+        <input type="checkbox" checked="@Visible"
+               @onchange="(e) => OnToggle.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Server Track (24h)</div>
+            <div class="chart-desc">Position history from SignalK</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggle { get; set; }
+
+    private bool expanded = true;
+}

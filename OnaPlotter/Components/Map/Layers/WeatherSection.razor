@@ -1,0 +1,24 @@
+@* Toggle for the weather tile overlay (OpenWeatherMap when a key is
+   configured, RainViewer radar otherwise). *@
+
+<SectionHeader Title="Weather Overlay"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    <label class="chart-item">
+        <input type="checkbox" checked="@Visible"
+               @onchange="(e) => OnToggle.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Wind Speed (OWM)</div>
+            <div class="chart-desc">OpenWeatherMap wind overlay</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggle { get; set; }
+
+    private bool expanded = false;
+}

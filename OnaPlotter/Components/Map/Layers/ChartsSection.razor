@@ -1,0 +1,38 @@
+@using OnaPlotter.Models
+
+@* Chart overlays (tile layers) toggleable from the Layers panel. *@
+
+@if (Charts.Count == 0) return;
+
+<SectionHeader Title="Charts" Count="@Charts.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    @foreach (var chart in Charts)
+    {
+        <label class="chart-item">
+            <input type="checkbox" checked="@Enabled.Contains(chart.Identifier)"
+                   @onchange="(e) => OnToggle.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
+            <div class="chart-item-body">
+                <div class="chart-name">@chart.Name</div>
+                @if (chart.Description is not null)
+                {
+                    <div class="chart-desc">@chart.Description</div>
+                }
+                @if (chart.MinZoom is not null || chart.MaxZoom is not null)
+                {
+                    <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
+                }
+            </div>
+        </label>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> Charts { get; set; } = [];
+    [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
+    [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggle { get; set; }
+
+    private bool expanded = true;
+}

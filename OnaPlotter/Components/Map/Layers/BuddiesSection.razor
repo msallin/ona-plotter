@@ -1,0 +1,49 @@
+@using OnaPlotter.Models
+
+@* Friends list from sbender9/signalk-buddylist-plugin. Shows every known
+   buddy whether or not they're currently transmitting AIS - useful so the
+   captain knows their friend hasn't been seen lately. *@
+
+@if (Buddies.Count == 0) return;
+
+<SectionHeader Title="Buddies" Count="@Buddies.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    @foreach (var buddy in Buddies)
+    {
+        var live = buddy.Mmsi is not null
+            ? Vessels.FirstOrDefault(v => v.DisplayName?.Contains(buddy.Mmsi) == true
+                                      || v.Context.Contains(buddy.Mmsi))
+            : null;
+        <div class="chart-item vessel-row vessel-buddy"
+             @onclick="() => { if (live is not null) OnFocus.InvokeAsync(live.Context); }">
+            <div class="chart-item-body">
+                <div class="chart-name">&#x2605; @buddy.Name</div>
+                <div class="chart-desc">
+                    @if (live?.DistanceNm is not null)
+                    {
+                        <span>@live.DistanceNm.Value.ToString("F1") nm</span>
+                        if (live.SogKn is not null)
+                        {
+                            <span> · @live.SogKn.Value.ToString("F1") kn</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="buddy-offline">Not in AIS range</span>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkBuddy> Buddies { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
+    [Parameter] public EventCallback<string> OnFocus { get; set; }
+
+    private bool expanded = true;
+}

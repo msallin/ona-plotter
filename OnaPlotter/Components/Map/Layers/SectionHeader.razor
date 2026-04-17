@@ -1,0 +1,19 @@
+@* Collapsible section header used by every sub-section of the Layers panel.
+   Owns nothing but its own expanded/collapsed toggle; the parent section
+   owns the bool. *@
+
+<div class="chart-panel-header section-toggle" @onclick="OnToggle">
+    <span class="toggle-arrow">@(Expanded ? "v" : ">")</span>
+    @Title
+    @if (Count is not null)
+    {
+        <span class="section-count">@Count</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public int? Count { get; set; }
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public EventCallback OnToggle { get; set; }
+}

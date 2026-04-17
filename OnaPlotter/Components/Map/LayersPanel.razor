@@ -1,8 +1,10 @@
 @using OnaPlotter.Models
+@using OnaPlotter.Components.Map.Layers
 @using Microsoft.AspNetCore.Components.Forms
 
-@* Slide-in panel listing available charts, routes, waypoints, track history,
-   and weather overlays. Each row has a checkbox and optional actions. *@
+@* Slide-in panel composed of independently-maintained sections. Each
+   section is a self-contained component under Components/Map/Layers/,
+   with its own expand/collapse state. *@
 
 <div class="chart-panel">
     @if (AvailableCharts.Count + AvailableRoutes.Count > 6)
@@ -11,200 +13,30 @@
                value="@LayerFilter" @oninput="OnFilterInput" />
     }
 
-    @if (FilteredCharts.Count > 0)
-    {
-        <div class="chart-panel-header section-toggle" @onclick="() => ChartsExpanded = !ChartsExpanded">
-            <span class="toggle-arrow">@(ChartsExpanded ? "v" : ">")</span>
-            Charts <span class="section-count">@FilteredCharts.Count</span>
-        </div>
-        @if (ChartsExpanded)
-        {
-            @foreach (var chart in FilteredCharts)
-            {
-                <label class="chart-item">
-                    <input type="checkbox" checked="@EnabledCharts.Contains(chart.Identifier)"
-                           @onchange="(e) => OnToggleChart.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
-                    <div class="chart-item-body">
-                        <div class="chart-name">@chart.Name</div>
-                        @if (chart.Description is not null)
-                        {
-                            <div class="chart-desc">@chart.Description</div>
-                        }
-                        @if (chart.MinZoom is not null || chart.MaxZoom is not null)
-                        {
-                            <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
-                        }
-                    </div>
-                </label>
-            }
-        }
-    }
+    <ChartsSection Charts="FilteredCharts"
+                   Enabled="EnabledCharts"
+                   OnToggle="OnToggleChart" />
 
-    @if (FilteredRoutes.Count > 0)
-    {
-        <div class="chart-panel-header section-toggle" @onclick="() => RoutesExpanded = !RoutesExpanded">
-            <span class="toggle-arrow">@(RoutesExpanded ? "v" : ">")</span>
-            Routes <span class="section-count">@FilteredRoutes.Count</span>
-        </div>
-        @if (RoutesExpanded)
-        {
-            @foreach (var route in FilteredRoutes)
-            {
-                <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-                    <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
-                        <input type="checkbox" checked="@EnabledRoutes.Contains(route.Id)"
-                               @onchange="(e) => OnToggleRoute.InvokeAsync((route, (bool)(e.Value ?? false)))" />
-                        <div class="chart-item-body">
-                            <div class="chart-name">@(route.Name ?? ShortId(route.Id))</div>
-                            @if (route.Distance is not null)
-                            {
-                                <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
-                            }
-                        </div>
-                    </label>
-                    <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                            @onclick="() => OnEditRoute.InvokeAsync(route)" title="Edit route">Edit</button>
-                </div>
-            }
-        }
-    }
+    <RoutesSection Routes="FilteredRoutes"
+                   Enabled="EnabledRoutes"
+                   OnToggle="OnToggleRoute"
+                   OnEdit="OnEditRoute" />
 
-    @if (LoadedWaypoints.Count > 0)
-    {
-        <div class="chart-panel-header section-toggle" @onclick="() => WaypointsExpanded = !WaypointsExpanded">
-            <span class="toggle-arrow">@(WaypointsExpanded ? "v" : ">")</span>
-            Waypoints <span class="section-count">@LoadedWaypoints.Count</span>
-        </div>
-        @if (WaypointsExpanded)
-        {
-            @foreach (var wp in LoadedWaypoints)
-            {
-                <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-                    <div class="chart-item-body">
-                        <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
-                    </div>
-                    <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                            @onclick="() => OnNavigateToWaypoint.InvokeAsync(wp)">Go</button>
-                </div>
-            }
-        }
-    }
+    <WaypointsSection Waypoints="LoadedWaypoints"
+                      OnNavigate="OnNavigateToWaypoint" />
 
-    @if (Buddies.Count > 0)
-    {
-        <div class="chart-panel-header section-toggle" @onclick="() => BuddiesExpanded = !BuddiesExpanded">
-            <span class="toggle-arrow">@(BuddiesExpanded ? "v" : ">")</span>
-            Buddies <span class="section-count">@Buddies.Count</span>
-        </div>
-        @if (BuddiesExpanded)
-        {
-            @foreach (var buddy in Buddies)
-            {
-                var live = buddy.Mmsi is not null
-                    ? Vessels.FirstOrDefault(v => v.DisplayName?.Contains(buddy.Mmsi) == true
-                                              || v.Context.Contains(buddy.Mmsi))
-                    : null;
-                <div class="chart-item vessel-row vessel-buddy"
-                     @onclick="() => { if (live is not null) OnFocusVessel.InvokeAsync(live.Context); }">
-                    <div class="chart-item-body">
-                        <div class="chart-name">&#x2605; @buddy.Name</div>
-                        <div class="chart-desc">
-                            @if (live?.DistanceNm is not null)
-                            {
-                                <span>@live.DistanceNm.Value.ToString("F1") nm</span>
-                                if (live.SogKn is not null)
-                                {
-                                    <span> · @live.SogKn.Value.ToString("F1") kn</span>
-                                }
-                            }
-                            else
-                            {
-                                <span class="buddy-offline">Not in AIS range</span>
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-        }
-    }
+    <BuddiesSection Buddies="Buddies"
+                    Vessels="Vessels"
+                    OnFocus="OnFocusVessel" />
 
-    @if (Vessels.Count > 0)
-    {
-        <div class="chart-panel-header section-toggle" @onclick="() => VesselsExpanded = !VesselsExpanded">
-            <span class="toggle-arrow">@(VesselsExpanded ? "v" : ">")</span>
-            Vessels <span class="section-count">@Vessels.Count</span>
-        </div>
-        @if (VesselsExpanded)
-        {
-            @foreach (var vessel in Vessels)
-            {
-                <div class="chart-item vessel-row @VesselRowClass(vessel)"
-                     @onclick="() => OnFocusVessel.InvokeAsync(vessel.Context)">
-                    <div class="chart-item-body">
-                        <div class="chart-name">@(vessel.IsBuddy ? "\u2605 " : "")@vessel.DisplayName</div>
-                        <div class="chart-desc">
-                            @if (vessel.CpaNm is not null && vessel.TcpaMin is not null)
-                            {
-                                <span>CPA @vessel.CpaNm.Value.ToString("F2") nm · T-@vessel.TcpaMin.Value.ToString("F0")m</span>
-                            }
-                            else if (vessel.DistanceNm is not null)
-                            {
-                                <span>@vessel.DistanceNm.Value.ToString("F1") nm @vessel.BearingDeg?.ToString("F0")°</span>
-                            }
-                            @if (vessel.SogKn is not null)
-                            {
-                                <span> · @vessel.SogKn.Value.ToString("F1") kn</span>
-                            }
-                        </div>
-                        @if (vessel.ColregsLabel is not null)
-                        {
-                            <div class="chart-desc vessel-colregs">
-                                <span>@vessel.ColregsLabel</span>
-                                @if (vessel.ColregsRole is not null)
-                                {
-                                    <span class="colregs-role @(vessel.ColregsRole == "Give way" ? "colregs-giveway" : "colregs-standon")">
-                                        · @vessel.ColregsRole
-                                    </span>
-                                }
-                            </div>
-                        }
-                    </div>
-                </div>
-            }
-        }
-    }
+    <VesselsSection Vessels="Vessels"
+                    OnFocus="OnFocusVessel" />
 
-    <div class="chart-panel-header section-toggle" @onclick="() => TrackExpanded = !TrackExpanded">
-        <span class="toggle-arrow">@(TrackExpanded ? "v" : ">")</span>
-        Track History
-    </div>
-    @if (TrackExpanded)
-    {
-        <label class="chart-item">
-            <input type="checkbox" checked="@ServerTrackVisible"
-                   @onchange="(e) => OnToggleServerTrack.InvokeAsync((bool)(e.Value ?? false))" />
-            <div class="chart-item-body">
-                <div class="chart-name">Server Track (24h)</div>
-                <div class="chart-desc">Position history from SignalK</div>
-            </div>
-        </label>
-    }
+    <TrackHistorySection Visible="ServerTrackVisible"
+                         OnToggle="OnToggleServerTrack" />
 
-    <div class="chart-panel-header section-toggle" @onclick="() => WeatherExpanded = !WeatherExpanded">
-        <span class="toggle-arrow">@(WeatherExpanded ? "v" : ">")</span>
-        Weather Overlay
-    </div>
-    @if (WeatherExpanded)
-    {
-        <label class="chart-item">
-            <input type="checkbox" checked="@WeatherOverlayVisible"
-                   @onchange="(e) => OnToggleWeatherOverlay.InvokeAsync((bool)(e.Value ?? false))" />
-            <div class="chart-item-body">
-                <div class="chart-name">Wind Speed (OWM)</div>
-                <div class="chart-desc">OpenWeatherMap wind overlay</div>
-            </div>
-        </label>
-    }
+    <WeatherSection Visible="WeatherOverlayVisible"
+                    OnToggle="OnToggleWeatherOverlay" />
 
     <div style="margin-top:8px; border-top:1px solid var(--sk-border); padding-top:8px; display:flex; gap:6px;">
         <label class="map-btn gpx-btn">
@@ -233,16 +65,6 @@
     [Parameter] public string LayerFilter { get; set; } = "";
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
 
-    // Section expand/collapse is local UI state; keeping it here avoids parent
-    // re-render resetting the toggles.
-    private bool ChartsExpanded { get; set; } = true;
-    private bool RoutesExpanded { get; set; } = true;
-    private bool WaypointsExpanded { get; set; } = true;
-    private bool BuddiesExpanded { get; set; } = true;
-    private bool VesselsExpanded { get; set; } = true;
-    private bool TrackExpanded { get; set; } = true;
-    private bool WeatherExpanded { get; set; }
-
     [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggleChart { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
@@ -257,23 +79,5 @@
     {
         LayerFilter = e.Value?.ToString() ?? "";
         await LayerFilterChanged.InvokeAsync(LayerFilter);
-    }
-
-    /// <summary>
-    /// Safe prefix of an arbitrary identifier. IDs from older routes or
-    /// third-party GPX imports can be shorter than the usual 8-char slug,
-    /// and the raw range operator throws on those.
-    /// </summary>
-    private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
-
-    /// <summary>Red tint for vessels with a sub-0.5 nm / sub-10 min CPA; amber
-    /// for sub-1 nm / sub-20 min; nothing for the rest. Matches the map's
-    /// crossing-line palette.</summary>
-    private static string VesselRowClass(VesselListEntry v)
-    {
-        if (v.CpaNm is null || v.TcpaMin is null) return "";
-        if (v.CpaNm < 0.5 && v.TcpaMin < 10) return "vessel-danger";
-        if (v.CpaNm < 1.0 && v.TcpaMin < 20) return "vessel-warn";
-        return "";
     }
 }

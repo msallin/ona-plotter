@@ -1,0 +1,65 @@
+@using OnaPlotter.Models
+
+@* All tracked AIS vessels sorted by TCPA (threat first). Buddies get a
+   star, and the row is tinted red/amber when the CPA is inside the
+   danger/warning bands. A third descriptive line shows the COLREGS
+   classification + give-way role. *@
+
+@if (Vessels.Count == 0) return;
+
+<SectionHeader Title="Vessels" Count="@Vessels.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    @foreach (var vessel in Vessels)
+    {
+        <div class="chart-item vessel-row @VesselRowClass(vessel)"
+             @onclick="() => OnFocus.InvokeAsync(vessel.Context)">
+            <div class="chart-item-body">
+                <div class="chart-name">@(vessel.IsBuddy ? "\u2605 " : "")@vessel.DisplayName</div>
+                <div class="chart-desc">
+                    @if (vessel.CpaNm is not null && vessel.TcpaMin is not null)
+                    {
+                        <span>CPA @vessel.CpaNm.Value.ToString("F2") nm · T-@vessel.TcpaMin.Value.ToString("F0")m</span>
+                    }
+                    else if (vessel.DistanceNm is not null)
+                    {
+                        <span>@vessel.DistanceNm.Value.ToString("F1") nm @vessel.BearingDeg?.ToString("F0")°</span>
+                    }
+                    @if (vessel.SogKn is not null)
+                    {
+                        <span> · @vessel.SogKn.Value.ToString("F1") kn</span>
+                    }
+                </div>
+                @if (vessel.ColregsLabel is not null)
+                {
+                    <div class="chart-desc vessel-colregs">
+                        <span>@vessel.ColregsLabel</span>
+                        @if (vessel.ColregsRole is not null)
+                        {
+                            <span class="colregs-role @(vessel.ColregsRole == "Give way" ? "colregs-giveway" : "colregs-standon")">
+                                · @vessel.ColregsRole
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
+    [Parameter] public EventCallback<string> OnFocus { get; set; }
+
+    private bool expanded = true;
+
+    private static string VesselRowClass(VesselListEntry v)
+    {
+        if (v.CpaNm is null || v.TcpaMin is null) return "";
+        if (v.CpaNm < 0.5 && v.TcpaMin < 10) return "vessel-danger";
+        if (v.CpaNm < 1.0 && v.TcpaMin < 20) return "vessel-warn";
+        return "";
+    }
+}

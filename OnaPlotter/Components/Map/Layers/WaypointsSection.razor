@@ -1,0 +1,32 @@
+@using OnaPlotter.Models
+
+@* Server-stored waypoints with a "Go" button that sets them as the active
+   destination. *@
+
+@if (Waypoints.Count == 0) return;
+
+<SectionHeader Title="Waypoints" Count="@Waypoints.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    @foreach (var wp in Waypoints)
+    {
+        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="chart-item-body">
+                <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
+            </div>
+            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                    @onclick="() => OnNavigate.InvokeAsync(wp)">Go</button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> Waypoints { get; set; } = [];
+    [Parameter] public EventCallback<SignalkWaypoint> OnNavigate { get; set; }
+
+    private bool expanded = true;
+
+    private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
+}

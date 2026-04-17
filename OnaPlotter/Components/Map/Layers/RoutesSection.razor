@@ -1,0 +1,42 @@
+@using OnaPlotter.Models
+
+@* Routes the user (or GPX import) has stored on the SignalK server, with
+   visibility toggles and an Edit button per route. *@
+
+@if (Routes.Count == 0) return;
+
+<SectionHeader Title="Routes" Count="@Routes.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    @foreach (var route in Routes)
+    {
+        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+            <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
+                <input type="checkbox" checked="@Enabled.Contains(route.Id)"
+                       @onchange="(e) => OnToggle.InvokeAsync((route, (bool)(e.Value ?? false)))" />
+                <div class="chart-item-body">
+                    <div class="chart-name">@(route.Name ?? ShortId(route.Id))</div>
+                    @if (route.Distance is not null)
+                    {
+                        <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
+                    }
+                </div>
+            </label>
+            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                    @onclick="() => OnEdit.InvokeAsync(route)" title="Edit route">Edit</button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> Routes { get; set; } = [];
+    [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
+    [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggle { get; set; }
+    [Parameter] public EventCallback<SignalkRoute> OnEdit { get; set; }
+
+    private bool expanded = true;
+
+    private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
+}
