@@ -583,6 +583,14 @@ export function updateAisTargets(vessels) {
             cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
         }
 
+        let colregsHtml = '';
+        if (v.colregsLabel) {
+            const roleHtml = v.colregsRole
+                ? ` <span style="color:${v.colregsRole === 'Give way' ? '#fca5a5' : '#86efac'};font-weight:600">${esc(v.colregsRole)}</span>`
+                : '';
+            colregsHtml = `<tr><td style="opacity:0.5">COLREGS</td><td>${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
+        }
+
         // External lookup links (free, no API key needed). VesselFinder's
         // search page uses ?name= even for MMSI queries.
         const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
@@ -609,6 +617,7 @@ export function updateAisTargets(vessels) {
               `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
               `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
               cpaHtml +
+              colregsHtml +
             `</table>` +
             linksHtml +
             `</div>`,

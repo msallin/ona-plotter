@@ -257,12 +257,26 @@
             }
 
             Cpa.Result? cpa = null;
+            Colregs.Result? colregs = null;
             if (ownLat is not null && ownLon is not null)
             {
                 cpa = Cpa.Compute(
                     ownLat.Value, ownLon.Value, ownCog, ownSog,
                     v.Latitude.Value, v.Longitude.Value, v.CourseOverGround, v.SpeedOverGround);
+
+                if (ownCog is not null && ownSog is not null
+                    && v.CourseOverGround is not null && v.SpeedOverGround is not null)
+                {
+                    colregs = Colregs.Classify(
+                        ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
+                        v.Latitude.Value, v.Longitude.Value, v.CourseOverGround.Value, v.SpeedOverGround.Value);
+                }
             }
+
+            string? colregsLabel = colregs is { Category: var cat and not Colregs.Category.Indeterminate }
+                ? Colregs.ShortLabel(cat) : null;
+            string? colregsRole = colregs is { Role: var role and not Colregs.Role.None }
+                ? Colregs.RoleLabel(role) : null;
 
             entries.Add(new VesselListEntry(
                 Context: v.Context,
@@ -273,7 +287,9 @@
                 BearingDeg: brgDeg,
                 SogKn: v.SpeedOverGround is not null ? v.SpeedOverGround * Format.MsToKnots : null,
                 ShipType: v.ShipType,
-                IsBuddy: v.IsBuddy));
+                IsBuddy: v.IsBuddy,
+                ColregsLabel: colregsLabel,
+                ColregsRole: colregsRole));
         }
 
         // TCPA-sorted; non-converging vessels fall to the bottom, sorted by distance.
@@ -706,15 +722,44 @@
             // AisStore filters on position when building the snapshot, but
             // defend against someone clearing a position between snapshots
             // anyway - force-unwrap is never worth the risk in a hot path.
+            // Pre-compute COLREGS per vessel (requires own lat/lon/cog/sog) so
+            // the JS popup can render the category + give-way role without
+            // re-implementing the math on the JS side.
+            double? ownLat = Data.Latitude;
+            double? ownLon = Data.Longitude;
+            double? ownCog = Data.CourseOverGround;
+            double? ownSog = Data.SpeedOverGround;
+
             var jsVessels = vessels
                 .Where(v => v.Latitude is not null && v.Longitude is not null)
-                .Select(v => new
+                .Select(v =>
                 {
-                    context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
-                    lat = v.Latitude!.Value, lon = v.Longitude!.Value,
-                    headingRad = v.Heading, cogRad = v.CourseOverGround,
-                    sogMs = v.SpeedOverGround, shipType = v.ShipType,
-                    buddy = v.IsBuddy
+                    string? colregsLabel = null;
+                    string? colregsRole = null;
+                    if (ownLat is not null && ownLon is not null
+                        && ownCog is not null && ownSog is not null
+                        && v.CourseOverGround is not null && v.SpeedOverGround is not null)
+                    {
+                        var r = Colregs.Classify(
+                            ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
+                            v.Latitude!.Value, v.Longitude!.Value,
+                            v.CourseOverGround.Value, v.SpeedOverGround.Value);
+                        if (r.Category != Colregs.Category.Indeterminate)
+                        {
+                            colregsLabel = Colregs.ShortLabel(r.Category);
+                            colregsRole = Colregs.RoleLabel(r.Role);
+                        }
+                    }
+                    return new
+                    {
+                        context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
+                        lat = v.Latitude!.Value, lon = v.Longitude!.Value,
+                        headingRad = v.Heading, cogRad = v.CourseOverGround,
+                        sogMs = v.SpeedOverGround, shipType = v.ShipType,
+                        buddy = v.IsBuddy,
+                        colregsLabel,
+                        colregsRole
+                    };
                 }).ToArray();
             await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);
         }

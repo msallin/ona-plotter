@@ -156,6 +156,18 @@
                                 <span> · @vessel.SogKn.Value.ToString("F1") kn</span>
                             }
                         </div>
+                        @if (vessel.ColregsLabel is not null)
+                        {
+                            <div class="chart-desc vessel-colregs">
+                                <span>@vessel.ColregsLabel</span>
+                                @if (vessel.ColregsRole is not null)
+                                {
+                                    <span class="colregs-role @(vessel.ColregsRole == "Give way" ? "colregs-giveway" : "colregs-standon")">
+                                        · @vessel.ColregsRole
+                                    </span>
+                                }
+                            </div>
+                        }
                     </div>
                 </div>
             }

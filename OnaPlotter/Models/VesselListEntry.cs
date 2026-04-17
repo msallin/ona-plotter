@@ -14,4 +14,6 @@ public sealed record VesselListEntry(
     double? BearingDeg,
     double? SogKn,
     string? ShipType,
-    bool IsBuddy);
+    bool IsBuddy,
+    string? ColregsLabel,
+    string? ColregsRole);

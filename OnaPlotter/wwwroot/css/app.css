@@ -1693,6 +1693,12 @@ main:has(.alarm-banner) .hud-top-left {
 .vessel-row.vessel-buddy .chart-name { color: #fde68a; }
 .buddy-offline { opacity: 0.6; font-style: italic; }
 
+/* COLREGS classification line under a vessel row */
+.vessel-colregs { font-size: 0.7rem; opacity: 0.85; }
+.colregs-role { font-weight: 600; }
+.colregs-giveway { color: #fca5a5; }   /* we must keep clear */
+.colregs-standon { color: #86efac; }   /* we hold course */
+
 /* CPA / crossing-situation labels on the map */
 .cpa-label {
     background: rgba(10, 12, 18, 0.88) !important;
