@@ -14,6 +14,14 @@ export function collectErrors(page) {
         // Filter expected noise.
         if (text.includes('favicon')) return;
         if (text.includes('websocket') && text.includes('1006')) return;
+        // In dev, the webapp runs at localhost:5282 without a SignalK server;
+        // every /signalk/v1/applicationData/* and /signalk/v2/api/* request
+        // 404s. Those are handled by SafeLoad -> toast, not a crash; filter
+        // them so the smoke test doesn't false-positive on dev.
+        if (text.includes('404') && text.includes('Not Found')) return;
+        // Blazor logs every unhandled exception through its crit logger; it's
+        // covered separately by assertBlazorErrorNotVisible.
+        if (text.includes('crit:')) return;
         errors.push(`console.error: ${text}`);
     });
     // Blazor renders a fixed-id error UI for unhandled exceptions.

@@ -282,6 +282,27 @@
         return entries;
     }
 
+    /// <summary>
+    /// Calls a SignalK resources-API loader and swallows HTTP/network
+    /// failures so a missing plugin or unreachable server does not take the
+    /// whole page down. Returns null on failure; callers coalesce to an
+    /// empty list. A Toast surfaces the error so the captain knows.
+    /// </summary>
+    private async Task<T?> SafeLoad<T>(Func<Task<T>> loader, string what) where T : class
+    {
+        try { return await loader(); }
+        catch (HttpRequestException ex)
+        {
+            Toasts.Error($"Couldn't load {what}: {ex.Message}");
+            return null;
+        }
+        catch (TaskCanceledException)
+        {
+            Toasts.Error($"Timed out loading {what}");
+            return null;
+        }
+    }
+
     private async Task FocusVessel(string context)
     {
         if (module is null) return;
@@ -392,10 +413,13 @@
             prevLon = points[^1].Longitude;
         }
 
-        // Load available charts and routes from SignalK server.
-        availableCharts = await ChartApi.GetAllAsync();
-        availableRoutes = await RouteApi.GetAllAsync();
-        loadedWaypoints = await WaypointApi.GetAllAsync();
+        // Load available charts and routes from SignalK server. Any of these
+        // endpoints can 404 or time out (SignalK unreachable, plugin not
+        // installed, webapp running standalone for dev). Degrade gracefully
+        // - the map itself is still usable without these.
+        availableCharts = await SafeLoad(() => ChartApi.GetAllAsync(), "charts") ?? [];
+        availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? [];
+        loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? [];
         PrecomputeRouteBounds();
         RebuildFilteredLayers();
         StateHasChanged();
@@ -803,7 +827,7 @@
         if (ok)
         {
             Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
-            availableRoutes = await RouteApi.GetAllAsync();
+            availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? availableRoutes;
             PrecomputeRouteBounds();
             RebuildFilteredLayers();
         }
@@ -865,7 +889,7 @@
         if (id is not null && module is not null)
         {
             await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
-            loadedWaypoints = await WaypointApi.GetAllAsync();
+            loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         }
     }
 

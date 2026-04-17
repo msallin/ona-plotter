@@ -25,7 +25,18 @@ $PackageJsonTemplate = Join-Path $PSScriptRoot "package.json.template"
 # 1. Build & publish Release.
 if (-not $SkipBuild) {
     Write-Host "Publishing Release build..." -ForegroundColor Cyan
+
+    # WASM AOT sometimes leaves a half-written PE image in obj/ after a prior
+    # aborted publish, which then fails the next run with "PE image does not
+    # have metadata". Nuking obj/Release and bin/Release avoids this without
+    # touching the Debug cache we use for dotnet run.
+    $ProjectDir = Split-Path -Parent $ProjectPath
+    $ObjRelease = Join-Path $ProjectDir "obj/Release"
+    $BinRelease = Join-Path $ProjectDir "bin/Release"
+    if (Test-Path $ObjRelease) { Remove-Item -Recurse -Force $ObjRelease }
+    if (Test-Path $BinRelease) { Remove-Item -Recurse -Force $BinRelease }
     if (Test-Path $PublishDir) { Remove-Item -Recurse -Force $PublishDir }
+
     dotnet publish $ProjectPath -c Release -o $PublishDir
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 }

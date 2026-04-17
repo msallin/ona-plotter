@@ -22,3 +22,7 @@ Thumbs.db
 publish/
 deploy/publish/
 deploy/staging/
+
+## Playwright (running from repo root or UiTests)
+test-results/
+playwright-report/

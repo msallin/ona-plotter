@@ -259,7 +259,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
 
-    trackLayer = L.layerGroup().addTo(map);
+    // featureGroup (not layerGroup) so zoomToTrack can call getBounds() on it.
+    trackLayer = L.featureGroup().addTo(map);
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
     boatVector = L.polyline([], { color: '#93c5fd', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
 
@@ -651,51 +652,19 @@ export function updateAisTargets(vessels) {
 }
 
 /**
- * Best-effort vessel name lookup via VesselFinder's public search page,
- * tunnelled through allorigins.win because both marine-traffic and
- * vesselfinder block CORS. Resolves to a string, or null on miss / error.
- * Per-MMSI cache and in-flight dedupe prevent flooding the proxy.
- * When a name is found, we push it back to Blazor so the vessel list,
- * popup, and alarm banner all pick it up.
+ * Vessel-name enrichment is disabled. The previous implementation used
+ * api.allorigins.win as a CORS proxy to scrape vesselfinder.com, but that
+ * proxy itself stopped sending CORS headers and now floods the console.
+ * The SignalK server already receives AIS message type 5 (static data)
+ * for named vessels within minutes of first sighting, so the common
+ * scenario is "wait a bit and the name shows up". A proper long-term
+ * home for this lookup is a SignalK server-side plugin.
+ *
+ * The function is kept as a no-op so call sites remain; the per-MMSI
+ * cache is still honored for any externally injected values.
  */
-async function resolveVesselName(context, mmsi) {
-    if (!mmsi) return null;
-    if (mmsi in vesselNameCache) return vesselNameCache[mmsi];
-    if (vesselNameInflight[mmsi]) return vesselNameInflight[mmsi];
-
-    const promise = (async () => {
-        try {
-            const target = `https://www.vesselfinder.com/vessels?name=${encodeURIComponent(mmsi)}`;
-            const url = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`;
-            const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 6000);
-            const res = await fetch(url, { signal: ctrl.signal });
-            clearTimeout(timer);
-            if (!res.ok) { vesselNameCache[mmsi] = null; return null; }
-            const json = await res.json();
-            const html = json.contents || '';
-            // VesselFinder's search result rows look like:
-            //   <a ... class="ship-link" title="NAME - VesselType">
-            // Fall back to a few patterns for resilience.
-            const m = html.match(/class="[^"]*ship-link[^"]*"[^>]*title="([^"]+?)(?:\s*-\s*[A-Za-z ]+)?"/i)
-                  || html.match(/<h1[^>]*class="title"[^>]*>([^<]+)<\/h1>/i)
-                  || html.match(/"name"\s*:\s*"([^"]+)"/i);
-            const name = m ? m[1].trim() : null;
-            vesselNameCache[mmsi] = name;
-            if (name && dotNetRef) {
-                try { await dotNetRef.invokeMethodAsync('OnVesselNameResolved', context, name); }
-                catch { /* page left, nothing to do */ }
-            }
-            return name;
-        } catch {
-            vesselNameCache[mmsi] = null;
-            return null;
-        } finally {
-            delete vesselNameInflight[mmsi];
-        }
-    })();
-    vesselNameInflight[mmsi] = promise;
-    return promise;
+async function resolveVesselName(_context, _mmsi) {
+    return null;
 }
 
 function updateAisTrail(ctx, lat, lon) {
@@ -1421,8 +1390,14 @@ function applyMapRotation(deg) {
 
 export function zoomToTrack() {
     if (!trackLayer || !map) return;
+    if (typeof trackLayer.getBounds !== 'function') return; // older map instance
     const bounds = trackLayer.getBounds();
-    if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+    if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+        return;
+    }
+    // No track yet: fall back to the boat's position if we have one.
+    if (boatMarker) map.setView(boatMarker.getLatLng(), Math.max(map.getZoom(), 13));
 }
 
 export function dispose() {

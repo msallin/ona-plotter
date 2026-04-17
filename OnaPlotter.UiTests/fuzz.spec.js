@@ -26,12 +26,15 @@ const SAFE_CLICK_SELECTORS = [
     '.section-toggle',
 ];
 
-test(`fuzz map UI (seed=${FUZZ_SEED}, clicks=${FUZZ_CLICKS})`, async ({ page }) => {
+// Title kept static so Playwright's worker process can re-attach to the
+// test between retries. Seed is still deterministic via FUZZ_SEED, logged
+// below so a caught failure can be reproduced.
+test('fuzz map UI', async ({ page }) => {
     console.log(`FUZZ_SEED=${FUZZ_SEED} FUZZ_CLICKS=${FUZZ_CLICKS}`);
     const { errors, assertBlazorErrorNotVisible } = collectErrors(page);
     const rng = seededRandom(FUZZ_SEED);
 
-    await page.goto('/map');
+    await page.goto('map');
     await waitForMapReady(page);
 
     for (let i = 0; i < FUZZ_CLICKS; i++) {

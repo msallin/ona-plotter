@@ -7,11 +7,21 @@
 // deployment (ignoreHTTPSErrors below).
 
 import { defineConfig, devices } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 
-const BASE_URL = process.env.BASE_URL ?? 'https://openplotter.local';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// OnaPlotter is served as a SignalK webapp under /signalk-onaplotter/ by
+// default. Override with BASE_URL=http://localhost:5296 for a local dev
+// build, or with the full webapp URL if the webapp name differs.
+// Trailing slash matters: relative paths in tests resolve against this.
+const BASE_URL = process.env.BASE_URL ?? 'https://openplotter.local/signalk-onaplotter/';
 
 export default defineConfig({
-    testDir: '.',
+    testDir: __dirname,
+    testMatch: '**/*.spec.js',
+    testIgnore: ['**/node_modules/**'],
     timeout: 60_000,
     expect: { timeout: 10_000 },
     fullyParallel: false, // one browser, one app - keep deterministic
