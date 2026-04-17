@@ -313,18 +313,33 @@
                 await module.InvokeVoidAsync("addWaypointMarker", wp.Id, wp.Latitude, wp.Longitude, wp.Name);
         }
 
-        // Auto-enable OpenSeaMap-named charts on first load (user preference).
-        foreach (var chart in availableCharts)
+        // Restore persisted settings (including enabled charts/routes) before
+        // applying defaults so user choices survive a reload.
+        await Settings.InitializeAsync();
+
+        if (Settings.EnabledChartIds.Count > 0)
         {
-            if (chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
-                || chart.Name.Contains("sea map", StringComparison.OrdinalIgnoreCase))
+            foreach (var chart in availableCharts)
+                if (Settings.EnabledChartIds.Contains(chart.Identifier))
+                    await ToggleChart(chart, true);
+        }
+        else
+        {
+            // First run: auto-enable OpenSeaMap-named charts.
+            foreach (var chart in availableCharts)
             {
-                await ToggleChart(chart, true);
+                if (chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
+                    || chart.Name.Contains("sea map", StringComparison.OrdinalIgnoreCase))
+                {
+                    await ToggleChart(chart, true);
+                }
             }
         }
 
-        // Restore persisted settings.
-        await Settings.InitializeAsync();
+        foreach (var route in availableRoutes)
+            if (Settings.EnabledRouteIds.Contains(route.Id))
+                await ToggleRoute(route, true);
+
         follow = Settings.FollowBoat;
         nightMode = Settings.NightMode;
         laylinesVisible = Settings.LaylinesVisible;
@@ -873,6 +888,7 @@
             await module.InvokeVoidAsync("removeChartLayer", chart.Identifier);
             enabledCharts.Remove(chart.Identifier);
         }
+        await Settings.SetEnabledChartsAsync(enabledCharts);
     }
 
     private async Task ToggleRoute(SignalkRoute route, bool enabled)
@@ -902,6 +918,7 @@
             await module.InvokeVoidAsync("removeRoute", route.Id);
             enabledRoutes.Remove(route.Id);
         }
+        await Settings.SetEnabledRoutesAsync(enabledRoutes);
     }
 
     private async Task ToggleServerTrack(bool enabled)

@@ -25,6 +25,11 @@ public sealed class AppSettingsService : IAppSettings
     public double CpaAlarmThreshold { get; private set; } = 0.5;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
 
+    private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
+    public IReadOnlySet<string> EnabledChartIds => _enabledChartIds;
+    public IReadOnlySet<string> EnabledRouteIds => _enabledRouteIds;
+
     public event Action? OnSettingsChanged;
 
     public AppSettingsService(IKeyValueStore store) => _store = store;
@@ -43,6 +48,8 @@ public sealed class AppSettingsService : IAppSettings
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 3.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
+            LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
+            LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             _initialized = true;
         }
         finally
@@ -98,6 +105,20 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
+    public async Task SetEnabledChartsAsync(IEnumerable<string> ids)
+    {
+        _enabledChartIds.Clear();
+        foreach (var id in ids) _enabledChartIds.Add(id);
+        await Save("enabledChartIds", string.Join('\n', _enabledChartIds));
+    }
+
+    public async Task SetEnabledRoutesAsync(IEnumerable<string> ids)
+    {
+        _enabledRouteIds.Clear();
+        foreach (var id in ids) _enabledRouteIds.Add(id);
+        await Save("enabledRouteIds", string.Join('\n', _enabledRouteIds));
+    }
+
     // --- storage helpers: swallow read errors (missing key = default), propagate write errors ---
 
     private async Task Save(string key, string value)
@@ -123,5 +144,13 @@ public sealed class AppSettingsService : IAppSettings
         var v = await LoadString(key);
         return v is not null && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
             ? d : fallback;
+    }
+
+    private static void LoadIdsInto(string? raw, HashSet<string> target)
+    {
+        target.Clear();
+        if (string.IsNullOrEmpty(raw)) return;
+        foreach (var id in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            target.Add(id);
     }
 }

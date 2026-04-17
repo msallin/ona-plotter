@@ -950,6 +950,11 @@ main:has(.alarm-banner) .hud-top-left {
     opacity: 0.8;
 }
 
+/* Red-shift instrument SVGs (Gauges, SailSteer, WindRose) for night vision. */
+.night-mode-global article svg {
+    filter: hue-rotate(-30deg) saturate(0.6) brightness(0.8);
+}
+
 .night-mode-global .top-row {
     background: var(--sk-surface);
     border-color: var(--sk-border);

@@ -1,7 +1,8 @@
 @* Reusable circular instrument gauge with animated needle, tick marks, and digital readout. *@
 
 <div class="text-center">
-    <svg viewBox="0 0 @Size @Size" width="@SizePx" height="@SizePx">
+    <svg viewBox="0 0 @Size @Size"
+         style="max-width:@(SizePx)px; width:100%; height:auto;">
         @* Background arc *@
         <path d="@ArcPath(0, 1)" fill="none" stroke="#333" stroke-width="@TrackWidth" stroke-linecap="round" />
 

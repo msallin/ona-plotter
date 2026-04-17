@@ -13,6 +13,8 @@ public interface IAppSettings
     double DepthAlarmThreshold { get; }
     double CpaAlarmThreshold { get; }
     double WindShiftAlarmThreshold { get; }
+    IReadOnlySet<string> EnabledChartIds { get; }
+    IReadOnlySet<string> EnabledRouteIds { get; }
 
     event Action? OnSettingsChanged;
 
@@ -24,4 +26,6 @@ public interface IAppSettings
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
+    Task SetEnabledChartsAsync(IEnumerable<string> ids);
+    Task SetEnabledRoutesAsync(IEnumerable<string> ids);
 }

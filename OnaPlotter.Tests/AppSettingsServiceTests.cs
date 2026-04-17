@@ -77,6 +77,50 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task EnabledCharts_RoundTrip()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetEnabledChartsAsync(["OSM", "OpenSeaMap", "navionics_x"]);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+
+        await Assert.That(svc2.EnabledChartIds.Count).IsEqualTo(3);
+        await Assert.That(svc2.EnabledChartIds.Contains("OpenSeaMap")).IsTrue();
+        await Assert.That(svc2.EnabledChartIds.Contains("navionics_x")).IsTrue();
+    }
+
+    [Test]
+    public async Task EnabledCharts_Empty_LoadsEmpty()
+    {
+        // Empty stored value should not produce a single empty-string element.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("enabledChartIds", "");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.EnabledChartIds.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task EnabledRoutes_Overwrite()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetEnabledRoutesAsync(["a", "b"]);
+        await svc.SetEnabledRoutesAsync(["c"]);
+
+        await Assert.That(svc.EnabledRouteIds.Count).IsEqualTo(1);
+        await Assert.That(svc.EnabledRouteIds.Contains("c")).IsTrue();
+    }
+
+    [Test]
     public async Task ConcurrentInitialize_RunsOnce()
     {
         // Race condition test: many pages call InitializeAsync simultaneously.
