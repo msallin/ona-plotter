@@ -216,22 +216,28 @@
 
     private void StepBy(int delta)
     {
-        if (trackPoints is null) return;
+        if (trackPoints is null || trackPoints.Length == 0) return;
         playbackIndex = Math.Clamp(playbackIndex + delta, 0, trackPoints.Length - 1);
         _ = MoveMarker();
     }
 
     private async Task MoveMarker()
     {
-        if (trackPoints is null || playbackIndex >= trackPoints.Length) return;
+        if (trackPoints is null || trackPoints.Length == 0) return;
+        if (playbackIndex < 0 || playbackIndex >= trackPoints.Length) return;
         var pt = trackPoints[playbackIndex];
-        await JS.InvokeVoidAsync("eval", $@"
-            (function() {{
-                var m = window._historyMap;
-                if (!m || !window._historyMarker) return;
-                window._historyMarker.setLatLng([{pt[0]}, {pt[1]}]);
-            }})()
-        ");
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m || !window._historyMarker) return;
+                    window._historyMarker.setLatLng([{pt[0]}, {pt[1]}]);
+                }})()
+            ");
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
     }
 
     public async ValueTask DisposeAsync()

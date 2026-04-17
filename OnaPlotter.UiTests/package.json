@@ -1,0 +1,16 @@
+{
+  "name": "onaplotter-uitests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright smoke + fuzz tests for the OnaPlotter Blazor WASM UI.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test smoke.spec.js",
+    "test:fuzz": "playwright test fuzz.spec.js",
+    "install:deps": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

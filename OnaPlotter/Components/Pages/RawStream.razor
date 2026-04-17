@@ -97,36 +97,40 @@
 
     private async void HandleRawMessage(string json)
     {
-        if (paused) return;
-
-        // Filter: only show messages containing at least one selected path.
-        if (selectedPaths.Count > 0 && !MessageMatchesFilter(json))
-            return;
-
-        // Write into circular buffer.
-        buffer[head] = json;
-        head = (head + 1) % MaxMessages;
-        if (count < MaxMessages) count++;
-
-        // Throttle: only rebuild snapshot every 5th message to reduce GC pressure.
-        if (++renderSkip < 5) return;
-        renderSkip = 0;
-
-        // Build snapshot in chronological order (oldest first, newest at bottom).
-        // This is the terminal/log-viewer convention for live streams.
-        var snap = new string[count];
-        int startIdx = (head - count + MaxMessages) % MaxMessages;
-        for (int i = 0; i < count; i++)
+        try
         {
-            snap[i] = buffer[(startIdx + i) % MaxMessages];
+            if (paused) return;
+
+            // Filter: only show messages containing at least one selected path.
+            if (selectedPaths.Count > 0 && !MessageMatchesFilter(json))
+                return;
+
+            // Write into circular buffer.
+            buffer[head] = json;
+            head = (head + 1) % MaxMessages;
+            if (count < MaxMessages) count++;
+
+            // Throttle: only rebuild snapshot every 5th message to reduce GC pressure.
+            if (++renderSkip < 5) return;
+            renderSkip = 0;
+
+            // Build snapshot in chronological order (oldest first, newest at bottom).
+            // This is the terminal/log-viewer convention for live streams.
+            var snap = new string[count];
+            int startIdx = (head - count + MaxMessages) % MaxMessages;
+            for (int i = 0; i < count; i++)
+            {
+                snap[i] = buffer[(startIdx + i) % MaxMessages];
+            }
+
+            await InvokeAsync(() =>
+            {
+                snapshot = snap;
+                needsScroll = true;
+                StateHasChanged();
+            });
         }
-
-        await InvokeAsync(() =>
-        {
-            snapshot = snap;
-            needsScroll = true;
-            StateHasChanged();
-        });
+        catch (ObjectDisposedException) { }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

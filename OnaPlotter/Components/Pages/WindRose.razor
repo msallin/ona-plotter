@@ -213,8 +213,12 @@
 
     private async void HandleTrackUpdated()
     {
-        RefreshData(fullRebuild: false);
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            RefreshData(fullRebuild: false);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException) { }
     }
 
     private void RefreshData(bool fullRebuild)

@@ -102,7 +102,11 @@
 
     private async void HandleDataChanged()
     {
-        await InvokeAsync(StateHasChanged);
+        // async void event handler: any uncaught exception tears down the
+        // Blazor SynchronizationContext. Swallow the expected post-dispose
+        // cases so a quick page switch while data is arriving doesn't crash.
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     public void Dispose()

@@ -55,7 +55,7 @@
                         <input type="checkbox" checked="@EnabledRoutes.Contains(route.Id)"
                                @onchange="(e) => OnToggleRoute.InvokeAsync((route, (bool)(e.Value ?? false)))" />
                         <div class="chart-item-body">
-                            <div class="chart-name">@(route.Name ?? route.Id[..8])</div>
+                            <div class="chart-name">@(route.Name ?? ShortId(route.Id))</div>
                             @if (route.Distance is not null)
                             {
                                 <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
@@ -81,7 +81,7 @@
             {
                 <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
                     <div class="chart-item-body">
-                        <div class="chart-name">@(wp.Name ?? wp.Id[..8])</div>
+                        <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
                     </div>
                     <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
                             @onclick="() => OnNavigateToWaypoint.InvokeAsync(wp)">Go</button>
@@ -206,6 +206,13 @@
         LayerFilter = e.Value?.ToString() ?? "";
         await LayerFilterChanged.InvokeAsync(LayerFilter);
     }
+
+    /// <summary>
+    /// Safe prefix of an arbitrary identifier. IDs from older routes or
+    /// third-party GPX imports can be shorter than the usual 8-char slug,
+    /// and the raw range operator throws on those.
+    /// </summary>
+    private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
 
     /// <summary>Red tint for vessels with a sub-0.5 nm / sub-10 min CPA; amber
     /// for sub-1 nm / sub-20 min; nothing for the rest. Matches the map's

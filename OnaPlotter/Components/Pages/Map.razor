@@ -285,7 +285,9 @@
     {
         if (module is null) return;
         chartPanelOpen = false;
-        await module.InvokeVoidAsync("focusVessel", context);
+        try { await module.InvokeVoidAsync("focusVessel", context); }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
     }
 
     private static double HaversineNm(double lat1, double lon1, double lat2, double lon2)
@@ -454,10 +456,17 @@
     private async Task PushGuardZoneAsync()
     {
         if (module is null) return;
-        await module.InvokeVoidAsync("setGuardZone",
-            Settings.CpaAlarmThreshold, Settings.GuardZoneLookaheadMinutes);
+        try
+        {
+            await module.InvokeVoidAsync("setGuardZone",
+                Settings.CpaAlarmThreshold, Settings.GuardZoneLookaheadMinutes);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
     }
 
+    // Fire-and-forget on the settings-changed event. PushGuardZoneAsync swallows
+    // expected disposal races so nothing escapes as an unobserved task exception.
     private void HandleSettingsChanged() => _ = PushGuardZoneAsync();
 
     [JSInvokable]
@@ -651,13 +660,18 @@
         try
         {
             var vessels = AisStore.GetVessels();
-            var jsVessels = vessels.Select(v => new
-            {
-                context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
-                lat = v.Latitude!.Value, lon = v.Longitude!.Value,
-                headingRad = v.Heading, cogRad = v.CourseOverGround,
-                sogMs = v.SpeedOverGround, shipType = v.ShipType
-            }).ToArray();
+            // AisStore filters on position when building the snapshot, but
+            // defend against someone clearing a position between snapshots
+            // anyway - force-unwrap is never worth the risk in a hot path.
+            var jsVessels = vessels
+                .Where(v => v.Latitude is not null && v.Longitude is not null)
+                .Select(v => new
+                {
+                    context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
+                    lat = v.Latitude!.Value, lon = v.Longitude!.Value,
+                    headingRad = v.Heading, cogRad = v.CourseOverGround,
+                    sogMs = v.SpeedOverGround, shipType = v.ShipType
+                }).ToArray();
             await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);
         }
         catch (JSDisconnectedException) { }

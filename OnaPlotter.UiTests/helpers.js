@@ -1,0 +1,47 @@
+// Shared helpers for Playwright UI tests.
+
+/**
+ * Installs console-error and page-error listeners that append to an array.
+ * Returns the array plus a function to assert it's empty.
+ * Ignores the usual noise (favicon 404, WebSocket disconnects during nav).
+ */
+export function collectErrors(page) {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    page.on('console', (msg) => {
+        if (msg.type() !== 'error') return;
+        const text = msg.text();
+        // Filter expected noise.
+        if (text.includes('favicon')) return;
+        if (text.includes('websocket') && text.includes('1006')) return;
+        errors.push(`console.error: ${text}`);
+    });
+    // Blazor renders a fixed-id error UI for unhandled exceptions.
+    // Watch for it becoming visible.
+    return {
+        errors,
+        async assertBlazorErrorNotVisible() {
+            const banner = page.locator('#blazor-error-ui');
+            if (await banner.isVisible()) {
+                const text = (await banner.textContent()) ?? '(empty)';
+                throw new Error(`Blazor error UI is visible: ${text.trim()}`);
+            }
+        }
+    };
+}
+
+/** Deterministic PRNG so fuzz runs are reproducible. Seed with FUZZ_SEED env. */
+export function seededRandom(seed) {
+    let s = seed >>> 0;
+    return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0x100000000;
+    };
+}
+
+/** Wait for the Blazor app's #app shell to populate and Leaflet to attach. */
+export async function waitForMapReady(page) {
+    await page.waitForSelector('#app > *:not(:empty)', { timeout: 30_000 });
+    // The Map page has a div#mapDiv once initMap() runs; other pages may not.
+    await page.waitForTimeout(1500);
+}
