@@ -5,7 +5,7 @@
     Tap map to add waypoints. Drag waypoints to reposition.
 </div>
 <div class="route-edit-bar">
-    <input type="text" class="route-name-input" placeholder="Route name..."
+    <input type="text" class="route-name-input" aria-label="Route name"
            value="@Name" @oninput="OnNameInput" />
     <span class="route-edit-stats">@Stats</span>
     <button class="map-btn" @onclick="OnUndo" title="Remove last waypoint">Undo</button>

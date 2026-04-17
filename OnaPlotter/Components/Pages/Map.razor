@@ -26,16 +26,14 @@
      @onfullscreenchange="OnFullscreenChange">
     <div id="mapDiv"></div>
 
-    @* Connection status chip. The MainLayout top-row already shows this
-       indicator, so we only surface it here when we're in fullscreen mode
-       and the top-row is hidden - otherwise it duplicates. *@
-    @if (fullscreen)
-    {
-        <div class="conn-chip conn-@ConnClass" title="@ConnTooltip">
-            <span class="conn-dot"></span>
-            @ConnLabel
-        </div>
-    }
+    @* Connection status chip. Rendered unconditionally; CSS hides it
+       except when the map is in fullscreen (native or our .map-fullscreen
+       CSS-only fallback). Avoids duplicating the MainLayout top-row
+       indicator but still shows on iPad where native fullscreen is spotty. *@
+    <div class="conn-chip conn-@ConnClass" title="@ConnTooltip">
+        <span class="conn-dot"></span>
+        @ConnLabel
+    </div>
 
     <MapHud Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
@@ -95,7 +93,7 @@
     {
         <div class="waypoint-dialog">
             <div class="hud-label" style="margin-bottom:8px;">Create Waypoint</div>
-            <input type="text" class="route-name-input" placeholder="Waypoint name..."
+            <input type="text" class="route-name-input" aria-label="Waypoint name"
                    @bind="newWaypointName" @bind:event="oninput" />
             <div style="display:flex; gap:6px; margin-top:8px;">
                 <button class="map-btn active" @onclick="SaveWaypoint">Save</button>
@@ -828,7 +826,10 @@
             return;
         }
         string name = string.IsNullOrWhiteSpace(routeEditName) ? $"Route {DateTime.Now:HH:mm}" : routeEditName;
-        bool ok = await RouteApi.SaveAsync(name, coords);
+        bool ok;
+        try { ok = await RouteApi.SaveAsync(name, coords); }
+        catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
+
         if (ok)
         {
             Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
@@ -836,7 +837,7 @@
             PrecomputeRouteBounds();
             RebuildFilteredLayers();
         }
-        else
+        else if (Toasts.Active.Count == 0) // only if we haven't already toasted the exception
         {
             Toasts.Error("Failed to save route");
         }
@@ -890,21 +891,30 @@
     {
         waypointDialogVisible = false;
         string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
-        string? id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon);
-        if (id is not null && module is not null)
-        {
+        string? id;
+        try { id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon); }
+        catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
+
+        if (id is null) { Toasts.Error("Save waypoint failed: server rejected"); return; }
+
+        if (module is not null)
             await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
-            loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
-        }
+        loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
+        Toasts.Success($"Saved waypoint '{name}'");
     }
 
     private async Task NavigateHere()
     {
         contextMenuVisible = false;
         string name = $"GoTo {DateTime.Now:HH:mm}";
-        string? id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon);
-        if (id is not null)
+        try
+        {
+            string? id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon);
+            if (id is null) { Toasts.Error("Navigate failed: server rejected waypoint"); return; }
             await CourseApi.SetDestinationAsync(id);
+            Toasts.Success($"Navigating to {name}");
+        }
+        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
     }
 
     private async Task StopNavigation()
@@ -916,8 +926,13 @@
 
     private async Task NavigateToWaypoint(SignalkWaypoint wp)
     {
-        if (wp.Latitude is not null && wp.Longitude is not null)
+        if (wp.Latitude is null || wp.Longitude is null) return;
+        try
+        {
             await CourseApi.SetDestinationAsync(wp.Id);
+            Toasts.Success($"Navigating to {wp.Name ?? "waypoint"}");
+        }
+        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
     }
 
     private async Task ToggleWeatherOverlay(bool enabled)

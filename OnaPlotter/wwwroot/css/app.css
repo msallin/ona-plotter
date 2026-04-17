@@ -621,8 +621,12 @@ article.content:has(.map-container) {
 }
 .mob-tooltip::before { display: none !important; }
 
-/* Compass rose (tiny heading indicator) */
+/* Compass rose (tiny heading indicator). transform-box:view-box pins the
+   rotation origin to the SVG's viewBox centre (0,0) so the needle rotates
+   around its pivot instead of the SVG element's top-left corner. */
 .compass-rose {
+    transform-box: view-box;
+    transform-origin: 0 0;
     transition: transform 0.3s ease-out;
 }
 
@@ -757,14 +761,18 @@ html {
     padding: 1rem 0.5rem;
 }
 
-/* ===== Connection Chip (on the map, including fullscreen) ===== */
+/* ===== Connection Chip (only visible in fullscreen) =====
+   The MainLayout top-row already shows connection state on every page.
+   In fullscreen the top-row is covered by the map, so we surface the
+   chip. Using CSS (not a Razor @if) lets us catch both native fullscreen
+   and our CSS-only fallback with the same rule. */
 
 .conn-chip {
     position: absolute;
     top: 12px;
     left: 12px;
     z-index: var(--z-controls);
-    display: flex;
+    display: none;                  /* hidden by default */
     align-items: center;
     gap: 6px;
     padding: 4px 10px 4px 8px;
@@ -777,6 +785,10 @@ html {
     color: var(--sk-text);
     user-select: none;
     pointer-events: none;
+}
+.map-container.map-fullscreen .conn-chip,
+.map-container:fullscreen .conn-chip {
+    display: flex;
 }
 
 .conn-chip .conn-dot {

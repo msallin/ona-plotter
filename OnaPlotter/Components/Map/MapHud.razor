@@ -68,10 +68,13 @@
             @SvgText(18, 0, "E", "rgba(255,255,255,0.3)", 7)
             @SvgText(0, 19, "S", "rgba(255,255,255,0.3)", 7)
             @SvgText(-18, 0, "W", "rgba(255,255,255,0.3)", 7)
-            <line x1="0" y1="0" x2="@HeadingX" y2="@HeadingY"
-                  stroke="#3b82f6" stroke-width="2" stroke-linecap="round"
-                  class="compass-rose" />
-            <circle cx="0" cy="0" r="2.5" fill="#3b82f6"/>
+            @* Needle shape: wide arrowhead forward, short tail. Rotated as a
+               whole so the pointer always tracks heading. *@
+            <g class="compass-rose" style="transform: rotate(@HeadingDegStr);">
+                <polygon points="0,-20 5,-6 0,-10 -5,-6" fill="#60a5fa" stroke="none"/>
+                <polygon points="0,12 3,4 0,6 -3,4" fill="rgba(96,165,250,0.5)" stroke="none"/>
+            </g>
+            <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
         </svg>
         <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;</span></div>
     </div>
@@ -208,8 +211,7 @@
             : "0deg";
 
     private double HeadingRad => LastHeadingRad ?? 0;
-    private string HeadingX => (Math.Sin(HeadingRad) * 16).ToString("F1");
-    private string HeadingY => (-Math.Cos(HeadingRad) * 16).ToString("F1");
+    private string HeadingDegStr => $"{(HeadingRad * RadToDeg):F0}deg";
 
     private string AnchorAlarmClass => AnchorDragging ? "anchor-alarm" : "";
     private string AnchorDistClass =>

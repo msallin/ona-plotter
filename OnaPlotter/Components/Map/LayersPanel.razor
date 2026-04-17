@@ -7,7 +7,7 @@
 <div class="chart-panel">
     @if (AvailableCharts.Count + AvailableRoutes.Count > 6)
     {
-        <input type="text" class="layer-search" placeholder="Filter..."
+        <input type="text" class="layer-search" aria-label="Filter layers"
                value="@LayerFilter" @oninput="OnFilterInput" />
     }
 

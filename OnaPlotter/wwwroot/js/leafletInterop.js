@@ -180,22 +180,28 @@ function syncFsIcon() {
 function toggleFullscreenFromControl() {
     const container = document.querySelector('.map-container');
     if (!container) return;
-    const isFs = isInFullscreen();
+    // iOS browsers (Safari, Firefox, Chrome) all route through WebKit and
+    // have spotty native Fullscreen support on non-video elements. Treat
+    // the CSS class as the source of truth; native API is a nice-to-have
+    // upgrade that we kick off best-effort.
+    const currently = container.classList.contains('map-fullscreen') || isInFullscreen();
 
-    if (!isFs) {
-        // Try native API first (desktop, Android).
-        if (container.requestFullscreen) {
-            container.requestFullscreen().catch(() => cssFsToggle(true));
-        } else if (container.webkitRequestFullscreen) {
-            container.webkitRequestFullscreen();
-            cssFsToggle(true); // iOS uses CSS fallback anyway
-        } else {
-            cssFsToggle(true);
-        }
+    if (!currently) {
+        cssFsToggle(true);
+        try {
+            const p = container.requestFullscreen
+                ? container.requestFullscreen()
+                : container.webkitRequestFullscreen && container.webkitRequestFullscreen();
+            if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
+        } catch { /* ignore - CSS still covers us */ }
     } else {
-        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
-        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
         cssFsToggle(false);
+        try {
+            const p = document.exitFullscreen
+                ? document.exitFullscreen()
+                : document.webkitExitFullscreen && document.webkitExitFullscreen();
+            if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
+        } catch { /* ignore */ }
     }
     setTimeout(() => {
         if (map) map.invalidateSize();
@@ -298,39 +304,51 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         showContextMenu(e.latlng);
     });
 
-    // Long-press for touch devices (500ms hold without moving >10px).
+    // Long-press for touch devices. Tuned to avoid firing during an
+    // intentional pan: need a full 700 ms of stillness and a tight 8 px
+    // movement budget, and Leaflet's own dragstart cancels immediately so
+    // a two-finger pinch or one-finger drag never accidentally triggers it.
+    const LONG_PRESS_MS = 700;
+    const LONG_PRESS_MAX_MOVE_PX = 8;
     let longPressTimer = null;
     let longPressStartPt = null;
     const mapEl = map.getContainer();
+    const cancelLongPress = () => {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        longPressStartPt = null;
+    };
+    map.on('movestart dragstart zoomstart', cancelLongPress);
+
     mapEl.addEventListener('touchstart', (e) => {
-        if (e.touches.length !== 1) return;
-        longPressStartPt = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        cancelLongPress();
+        if (e.touches.length !== 1) return; // two-finger pinch, etc.
+        // Ignore presses that land on a control (buttons, map chrome).
+        if (e.target && e.target.closest && e.target.closest('.leaflet-control, button, a, input, label'))
+            return;
+        const t0 = e.touches[0];
+        longPressStartPt = { x: t0.clientX, y: t0.clientY };
         longPressTimer = setTimeout(() => {
-            const touch = e.touches[0] || e.changedTouches[0];
-            if (!touch) return;
+            longPressTimer = null;
+            if (!longPressStartPt) return;
+            const rect = mapEl.getBoundingClientRect();
             const latlng = map.containerPointToLatLng([
-                touch.clientX - mapEl.getBoundingClientRect().left,
-                touch.clientY - mapEl.getBoundingClientRect().top
+                longPressStartPt.x - rect.left,
+                longPressStartPt.y - rect.top
             ]);
-            // Haptic feedback if available (iOS, Android).
             if (navigator.vibrate) navigator.vibrate(30);
             showContextMenu(latlng);
-            longPressTimer = null;
-        }, 500);
+            longPressStartPt = null;
+        }, LONG_PRESS_MS);
     }, { passive: true });
     mapEl.addEventListener('touchmove', (e) => {
-        if (longPressTimer && longPressStartPt && e.touches.length === 1) {
-            const dx = e.touches[0].clientX - longPressStartPt.x;
-            const dy = e.touches[0].clientY - longPressStartPt.y;
-            if (dx * dx + dy * dy > 100) { // 10px movement threshold
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-        }
+        if (!longPressTimer || !longPressStartPt || e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - longPressStartPt.x;
+        const dy = e.touches[0].clientY - longPressStartPt.y;
+        if (dx * dx + dy * dy > LONG_PRESS_MAX_MOVE_PX * LONG_PRESS_MAX_MOVE_PX)
+            cancelLongPress();
     }, { passive: true });
-    mapEl.addEventListener('touchend', () => {
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-    }, { passive: true });
+    mapEl.addEventListener('touchend', cancelLongPress, { passive: true });
+    mapEl.addEventListener('touchcancel', cancelLongPress, { passive: true });
 
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.
     // Debounced: skip events caused by programmatic panTo (follow mode) and coalesce

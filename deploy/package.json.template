@@ -9,7 +9,7 @@
   ],
   "license": "MIT",
   "signalk": {
-    "appIcon": "public/favicon.svg",
+    "appIcon": "favicon.svg",
     "displayName": "OnaPlotter"
   }
 }
