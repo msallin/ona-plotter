@@ -1,0 +1,172 @@
+@using OnaPlotter.Models
+@using Microsoft.AspNetCore.Components.Forms
+
+@* Slide-in panel listing available charts, routes, waypoints, track history,
+   and weather overlays. Each row has a checkbox and optional actions. *@
+
+<div class="chart-panel">
+    @if (AvailableCharts.Count + AvailableRoutes.Count > 6)
+    {
+        <input type="text" class="layer-search" placeholder="Filter..."
+               value="@LayerFilter" @oninput="OnFilterInput" />
+    }
+
+    @if (FilteredCharts.Count > 0)
+    {
+        <div class="chart-panel-header section-toggle" @onclick="() => ChartsExpanded = !ChartsExpanded">
+            <span class="toggle-arrow">@(ChartsExpanded ? "v" : ">")</span>
+            Charts <span class="section-count">@FilteredCharts.Count</span>
+        </div>
+        @if (ChartsExpanded)
+        {
+            @foreach (var chart in FilteredCharts)
+            {
+                <label class="chart-item">
+                    <input type="checkbox" checked="@EnabledCharts.Contains(chart.Identifier)"
+                           @onchange="(e) => OnToggleChart.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
+                    <div class="chart-item-body">
+                        <div class="chart-name">@chart.Name</div>
+                        @if (chart.Description is not null)
+                        {
+                            <div class="chart-desc">@chart.Description</div>
+                        }
+                        @if (chart.MinZoom is not null || chart.MaxZoom is not null)
+                        {
+                            <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
+                        }
+                    </div>
+                </label>
+            }
+        }
+    }
+
+    @if (FilteredRoutes.Count > 0)
+    {
+        <div class="chart-panel-header section-toggle" @onclick="() => RoutesExpanded = !RoutesExpanded">
+            <span class="toggle-arrow">@(RoutesExpanded ? "v" : ">")</span>
+            Routes <span class="section-count">@FilteredRoutes.Count</span>
+        </div>
+        @if (RoutesExpanded)
+        {
+            @foreach (var route in FilteredRoutes)
+            {
+                <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+                    <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
+                        <input type="checkbox" checked="@EnabledRoutes.Contains(route.Id)"
+                               @onchange="(e) => OnToggleRoute.InvokeAsync((route, (bool)(e.Value ?? false)))" />
+                        <div class="chart-item-body">
+                            <div class="chart-name">@(route.Name ?? route.Id[..8])</div>
+                            @if (route.Distance is not null)
+                            {
+                                <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
+                            }
+                        </div>
+                    </label>
+                    <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                            @onclick="() => OnEditRoute.InvokeAsync(route)" title="Edit route">Edit</button>
+                </div>
+            }
+        }
+    }
+
+    @if (LoadedWaypoints.Count > 0)
+    {
+        <div class="chart-panel-header section-toggle" @onclick="() => WaypointsExpanded = !WaypointsExpanded">
+            <span class="toggle-arrow">@(WaypointsExpanded ? "v" : ">")</span>
+            Waypoints <span class="section-count">@LoadedWaypoints.Count</span>
+        </div>
+        @if (WaypointsExpanded)
+        {
+            @foreach (var wp in LoadedWaypoints)
+            {
+                <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="chart-item-body">
+                        <div class="chart-name">@(wp.Name ?? wp.Id[..8])</div>
+                    </div>
+                    <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                            @onclick="() => OnNavigateToWaypoint.InvokeAsync(wp)">Go</button>
+                </div>
+            }
+        }
+    }
+
+    <div class="chart-panel-header section-toggle" @onclick="() => TrackExpanded = !TrackExpanded">
+        <span class="toggle-arrow">@(TrackExpanded ? "v" : ">")</span>
+        Track History
+    </div>
+    @if (TrackExpanded)
+    {
+        <label class="chart-item">
+            <input type="checkbox" checked="@ServerTrackVisible"
+                   @onchange="(e) => OnToggleServerTrack.InvokeAsync((bool)(e.Value ?? false))" />
+            <div class="chart-item-body">
+                <div class="chart-name">Server Track (24h)</div>
+                <div class="chart-desc">Position history from SignalK</div>
+            </div>
+        </label>
+    }
+
+    <div class="chart-panel-header section-toggle" @onclick="() => WeatherExpanded = !WeatherExpanded">
+        <span class="toggle-arrow">@(WeatherExpanded ? "v" : ">")</span>
+        Weather Overlay
+    </div>
+    @if (WeatherExpanded)
+    {
+        <label class="chart-item">
+            <input type="checkbox" checked="@WeatherOverlayVisible"
+                   @onchange="(e) => OnToggleWeatherOverlay.InvokeAsync((bool)(e.Value ?? false))" />
+            <div class="chart-item-body">
+                <div class="chart-name">Wind Speed (OWM)</div>
+                <div class="chart-desc">OpenWeatherMap wind overlay</div>
+            </div>
+        </label>
+    }
+
+    <div style="margin-top:8px; border-top:1px solid var(--sk-border); padding-top:8px; display:flex; gap:6px;">
+        <label class="map-btn gpx-btn">
+            Import GPX
+            <InputFile OnChange="OnGpxImport" Accept=".gpx" style="display:none;" />
+        </label>
+        <button class="map-btn gpx-btn" @onclick="OnGpxExport">
+            Export GPX
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> AvailableCharts { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> AvailableRoutes { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> FilteredCharts { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> FilteredRoutes { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> LoadedWaypoints { get; set; } = [];
+    [Parameter, EditorRequired] public HashSet<string> EnabledCharts { get; set; } = [];
+    [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
+    [Parameter] public bool ServerTrackVisible { get; set; }
+    [Parameter] public bool WeatherOverlayVisible { get; set; }
+
+    [Parameter] public string LayerFilter { get; set; } = "";
+    [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
+
+    // Section expand/collapse is local UI state; keeping it here avoids parent
+    // re-render resetting the toggles.
+    private bool ChartsExpanded { get; set; } = true;
+    private bool RoutesExpanded { get; set; } = true;
+    private bool WaypointsExpanded { get; set; } = true;
+    private bool TrackExpanded { get; set; } = true;
+    private bool WeatherExpanded { get; set; }
+
+    [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggleChart { get; set; }
+    [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
+    [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
+    [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleWeatherOverlay { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnGpxImport { get; set; }
+    [Parameter] public EventCallback OnGpxExport { get; set; }
+
+    private async Task OnFilterInput(ChangeEventArgs e)
+    {
+        LayerFilter = e.Value?.ToString() ?? "";
+        await LayerFilterChanged.InvokeAsync(LayerFilter);
+    }
+}

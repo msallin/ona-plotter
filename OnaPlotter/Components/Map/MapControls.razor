@@ -1,0 +1,86 @@
+@using OnaPlotter.Utilities
+
+@* Bottom control bar: follow, orientation, night, anchor, MOB, fit, laylines,
+   route, race timer, layers. Grouped by function with vertical separators. *@
+
+<div class="map-controls">
+    <button class="ctrl-btn @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
+        <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
+    </button>
+    <button class="ctrl-btn" @onclick="OnCycleOrientation" title="Map orientation (O)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Compass)</span>
+        <span class="ctrl-lbl">@OrientationLabel</span>
+    </button>
+    <button class="ctrl-btn @(NightMode ? "active" : "")" @onclick="OnToggleNight" title="Night mode (N)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Moon)</span>
+        <span class="ctrl-lbl">Night</span>
+    </button>
+
+    <div class="ctrl-sep"></div>
+
+    <button class="ctrl-btn @(AnchorActive ? "active" : "")" @onclick="OnToggleAnchor" title="Anchor watch (A)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
+        <span class="ctrl-lbl">@(AnchorActive ? "Set" : "Anchor")</span>
+    </button>
+    <button class="ctrl-btn ctrl-btn-danger @(MobActive ? "active" : "")" @onclick="OnToggleMob" title="Man overboard (M)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
+        <span class="ctrl-lbl">MOB</span>
+    </button>
+
+    <div class="ctrl-sep"></div>
+
+    <button class="ctrl-btn" @onclick="OnZoomToTrack" title="Fit track (T)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
+        <span class="ctrl-lbl">Fit</span>
+    </button>
+    <button class="ctrl-btn @(LaylinesVisible ? "active" : "")" @onclick="OnToggleLaylines" title="Laylines (L)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
+        <span class="ctrl-lbl">Laylines</span>
+    </button>
+
+    <div class="ctrl-sep"></div>
+
+    @if (!RouteEditMode)
+    {
+        <button class="ctrl-btn" @onclick="OnStartRouteEdit" title="Create a new route">
+            <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
+            <span class="ctrl-lbl">Route</span>
+        </button>
+    }
+    <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
+        <span class="ctrl-lbl">@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
+    </button>
+
+    <div class="ctrl-sep"></div>
+
+    <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers" title="Layers panel">
+        <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
+        <span class="ctrl-lbl">Layers</span>
+    </button>
+</div>
+
+@code {
+    [Parameter] public bool Follow { get; set; }
+    [Parameter] public string OrientationLabel { get; set; } = "N-Up";
+    [Parameter] public bool NightMode { get; set; }
+    [Parameter] public bool AnchorActive { get; set; }
+    [Parameter] public bool MobActive { get; set; }
+    [Parameter] public bool LaylinesVisible { get; set; }
+    [Parameter] public bool RouteEditMode { get; set; }
+    [Parameter] public bool RaceTimerActive { get; set; }
+    [Parameter] public string RaceTimerLabel { get; set; } = "";
+    [Parameter] public bool LayersPanelOpen { get; set; }
+
+    [Parameter] public EventCallback OnToggleFollow { get; set; }
+    [Parameter] public EventCallback OnCycleOrientation { get; set; }
+    [Parameter] public EventCallback OnToggleNight { get; set; }
+    [Parameter] public EventCallback OnToggleAnchor { get; set; }
+    [Parameter] public EventCallback OnToggleMob { get; set; }
+    [Parameter] public EventCallback OnZoomToTrack { get; set; }
+    [Parameter] public EventCallback OnToggleLaylines { get; set; }
+    [Parameter] public EventCallback OnStartRouteEdit { get; set; }
+    [Parameter] public EventCallback OnToggleRaceTimer { get; set; }
+    [Parameter] public EventCallback OnToggleLayers { get; set; }
+}

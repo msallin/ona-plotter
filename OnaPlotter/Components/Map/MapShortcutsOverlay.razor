@@ -1,0 +1,27 @@
+@* Modal card listing all keyboard shortcuts. Dismissed by clicking outside or Esc. *@
+
+<div class="shortcuts-overlay" @onclick="OnDismiss">
+    <div class="shortcuts-card" @onclick:stopPropagation>
+        <h5>Keyboard Shortcuts</h5>
+        <div class="shortcuts-grid">
+            <kbd>F</kbd><span>Toggle follow</span>
+            <kbd>O</kbd><span>Cycle orientation</span>
+            <kbd>N</kbd><span>Night mode</span>
+            <kbd>A</kbd><span>Anchor watch</span>
+            <kbd>M</kbd><span>Man overboard</span>
+            <kbd>T</kbd><span>Fit track</span>
+            <kbd>L</kbd><span>Laylines</span>
+            <kbd>R</kbd><span>Race timer</span>
+            <kbd>?</kbd><span>Show this card</span>
+            <kbd>Esc</kbd><span>Dismiss</span>
+        </div>
+        <div class="shortcuts-hint">
+            Double-click the map: toggle bearing/distance line.
+            Right-click or long-press: context menu.
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EventCallback OnDismiss { get; set; }
+}

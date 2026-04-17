@@ -4,6 +4,7 @@
 @using OnaPlotter.Services
 @using OnaPlotter.Services.Api
 @using OnaPlotter.Models
+@using OnaPlotter.Components.Map
 @using Microsoft.JSInterop
 @implements IAsyncDisposable
 @inject SignalkClient SignalkClient
@@ -31,275 +32,43 @@
         @ConnLabel
     </div>
 
-    @* === HUD: Top-Left — Speed (primary), Course & Position === *@
-    <div class="hud hud-top-left">
-        <div class="hud-panel">
-            <div class="hud-label">SOG</div>
-            <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
-            <div class="hud-label" style="margin-top:4px;">COG</div>
-            <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
-            <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
-        </div>
-    </div>
+    <MapHud Data="Data" Autopilot="AutopilotApi"
+            LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging" />
 
-    @* === HUD: Top-Right — Wind === *@
-    <div class="hud hud-top-right">
-        <div class="hud-panel" style="text-align:center;">
-            <div class="hud-label">AWA / AWS</div>
-            @if (Data.WindSpeedApparent is not null)
-            {
-                <svg width="48" height="48" viewBox="-24 -24 48 48" class="wind-arrow"
-                     style="transform: rotate(@WindAngleDegStr);" role="img" aria-label="Apparent wind">
-                    <circle cx="0" cy="0" r="22" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-                    <polygon points="0,-20 4,-8 0,-12 -4,-8" fill="#3b82f6" stroke="none"/>
-                </svg>
-                <div class="hud-value" style="font-size:1.1rem;">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
-            }
-            else
-            {
-                <div style="color: rgba(255,255,255,0.25); font-size:0.8rem; padding: 4px 0;">--</div>
-            }
-            @if (Data.WindSpeedTrue is not null)
-            {
-                <div style="margin-top:4px; border-top:1px solid rgba(255,255,255,0.1); padding-top:4px;">
-                    <div class="hud-label">TWA / TWS</div>
-                    <svg width="36" height="36" viewBox="-18 -18 36 36" class="wind-arrow"
-                         style="transform: rotate(@TrueWindAngleDegStr);" role="img" aria-label="True wind">
-                        <circle cx="0" cy="0" r="16" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
-                        <polygon points="0,-14 3,-6 0,-9 -3,-6" fill="#22c55e" stroke="none"/>
-                    </svg>
-                    <div class="hud-value" style="font-size:1rem;">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></div>
-                </div>
-            }
-        </div>
-    </div>
+    <MapControls Follow="follow"
+                 OrientationLabel="@mapOrientationLabel"
+                 NightMode="nightMode"
+                 AnchorActive="AnchorButtonActive"
+                 MobActive="mobActive"
+                 LaylinesVisible="laylinesVisible"
+                 RouteEditMode="routeEditMode"
+                 RaceTimerActive="raceTimerActive"
+                 RaceTimerLabel="@FormatRaceTimer()"
+                 LayersPanelOpen="chartPanelOpen"
+                 OnToggleFollow="ToggleFollow"
+                 OnCycleOrientation="CycleMapOrientation"
+                 OnToggleNight="ToggleNightMode"
+                 OnToggleAnchor="ToggleAnchor"
+                 OnToggleMob="ToggleMob"
+                 OnZoomToTrack="ZoomToTrack"
+                 OnToggleLaylines="ToggleLaylines"
+                 OnStartRouteEdit="StartRouteEdit"
+                 OnToggleRaceTimer="ToggleRaceTimer"
+                 OnToggleLayers="ToggleLayersPanel" />
 
-    @* === HUD: Bottom-Left — Depth === *@
-    <div class="hud hud-bottom-left">
-        <div class="hud-panel">
-            <div class="hud-label">Depth</div>
-            <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span></div>
-        </div>
-    </div>
-
-    @* === HUD: Bottom-Right — Heading Compass === *@
-    <div class="hud hud-bottom-right">
-        <div class="hud-panel" style="text-align:center;">
-            <div class="hud-label">HDG</div>
-            <svg width="52" height="52" viewBox="-26 -26 52 52">
-                <circle cx="0" cy="0" r="24" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-                @SvgTextMarkup(0, -18, "N", "rgba(255,255,255,0.5)", 7)
-                @SvgTextMarkup(18, 0, "E", "rgba(255,255,255,0.3)", 7)
-                @SvgTextMarkup(0, 19, "S", "rgba(255,255,255,0.3)", 7)
-                @SvgTextMarkup(-18, 0, "W", "rgba(255,255,255,0.3)", 7)
-                <line x1="0" y1="0" x2="@HeadingX" y2="@HeadingY"
-                      stroke="#3b82f6" stroke-width="2" stroke-linecap="round"
-                      class="compass-rose" />
-                <circle cx="0" cy="0" r="2.5" fill="#3b82f6"/>
-            </svg>
-            <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;</span></div>
-        </div>
-    </div>
-
-    @* === HUD: Route Info (only visible when an active course exists) === *@
-    @if (Data.HasActiveCourse)
-    {
-        <div class="hud hud-route">
-            <div class="hud-panel route-panel">
-                <div class="hud-label">
-                    @(Data.ActiveRouteName ?? "Active Route")
-                </div>
-                <div class="route-info-grid">
-                    <div>
-                        <div class="hud-label">DTW</div>
-                        <div class="hud-value route-value">@Format.Nm(Data.CourseNextPointDistance)<span class="hud-unit">nm</span></div>
-                    </div>
-                    <div>
-                        <div class="hud-label">BRG</div>
-                        <div class="hud-value route-value">@Format.Degrees(Data.CourseNextPointBearing)<span class="hud-unit">&deg;</span></div>
-                    </div>
-                    @if (Data.CourseNextPointVmg is not null)
-                    {
-                        <div>
-                            <div class="hud-label">VMG</div>
-                            <div class="hud-value route-value">@Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span></div>
-                        </div>
-                    }
-                    @if (Data.CourseNextPointTimeToGo is not null)
-                    {
-                        <div>
-                            <div class="hud-label">TTG</div>
-                            <div class="hud-value route-value">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</div>
-                        </div>
-                        <div>
-                            <div class="hud-label">ETA</div>
-                            <div class="hud-value route-value">@Format.Eta(Data.CourseNextPointTimeToGo)</div>
-                        </div>
-                    }
-                    @if (Data.CrossTrackError is not null)
-                    {
-                        <div>
-                            <div class="hud-label">XTE</div>
-                            <div class="hud-value route-value @Format.XteClass(Data.CrossTrackError)">@Format.Xte(Data.CrossTrackError)</div>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    }
-
-    @* === HUD: Anchor Info (when server-side anchor alarm is active) === *@
-    @if (Data.AnchorActive)
-    {
-        <div class="hud hud-anchor">
-            <div class="hud-panel anchor-panel @AnchorAlarmClass">
-                <div class="hud-label">Anchor Watch</div>
-                <div class="anchor-info-row">
-                    <div>
-                        <div class="hud-label">Dist</div>
-                        <div class="hud-value route-value @AnchorDistClass">@Format.MetersDual(Data.AnchorCurrentRadius)</div>
-                    </div>
-                    @if (Data.AnchorMaxRadius is not null)
-                    {
-                        <div>
-                            <div class="hud-label">Radius</div>
-                            <div class="hud-value route-value">@Format.MetersDual(Data.AnchorMaxRadius)</div>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
-    }
-
-    @* === HUD: Autopilot Panel === *@
-    @if (Data.AutopilotState is not null)
-    {
-        <div class="hud hud-autopilot">
-            <div class="hud-panel autopilot-panel @(Data.AutopilotState != "standby" ? "ap-engaged" : "")">
-                <div class="hud-label">Autopilot</div>
-                <div class="ap-state">@(Data.AutopilotState?.ToUpperInvariant() ?? "--")</div>
-                @if (Data.AutopilotTargetHeading is not null)
-                {
-                    <div class="hud-value route-value" style="font-size:1.1rem;">
-                        @Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span>
-                    </div>
-                }
-                <div class="ap-controls">
-                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(-10)'>-10</button>
-                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(-1)'>-1</button>
-                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(1)'>+1</button>
-                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(10)'>+10</button>
-                </div>
-                <div class="ap-modes">
-                    <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
-                            @onclick='() => AutopilotApi.SetStateAsync("standby")'>Stby</button>
-                    <button class="ap-mode-btn @(Data.AutopilotState == "auto" ? "active" : "")"
-                            @onclick='() => AutopilotApi.SetStateAsync("auto")'>Auto</button>
-                    <button class="ap-mode-btn @(Data.AutopilotState == "wind" ? "active" : "")"
-                            @onclick='() => AutopilotApi.SetStateAsync("wind")'>Wind</button>
-                    <button class="ap-mode-btn @(Data.AutopilotState == "route" ? "active" : "")"
-                            @onclick='() => AutopilotApi.SetStateAsync("route")'>Route</button>
-                </div>
-            </div>
-        </div>
-    }
-
-    @* === Control Bar === *@
-    <div class="map-controls">
-        <button class="ctrl-btn @(follow ? "active" : "")" @onclick="ToggleFollow" title="Follow boat (F)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
-            <span class="ctrl-lbl">@(follow ? "Follow" : "Free")</span>
-        </button>
-        <button class="ctrl-btn" @onclick="CycleMapOrientation" title="Map orientation (O)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Compass)</span>
-            <span class="ctrl-lbl">@mapOrientationLabel</span>
-        </button>
-        <button class="ctrl-btn @(nightMode ? "active" : "")" @onclick="ToggleNightMode" title="Night mode (N)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Moon)</span>
-            <span class="ctrl-lbl">Night</span>
-        </button>
-
-        <div class="ctrl-sep"></div>
-
-        <button class="ctrl-btn @(AnchorButtonActive ? "active" : "")" @onclick="ToggleAnchor" title="Anchor watch (A)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
-            <span class="ctrl-lbl">@(AnchorButtonActive ? "Set" : "Anchor")</span>
-        </button>
-        <button class="ctrl-btn ctrl-btn-danger @(mobActive ? "active" : "")" @onclick="ToggleMob" title="Man overboard (M)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
-            <span class="ctrl-lbl">MOB</span>
-        </button>
-
-        <div class="ctrl-sep"></div>
-
-        <button class="ctrl-btn" @onclick="ZoomToTrack" title="Fit track (T)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
-            <span class="ctrl-lbl">Fit</span>
-        </button>
-        <button class="ctrl-btn @(laylinesVisible ? "active" : "")" @onclick="ToggleLaylines" title="Laylines (L)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
-            <span class="ctrl-lbl">Laylines</span>
-        </button>
-
-        <div class="ctrl-sep"></div>
-
-        @if (!routeEditMode)
-        {
-            <button class="ctrl-btn" @onclick="StartRouteEdit" title="Create a new route">
-                <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
-                <span class="ctrl-lbl">Route</span>
-            </button>
-        }
-        <button class="ctrl-btn @(raceTimerActive ? "active" : "")" @onclick="ToggleRaceTimer" title="Race timer (R)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
-            <span class="ctrl-lbl">@(raceTimerActive ? FormatRaceTimer() : "Race")</span>
-        </button>
-
-        <div class="ctrl-sep"></div>
-
-        <button class="ctrl-btn @(chartPanelOpen ? "active" : "")" @onclick="() => chartPanelOpen = !chartPanelOpen" title="Layers panel">
-            <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
-            <span class="ctrl-lbl">Layers</span>
-        </button>
-    </div>
-
-    @* === Keyboard Shortcuts Overlay === *@
     @if (shortcutsVisible)
     {
-        <div class="shortcuts-overlay" @onclick="() => shortcutsVisible = false">
-            <div class="shortcuts-card" @onclick:stopPropagation>
-                <h5>Keyboard Shortcuts</h5>
-                <div class="shortcuts-grid">
-                    <kbd>F</kbd><span>Toggle follow</span>
-                    <kbd>O</kbd><span>Cycle orientation</span>
-                    <kbd>N</kbd><span>Night mode</span>
-                    <kbd>A</kbd><span>Anchor watch</span>
-                    <kbd>M</kbd><span>Man overboard</span>
-                    <kbd>T</kbd><span>Fit track</span>
-                    <kbd>L</kbd><span>Laylines</span>
-                    <kbd>R</kbd><span>Race timer</span>
-                    <kbd>?</kbd><span>Show this card</span>
-                    <kbd>Esc</kbd><span>Dismiss</span>
-                </div>
-                <div class="shortcuts-hint">Double-click the map: toggle bearing/distance line. Right-click or long-press: context menu.</div>
-            </div>
-        </div>
+        <MapShortcutsOverlay OnDismiss="() => shortcutsVisible = false" />
     }
 
-    @* === Route Editing Bar === *@
     @if (routeEditMode)
     {
-        <div class="route-edit-hint">
-            Tap map to add waypoints. Drag waypoints to reposition.
-        </div>
-        <div class="route-edit-bar">
-            <input type="text" class="route-name-input" placeholder="Route name..."
-                   @bind="routeEditName" @bind:event="oninput" />
-            <span class="route-edit-stats">@routeEditStats</span>
-            <button class="map-btn" @onclick="UndoLastWaypoint" title="Remove last waypoint">Undo</button>
-            <button class="map-btn active" @onclick="SaveRoute">Save</button>
-            <button class="map-btn" @onclick="CancelRouteEdit">Cancel</button>
-        </div>
+        <RouteEditPanel Name="routeEditName"
+                        NameChanged="v => routeEditName = v"
+                        Stats="@routeEditStats"
+                        OnUndo="UndoLastWaypoint"
+                        OnSave="SaveRoute"
+                        OnCancel="CancelRouteEdit" />
     }
 
     @* === Context Menu (right-click) === *@
@@ -344,141 +113,42 @@
         </div>
     }
 
-    @* === Layers Panel === *@
     @if (chartPanelOpen)
     {
-        <div class="chart-panel">
-            @if (availableCharts.Count + availableRoutes.Count > 6)
-            {
-                <input type="text" class="layer-search" placeholder="Filter..."
-                       @oninput="OnLayerFilterInput" />
-            }
-
-            @if (FilteredCharts.Length > 0)
-            {
-                <div class="chart-panel-header section-toggle" @onclick="() => chartsExpanded = !chartsExpanded">
-                    <span class="toggle-arrow">@(chartsExpanded ? "v" : ">")</span>
-                    Charts <span class="section-count">@FilteredCharts.Length</span>
-                </div>
-                @if (chartsExpanded)
-                {
-                    @foreach (var chart in FilteredCharts)
-                    {
-                        <label class="chart-item">
-                            <input type="checkbox" checked="@enabledCharts.Contains(chart.Identifier)"
-                                   @onchange="(e) => ToggleChart(chart, (bool)(e.Value ?? false))" />
-                            <div class="chart-item-body">
-                                <div class="chart-name">@chart.Name</div>
-                                @if (chart.Description is not null)
-                                {
-                                    <div class="chart-desc">@chart.Description</div>
-                                }
-                                @if (chart.MinZoom is not null || chart.MaxZoom is not null)
-                                {
-                                    <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
-                                }
-                            </div>
-                        </label>
-                    }
-                }
-            }
-
-            @if (FilteredRoutes.Length > 0)
-            {
-                <div class="chart-panel-header section-toggle" @onclick="() => routesExpanded = !routesExpanded">
-                    <span class="toggle-arrow">@(routesExpanded ? "v" : ">")</span>
-                    Routes <span class="section-count">@FilteredRoutes.Length</span>
-                </div>
-                @if (routesExpanded)
-                {
-                    @foreach (var route in FilteredRoutes)
-                    {
-                        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-                            <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
-                                <input type="checkbox" checked="@enabledRoutes.Contains(route.Id)"
-                                       @onchange="(e) => ToggleRoute(route, (bool)(e.Value ?? false))" />
-                                <div class="chart-item-body">
-                                    <div class="chart-name">@(route.Name ?? route.Id[..8])</div>
-                                    @if (route.Distance is not null)
-                                    {
-                                        <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
-                                    }
-                                </div>
-                            </label>
-                            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                                    @onclick="() => EditRoute(route)" title="Edit route">Edit</button>
-                        </div>
-                    }
-                }
-            }
-
-            @if (loadedWaypoints.Count > 0)
-            {
-                <div class="chart-panel-header section-toggle" @onclick="() => waypointsExpanded = !waypointsExpanded">
-                    <span class="toggle-arrow">@(waypointsExpanded ? "v" : ">")</span>
-                    Waypoints <span class="section-count">@loadedWaypoints.Count</span>
-                </div>
-                @if (waypointsExpanded)
-                {
-                    @foreach (var wp in loadedWaypoints)
-                    {
-                        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-                            <div class="chart-item-body">
-                                <div class="chart-name">@(wp.Name ?? wp.Id[..8])</div>
-                            </div>
-                            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                                    @onclick="() => NavigateToWaypoint(wp)">Go</button>
-                        </div>
-                    }
-                }
-            }
-
-            <div class="chart-panel-header section-toggle" @onclick="() => trackExpanded = !trackExpanded">
-                <span class="toggle-arrow">@(trackExpanded ? "v" : ">")</span>
-                Track History
-            </div>
-            @if (trackExpanded)
-            {
-                <label class="chart-item">
-                    <input type="checkbox" checked="@serverTrackVisible"
-                           @onchange="ToggleServerTrack" />
-                    <div class="chart-item-body">
-                        <div class="chart-name">Server Track (24h)</div>
-                        <div class="chart-desc">Position history from SignalK</div>
-                    </div>
-                </label>
-            }
-
-            <div class="chart-panel-header section-toggle" @onclick="() => weatherExpanded = !weatherExpanded">
-                <span class="toggle-arrow">@(weatherExpanded ? "v" : ">")</span>
-                Weather Overlay
-            </div>
-            @if (weatherExpanded)
-            {
-                <label class="chart-item">
-                    <input type="checkbox" checked="@weatherOverlayVisible"
-                           @onchange="ToggleWeatherOverlay" />
-                    <div class="chart-item-body">
-                        <div class="chart-name">Wind Speed (OWM)</div>
-                        <div class="chart-desc">OpenWeatherMap wind overlay</div>
-                    </div>
-                </label>
-            }
-
-            <div style="margin-top:8px; border-top:1px solid var(--sk-border); padding-top:8px; display:flex; gap:6px;">
-                <label class="map-btn gpx-btn">
-                    Import GPX
-                    <InputFile OnChange="HandleGpxImport" Accept=".gpx" style="display:none;" />
-                </label>
-                <button class="map-btn gpx-btn" @onclick="ExportGpx">
-                    Export GPX
-                </button>
-            </div>
-        </div>
+        <LayersPanel AvailableCharts="availableCharts"
+                     AvailableRoutes="availableRoutes"
+                     FilteredCharts="FilteredCharts"
+                     FilteredRoutes="FilteredRoutes"
+                     LoadedWaypoints="loadedWaypoints"
+                     EnabledCharts="enabledCharts"
+                     EnabledRoutes="enabledRoutes"
+                     ServerTrackVisible="serverTrackVisible"
+                     WeatherOverlayVisible="weatherOverlayVisible"
+                     LayerFilter="layerFilter"
+                     LayerFilterChanged="OnLayerFilterChanged"
+                     OnToggleChart="OnToggleChartCallback"
+                     OnToggleRoute="OnToggleRouteCallback"
+                     OnEditRoute="EditRoute"
+                     OnNavigateToWaypoint="NavigateToWaypoint"
+                     OnToggleServerTrack="ToggleServerTrack"
+                     OnToggleWeatherOverlay="ToggleWeatherOverlay"
+                     OnGpxImport="HandleGpxImport"
+                     OnGpxExport="ExportGpx" />
     }
 </div>
 
 @code {
+    // Timing constants. Implementation details; not user-configurable.
+    private const int AisPushInitialDelayMs = 1_000;
+    private const int AisPushIntervalMs = 3_000;
+    private const int RouteStatsPollIntervalMs = 500;
+    private const int RaceTimerTickMs = 1_000;
+    private const int LaylinePushEveryNFixes = 5;
+    /// <summary>Below this drift (m/s) the tidal current arrow is suppressed (~0.1 kn).</summary>
+    private const double MinCurrentDriftMs = 0.05;
+    /// <summary>GPX import size cap to prevent OOM on pathological input.</summary>
+    private const long MaxGpxImportBytes = 10L * 1024 * 1024;
+
     private IJSObjectReference? module;
     private DotNetObjectReference<Map>? dotNetRef;
     private bool follow;
@@ -510,22 +180,17 @@
     private bool waypointDialogVisible;
     private string newWaypointName = "";
     private List<SignalkWaypoint> loadedWaypoints = [];
-    private bool waypointsExpanded = true;
     // Race timer.
     private bool raceTimerActive;
     private bool shortcutsVisible;
     private DateTime raceTimerTarget;
     private System.Threading.Timer? raceTimer;
-    private bool weatherExpanded;
     private bool weatherOverlayVisible;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     private readonly HashSet<string> enabledCharts = [];
     private readonly HashSet<string> enabledRoutes = [];
     private bool serverTrackVisible;
-    private bool chartsExpanded = true;
-    private bool routesExpanded = true;
-    private bool trackExpanded = true;
     private string layerFilter = "";
     private double? viewWest, viewSouth, viewEast, viewNorth;
 
@@ -540,11 +205,19 @@
     // Pre-computed route bounding boxes (avoids re-parsing GeoJSON on every filter).
     private readonly Dictionary<string, (double MinLat, double MaxLat, double MinLon, double MaxLon)?> routeBounds = [];
 
-    private void OnLayerFilterInput(ChangeEventArgs e)
+    private void OnLayerFilterChanged(string v)
     {
-        layerFilter = e.Value?.ToString() ?? "";
+        layerFilter = v;
         RebuildFilteredLayers();
     }
+
+    private void ToggleLayersPanel() => chartPanelOpen = !chartPanelOpen;
+
+    private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
+        ToggleChart(t.chart, t.enabled);
+
+    private Task OnToggleRouteCallback((SignalkRoute route, bool enabled) t) =>
+        ToggleRoute(t.route, t.enabled);
 
     private void RebuildFilteredLayers()
     {
@@ -567,29 +240,9 @@
 
     private NavigationData Data => SignalkClient.Data;
 
-    // Heading compass needle endpoint. Sticky: keeps last known heading if data drops.
+    /// <summary>Last non-null heading (radians). Keeps compass needle pointing
+    /// in a stable direction if the SignalK feed briefly drops Heading.</summary>
     private double? lastHeading;
-    private double HeadingRad
-    {
-        get
-        {
-            if (Data.Heading is not null) lastHeading = Data.Heading;
-            return lastHeading ?? 0;
-        }
-    }
-    private string HeadingX => (Math.Sin(HeadingRad) * 16).ToString("F1");
-    private string HeadingY => (-Math.Cos(HeadingRad) * 16).ToString("F1");
-
-    // Wind arrow rotation.
-    private string WindAngleDegStr =>
-        Data.WindAngleApparent is not null
-            ? $"{(Data.WindAngleApparent.Value * Format.RadToDeg):F0}deg"
-            : "0deg";
-
-    private string TrueWindAngleDegStr =>
-        Data.WindAngleTrue is not null
-            ? $"{(Data.WindAngleTrue.Value * Format.RadToDeg):F0}deg"
-            : "0deg";
 
     private async void HandleConnectionChanged()
     {
@@ -616,10 +269,6 @@
         && Data.AnchorCurrentRadius is not null
         && Data.AnchorMaxRadius is not null
         && Data.AnchorCurrentRadius > Data.AnchorMaxRadius;
-
-    private string AnchorAlarmClass => AnchorDragging ? "anchor-alarm" : "";
-    private string AnchorDistClass => AnchorDragging ? "depth-danger"
-        : Data.AnchorCurrentRadius is not null ? "depth-ok" : "";
 
     // Track whether we've already drawn the server anchor on the map.
     private bool serverAnchorDrawn;
@@ -688,7 +337,7 @@
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
-        aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, 1000, 3000);
+        aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
 
         await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
     }
@@ -793,6 +442,9 @@
     {
         if (!mapInitialized || module is null) return;
 
+        // Keep the sticky last-heading field current for the HUD compass needle.
+        if (Data.Heading is not null) lastHeading = Data.Heading;
+
         try
         {
             if (Data.Latitude is not null && Data.Longitude is not null)
@@ -838,7 +490,7 @@
 
             // Update tidal current arrow when data available.
             if (Data.CurrentSet is not null && Data.CurrentDrift is not null
-                && Data.CurrentDrift > 0.05 // Only show if drift > ~0.1 kn
+                && Data.CurrentDrift > MinCurrentDriftMs
                 && Data.Latitude is not null && Data.Longitude is not null)
             {
                 await module.InvokeVoidAsync("setCurrentArrow",
@@ -848,7 +500,7 @@
             // Push laylines when visible and TWD is available (throttled: every 5th fix).
             if (laylinesVisible && Data.WindDirectionTrue is not null
                 && Data.Latitude is not null && Data.Longitude is not null
-                && ++laylinesSkip >= 5)
+                && ++laylinesSkip >= LaylinePushEveryNFixes)
             {
                 laylinesSkip = 0;
                 double twa = Data.WindAngleTrue is not null
@@ -939,7 +591,7 @@
         if (module is not null)
             await module.InvokeVoidAsync("startRouteEdit");
         // Poll stats twice a second while editing.
-        routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, 500, 500);
+        routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
     }
 
     private async Task CancelRouteEdit()
@@ -979,7 +631,7 @@
         routeEditName = route.Name ?? "";
         chartPanelOpen = false; // Close layers panel so user can see the map.
         await module.InvokeVoidAsync("loadRouteForEdit", (object)coords.ToArray());
-        routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, 500, 500);
+        routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
         await UpdateRouteStats();
     }
 
@@ -1095,9 +747,9 @@
             await CourseApi.SetDestinationAsync(wp.Id);
     }
 
-    private async Task ToggleWeatherOverlay(ChangeEventArgs e)
+    private async Task ToggleWeatherOverlay(bool enabled)
     {
-        weatherOverlayVisible = (bool)(e.Value ?? false);
+        weatherOverlayVisible = enabled;
         if (module is null) return;
 
         if (weatherOverlayVisible)
@@ -1139,7 +791,7 @@
             // Start 5-minute countdown.
             raceTimerActive = true;
             raceTimerTarget = DateTime.UtcNow.AddMinutes(5);
-            raceTimer = new System.Threading.Timer(_ => _ = RaceTimerTick(), null, 0, 1000);
+            raceTimer = new System.Threading.Timer(_ => _ = RaceTimerTick(), null, 0, RaceTimerTickMs);
         }
     }
 
@@ -1163,7 +815,7 @@
     {
         try
         {
-            using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024));
+            using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: MaxGpxImportBytes));
             string xml = await reader.ReadToEndAsync();
             var data = GpxService.Parse(xml);
 
@@ -1252,9 +904,9 @@
         }
     }
 
-    private async Task ToggleServerTrack(ChangeEventArgs e)
+    private async Task ToggleServerTrack(bool enabled)
     {
-        serverTrackVisible = (bool)(e.Value ?? false);
+        serverTrackVisible = enabled;
         if (module is null) return;
 
         if (serverTrackVisible)
@@ -1441,16 +1093,6 @@
                 StateHasChanged();
             }
         });
-    }
-
-    /// <summary>
-    /// Renders SVG text as MarkupString to avoid Razor's text directive conflict.
-    /// </summary>
-    private static MarkupString SvgTextMarkup(double x, double y, string content, string fill, int fontSize)
-    {
-        return new MarkupString(
-            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\" " +
-            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
     }
 
     public async ValueTask DisposeAsync()

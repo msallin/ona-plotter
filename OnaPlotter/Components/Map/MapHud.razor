@@ -1,0 +1,218 @@
+@using OnaPlotter.Models
+@using OnaPlotter.Utilities
+@using OnaPlotter.Services.Api
+
+@* All the floating HUD panels overlaid on the map:
+   top-left (speed/course/position), top-right (wind), bottom-left (depth),
+   bottom-right (heading compass), centered-top route panel, anchor watch,
+   and autopilot control. All purely data-driven; state lives in the parent. *@
+
+@* === Top-Left: Speed (primary), Course, Position === *@
+<div class="hud hud-top-left">
+    <div class="hud-panel">
+        <div class="hud-label">SOG</div>
+        <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
+        <div class="hud-label" style="margin-top:4px;">COG</div>
+        <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
+        <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
+    </div>
+</div>
+
+@* === Top-Right: Wind (apparent + true when available) === *@
+<div class="hud hud-top-right">
+    <div class="hud-panel" style="text-align:center;">
+        <div class="hud-label">AWA / AWS</div>
+        @if (Data.WindSpeedApparent is not null)
+        {
+            <svg width="48" height="48" viewBox="-24 -24 48 48" class="wind-arrow"
+                 style="transform: rotate(@WindAngleDegStr);" role="img" aria-label="Apparent wind">
+                <circle cx="0" cy="0" r="22" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+                <polygon points="0,-20 4,-8 0,-12 -4,-8" fill="#3b82f6" stroke="none"/>
+            </svg>
+            <div class="hud-value" style="font-size:1.1rem;">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
+        }
+        else
+        {
+            <div style="color: rgba(255,255,255,0.25); font-size:0.8rem; padding: 4px 0;">--</div>
+        }
+        @if (Data.WindSpeedTrue is not null)
+        {
+            <div style="margin-top:4px; border-top:1px solid rgba(255,255,255,0.1); padding-top:4px;">
+                <div class="hud-label">TWA / TWS</div>
+                <svg width="36" height="36" viewBox="-18 -18 36 36" class="wind-arrow"
+                     style="transform: rotate(@TrueWindAngleDegStr);" role="img" aria-label="True wind">
+                    <circle cx="0" cy="0" r="16" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                    <polygon points="0,-14 3,-6 0,-9 -3,-6" fill="#22c55e" stroke="none"/>
+                </svg>
+                <div class="hud-value" style="font-size:1rem;">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></div>
+            </div>
+        }
+    </div>
+</div>
+
+@* === Bottom-Left: Depth === *@
+<div class="hud hud-bottom-left">
+    <div class="hud-panel">
+        <div class="hud-label">Depth</div>
+        <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span></div>
+    </div>
+</div>
+
+@* === Bottom-Right: Heading compass === *@
+<div class="hud hud-bottom-right">
+    <div class="hud-panel" style="text-align:center;">
+        <div class="hud-label">HDG</div>
+        <svg width="52" height="52" viewBox="-26 -26 52 52">
+            <circle cx="0" cy="0" r="24" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+            @SvgText(0, -18, "N", "rgba(255,255,255,0.5)", 7)
+            @SvgText(18, 0, "E", "rgba(255,255,255,0.3)", 7)
+            @SvgText(0, 19, "S", "rgba(255,255,255,0.3)", 7)
+            @SvgText(-18, 0, "W", "rgba(255,255,255,0.3)", 7)
+            <line x1="0" y1="0" x2="@HeadingX" y2="@HeadingY"
+                  stroke="#3b82f6" stroke-width="2" stroke-linecap="round"
+                  class="compass-rose" />
+            <circle cx="0" cy="0" r="2.5" fill="#3b82f6"/>
+        </svg>
+        <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;</span></div>
+    </div>
+</div>
+
+@* === Route info (only visible when an active course exists) === *@
+@if (Data.HasActiveCourse)
+{
+    <div class="hud hud-route">
+        <div class="hud-panel route-panel">
+            <div class="hud-label">@(Data.ActiveRouteName ?? "Active Route")</div>
+            <div class="route-info-grid">
+                <div>
+                    <div class="hud-label">DTW</div>
+                    <div class="hud-value route-value">@Format.Nm(Data.CourseNextPointDistance)<span class="hud-unit">nm</span></div>
+                </div>
+                <div>
+                    <div class="hud-label">BRG</div>
+                    <div class="hud-value route-value">@Format.Degrees(Data.CourseNextPointBearing)<span class="hud-unit">&deg;</span></div>
+                </div>
+                @if (Data.CourseNextPointVmg is not null)
+                {
+                    <div>
+                        <div class="hud-label">VMG</div>
+                        <div class="hud-value route-value">@Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span></div>
+                    </div>
+                }
+                @if (Data.CourseNextPointTimeToGo is not null)
+                {
+                    <div>
+                        <div class="hud-label">TTG</div>
+                        <div class="hud-value route-value">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</div>
+                    </div>
+                    <div>
+                        <div class="hud-label">ETA</div>
+                        <div class="hud-value route-value">@Format.Eta(Data.CourseNextPointTimeToGo)</div>
+                    </div>
+                }
+                @if (Data.CrossTrackError is not null)
+                {
+                    <div>
+                        <div class="hud-label">XTE</div>
+                        <div class="hud-value route-value @Format.XteClass(Data.CrossTrackError)">@Format.Xte(Data.CrossTrackError)</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* === Anchor watch (server-driven) === *@
+@if (Data.AnchorActive)
+{
+    <div class="hud hud-anchor">
+        <div class="hud-panel anchor-panel @AnchorAlarmClass">
+            <div class="hud-label">Anchor Watch</div>
+            <div class="anchor-info-row">
+                <div>
+                    <div class="hud-label">Dist</div>
+                    <div class="hud-value route-value @AnchorDistClass">@Format.MetersDual(Data.AnchorCurrentRadius)</div>
+                </div>
+                @if (Data.AnchorMaxRadius is not null)
+                {
+                    <div>
+                        <div class="hud-label">Radius</div>
+                        <div class="hud-value route-value">@Format.MetersDual(Data.AnchorMaxRadius)</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* === Autopilot control === *@
+@if (Data.AutopilotState is not null)
+{
+    <div class="hud hud-autopilot">
+        <div class="hud-panel autopilot-panel @(Data.AutopilotState != "standby" ? "ap-engaged" : "")">
+            <div class="hud-label">Autopilot</div>
+            <div class="ap-state">@(Data.AutopilotState?.ToUpperInvariant() ?? "--")</div>
+            @if (Data.AutopilotTargetHeading is not null)
+            {
+                <div class="hud-value route-value" style="font-size:1.1rem;">
+                    @Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span>
+                </div>
+            }
+            <div class="ap-controls">
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-10)'>-10</button>
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-1)'>-1</button>
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(1)'>+1</button>
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(10)'>+10</button>
+            </div>
+            <div class="ap-modes">
+                <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
+                        @onclick='() => Autopilot.SetStateAsync("standby")'>Stby</button>
+                <button class="ap-mode-btn @(Data.AutopilotState == "auto" ? "active" : "")"
+                        @onclick='() => Autopilot.SetStateAsync("auto")'>Auto</button>
+                <button class="ap-mode-btn @(Data.AutopilotState == "wind" ? "active" : "")"
+                        @onclick='() => Autopilot.SetStateAsync("wind")'>Wind</button>
+                <button class="ap-mode-btn @(Data.AutopilotState == "route" ? "active" : "")"
+                        @onclick='() => Autopilot.SetStateAsync("route")'>Route</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const double RadToDeg = 180.0 / Math.PI;
+
+    [Parameter, EditorRequired] public NavigationData Data { get; set; } = null!;
+    [Parameter, EditorRequired] public IAutopilotApi Autopilot { get; set; } = null!;
+
+    /// <summary>Current heading in radians; used to draw the compass needle.</summary>
+    [Parameter] public double? LastHeadingRad { get; set; }
+
+    /// <summary>Set when the anchor alarm is dragging outside its max radius.</summary>
+    [Parameter] public bool AnchorDragging { get; set; }
+
+    private string WindAngleDegStr =>
+        Data.WindAngleApparent is not null
+            ? $"{(Data.WindAngleApparent.Value * RadToDeg):F0}deg"
+            : "0deg";
+
+    private string TrueWindAngleDegStr =>
+        Data.WindAngleTrue is not null
+            ? $"{(Data.WindAngleTrue.Value * RadToDeg):F0}deg"
+            : "0deg";
+
+    private double HeadingRad => LastHeadingRad ?? 0;
+    private string HeadingX => (Math.Sin(HeadingRad) * 16).ToString("F1");
+    private string HeadingY => (-Math.Cos(HeadingRad) * 16).ToString("F1");
+
+    private string AnchorAlarmClass => AnchorDragging ? "anchor-alarm" : "";
+    private string AnchorDistClass =>
+        AnchorDragging ? "depth-danger"
+        : Data.AnchorCurrentRadius is not null ? "depth-ok" : "";
+
+    private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize)
+    {
+        return new MarkupString(
+            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\" " +
+            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+}

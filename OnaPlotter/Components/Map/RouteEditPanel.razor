@@ -1,0 +1,29 @@
+@* Route-edit overlay: hint banner at the top, name input + stats + buttons
+   above the control bar. Visible only while the parent is in edit mode. *@
+
+<div class="route-edit-hint">
+    Tap map to add waypoints. Drag waypoints to reposition.
+</div>
+<div class="route-edit-bar">
+    <input type="text" class="route-name-input" placeholder="Route name..."
+           value="@Name" @oninput="OnNameInput" />
+    <span class="route-edit-stats">@Stats</span>
+    <button class="map-btn" @onclick="OnUndo" title="Remove last waypoint">Undo</button>
+    <button class="map-btn active" @onclick="OnSave">Save</button>
+    <button class="map-btn" @onclick="OnCancel">Cancel</button>
+</div>
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public EventCallback<string> NameChanged { get; set; }
+    [Parameter] public string Stats { get; set; } = "";
+    [Parameter] public EventCallback OnUndo { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task OnNameInput(ChangeEventArgs e)
+    {
+        Name = e.Value?.ToString() ?? "";
+        await NameChanged.InvokeAsync(Name);
+    }
+}
