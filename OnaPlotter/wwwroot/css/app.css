@@ -24,6 +24,13 @@
     --z-popup: 850;
     --z-modal: 900;
     --z-fullscreen: 9999;
+
+    /* Map overlay positioning. All floating panels above the control bar use
+       --panel-bottom so they stack predictably. Update in one place. */
+    --ctrl-bar-height: 64px;  /* Approx height of .map-controls (icon + label + padding). */
+    --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
+    --panel-gap: 10px;        /* Gap between the bar and panels above it. */
+    --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
 html, body {
@@ -230,7 +237,7 @@ article.content:has(.map-container) {
     border: 1px solid rgba(255,255,255,0.06);
 }
 
-.hud-top-left { top: 12px; left: 12px; }
+.hud-top-left { top: 44px; left: 12px; } /* leaves room for the connection chip above */
 .hud-top-right { top: 12px; right: 56px; }
 .hud-bottom-left { bottom: 60px; left: 12px; }
 .hud-bottom-right { bottom: 60px; right: 12px; }
@@ -711,6 +718,52 @@ html {
     padding: 1rem 0.5rem;
 }
 
+/* ===== Connection Chip (on the map, including fullscreen) ===== */
+
+.conn-chip {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: var(--z-controls);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    background: rgba(10, 12, 18, 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--sk-text);
+    user-select: none;
+    pointer-events: none;
+}
+
+.conn-chip .conn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sk-text-muted);
+}
+
+.conn-live { border-color: rgba(74, 222, 128, 0.3); color: var(--sk-green); }
+.conn-live .conn-dot { background: var(--sk-green); box-shadow: 0 0 6px rgba(74, 222, 128, 0.6); }
+
+.conn-stale { border-color: rgba(251, 191, 36, 0.4); color: var(--sk-orange); animation: conn-pulse 1.5s ease-in-out infinite; }
+.conn-stale .conn-dot { background: var(--sk-orange); }
+
+.conn-offline { border-color: rgba(248, 113, 113, 0.5); color: var(--sk-red); animation: conn-pulse 1s ease-in-out infinite; }
+.conn-offline .conn-dot { background: var(--sk-red); }
+
+@keyframes conn-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Shift the chip down when an alarm banner is shown so it doesn't collide. */
+main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
+
 /* ===== Toast Notifications ===== */
 
 .toast-stack {
@@ -772,11 +825,13 @@ html {
 }
 
 /* Push top HUD panels below the alarm banner when it's visible. */
-main:has(.alarm-banner) .hud-top-left,
 main:has(.alarm-banner) .hud-top-right,
 main:has(.alarm-banner) .hud-route,
 main:has(.alarm-banner) .chart-quick-bar {
     top: calc(12px + 44px);
+}
+main:has(.alarm-banner) .hud-top-left {
+    top: calc(44px + 44px);
 }
 
 .alarm-danger {
@@ -842,7 +897,7 @@ main:has(.alarm-banner) .chart-quick-bar {
 @media (max-width: 600px) {
     .hud-bottom-left { bottom: 80px; left: 8px; }
     .hud-bottom-right { bottom: 80px; right: 8px; }
-    .hud-top-left { top: 8px; left: 8px; }
+    .hud-top-left { top: 40px; left: 8px; }
     .hud-top-right { top: 8px; right: 8px; }
     .map-controls {
         max-width: 95%;
@@ -857,7 +912,9 @@ main:has(.alarm-banner) .chart-quick-bar {
     .hud-panel { padding: 6px 10px; border-radius: 8px; }
     .hud-route { max-width: 280px; }
     .hud-anchor { max-width: 200px; }
-    .hud-autopilot { bottom: 80px; right: 8px; }
+    .hud-autopilot { right: 8px; }
+    /* Tighter control bar on mobile -> recompute panel-bottom. */
+    :root { --ctrl-bar-height: 56px; }
 }
 
 /* Tablet landscape: slightly tighter HUD */
@@ -869,10 +926,10 @@ main:has(.alarm-banner) .chart-quick-bar {
 /* Chart picker panel */
 .chart-panel {
     position: absolute;
-    bottom: 52px;
+    bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
-    z-index: 800;
+    z-index: var(--z-controls);
     background: rgba(15, 17, 22, 0.92);
     backdrop-filter: blur(6px);
     border-radius: 8px;
@@ -890,6 +947,17 @@ main:has(.alarm-banner) .chart-quick-bar {
     letter-spacing: 0.08em;
     color: rgba(255,255,255,0.5);
     margin-bottom: 8px;
+}
+
+/* GPX import/export in the layers panel: normal case, consistent sizing. */
+.gpx-btn {
+    font-size: 0.75rem;
+    padding: 6px 12px;
+    text-transform: none !important;
+    letter-spacing: normal !important;
+    cursor: pointer;
+    flex: 1;
+    text-align: center;
 }
 
 .chart-item {
@@ -1068,13 +1136,11 @@ main:has(.alarm-banner) .chart-quick-bar {
 /* ===== Autopilot Panel ===== */
 
 .hud-autopilot {
-    bottom: 60px;
+    bottom: var(--panel-bottom);
     right: 10px;
 }
 
-/* Prevent anchor + autopilot overlap on narrow screens (iPad portrait). */
 @media (max-width: 820px) {
-    .hud-autopilot { bottom: 140px; right: 10px; }
     .hud-route { max-width: 260px; font-size: 0.85rem; }
 }
 
@@ -1257,10 +1323,10 @@ main:has(.alarm-banner) .chart-quick-bar {
 
 .route-edit-bar {
     position: absolute;
-    bottom: 52px;
+    bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
-    z-index: 800;
+    z-index: var(--z-controls);
     display: flex;
     gap: 6px;
     align-items: center;
@@ -1446,13 +1512,9 @@ main:has(.alarm-banner) .chart-quick-bar {
 /* ===== Anchor Alarm HUD Panel ===== */
 
 .hud-anchor {
-    bottom: 100px;
+    bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
-}
-
-@media (max-width: 600px) {
-    .hud-anchor { bottom: 140px; }
 }
 
 .anchor-panel {
