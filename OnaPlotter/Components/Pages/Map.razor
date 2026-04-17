@@ -194,34 +194,60 @@
 
     @* === Control Bar === *@
     <div class="map-controls">
-        <button class="map-btn @(follow ? "active" : "")" @onclick="ToggleFollow" title="Keyboard: F">
-            @(follow ? "Following" : "Follow")
+        <button class="ctrl-btn @(follow ? "active" : "")" @onclick="ToggleFollow" title="Follow boat (F)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
+            <span class="ctrl-lbl">@(follow ? "Follow" : "Free")</span>
         </button>
-        <button class="map-btn" @onclick="CycleMapOrientation" title="Keyboard: O">
-            @mapOrientationLabel
+        <button class="ctrl-btn" @onclick="CycleMapOrientation" title="Map orientation (O)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Compass)</span>
+            <span class="ctrl-lbl">@mapOrientationLabel</span>
         </button>
-        <button class="map-btn @(nightMode ? "active" : "")" @onclick="ToggleNightMode" title="Keyboard: N">
-            Night
+        <button class="ctrl-btn @(nightMode ? "active" : "")" @onclick="ToggleNightMode" title="Night mode (N)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Moon)</span>
+            <span class="ctrl-lbl">Night</span>
         </button>
-        <button class="map-btn @(AnchorButtonActive ? "active" : "")" @onclick="ToggleAnchor" title="Keyboard: A">
-            @(AnchorButtonActive ? "Anchored" : "Anchor")
+
+        <div class="ctrl-sep"></div>
+
+        <button class="ctrl-btn @(AnchorButtonActive ? "active" : "")" @onclick="ToggleAnchor" title="Anchor watch (A)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
+            <span class="ctrl-lbl">@(AnchorButtonActive ? "Set" : "Anchor")</span>
         </button>
-        <button class="map-btn mob-btn @(mobActive ? "active" : "")" @onclick="ToggleMob" title="Keyboard: M">
-            MOB
+        <button class="ctrl-btn ctrl-btn-danger @(mobActive ? "active" : "")" @onclick="ToggleMob" title="Man overboard (M)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
+            <span class="ctrl-lbl">MOB</span>
         </button>
-        <button class="map-btn" @onclick="ZoomToTrack" title="Keyboard: T">Fit Track</button>
-        <button class="map-btn @(laylinesVisible ? "active" : "")" @onclick="ToggleLaylines" title="Keyboard: L">
-            Laylines
+
+        <div class="ctrl-sep"></div>
+
+        <button class="ctrl-btn" @onclick="ZoomToTrack" title="Fit track (T)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
+            <span class="ctrl-lbl">Fit</span>
         </button>
+        <button class="ctrl-btn @(laylinesVisible ? "active" : "")" @onclick="ToggleLaylines" title="Laylines (L)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
+            <span class="ctrl-lbl">Laylines</span>
+        </button>
+
+        <div class="ctrl-sep"></div>
+
         @if (!routeEditMode)
         {
-            <button class="map-btn" @onclick="StartRouteEdit">New Route</button>
+            <button class="ctrl-btn" @onclick="StartRouteEdit" title="Create a new route">
+                <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
+                <span class="ctrl-lbl">Route</span>
+            </button>
         }
-        <button class="map-btn @(raceTimerActive ? "active" : "")" @onclick="ToggleRaceTimer" title="Keyboard: R">
-            @(raceTimerActive ? FormatRaceTimer() : "Race")
+        <button class="ctrl-btn @(raceTimerActive ? "active" : "")" @onclick="ToggleRaceTimer" title="Race timer (R)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
+            <span class="ctrl-lbl">@(raceTimerActive ? FormatRaceTimer() : "Race")</span>
         </button>
-        <button class="map-btn @(chartPanelOpen ? "active" : "")" @onclick="() => chartPanelOpen = !chartPanelOpen">
-            Layers
+
+        <div class="ctrl-sep"></div>
+
+        <button class="ctrl-btn @(chartPanelOpen ? "active" : "")" @onclick="() => chartPanelOpen = !chartPanelOpen" title="Layers panel">
+            <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
+            <span class="ctrl-lbl">Layers</span>
         </button>
     </div>
 
