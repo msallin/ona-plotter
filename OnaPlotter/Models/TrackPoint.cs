@@ -1,5 +1,3 @@
-// Immutable snapshot of vessel state at a point in time, used for track history.
-
 namespace OnaPlotter.Models;
 
 public sealed record TrackPoint(

@@ -1,7 +1,3 @@
-// DTO for a chart resource from the SignalK charts API.
-// GET /signalk/v1/api/resources/charts returns an object keyed by identifier,
-// where each value has this shape.
-
 using System.Text.Json.Serialization;
 
 namespace OnaPlotter.Models;

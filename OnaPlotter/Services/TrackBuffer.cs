@@ -1,5 +1,3 @@
-// Ring buffer that stores recent vessel track points for map trails and wind rose history.
-
 using OnaPlotter.Models;
 
 namespace OnaPlotter.Services;

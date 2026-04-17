@@ -4,7 +4,8 @@
 @using OnaPlotter.Services
 @using Microsoft.JSInterop
 @implements IAsyncDisposable
-@inject ChartService ChartService
+@using OnaPlotter.Services.Api
+@inject ITrackApi TrackApi
 @inject SignalkClient SignalkClient
 @inject IJSRuntime JS
 
@@ -155,7 +156,7 @@
     private async Task LoadTrack()
     {
         loadAttempted = true;
-        trackPoints = await ChartService.GetServerTrackAsync(selectedTimespan, "30s");
+        trackPoints = await TrackApi.GetServerTrackAsync(selectedTimespan, "30s");
         playbackIndex = 0;
         playing = false;
         playTimer?.Dispose();

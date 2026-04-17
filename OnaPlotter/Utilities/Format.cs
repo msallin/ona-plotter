@@ -1,6 +1,3 @@
-// Shared formatting helpers for navigation data display.
-// Centralizes conversions so the same value is always rendered the same way across pages.
-
 namespace OnaPlotter.Utilities;
 
 public static class Format

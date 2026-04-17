@@ -1,5 +1,3 @@
-// Thread-safe store for AIS vessel targets. Prunes stale entries on a throttled schedule.
-
 using System.Collections.Concurrent;
 using OnaPlotter.Models;
 

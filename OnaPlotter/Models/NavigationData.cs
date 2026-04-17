@@ -1,7 +1,3 @@
-// Strongly-typed navigation state populated from SignalK delta updates.
-// Values use SI units as per the SignalK spec (radians, m/s, meters, kelvin).
-// Display conversion happens in the UI layer.
-
 namespace OnaPlotter.Models;
 
 /// <summary>

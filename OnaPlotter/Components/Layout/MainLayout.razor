@@ -3,8 +3,8 @@
 @using Microsoft.JSInterop
 @inject SignalkClient SignalkClient
 @inject AisStore AisStore
-@inject AppSettingsService Settings
-@inject ToastService Toasts
+@inject IAppSettings Settings
+@inject IToastService Toasts
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 

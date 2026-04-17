@@ -2,15 +2,21 @@
 
 @page "/map"
 @using OnaPlotter.Services
+@using OnaPlotter.Services.Api
 @using OnaPlotter.Models
 @using Microsoft.JSInterop
 @implements IAsyncDisposable
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
 @inject AisStore AisStore
-@inject ChartService ChartService
-@inject AppSettingsService Settings
-@inject ToastService Toasts
+@inject IChartApi ChartApi
+@inject IRouteApi RouteApi
+@inject IWaypointApi WaypointApi
+@inject ICourseApi CourseApi
+@inject IAutopilotApi AutopilotApi
+@inject ITrackApi TrackApi
+@inject IAppSettings Settings
+@inject IToastService Toasts
 @inject IJSRuntime JS
 
 <PageTitle>Map</PageTitle>
@@ -179,20 +185,20 @@
                     </div>
                 }
                 <div class="ap-controls">
-                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(-10)'>-10</button>
-                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(-1)'>-1</button>
-                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(1)'>+1</button>
-                    <button class="ap-btn" @onclick='() => ChartService.AdjustAutopilotHeadingAsync(10)'>+10</button>
+                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(-10)'>-10</button>
+                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(-1)'>-1</button>
+                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(1)'>+1</button>
+                    <button class="ap-btn" @onclick='() => AutopilotApi.AdjustHeadingAsync(10)'>+10</button>
                 </div>
                 <div class="ap-modes">
                     <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
-                            @onclick='() => ChartService.SetAutopilotStateAsync("standby")'>Stby</button>
+                            @onclick='() => AutopilotApi.SetStateAsync("standby")'>Stby</button>
                     <button class="ap-mode-btn @(Data.AutopilotState == "auto" ? "active" : "")"
-                            @onclick='() => ChartService.SetAutopilotStateAsync("auto")'>Auto</button>
+                            @onclick='() => AutopilotApi.SetStateAsync("auto")'>Auto</button>
                     <button class="ap-mode-btn @(Data.AutopilotState == "wind" ? "active" : "")"
-                            @onclick='() => ChartService.SetAutopilotStateAsync("wind")'>Wind</button>
+                            @onclick='() => AutopilotApi.SetStateAsync("wind")'>Wind</button>
                     <button class="ap-mode-btn @(Data.AutopilotState == "route" ? "active" : "")"
-                            @onclick='() => ChartService.SetAutopilotStateAsync("route")'>Route</button>
+                            @onclick='() => AutopilotApi.SetStateAsync("route")'>Route</button>
                 </div>
             </div>
         </div>
@@ -620,9 +626,9 @@
         }
 
         // Load available charts and routes from SignalK server.
-        availableCharts = await ChartService.GetChartsAsync();
-        availableRoutes = await ChartService.GetRoutesAsync();
-        loadedWaypoints = await ChartService.GetWaypointsAsync();
+        availableCharts = await ChartApi.GetAllAsync();
+        availableRoutes = await RouteApi.GetAllAsync();
+        loadedWaypoints = await WaypointApi.GetAllAsync();
         PrecomputeRouteBounds();
         RebuildFilteredLayers();
         StateHasChanged();
@@ -982,11 +988,11 @@
             return;
         }
         string name = string.IsNullOrWhiteSpace(routeEditName) ? $"Route {DateTime.Now:HH:mm}" : routeEditName;
-        bool ok = await ChartService.SaveRouteAsync(name, coords);
+        bool ok = await RouteApi.SaveAsync(name, coords);
         if (ok)
         {
             Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
-            availableRoutes = await ChartService.GetRoutesAsync();
+            availableRoutes = await RouteApi.GetAllAsync();
             PrecomputeRouteBounds();
             RebuildFilteredLayers();
         }
@@ -1034,11 +1040,11 @@
     {
         waypointDialogVisible = false;
         string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
-        string? id = await ChartService.CreateWaypointAsync(name, contextMenuLat, contextMenuLon);
+        string? id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon);
         if (id is not null && module is not null)
         {
             await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
-            loadedWaypoints = await ChartService.GetWaypointsAsync();
+            loadedWaypoints = await WaypointApi.GetAllAsync();
         }
     }
 
@@ -1046,21 +1052,21 @@
     {
         contextMenuVisible = false;
         string name = $"GoTo {DateTime.Now:HH:mm}";
-        string? id = await ChartService.CreateWaypointAsync(name, contextMenuLat, contextMenuLon);
+        string? id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon);
         if (id is not null)
-            await ChartService.SetCourseDestinationAsync(id);
+            await CourseApi.SetDestinationAsync(id);
     }
 
     private async Task StopNavigation()
     {
         contextMenuVisible = false;
-        await ChartService.ClearCourseAsync();
+        await CourseApi.ClearAsync();
     }
 
     private async Task NavigateToWaypoint(SignalkWaypoint wp)
     {
         if (wp.Latitude is not null && wp.Longitude is not null)
-            await ChartService.SetCourseDestinationAsync(wp.Id);
+            await CourseApi.SetDestinationAsync(wp.Id);
     }
 
     private async Task ToggleWeatherOverlay(ChangeEventArgs e)
@@ -1136,14 +1142,14 @@
             var data = GpxService.Parse(xml);
 
             foreach (var route in data.Routes)
-                await ChartService.SaveRouteAsync(route.Name, route.Coords);
+                await RouteApi.SaveAsync(route.Name, route.Coords);
 
             foreach (var wp in data.Waypoints)
-                await ChartService.CreateWaypointAsync(wp.Name, wp.Lat, wp.Lon);
+                await WaypointApi.CreateAsync(wp.Name, wp.Lat, wp.Lon);
 
             // Refresh lists.
-            availableRoutes = await ChartService.GetRoutesAsync();
-            loadedWaypoints = await ChartService.GetWaypointsAsync();
+            availableRoutes = await RouteApi.GetAllAsync();
+            loadedWaypoints = await WaypointApi.GetAllAsync();
             PrecomputeRouteBounds();
             RebuildFilteredLayers();
             StateHasChanged();
@@ -1227,7 +1233,7 @@
 
         if (serverTrackVisible)
         {
-            var points = await ChartService.GetServerTrackAsync("1d", "1m");
+            var points = await TrackApi.GetServerTrackAsync("1d", "1m");
             if (points is not null && points.Length > 0)
                 await module.InvokeVoidAsync("setServerTrack", (object)points);
             else
@@ -1347,7 +1353,7 @@
         // Route activated: fetch and draw.
         if (!string.IsNullOrEmpty(currentHref))
         {
-            activeRouteCoords = await ChartService.GetRouteCoordinatesAsync(currentHref);
+            activeRouteCoords = await RouteApi.GetCoordinatesAsync(currentHref);
             if (activeRouteCoords is not null && activeRouteCoords.Length > 0)
             {
                 await module.InvokeVoidAsync("setActiveRoute",

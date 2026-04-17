@@ -1,7 +1,3 @@
-// DTO for a route resource from SignalK.
-// GET /signalk/v2/api/resources/routes returns an object keyed by UUID.
-// Each route has a GeoJSON Feature with LineString geometry.
-
 using System.Text.Json.Serialization;
 
 namespace OnaPlotter.Models;

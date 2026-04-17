@@ -1,6 +1,3 @@
-// Nautical formatting utilities. Sailors use DD°MM.MMM' notation, not decimal degrees.
-// Example: 47.390933 -> 47°23.456'N
-
 namespace OnaPlotter.Models;
 
 /// <summary>

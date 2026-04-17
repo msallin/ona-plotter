@@ -1,6 +1,3 @@
-// Inline SVG icons for UI controls. Lucide/Feather-inspired stroke style.
-// All 20x20, currentColor stroke, 2px stroke width. Easily themeable via CSS color.
-
 namespace OnaPlotter.Utilities;
 
 public static class Icons

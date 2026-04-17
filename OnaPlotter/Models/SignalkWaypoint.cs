@@ -1,7 +1,3 @@
-// DTO for a waypoint resource from SignalK.
-// GET /signalk/v2/api/resources/waypoints returns an object keyed by UUID.
-// Each waypoint has a GeoJSON Feature with Point geometry.
-
 using System.Text.Json.Serialization;
 
 namespace OnaPlotter.Models;

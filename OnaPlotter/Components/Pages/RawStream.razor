@@ -5,7 +5,8 @@
 @using Microsoft.JSInterop
 @implements IAsyncDisposable
 @inject SignalkClient SignalkClient
-@inject ChartService ChartService
+@using OnaPlotter.Services.Api
+@inject IPathApi PathApi
 @inject IJSRuntime JS
 
 <PageTitle>Raw Stream</PageTitle>
@@ -87,7 +88,7 @@
     {
         SignalkClient.OnRawMessage += HandleRawMessage;
 
-        availablePaths = await ChartService.GetAvailablePathsAsync();
+        availablePaths = await PathApi.GetAvailablePathsAsync();
 
         // Default selection: the core paths the app subscribes to.
         foreach (var p in SignalkClient.CoreSelfPaths)

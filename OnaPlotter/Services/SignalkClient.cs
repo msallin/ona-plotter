@@ -1,6 +1,3 @@
-// Service that maintains a websocket connection to a SignalK server,
-// receives delta messages, and updates shared NavigationData state.
-
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -116,25 +113,14 @@ public sealed class SignalkClient : IAsyncDisposable
     public bool IsDataStale => IsConnected
         && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > 5 * TimeSpan.TicksPerSecond;
 
-    public SignalkClient(IConfiguration configuration, ILogger<SignalkClient> logger,
-        TrackBuffer track, AisStore ais, Microsoft.AspNetCore.Components.NavigationManager nav)
+    public SignalkClient(OnaPlotter.Services.Api.ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
+        TrackBuffer track, AisStore ais)
     {
         _logger = logger;
         _data = new NavigationData();
         _track = track;
         _ais = ais;
-
-        string? configured = configuration["SignalK:ServerUrl"];
-        // If config is empty or "auto", derive the server from the page location.
-        // This makes the app work when served as a SignalK webapp on the same server.
-        string serverUrl = string.IsNullOrWhiteSpace(configured) || configured == "auto"
-            ? nav.BaseUri
-            : configured;
-
-        var baseUri = new Uri(serverUrl);
-        // Ignore any webapp subpath: SignalK stream is always at /signalk/v1/stream on the root.
-        string wsScheme = baseUri.Scheme == "https" ? "wss" : "ws";
-        _wsUri = new Uri($"{wsScheme}://{baseUri.Host}:{baseUri.Port}/signalk/v1/stream?subscribe=none");
+        _wsUri = baseUrl.StreamUri();
         _selfContext = "";
     }
 

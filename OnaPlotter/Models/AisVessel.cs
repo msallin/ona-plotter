@@ -1,5 +1,3 @@
-// AIS target vessel state, populated from SignalK delta updates for non-self contexts.
-
 using System.Text.Json;
 
 namespace OnaPlotter.Models;
