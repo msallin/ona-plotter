@@ -68,6 +68,23 @@ public sealed class AisStore
 
     public int Count => _vessels.Count;
 
+    /// <summary>
+    /// Overwrites the vessel name, typically from an external enrichment source
+    /// (MarineTraffic / VesselFinder lookup) when SignalK hasn't yet delivered
+    /// an AIS static-data message. No-op if the name is unchanged or the vessel
+    /// already has a name from SignalK.
+    /// </summary>
+    public void SetName(string context, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        if (!_vessels.TryGetValue(context, out var vessel)) return;
+        if (!string.IsNullOrEmpty(vessel.Name)) return;
+
+        vessel.Name = name;
+        Interlocked.Increment(ref _version);
+        OnAisUpdated?.Invoke();
+    }
+
     private void PruneStale(DateTime now)
     {
         var cutoff = now - StaleThreshold;

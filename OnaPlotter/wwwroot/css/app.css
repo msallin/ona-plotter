@@ -881,9 +881,31 @@ main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
     padding: 10px 16px;
     font-size: 0.9rem;
     text-align: center;
-    cursor: pointer;
     animation: alarm-flash 1s ease-in-out infinite;
     backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+.alarm-body {
+    flex: 1;
+    cursor: pointer;
+}
+.alarm-snooze {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid currentColor;
+    color: inherit;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+}
+.alarm-snooze:hover { background: rgba(0, 0, 0, 0.5); }
+@media (pointer: coarse) {
+    .alarm-snooze { min-height: 36px; padding: 6px 14px; font-size: 0.85rem; }
 }
 
 @media (min-width: 641px) {
@@ -1579,6 +1601,12 @@ main:has(.alarm-banner) .hud-top-left {
 .xte-ok { color: #22c55e; }
 .xte-warn { color: #f59e0b; }
 .xte-danger { color: #ef4444; }
+
+/* Layers-panel vessel rows */
+.vessel-row { cursor: pointer; }
+.vessel-row:hover { background: var(--sk-surface-hover); }
+.vessel-row.vessel-danger { border-left: 3px solid #ef4444; padding-left: 5px; }
+.vessel-row.vessel-warn   { border-left: 3px solid #f59e0b; padding-left: 5px; }
 
 /* CPA / crossing-situation labels on the map */
 .cpa-label {

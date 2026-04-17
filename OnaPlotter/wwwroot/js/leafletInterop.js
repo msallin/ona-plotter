@@ -23,6 +23,16 @@ const aisVectors = {};
 const aisCpaOwnLines = {};  // polyline from own boat to own-CPA point, per vessel context
 const aisCpaTgtLines = {};  // polyline from target to target-CPA point, per vessel context
 const aisCpaLabels = {};    // tooltip at midpoint labelled CPA / TCPA
+const aisTrailHistory = {}; // context -> [{lat, lon, t}, ...] (t = Date.now())
+const aisTrailLines = {};   // context -> L.polyline
+const AIS_TRAIL_SECONDS = 60;
+
+// Best-effort external-lookup cache for vessels whose SignalK feed hasn't
+// yet delivered a static-data AIS message (message 5 / 24). Keyed by MMSI.
+// A value of null means "looked up and came back empty" — prevents endless
+// retries. Survives for the lifetime of the map module.
+const vesselNameCache = {};
+const vesselNameInflight = {};
 
 // Guard zone: collision-alarm envelope drawn around own boat.
 let guardZoneRing = null;
@@ -489,8 +499,10 @@ export function updateAisTargets(vessels) {
         }
         rotateMarker(marker, v.cogRad ?? v.headingRad);
 
-        // Name label visible at zoom >= 12.
-        const displayName = v.name || (v.mmsi ? v.mmsi : null);
+        // Name label visible at zoom >= 12. Prefer resolved external name
+        // over raw MMSI so the chart looks clean even for unnamed targets.
+        const resolvedName = v.name || (v.mmsi ? vesselNameCache[v.mmsi] : null);
+        const displayName = resolvedName || (v.mmsi ? v.mmsi : null);
         if (displayName) {
             if (!aisLabels[v.context]) {
                 aisLabels[v.context] = L.tooltip({
@@ -513,8 +525,24 @@ export function updateAisTargets(vessels) {
         const dist = haversineMeters(selfLat, selfLon, v.lat, v.lon) * NM_PER_METER;
         const brg = bearingDeg(selfLat, selfLon, v.lat, v.lon);
 
-        // Display name: prefer name, fall back to callsign, then MMSI.
-        const displayTitle = name || (callsign ? callsign : (mmsi ? `MMSI ${esc(mmsi)}` : 'Unknown'));
+        // Display name preference: SignalK name > external-lookup cache >
+        // callsign > MMSI. For unnamed vessels, kick off an external lookup
+        // in the background; next update tick will pick up the resolved name.
+        let displayTitle;
+        if (name) {
+            displayTitle = name;
+        } else if (mmsi && vesselNameCache[mmsi]) {
+            displayTitle = esc(vesselNameCache[mmsi]);
+        } else if (callsign) {
+            displayTitle = callsign;
+        } else if (mmsi) {
+            displayTitle = `MMSI ${esc(mmsi)}`;
+        } else {
+            displayTitle = 'Unknown';
+        }
+        if (!name && mmsi && !(mmsi in vesselNameCache)) {
+            resolveVesselName(v.context, mmsi);
+        }
 
         let cpaHtml = '';
         if (cpaInfo && cpaInfo.tcpa > 0) {
@@ -522,9 +550,10 @@ export function updateAisTargets(vessels) {
             cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
         }
 
-        // External lookup links (free, no API key needed).
+        // External lookup links (free, no API key needed). VesselFinder's
+        // search page uses ?name= even for MMSI queries.
         const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
-        const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?mmsi=${esc(mmsi)}` : '';
+        const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?name=${esc(mmsi)}` : '';
 
         let linksHtml = '';
         if (mmsi) {
@@ -552,6 +581,10 @@ export function updateAisTargets(vessels) {
             `</div>`,
             { closeButton: false, maxWidth: 280, className: 'ais-popup' }
         );
+
+        // Trail: last AIS_TRAIL_SECONDS of positions, drawn as a fading line.
+        // We only push when the position actually changes to avoid empty ticks.
+        updateAisTrail(v.context, v.lat, v.lon);
 
         // Course vector.
         const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs);
@@ -612,8 +645,85 @@ export function updateAisTargets(vessels) {
             if (aisVectors[ctx]) { map.removeLayer(aisVectors[ctx]); delete aisVectors[ctx]; }
             delete aisLabels[ctx];
             removeCpaOverlay(ctx);
+            removeAisTrail(ctx);
         }
     }
+}
+
+/**
+ * Best-effort vessel name lookup via VesselFinder's public search page,
+ * tunnelled through allorigins.win because both marine-traffic and
+ * vesselfinder block CORS. Resolves to a string, or null on miss / error.
+ * Per-MMSI cache and in-flight dedupe prevent flooding the proxy.
+ * When a name is found, we push it back to Blazor so the vessel list,
+ * popup, and alarm banner all pick it up.
+ */
+async function resolveVesselName(context, mmsi) {
+    if (!mmsi) return null;
+    if (mmsi in vesselNameCache) return vesselNameCache[mmsi];
+    if (vesselNameInflight[mmsi]) return vesselNameInflight[mmsi];
+
+    const promise = (async () => {
+        try {
+            const target = `https://www.vesselfinder.com/vessels?name=${encodeURIComponent(mmsi)}`;
+            const url = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`;
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 6000);
+            const res = await fetch(url, { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (!res.ok) { vesselNameCache[mmsi] = null; return null; }
+            const json = await res.json();
+            const html = json.contents || '';
+            // VesselFinder's search result rows look like:
+            //   <a ... class="ship-link" title="NAME - VesselType">
+            // Fall back to a few patterns for resilience.
+            const m = html.match(/class="[^"]*ship-link[^"]*"[^>]*title="([^"]+?)(?:\s*-\s*[A-Za-z ]+)?"/i)
+                  || html.match(/<h1[^>]*class="title"[^>]*>([^<]+)<\/h1>/i)
+                  || html.match(/"name"\s*:\s*"([^"]+)"/i);
+            const name = m ? m[1].trim() : null;
+            vesselNameCache[mmsi] = name;
+            if (name && dotNetRef) {
+                try { await dotNetRef.invokeMethodAsync('OnVesselNameResolved', context, name); }
+                catch { /* page left, nothing to do */ }
+            }
+            return name;
+        } catch {
+            vesselNameCache[mmsi] = null;
+            return null;
+        } finally {
+            delete vesselNameInflight[mmsi];
+        }
+    })();
+    vesselNameInflight[mmsi] = promise;
+    return promise;
+}
+
+function updateAisTrail(ctx, lat, lon) {
+    const now = Date.now();
+    const hist = aisTrailHistory[ctx] ||= [];
+    const last = hist[hist.length - 1];
+    if (!last || last.lat !== lat || last.lon !== lon) hist.push({ lat, lon, t: now });
+
+    // Drop points older than the trail window.
+    const cutoff = now - AIS_TRAIL_SECONDS * 1000;
+    while (hist.length > 0 && hist[0].t < cutoff) hist.shift();
+
+    if (hist.length < 2) return;
+    const coords = hist.map(p => [p.lat, p.lon]);
+    let line = aisTrailLines[ctx];
+    if (!line) {
+        line = L.polyline(coords, {
+            color: '#94a3b8', weight: 1.2, opacity: 0.45, interactive: false
+        }).addTo(map);
+        aisTrailLines[ctx] = line;
+    } else {
+        line.setLatLngs(coords);
+    }
+}
+
+function removeAisTrail(ctx) {
+    if (aisTrailLines[ctx]) { map.removeLayer(aisTrailLines[ctx]); delete aisTrailLines[ctx]; }
+    delete aisTrailHistory[ctx];
 }
 
 function updateCpaLine(store, ctx, from, to, color) {
@@ -641,6 +751,15 @@ function removeCpaOverlay(ctx) {
  * @param radiusNm    CPA threshold (nautical miles)
  * @param lookaheadMin  TCPA threshold (minutes)
  */
+/** Pans the map to an AIS vessel and opens its popup. */
+export function focusVessel(context) {
+    const marker = aisMarkers[context];
+    if (!marker || !map) return;
+    const ll = marker.getLatLng();
+    map.panTo(ll, { animate: true });
+    marker.openPopup();
+}
+
 export function setGuardZone(radiusNm, lookaheadMin) {
     guardZoneRadiusNm = radiusNm;
     guardZoneLookaheadMin = lookaheadMin;
@@ -1324,6 +1443,8 @@ export function dispose() {
     for (const ctx of Object.keys(aisCpaOwnLines)) delete aisCpaOwnLines[ctx];
     for (const ctx of Object.keys(aisCpaTgtLines)) delete aisCpaTgtLines[ctx];
     for (const ctx of Object.keys(aisCpaLabels)) delete aisCpaLabels[ctx];
+    for (const ctx of Object.keys(aisTrailLines)) delete aisTrailLines[ctx];
+    for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];
     guardZoneRing = null;
     dotNetRef = null;
 }

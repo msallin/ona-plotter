@@ -120,6 +120,7 @@
                      FilteredCharts="FilteredCharts"
                      FilteredRoutes="FilteredRoutes"
                      LoadedWaypoints="loadedWaypoints"
+                     Vessels="@BuildVesselList()"
                      EnabledCharts="enabledCharts"
                      EnabledRoutes="enabledRoutes"
                      ServerTrackVisible="serverTrackVisible"
@@ -130,6 +131,7 @@
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
                      OnNavigateToWaypoint="NavigateToWaypoint"
+                     OnFocusVessel="FocusVessel"
                      OnToggleServerTrack="ToggleServerTrack"
                      OnToggleWeatherOverlay="ToggleWeatherOverlay"
                      OnGpxImport="HandleGpxImport"
@@ -218,6 +220,95 @@
 
     private Task OnToggleRouteCallback((SignalkRoute route, bool enabled) t) =>
         ToggleRoute(t.route, t.enabled);
+
+    /// <summary>
+    /// Snapshot of every known AIS vessel sorted by threat: vessels with a
+    /// valid TCPA first (ascending), then the rest by raw distance. Built on
+    /// demand from <see cref="AisStore"/> so the layers panel always reflects
+    /// the latest fixes without subscribing to AIS updates directly.
+    /// </summary>
+    private IReadOnlyList<VesselListEntry> BuildVesselList()
+    {
+        var vessels = AisStore.GetVessels();
+        if (vessels.Length == 0) return [];
+
+        var ownLat = Data.Latitude;
+        var ownLon = Data.Longitude;
+        var ownCog = Data.CourseOverGround;
+        var ownSog = Data.SpeedOverGround;
+
+        var entries = new List<VesselListEntry>(vessels.Length);
+        foreach (var v in vessels)
+        {
+            if (v.Latitude is null || v.Longitude is null) continue;
+
+            double? distNm = null, brgDeg = null;
+            if (ownLat is not null && ownLon is not null)
+            {
+                distNm = HaversineNm(ownLat.Value, ownLon.Value, v.Latitude.Value, v.Longitude.Value);
+                brgDeg = BearingDeg(ownLat.Value, ownLon.Value, v.Latitude.Value, v.Longitude.Value);
+            }
+
+            Cpa.Result? cpa = null;
+            if (ownLat is not null && ownLon is not null)
+            {
+                cpa = Cpa.Compute(
+                    ownLat.Value, ownLon.Value, ownCog, ownSog,
+                    v.Latitude.Value, v.Longitude.Value, v.CourseOverGround, v.SpeedOverGround);
+            }
+
+            entries.Add(new VesselListEntry(
+                Context: v.Context,
+                DisplayName: v.Name ?? v.Callsign ?? (v.Mmsi is not null ? $"MMSI {v.Mmsi}" : v.Context),
+                CpaNm: cpa?.CpaNm,
+                TcpaMin: cpa?.TcpaMin,
+                DistanceNm: distNm,
+                BearingDeg: brgDeg,
+                SogKn: v.SpeedOverGround is not null ? v.SpeedOverGround * Format.MsToKnots : null,
+                ShipType: v.ShipType));
+        }
+
+        // TCPA-sorted; non-converging vessels fall to the bottom, sorted by distance.
+        entries.Sort((a, b) =>
+        {
+            bool aHas = a.TcpaMin is not null;
+            bool bHas = b.TcpaMin is not null;
+            if (aHas && bHas) return a.TcpaMin!.Value.CompareTo(b.TcpaMin!.Value);
+            if (aHas) return -1;
+            if (bHas) return 1;
+            return (a.DistanceNm ?? double.MaxValue).CompareTo(b.DistanceNm ?? double.MaxValue);
+        });
+        return entries;
+    }
+
+    private async Task FocusVessel(string context)
+    {
+        if (module is null) return;
+        chartPanelOpen = false;
+        await module.InvokeVoidAsync("focusVessel", context);
+    }
+
+    private static double HaversineNm(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double R = 6371000;
+        double dLat = (lat2 - lat1) * Math.PI / 180;
+        double dLon = (lon2 - lon1) * Math.PI / 180;
+        double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                   Math.Cos(lat1 * Math.PI / 180) * Math.Cos(lat2 * Math.PI / 180) *
+                   Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        double meters = R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return meters / 1852.0;
+    }
+
+    private static double BearingDeg(double lat1, double lon1, double lat2, double lon2)
+    {
+        double rad1 = lat1 * Math.PI / 180, rad2 = lat2 * Math.PI / 180;
+        double dLon = (lon2 - lon1) * Math.PI / 180;
+        double y = Math.Sin(dLon) * Math.Cos(rad2);
+        double x = Math.Cos(rad1) * Math.Sin(rad2) - Math.Sin(rad1) * Math.Cos(rad2) * Math.Cos(dLon);
+        double deg = Math.Atan2(y, x) * 180.0 / Math.PI;
+        return (deg + 360) % 360;
+    }
 
     private void RebuildFilteredLayers()
     {
@@ -722,6 +813,16 @@
         contextMenuY = py;
         contextMenuVisible = true;
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called by the JS AIS name resolver when an enrichment lookup
+    /// (MarineTraffic / VesselFinder via CORS proxy) returns a human-readable
+    /// name for a vessel that SignalK hasn't named yet.</summary>
+    [JSInvokable]
+    public void OnVesselNameResolved(string context, string name)
+    {
+        AisStore.SetName(context, name);
+        if (chartPanelOpen) _ = InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]

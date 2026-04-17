@@ -28,9 +28,17 @@
 
         @if (activeAlarm is not null)
         {
-            <div class="alarm-banner @(activeAlarm.Severity == "danger" ? "alarm-danger" : "alarm-warn")"
-                 @onclick="DismissAlarm">
-                <strong>@activeAlarm.Title</strong> @activeAlarm.Message
+            <div class="alarm-banner @(activeAlarm.Severity == "danger" ? "alarm-danger" : "alarm-warn")">
+                <div class="alarm-body" @onclick="DismissAlarm">
+                    <strong>@activeAlarm.Title</strong> @activeAlarm.Message
+                </div>
+                @if (activeAlarm.TargetKey is not null)
+                {
+                    <button class="alarm-snooze" @onclick="SnoozeActiveAlarm"
+                            title="Silence this target for @SnoozeMinutes minutes">
+                        Snooze @SnoozeMinutes m
+                    </button>
+                }
             </div>
         }
 
@@ -80,7 +88,16 @@
     private const int MooredHoldSeconds = 120;
     private readonly Dictionary<string, DateTime> lowSpeedSince = [];
 
-    private sealed record AlarmInfo(string Title, string Message, string Severity);
+    /// <param name="TargetKey">Stable identifier (AIS context / MMSI) for
+    /// per-target snooze. Null for alarms that don't refer to a single
+    /// vessel, like SHALLOW or WIND SHIFT.</param>
+    private sealed record AlarmInfo(string Title, string Message, string Severity, string? TargetKey = null);
+
+    // Per-target snooze. After the captain acknowledges a specific vessel's
+    // CPA warning it stops firing for this MMSI for SnoozeMinutes. Cleared
+    // on page reload (in-memory only, intentionally).
+    private const int SnoozeMinutes = 10;
+    private readonly Dictionary<string, DateTime> snoozed = [];
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -216,6 +233,7 @@
                     continue;
 
                 if (IsMoored(v, now)) continue;
+                if (IsSnoozed(v.Context, now)) continue;
 
                 var cpa = Cpa.Compute(
                     data.Latitude.Value, data.Longitude.Value,
@@ -230,7 +248,8 @@
                 string name = v.Name ?? v.Mmsi ?? "vessel";
                 SetAlarm("CPA",
                     $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
-                    "danger");
+                    "danger",
+                    v.Context);
                 return;
             }
         }
@@ -252,6 +271,24 @@
         }
     }
 
+    private bool IsSnoozed(string targetKey, DateTime now)
+    {
+        if (!snoozed.TryGetValue(targetKey, out var until)) return false;
+        if (now < until) return true;
+        snoozed.Remove(targetKey);
+        return false;
+    }
+
+    private async Task SnoozeActiveAlarm()
+    {
+        if (activeAlarm?.TargetKey is null) return;
+        snoozed[activeAlarm.TargetKey] = DateTime.UtcNow.AddMinutes(SnoozeMinutes);
+        activeAlarm = null;
+        alarmAudioActive = false;
+        await StopAlarmAsync();
+        StateHasChanged();
+    }
+
     /// <summary>True once the vessel has held near-zero speed for at least
     /// MooredHoldSeconds. Transitions from moving to stopped reset the clock.</summary>
     private bool IsMoored(OnaPlotter.Models.AisVessel v, DateTime now)
@@ -271,10 +308,19 @@
         return (now - since).TotalSeconds >= MooredHoldSeconds;
     }
 
-    private void SetAlarm(string title, string message, string severity)
+    private void SetAlarm(string title, string message, string severity, string? targetKey = null)
     {
-        if (activeAlarm?.Title == title) return; // Don't re-trigger same alarm.
-        activeAlarm = new AlarmInfo(title, message, severity);
+        // Same target already showing - update message in place, don't re-arm audio.
+        if (activeAlarm?.Title == title && activeAlarm.TargetKey == targetKey)
+        {
+            if (activeAlarm.Message != message)
+            {
+                activeAlarm = activeAlarm with { Message = message };
+                _ = InvokeAsync(StateHasChanged);
+            }
+            return;
+        }
+        activeAlarm = new AlarmInfo(title, message, severity, targetKey);
         _ = InvokeAsync(async () =>
         {
             StateHasChanged();

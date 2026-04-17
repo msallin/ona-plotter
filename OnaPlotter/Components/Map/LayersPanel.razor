@@ -90,6 +90,40 @@
         }
     }
 
+    @if (Vessels.Count > 0)
+    {
+        <div class="chart-panel-header section-toggle" @onclick="() => VesselsExpanded = !VesselsExpanded">
+            <span class="toggle-arrow">@(VesselsExpanded ? "v" : ">")</span>
+            Vessels <span class="section-count">@Vessels.Count</span>
+        </div>
+        @if (VesselsExpanded)
+        {
+            @foreach (var vessel in Vessels)
+            {
+                <div class="chart-item vessel-row @VesselRowClass(vessel)"
+                     @onclick="() => OnFocusVessel.InvokeAsync(vessel.Context)">
+                    <div class="chart-item-body">
+                        <div class="chart-name">@vessel.DisplayName</div>
+                        <div class="chart-desc">
+                            @if (vessel.CpaNm is not null && vessel.TcpaMin is not null)
+                            {
+                                <span>CPA @vessel.CpaNm.Value.ToString("F2") nm · T-@vessel.TcpaMin.Value.ToString("F0")m</span>
+                            }
+                            else if (vessel.DistanceNm is not null)
+                            {
+                                <span>@vessel.DistanceNm.Value.ToString("F1") nm @vessel.BearingDeg?.ToString("F0")°</span>
+                            }
+                            @if (vessel.SogKn is not null)
+                            {
+                                <span> · @vessel.SogKn.Value.ToString("F1") kn</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    }
+
     <div class="chart-panel-header section-toggle" @onclick="() => TrackExpanded = !TrackExpanded">
         <span class="toggle-arrow">@(TrackExpanded ? "v" : ">")</span>
         Track History
@@ -139,6 +173,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> FilteredCharts { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> FilteredRoutes { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> LoadedWaypoints { get; set; } = [];
+    [Parameter] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledCharts { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
     [Parameter] public bool ServerTrackVisible { get; set; }
@@ -152,6 +187,7 @@
     private bool ChartsExpanded { get; set; } = true;
     private bool RoutesExpanded { get; set; } = true;
     private bool WaypointsExpanded { get; set; } = true;
+    private bool VesselsExpanded { get; set; } = true;
     private bool TrackExpanded { get; set; } = true;
     private bool WeatherExpanded { get; set; }
 
@@ -159,6 +195,7 @@
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
+    [Parameter] public EventCallback<string> OnFocusVessel { get; set; }
     [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }
     [Parameter] public EventCallback<bool> OnToggleWeatherOverlay { get; set; }
     [Parameter] public EventCallback<InputFileChangeEventArgs> OnGpxImport { get; set; }
@@ -168,5 +205,16 @@
     {
         LayerFilter = e.Value?.ToString() ?? "";
         await LayerFilterChanged.InvokeAsync(LayerFilter);
+    }
+
+    /// <summary>Red tint for vessels with a sub-0.5 nm / sub-10 min CPA; amber
+    /// for sub-1 nm / sub-20 min; nothing for the rest. Matches the map's
+    /// crossing-line palette.</summary>
+    private static string VesselRowClass(VesselListEntry v)
+    {
+        if (v.CpaNm is null || v.TcpaMin is null) return "";
+        if (v.CpaNm < 0.5 && v.TcpaMin < 10) return "vessel-danger";
+        if (v.CpaNm < 1.0 && v.TcpaMin < 20) return "vessel-warn";
+        return "";
     }
 }
