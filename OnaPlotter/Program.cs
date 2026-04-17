@@ -32,6 +32,8 @@ builder.Services.AddSingleton<ICourseApi, CourseApi>();
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
+// Optional: detects sbender9/signalk-buddylist-plugin at runtime.
+builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 
 // SignalK WebSocket delta stream.
 builder.Services.AddSingleton<SignalkClient>();

@@ -1,4 +1,18 @@
 <Solution>
   <Project Path="OnaPlotter/OnaPlotter.csproj" />
   <Project Path="OnaPlotter.Tests/OnaPlotter.Tests.csproj" />
+  <Folder Name="/OnaPlotter.UiTests/">
+    <File Path="OnaPlotter.UiTests/README.md" />
+    <File Path="OnaPlotter.UiTests/package.json" />
+    <File Path="OnaPlotter.UiTests/playwright.config.js" />
+    <File Path="OnaPlotter.UiTests/helpers.js" />
+    <File Path="OnaPlotter.UiTests/smoke.spec.js" />
+    <File Path="OnaPlotter.UiTests/fuzz.spec.js" />
+    <File Path="OnaPlotter.UiTests/diagnose.spec.js" />
+    <File Path="OnaPlotter.UiTests/diagnose-buttons.spec.js" />
+  </Folder>
+  <Folder Name="/docs/">
+    <File Path="README.md" />
+    <File Path="docs/collision-detection.md" />
+  </Folder>
 </Solution>

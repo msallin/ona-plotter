@@ -83,17 +83,30 @@ Copy-Item -Recurse -Path $WwwRootSrc -Destination (Join-Path $WebappStaging "pub
 Write-Host "Staged at $WebappStaging" -ForegroundColor Green
 
 # 4. SCP to SignalK node_modules.
+# ~ is expanded by the remote shell; quoted so PowerShell leaves it alone.
 $RemotePath = "~/.signalk/node_modules/$WebappName"
 Write-Host "Deploying to $SshTarget : $RemotePath ..." -ForegroundColor Cyan
 
-# Create remote directory (wipe old install).
-ssh $SshTarget "rm -rf $RemotePath && mkdir -p $RemotePath"
-if ($LASTEXITCODE -ne 0) { throw "ssh mkdir failed" }
+# Verify we can reach the host and that ~/.signalk exists. Echos a clear
+# message rather than the opaque "ssh mkdir failed".
+Write-Host "Testing SSH connection..." -ForegroundColor DarkGray
+$sshTest = ssh -o BatchMode=yes -o ConnectTimeout=8 $SshTarget 'test -d ~/.signalk && echo OK' 2>&1
+if ($LASTEXITCODE -ne 0 -or $sshTest -notmatch "OK") {
+    Write-Host $sshTest -ForegroundColor Yellow
+    throw "SSH to $SshTarget failed. Check: (1) key-based auth (ssh-copy-id), (2) `~/.signalk` exists on the target, (3) host key is trusted (ssh once manually)."
+}
+
+# Create remote directory (wipe old install). Keep the two ops separate so
+# the exit code pinpoints which one failed.
+$rmOut = ssh $SshTarget "rm -rf '$RemotePath'" 2>&1
+if ($LASTEXITCODE -ne 0) { Write-Host $rmOut -ForegroundColor Yellow; throw "Remote rm failed (is the current install owned by another user?)" }
+$mkOut = ssh $SshTarget "mkdir -p '$RemotePath'" 2>&1
+if ($LASTEXITCODE -ne 0) { Write-Host $mkOut -ForegroundColor Yellow; throw "Remote mkdir failed" }
 
 # Copy staging contents.
 # Use scp -r for the whole folder; rsync would be nicer but might not be installed.
 scp -r "$WebappStaging/*" "${SshTarget}:$RemotePath/"
-if ($LASTEXITCODE -ne 0) { throw "scp failed" }
+if ($LASTEXITCODE -ne 0) { throw "scp failed (check disk space on target with 'df -h ~')" }
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green

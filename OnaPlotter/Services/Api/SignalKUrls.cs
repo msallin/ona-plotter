@@ -21,6 +21,12 @@ public static class SignalKUrls
     public const string AutopilotStatePath = "/signalk/v2/api/vessels/self/steering/autopilot/state";
     public const string AutopilotAdjustHeadingPath = "/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";
 
+    /// <summary>REST API exposed by sbender9/signalk-buddylist-plugin.
+    /// A 200 means the plugin is installed and running; 404 means it isn't.</summary>
+    public const string BuddiesPath = "/signalk/v2/api/resources/buddies";
+
+    public static string Buddy(string urn) => $"{BuddiesPath}/{Uri.EscapeDataString(urn)}";
+
     public static string Route(string id) => $"{RoutesPath}/{Uri.EscapeDataString(id)}";
     public static string Waypoint(string id) => $"{WaypointsPath}/{Uri.EscapeDataString(id)}";
 
