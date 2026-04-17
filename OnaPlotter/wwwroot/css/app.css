@@ -16,6 +16,17 @@
     --sk-cyan: #22d3ee;
     --sk-purple: #c4b5fd;
 
+    /* Chrome palette (sidebar + top bar). Keep separate from content vars
+       so the sidebar can have its own depth treatment on either theme. */
+    --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
+    --sk-sidebar-text: rgba(255, 255, 255, 0.65);
+    --sk-sidebar-text-active: #ffffff;
+    --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+    --sk-sidebar-active-bg: rgba(255, 255, 255, 0.10);
+    --sk-top-row-bg: #1a1d23;
+    --sk-top-row-text: #8a919c;
+    --sk-top-row-border: #363b44;
+
     /* Z-index stack. Use these consistently to avoid layering conflicts. */
     --z-map-layer: 10;
     --z-hud: 500;
@@ -40,14 +51,25 @@
    to stay dark for readability) is unaffected. */
 .page.theme-light,
 .page.theme-system {
-    --sk-bg: #f4f6f8;
+    --sk-bg: #f8fafc;                 /* slate-50 */
     --sk-surface: #ffffff;
-    --sk-surface-hover: #eef2f6;
-    --sk-border: #d1d5db;
-    --sk-text: #1f2937;
-    --sk-text-muted: #6b7280;
-    --sk-accent: #2563eb;
-    --sk-accent-dim: #1d4ed8;
+    --sk-surface-hover: #f1f5f9;      /* slate-100 */
+    --sk-border: #cbd5e1;             /* slate-300 */
+    --sk-text: #0f172a;               /* slate-900 */
+    --sk-text-muted: #64748b;         /* slate-500 */
+    --sk-accent: #0369a1;             /* sky-700 - readable on white */
+    --sk-accent-dim: #075985;         /* sky-800 */
+
+    /* Chrome palette for light mode: subtle cool gradient for the sidebar
+       so it stands apart from the content area without shouting. */
+    --sk-sidebar-bg: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
+    --sk-sidebar-text: #475569;       /* slate-600 */
+    --sk-sidebar-text-active: #0f172a;
+    --sk-sidebar-hover-bg: rgba(15, 23, 42, 0.06);
+    --sk-sidebar-active-bg: rgba(15, 23, 42, 0.10);
+    --sk-top-row-bg: #ffffff;
+    --sk-top-row-text: #475569;
+    --sk-top-row-border: #e2e8f0;
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the
@@ -63,6 +85,14 @@
         --sk-text-muted: #94a3b8;
         --sk-accent: #60a5fa;
         --sk-accent-dim: #3b82f6;
+        --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
+        --sk-sidebar-text: rgba(255, 255, 255, 0.65);
+        --sk-sidebar-text-active: #ffffff;
+        --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+        --sk-sidebar-active-bg: rgba(255, 255, 255, 0.10);
+        --sk-top-row-bg: #1a1d23;
+        --sk-top-row-text: #8a919c;
+        --sk-top-row-border: #363b44;
     }
 }
 
@@ -137,7 +167,7 @@ h2 {
     font-size: 2rem;
     font-weight: 300;
     font-variant-numeric: tabular-nums;
-    color: #fff;
+    color: var(--sk-text);
 }
 
 .card .card-subtitle {
@@ -755,7 +785,7 @@ html {
 /* ===== Dashboard ===== */
 
 .dash-card-primary {
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--sk-border);
 }
 
 .dash-card-primary .card-body {

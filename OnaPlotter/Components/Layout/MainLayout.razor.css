@@ -9,12 +9,12 @@ main {
 }
 
 .sidebar {
-    background: linear-gradient(180deg, #0c1929 0%, #162544 100%);
+    background: var(--sk-sidebar-bg);
 }
 
 .top-row {
-    background-color: #1a1d23;
-    border-bottom: 1px solid #363b44;
+    background-color: var(--sk-top-row-bg);
+    border-bottom: 1px solid var(--sk-top-row-border);
     justify-content: flex-end;
     height: 3rem;
     display: flex;
@@ -23,7 +23,7 @@ main {
 
 .connection-status {
     font-size: 0.8rem;
-    color: #8a919c;
+    color: var(--sk-top-row-text);
 }
 
 @media (max-width: 640.98px) {

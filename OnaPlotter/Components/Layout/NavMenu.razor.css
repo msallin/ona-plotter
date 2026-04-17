@@ -3,27 +3,44 @@
     cursor: pointer;
     width: 3.5rem;
     height: 2.5rem;
-    color: white;
+    color: var(--sk-sidebar-text-active);
     position: absolute;
     top: 0.5rem;
     right: 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem;
+    border: 1px solid var(--sk-border);
+    background: transparent;
+    font-size: 1.3rem;
+    line-height: 2.3rem;
+    text-align: center;
+}
+
+.navbar-toggler::before {
+    content: "\2630";              /* U+2630 TRIGRAM FOR HEAVEN, a clean hamburger glyph */
+    color: var(--sk-sidebar-text);
 }
 
 .navbar-toggler:checked ~ .nav-scrollable {
     display: block;
 }
 
+/* NavMenu's own top-row (the brand header in the sidebar), not the main
+   layout's connection-status bar. Transparent so the sidebar gradient
+   shows through; a subtle border gives the brand a little weight. */
 .top-row {
     height: 3rem;
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: transparent;
+    border-bottom: 1px solid var(--sk-border);
 }
 
 .navbar-brand {
     font-size: 1rem;
     font-weight: 600;
     letter-spacing: 0.02em;
+    color: var(--sk-sidebar-text-active) !important;
+}
+
+.navbar-brand:hover {
+    color: var(--sk-sidebar-text-active) !important;
 }
 
 .nav-icon {
@@ -44,7 +61,7 @@
 }
 
 ::deep .nav-link {
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--sk-sidebar-text);
     border-radius: 4px;
     height: 2.5rem;
     display: flex;
@@ -53,13 +70,13 @@
 }
 
 ::deep .nav-link:hover {
-    background-color: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.9);
+    background-color: var(--sk-sidebar-hover-bg);
+    color: var(--sk-sidebar-text-active);
 }
 
 ::deep .nav-link.active {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background-color: var(--sk-sidebar-active-bg);
+    color: var(--sk-sidebar-text-active);
 }
 
 ::deep .nav-link.active .nav-icon {
