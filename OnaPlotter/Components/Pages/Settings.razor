@@ -4,6 +4,7 @@
 @using OnaPlotter.Services
 @inject AppSettingsService AppSettings
 @inject PolarService Polar
+@inject ToastService Toasts
 
 <PageTitle>Settings</PageTitle>
 
@@ -142,17 +143,19 @@
             using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: 1024 * 1024));
             string csv = await reader.ReadToEndAsync();
             await Polar.ImportAsync(csv);
+            Toasts.Success($"Polar loaded: {Polar.TwaValues.Length} TWA rows");
             StateHasChanged();
         }
         catch (Exception ex)
         {
-            System.Console.Error.WriteLine($"Polar import failed: {ex.Message}");
+            Toasts.Error($"Polar import failed: {ex.Message}");
         }
     }
 
     private async Task ClearPolar()
     {
         await Polar.ClearAsync();
+        Toasts.Success("Polar cleared");
         StateHasChanged();
     }
 

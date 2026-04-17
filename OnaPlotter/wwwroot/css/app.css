@@ -1,6 +1,7 @@
 /* Dark nautical theme for OnaPlotter. */
 
 :root {
+    /* Color palette */
     --sk-bg: #0f1117;
     --sk-surface: #1a1e28;
     --sk-surface-hover: #242a36;
@@ -13,6 +14,16 @@
     --sk-red: #f87171;
     --sk-orange: #fbbf24;
     --sk-cyan: #22d3ee;
+    --sk-purple: #c4b5fd;
+
+    /* Z-index stack. Use these consistently to avoid layering conflicts. */
+    --z-map-layer: 10;
+    --z-hud: 500;
+    --z-quick-bar: 700;
+    --z-controls: 800;
+    --z-popup: 850;
+    --z-modal: 900;
+    --z-fullscreen: 9999;
 }
 
 html, body {
@@ -566,6 +577,46 @@ html {
 
 .dash-card-primary .card-body {
     padding: 1rem 0.5rem;
+}
+
+/* ===== Toast Notifications ===== */
+
+.toast-stack {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 360px;
+    pointer-events: none;
+}
+
+.toast-item {
+    pointer-events: auto;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    background: rgba(15, 18, 25, 0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--sk-text);
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    animation: toast-slide-in 0.2s ease-out;
+}
+
+.toast-item:hover { background: rgba(25, 30, 40, 0.95); }
+
+.toast-success { border-left: 3px solid var(--sk-green); }
+.toast-warning { border-left: 3px solid var(--sk-orange); }
+.toast-error   { border-left: 3px solid var(--sk-red); }
+.toast-info    { border-left: 3px solid var(--sk-accent); }
+
+@keyframes toast-slide-in {
+    from { transform: translateX(20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
 /* ===== Alarm Banner ===== */

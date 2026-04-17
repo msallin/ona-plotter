@@ -4,6 +4,7 @@
 @inject SignalkClient SignalkClient
 @inject AisStore AisStore
 @inject AppSettingsService Settings
+@inject ToastService Toasts
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -35,6 +36,20 @@
         <article class="content px-4">
             @Body
         </article>
+
+        @* === Toast notifications === *@
+        @if (Toasts.Active.Count > 0)
+        {
+            <div class="toast-stack">
+                @foreach (var t in Toasts.Active)
+                {
+                    <div class="toast-item toast-@(t.Level.ToString().ToLowerInvariant())"
+                         @key="t.Id" @onclick="() => Toasts.Dismiss(t.Id)">
+                        @t.Message
+                    </div>
+                }
+            </div>
+        }
     </main>
 </div>
 
@@ -72,9 +87,16 @@
     {
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         SignalkClient.OnDataChanged += HandleDataChanged;
+        Toasts.OnChanged += HandleToastsChanged;
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
+    }
+
+    private async void HandleToastsChanged()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     private async Task ToggleNightMode()
@@ -292,6 +314,7 @@
     {
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         SignalkClient.OnDataChanged -= HandleDataChanged;
+        Toasts.OnChanged -= HandleToastsChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (audioModule is not null)
         {

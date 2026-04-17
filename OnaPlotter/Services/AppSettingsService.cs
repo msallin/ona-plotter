@@ -12,6 +12,7 @@ namespace OnaPlotter.Services;
 public sealed class AppSettingsService
 {
     private readonly IJSRuntime _js;
+    private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
 
     public bool NightMode { get; private set; }
@@ -34,21 +35,31 @@ public sealed class AppSettingsService
     public async Task InitializeAsync()
     {
         if (_initialized) return;
-        _initialized = true;
-
+        await _initLock.WaitAsync();
         try
         {
-            NightMode = await LoadBoolAsync("nightMode", false);
-            MapOrientation = await LoadStringAsync("mapOrientation", "north") ?? "north";
-            FollowBoat = await LoadBoolAsync("followBoat", true);
-            LaylinesVisible = await LoadBoolAsync("laylinesVisible", false);
-            DepthAlarmThreshold = await LoadDoubleAsync("depthAlarmThreshold", 3.0);
-            CpaAlarmThreshold = await LoadDoubleAsync("cpaAlarmThreshold", 0.5);
-            WindShiftAlarmThreshold = await LoadDoubleAsync("windShiftAlarmThreshold", 15.0);
+            if (_initialized) return; // Double-check after acquiring lock.
+
+            try
+            {
+                NightMode = await LoadBoolAsync("nightMode", false);
+                MapOrientation = await LoadStringAsync("mapOrientation", "north") ?? "north";
+                FollowBoat = await LoadBoolAsync("followBoat", true);
+                LaylinesVisible = await LoadBoolAsync("laylinesVisible", false);
+                DepthAlarmThreshold = await LoadDoubleAsync("depthAlarmThreshold", 3.0);
+                CpaAlarmThreshold = await LoadDoubleAsync("cpaAlarmThreshold", 0.5);
+                WindShiftAlarmThreshold = await LoadDoubleAsync("windShiftAlarmThreshold", 15.0);
+            }
+            catch
+            {
+                // localStorage might not be available (private browsing, etc.).
+            }
+
+            _initialized = true;
         }
-        catch
+        finally
         {
-            // localStorage might not be available (private browsing, etc.).
+            _initLock.Release();
         }
     }
 

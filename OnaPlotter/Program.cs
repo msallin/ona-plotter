@@ -14,6 +14,7 @@ builder.Services.AddSingleton<ChartService>();
 builder.Services.AddSingleton<SignalkClient>();
 builder.Services.AddSingleton<AppSettingsService>();
 builder.Services.AddSingleton<PolarService>();
+builder.Services.AddSingleton<ToastService>();
 
 var host = builder.Build();
 

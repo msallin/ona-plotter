@@ -55,17 +55,14 @@
 </div>
 
 @code {
-    private const double MsToKnots = 1.94384;
-    private const double RadToDeg = 180.0 / Math.PI;
-
     private Models.NavigationData Data => SignalkClient.Data;
 
-    private double? SogKn => Data.SpeedOverGround is not null ? Data.SpeedOverGround * MsToKnots : null;
-    private double? HeadingDeg => Data.Heading is not null ? Data.Heading * RadToDeg : null;
-    private double? WindSpeedKn => Data.WindSpeedApparent is not null ? Data.WindSpeedApparent * MsToKnots : null;
-    private double? WindAngleDeg => Data.WindAngleApparent is not null ? Data.WindAngleApparent * RadToDeg : null;
-    private double? TrueWindSpeedKn => Data.WindSpeedTrue is not null ? Data.WindSpeedTrue * MsToKnots : null;
-    private double? TrueWindAngleDeg => Data.WindAngleTrue is not null ? Data.WindAngleTrue * RadToDeg : null;
+    private double? SogKn => Data.SpeedOverGround * Format.MsToKnots;
+    private double? HeadingDeg => Data.Heading * Format.RadToDeg;
+    private double? WindSpeedKn => Data.WindSpeedApparent * Format.MsToKnots;
+    private double? WindAngleDeg => Data.WindAngleApparent * Format.RadToDeg;
+    private double? TrueWindSpeedKn => Data.WindSpeedTrue * Format.MsToKnots;
+    private double? TrueWindAngleDeg => Data.WindAngleTrue * Format.RadToDeg;
 
     // Color zones: unified with CSS vars (green=safe, orange=caution, red=danger).
     private static readonly List<GaugeZone> sogZones =

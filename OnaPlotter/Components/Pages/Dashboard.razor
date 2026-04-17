@@ -21,7 +21,7 @@
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Speed</h6>
                 <p class="card-text" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
-                    @FormatSpeed(Data.SpeedOverGround)
+                    @Format.Speed(Data.SpeedOverGround)
                 </p>
                 <small class="text-muted">kn SOG</small>
             </div>
@@ -31,8 +31,8 @@
         <div class="card dash-card-primary">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Depth</h6>
-                <p class="card-text @DepthClass" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
-                    @FormatDecimal(Data.Depth, "F1")
+                <p class="card-text @Format.DepthClass(Data.Depth)" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
+                    @Format.Depth(Data.Depth)
                 </p>
                 <small class="text-muted">m</small>
             </div>
@@ -43,7 +43,7 @@
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Heading</h6>
                 <p class="card-text" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
-                    @FormatDegrees(Data.Heading)
+                    @Format.Degrees(Data.Heading)
                 </p>
                 <small class="text-muted">deg</small>
             </div>
@@ -85,7 +85,7 @@
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">AWA</h6>
-                <p class="card-text display-6">@FormatDegrees(Data.WindAngleApparent)</p>
+                <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)</p>
                 <small class="text-muted">apparent angle</small>
             </div>
         </div>
@@ -94,7 +94,7 @@
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">AWS</h6>
-                <p class="card-text display-6">@FormatSpeed(Data.WindSpeedApparent)</p>
+                <p class="card-text display-6">@Format.Speed(Data.WindSpeedApparent)</p>
                 <small class="text-muted">kn apparent</small>
             </div>
         </div>
@@ -103,7 +103,7 @@
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">TWA</h6>
-                <p class="card-text display-6">@FormatDegrees(Data.WindAngleTrue)</p>
+                <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)</p>
                 <small class="text-muted">true angle</small>
             </div>
         </div>
@@ -112,7 +112,7 @@
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">TWS</h6>
-                <p class="card-text display-6">@FormatSpeed(Data.WindSpeedTrue)</p>
+                <p class="card-text display-6">@Format.Speed(Data.WindSpeedTrue)</p>
                 <small class="text-muted">kn true</small>
             </div>
         </div>
@@ -126,7 +126,7 @@
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">COG</h6>
-                <p class="card-text display-6">@FormatDegrees(Data.CourseOverGround)</p>
+                <p class="card-text display-6">@Format.Degrees(Data.CourseOverGround)</p>
                 <small class="text-muted">deg</small>
             </div>
         </div>
@@ -135,7 +135,7 @@
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">TWD</h6>
-                <p class="card-text display-6">@FormatDegrees(Data.WindDirectionTrue)</p>
+                <p class="card-text display-6">@Format.Degrees(Data.WindDirectionTrue)</p>
                 <small class="text-muted">from</small>
             </div>
         </div>
@@ -161,7 +161,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">DTG</h6>
-                    <p class="card-text display-6">@FormatNm(Data.CourseNextPointDistance)</p>
+                    <p class="card-text display-6">@Format.Nm(Data.CourseNextPointDistance)</p>
                     <small class="text-muted">nm</small>
                 </div>
             </div>
@@ -170,7 +170,7 @@
             <div class="card">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">BRG</h6>
-                    <p class="card-text display-6">@FormatDegrees(Data.CourseNextPointBearing)</p>
+                    <p class="card-text display-6">@Format.Degrees(Data.CourseNextPointBearing)</p>
                     <small class="text-muted">deg</small>
                 </div>
             </div>
@@ -181,7 +181,7 @@
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">VMG</h6>
-                        <p class="card-text display-6">@FormatSpeed(Data.CourseNextPointVmg)</p>
+                        <p class="card-text display-6">@Format.Speed(Data.CourseNextPointVmg)</p>
                         <small class="text-muted">kn</small>
                     </div>
                 </div>
@@ -193,7 +193,7 @@
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">XTE</h6>
-                        <p class="card-text display-6 @XteClass">@FormatXte(Data.CrossTrackError)</p>
+                        <p class="card-text display-6 @Format.XteClass(Data.CrossTrackError)">@Format.Xte(Data.CrossTrackError)</p>
                     </div>
                 </div>
             </div>
@@ -204,7 +204,7 @@
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">TTG</h6>
-                        <p class="card-text display-6" style="font-size:1.4rem;">@FormatTTG(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text display-6" style="font-size:1.4rem;">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</p>
                     </div>
                 </div>
             </div>
@@ -212,7 +212,7 @@
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">ETA</h6>
-                        <p class="card-text display-6" style="font-size:1.4rem;">@FormatEta(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text display-6" style="font-size:1.4rem;">@Format.Eta(Data.CourseNextPointTimeToGo)</p>
                     </div>
                 </div>
             </div>
@@ -227,10 +227,8 @@
 
 @code {
     private Models.NavigationData Data => SignalkClient.Data;
-    private const double MsToKnots = 1.94384;
-    private const double RadToDeg = 180.0 / Math.PI;
 
-    // Polar performance.
+    // Polar performance (returns null if polar not loaded or wind data missing).
     private double? PolarPerformancePct
     {
         get
@@ -238,9 +236,9 @@
             if (!Polar.HasPolar || Data.SpeedOverGround is null
                 || Data.WindAngleTrue is null || Data.WindSpeedTrue is null)
                 return null;
-            double sogKn = Data.SpeedOverGround.Value * MsToKnots;
-            double twaDeg = Data.WindAngleTrue.Value * RadToDeg;
-            double twsKn = Data.WindSpeedTrue.Value * MsToKnots;
+            double sogKn = Data.SpeedOverGround.Value * Format.MsToKnots;
+            double twaDeg = Data.WindAngleTrue.Value * Format.RadToDeg;
+            double twsKn = Data.WindSpeedTrue.Value * Format.MsToKnots;
             return Polar.GetPerformance(sogKn, twaDeg, twsKn);
         }
     }
@@ -250,8 +248,8 @@
         get
         {
             if (!Polar.HasPolar || Data.WindAngleTrue is null || Data.WindSpeedTrue is null) return "--";
-            double twaDeg = Data.WindAngleTrue.Value * RadToDeg;
-            double twsKn = Data.WindSpeedTrue.Value * MsToKnots;
+            double twaDeg = Data.WindAngleTrue.Value * Format.RadToDeg;
+            double twsKn = Data.WindSpeedTrue.Value * Format.MsToKnots;
             var target = Polar.GetTargetSpeed(twaDeg, twsKn);
             return target is not null ? target.Value.ToString("F1") : "--";
         }
@@ -260,25 +258,9 @@
     private string PerfClass => PolarPerformancePct switch
     {
         null => "",
-        >= 0.95 => "depth-ok",    // green: at or above target
-        >= 0.80 => "depth-warn",  // yellow: acceptable
-        _ => "depth-danger"       // red: well below target
-    };
-
-    private string DepthClass => Data.Depth switch
-    {
-        null => "",
-        < 3 => "depth-danger",
-        < 8 => "depth-warn",
-        _ => "depth-ok"
-    };
-
-    private string XteClass => Data.CrossTrackError switch
-    {
-        null => "",
-        var x when Math.Abs(x.Value) < 50 => "xte-ok",
-        var x when Math.Abs(x.Value) < 200 => "xte-warn",
-        _ => "xte-danger"
+        >= 0.95 => "depth-ok",
+        >= 0.80 => "depth-warn",
+        _ => "depth-danger"
     };
 
     protected override async Task OnInitializedAsync()
@@ -289,56 +271,8 @@
 
     private async void HandleDataChanged()
     {
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private static string FormatSpeed(double? ms)
-    {
-        if (ms is null) return "--";
-        return (ms.Value * MsToKnots).ToString("F1");
-    }
-
-    private static string FormatDegrees(double? rad)
-    {
-        if (rad is null) return "--";
-        double deg = rad.Value * RadToDeg;
-        if (deg < 0) deg += 360;
-        return deg.ToString("F0");
-    }
-
-    private static string FormatDecimal(double? val, string format)
-    {
-        if (val is null) return "--";
-        return val.Value.ToString(format);
-    }
-
-    private static string FormatNm(double? meters)
-    {
-        if (meters is null) return "--";
-        double nm = meters.Value / 1852.0;
-        return nm < 10 ? nm.ToString("F2") : nm.ToString("F1");
-    }
-
-    private static string FormatTTG(double? seconds)
-    {
-        if (seconds is null) return "--";
-        var ts = TimeSpan.FromSeconds(seconds.Value);
-        return ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h{ts.Minutes:D2}m" : $"{ts.Minutes}m{ts.Seconds:D2}s";
-    }
-
-    private static string FormatEta(double? ttgSeconds)
-    {
-        if (ttgSeconds is null) return "--";
-        var eta = DateTime.Now.AddSeconds(ttgSeconds.Value);
-        return eta.Date == DateTime.Today ? eta.ToString("HH:mm") : eta.ToString("dd.MM HH:mm");
-    }
-
-    private static string FormatXte(double? meters)
-    {
-        if (meters is null) return "--";
-        double abs = Math.Abs(meters.Value);
-        string side = meters > 0 ? "S" : meters < 0 ? "P" : "";
-        return abs < 1000 ? $"{abs:F0}m {side}" : $"{(abs / 1852.0):F2}nm {side}";
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
     }
 
     public void Dispose()
