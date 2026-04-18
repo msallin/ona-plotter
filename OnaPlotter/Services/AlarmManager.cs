@@ -10,17 +10,50 @@ public sealed class AlarmManager : IAlarmManager
 
     public const int SnoozeMinutes = 10;
 
+    /// <summary>Hard cap on the banner stack size. Beyond this a lower-
+    /// priority alarm is dropped; it will re-add on the next tick if still
+    /// live. Keeps the banner from burying the viewport when everything
+    /// goes wrong at once.</summary>
+    public const int MaxActiveAlarms = 3;
+
+    /// <summary>How many dismissed alarms to keep for the history drawer.
+    /// Ring buffer, newest first. One screen-page of history is enough for
+    /// a post-mortem without inflating memory on long watches.</summary>
+    public const int MaxDismissedHistory = 20;
+
     private readonly IReadOnlyList<IAlarmRule> _rules;
-    private readonly Dictionary<string, DateTime> _snoozed = [];
+    private readonly Dictionary<string, SnoozedTarget> _snoozed = [];
     private readonly Func<DateTime> _now;
 
-    private DateTime _lastEvaluation = DateTime.MinValue;
-    private IAlarmRule? _activeRule;
+    // Active alarms keyed by (Title, TargetKey) so the same rule firing on
+    // a different target counts as a different alarm (two CPA threats, or
+    // SHALLOW plus CPA coexisting). Value remembers the originating rule
+    // so auto-clear / latch behaviour survives severity/message updates.
+    private readonly Dictionary<AlarmKey, ActiveEntry> _active = [];
+    private readonly List<DismissedAlarm> _history = [];
 
-    public AlarmInfo? ActiveAlarm { get; private set; }
+    private DateTime _lastEvaluation = DateTime.MinValue;
+    private AlarmInfo? _lastTop;
+
+    public AlarmInfo? ActiveAlarm => ActiveAlarms.Count > 0 ? ActiveAlarms[0] : null;
+
+    public IReadOnlyList<AlarmInfo> ActiveAlarms => _active.Values
+        .OrderByDescending(e => e.Info.Severity)
+        .ThenBy(e => e.Rule.Priority)
+        .Select(e => e.Info)
+        .Take(MaxActiveAlarms)
+        .ToList();
+
+    public IReadOnlyList<SnoozedTarget> SnoozedTargets => _snoozed.Values
+        .OrderBy(s => s.ExpiresAt)
+        .ToList();
+
+    public IReadOnlyList<DismissedAlarm> DismissedHistory => _history.AsReadOnly();
+
     public int SnoozeDurationMinutes => SnoozeMinutes;
 
     public event Action<AlarmInfo?>? OnAlarmChanged;
+    public event Action? OnAlarmsChanged;
 
     public AlarmManager(IEnumerable<IAlarmRule> rules)
         : this(rules, () => DateTime.UtcNow) { }
@@ -42,86 +75,162 @@ public sealed class AlarmManager : IAlarmManager
 
         var ctx = new AlarmEvaluationContext(data, vessels, settings, now, IsSnoozed);
 
-        // Rules evaluate in priority order. First that returns a non-null
-        // alarm wins and short-circuits the rest. Others are still given
-        // the chance to update their internal state on later ticks.
+        // Every rule gets a chance to produce an alarm. Unlike the earlier
+        // first-wins model, we collect all hits and stack them so a depth
+        // warning doesn't hide a closing ferry (and vice versa). The
+        // display order is severity-then-priority; the rules themselves
+        // stay ignorant of the stack.
+        var thisTick = new Dictionary<AlarmKey, (AlarmInfo info, IAlarmRule rule)>();
         foreach (var rule in _rules)
         {
             var alarm = rule.Check(ctx);
-            if (alarm is not null)
+            if (alarm is null) continue;
+            thisTick[new AlarmKey(alarm.Title, alarm.TargetKey)] = (alarm, rule);
+        }
+
+        bool changed = false;
+
+        // Remove alarms that didn't fire this tick and whose rule wants
+        // auto-clear. Latching rules (WIND SHIFT) stay in the stack until
+        // the user dismisses them, matching the pre-refactor behaviour.
+        var toDrop = _active
+            .Where(kv => !thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear)
+            .Select(kv => kv.Key)
+            .ToList();
+        foreach (var key in toDrop)
+        {
+            LogHistory(_active[key].Info, now, DismissReason.AutoCleared);
+            _active.Remove(key);
+            changed = true;
+        }
+
+        // Add-or-update from this tick's hits.
+        foreach (var (key, (info, rule)) in thisTick)
+        {
+            if (_active.TryGetValue(key, out var existing))
             {
-                SetAlarm(alarm, rule);
-                return;
+                // Same rule + same target. A severity change or a message
+                // update should update the stored entry. Message-only
+                // changes don't re-arm the audio, matching the
+                // pre-refactor quiet-tick behaviour.
+                if (existing.Info != info)
+                {
+                    _active[key] = new ActiveEntry(info, rule);
+                    changed = true;
+                }
+            }
+            else
+            {
+                _active[key] = new ActiveEntry(info, rule);
+                changed = true;
             }
         }
 
-        // Nothing matched this tick. Auto-clear if the last-active rule is
-        // self-clearing (SHALLOW, CPA); latch rules (WIND SHIFT) keep the
-        // banner until the user dismisses.
-        if (ActiveAlarm is not null && (_activeRule?.AutoClear ?? true))
-        {
-            ActiveAlarm = null;
-            _activeRule = null;
-            OnAlarmChanged?.Invoke(null);
-        }
+        if (changed) FireAlarmsChanged();
     }
 
     public Task DismissAsync()
     {
-        if (ActiveAlarm is null) return Task.CompletedTask;
-        ActiveAlarm = null;
-        _activeRule = null;
-        OnAlarmChanged?.Invoke(null);
+        if (_active.Count == 0) return Task.CompletedTask;
+        var now = _now();
+        foreach (var e in _active.Values)
+            LogHistory(e.Info, now, DismissReason.UserDismissed);
+        _active.Clear();
+        FireAlarmsChanged();
+        return Task.CompletedTask;
+    }
+
+    public Task DismissAsync(AlarmInfo alarm)
+    {
+        var key = new AlarmKey(alarm.Title, alarm.TargetKey);
+        if (!_active.Remove(key, out var removed)) return Task.CompletedTask;
+        LogHistory(removed.Info, _now(), DismissReason.UserDismissed);
+        FireAlarmsChanged();
         return Task.CompletedTask;
     }
 
     public Task SnoozeActiveAsync()
     {
-        if (ActiveAlarm?.TargetKey is null) return Task.CompletedTask;
-        _snoozed[ActiveAlarm.TargetKey] = _now().AddMinutes(SnoozeMinutes);
-        ActiveAlarm = null;
-        _activeRule = null;
-        OnAlarmChanged?.Invoke(null);
+        var top = ActiveAlarm;
+        if (top is null) return Task.CompletedTask;
+        return SnoozeAsync(top);
+    }
+
+    public Task SnoozeAsync(AlarmInfo alarm)
+    {
+        if (alarm.TargetKey is null) return Task.CompletedTask;
+        var now = _now();
+        var label = alarm.TargetLabel ?? alarm.TargetKey;
+        _snoozed[alarm.TargetKey] = new SnoozedTarget(
+            alarm.TargetKey, label, now.AddMinutes(SnoozeMinutes));
+
+        // Remove every active alarm referring to this target, not just the
+        // snoozed one - all CPA fields for "vessels.a" should go quiet
+        // together.
+        var toDrop = _active.Where(kv => kv.Key.TargetKey == alarm.TargetKey)
+                            .Select(kv => kv.Key).ToList();
+        foreach (var key in toDrop)
+        {
+            LogHistory(_active[key].Info, now, DismissReason.UserSnoozed);
+            _active.Remove(key);
+        }
+
+        FireAlarmsChanged();
         return Task.CompletedTask;
+    }
+
+    public Task UnsnoozeAsync(string targetKey)
+    {
+        if (!_snoozed.Remove(targetKey)) return Task.CompletedTask;
+        FireAlarmsChanged();
+        return Task.CompletedTask;
+    }
+
+    private void LogHistory(AlarmInfo info, DateTime at, DismissReason reason)
+    {
+        _history.Insert(0, new DismissedAlarm(info, at, reason));
+        if (_history.Count > MaxDismissedHistory)
+            _history.RemoveAt(_history.Count - 1);
+    }
+
+    private void FireAlarmsChanged()
+    {
+        OnAlarmsChanged?.Invoke();
+
+        // Audio-relevant change = top alarm identity (Title+TargetKey+Severity)
+        // moved. Message-only updates on the same top alarm don't re-arm
+        // the audio (the danger/warn cadence doesn't change).
+        var top = ActiveAlarm;
+        bool topChanged =
+            (_lastTop is null) != (top is null)
+            || (_lastTop is not null && top is not null && (
+                _lastTop.Title != top.Title
+                || _lastTop.TargetKey != top.TargetKey
+                || _lastTop.Severity != top.Severity
+                || _lastTop.Message != top.Message));
+
+        if (topChanged)
+        {
+            _lastTop = top;
+            OnAlarmChanged?.Invoke(top);
+        }
     }
 
     private void SweepExpiredSnoozes(DateTime now)
     {
         if (_snoozed.Count == 0) return;
-        var expired = _snoozed.Where(kv => now >= kv.Value).Select(kv => kv.Key).ToList();
+        var expired = _snoozed.Where(kv => now >= kv.Value.ExpiresAt).Select(kv => kv.Key).ToList();
         foreach (var k in expired) _snoozed.Remove(k);
     }
 
     private bool IsSnoozed(string targetKey)
     {
-        if (!_snoozed.TryGetValue(targetKey, out var until)) return false;
-        if (_now() < until) return true;
+        if (!_snoozed.TryGetValue(targetKey, out var s)) return false;
+        if (_now() < s.ExpiresAt) return true;
         _snoozed.Remove(targetKey);
         return false;
     }
 
-    private void SetAlarm(AlarmInfo next, IAlarmRule rule)
-    {
-        // Same rule + same target + same severity: update the message in
-        // place, don't re-fire OnAlarmChanged for a message-only update so
-        // the audio driver doesn't re-arm on every tick. A *severity*
-        // escalation (e.g. Warn -> Danger) DOES re-fire so the audio
-        // cadence updates - that's a safety-relevant change the captain
-        // needs to hear.
-        if (ActiveAlarm is not null
-            && ActiveAlarm.Title == next.Title
-            && ActiveAlarm.TargetKey == next.TargetKey
-            && ActiveAlarm.Severity == next.Severity)
-        {
-            if (ActiveAlarm.Message != next.Message)
-            {
-                ActiveAlarm = ActiveAlarm with { Message = next.Message };
-                OnAlarmChanged?.Invoke(ActiveAlarm);
-            }
-            return;
-        }
-        ActiveAlarm = next;
-        _activeRule = rule;
-        OnAlarmChanged?.Invoke(ActiveAlarm);
-    }
+    private readonly record struct AlarmKey(string Title, string? TargetKey);
+    private readonly record struct ActiveEntry(AlarmInfo Info, IAlarmRule Rule);
 }

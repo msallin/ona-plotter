@@ -88,11 +88,18 @@ including the single-file C# port of the math, is documented here:
 **[docs/collision-detection.md](docs/collision-detection.md)**.
 
 ### Alarm banner
-A single top banner surfaces the most-urgent alarm. Priorities: SHALLOW (depth
-under threshold) > CPA (vessel projected inside guard zone) > WIND SHIFT (TWD
-shifted more than threshold over 5 min). Audio is orchestrated by `audioAlert.js`
-with danger (1 s) and warn (3 s) cadences. The banner's **Snooze 10 m** button
-silences a specific vessel so other threats still trip the alarm.
+Up to three concurrent alarms stack at the top of the screen, ordered by
+severity (Danger before Warn) then by rule priority (SHALLOW, CPA, WIND
+SHIFT). Only the top banner pulses; lower entries are steady so a busy
+viewport doesn't become a disco. Audio is orchestrated by `audioAlert.js`
+with danger (1 s) and warn (3 s) cadences, driven off the top-of-stack
+identity so a Warn→Danger escalation on the same target re-arms to the
+faster cadence. The banner's **Snooze 10 m** button silences a specific
+vessel so other threats still trip the alarm; snoozed targets show up as
+small chips below the banner with a live countdown, tap to un-silence.
+A **Log** button in the top row opens a drawer of the last 20 alarms
+with their dismissal reason (user-dismissed / user-snoozed / auto-cleared)
+for post-mortem.
 
 ### Optional plugin detection
 `BuddyListApi` probes for

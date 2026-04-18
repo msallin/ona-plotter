@@ -7,11 +7,15 @@ namespace OnaPlotter.Models;
 /// <param name="TargetKey">Stable identifier (AIS context / MMSI) for
 /// per-target snooze. Null for alarms that don't refer to a single vessel
 /// (SHALLOW, WIND SHIFT, ...).</param>
+/// <param name="TargetLabel">Human-readable name for the target ("MV Aurora",
+/// "123456789"). Used for the snoozed-target chip. Falls back to TargetKey
+/// when null.</param>
 public sealed record AlarmInfo(
     string Title,
     string Message,
     AlarmSeverity Severity,
-    string? TargetKey = null);
+    string? TargetKey = null,
+    string? TargetLabel = null);
 
 public enum AlarmSeverity
 {

@@ -227,4 +227,210 @@ public class AlarmManagerTests
         await Assert.That(mgr.ActiveAlarm).IsNull();
         await Assert.That(firesBefore).IsEqualTo(1);
     }
+
+    // --- stack behaviour ------------------------------------------------
+
+    // Synthetic rule for stack tests - lets us fire N alarms on demand
+    // without having to line up real NavData / AIS conditions for each
+    // rule implementation.
+    private sealed class StubRule(string title, int priority, AlarmSeverity sev,
+        string? targetKey = null, bool autoClear = true) : IAlarmRule
+    {
+        public string Title => title;
+        public int Priority => priority;
+        public bool AutoClear => autoClear;
+        public bool ShouldFire { get; set; } = true;
+        public string Message { get; set; } = "msg";
+        public AlarmInfo? Check(AlarmEvaluationContext ctx)
+            => ShouldFire
+                ? new AlarmInfo(title, Message, sev, targetKey, targetKey)
+                : null;
+    }
+
+    private static (AlarmManager mgr, MutableClock clock, FixedSettings settings) NewMgrWith(params IAlarmRule[] rules)
+    {
+        var clock = new MutableClock();
+        var settings = new FixedSettings();
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
+            culture: null)!;
+        return (mgr, clock, settings);
+    }
+
+    [Test]
+    public async Task MultipleRulesFire_StackedBySeverityThenPriority()
+    {
+        var shallow = new StubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var shift = new StubRule("WIND SHIFT", 300, AlarmSeverity.Warn);
+        var (mgr, _, settings) = NewMgrWith(shallow, cpa, shift);
+
+        mgr.Evaluate(Nav(), [], settings);
+
+        // Two Danger first (by priority asc), then Warn.
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(3);
+        await Assert.That(mgr.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
+        await Assert.That(mgr.ActiveAlarms[1].Title).IsEqualTo("CPA");
+        await Assert.That(mgr.ActiveAlarms[2].Title).IsEqualTo("WIND SHIFT");
+        await Assert.That(mgr.ActiveAlarm!.Title).IsEqualTo("SHALLOW");
+    }
+
+    [Test]
+    public async Task DismissSpecific_RemovesOneKeepsOthers()
+    {
+        var a = new StubRule("A", 100, AlarmSeverity.Danger);
+        var b = new StubRule("B", 200, AlarmSeverity.Warn);
+        var (mgr, _, settings) = NewMgrWith(a, b);
+        mgr.Evaluate(Nav(), [], settings);
+
+        var toDismiss = mgr.ActiveAlarms.First(x => x.Title == "A");
+        await mgr.DismissAsync(toDismiss);
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(mgr.ActiveAlarms[0].Title).IsEqualTo("B");
+    }
+
+    [Test]
+    public async Task DismissAll_LogsEachAsUserDismissed()
+    {
+        var a = new StubRule("A", 100, AlarmSeverity.Danger);
+        var b = new StubRule("B", 200, AlarmSeverity.Warn);
+        var (mgr, _, settings) = NewMgrWith(a, b);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await mgr.DismissAsync();
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(mgr.DismissedHistory.Count).IsEqualTo(2);
+        await Assert.That(mgr.DismissedHistory.All(d => d.Reason == DismissReason.UserDismissed)).IsTrue();
+    }
+
+    [Test]
+    public async Task AutoClear_LogsAsAutoCleared()
+    {
+        var a = new StubRule("A", 100, AlarmSeverity.Danger, autoClear: true);
+        var (mgr, clock, settings) = NewMgrWith(a);
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+
+        a.ShouldFire = false;
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(mgr.DismissedHistory.Count).IsEqualTo(1);
+        await Assert.That(mgr.DismissedHistory[0].Reason).IsEqualTo(DismissReason.AutoCleared);
+    }
+
+    [Test]
+    public async Task LatchingRule_StaysActiveWhenRuleStopsFiring()
+    {
+        var latched = new StubRule("LATCH", 100, AlarmSeverity.Warn, autoClear: false);
+        var (mgr, clock, settings) = NewMgrWith(latched);
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+
+        latched.ShouldFire = false;
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(), [], settings);
+
+        // Latched: still active until the user dismisses.
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(mgr.DismissedHistory.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Snooze_AddsToSnoozedTargetsAndDropsActive()
+    {
+        var a = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, _, settings) = NewMgrWith(a);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await mgr.SnoozeActiveAsync();
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(1);
+        await Assert.That(mgr.SnoozedTargets[0].TargetKey).IsEqualTo("vessels.x");
+        await Assert.That(mgr.DismissedHistory[0].Reason).IsEqualTo(DismissReason.UserSnoozed);
+    }
+
+    [Test]
+    public async Task Unsnooze_RemovesAndAllowsRefire()
+    {
+        var a = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, clock, settings) = NewMgrWith(a);
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.SnoozeActiveAsync();
+
+        await mgr.UnsnoozeAsync("vessels.x");
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task StackCap_DropsLowestPriorityWhenExceeded()
+    {
+        // 4 rules all firing simultaneously; MaxActiveAlarms=3 means the
+        // lowest-priority (WARN priority 400) must be dropped from the
+        // public list.
+        var a = new StubRule("A", 100, AlarmSeverity.Danger);
+        var b = new StubRule("B", 200, AlarmSeverity.Danger);
+        var c = new StubRule("C", 300, AlarmSeverity.Warn);
+        var d = new StubRule("D", 400, AlarmSeverity.Warn);
+        var (mgr, _, settings) = NewMgrWith(a, b, c, d);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(AlarmManager.MaxActiveAlarms);
+        await Assert.That(mgr.ActiveAlarms.Select(x => x.Title)).IsEquivalentTo(["A", "B", "C"]);
+    }
+
+    [Test]
+    public async Task History_RingBufferCapsAtMax()
+    {
+        var a = new StubRule("A", 100, AlarmSeverity.Danger);
+        var (mgr, clock, settings) = NewMgrWith(a);
+
+        // Fire-clear-fire-clear until we exceed the cap.
+        for (int i = 0; i < AlarmManager.MaxDismissedHistory + 5; i++)
+        {
+            a.ShouldFire = true;
+            clock.Now = clock.Now.AddSeconds(2);
+            mgr.Evaluate(Nav(), [], settings);
+            a.ShouldFire = false;
+            clock.Now = clock.Now.AddSeconds(2);
+            mgr.Evaluate(Nav(), [], settings);
+        }
+
+        await Assert.That(mgr.DismissedHistory.Count).IsEqualTo(AlarmManager.MaxDismissedHistory);
+    }
+
+    [Test]
+    public async Task OnAlarmChanged_FiresOnlyOnTopChange()
+    {
+        // Two dangers active; dismissing the NON-top one should not
+        // re-arm audio (top stays the same). Dismissing the top does.
+        var top = new StubRule("TOP", 100, AlarmSeverity.Danger);
+        var other = new StubRule("OTHER", 200, AlarmSeverity.Danger);
+        var (mgr, _, settings) = NewMgrWith(top, other);
+        mgr.Evaluate(Nav(), [], settings);
+
+        int fires = 0;
+        mgr.OnAlarmChanged += _ => fires++;
+
+        var otherAlarm = mgr.ActiveAlarms.First(x => x.Title == "OTHER");
+        await mgr.DismissAsync(otherAlarm);
+        await Assert.That(fires).IsEqualTo(0);
+
+        var topAlarm = mgr.ActiveAlarms.First(x => x.Title == "TOP");
+        await mgr.DismissAsync(topAlarm);
+        await Assert.That(fires).IsEqualTo(1);
+    }
 }

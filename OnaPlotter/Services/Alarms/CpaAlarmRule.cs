@@ -55,7 +55,8 @@ public sealed class CpaAlarmRule : IAlarmRule
                 Title,
                 $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
                 AlarmSeverity.Danger,
-                v.Context);
+                v.Context,
+                name);
         }
         return null;
     }

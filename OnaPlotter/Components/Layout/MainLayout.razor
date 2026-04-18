@@ -21,6 +21,18 @@
                 <span class="connection-dot @DotClass"></span>
                 @ConnectionLabel
             </span>
+
+            @{
+                var historyCount = Alarms.DismissedHistory.Count;
+            }
+            @if (historyCount > 0 || Alarms.SnoozedTargets.Count > 0)
+            {
+                <button class="alarm-log-btn" @onclick="ToggleAlarmLog"
+                        title="Alarm log (@historyCount recent)">
+                    Log @historyCount
+                </button>
+            }
+
             <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ToggleNightMode"
                     style="font-size:0.75rem;">
                 @(Settings.NightMode ? "Day" : "Night")
@@ -28,20 +40,71 @@
         </div>
 
         @{
-            var alarm = Alarms.ActiveAlarm;
+            var activeAlarms = Alarms.ActiveAlarms;
+            var snoozed = Alarms.SnoozedTargets;
         }
-        @if (alarm is not null)
+        @if (activeAlarms.Count > 0)
         {
-            <div class="alarm-banner @(alarm.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")">
-                <div class="alarm-body" @onclick="DismissAlarm">
-                    <strong>@alarm.Title</strong> @alarm.Message
-                </div>
-                @if (alarm.TargetKey is not null)
+            <div class="alarm-banner-stack">
+                @foreach (var a in activeAlarms)
                 {
-                    <button class="alarm-snooze" @onclick="SnoozeActiveAlarm"
-                            title="Silence this target for @Alarms.SnoozeDurationMinutes minutes">
-                        Snooze @Alarms.SnoozeDurationMinutes m
+                    <div class="alarm-banner @(a.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")"
+                         @key="(a.Title, a.TargetKey)">
+                        <div class="alarm-body" @onclick="() => DismissOne(a)">
+                            <strong>@a.Title</strong> @a.Message
+                        </div>
+                        @if (a.TargetKey is not null)
+                        {
+                            <button class="alarm-snooze" @onclick="() => SnoozeOne(a)" @onclick:stopPropagation
+                                    title="Silence this target for @Alarms.SnoozeDurationMinutes minutes">
+                                Snooze @Alarms.SnoozeDurationMinutes m
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (snoozed.Count > 0)
+        {
+            <div class="snooze-chips">
+                @foreach (var s in snoozed)
+                {
+                    <button class="snooze-chip" @onclick="() => UnsnoozeOne(s.TargetKey)" @key="s.TargetKey"
+                            title="Un-snooze @s.Label">
+                        <span class="snooze-chip-label">Snoozed: @s.Label</span>
+                        <span class="snooze-chip-time">@FormatRemaining(s.ExpiresAt)</span>
+                        <span class="snooze-chip-close">x</span>
                     </button>
+                }
+            </div>
+        }
+
+        @if (alarmLogOpen)
+        {
+            <div class="alarm-log-panel" @onclick:stopPropagation>
+                <div class="alarm-log-header">
+                    <strong>Alarm log</strong>
+                    <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>
+                </div>
+                @if (Alarms.DismissedHistory.Count == 0)
+                {
+                    <div class="alarm-log-empty">No recent alarms.</div>
+                }
+                else
+                {
+                    <ul class="alarm-log-list">
+                        @foreach (var d in Alarms.DismissedHistory)
+                        {
+                            <li class="alarm-log-item alarm-log-@d.Reason.ToString().ToLowerInvariant()"
+                                @key="(d.Alarm.Title, d.Alarm.TargetKey, d.At)">
+                                <span class="alarm-log-time">@d.At.ToLocalTime().ToString("HH:mm:ss")</span>
+                                <span class="alarm-log-title">@d.Alarm.Title</span>
+                                <span class="alarm-log-reason">@FormatReason(d.Reason)</span>
+                                <span class="alarm-log-msg">@d.Alarm.Message</span>
+                            </li>
+                        }
+                    </ul>
                 }
             </div>
         }
@@ -76,9 +139,10 @@
 @code {
     private IJSObjectReference? audioModule;
     private System.Threading.Timer? staleCheckTimer;
+    private System.Threading.Timer? snoozeCountdownTimer;
     private volatile bool wasDisconnected;
     private volatile bool wasStale;
-    private bool alarmAudioActive;
+    private bool alarmLogOpen;
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -103,9 +167,15 @@
         Toasts.OnChanged += HandleToastsChanged;
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
+        Alarms.OnAlarmsChanged += HandleAlarmsChanged;
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
+        // Snoozed-chip countdown refresh: updates the "7m" label each
+        // minute. Separate from the stale check to keep the two concerns
+        // independent.
+        snoozeCountdownTimer = new System.Threading.Timer(
+            _ => _ = RefreshSnoozeCountdownAsync(), null, 60_000, 60_000);
     }
 
     private async void HandleSettingsChanged()
@@ -120,24 +190,34 @@
         catch (ObjectDisposedException) { }
     }
 
+    private async void HandleAlarmsChanged()
+    {
+        // Any alarm-state change (stack, snooze list, history) redraws
+        // the UI. Audio is handled by HandleAlarmChanged which only fires
+        // when the TOP alarm transitions.
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
     private async void HandleAlarmChanged(AlarmInfo? active)
     {
         // `active` is a snapshot captured at the moment the event fired, so
         // the audio decision is based on the transition that actually
-        // happened - not on whatever ActiveAlarm happens to be after the
-        // InvokeAsync await resolves.
+        // happened - not on whatever the top alarm happens to be after
+        // the InvokeAsync await resolves.
         try
         {
             await InvokeAsync(async () =>
             {
                 if (active is null)
                 {
-                    alarmAudioActive = false;
                     await StopAlarmAsync();
                 }
-                else if (!alarmAudioActive && audioModule is not null)
+                else if (audioModule is not null)
                 {
-                    alarmAudioActive = true;
+                    // Re-arm on every top transition (including severity
+                    // escalation within the same target) so the Danger
+                    // cadence supersedes the Warn cadence audibly.
                     int cadence = active.Severity == AlarmSeverity.Danger ? 1000 : 3000;
                     try { await audioModule.InvokeVoidAsync("startAlarm", cadence); }
                     catch (JSDisconnectedException) { }
@@ -152,6 +232,11 @@
     {
         await Settings.SetNightModeAsync(!Settings.NightMode);
         StateHasChanged();
+    }
+
+    private void ToggleAlarmLog()
+    {
+        alarmLogOpen = !alarmLogOpen;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -194,10 +279,9 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async Task DismissAlarm()
-    {
-        await Alarms.DismissAsync();
-    }
+    private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);
+    private async Task SnoozeOne(AlarmInfo alarm) => await Alarms.SnoozeAsync(alarm);
+    private async Task UnsnoozeOne(string targetKey) => await Alarms.UnsnoozeAsync(targetKey);
 
     private async Task RunToastAction(ToastService.Toast t)
     {
@@ -205,11 +289,6 @@
         if (t.Action is null) return;
         try { await t.Action(); }
         catch (Exception ex) { Toasts.Error($"Undo failed: {ex.Message}"); }
-    }
-
-    private async Task SnoozeActiveAlarm()
-    {
-        await Alarms.SnoozeActiveAsync();
     }
 
     private async Task CheckStaleAsync()
@@ -224,6 +303,29 @@
         }
         catch (ObjectDisposedException) { }
     }
+
+    private async Task RefreshSnoozeCountdownAsync()
+    {
+        if (Alarms.SnoozedTargets.Count == 0) return;
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private static string FormatRemaining(DateTime expiresAt)
+    {
+        var remaining = expiresAt - DateTime.UtcNow;
+        if (remaining.TotalSeconds <= 0) return "0m";
+        int minutes = (int)Math.Ceiling(remaining.TotalMinutes);
+        return $"{minutes}m";
+    }
+
+    private static string FormatReason(DismissReason reason) => reason switch
+    {
+        DismissReason.UserDismissed => "dismissed",
+        DismissReason.UserSnoozed => "snoozed",
+        DismissReason.AutoCleared => "cleared",
+        _ => reason.ToString(),
+    };
 
     private async Task UpdateConnectionAlarmAsync()
     {
@@ -270,7 +372,9 @@
         Toasts.OnChanged -= HandleToastsChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;
+        Alarms.OnAlarmsChanged -= HandleAlarmsChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
+        if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
         if (audioModule is not null)
         {
             try

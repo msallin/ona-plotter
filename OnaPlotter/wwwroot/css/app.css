@@ -851,7 +851,7 @@ html {
 }
 
 /* Shift the chip down when an alarm banner is shown so it doesn't collide. */
-main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
+main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 
 /* ===== Keyboard Shortcuts Overlay ===== */
 
@@ -979,12 +979,17 @@ main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
 
 /* ===== Alarm Banner ===== */
 
-.alarm-banner {
+/* Stack container - fixed-positions itself; children stack vertically. */
+.alarm-banner-stack {
     position: fixed;
     top: 3rem; /* below the sticky top bar */
     left: 0;
     right: 0;
     z-index: var(--z-modal);
+    display: flex;
+    flex-direction: column;
+}
+.alarm-banner {
     padding: 10px 16px;
     font-size: 0.9rem;
     text-align: center;
@@ -994,6 +999,14 @@ main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
     align-items: center;
     justify-content: center;
     gap: 12px;
+}
+/* Within the stack, only the top alarm pulses. Lower entries stay
+   steady so the viewport isn't a disco. */
+.alarm-banner-stack > .alarm-banner:not(:first-child) {
+    animation: none;
+    opacity: 0.9;
+    font-size: 0.82rem;
+    padding: 6px 16px;
 }
 .alarm-body {
     flex: 1;
@@ -1019,13 +1032,15 @@ main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
     .alarm-banner { left: 220px; } /* clear the sidebar */
 }
 
-/* Push top HUD panels below the alarm banner when it's visible. */
-main:has(.alarm-banner) .hud-top-right,
-main:has(.alarm-banner) .hud-route,
-main:has(.alarm-banner) .chart-quick-bar {
+/* Push top HUD panels below the alarm banner when it's visible. The
+   nudge is sized for the top (pulsing) banner; additional stacked
+   banners are thinner and acceptable to overlap the HUD by a few px. */
+main:has(.alarm-banner-stack) .hud-top-right,
+main:has(.alarm-banner-stack) .hud-route,
+main:has(.alarm-banner-stack) .chart-quick-bar {
     top: calc(12px + 44px);
 }
-main:has(.alarm-banner) .hud-top-left {
+main:has(.alarm-banner-stack) .hud-top-left {
     top: calc(44px + 44px);
 }
 
@@ -1045,6 +1060,121 @@ main:has(.alarm-banner) .hud-top-left {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
 }
+
+/* ===== Snoozed-target chips ===== */
+/* Small row of pills under the banner-stack showing who is silenced
+   and how long remains; tap to un-snooze. Intentionally muted (no
+   flash, no vivid colour) so they don't compete with the active
+   banner. */
+.snooze-chips {
+    position: fixed;
+    top: calc(3rem + 48px);
+    left: 0;
+    right: 0;
+    z-index: calc(var(--z-modal) - 1);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 4px 12px;
+    pointer-events: none; /* chips themselves re-enable below */
+}
+.snooze-chip {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(32, 32, 40, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #cbd5e1;
+    font-size: 0.72rem;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    -webkit-tap-highlight-color: transparent;
+}
+.snooze-chip:hover { background: rgba(48, 48, 56, 0.95); }
+.snooze-chip-label { font-weight: 500; }
+.snooze-chip-time { color: #94a3b8; font-variant-numeric: tabular-nums; }
+.snooze-chip-close { color: #94a3b8; font-size: 0.9em; margin-left: 2px; }
+@media (min-width: 641px) {
+    .snooze-chips { left: 220px; }
+}
+@media (pointer: coarse) {
+    .snooze-chip { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
+}
+
+/* ===== Alarm log button + dropdown panel ===== */
+.alarm-log-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #cbd5e1;
+    padding: 2px 10px;
+    font-size: 0.72rem;
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    margin-left: 12px;
+}
+.alarm-log-btn:hover { background: rgba(255, 255, 255, 0.14); }
+@media (pointer: coarse) {
+    .alarm-log-btn { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
+}
+
+.alarm-log-panel {
+    position: fixed;
+    top: 3rem;
+    right: 12px;
+    width: min(360px, calc(100vw - 24px));
+    max-height: 60vh;
+    overflow-y: auto;
+    z-index: var(--z-modal);
+    background: rgba(16, 20, 28, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: #e2e8f0;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+}
+.alarm-log-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.alarm-log-close {
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 2px 8px;
+}
+.alarm-log-close:hover { color: #f1f5f9; }
+.alarm-log-empty { padding: 20px; color: #64748b; text-align: center; font-size: 0.85rem; }
+.alarm-log-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.alarm-log-item {
+    display: grid;
+    grid-template-columns: auto auto auto 1fr;
+    gap: 8px;
+    padding: 8px 14px;
+    font-size: 0.78rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    align-items: baseline;
+}
+.alarm-log-item:last-child { border-bottom: none; }
+.alarm-log-time { color: #64748b; font-variant-numeric: tabular-nums; font-size: 0.72rem; }
+.alarm-log-title { color: #cbd5e1; font-weight: 600; }
+.alarm-log-reason { color: #94a3b8; font-size: 0.72rem; }
+.alarm-log-msg { color: #94a3b8; }
+.alarm-log-userdismissed .alarm-log-title { color: #f87171; }
+.alarm-log-usersnoozed .alarm-log-title { color: #fbbf24; }
+.alarm-log-autocleared .alarm-log-title { color: #4ade80; }
 
 /* ===== Global Night Mode ===== */
 /* Red-shifted dark mode for all pages (preserves night vision). */
