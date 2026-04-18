@@ -1572,18 +1572,42 @@ export function addNoteMarker(id, lat, lon, title, description) {
     // Wire up the delete button when the popup opens. We query within the
     // popup DOM so an id collision with something else on the page can't
     // hijack the click.
-    marker.on('popupopen', (ev) => {
-        const el = ev.popup.getElement();
-        if (!el) return;
-        const btn = el.querySelector('.note-delete-btn');
-        if (btn && !btn._wired) {
-            btn._wired = true;
-            btn.addEventListener('click', () => {
-                if (dotNetRef) dotNetRef.invokeMethodAsync('DeleteNote', id);
-            });
-        }
-    });
+    marker.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.note-delete-btn', 'DeleteNote', id));
     noteMarkers[id] = marker;
+}
+
+// Two-step confirm wiring for a popup's delete button. First click
+// swaps the label to "Really delete?" and adds a `.confirming` class
+// for the red-warning styling; second click within 3 seconds triggers
+// the actual server delete via the C# [JSInvokable] method. A passing
+// tap in rough weather is the nightmare case; the confirm-and-timeout
+// pattern matches how native iOS/Android apps guard destructive
+// actions without pulling up a full confirm dialog.
+function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector(selector);
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    const originalLabel = btn.textContent;
+    let confirmTimer = null;
+    const reset = () => {
+        btn.classList.remove('confirming');
+        btn.textContent = originalLabel;
+        if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
+    };
+    btn.addEventListener('click', () => {
+        if (!btn.classList.contains('confirming')) {
+            btn.classList.add('confirming');
+            btn.textContent = 'Really delete?';
+            confirmTimer = setTimeout(reset, 3000);
+            return;
+        }
+        reset();
+        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id);
+    });
+    // Closing the popup resets confirm state so re-opening starts fresh.
+    popup.once('popupclose', reset);
 }
 
 function buildNotePopupHtml(id, title, description) {
@@ -1655,17 +1679,7 @@ export function addRegion(id, rings, title, description) {
             opacity: 0.85,
         });
         poly.bindPopup(popupHtml, { className: 'region-popup', maxWidth: 280 });
-        poly.on('popupopen', (ev) => {
-            const el = ev.popup.getElement();
-            if (!el) return;
-            const btn = el.querySelector('.region-delete-btn');
-            if (btn && !btn._wired) {
-                btn._wired = true;
-                btn.addEventListener('click', () => {
-                    if (dotNetRef) dotNetRef.invokeMethodAsync('DeleteRegion', id);
-                });
-            }
-        });
+        poly.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.region-delete-btn', 'DeleteRegion', id));
         group.addLayer(poly);
     }
     group.addTo(map);

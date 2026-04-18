@@ -353,14 +353,46 @@
         await Polar.InitializeAsync();
     }
 
+    // SignalK can push position / speed / wind updates at 10+ Hz on a
+    // well-instrumented boat. The Dashboard has no moving parts that
+    // benefit from rendering that fast; 4 Hz is enough for every tile
+    // to feel live without burning the CPU on StateHasChanged. We use
+    // leading-edge + trailing-edge throttling: fire immediately on the
+    // first delta after idle, queue at most one trailing render so a
+    // burst ending mid-window still updates the UI cleanly.
+    private static readonly TimeSpan DashboardMinRenderInterval = TimeSpan.FromMilliseconds(250);
+    private DateTime _lastRender = DateTime.MinValue;
+    private System.Threading.Timer? _trailingRenderTimer;
+
     private async void HandleDataChanged()
     {
-        try { await InvokeAsync(StateHasChanged); }
+        try
+        {
+            var now = DateTime.UtcNow;
+            var elapsed = now - _lastRender;
+            if (elapsed >= DashboardMinRenderInterval)
+            {
+                _lastRender = now;
+                await InvokeAsync(StateHasChanged);
+            }
+            else if (_trailingRenderTimer is null)
+            {
+                int delayMs = (int)(DashboardMinRenderInterval - elapsed).TotalMilliseconds;
+                _trailingRenderTimer = new System.Threading.Timer(_ =>
+                {
+                    _trailingRenderTimer?.Dispose();
+                    _trailingRenderTimer = null;
+                    _lastRender = DateTime.UtcNow;
+                    _ = InvokeAsync(StateHasChanged);
+                }, null, delayMs, System.Threading.Timeout.Infinite);
+            }
+        }
         catch (ObjectDisposedException) { }
     }
 
     public void Dispose()
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
+        _trailingRenderTimer?.Dispose();
     }
 }

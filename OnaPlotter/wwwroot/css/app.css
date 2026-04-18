@@ -2267,6 +2267,20 @@ main:has(.alarm-banner-stack) .hud-top-left {
 @media (pointer: coarse) {
     .note-delete-btn { min-height: 36px; padding: 8px 14px; font-size: 0.85rem; }
 }
+/* First-tap state on a resource delete button. Full red fill so the
+   confirm intent is obvious; second tap within 3s actually deletes. */
+.note-delete-btn.confirming,
+.region-delete-btn.confirming {
+    background: rgba(239, 68, 68, 0.85);
+    color: #fff;
+    border-color: #ef4444;
+    font-weight: 600;
+    animation: confirm-pulse 0.8s ease-in-out infinite;
+}
+@keyframes confirm-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.75; }
+}
 
 /* Region radius chips in the Add Region dialog. Mirrors the route-name
    input family so the dialog reads as the same visual component. */
