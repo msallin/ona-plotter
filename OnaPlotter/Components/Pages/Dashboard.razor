@@ -150,10 +150,16 @@
     </div>
 </div>
 
-@* === Tide (conditional: only when a tide plugin publishes data) === *@
+@* === Tide (conditional: only when a SignalK tide plugin publishes data) === *@
 @if (HasTideData)
 {
-    <h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">Tide</h6>
+    <h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">
+        Tide
+        @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
+        {
+            <span class="tide-station-name">@Data.TideStationName</span>
+        }
+    </h6>
     <div class="row g-3 mb-4">
         @if (Data.TideHeightNow is double hNow)
         {
@@ -339,6 +345,7 @@
         int minutes = (int)(span.TotalMinutes - hours * 60);
         return minutes == 0 ? $"in {hours}h" : $"in {hours}h{minutes:D2}";
     }
+
 
     protected override async Task OnInitializedAsync()
     {

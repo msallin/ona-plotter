@@ -60,6 +60,7 @@ public sealed class NavigationData
     public double? TideHeightLow { get; private set; }
     public DateTime? TideTimeHigh { get; private set; }
     public DateTime? TideTimeLow { get; private set; }
+    public string? TideStationName { get; private set; }
 
     /// <summary>
     /// Applies a single SignalK path/value pair to the navigation state.
@@ -263,6 +264,9 @@ public sealed class NavigationData
                     break;
                 case "environment.tide.timeLow":
                     TideTimeLow = ParseUtc(value);
+                    break;
+                case "environment.tide.stationName":
+                    TideStationName = value;
                     break;
                 default:
                     return false;

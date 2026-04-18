@@ -268,4 +268,12 @@ public class NavigationDataTests
         nav.ApplyString("environment.tide.timeHigh", "not-a-date");
         await Assert.That(nav.TideTimeHigh).IsNull();
     }
+
+    [Test]
+    public async Task ApplyString_TideStationName_SetsProperty()
+    {
+        var nav = new NavigationData();
+        nav.ApplyString("environment.tide.stationName", "Lerwick");
+        await Assert.That(nav.TideStationName).IsEqualTo("Lerwick");
+    }
 }

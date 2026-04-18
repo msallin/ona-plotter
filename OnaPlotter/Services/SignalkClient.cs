@@ -77,14 +77,15 @@ public sealed class SignalkClient : IAsyncDisposable
         // Tidal current
         "environment.current.setTrue",
         "environment.current.drift",
-        // Tide height + next extremes (published by mxtide / signalk-tides-api /
-        // similar plugins). Subscriptions are no-ops when no plugin is
+        // Tide height + next extremes (published by openwatersio/signalk-tides
+        // and similar plugins). Subscriptions are no-ops when no plugin is
         // present -- the paths just never emit.
         "environment.tide.heightNow",
         "environment.tide.heightHigh",
         "environment.tide.heightLow",
         "environment.tide.timeHigh",
-        "environment.tide.timeLow"
+        "environment.tide.timeLow",
+        "environment.tide.stationName"
     ];
 
     private static readonly string[] AisPaths =

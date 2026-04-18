@@ -1751,6 +1751,17 @@ main:has(.alarm-banner-stack) .hud-top-left {
     background: rgba(30, 5, 5, 0.92);
 }
 
+/* Station name under the Tide heading when a plugin publishes it.
+   Small and muted so it reads as metadata, not as the value. */
+.tide-station-name {
+    margin-left: 8px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--sk-text-muted);
+    letter-spacing: normal;
+    text-transform: none;
+}
+
 /* ===== Tide card =====
    Conditional: only rendered when the SignalK server actually publishes
    tide data (via mxtide / signalk-tides-api / similar). Stacks above the

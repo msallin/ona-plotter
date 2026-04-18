@@ -70,7 +70,13 @@
 {
     <div class="hud hud-tide">
         <div class="hud-panel">
-            <div class="hud-label">Tide</div>
+            <div class="hud-label">
+                Tide
+                @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
+                {
+                    <span class="tide-station-name">@Data.TideStationName</span>
+                }
+            </div>
             @if (Data.TideHeightNow is double h)
             {
                 <div class="hud-value tide-height" title="Height above chart datum">
