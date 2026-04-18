@@ -125,23 +125,52 @@
 }
 
 @* === Windplot: TWD over time to identify wind shifts === *@
+@{
+    // Sliding window view of the TWD history. The buffer itself always
+    // holds MaxWindowMinutes worth of samples; what the user sees is a
+    // trailing slice selected by the segmented control. Short windows
+    // (15m) are great for spotting a pending shift mid-race; long
+    // windows (3h) are useful for a sunset wind-clocking pattern on a
+    // cruise.
+    var cutoff = DateTime.UtcNow.AddMinutes(-windowMinutes);
+    var visible = twdHistory.Where(s => s.Time >= cutoff).ToList();
+}
+
 @if (twdHistory.Count > 1)
 {
-    <h4 class="mt-4">Wind Direction (TWD) History</h4>
-    <p class="text-muted" style="font-size:0.8rem;">Last @WindplotMinutes minutes. Green line = mean TWD.</p>
+    <div class="mt-4 d-flex align-items-baseline gap-3 flex-wrap">
+        <h4 style="margin:0;">Wind Direction (TWD) History</h4>
+        <div class="btn-group" role="group" aria-label="Window">
+            @foreach (var (mins, label) in WindowChoices)
+            {
+                <input type="radio" class="btn-check" name="twd-window"
+                       id="@($"twd-win-{mins}")" autocomplete="off"
+                       checked="@(windowMinutes == mins)"
+                       @onchange="() => windowMinutes = mins" />
+                <label class="btn btn-outline-secondary btn-sm" for="@($"twd-win-{mins}")">@label</label>
+            }
+        </div>
+    </div>
+    <p class="text-muted" style="font-size:0.8rem;">
+        Last @windowMinutes min (@visible.Count samples). Green line = mean TWD.
+    </p>
+}
+
+@if (visible.Count > 1)
+{
     <svg viewBox="0 0 @WpWidth @WpHeight"
          style="max-width:@(WpWidth)px; width:100%; height:auto; background: var(--sk-surface); border-radius: 6px;">
         @* Y-axis labels (degrees) *@
         @{
-            double twdMin = twdHistory.Min(t => t.Deg);
-            double twdMax = twdHistory.Max(t => t.Deg);
+            double twdMin = visible.Min(t => t.Deg);
+            double twdMax = visible.Max(t => t.Deg);
             double twdRange = Math.Max(twdMax - twdMin, 20); // min 20 degree range
             double twdMid = (twdMin + twdMax) / 2;
             twdMin = twdMid - twdRange / 2 - 5;
             twdMax = twdMid + twdRange / 2 + 5;
-            double meanTwd = twdHistory.Average(t => t.Deg);
-            DateTime oldest = twdHistory[0].Time;
-            DateTime newest = twdHistory[^1].Time;
+            double meanTwd = visible.Average(t => t.Deg);
+            DateTime oldest = visible[0].Time;
+            DateTime newest = visible[^1].Time;
             double timeSpan = Math.Max((newest - oldest).TotalSeconds, 1);
         }
 
@@ -163,7 +192,7 @@
 
         @* TWD data line *@
         <polyline fill="none" stroke="#3b82f6" stroke-width="1.5" opacity="0.9"
-                  points="@TwdPolylinePoints(twdMin, twdMax, oldest, timeSpan)" />
+                  points="@TwdPolylinePoints(visible, twdMin, twdMax, oldest, timeSpan)" />
 
         @* Time axis labels *@
         @for (int i = 0; i <= 3; i++)
@@ -193,16 +222,31 @@
     private (double Angle, double SpeedKn)? currentWind;
     private int lastProcessedCount;
 
-    // Windplot: TWD over time for shift detection.
-    // Capped at MaxTwdSamples to prevent unbounded growth.
-    private const int WindplotMinutes = 30;
-    private const int MaxTwdSamples = 1800; // 30 min at 1 sample/sec
+    // Windplot: TWD over time for shift detection. The buffer is sized
+    // for the longest window offered; the user picks a trailing slice
+    // of it via WindowChoices below. Hard cap MaxTwdSamples keeps
+    // memory bounded even if we're fed a 10Hz TWD stream.
+    private const int MaxWindowMinutes = 180;
+    private const int MaxTwdSamples = 10800;   // 3h at 1 sample/sec; headroom for faster rates
     private const int WpWidth = 420;
     private const int WpHeight = 180;
     private const int WpPad = 40;
     private const int WpPlotW = WpWidth - WpPad - 10;
     private const int WpPlotH = WpHeight - WpPad - 20;
     private List<TwdSample> twdHistory = [];
+
+    // User-selectable trailing window. Defaults to 30 min (unchanged
+    // from the previous fixed behaviour). 15 min for racers spotting
+    // a shift mid-leg; 1 h / 3 h for cruisers watching a sunset clock.
+    private int windowMinutes = 30;
+
+    private static readonly (int minutes, string label)[] WindowChoices =
+    [
+        (15,  "15m"),
+        (30,  "30m"),
+        (60,  "1h"),
+        (180, "3h"),
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -254,8 +298,9 @@
             double twdDeg = data.WindDirectionTrue.Value * 180.0 / Math.PI;
             if (twdDeg < 0) twdDeg += 360;
             twdHistory.Add(new TwdSample(DateTime.UtcNow, twdDeg));
-            // Prune: time-based and hard cap.
-            var cutoff = DateTime.UtcNow.AddMinutes(-WindplotMinutes);
+            // Prune: retain up to the maximum supported window; the
+            // visible slice picks its own cutoff.
+            var cutoff = DateTime.UtcNow.AddMinutes(-MaxWindowMinutes);
             twdHistory.RemoveAll(s => s.Time < cutoff);
             if (twdHistory.Count > MaxTwdSamples)
                 twdHistory.RemoveRange(0, twdHistory.Count - MaxTwdSamples);
@@ -326,10 +371,11 @@
 
     private static string F(double v) => v.ToString("F1");
 
-    private string TwdPolylinePoints(double twdMin, double twdMax, DateTime oldest, double timeSpanSecs)
+    private string TwdPolylinePoints(IReadOnlyList<TwdSample> samples,
+        double twdMin, double twdMax, DateTime oldest, double timeSpanSecs)
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var s in twdHistory)
+        foreach (var s in samples)
         {
             double t = (s.Time - oldest).TotalSeconds;
             double x = WpPad + WpPlotW * (t / timeSpanSecs);
