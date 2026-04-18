@@ -140,4 +140,82 @@ public class IsochroneRouterTests
         await Assert.That(Math.Abs(route.Path[^1].Latitude - 10.05)).IsLessThan(0.001);
         await Assert.That(Math.Abs(route.Path[^1].Longitude - 20.05)).IsLessThan(0.001);
     }
+
+    // --- Tidal current ----------------------------------------------
+
+    /// <summary>Constant current factory. SetDeg is the direction the
+    /// water flows TOWARD (nautical convention).</summary>
+    private static Func<double, double, DateTime, CurrentSample?> ConstantCurrent(double setDeg, double spdKn)
+        => (_, _, t) => new CurrentSample(t, setDeg, spdKn);
+
+    [Test]
+    public async Task Current_NullDelegate_MatchesNoCurrentArgument()
+    {
+        // Passing `current: null` explicitly must produce the exact same
+        // route as omitting the parameter. Prevents someone later
+        // accidentally making null mean "no current sample available"
+        // vs "no current at all".
+        var start = DateTime.UtcNow;
+        var opts = new IsochroneRouter.Options(StepMinutes: 15, MaxSteps: 16, ReachNauticalMiles: 0.3);
+
+        var a = IsochroneRouter.Route(0, 0, start, -3.0 / NmPerDegLat, 0,
+            ConstantWind(0, 15), SimplePolar, options: opts);
+        var b = IsochroneRouter.Route(0, 0, start, -3.0 / NmPerDegLat, 0,
+            ConstantWind(0, 15), SimplePolar, current: null, options: opts);
+
+        await Assert.That(a).IsNotNull();
+        await Assert.That(b).IsNotNull();
+        await Assert.That(a!.Duration).IsEqualTo(b!.Duration);
+        await Assert.That(a.TotalNauticalMiles).IsEqualTo(b.TotalNauticalMiles);
+    }
+
+    [Test]
+    public async Task Current_DelegateIsInvokedDuringExpansion()
+    {
+        // Integration: when a current delegate is provided, the expansion
+        // step must actually query it. Direct check; avoids coupling the
+        // test to pruning/bearing-step details that don't meaningfully
+        // affect whether the feature works.
+        int callCount = 0;
+        Func<double, double, DateTime, CurrentSample?> counting = (lat, lon, t) =>
+        {
+            callCount++;
+            return new CurrentSample(t, 90, 2);
+        };
+        var start = DateTime.UtcNow;
+        var route = IsochroneRouter.Route(
+            0, 0, start, -3.0 / NmPerDegLat, 0,
+            ConstantWind(0, 15), SimplePolar,
+            current: counting,
+            options: new IsochroneRouter.Options(StepMinutes: 10, MaxSteps: 24, ReachNauticalMiles: 0.3));
+
+        await Assert.That(route).IsNotNull();
+        await Assert.That(callCount).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task Current_DifferentDrift_DifferentRouteGeometry()
+    {
+        // A large current vector (5 kn east) must shift the expanded
+        // frontier positions, which the Backtrack preserves. The two
+        // routes should not be bitwise identical.
+        var start = DateTime.UtcNow;
+        var opts = new IsochroneRouter.Options(StepMinutes: 10, MaxSteps: 24, ReachNauticalMiles: 0.3);
+
+        var noCurrent = IsochroneRouter.Route(0, 0, start, -3.0 / NmPerDegLat, 0,
+            ConstantWind(0, 15), SimplePolar, options: opts);
+        var eastCurrent = IsochroneRouter.Route(0, 0, start, -3.0 / NmPerDegLat, 0,
+            ConstantWind(0, 15), SimplePolar,
+            current: ConstantCurrent(90, 5),
+            options: opts);
+
+        await Assert.That(noCurrent).IsNotNull();
+        await Assert.That(eastCurrent).IsNotNull();
+        bool differs = noCurrent!.Path.Count != eastCurrent!.Path.Count
+            || Math.Abs(noCurrent.TotalNauticalMiles - eastCurrent.TotalNauticalMiles) > 1e-6
+            || noCurrent.Path.Zip(eastCurrent.Path).Any(p =>
+                Math.Abs(p.First.Longitude - p.Second.Longitude) > 1e-6
+                || Math.Abs(p.First.Latitude - p.Second.Latitude) > 1e-6);
+        await Assert.That(differs).IsTrue();
+    }
 }

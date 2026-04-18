@@ -38,11 +38,19 @@ public static class IsochroneRouter
     /// knots). Return null to signal "no wind data, skip this candidate".</param>
     /// <param name="polar">(TWA degrees 0-180, TWS knots) -&gt; target boat
     /// speed knots, or null for no-go / out-of-range.</param>
+    /// <param name="current">Optional tidal/ocean current lookup.
+    /// (lat, lon, time) -&gt; <see cref="CurrentSample"/> with SetDeg
+    /// (direction the water flows TOWARD) and SpeedKn. Added as a
+    /// vector to the polar-derived boat-through-water speed during
+    /// isochrone expansion, so favourable current extends the reach
+    /// and foul current shortens it. Return null (or pass a null
+    /// delegate) to route without any current.</param>
     public static WeatherRoute? Route(
         double startLat, double startLon, DateTime startTime,
         double endLat, double endLon,
         Func<double, double, DateTime, WindSample?> weather,
         Func<double, double, double?> polar,
+        Func<double, double, DateTime, CurrentSample?>? current = null,
         Options? options = null)
     {
         var opt = options ?? new Options();
@@ -108,6 +116,22 @@ public static class IsochroneRouter
                 var wind = weather(p.Lat, p.Lon, p.Time);
                 if (wind is null) continue;
 
+                // Current vector at this frontier node. Constant across
+                // the step's candidate bearings (current doesn't care
+                // which direction the boat turns); queried once per
+                // parent to keep the inner loop cheap.
+                (double EastNm, double NorthNm) curVec = (0, 0);
+                if (current is not null)
+                {
+                    var cur = current(p.Lat, p.Lon, p.Time);
+                    if (cur is not null)
+                    {
+                        double curNm = cur.Value.SpeedKn * dtHours;
+                        double setRad = cur.Value.SetDeg * Math.PI / 180;
+                        curVec = (curNm * Math.Sin(setRad), curNm * Math.Cos(setRad));
+                    }
+                }
+
                 for (double bearing = 0; bearing < 360; bearing += opt.BearingDegStep)
                 {
                     double twa = AbsoluteTwa(bearing, wind.Value.DirectionDeg);
@@ -115,7 +139,14 @@ public static class IsochroneRouter
                     if (speed is null || speed < opt.MinBoatSpeedKn) continue;
 
                     double distanceNm = speed.Value * dtHours;
-                    var (nextLat, nextLon) = Advance(p.Lat, p.Lon, bearing, distanceNm);
+                    // Vector sum: boat-through-water (heading along
+                    // `bearing` at polar speed) + current drift. The
+                    // result is over-ground motion, which is what the
+                    // router tracks via (lat, lon).
+                    double brgRad = bearing * Math.PI / 180;
+                    double eastNm = distanceNm * Math.Sin(brgRad) + curVec.EastNm;
+                    double northNm = distanceNm * Math.Cos(brgRad) + curVec.NorthNm;
+                    var (nextLat, nextLon) = AdvanceByVector(p.Lat, p.Lon, eastNm, northNm);
                     expanded.Add(new Node(nextLat, nextLon, stepTime, parentIdx));
                 }
             }
@@ -207,6 +238,19 @@ public static class IsochroneRouter
         double brgRad = bearingDeg * Math.PI / 180;
         double dLat = Math.Cos(brgRad) * distanceNm / NmPerDegLat;
         double dLon = Math.Sin(brgRad) * distanceNm / (NmPerDegLat * Math.Cos((lat + dLat * 0.5) * Math.PI / 180));
+        return (lat + dLat, lon + dLon);
+    }
+
+    /// <summary>
+    /// Advance a lat/lon position by a displacement vector in nautical
+    /// miles (east, north). Used when the displacement isn't a single
+    /// bearing+speed (e.g. vector sum of boat velocity and current
+    /// drift). Same equirectangular approximation as <see cref="Advance"/>.
+    /// </summary>
+    private static (double Lat, double Lon) AdvanceByVector(double lat, double lon, double eastNm, double northNm)
+    {
+        double dLat = northNm / NmPerDegLat;
+        double dLon = eastNm / (NmPerDegLat * Math.Cos((lat + dLat * 0.5) * Math.PI / 180));
         return (lat + dLat, lon + dLon);
     }
 

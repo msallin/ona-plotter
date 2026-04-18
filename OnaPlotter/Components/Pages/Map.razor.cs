@@ -290,10 +290,27 @@ public partial class Map
         WindSample? WindAt(double _lat, double _lon, DateTime t) => forecast.At(t);
         double? PolarLookup(double twaDeg, double twsKn) => Polar.GetTargetSpeed(twaDeg, twsKn);
 
+        // Tidal/ocean current lookup. Uses the live SignalK
+        // environment.current.* values (set in radians, drift in m/s)
+        // as a constant vector applied everywhere along the route.
+        // That's a strong simplification -- real tides swing over the
+        // next six hours -- but it still meaningfully improves routes
+        // in currenty waters (helps the router choose the tack that
+        // rides the flood instead of stemming it). A proper
+        // time-varying current lookup is the Phase-3 upgrade.
+        Func<double, double, DateTime, CurrentSample?>? currentAt = null;
+        if (Data.CurrentSet is double setRad && Data.CurrentDrift is double driftMs && driftMs > 0.05)
+        {
+            double setDeg = setRad * 180.0 / Math.PI;
+            double speedKn = driftMs * Format.MsToKnots;
+            currentAt = (_lat, _lon, t) => new CurrentSample(t, setDeg, speedKn);
+        }
+
         var route = IsochroneRouter.Route(
             startLat, startLon, now,
             endLat, endLon,
             WindAt, PolarLookup,
+            current: currentAt,
             options: new IsochroneRouter.Options(StepMinutes: 10, MaxSteps: 72, ReachNauticalMiles: 0.4));
 
         if (route is null)
