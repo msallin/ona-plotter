@@ -10,5 +10,11 @@ public interface IToastService
     void Success(string message);
     void Warning(string message);
     void Error(string message);
+
+    /// <summary>Shows a toast with an action button. Returns the toast id
+    /// in case the caller wants to dismiss it early.</summary>
+    Guid ShowAction(string message, string actionLabel, Func<Task> action,
+        ToastService.ToastLevel level = ToastService.ToastLevel.Info, int durationSec = 6);
+
     void Dismiss(Guid id);
 }

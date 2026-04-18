@@ -21,6 +21,17 @@ public sealed class CourseApi : ICourseApi
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>Sets a direct lat/lon destination - used for the Stop
+    /// Navigation undo path, where we want to restore to an arbitrary point
+    /// without having to identify the original waypoint or route.</summary>
+    public async Task<bool> SetDestinationPositionAsync(double latitude, double longitude, CancellationToken ct = default)
+    {
+        var body = new { position = new { latitude, longitude } };
+        var url = _baseUrl.Combine(SignalKUrls.CourseDestinationPath);
+        using var response = await _http.PutAsJsonAsync(url, body, ct);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<bool> ClearAsync(CancellationToken ct = default)
     {
         var url = _baseUrl.Combine(SignalKUrls.CoursePath);

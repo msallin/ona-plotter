@@ -171,15 +171,26 @@
                 <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(1)'>+1</button>
                 <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(10)'>+10</button>
             </div>
+            @* Engaging the autopilot into any non-standby mode is potentially
+               dangerous on a charter boat where crew can knock a button in
+               passing. Stby stays an instant tap (that's the "safety"
+               direction). Auto / Wind / Route require a 600 ms hold; an
+               accidental tap does nothing. *@
             <div class="ap-modes">
                 <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
                         @onclick='() => Autopilot.SetStateAsync("standby")'>Stby</button>
-                <button class="ap-mode-btn @(Data.AutopilotState == "auto" ? "active" : "")"
-                        @onclick='() => Autopilot.SetStateAsync("auto")'>Auto</button>
-                <button class="ap-mode-btn @(Data.AutopilotState == "wind" ? "active" : "")"
-                        @onclick='() => Autopilot.SetStateAsync("wind")'>Wind</button>
-                <button class="ap-mode-btn @(Data.AutopilotState == "route" ? "active" : "")"
-                        @onclick='() => Autopilot.SetStateAsync("route")'>Route</button>
+                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "auto" ? "active" : "") @(holding == "auto" ? "holding" : "")"
+                        @onpointerdown='@(() => ApHoldStart("auto"))'
+                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
+                        @onpointercancel="ApHoldEnd" title="Hold to engage Auto">Auto</button>
+                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "wind" ? "active" : "") @(holding == "wind" ? "holding" : "")"
+                        @onpointerdown='@(() => ApHoldStart("wind"))'
+                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
+                        @onpointercancel="ApHoldEnd" title="Hold to engage Wind">Wind</button>
+                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "route" ? "active" : "") @(holding == "route" ? "holding" : "")"
+                        @onpointerdown='@(() => ApHoldStart("route"))'
+                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
+                        @onpointercancel="ApHoldEnd" title="Hold to engage Route">Route</button>
             </div>
         </div>
     </div>
@@ -223,5 +234,45 @@
         return new MarkupString(
             $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\" " +
             $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+
+    // --- Autopilot hold-to-engage ---
+    // 600 ms is long enough that an accidental brush does nothing, short
+    // enough that an intentional press feels responsive. The CSS `.holding`
+    // class draws a progress sweep during the wait.
+    private const int ApHoldMs = 600;
+    private string? holding;
+    private CancellationTokenSource? _apHoldCts;
+
+    private void ApHoldStart(string mode)
+    {
+        _apHoldCts?.Cancel();
+        _apHoldCts = new CancellationTokenSource();
+        holding = mode;
+        _ = RunApHoldAsync(mode, _apHoldCts.Token);
+    }
+
+    private async Task RunApHoldAsync(string mode, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(ApHoldMs, ct);
+            if (ct.IsCancellationRequested) return;
+            holding = null;
+            await Autopilot.SetStateAsync(mode);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* user released before the threshold */ }
+    }
+
+    private void ApHoldEnd()
+    {
+        _apHoldCts?.Cancel();
+        _apHoldCts = null;
+        if (holding is not null)
+        {
+            holding = null;
+            _ = InvokeAsync(StateHasChanged);
+        }
     }
 }

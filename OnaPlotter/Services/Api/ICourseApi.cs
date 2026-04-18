@@ -6,5 +6,6 @@ namespace OnaPlotter.Services.Api;
 public interface ICourseApi
 {
     Task<bool> SetDestinationAsync(string waypointId, CancellationToken ct = default);
+    Task<bool> SetDestinationPositionAsync(double latitude, double longitude, CancellationToken ct = default);
     Task<bool> ClearAsync(CancellationToken ct = default);
 }

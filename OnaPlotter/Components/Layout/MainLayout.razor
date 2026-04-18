@@ -58,7 +58,14 @@
                 {
                     <div class="toast-item toast-@(t.Level.ToString().ToLowerInvariant())"
                          @key="t.Id" @onclick="() => Toasts.Dismiss(t.Id)">
-                        @t.Message
+                        <span class="toast-message">@t.Message</span>
+                        @if (t.ActionLabel is not null && t.Action is not null)
+                        {
+                            <button class="toast-action" @onclick="() => RunToastAction(t)"
+                                    @onclick:stopPropagation>
+                                @t.ActionLabel
+                            </button>
+                        }
                     </div>
                 }
             </div>
@@ -190,6 +197,14 @@
     private async Task DismissAlarm()
     {
         await Alarms.DismissAsync();
+    }
+
+    private async Task RunToastAction(ToastService.Toast t)
+    {
+        Toasts.Dismiss(t.Id);
+        if (t.Action is null) return;
+        try { await t.Action(); }
+        catch (Exception ex) { Toasts.Error($"Undo failed: {ex.Message}"); }
     }
 
     private async Task SnoozeActiveAlarm()

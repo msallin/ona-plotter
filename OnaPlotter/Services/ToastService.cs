@@ -6,7 +6,16 @@ namespace OnaPlotter.Services;
 /// </summary>
 public sealed class ToastService : IToastService
 {
-    public sealed record Toast(Guid Id, string Message, ToastLevel Level, DateTime ExpiresAt);
+    /// <summary>A transient notification. When <paramref name="ActionLabel"/>
+    /// is non-null the UI renders an action button; clicking it invokes
+    /// <paramref name="Action"/> and dismisses the toast.</summary>
+    public sealed record Toast(
+        Guid Id,
+        string Message,
+        ToastLevel Level,
+        DateTime ExpiresAt,
+        string? ActionLabel = null,
+        Func<Task>? Action = null);
 
     public enum ToastLevel { Info, Success, Warning, Error }
 
@@ -39,6 +48,25 @@ public sealed class ToastService : IToastService
     public void Success(string message) => Show(message, ToastLevel.Success);
     public void Warning(string message) => Show(message, ToastLevel.Warning);
     public void Error(string message) => Show(message, ToastLevel.Error, durationSec: 6);
+
+    /// <summary>Adds a toast with an action button (e.g. "Undo" after a
+    /// destructive operation). The action runs asynchronously; any
+    /// exception is swallowed so a flaky restore doesn't crash the UI.</summary>
+    public Guid ShowAction(string message, string actionLabel, Func<Task> action,
+        ToastLevel level = ToastLevel.Info, int durationSec = 6)
+    {
+        var t = new Toast(Guid.NewGuid(), message, level,
+            DateTime.UtcNow.AddSeconds(durationSec), actionLabel, action);
+        _toasts.Add(t);
+        OnChanged?.Invoke();
+
+        _ = Task.Delay(durationSec * 1000).ContinueWith(_ =>
+        {
+            _toasts.RemoveAll(x => x.Id == t.Id);
+            OnChanged?.Invoke();
+        });
+        return t.Id;
+    }
 
     public void Dismiss(Guid id)
     {

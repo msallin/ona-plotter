@@ -936,6 +936,30 @@ main:has(.alarm-banner) .conn-chip { top: calc(12px + 44px); }
     cursor: pointer;
     box-shadow: 0 4px 20px rgba(0,0,0,0.4);
     animation: toast-slide-in 0.2s ease-out;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toast-item .toast-message { flex: 1; }
+
+.toast-action {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--sk-accent);
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;
+}
+.toast-action:hover { background: rgba(255, 255, 255, 0.2); }
+@media (pointer: coarse) {
+    .toast-action { min-height: 32px; padding: 6px 12px; }
 }
 
 .toast-item:hover { background: rgba(25, 30, 40, 0.95); }
@@ -1442,6 +1466,29 @@ main:has(.alarm-banner) .hud-top-left {
     border-color: var(--sk-accent);
     color: #fff;
     box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.3);
+}
+
+/* Hold-to-engage: Auto / Wind / Route require a 600 ms press. The
+   .holding class draws a horizontal fill sweep so the captain sees
+   the progress; animation duration mirrors MapHud.ApHoldMs. */
+.ap-mode-btn.ap-engage-btn {
+    position: relative;
+    overflow: hidden;
+}
+.ap-mode-btn.ap-engage-btn.holding::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 100%;
+    width: 0;
+    background: rgba(96, 165, 250, 0.30);
+    animation: ap-hold-fill 600ms linear forwards;
+    pointer-events: none;
+}
+@keyframes ap-hold-fill {
+    from { width: 0; }
+    to   { width: 100%; }
 }
 
 /* ===== Map Rotation (Course-up / Head-up) ===== */

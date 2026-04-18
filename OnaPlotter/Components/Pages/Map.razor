@@ -1025,8 +1025,33 @@
     private async Task StopNavigation()
     {
         contextMenuVisible = false;
+
+        // Capture where we were heading before clearing so the Undo toast
+        // can restore it. `position` via the SignalK course API works for
+        // both waypoint- and route-based destinations.
+        var savedLat = Data.CourseNextPointLatitude;
+        var savedLon = Data.CourseNextPointLongitude;
+
         try { await CourseApi.ClearAsync(); }
-        catch (Exception ex) { Toasts.Error($"Stop navigation failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.Error($"Stop navigation failed: {ex.Message}"); return; }
+
+        if (savedLat is not null && savedLon is not null)
+        {
+            double lat = savedLat.Value, lon = savedLon.Value;
+            Toasts.ShowAction(
+                "Navigation stopped",
+                "Undo",
+                async () =>
+                {
+                    try
+                    {
+                        await CourseApi.SetDestinationPositionAsync(lat, lon);
+                        Toasts.Success("Navigation restored");
+                    }
+                    catch (Exception ex) { Toasts.Error($"Undo failed: {ex.Message}"); }
+                },
+                durationSec: 6);
+        }
     }
 
     private async Task NavigateToWaypoint(SignalkWaypoint wp)
