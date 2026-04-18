@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Utilities;
 
@@ -18,11 +17,8 @@ public sealed class WaypointApi : IWaypointApi
 
     public async Task<List<SignalkWaypoint>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
-        using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return [];
-
-        var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkWaypoint>>(cancellationToken: ct);
+        var dict = await ResourceHttp.GetDictAsync<SignalkWaypoint>(
+            _http, _baseUrl.Combine(SignalKUrls.WaypointsPath), ct);
         if (dict is null) return [];
 
         var waypoints = new List<SignalkWaypoint>(dict.Count);
@@ -76,10 +72,6 @@ public sealed class WaypointApi : IWaypointApi
         return result.Trim('"');
     }
 
-    public async Task<bool> DeleteAsync(string id, CancellationToken ct = default)
-    {
-        var url = _baseUrl.Combine(SignalKUrls.Waypoint(id));
-        using var response = await _http.DeleteAsync(url, ct);
-        return response.IsSuccessStatusCode;
-    }
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Waypoint(id)), ct);
 }

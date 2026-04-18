@@ -22,11 +22,8 @@ public sealed class NoteApi : INoteApi
 
     public async Task<List<SignalkNote>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.NotesPath);
-        using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return [];
-
-        var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkNote>>(cancellationToken: ct);
+        var dict = await ResourceHttp.GetDictAsync<SignalkNote>(
+            _http, _baseUrl.Combine(SignalKUrls.NotesPath), ct);
         if (dict is null) return [];
 
         var notes = new List<SignalkNote>(dict.Count);
@@ -57,10 +54,6 @@ public sealed class NoteApi : INoteApi
         return result.Trim('"');
     }
 
-    public async Task<bool> DeleteAsync(string id, CancellationToken ct = default)
-    {
-        var url = _baseUrl.Combine(SignalKUrls.Note(id));
-        using var response = await _http.DeleteAsync(url, ct);
-        return response.IsSuccessStatusCode;
-    }
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Note(id)), ct);
 }

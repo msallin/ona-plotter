@@ -18,11 +18,8 @@ public sealed class RouteApi : IRouteApi
 
     public async Task<List<SignalkRoute>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.RoutesPath);
-        using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return [];
-
-        var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkRoute>>(cancellationToken: ct);
+        var dict = await ResourceHttp.GetDictAsync<SignalkRoute>(
+            _http, _baseUrl.Combine(SignalKUrls.RoutesPath), ct);
         if (dict is null) return [];
 
         var routes = new List<SignalkRoute>(dict.Count);
@@ -81,10 +78,6 @@ public sealed class RouteApi : IRouteApi
         return response.IsSuccessStatusCode;
     }
 
-    public async Task<bool> DeleteAsync(string id, CancellationToken ct = default)
-    {
-        var url = _baseUrl.Combine(SignalKUrls.Route(id));
-        using var response = await _http.DeleteAsync(url, ct);
-        return response.IsSuccessStatusCode;
-    }
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Route(id)), ct);
 }

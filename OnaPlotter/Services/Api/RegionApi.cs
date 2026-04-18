@@ -35,11 +35,8 @@ public sealed class RegionApi : IRegionApi
 
     public async Task<List<SignalkRegion>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.RegionsPath);
-        using var response = await _http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return [];
-
-        var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkRegion>>(cancellationToken: ct);
+        var dict = await ResourceHttp.GetDictAsync<SignalkRegion>(
+            _http, _baseUrl.Combine(SignalKUrls.RegionsPath), ct);
         if (dict is null) return [];
 
         var regions = new List<SignalkRegion>(dict.Count);
@@ -89,12 +86,8 @@ public sealed class RegionApi : IRegionApi
         return result.Trim('"');
     }
 
-    public async Task<bool> DeleteAsync(string id, CancellationToken ct = default)
-    {
-        var url = _baseUrl.Combine(SignalKUrls.Region(id));
-        using var response = await _http.DeleteAsync(url, ct);
-        return response.IsSuccessStatusCode;
-    }
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Region(id)), ct);
 
     /// <summary>
     /// Builds a closed linear ring approximating a circle of the given
