@@ -25,6 +25,11 @@ public static class SignalKUrls
     /// A 200 means the plugin is installed and running; 404 means it isn't.</summary>
     public const string BuddiesPath = "/signalk/v2/api/resources/buddies";
 
+    /// <summary>Open-Meteo's hourly global forecast API. Free, no key, no
+    /// CORS. Returns JSON with parallel arrays of hourly samples keyed by
+    /// the variables we request. Used by the weather router.</summary>
+    public const string OpenMeteoBase = "https://api.open-meteo.com/v1/forecast";
+
     public static string Buddy(string urn) => $"{BuddiesPath}/{Uri.EscapeDataString(urn)}";
 
     public static string Route(string id) => $"{RoutesPath}/{Uri.EscapeDataString(id)}";

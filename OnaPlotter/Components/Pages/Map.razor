@@ -17,6 +17,8 @@
 @inject IAutopilotApi AutopilotApi
 @inject ITrackApi TrackApi
 @inject IBuddyListApi BuddyListApi
+@inject IWeatherForecastApi WeatherApi
+@inject IPolarService Polar
 @inject IAppSettings Settings
 @inject IToastService Toasts
 @inject IJSRuntime JS
@@ -82,6 +84,11 @@
         <div class="map-context-menu" style="left:@(contextMenuX)px; top:@(contextMenuY)px;">
             <button class="ctx-menu-item" @onclick="CreateWaypointHere">Create Waypoint</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
+            <button class="ctx-menu-item" @onclick="RouteWithWindHere"
+                    disabled="@(!Polar.HasPolar)"
+                    title="@(Polar.HasPolar ? "Isochrone weather routing" : "Upload a polar in Settings first")">
+                Route with wind
+            </button>
             @if (Data.HasActiveCourse)
             {
                 <button class="ctx-menu-item ctx-menu-danger" @onclick="StopNavigation">Stop Navigation</button>
@@ -1019,6 +1026,61 @@
             await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         Toasts.Success($"Saved waypoint '{name}'");
+    }
+
+    /// <summary>
+    /// Kicks off isochrone weather routing from the current own-boat
+    /// position to the point the user right-clicked / long-pressed.
+    /// Fetches a single-point wind forecast from Open-Meteo, runs the
+    /// router with the user's uploaded polars, and draws the result on
+    /// the map. For v1 we assume uniform wind across the whole route -
+    /// adequate for coastal hops up to ~30 nm; a multi-point grid
+    /// sample is a later upgrade.
+    /// </summary>
+    private async Task RouteWithWindHere()
+    {
+        contextMenuVisible = false;
+        if (!Polar.HasPolar) { Toasts.Error("Upload polars in Settings first"); return; }
+        if (Data.Latitude is null || Data.Longitude is null)
+        {
+            Toasts.Error("Own-boat position unknown"); return;
+        }
+
+        double startLat = Data.Latitude.Value, startLon = Data.Longitude.Value;
+        double endLat = contextMenuLat, endLon = contextMenuLon;
+        DateTime now = DateTime.UtcNow;
+
+        Toasts.Show("Computing weather route...", ToastService.ToastLevel.Info, durationSec: 2);
+
+        var forecast = await WeatherApi.GetAsync(startLat, startLon, forecastHours: 24);
+        if (forecast is null) { Toasts.Error("Weather forecast unavailable"); return; }
+
+        // Single-point forecast applied uniformly across the route. The
+        // router lookup returns the nearest-time sample from that series;
+        // spatial variation is ignored for now.
+        WindSample? WindAt(double _lat, double _lon, DateTime t) => forecast.At(t);
+        double? PolarLookup(double twaDeg, double twsKn) => Polar.GetTargetSpeed(twaDeg, twsKn);
+
+        var route = IsochroneRouter.Route(
+            startLat, startLon, now,
+            endLat, endLon,
+            WindAt, PolarLookup,
+            options: new IsochroneRouter.Options(StepMinutes: 10, MaxSteps: 72, ReachNauticalMiles: 0.4));
+
+        if (route is null)
+        {
+            Toasts.Error("No viable route in the next 12 hours (tight no-go angle, or too far)");
+            return;
+        }
+
+        var coords = route.Path.Select(w => new[] { w.Latitude, w.Longitude }).ToArray();
+        if (module is not null)
+            await module.InvokeVoidAsync("setWeatherRoute", (object)coords);
+
+        var eta = now + route.Duration;
+        Toasts.Success(
+            $"Weather route: {route.TotalNauticalMiles:F1} nm, "
+            + $"ETA {eta.ToLocalTime():HH:mm} (+{route.Duration.Hours}h{route.Duration.Minutes:D2})");
     }
 
     private async Task NavigateHere()

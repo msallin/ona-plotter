@@ -14,5 +14,6 @@
   <Folder Name="/docs/">
     <File Path="README.md" />
     <File Path="docs/collision-detection.md" />
+    <File Path="docs/weather-routing.md" />
   </Folder>
 </Solution>

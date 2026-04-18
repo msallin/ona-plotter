@@ -1130,6 +1130,29 @@ export function clearServerTrack() {
     if (serverTrackLayer && map) { map.removeLayer(serverTrackLayer); serverTrackLayer = null; }
 }
 
+// --- Weather-routing overlay ---
+//
+// Drawn on top of the chart as a thicker amber polyline with a dashed
+// outline - visually distinct from saved routes (solid amber), the
+// server track (grey), and own-track (speed-coloured). Clears any
+// previous weather route first so re-running replaces, not stacks.
+let weatherRouteLayer = null;
+
+export function setWeatherRoute(coords) {
+    clearWeatherRoute();
+    if (!map || !coords || coords.length < 2) return;
+    weatherRouteLayer = L.layerGroup([
+        L.polyline(coords, { color: '#000', weight: 5, opacity: 0.35 }),
+        L.polyline(coords, { color: '#e9c46a', weight: 3, opacity: 0.95, dashArray: '10,6' }),
+        L.circleMarker(coords[0],        { radius: 4, color: '#e9c46a', fillColor: '#e9c46a', fillOpacity: 1 }),
+        L.circleMarker(coords[coords.length - 1], { radius: 5, color: '#e9c46a', fillColor: '#fff', fillOpacity: 1, weight: 2 }),
+    ]).addTo(map);
+}
+
+export function clearWeatherRoute() {
+    if (weatherRouteLayer && map) { map.removeLayer(weatherRouteLayer); weatherRouteLayer = null; }
+}
+
 // --- Active Route Navigation ---
 
 const activeWpIcon = L.divIcon({
@@ -1612,6 +1635,7 @@ export function dispose() {
     if (map) { map.remove(); map = null; }
     boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
     osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
+    weatherRouteLayer = null;
     for (const id of Object.keys(chartLayers)) delete chartLayers[id];
     for (const id of Object.keys(routeLayers)) delete routeLayers[id];
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];

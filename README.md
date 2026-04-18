@@ -29,6 +29,9 @@ pocket. All layout is responsive and touch-tuned (WCAG-sized tap targets under
 - [Collision detection](docs/collision-detection.md): guard-zone ring, crossing
   lines, configurable CPA/TCPA alarm, per-target snooze, auto-mute of moored
   vessels. See the linked doc for the full behaviour.
+- [Weather routing](docs/weather-routing.md): isochrone route from own
+  position to any map point using Open-Meteo's wind forecast and your
+  uploaded polars. Right-click → *Route with wind*.
 - Vessel list in the Layers panel, sorted by TCPA (most pressing threat first),
   tap to centre + popup.
 - SignalK-managed routes and waypoints: load, toggle visibility, edit on the
@@ -200,5 +203,4 @@ Restart SignalK to pick it up.
 
 - [ ] Buddy-list UI integration (the detection plumbing is already in place)
 - [ ] COLREGS crossing-category labels (head-on / port / stbd / overtaking)
-- [ ] Grib-based weather routing
 - [ ] Offline tile download for the current viewport
