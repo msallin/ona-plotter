@@ -107,4 +107,44 @@ public class RouteApiTests
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Post);
         await Assert.That(capturedUrl).IsEqualTo($"{ApiTestHelpers.TestBase}/signalk/v2/api/resources/routes");
     }
+
+    [Test]
+    public async Task SaveAsync_EmitsCompleteGeoJsonFeature()
+    {
+        // GeoJSON requires `properties` on every Feature, and freeboard-sk
+        // expects coordinatesMeta one-per-waypoint. Guard the payload shape.
+        string body = string.Empty;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            body = req.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        });
+        var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        await api.SaveAsync("Test Route", [[47.0, 8.0], [48.0, 9.0], [49.0, 10.0]]);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        // Top-level SignalK route name.
+        await Assert.That(root.GetProperty("name").GetString()).IsEqualTo("Test Route");
+
+        // feature.properties must always be present (GeoJSON spec).
+        var feature = root.GetProperty("feature");
+        await Assert.That(feature.GetProperty("type").GetString()).IsEqualTo("Feature");
+
+        var props = feature.GetProperty("properties");
+        await Assert.That(props.ValueKind).IsEqualTo(System.Text.Json.JsonValueKind.Object);
+        await Assert.That(props.GetProperty("name").GetString()).IsEqualTo("Test Route");
+        await Assert.That(props.GetProperty("description").GetString()).IsEqualTo("");
+
+        // One coordinatesMeta entry per waypoint.
+        var meta = props.GetProperty("coordinatesMeta");
+        await Assert.That(meta.GetArrayLength()).IsEqualTo(3);
+
+        // Coordinates flipped to GeoJSON [lon, lat] order.
+        var coords = feature.GetProperty("geometry").GetProperty("coordinates");
+        await Assert.That(coords[0][0].GetDouble()).IsEqualTo(8.0);
+        await Assert.That(coords[0][1].GetDouble()).IsEqualTo(47.0);
+    }
 }

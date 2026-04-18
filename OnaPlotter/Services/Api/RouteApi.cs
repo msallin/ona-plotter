@@ -52,13 +52,28 @@ public sealed class RouteApi : IRouteApi
     public async Task<bool> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
     {
         var geoJsonCoords = coordsLatLon.Select(c => new[] { c[1], c[0] }).ToArray();
+
+        // GeoJSON requires `properties` on every Feature (empty is fine) and
+        // freeboard-sk assumes it's always present. `coordinatesMeta` is one
+        // entry per waypoint - we emit empty-name placeholders so downstream
+        // editors have slots to fill in.
+        var coordinatesMeta = Enumerable.Range(0, coordsLatLon.Length)
+            .Select(_ => new { name = "" })
+            .ToArray();
+
         var body = new
         {
             name,
             feature = new
             {
                 type = "Feature",
-                geometry = new { type = "LineString", coordinates = geoJsonCoords }
+                geometry = new { type = "LineString", coordinates = geoJsonCoords },
+                properties = new
+                {
+                    name,
+                    description = "",
+                    coordinatesMeta
+                }
             }
         };
         var url = _baseUrl.Combine(SignalKUrls.RoutesPath);
