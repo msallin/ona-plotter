@@ -76,6 +76,13 @@ let mobLabel = null;
 // Anchor watch state.
 let anchorMarker = null;
 let anchorCircle = null;
+// Swing-arc history: own-boat positions sampled while the anchor is set,
+// trimmed to ANCHOR_TRAIL_MINUTES so the captain can see at a glance how
+// much water the boat has actually covered on this tide cycle.
+const anchorTrail = [];
+let anchorTrailLayer = null;
+const ANCHOR_TRAIL_MINUTES = 60;
+const ANCHOR_TRAIL_SAMPLE_MS = 10_000;
 
 // Own vessel state cache (for CPA calculations).
 let selfLat = 0, selfLon = 0, selfCogRad = null, selfSogMs = null;
@@ -403,6 +410,7 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     rotateMarker(boatMarker, headingRad ?? cogRad);
 
     if (guardZoneRing) guardZoneRing.setLatLng([lat, lon]);
+    updateAnchorTrail(lat, lon);
 
     const end = vectorEnd(lat, lon, cogRad, sogMs);
     if (end) {
@@ -906,15 +914,54 @@ export function setAnchor(lat, lon, radiusM) {
         radius: radiusM, color: '#22c55e', fillColor: '#22c55e',
         fillOpacity: 0.06, weight: 2, dashArray: '6,4'
     }).addTo(map);
+    // Seed the trail with the current boat position so the first segment
+    // renders without waiting for ANCHOR_TRAIL_SAMPLE_MS.
+    if (selfLat && selfLon) anchorTrail.push({ lat: selfLat, lon: selfLon, t: Date.now() });
 }
 
 export function clearAnchor() {
     if (anchorMarker) { map.removeLayer(anchorMarker); anchorMarker = null; }
     if (anchorCircle) { map.removeLayer(anchorCircle); anchorCircle = null; }
+    if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
+    anchorTrail.length = 0;
 }
 
 export function updateAnchorRadius(radiusM) {
     if (anchorCircle) anchorCircle.setRadius(radiusM);
+}
+
+function updateAnchorTrail(lat, lon) {
+    if (!anchorMarker) {
+        // Anchor not set: tear down any residual trail.
+        if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
+        anchorTrail.length = 0;
+        return;
+    }
+
+    const now = Date.now();
+    const last = anchorTrail[anchorTrail.length - 1];
+    if (!last || now - last.t >= ANCHOR_TRAIL_SAMPLE_MS) {
+        anchorTrail.push({ lat, lon, t: now });
+    } else {
+        // Within the sample window - update the latest point so the trail
+        // head follows the boat smoothly.
+        last.lat = lat; last.lon = lon;
+    }
+
+    // Drop points outside the rolling window.
+    const cutoff = now - ANCHOR_TRAIL_MINUTES * 60_000;
+    while (anchorTrail.length > 0 && anchorTrail[0].t < cutoff) anchorTrail.shift();
+
+    if (anchorTrail.length < 2) return;
+    const coords = anchorTrail.map(p => [p.lat, p.lon]);
+    if (!anchorTrailLayer) {
+        anchorTrailLayer = L.polyline(coords, {
+            color: '#22c55e', weight: 2, opacity: 0.55,
+            dashArray: '2,4', interactive: false
+        }).addTo(map);
+    } else {
+        anchorTrailLayer.setLatLngs(coords);
+    }
 }
 
 // --- Night Mode ---
@@ -1493,7 +1540,8 @@ export function dispose() {
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];
     bearingLine = null; bearingLabel = null;
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
-    anchorMarker = null; anchorCircle = null;
+    anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
+    anchorTrail.length = 0;
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
     laylineStarboard = null; laylinePort = null;
