@@ -165,7 +165,9 @@ function makeBoatSvg(fill, size, isOwn, category) {
 
 // Small glyph overlaid near the centre of the chevron. Kept to 3-4 px
 // so it never obscures the outline; stroke colour is a fixed dark so it
-// reads on any coloured chevron (including muted warms).
+// reads on any coloured chevron (including muted warms). The category
+// string comes from C# (Utilities/AisPalette.ShipTypeCategory); this
+// function is a pure renderer that maps a category to SVG.
 function shipTypeGlyph(category) {
     const stroke = `stroke="rgba(0,0,0,0.7)" stroke-width="0.9" stroke-linecap="round"`;
     switch (category) {
@@ -184,21 +186,6 @@ function shipTypeGlyph(category) {
     }
 }
 
-function shipTypeCategory(shipType) {
-    if (!shipType) return null;
-    const t = shipType.toLowerCase();
-    if (t.includes('sail'))     return 'sail';
-    if (t.includes('pleasure')) return 'sail';
-    if (t.includes('fish'))     return 'fish';
-    if (t.includes('cargo'))    return 'commercial';
-    if (t.includes('tanker'))   return 'commercial';
-    if (t.includes('passenger'))return 'commercial';
-    if (t.includes('tug'))      return 'commercial';
-    if (t.includes('military')) return 'service';
-    if (t.includes('sar'))      return 'service';
-    return null;
-}
-
 function makeIcon(html, size) {
     return L.divIcon({ className: 'boat-icon', html, iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
@@ -208,39 +195,14 @@ function makeIcon(html, size) {
 // reserved for MOB and collision alarms.
 const selfIcon = makeIcon(makeBoatSvg('#ec4899', 30, true), 30);
 
-// AIS colour palette. Tuned for blue water: all warm/earth hues so
-// every vessel reads clearly against OSM/OpenSeaMap tiles. Matches the
-// route and waypoint colours for a coherent chart look. Any change
-// here should ripple to the route/waypoint colours below so the
-// palette stays in one place.
-const AIS_COLORS = {
-    cargo:     '#7d9b76',    // sage green - commercial bulk
-    tanker:    '#c9a27e',    // warm tan - oil / liquid
-    passenger: '#b589b0',    // muted plum - civilian
-    fishing:   '#d4a850',    // muted gold - nets
-    sailing:   '#e28862',    // warm coral - replaces sky blue that vanished on water
-    pleasure:  '#f2b785',    // pale apricot - same family
-    tug:       '#c0a080',    // warm beige
-    military:  '#8a7a7a',    // muted brown-gray
-    sar:       '#d17056',    // terracotta - "rescue orange" toned down
-    default:   '#e0c9a6',    // warm cream for unclassified targets (was pale gray, muddy on water)
-    danger:    '#c4453e',    // warm brick - CPA alarm
-    buddy:     '#e9c46a'     // honey gold - also gets a star glyph
-};
-
-function aisColor(shipType, isDanger, isBuddy) {
-    // Buddy colour overrides everything else. The collision alarm is
-    // skipped for buddies in C#, so we also skip the red-danger tint
-    // here to avoid the "alarm-looking but silent" mismatch.
-    if (isBuddy) return AIS_COLORS.buddy;
-    if (isDanger) return AIS_COLORS.danger;
-    if (!shipType) return AIS_COLORS.default;
-    const t = shipType.toLowerCase();
-    for (const [key, color] of Object.entries(AIS_COLORS)) {
-        if (t.includes(key)) return color;
-    }
-    return AIS_COLORS.default;
-}
+// Two palette entries that JS still needs: danger overrides the
+// C#-resolved ship-type colour when a CPA alarm is active for a
+// vessel, and buddy likewise when the buddy-list-plugin marks the
+// target as a friend. Both mirror entries in Utilities/AisPalette.cs
+// (palette source of truth) -- keep these in sync when the palette
+// changes, or thread isDanger/isBuddy resolution entirely through C#.
+const AIS_DANGER_COLOR = '#c4453e';
+const AIS_BUDDY_COLOR  = '#e9c46a';
 
 // Radar ARPA icon: outline triangle (no fill) + small center dot.
 // Classic ARPA look, and visually distinct from the filled AIS chevron.
@@ -273,22 +235,6 @@ function getRadarIcon(color) {
         radarIconCache[color] = makeIcon(makeRadarSvg(color, 22), 22);
     }
     return radarIconCache[color];
-}
-
-// Classify an AIS MMSI as a distress-transmitter category.
-// 970xxxxxx = AIS SART (from a life raft), 972xxxxxx = MOB beacon,
-// 974xxxxxx = AIS EPIRB. ITU-R M.585-9 Annex 1.
-// Null for normal vessel MMSIs and anything that doesn't match the
-// 9-digit pattern.
-function sartCategory(mmsi) {
-    if (typeof mmsi !== 'string' || mmsi.length !== 9) return null;
-    if (mmsi[0] !== '9' || mmsi[1] !== '7') return null;
-    switch (mmsi[2]) {
-        case '0': return 'SART';
-        case '2': return 'MOB';
-        case '4': return 'EPIRB';
-        default: return null;
-    }
 }
 
 // SART / MOB / EPIRB marker: large pulsing red bullseye with the
@@ -721,23 +667,31 @@ export function updateAisTargets(vessels) {
             && cpaInfo.cpa < guardZoneRadiusNm * guardZoneWarningFactor
             && cpaInfo.tcpa < guardZoneLookaheadMin * guardZoneWarningFactor
             && cpaInfo.tcpa > 0;
-        // Distress-transmitter MMSIs (SART/MOB/EPIRB) bypass the
-        // ship-type colour scheme and render as a big pulsing
-        // bullseye so they read as "emergency" at any zoom. We skip
-        // COG rotation for them too (beacons don't have heading, and
-        // a spinning icon would look wrong).
-        const sartCat = sartCategory(v.mmsi);
-        const isSart = sartCat !== null;
+        // Visual fields are resolved on the C# side (AisPalette /
+        // AisSart) and arrive on the vessel payload:
+        //   v.sartCategory  - "SART"/"MOB"/"EPIRB" or null
+        //   v.glyphCategory - "sail"/"fish"/"commercial"/"service" or null
+        //   v.shipColor     - hex string from the ship-type palette
+        // JS only applies the runtime overrides (danger / buddy) since
+        // those are derived from CPA state that's computed here in JS.
+        const isSart = v.sartCategory != null;
 
         // Radar targets use their own outline-triangle icon in a fixed tan
-        // tone; AIS targets fall back to the per-ship-type colour scale.
+        // tone; AIS targets fall back to the C#-resolved ship-type colour.
         const isRadar = v.source === 'radar';
-        const color = isRadar
-            ? (isDangerEff ? AIS_COLORS.danger : RADAR_COLOR)
-            : aisColor(v.shipType, isDangerEff, v.buddy);
-        const category = isRadar ? null : shipTypeCategory(v.shipType);
+        let color;
+        if (isRadar) {
+            color = isDangerEff ? AIS_DANGER_COLOR : RADAR_COLOR;
+        } else if (v.buddy) {
+            color = AIS_BUDDY_COLOR;              // buddies always win
+        } else if (isDangerEff) {
+            color = AIS_DANGER_COLOR;             // CPA alarm active
+        } else {
+            color = v.shipColor || '#e0c9a6';     // palette default from C#
+        }
+        const category = isRadar ? null : v.glyphCategory;
         const icon = isSart
-            ? getSartIcon(sartCat)
+            ? getSartIcon(v.sartCategory)
             : (isRadar ? getRadarIcon(color) : getAisIcon(color, category));
 
         let marker = aisMarkers[v.context];

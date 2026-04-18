@@ -891,6 +891,13 @@
                             colregsRole = Colregs.RoleLabel(r.Role);
                         }
                     }
+                    // Pre-resolved visual fields so the JS layer is a
+                    // dumb renderer: one source of truth for the AIS
+                    // palette + SART classification in C#, tested in
+                    // AisPaletteTests / AisSartAlarmRuleTests.
+                    string? sartCat = OnaPlotter.Utilities.AisSart.CategoryFromAny(v.Mmsi, v.Context);
+                    string? glyphCategory = OnaPlotter.Utilities.AisPalette.ShipTypeCategory(v.ShipType);
+
                     return new
                     {
                         context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
@@ -902,6 +909,9 @@
                         // icon. Radar targets lose buddy/danger overlays too;
                         // JS looks at this flag.
                         source = v.Source == OnaPlotter.Models.TargetSource.Radar ? "radar" : "ais",
+                        sartCategory = sartCat,       // "SART"/"MOB"/"EPIRB" or null
+                        glyphCategory,                 // "sail"/"fish"/"commercial"/"service"/null
+                        shipColor = OnaPlotter.Utilities.AisPalette.ShipTypeColor(v.ShipType),
                         colregsLabel,
                         colregsRole
                     };
