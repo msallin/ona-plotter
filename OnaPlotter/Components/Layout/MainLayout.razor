@@ -86,8 +86,12 @@
                on desktop (just serves as an outside-click target), dimmed
                on phone under the bottom-sheet so the sheet reads as modal. *@
             <div class="alarm-log-backdrop" @onclick="ToggleAlarmLog"></div>
-            <div class="alarm-log-panel" @onclick:stopPropagation>
-                <div class="alarm-log-handle" aria-hidden="true"></div>
+            <div class="alarm-log-panel @(alarmLogOpen ? "alarm-log-open" : "")" @onclick:stopPropagation>
+                @* Tappable on mobile: the grab-handle affordance
+                   telegraphs "dismiss me", so it had better actually
+                   dismiss. Clicking anywhere above the header works too. *@
+                <div class="alarm-log-handle" role="button" aria-label="Close"
+                     @onclick="ToggleAlarmLog"></div>
                 <div class="alarm-log-header">
                     <strong>Alarm log</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>

@@ -444,6 +444,13 @@
     {
         if (module is null || note.Position is null) return;
         chartPanelOpen = false;
+        // Un-hide first so the pin's popup actually has something to
+        // open -- hidden notes have no marker instance in the JS side
+        // and openNotePopup would silently no-op.
+        if (!notesVisible)
+        {
+            await ToggleNotesVisible(true);
+        }
         try
         {
             await module.InvokeVoidAsync("panTo", note.Position.Latitude, note.Position.Longitude);
@@ -1315,6 +1322,14 @@
     {
         if (module is null || region.OuterRings.Count == 0) return;
         chartPanelOpen = false;
+        // If the user hid regions via the Show toggle, clicking Focus
+        // on a region row should still land them at it. Un-hide first
+        // so the polygon is actually on the map when the bounds-fit
+        // runs; otherwise Focus is a silent no-op which is confusing.
+        if (!regionsVisible)
+        {
+            await ToggleRegionsVisible(true);
+        }
         try
         {
             await module.InvokeVoidAsync("focusRegion", region.Id, region.OuterRings[0]);

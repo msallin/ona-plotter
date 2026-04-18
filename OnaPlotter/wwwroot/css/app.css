@@ -1250,11 +1250,33 @@ main:has(.alarm-banner-stack) .hud-top-left {
 @media (max-width: 600px) {
     .alarm-log-handle {
         display: block;
+        width: 100%;
+        padding: 6px 0 4px;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+    /* The visible grab pill lives as a centered pseudo-element so the
+       hit-target is the full panel width, not just the 36px pill. */
+    .alarm-log-handle::before {
+        content: "";
+        display: block;
         width: 36px;
         height: 4px;
         border-radius: 2px;
         background: rgba(255, 255, 255, 0.25);
-        margin: 8px auto 4px;
+        margin: 0 auto;
+    }
+    .alarm-log-handle:hover::before { background: rgba(255, 255, 255, 0.4); }
+}
+
+/* Lock page scroll behind the alarm-log bottom-sheet on mobile so the
+   map doesn't slide around when the user swipes in the sheet. Scoped
+   by the .alarm-log-open flag on the panel, so desktop-dropdown mode
+   (where the page scroll never mattered) is unaffected. */
+@media (max-width: 600px) {
+    .page:has(.alarm-log-open) {
+        overflow: hidden;
+        height: 100vh;
     }
 }
 
