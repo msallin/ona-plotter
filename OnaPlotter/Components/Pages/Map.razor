@@ -1123,8 +1123,23 @@
         }
 
         var coords = route.Path.Select(w => new[] { w.Latitude, w.Longitude }).ToArray();
+
+        // Wind-field overlay: sample the forecast at each 3rd waypoint
+        // and pass to JS as [lat, lon, dirFromDeg, speedKn]. Enough points
+        // to let the skipper eyeball where the wind swings along the
+        // route without cluttering the chart with one arrow per step.
+        // `DirectionDeg` is FROM-which (meteorological convention).
+        var windSamples = new List<double[]>();
+        for (int i = 0; i < route.Path.Count; i += 3)
+        {
+            var wp = route.Path[i];
+            var sample = forecast.At(wp.Time);
+            if (sample is null) continue;
+            windSamples.Add([wp.Latitude, wp.Longitude, sample.Value.DirectionDeg, sample.Value.SpeedKn]);
+        }
+
         if (module is not null)
-            await module.InvokeVoidAsync("setWeatherRoute", (object)coords);
+            await module.InvokeVoidAsync("setWeatherRoute", (object)coords, (object)windSamples.ToArray());
 
         var eta = now + route.Duration;
         Toasts.Success(

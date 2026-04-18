@@ -117,7 +117,15 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 // --- Icons ---
 
 // Boat icon: clean chevron shape, subtle drop shadow for depth.
-function makeBoatSvg(fill, size, isOwn) {
+// `category` (optional) is a coarse ship-type bucket used to draw a
+// small glyph inside the chevron so vessel type is distinguishable
+// without colour (accessibility / colour-blind users). Four buckets:
+//   - "sail":       diamond (sailing, pleasure)
+//   - "fish":       crossed nets (fishing)
+//   - "commercial": solid dot (cargo, tanker, passenger, tug)
+//   - "service":    cross/plus (military, sar)
+// Own-boat and unknown vessels get no glyph.
+function makeBoatSvg(fill, size, isOwn, category) {
     const s = size || 28;
     const h = s / 2;
     // Sleek arrow shape: pointed bow, tapered stern with notch.
@@ -126,7 +134,44 @@ function makeBoatSvg(fill, size, isOwn) {
         : `stroke="rgba(255,255,255,0.5)" stroke-width="0.8" stroke-linejoin="round"`;
     return `<svg width="${s}" height="${s}" viewBox="-${h} -${h} ${s} ${s}" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))">
               <polygon points="0,-${h-2} ${h-6},${h-4} 0,${h-8} -${h-6},${h-4}" fill="${fill}" ${outline} opacity="${isOwn ? 1 : 0.9}"/>
+              ${shipTypeGlyph(category)}
             </svg>`;
+}
+
+// Small glyph overlaid near the centre of the chevron. Kept to 3-4 px
+// so it never obscures the outline; stroke colour is a fixed dark so it
+// reads on any coloured chevron (including muted warms).
+function shipTypeGlyph(category) {
+    const stroke = `stroke="rgba(0,0,0,0.7)" stroke-width="0.9" stroke-linecap="round"`;
+    switch (category) {
+        case 'sail':       // small diamond
+            return `<polygon points="0,-3 2.5,0 0,3 -2.5,0" fill="rgba(255,255,255,0.85)" ${stroke}/>`;
+        case 'fish':       // crossed nets
+            return `<line x1="-2.5" y1="-2" x2="2.5" y2="2" ${stroke}/>`
+                 + `<line x1="-2.5" y1="2"  x2="2.5" y2="-2" ${stroke}/>`;
+        case 'commercial': // solid dot (bulk / deck superstructure)
+            return `<circle cx="0" cy="0.5" r="1.8" fill="rgba(0,0,0,0.75)"/>`;
+        case 'service':    // plus
+            return `<line x1="-2.5" y1="0" x2="2.5" y2="0" ${stroke}/>`
+                 + `<line x1="0" y1="-2.5" x2="0" y2="2.5" ${stroke}/>`;
+        default:
+            return '';
+    }
+}
+
+function shipTypeCategory(shipType) {
+    if (!shipType) return null;
+    const t = shipType.toLowerCase();
+    if (t.includes('sail'))     return 'sail';
+    if (t.includes('pleasure')) return 'sail';
+    if (t.includes('fish'))     return 'fish';
+    if (t.includes('cargo'))    return 'commercial';
+    if (t.includes('tanker'))   return 'commercial';
+    if (t.includes('passenger'))return 'commercial';
+    if (t.includes('tug'))      return 'commercial';
+    if (t.includes('military')) return 'service';
+    if (t.includes('sar'))      return 'service';
+    return null;
 }
 
 function makeIcon(html, size) {
@@ -187,14 +232,15 @@ function makeRadarSvg(fill, size) {
          + `<circle cx="0" cy="0" r="1.6" fill="${fill}"/></svg>`;
 }
 
-// Icon caches (one per source x colour combo).
+// Icon caches (one per source x colour x category combo).
 const aisIconCache = {};
 const radarIconCache = {};
-function getAisIcon(color) {
-    if (!aisIconCache[color]) {
-        aisIconCache[color] = makeIcon(makeBoatSvg(color, 24, false), 24);
+function getAisIcon(color, category) {
+    const key = `${color}|${category || ''}`;
+    if (!aisIconCache[key]) {
+        aisIconCache[key] = makeIcon(makeBoatSvg(color, 24, false, category), 24);
     }
-    return aisIconCache[color];
+    return aisIconCache[key];
 }
 function getRadarIcon(color) {
     if (!radarIconCache[color]) {
@@ -609,7 +655,8 @@ export function updateAisTargets(vessels) {
         const color = isRadar
             ? (isDangerEff ? AIS_COLORS.danger : RADAR_COLOR)
             : aisColor(v.shipType, isDangerEff, v.buddy);
-        const icon = isRadar ? getRadarIcon(color) : getAisIcon(color);
+        const category = isRadar ? null : shipTypeCategory(v.shipType);
+        const icon = isRadar ? getRadarIcon(color) : getAisIcon(color, category);
 
         let marker = aisMarkers[v.context];
         if (!marker) {
@@ -1138,15 +1185,61 @@ export function clearServerTrack() {
 // previous weather route first so re-running replaces, not stacks.
 let weatherRouteLayer = null;
 
-export function setWeatherRoute(coords) {
+// windSamples (optional): [[lat, lon, dirFromDeg, speedKn], ...] -- small
+// amber arrows drawn along the route so the user can eyeball where the
+// wind swings without leaving the chart. The `dirFromDeg` convention is
+// meteorological (degrees FROM which the wind blows); we rotate the arrow
+// to point WITH the wind (i.e. rotate by dirFromDeg + 180).
+export function setWeatherRoute(coords, windSamples) {
     clearWeatherRoute();
     if (!map || !coords || coords.length < 2) return;
-    weatherRouteLayer = L.layerGroup([
+    const layers = [
         L.polyline(coords, { color: '#000', weight: 5, opacity: 0.35 }),
         L.polyline(coords, { color: '#e9c46a', weight: 3, opacity: 0.95, dashArray: '10,6' }),
         L.circleMarker(coords[0],        { radius: 4, color: '#e9c46a', fillColor: '#e9c46a', fillOpacity: 1 }),
         L.circleMarker(coords[coords.length - 1], { radius: 5, color: '#e9c46a', fillColor: '#fff', fillOpacity: 1, weight: 2 }),
-    ]).addTo(map);
+    ];
+    if (Array.isArray(windSamples)) {
+        for (const s of windSamples) {
+            if (!Array.isArray(s) || s.length < 4) continue;
+            const [lat, lon, dirFromDeg, spdKn] = s;
+            layers.push(L.marker([lat, lon], { icon: makeWindArrowIcon(dirFromDeg, spdKn), interactive: false }));
+        }
+    }
+    weatherRouteLayer = L.layerGroup(layers).addTo(map);
+}
+
+// Small wind-arrow divIcon. Arrow length scales mildly with speed so a
+// 20kn gust reads bigger than a 5kn zephyr; clamped so it doesn't take
+// over the viewport. Rotation uses wind-TO direction (dirFrom + 180).
+function makeWindArrowIcon(dirFromDeg, spdKn) {
+    const size = 36;
+    const dirTo = ((dirFromDeg || 0) + 180) % 360;
+    const spd = Math.max(0, Math.min(40, spdKn || 0));
+    const len = 8 + spd * 0.5;   // 8px at 0kn, 28px at 40kn
+    const half = size / 2;
+    const svg = `
+        <svg width="${size}" height="${size}" viewBox="-${half} -${half} ${size} ${size}"
+             style="transform: rotate(${dirTo}deg); overflow: visible;">
+            <line x1="0" y1="${-len}" x2="0" y2="${len * 0.3}"
+                  stroke="#000" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
+            <line x1="0" y1="${-len}" x2="0" y2="${len * 0.3}"
+                  stroke="#e9c46a" stroke-width="1.6" stroke-linecap="round"/>
+            <polygon points="0,${-len - 3} 3.5,${-len + 4} 0,${-len + 1.5} -3.5,${-len + 4}"
+                     fill="#e9c46a" stroke="#000" stroke-width="0.5" opacity="0.95"/>
+            <text x="0" y="${len + 7}" fill="#e9c46a" stroke="#000" stroke-width="0.4"
+                  text-anchor="middle" font-size="9" font-weight="600"
+                  style="paint-order: stroke; transform: rotate(${-dirTo}deg);
+                         transform-box: fill-box; transform-origin: center;">
+                ${Math.round(spd)}
+            </text>
+        </svg>`;
+    return L.divIcon({
+        className: 'wind-arrow-icon',
+        html: svg,
+        iconSize: [size, size],
+        iconAnchor: [half, half],
+    });
 }
 
 export function clearWeatherRoute() {
