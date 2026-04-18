@@ -7,7 +7,13 @@
 
 @if (Notes.Count == 0) return;
 
-<SectionHeader Title="Notes" Count="@Notes.Count"
+@{
+    var filtered = Filter(Notes, LayerFilter);
+}
+
+@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
+
+<SectionHeader Title="Notes" Count="@filtered.Count"
                Expanded="@expanded"
                OnToggle="() => expanded = !expanded">
     <label class="notes-visible-toggle"
@@ -21,7 +27,7 @@
 
 @if (expanded)
 {
-    @foreach (var n in Notes)
+    @foreach (var n in filtered)
     {
         <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
             <div class="chart-item-body">
@@ -42,9 +48,20 @@
     [Parameter] public bool Visible { get; set; } = true;
     [Parameter] public EventCallback<SignalkNote> OnFocus { get; set; }
     [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
+    [Parameter] public string LayerFilter { get; set; } = "";
 
     private bool expanded = true;
 
     private static string Truncate(string s, int n)
         => s.Length <= n ? s : s[..n] + "...";
+
+    private static IReadOnlyList<SignalkNote> Filter(
+        IReadOnlyList<SignalkNote> all, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return all;
+        var f = filter.Trim();
+        return all.Where(n =>
+            (n.Title?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (n.Description?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+    }
 }

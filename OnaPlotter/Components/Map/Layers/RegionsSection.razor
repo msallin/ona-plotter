@@ -7,7 +7,13 @@
 
 @if (Regions.Count == 0) return;
 
-<SectionHeader Title="Regions" Count="@Regions.Count"
+@{
+    var filtered = Filter(Regions, LayerFilter);
+}
+
+@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
+
+<SectionHeader Title="Regions" Count="@filtered.Count"
                Expanded="@expanded"
                OnToggle="() => expanded = !expanded">
     <label class="notes-visible-toggle"
@@ -21,7 +27,7 @@
 
 @if (expanded)
 {
-    @foreach (var r in Regions)
+    @foreach (var r in filtered)
     {
         <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
             <div class="chart-item-body">
@@ -42,9 +48,20 @@
     [Parameter] public bool Visible { get; set; } = true;
     [Parameter] public EventCallback<SignalkRegion> OnFocus { get; set; }
     [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
+    [Parameter] public string LayerFilter { get; set; } = "";
 
     private bool expanded = true;
 
     private static string Truncate(string s, int n)
         => s.Length <= n ? s : s[..n] + "...";
+
+    private static IReadOnlyList<SignalkRegion> Filter(
+        IReadOnlyList<SignalkRegion> all, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return all;
+        var f = filter.Trim();
+        return all.Where(r =>
+            (r.Name?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (r.Description?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
+    }
 }

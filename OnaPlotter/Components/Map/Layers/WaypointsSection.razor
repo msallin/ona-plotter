@@ -1,16 +1,23 @@
 @using OnaPlotter.Models
 
 @* Server-stored waypoints with a "Go" button that sets them as the active
-   destination. *@
+   destination. Filters by the shared LayerFilter so the panel's search
+   input finds waypoints as well as charts and routes. *@
 
 @if (Waypoints.Count == 0) return;
 
-<SectionHeader Title="Waypoints" Count="@Waypoints.Count"
+@{
+    var filtered = Filter(Waypoints, LayerFilter);
+}
+
+@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
+
+<SectionHeader Title="Waypoints" Count="@filtered.Count"
                Expanded="@expanded"
                OnToggle="() => expanded = !expanded" />
 @if (expanded)
 {
-    @foreach (var wp in Waypoints)
+    @foreach (var wp in filtered)
     {
         <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
             <div class="chart-item-body">
@@ -25,8 +32,19 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> Waypoints { get; set; } = [];
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigate { get; set; }
+    [Parameter] public string LayerFilter { get; set; } = "";
 
     private bool expanded = true;
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
+
+    private static IReadOnlyList<SignalkWaypoint> Filter(
+        IReadOnlyList<SignalkWaypoint> all, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)) return all;
+        var f = filter.Trim();
+        return all.Where(wp =>
+            (wp.Name?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+            || wp.Id.Contains(f, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
 }

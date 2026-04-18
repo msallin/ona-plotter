@@ -7,10 +7,19 @@
    with its own expand/collapse state. *@
 
 <div class="chart-panel" @onclick:stopPropagation>
-    @if (AvailableCharts.Count + AvailableRoutes.Count > 6)
+    @{
+        // Filter input threshold sums every list the filter now targets
+        // (charts + routes + waypoints + notes + regions). Cutoff at
+        // 6 is still enough to want a search box; below that, scrolling
+        // the list is faster than typing.
+        int filterableTotal = AvailableCharts.Count + AvailableRoutes.Count
+            + LoadedWaypoints.Count + LoadedNotes.Count + LoadedRegions.Count;
+    }
+    @if (filterableTotal > 6)
     {
         <input type="text" class="layer-search"
-               placeholder="Filter layers" aria-label="Filter layers"
+               placeholder="Filter charts, routes, waypoints, notes, regions"
+               aria-label="Filter layers"
                value="@LayerFilter" @oninput="OnFilterInput" />
     }
 
@@ -24,15 +33,18 @@
                    OnEdit="OnEditRoute" />
 
     <WaypointsSection Waypoints="LoadedWaypoints"
+                      LayerFilter="LayerFilter"
                       OnNavigate="OnNavigateToWaypoint" />
 
     <NotesSection Notes="LoadedNotes"
                   Visible="NotesVisible"
+                  LayerFilter="LayerFilter"
                   OnFocus="OnFocusNote"
                   OnToggleVisible="OnToggleNotesVisible" />
 
     <RegionsSection Regions="LoadedRegions"
                     Visible="RegionsVisible"
+                    LayerFilter="LayerFilter"
                     OnFocus="OnFocusRegion"
                     OnToggleVisible="OnToggleRegionsVisible" />
 

@@ -46,6 +46,26 @@
             DepthAlarmThreshold="Settings.DepthAlarmThreshold"
             OnStopNavigation="StopNavigation" />
 
+    @* Nearest-waypoint chip. Only shows when we have own-boat position,
+       at least one waypoint, and no active route (the route HUD already
+       tells you where you're heading). One-tap shortcut that saves
+       opening the Layers panel + scrolling to find the closest target
+       -- a common sailor workflow before setting a destination. *@
+    @if (!Data.HasActiveCourse && NearestWp is { } nearest)
+    {
+        <button class="nearest-wp-chip" @onclick="() => FocusWaypoint(nearest.Wp)"
+                title="@($"Pan to {nearest.Wp.Name ?? nearest.Wp.Id}")">
+            <span class="nearest-wp-label">NEAREST WP</span>
+            <span class="nearest-wp-name">@(nearest.Wp.Name ?? nearest.Wp.Id[..Math.Min(8, nearest.Wp.Id.Length)])</span>
+            <span class="nearest-wp-dist">
+                @nearest.Nm.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">nm</span>
+            </span>
+            <span class="nearest-wp-brg">
+                @((int)Math.Round(nearest.BearingDeg))<span class="hud-unit">&deg;</span>
+            </span>
+        </button>
+    }
+
     <MapControls Follow="follow"
                  OrientationLabel="@mapOrientationLabel"
                  NightMode="nightMode"

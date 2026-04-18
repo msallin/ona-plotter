@@ -1834,6 +1834,63 @@ main:has(.alarm-banner-stack) .hud-top-left {
     50%      { transform: scale(1.18); opacity: 0.85; }
 }
 
+/* ===== Nearest-waypoint chip =====
+   Anchored top-centre just under the top row. Shows the closest
+   saved waypoint when there's no active course. Tapping pans to it
+   (a one-tap "show me that waypoint" shortcut). Visually sits
+   between the top HUDs, never blocks the map more than a single
+   row of text. Hidden via .nearest-wp-chip-hidden when an active
+   course fills the same vertical slot. */
+.nearest-wp-chip {
+    position: fixed;
+    top: 3.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--z-hud);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 14px;
+    background: rgba(16, 20, 28, 0.85);
+    color: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(224, 159, 62, 0.45);    /* --ann-route */
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease;
+}
+.nearest-wp-chip:hover {
+    background: rgba(30, 38, 52, 0.95);
+    border-color: rgba(224, 159, 62, 0.7);
+}
+.nearest-wp-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: rgba(224, 159, 62, 0.95);
+}
+.nearest-wp-name { font-weight: 600; color: rgba(255, 255, 255, 0.95); }
+.nearest-wp-dist,
+.nearest-wp-brg { color: rgba(255, 255, 255, 0.7); }
+/* Push below the alarm-banner-stack when it's visible so the chip
+   never hides under an alarm. */
+main:has(.alarm-banner-stack) .nearest-wp-chip {
+    top: calc(3rem + 56px);
+}
+@media (max-width: 600px) {
+    .nearest-wp-chip {
+        font-size: 0.72rem;
+        padding: 4px 10px;
+        gap: 6px;
+    }
+}
+@media (pointer: coarse) {
+    .nearest-wp-chip { min-height: 40px; }
+}
+
 /* ===== Depth + tide row =====
    Tide data (from mxtide / openwatersio / similar) lives inside the
    depth panel as a subtle one-liner. Only rendered when a plugin
