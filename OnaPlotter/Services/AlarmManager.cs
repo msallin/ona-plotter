@@ -26,7 +26,7 @@ public sealed class AlarmManager : IAlarmManager
     public AlarmInfo? ActiveAlarm { get; private set; }
     public int SnoozeDurationMinutes => SnoozeMinutes;
 
-    public event Action? OnAlarmChanged;
+    public event Action<AlarmInfo?>? OnAlarmChanged;
 
     public AlarmManager() : this(() => DateTime.UtcNow) { }
 
@@ -42,6 +42,11 @@ public sealed class AlarmManager : IAlarmManager
         if ((now - _lastEvaluation).TotalMilliseconds < EvaluationIntervalMs) return;
         _lastEvaluation = now;
 
+        // Drop expired snooze entries before doing anything else. Otherwise a
+        // vessel that was snoozed once and then dropped off AIS forever would
+        // leave a dead entry in the dict until its Context was re-evaluated.
+        SweepExpiredSnoozes(now);
+
         if (CheckDepth(data, settings)) return;
         CheckWindShift(data, settings, now);                 // not an early-return: warn, not danger
         if (CheckGuardZone(data, vessels, settings, now)) return;
@@ -49,11 +54,18 @@ public sealed class AlarmManager : IAlarmManager
         ClearResolved(data, settings);
     }
 
+    private void SweepExpiredSnoozes(DateTime now)
+    {
+        if (_snoozed.Count == 0) return;
+        var expired = _snoozed.Where(kv => now >= kv.Value).Select(kv => kv.Key).ToList();
+        foreach (var k in expired) _snoozed.Remove(k);
+    }
+
     public Task DismissAsync()
     {
         if (ActiveAlarm is null) return Task.CompletedTask;
         ActiveAlarm = null;
-        OnAlarmChanged?.Invoke();
+        OnAlarmChanged?.Invoke(ActiveAlarm);
         return Task.CompletedTask;
     }
 
@@ -62,7 +74,7 @@ public sealed class AlarmManager : IAlarmManager
         if (ActiveAlarm?.TargetKey is null) return Task.CompletedTask;
         _snoozed[ActiveAlarm.TargetKey] = _now().AddMinutes(SnoozeMinutes);
         ActiveAlarm = null;
-        OnAlarmChanged?.Invoke();
+        OnAlarmChanged?.Invoke(ActiveAlarm);
         return Task.CompletedTask;
     }
 
@@ -160,7 +172,7 @@ public sealed class AlarmManager : IAlarmManager
         if (resolved)
         {
             ActiveAlarm = null;
-            OnAlarmChanged?.Invoke();
+            OnAlarmChanged?.Invoke(ActiveAlarm);
         }
     }
 
@@ -182,11 +194,11 @@ public sealed class AlarmManager : IAlarmManager
             if (ActiveAlarm.Message != message)
             {
                 ActiveAlarm = ActiveAlarm with { Message = message };
-                OnAlarmChanged?.Invoke();
+                OnAlarmChanged?.Invoke(ActiveAlarm);
             }
             return;
         }
         ActiveAlarm = new AlarmInfo(title, message, severity, targetKey);
-        OnAlarmChanged?.Invoke();
+        OnAlarmChanged?.Invoke(ActiveAlarm);
     }
 }

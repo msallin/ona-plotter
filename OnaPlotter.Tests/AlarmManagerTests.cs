@@ -17,6 +17,7 @@ public class AlarmManagerTests
         public double DepthAlarmThreshold { get; set; } = 3.0;
         public double CpaAlarmThreshold { get; set; } = 0.5;
         public double GuardZoneLookaheadMinutes { get; set; } = 10.0;
+        public double GuardZoneWarningFactor { get; set; } = 2.0;
         public double WindShiftAlarmThreshold { get; set; } = 15.0;
         public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
         public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
@@ -30,6 +31,7 @@ public class AlarmManagerTests
         public Task SetDepthAlarmThresholdAsync(double v) => Task.CompletedTask;
         public Task SetCpaAlarmThresholdAsync(double v) => Task.CompletedTask;
         public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;
+        public Task SetGuardZoneWarningFactorAsync(double v) => Task.CompletedTask;
         public Task SetWindShiftAlarmThresholdAsync(double v) => Task.CompletedTask;
         public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
         public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
@@ -71,7 +73,7 @@ public class AlarmManagerTests
             args: [(Func<DateTime>)(() => clock.Now)],
             culture: null)!;
         int fires = 0;
-        mgr.OnAlarmChanged += () => fires++;
+        mgr.OnAlarmChanged += _ => fires++;
         return (mgr, clock, settings, fires);
     }
 
@@ -186,7 +188,7 @@ public class AlarmManagerTests
     {
         var (mgr, clock, settings, _) = NewMgr();
         int calls = 0;
-        mgr.OnAlarmChanged += () => calls++;
+        mgr.OnAlarmChanged += _ => calls++;
 
         var data = Nav(depth: 2.0);
         mgr.Evaluate(data, [], settings);
@@ -209,7 +211,7 @@ public class AlarmManagerTests
         var (mgr, clock, settings, _) = NewMgr();
         mgr.Evaluate(Nav(depth: 2.0), [], settings);
         int firesBefore = 0;
-        mgr.OnAlarmChanged += () => firesBefore++;
+        mgr.OnAlarmChanged += _ => firesBefore++;
 
         await mgr.DismissAsync();
 

@@ -8,6 +8,7 @@ namespace OnaPlotter.Models;
 public sealed record VesselListEntry(
     string Context,
     string DisplayName,
+    string? Mmsi,
     double? CpaNm,
     double? TcpaMin,
     double? DistanceNm,

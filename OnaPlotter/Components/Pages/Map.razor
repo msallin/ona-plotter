@@ -281,6 +281,7 @@
             entries.Add(new VesselListEntry(
                 Context: v.Context,
                 DisplayName: v.Name ?? v.Callsign ?? (v.Mmsi is not null ? $"MMSI {v.Mmsi}" : v.Context),
+                Mmsi: v.Mmsi,
                 CpaNm: cpa?.CpaNm,
                 TcpaMin: cpa?.TcpaMin,
                 DistanceNm: distNm,
@@ -518,7 +519,9 @@
         try
         {
             await module.InvokeVoidAsync("setGuardZone",
-                Settings.CpaAlarmThreshold, Settings.GuardZoneLookaheadMinutes);
+                Settings.CpaAlarmThreshold,
+                Settings.GuardZoneLookaheadMinutes,
+                Settings.GuardZoneWarningFactor);
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }

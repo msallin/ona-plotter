@@ -13,9 +13,11 @@
 {
     @foreach (var buddy in Buddies)
     {
+        // Match on the canonical MMSI slot, not a substring search - a buddy
+        // whose display name happens to contain the MMSI would otherwise
+        // false-match a different vessel.
         var live = buddy.Mmsi is not null
-            ? Vessels.FirstOrDefault(v => v.DisplayName?.Contains(buddy.Mmsi) == true
-                                      || v.Context.Contains(buddy.Mmsi))
+            ? Vessels.FirstOrDefault(v => v.Mmsi == buddy.Mmsi)
             : null;
         <div class="chart-item vessel-row vessel-buddy"
              @onclick="() => { if (live is not null) OnFocus.InvokeAsync(live.Context); }">

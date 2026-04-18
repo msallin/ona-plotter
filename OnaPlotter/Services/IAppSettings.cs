@@ -26,6 +26,12 @@ public interface IAppSettings
     /// within this window trigger the CPA alarm.</summary>
     double GuardZoneLookaheadMinutes { get; }
 
+    /// <summary>Multiplier for the advisory (amber) warning band around the
+    /// guard zone. A factor of 2.0 draws the warning ring at 2x the alarm
+    /// radius and within 2x the lookahead; targets inside that band get
+    /// amber crossing lines but no audible alarm.</summary>
+    double GuardZoneWarningFactor { get; }
+
     double WindShiftAlarmThreshold { get; }
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
@@ -41,6 +47,7 @@ public interface IAppSettings
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetGuardZoneLookaheadMinutesAsync(double value);
+    Task SetGuardZoneWarningFactorAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);

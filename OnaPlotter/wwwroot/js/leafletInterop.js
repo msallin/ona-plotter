@@ -36,8 +36,9 @@ const vesselNameInflight = {};
 
 // Guard zone: collision-alarm envelope drawn around own boat.
 let guardZoneRing = null;
-let guardZoneRadiusNm = 0.5;    // default matches IAppSettings.CpaAlarmThreshold
-let guardZoneLookaheadMin = 10; // default matches IAppSettings.GuardZoneLookaheadMinutes
+let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThreshold
+let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
+let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
 
 // Chart layers from SignalK.
 const chartLayers = {};  // keyed by chart identifier
@@ -515,14 +516,15 @@ export function updateAisTargets(vessels) {
             && cpaInfo.cpa < guardZoneRadiusNm
             && cpaInfo.tcpa < guardZoneLookaheadMin
             && cpaInfo.tcpa > 0;
-        // Within 2x the guard zone we draw a yellow warning line; this gives
-        // the captain situational awareness before a red alarm fires.
+        // Within guardZone*factor we draw an amber warning line; this gives
+        // the captain situational awareness before a red alarm fires. The
+        // factor is user-configurable via Settings.GuardZoneWarningFactor.
         // Buddies never trigger the danger/warning overlays - they're
         // intentionally sailing near us and shouldn't paint the map red.
         const isDangerEff = isDanger && !v.buddy;
         const isWarning = !isDangerEff && !v.buddy && cpaInfo
-            && cpaInfo.cpa < guardZoneRadiusNm * 2
-            && cpaInfo.tcpa < guardZoneLookaheadMin * 2
+            && cpaInfo.cpa < guardZoneRadiusNm * guardZoneWarningFactor
+            && cpaInfo.tcpa < guardZoneLookaheadMin * guardZoneWarningFactor
             && cpaInfo.tcpa > 0;
         const color = aisColor(v.shipType, isDangerEff, v.buddy);
         const icon = getAisIcon(color);
@@ -780,9 +782,18 @@ export function focusVessel(context) {
     marker.openPopup();
 }
 
-export function setGuardZone(radiusNm, lookaheadMin) {
+/**
+ * Updates collision thresholds used to colour AIS targets and draw the
+ * crossing-situation lines. A target whose CPA/TCPA is inside the raw
+ * guard zone gets a red line; a target inside guardZone*warningFactor
+ * gets amber. Pass warningFactor <= 1 to disable the amber band.
+ */
+export function setGuardZone(radiusNm, lookaheadMin, warningFactor) {
     guardZoneRadiusNm = radiusNm;
     guardZoneLookaheadMin = lookaheadMin;
+    if (typeof warningFactor === 'number' && warningFactor > 1) {
+        guardZoneWarningFactor = warningFactor;
+    }
     drawGuardZone();
 }
 

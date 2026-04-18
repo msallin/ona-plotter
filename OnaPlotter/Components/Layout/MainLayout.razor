@@ -113,15 +113,16 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async void HandleAlarmChanged()
+    private async void HandleAlarmChanged(AlarmInfo? active)
     {
-        // Drive the audio side-effect: ramp up when an alarm becomes active
-        // or its severity changes, stop when it clears.
+        // `active` is a snapshot captured at the moment the event fired, so
+        // the audio decision is based on the transition that actually
+        // happened - not on whatever ActiveAlarm happens to be after the
+        // InvokeAsync await resolves.
         try
         {
             await InvokeAsync(async () =>
             {
-                var active = Alarms.ActiveAlarm;
                 if (active is null)
                 {
                     alarmAudioActive = false;

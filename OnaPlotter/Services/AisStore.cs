@@ -78,6 +78,14 @@ public sealed class AisStore
     /// Replaces the buddy-context set and retags every tracked vessel. Fed
     /// from the REST seed of sbender9/signalk-buddylist-plugin at startup.
     /// Vessels that join later are tagged on creation in <see cref="Apply"/>.
+    /// <para>
+    /// Concurrency note: this method holds <c>_buddyLock</c> while it
+    /// iterates the vessel dictionary, which blocks any concurrent
+    /// UpdateBuddies call. Apply() reads the buddy set only while creating
+    /// a new vessel (also under the lock), so a vessel that arrives during
+    /// an UpdateBuddies call is guaranteed to see either the old or the
+    /// new buddy set consistently - never a half-applied one.
+    /// </para>
     /// </summary>
     public void UpdateBuddies(IEnumerable<string> buddyContexts)
     {

@@ -13,6 +13,8 @@ public sealed class BuddyListApi : IBuddyListApi
 
     // Detection cache. Null = unknown; set once on first probe.
     private bool? _available;
+    // Serialises concurrent first-probe callers so we only send one request.
+    private readonly SemaphoreSlim _probeLock = new(1, 1);
 
     public BuddyListApi(HttpClient http, ISignalKBaseUrl baseUrl, ILogger<BuddyListApi> logger)
     {
@@ -24,8 +26,14 @@ public sealed class BuddyListApi : IBuddyListApi
     public async Task<bool> IsAvailableAsync(CancellationToken ct = default)
     {
         if (_available is { } cached) return cached;
-        _ = await GetAllAsync(ct); // side-effect: fills the cache
-        return _available ?? false;
+        await _probeLock.WaitAsync(ct);
+        try
+        {
+            if (_available is { } cached2) return cached2;
+            _ = await GetAllAsync(ct); // side-effect: fills the cache
+            return _available ?? false;
+        }
+        finally { _probeLock.Release(); }
     }
 
     public async Task<IReadOnlyList<SignalkBuddy>?> GetAllAsync(CancellationToken ct = default)

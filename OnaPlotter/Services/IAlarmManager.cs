@@ -15,10 +15,11 @@ public interface IAlarmManager
 
     /// <summary>
     /// Fires when ActiveAlarm transitions (set / cleared / replaced) AND
-    /// when an existing alarm's message changes. Severity changes also
-    /// fire so the audio driver can re-pulse at the right cadence.
+    /// when an existing alarm's message changes. The payload is the new
+    /// state, captured at event-raise time so handlers don't race with a
+    /// later Evaluate/Dismiss mutating ActiveAlarm during their await.
     /// </summary>
-    event Action? OnAlarmChanged;
+    event Action<AlarmInfo?>? OnAlarmChanged;
 
     /// <summary>
     /// Fires alarm evaluation across all configured sources (depth, CPA,
