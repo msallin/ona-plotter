@@ -25,6 +25,7 @@ builder.Services.AddSingleton<IPolarService, PolarService>();
 // Alarm rules are DI-registered; AlarmManager picks them up via
 // IEnumerable<IAlarmRule>. Adding a new rule is a one-line registration.
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ShallowAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorTideAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();

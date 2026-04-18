@@ -91,6 +91,36 @@
         </div>
     </div>
 
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Boat Draft</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.1" min="0" max="10"
+                           value="@AppSettings.BoatDraftMeters"
+                           @onchange="(e) => OnBoatDraftChanged(e)" />
+                    <span class="input-group-text">m</span>
+                </div>
+                <small class="text-muted">Used by the tide-aware anchor alarm to predict grounding at low water.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Anchor Tide Safety Margin</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.1" min="0" max="5"
+                           value="@AppSettings.AnchorTideSafetyMargin"
+                           @onchange="(e) => OnAnchorTideMarginChanged(e)" />
+                    <span class="input-group-text">m</span>
+                </div>
+                <small class="text-muted">Warn when predicted LW clearance is below this margin. Add more for soft mud / tender hulls.</small>
+            </div>
+        </div>
+    </div>
+
     <div class="col-12 mt-3">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Performance</h5>
     </div>
@@ -207,6 +237,18 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 1)
             await AppSettings.SetWindShiftLookbackMinutesAsync(val);
+    }
+
+    private async Task OnBoatDraftChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
+            await AppSettings.SetBoatDraftMetersAsync(val);
+    }
+
+    private async Task OnAnchorTideMarginChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
+            await AppSettings.SetAnchorTideSafetyMarginAsync(val);
     }
 
     private async Task OnNightModeChanged(ChangeEventArgs e)

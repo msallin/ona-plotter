@@ -29,6 +29,8 @@ public sealed class AppSettingsService : IAppSettings
     public double GuardZoneWarningFactor { get; private set; } = 2.0;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
     public double WindShiftLookbackMinutes { get; private set; } = 5.0;
+    public double BoatDraftMeters { get; private set; } = 1.5;
+    public double AnchorTideSafetyMargin { get; private set; } = 1.0;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -58,6 +60,8 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneWarningFactor = await LoadDouble("guardZoneWarningFactor", 2.0);
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
+            BoatDraftMeters = await LoadDouble("boatDraftMeters", 1.5);
+            AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             _initialized = true;
@@ -159,6 +163,20 @@ public sealed class AppSettingsService : IAppSettings
     {
         WindShiftLookbackMinutes = value;
         await Save("windShiftLookbackMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetBoatDraftMetersAsync(double value)
+    {
+        BoatDraftMeters = value;
+        await Save("boatDraftMeters", value.ToString("F2", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAnchorTideSafetyMarginAsync(double value)
+    {
+        AnchorTideSafetyMargin = value;
+        await Save("anchorTideSafetyMargin", value.ToString("F2", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

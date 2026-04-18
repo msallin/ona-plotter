@@ -45,6 +45,18 @@ public interface IAppSettings
     /// crews typically want 1-2 min; cruisers want 10-15. Configurable so
     /// the alarm is useful on either side of that spread.</summary>
     double WindShiftLookbackMinutes { get; }
+
+    /// <summary>Boat draft in metres: the depth the keel extends below
+    /// the waterline. Used by the tide-aware anchor alarm to predict
+    /// whether the boat will touch bottom at the next low water. Users
+    /// should enter the deepest point of the hull at the widest loading.</summary>
+    double BoatDraftMeters { get; }
+
+    /// <summary>Safety margin added to draft for the tide-aware anchor
+    /// alarm: alarm fires when predicted LW depth is less than
+    /// <c>draft + margin</c>. Typical is 0.5-1 m; add more for soft
+    /// mud where the boat can settle.</summary>
+    double AnchorTideSafetyMargin { get; }
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -63,6 +75,8 @@ public interface IAppSettings
     Task SetGuardZoneWarningFactorAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetWindShiftLookbackMinutesAsync(double value);
+    Task SetBoatDraftMetersAsync(double value);
+    Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
 }
