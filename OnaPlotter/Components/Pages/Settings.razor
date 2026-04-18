@@ -105,7 +105,8 @@
                         Polar loaded: @Polar.TwaValues.Length TWA rows, @Polar.TwsValues.Length TWS columns
                         (TWS @Polar.TwsValues[0]-@Polar.TwsValues[^1] kn)
                     </p>
-                    <button class="btn btn-sm btn-outline-danger" @onclick="ClearPolar">Remove Polar</button>
+                    @RenderPolarPlot()
+                    <button class="btn btn-sm btn-outline-danger mt-2" @onclick="ClearPolar">Remove Polar</button>
                 }
                 else
                 {
@@ -247,6 +248,150 @@
         await Polar.ClearAsync();
         Toasts.Success("Polar cleared");
         StateHasChanged();
+    }
+
+    // ---- Polar plot ---------------------------------------------------
+    // Renders the loaded polar as a classic radial diagram: 0 deg TWA at
+    // top (upwind), 180 deg at bottom (downwind); one curve per TWS
+    // bucket, port-starboard mirrored. The plot gives serious sailors a
+    // "does this polar look right?" sanity check that the bare "23 TWA x
+    // 7 TWS" text couldn't (Jonas's UX-round ask).
+
+    private const double PlotRadius = 150;       // SVG units
+    private const double PlotPadding = 30;
+    private const double PlotViewHalf = PlotRadius + PlotPadding;
+
+    // Up to 5 TWS buckets evenly spaced across the loaded range. Colours
+    // are a cool-to-warm gradient chosen from the same earth palette as
+    // the AIS ship-type colours so the plot reads as part of the app.
+    private static readonly string[] PlotColors =
+    [
+        "#4a7ca1", // muted blue     - lightest wind
+        "#5a9aa8", // teal
+        "#7ea888", // sage
+        "#c08e4f", // amber
+        "#b05b45", // terracotta     - strongest wind
+    ];
+
+    private (int index, double tws, string color)[] SelectedBuckets()
+    {
+        var all = Polar.TwsValues;
+        if (all.Length == 0) return [];
+        int n = Math.Min(all.Length, PlotColors.Length);
+        var result = new (int, double, string)[n];
+        for (int i = 0; i < n; i++)
+        {
+            // Evenly spaced indices; always include first and last TWS.
+            int idx = n == 1 ? 0 : (int)Math.Round(i * (all.Length - 1) / (double)(n - 1));
+            result[i] = (idx, all[idx], PlotColors[i]);
+        }
+        return result;
+    }
+
+    private double MaxPolarSpeed()
+    {
+        double max = 0;
+        foreach (var tws in Polar.TwsValues)
+        foreach (var p in Polar.GetPolarCurve(tws))
+            if (p.Speed > max) max = p.Speed;
+        // Round up to the next even knot for clean ring labels.
+        return Math.Max(2, Math.Ceiling(max / 2.0) * 2.0);
+    }
+
+    // Polar (twa, boat-speed) -> SVG (x, y). TWA 0 is at the top; SVG y
+    // grows downward so cos is negated.
+    private static (double x, double y) ToSvg(double twaDeg, double speed, double maxSpeed)
+    {
+        double r = (speed / maxSpeed) * PlotRadius;
+        double rad = twaDeg * Math.PI / 180.0;
+        return (r * Math.Sin(rad), -r * Math.Cos(rad));
+    }
+
+    private static string F(double v) => v.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+    private RenderFragment RenderPolarPlot() => __builder =>
+    {
+        double maxSpeed = MaxPolarSpeed();
+        var buckets = SelectedBuckets();
+        if (buckets.Length == 0) return;
+
+        int view = (int)(PlotViewHalf * 2);
+        int half = (int)PlotViewHalf;
+
+        <div class="polar-plot">
+            <svg viewBox="@(-half) @(-half) @view @view" role="img" aria-label="Boat polar diagram">
+                @* Concentric rings every 2 kn + labels on the right spoke. *@
+                @for (int s = 2; s <= maxSpeed; s += 2)
+                {
+                    double r = (s / maxSpeed) * PlotRadius;
+                    <circle cx="0" cy="0" r="@F(r)" fill="none"
+                            stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+                    @SvgLabel(r + 3, 3, $"{s}", "rgba(255,255,255,0.35)", 8, "start")
+                }
+
+                @* Radial spokes every 30 deg. Labels only on 0/30/60/.../180. *@
+                @for (int a = 0; a < 360; a += 30)
+                {
+                    var (x, y) = ToSvg(a, maxSpeed, maxSpeed);
+                    <line x1="0" y1="0" x2="@F(x)" y2="@F(y)"
+                          stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+                }
+                @for (int a = 0; a <= 180; a += 30)
+                {
+                    var (x, y) = ToSvg(a, maxSpeed * 1.12, maxSpeed);
+                    @SvgLabel(x, y + 3, $"{a}\u00B0", "rgba(255,255,255,0.5)", 9, "middle")
+                }
+
+                @* One curve per TWS bucket, mirrored port + starboard. *@
+                @foreach (var (_, tws, color) in buckets)
+                {
+                    var curve = Polar.GetPolarCurve(tws);
+                    if (curve.Length < 2) continue;
+                    string starboard = BuildPolyline(curve, maxSpeed, mirror: false);
+                    string port      = BuildPolyline(curve, maxSpeed, mirror: true);
+                    <polyline points="@starboard" fill="none" stroke="@color" stroke-width="1.6"
+                              stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>
+                    <polyline points="@port" fill="none" stroke="@color" stroke-width="1.6"
+                              stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>
+                }
+
+                @* Centre dot. *@
+                <circle cx="0" cy="0" r="1.5" fill="rgba(255,255,255,0.5)"/>
+            </svg>
+
+            <div class="polar-plot-legend">
+                @foreach (var (_, tws, color) in buckets)
+                {
+                    <span class="polar-legend-item">
+                        <span class="polar-legend-swatch" style="background:@color"></span>
+                        @F(tws)kn
+                    </span>
+                }
+            </div>
+        </div>
+    };
+
+    private static string BuildPolyline((double Twa, double Speed)[] curve, double maxSpeed, bool mirror)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var (twa, speed) in curve)
+        {
+            double a = mirror ? -twa : twa;
+            var (x, y) = ToSvg(a, speed, maxSpeed);
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(F(x)).Append(',').Append(F(y));
+        }
+        return sb.ToString();
+    }
+
+    // Razor reserves <text> as a literal-text block marker in component
+    // markup, so we emit SVG <text> elements via MarkupString to bypass
+    // the parser. Mirrors the trick used in MapHud.SvgText.
+    private static MarkupString SvgLabel(double x, double y, string content, string fill, int fontSize, string anchor)
+    {
+        return new MarkupString(
+            $"<text x=\"{F(x)}\" y=\"{F(y)}\" fill=\"{fill}\" font-size=\"{fontSize}\" "
+            + $"text-anchor=\"{anchor}\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

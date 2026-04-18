@@ -1988,6 +1988,47 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 220px;
 }
 
+/* ===== Polar plot (Settings page) ===== */
+/* Renders the loaded boat polar as a classic radial diagram so the user
+   can sanity-check the numbers they just uploaded. Responsive: shrinks
+   on narrow viewports; legend stacks below on phones. */
+.polar-plot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 12px;
+    max-width: 360px;
+}
+.polar-plot svg {
+    width: 100%;
+    height: auto;
+    max-width: 320px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.polar-plot-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 10px;
+    justify-content: center;
+    font-size: 0.72rem;
+    color: #94a3b8;
+}
+.polar-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-variant-numeric: tabular-nums;
+}
+.polar-legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 3px;
+    border-radius: 2px;
+}
+
 /* Note dialog extends the waypoint dialog with a larger footprint since
    the description field wants room. Multiline textarea; mobile gets the
    full viewport minus margin. */
