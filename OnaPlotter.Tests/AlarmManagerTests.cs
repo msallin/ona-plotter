@@ -7,44 +7,8 @@ namespace OnaPlotter.Tests;
 public class AlarmManagerTests
 {
     // --- test scaffolding ----------------------------------------------
-
-    private sealed class FixedSettings : IAppSettings
-    {
-        public bool NightMode => false;
-        public string NightModePreset => "soft";
-        public string Theme => "dark";
-        public string MapOrientation => "north";
-        public bool FollowBoat => true;
-        public bool LaylinesVisible => false;
-        public double DepthAlarmThreshold { get; set; } = 3.0;
-        public double CpaAlarmThreshold { get; set; } = 0.5;
-        public double GuardZoneLookaheadMinutes { get; set; } = 10.0;
-        public double GuardZoneWarningFactor { get; set; } = 2.0;
-        public double WindShiftAlarmThreshold { get; set; } = 15.0;
-        public double WindShiftLookbackMinutes { get; set; } = 5.0;
-        public double BoatDraftMeters { get; set; } = 1.5;
-        public double AnchorTideSafetyMargin { get; set; } = 1.0;
-        public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
-        public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
-        public event Action? OnSettingsChanged { add { } remove { } }
-        public Task InitializeAsync() => Task.CompletedTask;
-        public Task SetNightModeAsync(bool v) => Task.CompletedTask;
-        public Task SetNightModePresetAsync(string v) => Task.CompletedTask;
-        public Task SetThemeAsync(string v) => Task.CompletedTask;
-        public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
-        public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
-        public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
-        public Task SetDepthAlarmThresholdAsync(double v) => Task.CompletedTask;
-        public Task SetCpaAlarmThresholdAsync(double v) => Task.CompletedTask;
-        public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;
-        public Task SetGuardZoneWarningFactorAsync(double v) => Task.CompletedTask;
-        public Task SetWindShiftAlarmThresholdAsync(double v) => Task.CompletedTask;
-        public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
-        public Task SetBoatDraftMetersAsync(double v) => Task.CompletedTask;
-        public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
-        public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
-        public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
-    }
+    // IAppSettings stub lives in OnaPlotter.Tests/FakeSettings.cs and is
+    // shared with the other alarm-rule test classes.
 
     private static AisVessel Vessel(string ctx, double lat, double lon,
         double? cogRad = 0, double? sogMs = 5.0, bool buddy = false)
@@ -68,10 +32,10 @@ public class AlarmManagerTests
         return n;
     }
 
-    private static (AlarmManager mgr, MutableClock clock, FixedSettings settings, int fires) NewMgr()
+    private static (AlarmManager mgr, MutableClock clock, FakeSettings settings, int fires) NewMgr()
     {
         var clock = new MutableClock();
-        var settings = new FixedSettings();
+        var settings = new FakeSettings();
         IAlarmRule[] rules =
         [
             new ShallowAlarmRule(),
@@ -253,10 +217,10 @@ public class AlarmManagerTests
                 : null;
     }
 
-    private static (AlarmManager mgr, MutableClock clock, FixedSettings settings) NewMgrWith(params IAlarmRule[] rules)
+    private static (AlarmManager mgr, MutableClock clock, FakeSettings settings) NewMgrWith(params IAlarmRule[] rules)
     {
         var clock = new MutableClock();
-        var settings = new FixedSettings();
+        var settings = new FakeSettings();
         var mgr = (AlarmManager)Activator.CreateInstance(
             typeof(AlarmManager),
             bindingAttr: System.Reflection.BindingFlags.Instance

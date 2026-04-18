@@ -1194,20 +1194,13 @@
 
         if (weatherOverlayVisible)
         {
-            // OpenWeatherMap free tier tile URL. Users can set their own key in appsettings.
-            // Default: wind_new layer. Without an API key the tiles will return 401.
-            var owmKey = ""; // TODO: read from configuration if available
-            if (!string.IsNullOrEmpty(owmKey))
-            {
-                var url = $"https://tile.openweathermap.org/map/wind_new/{{z}}/{{x}}/{{y}}.png?appid={owmKey}";
-                await module.InvokeVoidAsync("setWeatherOverlay", url);
-            }
-            else
-            {
-                // Fallback: use RainViewer (free, no key needed) for precipitation radar.
-                await module.InvokeVoidAsync("setWeatherOverlay",
-                    "https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png");
-            }
+            // RainViewer precipitation-radar tiles: free, no API key, CORS-friendly.
+            // If we ever want wind / temperature overlays, OpenWeatherMap is the
+            // obvious upgrade -- would need a per-user API key threaded through
+            // IAppSettings and a dropdown picker for the layer (wind / temp /
+            // pressure / precip). Not worth the plumbing until someone asks.
+            await module.InvokeVoidAsync("setWeatherOverlay",
+                "https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png");
         }
         else
         {

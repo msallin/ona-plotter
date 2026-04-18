@@ -1025,10 +1025,6 @@ export function setGuardZone(radiusNm, lookaheadMin, warningFactor) {
     drawGuardZone();
 }
 
-export function clearGuardZone() {
-    if (guardZoneRing) { map.removeLayer(guardZoneRing); guardZoneRing = null; }
-}
-
 function drawGuardZone() {
     if (!map) return;
     // Disabled (radius <= 0) - remove the ring entirely instead of shrinking
@@ -1203,11 +1199,6 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
 }
 
 export function removeChartLayer(id) { chartLayers.remove(id); }
-
-export function setChartLayerOpacity(id, opacity) {
-    const layer = chartLayers.get(id);
-    if (layer) layer.setOpacity(opacity);
-}
 
 // --- Routes ---
 
@@ -1584,8 +1575,6 @@ export function addWaypointMarker(id, lat, lon, name) {
     });
     waypointMarkers.set(id, marker);
 }
-
-export function removeWaypointMarker(id) { waypointMarkers.remove(id); }
 
 // --- Note Markers ---
 // Geolocated text annotations (SignalK /resources/notes). Rendered as a
