@@ -5,6 +5,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <!-- Opt in to the Microsoft Testing Platform dotnet-test experience.
+         Required on .NET 10 SDK where the legacy VSTest dispatch was
+         removed; without this, `dotnet test OnaPlotter.slnx` aborts with
+         the "Testing with VSTest target is no longer supported" error.
+         TUnit runs natively on MTP, so this just swaps the CI dispatcher;
+         local `dotnet run` on the test project keeps working too. -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>

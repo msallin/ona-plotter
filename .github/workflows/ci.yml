@@ -27,5 +27,14 @@ jobs:
       - name: Build
         run: dotnet build OnaPlotter.slnx --no-restore --configuration Release
 
-      - name: Test
-        run: dotnet test OnaPlotter.slnx --no-build --configuration Release --verbosity normal
+      # `dotnet test` on .NET 10 SDK dispatches through VSTest by default,
+      # which Microsoft.Testing.Platform refuses. TUnit is MTP-native and
+      # runs as an executable, so invoking the test project directly is
+      # the cleanest route. `--no-build` reuses the Release artefacts from
+      # the step above. A non-zero exit propagates a red CI.
+      - name: Test (C# unit + bUnit component)
+        run: dotnet run --project OnaPlotter.Tests --configuration Release --no-build
+
+      # JS navigation-math tests. Pure Node, no server dependency.
+      - name: Test (JS math)
+        run: node --test OnaPlotter/wwwroot/js/geoMath.test.js
