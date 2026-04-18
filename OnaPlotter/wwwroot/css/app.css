@@ -1153,6 +1153,17 @@ main:has(.alarm-banner) .hud-top-left {
 }
 
 /* Chart picker panel */
+/* Invisible full-area catcher that dismisses the Layers panel on a
+   click outside it. Sits one layer below the panel; the panel itself
+   stops click propagation so taps inside it don't reach this. */
+.panel-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: calc(var(--z-controls) - 1);
+    background: transparent;
+    cursor: default;
+}
+
 .chart-panel {
     position: absolute;
     bottom: var(--panel-bottom);

@@ -120,6 +120,11 @@
 
     @if (chartPanelOpen)
     {
+        @* Click-outside-to-close: invisible backdrop covers the map beneath
+           the panel. The panel sits at z-index:var(--z-controls), backdrop
+           one layer under. LayersPanel itself stops click propagation via
+           its own stopPropagation, so taps inside keep the panel open. *@
+        <div class="panel-backdrop" @onclick="() => chartPanelOpen = false"></div>
         <LayersPanel AvailableCharts="availableCharts"
                      AvailableRoutes="availableRoutes"
                      FilteredCharts="FilteredCharts"

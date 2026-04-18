@@ -6,7 +6,7 @@
    section is a self-contained component under Components/Map/Layers/,
    with its own expand/collapse state. *@
 
-<div class="chart-panel">
+<div class="chart-panel" @onclick:stopPropagation>
     @if (AvailableCharts.Count + AvailableRoutes.Count > 6)
     {
         <input type="text" class="layer-search" aria-label="Filter layers"
