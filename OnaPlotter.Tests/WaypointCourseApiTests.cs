@@ -26,6 +26,40 @@ public class WaypointCourseApiTests
     }
 
     [Test]
+    public async Task WaypointApi_Create_EmitsFeatureProperties()
+    {
+        // Pins the Freeboard-SK compatibility contract: every POSTed
+        // waypoint must carry Feature.properties (name + description) in
+        // addition to the top-level name and geometry. A missing
+        // properties block is exactly what made our waypoints invisible
+        // in freeboard until the route fix was cargo-culted over.
+        string? capturedBody = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("\"wpt-new-42\"")
+            };
+        });
+        var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var id = await api.CreateAsync("Marker", 47.4, 8.5);
+
+        await Assert.That(id).IsEqualTo("wpt-new-42");
+        await Assert.That(capturedBody).IsNotNull();
+        // Top-level name preserved for SignalK.
+        await Assert.That(capturedBody).Contains("\"name\":\"Marker\"");
+        // Feature type + Point geometry with [lon, lat] order.
+        await Assert.That(capturedBody).Contains("\"type\":\"Feature\"");
+        await Assert.That(capturedBody).Contains("\"type\":\"Point\"");
+        await Assert.That(capturedBody).Contains("[8.5,47.4]");
+        // Properties block with name + description (Freeboard compat).
+        await Assert.That(capturedBody).Contains("\"properties\"");
+        await Assert.That(capturedBody).Contains("\"description\":\"\"");
+    }
+
+    [Test]
     public async Task WaypointApi_Delete_UrlEncodesId()
     {
         string? capturedUrl = null;

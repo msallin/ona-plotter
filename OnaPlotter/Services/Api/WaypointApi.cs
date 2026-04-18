@@ -46,13 +46,26 @@ public sealed class WaypointApi : IWaypointApi
 
     public async Task<string?> CreateAsync(string name, double lat, double lon, CancellationToken ct = default)
     {
+        // GeoJSON requires `properties` on every Feature (empty is fine)
+        // and freeboard-sk explicitly assumes it's always present.
+        // Shipping just `{type, geometry}` produced waypoints that
+        // displayed broken or not at all when the same SignalK server
+        // was viewed through freeboard. Mirrors the route fix
+        // (1ca24fc): top-level `name` stays as the SignalK resource
+        // name; properties.name/description are the per-GeoJSON copy so
+        // any consumer picks them up.
         var body = new
         {
             name,
             feature = new
             {
                 type = "Feature",
-                geometry = new { type = "Point", coordinates = new[] { lon, lat } }
+                geometry = new { type = "Point", coordinates = new[] { lon, lat } },
+                properties = new
+                {
+                    name,
+                    description = "",
+                }
             }
         };
         var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
