@@ -39,6 +39,11 @@ pocket. All layout is responsive and touch-tuned (WCAG-sized tap targets under
   route is active.
 - Server track (last 24h), tidal current arrow, OpenWeatherMap/RainViewer
   weather overlay, OpenSeaMap overlay (auto-enabled on first run).
+- Tide heights + next HW/LW from any SignalK tide plugin (e.g.
+  [openwatersio/signalk-tides](https://github.com/openwatersio/signalk-tides)):
+  small Tide card in the bottom-left with current height, flood/ebb arrow,
+  countdown to the next extreme and station name. Card hides entirely on
+  installs without a tide plugin -- no empty state.
 - Anchor watch: manual drop from current position, or server-driven via
   [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin)
   with live radius and drag alarm.
@@ -60,17 +65,22 @@ pocket. All layout is responsive and touch-tuned (WCAG-sized tap targets under
   *Navigate Here*, *Route with wind*, *Stop Navigation*).
 
 ### Other pages
-- **Dashboard** — speed, course, position, depth, wind at-a-glance.
+- **Dashboard** — speed, course, position, depth, wind, tide and polar
+  performance at a glance. Tide section surfaces when a SignalK tide plugin
+  is feeding the bus.
 - **Gauges** — circular instruments with colour zones; responsive grid (2-up on
   phones, auto on desktop).
 - **SailSteer** — compass-rose view combining wind, heading, COG, laylines, and
   waypoint bearing; compass rotates so the boat always points up.
-- **Wind Rose** — TWD history over time for spotting wind shifts.
+- **Wind Rose** — TWD history over time for spotting wind shifts, with a
+  15m / 30m / 1h / 3h window picker so short-window racing and long-window
+  cruising both get a useful view.
 - **Raw Stream** — live SignalK delta viewer with per-path filtering, paused
   when you scroll away from the bottom.
 - **History** — playback of the buffered track with step / scrub / play controls.
-- **Settings** — Theme (System/Light/Dark), Night Mode, alarm thresholds,
-  polar-file upload.
+- **Settings** — Theme (System/Light/Dark), Night Mode (Soft/Amber/Red preset),
+  alarm thresholds (depth, CPA, guard-zone lookahead+warning factor, wind
+  shift + lookback), polar-file upload with a live polar diagram.
 
 ## Less-visible behaviours (the "quiet" features)
 
@@ -112,12 +122,27 @@ A **Log** button in the top row opens a drawer of the last 20 alarms
 with their dismissal reason (user-dismissed / user-snoozed / auto-cleared)
 for post-mortem.
 
+### Freeboard-SK interop
+Routes, waypoints, notes, and regions all round-trip through the SignalK v2
+`/resources/*` API with the shape Freeboard-SK expects (`feature` wrapper with
+`properties`, GeoJSON geometry in `[lon, lat]` order, etc.). A waypoint or note
+created in OnaPlotter appears in Freeboard and vice-versa, on the same server,
+with no extra configuration. The test suite pins the exact POST payloads so
+this contract doesn't drift silently.
+
 ### Optional plugin detection
-`BuddyListApi` probes for
-[sbender9/signalk-buddylist-plugin](https://github.com/sbender9/signalk-buddylist-plugin)
-(`GET /signalk/v2/api/resources/buddies`) once per session and caches the
-result. UI that depends on it (coming next) stays hidden when the plugin isn't
-installed, so the app degrades cleanly against any SignalK deployment.
+Each optional plugin is probed the same way: hit its endpoint once, cache the
+result, hide dependent UI if it's absent.
+- [sbender9/signalk-buddylist-plugin](https://github.com/sbender9/signalk-buddylist-plugin)
+  feeds the Buddies section in the Layers panel and the buddy-star on AIS
+  triangles.
+- [openwatersio/signalk-tides](https://github.com/openwatersio/signalk-tides)
+  (or any plugin publishing `environment.tide.*`) feeds the Tide HUD card and
+  the Tide section on the Dashboard.
+- [sbender9/signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin)
+  drives the anchor watch UI with live radius + drag detection.
+- [Mayara](https://github.com/MarineYachtRadar/mayara-server) radar ARPA
+  targets show up alongside AIS when the plugin is present.
 
 ### Robustness the user shouldn't notice
 - All SignalK resource fetches (`ChartApi`, `RouteApi`, `WaypointApi`) use a
@@ -149,12 +174,17 @@ Browser (Blazor WASM)                          SignalK server
 │    └─ AisStore (other vessels)     │        │                      │
 │                                    │  HTTP  │                      │
 │  Services/Api/*Api ◄──────────────►│───────►│  /signalk/v1|v2/api  │
-│    Chart, Route, Waypoint, Course, │        │                      │
-│    Autopilot, Path, Track,         │        │                      │
+│    Chart, Route, Waypoint, Note,   │        │                      │
+│    Region, Course, Autopilot,      │        │                      │
+│    Path, Track, Weather (OM),      │        │                      │
 │    BuddyList (optional)            │        │                      │
 │                                    │        │                      │
+│  Services/                         │        │                      │
+│    AlarmManager + IAlarmRule       │        │                      │
+│    PolarService, AppSettings       │        │                      │
+│                                    │        │                      │
 │  Utilities/                        │        │                      │
-│    Cpa, Format, Icons, JsonExt.    │        │                      │
+│    Cpa, IsochroneRouter, Format    │        │                      │
 │                                    │        │                      │
 │  wwwroot/js/leafletInterop.js      │        │                      │
 │  wwwroot/js/audioAlert.js          │        │                      │
@@ -172,8 +202,14 @@ Browser (Blazor WASM)                          SignalK server
 - **`Services/Api/*`** are thin HTTP clients, one per concern. They return
   typed data or throw `HttpRequestException`; the caller decides whether to
   surface a toast or rethrow.
-- **`Utilities/Cpa.cs`** is the only place that does navigation math in C#;
-  `wwwroot/js/geoMath.js` has the JS mirror with its own test suite.
+- **`Services/AlarmManager`** owns the alarm stack: every registered
+  `IAlarmRule` (SHALLOW, CPA, WIND SHIFT today) gets a crack at each eval
+  tick; up to three concurrent alarms surface in the banner.
+- **`Utilities/Cpa.cs`** and **`Utilities/IsochroneRouter.cs`** are the two
+  places that do substantive navigation math in C# (CPA/TCPA projection for
+  collisions; isochrone expansion + sector pruning for weather routing).
+  `wwwroot/js/geoMath.js` mirrors the smaller math helpers with its own
+  Node test suite.
 
 ## Quick start
 
@@ -189,7 +225,7 @@ origin when the app is hosted as a SignalK webapp.
 ## Tests
 
 ```bash
-# C# unit tests (178+ at time of writing)
+# C# unit tests (~270 at time of writing)
 dotnet run --project OnaPlotter.Tests
 
 # JS math tests
@@ -219,6 +255,9 @@ Restart SignalK to pick it up.
 
 ## Future plans
 
-- [ ] Buddy-list UI integration (the detection plumbing is already in place)
 - [ ] COLREGS crossing-category labels (head-on / port / stbd / overtaking)
 - [ ] Offline tile download for the current viewport
+- [ ] Polygon regions via freeform drawing (circles and server-supplied
+      polygons already work)
+- [ ] Tide-aware weather routing: add the tidal-current vector to the
+      polar-derived boat speed inside `IsochroneRouter`
