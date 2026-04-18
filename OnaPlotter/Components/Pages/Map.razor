@@ -766,6 +766,10 @@
                         headingRad = v.Heading, cogRad = v.CourseOverGround,
                         sogMs = v.SpeedOverGround, shipType = v.ShipType,
                         buddy = v.IsBuddy,
+                        // Tell JS whether to render with an AIS or radar-ARPA
+                        // icon. Radar targets lose buddy/danger overlays too;
+                        // JS looks at this flag.
+                        source = v.Source == OnaPlotter.Models.TargetSource.Radar ? "radar" : "ais",
                         colregsLabel,
                         colregsRole
                     };

@@ -48,6 +48,11 @@ public sealed class SignalkClient : IAsyncDisposable
         "navigation.anchor.position",
         "navigation.anchor.maxRadius",
         "navigation.anchor.currentRadius",
+        // Mayara radar ARPA targets. Paths arrive as
+        // radars.<radarId>.targets.<targetId>.(position|course|speed|...)
+        // under context vessels.self; ProcessSelfDelta detects and routes
+        // them into AisStore with a synthesised radar.* context.
+        "radars.*.targets.*",
         // Active course / route info
         "navigation.courseGreatCircle.activeRoute.href",
         "navigation.courseGreatCircle.activeRoute.name",
@@ -272,6 +277,17 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (val.Path is null)
                     continue;
 
+                // Mayara radar ARPA targets come in under vessels.self on
+                // paths like radars.<rid>.targets.<tid>.position. Route
+                // each target field into AisStore with a synthesised
+                // radar.<rid>.<tid> context so the alarm pipeline treats
+                // them uniformly with AIS vessels.
+                if (val.Path.StartsWith("radars.", StringComparison.Ordinal))
+                {
+                    RouteRadarDelta(val.Path, val.Value);
+                    continue;
+                }
+
                 if (val.Path == "navigation.position" && val.Value is JsonElement posEl
                     && posEl.ValueKind == JsonValueKind.Object)
                 {
@@ -402,6 +418,28 @@ public sealed class SignalkClient : IAsyncDisposable
                 _ais.Apply(delta.Context!, val.Path, val.Value);
             }
         }
+    }
+
+    /// <summary>
+    /// Converts a raw Mayara radar-target delta path like
+    /// <c>radars.&lt;radarId&gt;.targets.&lt;targetId&gt;.&lt;field&gt;</c>
+    /// into a synthesised AIS context plus a short path name, then
+    /// dispatches to <see cref="AisStore"/>. Unknown shapes are dropped
+    /// silently; malformed ones should not crash the receive loop.
+    /// </summary>
+    private void RouteRadarDelta(string path, object? value)
+    {
+        // path segments: radars . <radarId> . targets . <targetId> . <field...>
+        var parts = path.Split('.');
+        if (parts.Length < 5) return;
+        if (!string.Equals(parts[0], "radars", StringComparison.Ordinal)) return;
+        if (!string.Equals(parts[2], "targets", StringComparison.Ordinal)) return;
+
+        string radarId = parts[1];
+        string targetId = parts[3];
+        string field = string.Join('.', parts, 4, parts.Length - 4);
+        string ctx = $"{AisStore.RadarContextPrefix}{radarId}.{targetId}";
+        _ais.Apply(ctx, field, value);
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OnaPlotter.Models;
 using OnaPlotter.Services;
 
 namespace OnaPlotter.Tests;
@@ -110,6 +111,47 @@ public class AisStoreTests
         // list must un-tag the vessel.
         store.UpdateBuddies([]);
         await Assert.That(store.GetVessels()[0].IsBuddy).IsFalse();
+    }
+
+    [Test]
+    public async Task RadarContext_SeedsRadarSource_AndRdrName()
+    {
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("radar.1.T42", "position", pos);
+
+        var v = store.GetVessels().Single();
+        await Assert.That(v.Source).IsEqualTo(TargetSource.Radar);
+        await Assert.That(v.Mmsi).IsNull();
+        await Assert.That(v.Name).IsEqualTo("RDR-T42");
+        await Assert.That(v.Latitude).IsEqualTo(47.0);
+        await Assert.That(v.Longitude).IsEqualTo(8.0);
+    }
+
+    [Test]
+    public async Task RadarTarget_AcceptsCourseAndSpeedShorthand()
+    {
+        var store = new AisStore();
+        store.Apply("radar.1.T1", "position",
+            JsonSerializer.SerializeToElement(new { latitude = 0.0, longitude = 0.0 }));
+        store.Apply("radar.1.T1", "course", JsonSerializer.SerializeToElement(1.57));
+        store.Apply("radar.1.T1", "speed", JsonSerializer.SerializeToElement(4.1));
+
+        var v = store.GetVessels().Single();
+        await Assert.That(v.CourseOverGround).IsEqualTo(1.57);
+        await Assert.That(v.SpeedOverGround).IsEqualTo(4.1);
+    }
+
+    [Test]
+    public async Task AisContext_KeepsAisSource()
+    {
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 1.0, longitude = 2.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:777777777", "navigation.position", pos);
+
+        var v = store.GetVessels().Single();
+        await Assert.That(v.Source).IsEqualTo(TargetSource.Ais);
+        await Assert.That(v.Mmsi).IsEqualTo("777777777");
     }
 
     [Test]

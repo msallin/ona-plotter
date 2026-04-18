@@ -26,12 +26,29 @@ public sealed class AisStore
     /// <summary>
     /// Gets or creates a vessel entry for the given SignalK context, then applies the path/value.
     /// </summary>
+    /// <summary>Prefix used for radar-target contexts: <c>radar.&lt;radarId&gt;.&lt;targetId&gt;</c>.
+    /// Radar contexts are synthesised by <see cref="SignalkClient"/>; they
+    /// live in the same store as AIS vessels so the alarm/CPA/COLREGS
+    /// pipeline treats both uniformly.</summary>
+    public const string RadarContextPrefix = "radar.";
+
     public void Apply(string context, string path, object? value)
     {
         var vessel = _vessels.GetOrAdd(context, ctx =>
         {
             var v = new AisVessel(ctx);
-            v.Mmsi = AisVessel.ExtractMmsi(ctx);
+            if (ctx.StartsWith(RadarContextPrefix, StringComparison.Ordinal))
+            {
+                v.Source = TargetSource.Radar;
+                // Name the radar target using its target-id portion so the
+                // map label shows something like "RDR-T123" instead of a
+                // raw context string.
+                v.Name = "RDR-" + ctx[(ctx.LastIndexOf('.') + 1)..];
+            }
+            else
+            {
+                v.Mmsi = AisVessel.ExtractMmsi(ctx);
+            }
             lock (_buddyLock)
             {
                 v.IsBuddy = _buddyContexts.Contains(ctx);

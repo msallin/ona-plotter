@@ -2,13 +2,29 @@ using System.Text.Json;
 
 namespace OnaPlotter.Models;
 
+/// <summary>Where a tracked target originated. Kept on the target so the
+/// map can render AIS and radar distinguishably and so features that only
+/// apply to one source (external name lookup, buddy tagging) can be
+/// skipped for the other.</summary>
+public enum TargetSource
+{
+    /// <summary>AIS vessel, context format <c>vessels.urn:mrn:imo:mmsi:NNN</c>.</summary>
+    Ais,
+    /// <summary>Radar ARPA target from Mayara, synthesised context
+    /// <c>radar.&lt;radarId&gt;.&lt;targetId&gt;</c>.</summary>
+    Radar,
+}
+
 /// <summary>
-/// Mutable state for a single AIS target vessel, populated from SignalK delta
-/// updates for non-self vessel contexts. Tracks position, identity, and motion.
+/// Mutable state for a single tracked target. Originally built for AIS
+/// vessels; now doubles as the state holder for radar ARPA targets too
+/// (they share the same fields the alarm pipeline cares about).
+/// Populated from SignalK delta updates.
 /// </summary>
 public sealed class AisVessel
 {
     public string Context { get; }
+    public TargetSource Source { get; set; } = TargetSource.Ais;
     public string? Name { get; set; }
     public string? Mmsi { get; set; }
     public string? Callsign { get; set; }
@@ -44,7 +60,12 @@ public sealed class AisVessel
 
         switch (path)
         {
+            // AIS uses the full SignalK path names; Mayara radar targets use
+            // the short leaf names (position / course / speed) under their
+            // own radars.*.targets.* subtree. Accept both for the same fields
+            // so every consumer downstream sees a uniform target shape.
             case "navigation.position":
+            case "position":
                 if (rawValue is JsonElement posEl && posEl.ValueKind == JsonValueKind.Object
                     && posEl.TryGetProperty("latitude", out var lat)
                     && posEl.TryGetProperty("longitude", out var lon)
@@ -62,10 +83,12 @@ public sealed class AisVessel
                 return Heading is not null;
 
             case "navigation.courseOverGroundTrue":
+            case "course":
                 CourseOverGround = ToDouble(rawValue);
                 return CourseOverGround is not null;
 
             case "navigation.speedOverGround":
+            case "speed":
                 SpeedOverGround = ToDouble(rawValue);
                 return SpeedOverGround is not null;
 

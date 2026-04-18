@@ -18,6 +18,12 @@ pocket. All layout is responsive and touch-tuned (WCAG-sized tap targets under
   over blue water.
 - AIS targets: ship-type-coloured triangles with COG vector, 60-second fading
   trail, permanent name label (resolved from SignalK or falling back to MMSI).
+- Radar ARPA targets from
+  [Mayara](https://github.com/MarineYachtRadar/mayara-server) render as
+  outline triangles alongside AIS, share the same guard-zone alarm / CPA
+  crossing lines / COLREGS classification pipeline. No configuration needed
+  on the client: we subscribe to `radars.*.targets.*` and the rest just
+  works when a radar plugin is present.
 - Click any vessel for a popup with SOG/COG/HDG/BRG/distance/CPA plus deep links
   to MarineTraffic and VesselFinder.
 - [Collision detection](docs/collision-detection.md): guard-zone ring, crossing
@@ -193,7 +199,6 @@ Restart SignalK to pick it up.
 ## Future plans
 
 - [ ] Buddy-list UI integration (the detection plumbing is already in place)
-- [ ] Mayara radar ARPA targets via the SignalK delta stream
 - [ ] COLREGS crossing-category labels (head-on / port / stbd / overtaking)
 - [ ] Grib-based weather routing
 - [ ] Offline tile download for the current viewport

@@ -172,13 +172,35 @@ function aisColor(shipType, isDanger, isBuddy) {
     return AIS_COLORS.default;
 }
 
-// AIS icon cache to avoid creating new icons for every update.
+// Radar ARPA icon: outline triangle (no fill) + small center dot.
+// Classic ARPA look, and visually distinct from the filled AIS chevron.
+// Colour stays in the same warm family (tan) so radar targets read as
+// "same chart, different source" rather than "new palette".
+const RADAR_COLOR = '#b08d5a';
+function makeRadarSvg(fill, size) {
+    const s = size || 22;
+    const h = s / 2;
+    return `<svg width="${s}" height="${s}" viewBox="-${h} -${h} ${s} ${s}" `
+         + `style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4))">`
+         + `<polygon points="0,-${h-3} ${h-4},${h-5} -${h-4},${h-5}" `
+         + `fill="none" stroke="${fill}" stroke-width="1.6" stroke-linejoin="round" opacity="0.95"/>`
+         + `<circle cx="0" cy="0" r="1.6" fill="${fill}"/></svg>`;
+}
+
+// Icon caches (one per source x colour combo).
 const aisIconCache = {};
+const radarIconCache = {};
 function getAisIcon(color) {
     if (!aisIconCache[color]) {
         aisIconCache[color] = makeIcon(makeBoatSvg(color, 24, false), 24);
     }
     return aisIconCache[color];
+}
+function getRadarIcon(color) {
+    if (!radarIconCache[color]) {
+        radarIconCache[color] = makeIcon(makeRadarSvg(color, 22), 22);
+    }
+    return radarIconCache[color];
 }
 
 // AIS name labels (tooltips).
@@ -577,8 +599,13 @@ export function updateAisTargets(vessels) {
             && cpaInfo.cpa < guardZoneRadiusNm * guardZoneWarningFactor
             && cpaInfo.tcpa < guardZoneLookaheadMin * guardZoneWarningFactor
             && cpaInfo.tcpa > 0;
-        const color = aisColor(v.shipType, isDangerEff, v.buddy);
-        const icon = getAisIcon(color);
+        // Radar targets use their own outline-triangle icon in a fixed tan
+        // tone; AIS targets fall back to the per-ship-type colour scale.
+        const isRadar = v.source === 'radar';
+        const color = isRadar
+            ? (isDangerEff ? AIS_COLORS.danger : RADAR_COLOR)
+            : aisColor(v.shipType, isDangerEff, v.buddy);
+        const icon = isRadar ? getRadarIcon(color) : getAisIcon(color);
 
         let marker = aisMarkers[v.context];
         if (!marker) {
