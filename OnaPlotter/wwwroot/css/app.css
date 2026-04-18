@@ -1834,47 +1834,41 @@ main:has(.alarm-banner-stack) .hud-top-left {
     50%      { transform: scale(1.18); opacity: 0.85; }
 }
 
-/* ===== Tide card =====
-   Conditional: only rendered when the SignalK server actually publishes
-   tide data (via mxtide / signalk-tides-api / similar). Stacks above the
-   depth panel in the bottom-left column; depth panel is ~110px tall with
-   the threshold label, so 140px keeps a small gap. */
-.hud-tide {
-    bottom: 140px;
-    left: 12px;
-}
-@media (max-width: 600px) {
-    .hud-tide { bottom: 200px; left: 8px; }
-}
-.tide-height {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
-}
-.tide-arrow {
-    font-size: 0.85rem;
-    opacity: 0.85;
-}
-.tide-next {
-    margin-top: 4px;
-    padding-top: 4px;
+/* ===== Depth + tide row =====
+   Tide data (from mxtide / openwatersio / similar) lives inside the
+   depth panel as a subtle one-liner. Only rendered when a plugin
+   publishes -- zero visual footprint on installs without one. Matches
+   the 'depth-ok / depth-warn / depth-danger' styling family the depth
+   number already uses. */
+.depth-tide-row {
+    margin-top: 6px;
+    padding-top: 5px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 6px;
+    display: flex;
     align-items: baseline;
-    font-size: 0.75rem;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.7);
+    white-space: nowrap;
+}
+.depth-tide-arrow {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.55);
+    line-height: 1;
+}
+.depth-tide-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+}
+.depth-tide-time {
     color: rgba(255, 255, 255, 0.75);
 }
-.tide-next-label {
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.5);
-}
-.tide-next-val { font-variant-numeric: tabular-nums; }
-.tide-next-time {
-    font-variant-numeric: tabular-nums;
+.depth-tide-height {
+    margin-left: auto;
     color: rgba(255, 255, 255, 0.55);
 }
 
