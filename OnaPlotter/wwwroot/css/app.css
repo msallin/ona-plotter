@@ -1734,6 +1734,15 @@ main:has(.alarm-banner) .hud-top-left {
 .vessel-row.vessel-buddy .chart-name { color: #fde68a; }
 .buddy-offline { opacity: 0.6; font-style: italic; }
 
+/* Section header with a trailing action button (Refresh on the Buddies
+   section). The header fills the row; the button parks on the right. */
+.section-with-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.section-with-action > :first-child { flex: 1; min-width: 0; }
+
 /* COLREGS classification line under a vessel row */
 .vessel-colregs { font-size: 0.7rem; opacity: 0.85; }
 .colregs-role { font-weight: 600; }

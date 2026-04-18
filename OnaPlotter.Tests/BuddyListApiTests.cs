@@ -104,6 +104,58 @@ public class BuddyListApiTests
     }
 
     [Test]
+    public async Task AddAsync_200_ReturnsTrue_MarksAvailable()
+    {
+        HttpRequestMessage? captured = null;
+        var client = ApiTestHelpers.MockClient(req =>
+        {
+            captured = req;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+        });
+        var api = NewApi(client);
+
+        var ok = await api.AddAsync("urn:mrn:imo:mmsi:1234", "Test Boat");
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(await api.IsAvailableAsync()).IsTrue();
+        await Assert.That(captured!.Method).IsEqualTo(HttpMethod.Post);
+        await Assert.That(captured.RequestUri!.PathAndQuery).IsEqualTo("/signalk/v2/api/resources/buddies");
+    }
+
+    [Test]
+    public async Task AddAsync_404_ReturnsFalse_MarksUnavailable()
+    {
+        var client = ApiTestHelpers.MockClient(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var api = NewApi(client);
+
+        var ok = await api.AddAsync("urn:...", "Name");
+
+        await Assert.That(ok).IsFalse();
+        await Assert.That(await api.IsAvailableAsync()).IsFalse();
+    }
+
+    [Test]
+    public async Task RemoveAsync_HitsCorrectEncodedUrl()
+    {
+        string? hitPath = null;
+        HttpMethod? method = null;
+        var client = ApiTestHelpers.MockClient(req =>
+        {
+            hitPath = req.RequestUri!.AbsoluteUri;
+            method = req.Method;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = NewApi(client);
+
+        var ok = await api.RemoveAsync("urn:mrn:imo:mmsi:338 246 284");
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(method).IsEqualTo(HttpMethod.Delete);
+        // The URN embeds spaces (or any char) - must be percent-encoded.
+        await Assert.That(hitPath).Contains("338%20246%20284");
+    }
+
+    [Test]
     public async Task GetAllAsync_HitsBuddiesPath()
     {
         string? hitPath = null;

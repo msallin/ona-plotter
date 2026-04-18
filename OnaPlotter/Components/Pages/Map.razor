@@ -138,6 +138,7 @@
                      OnEditRoute="EditRoute"
                      OnNavigateToWaypoint="NavigateToWaypoint"
                      OnFocusVessel="FocusVessel"
+                     OnRefreshBuddies="RefreshBuddiesAsync"
                      OnToggleServerTrack="ToggleServerTrack"
                      OnToggleWeatherOverlay="ToggleWeatherOverlay"
                      OnGpxImport="HandleGpxImport"
@@ -932,6 +933,46 @@
     {
         AisStore.SetName(context, name);
         if (chartPanelOpen) _ = InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called from the AIS popup's Buddy link. Adds or removes the
+    /// target via the plugin's REST API, then refreshes the buddy list and
+    /// retags the tracked AIS vessels.</summary>
+    [JSInvokable]
+    public async Task OnToggleBuddy(string context, string? mmsi, string? name, bool currentlyBuddy)
+    {
+        // Plugin's API takes URNs like "urn:mrn:imo:mmsi:NNN", not the
+        // leading "vessels." prefix that SignalK contexts carry.
+        string urn = context.StartsWith("vessels.", StringComparison.Ordinal)
+            ? context["vessels.".Length..] : context;
+        string friendly = string.IsNullOrWhiteSpace(name)
+            ? (mmsi is { } m ? $"MMSI {m}" : urn) : name!;
+
+        bool ok = currentlyBuddy
+            ? await BuddyListApi.RemoveAsync(urn)
+            : await BuddyListApi.AddAsync(urn, friendly);
+
+        if (ok)
+        {
+            Toasts.Success(currentlyBuddy ? $"Removed {friendly} from buddies" : $"Added {friendly} to buddies");
+            await RefreshBuddiesAsync();
+        }
+        else
+        {
+            Toasts.Error("Buddy update failed (plugin installed & auth?)");
+        }
+    }
+
+    /// <summary>Re-fetches the buddy list from the plugin and retags all
+    /// tracked AIS vessels. Called after a user-initiated add/remove and
+    /// from the Refresh button on the Buddies panel.</summary>
+    private async Task RefreshBuddiesAsync()
+    {
+        var refreshed = await BuddyListApi.GetAllAsync();
+        if (refreshed is null) return;
+        loadedBuddies = refreshed;
+        AisStore.UpdateBuddies(refreshed.Select(b => $"vessels.{b.Urn}"));
+        await InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]

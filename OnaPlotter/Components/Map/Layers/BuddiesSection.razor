@@ -6,9 +6,15 @@
 
 @if (Buddies.Count == 0) return;
 
-<SectionHeader Title="Buddies" Count="@Buddies.Count"
-               Expanded="@expanded"
-               OnToggle="() => expanded = !expanded" />
+<div class="section-with-action">
+    <SectionHeader Title="Buddies" Count="@Buddies.Count"
+                   Expanded="@expanded"
+                   OnToggle="() => expanded = !expanded" />
+    <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+            @onclick="() => OnRefresh.InvokeAsync()"
+            @onclick:stopPropagation
+            title="Re-fetch the buddy list from the plugin">Refresh</button>
+</div>
 @if (expanded)
 {
     @foreach (var buddy in Buddies)
@@ -46,6 +52,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkBuddy> Buddies { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
     [Parameter] public EventCallback<string> OnFocus { get; set; }
+    [Parameter] public EventCallback OnRefresh { get; set; }
 
     private bool expanded = true;
 }

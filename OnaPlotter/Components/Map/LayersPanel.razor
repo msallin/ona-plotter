@@ -27,7 +27,8 @@
 
     <BuddiesSection Buddies="Buddies"
                     Vessels="Vessels"
-                    OnFocus="OnFocusVessel" />
+                    OnFocus="OnFocusVessel"
+                    OnRefresh="OnRefreshBuddies" />
 
     <VesselsSection Vessels="Vessels"
                     OnFocus="OnFocusVessel" />
@@ -70,6 +71,7 @@
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
     [Parameter] public EventCallback<string> OnFocusVessel { get; set; }
+    [Parameter] public EventCallback OnRefreshBuddies { get; set; }
     [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }
     [Parameter] public EventCallback<bool> OnToggleWeatherOverlay { get; set; }
     [Parameter] public EventCallback<InputFileChangeEventArgs> OnGpxImport { get; set; }

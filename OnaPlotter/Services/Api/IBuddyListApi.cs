@@ -26,4 +26,14 @@ public interface IBuddyListApi
 
     /// <summary>Forces the next call to re-probe instead of using the cache.</summary>
     void InvalidateAsync();
+
+    /// <summary>Adds a buddy by its SignalK URN (e.g.
+    /// <c>urn:mrn:imo:mmsi:338246284</c>) and friendly name. Returns true on
+    /// success, false if the plugin isn't installed or the server rejected
+    /// the write (e.g. auth required).</summary>
+    Task<bool> AddAsync(string urn, string name, CancellationToken ct = default);
+
+    /// <summary>Removes a buddy by URN. Same return contract as
+    /// <see cref="AddAsync"/>.</summary>
+    Task<bool> RemoveAsync(string urn, CancellationToken ct = default);
 }

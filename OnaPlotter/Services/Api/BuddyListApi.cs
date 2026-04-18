@@ -78,4 +78,40 @@ public sealed class BuddyListApi : IBuddyListApi
     }
 
     public void InvalidateAsync() => _available = null;
+
+    public async Task<bool> AddAsync(string urn, string name, CancellationToken ct = default)
+    {
+        var url = _baseUrl.Combine(SignalKUrls.BuddiesPath);
+        try
+        {
+            using var res = await _http.PostAsJsonAsync(url, new { urn, name }, ct);
+            if (res.IsSuccessStatusCode) { _available = true; return true; }
+            if (res.StatusCode == HttpStatusCode.NotFound) { _available = false; return false; }
+            _logger.LogWarning("Buddy add rejected with {Status}", res.StatusCode);
+            return false;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Buddy add failed");
+            return false;
+        }
+    }
+
+    public async Task<bool> RemoveAsync(string urn, CancellationToken ct = default)
+    {
+        var url = _baseUrl.Combine(SignalKUrls.Buddy(urn));
+        try
+        {
+            using var res = await _http.DeleteAsync(url, ct);
+            if (res.IsSuccessStatusCode) { _available = true; return true; }
+            if (res.StatusCode == HttpStatusCode.NotFound) { _available = false; return false; }
+            _logger.LogWarning("Buddy delete rejected with {Status}", res.StatusCode);
+            return false;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Buddy delete failed");
+            return false;
+        }
+    }
 }

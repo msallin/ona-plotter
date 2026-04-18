@@ -364,6 +364,21 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     mapEl.addEventListener('touchend', cancelLongPress, { passive: true });
     mapEl.addEventListener('touchcancel', cancelLongPress, { passive: true });
 
+    // Delegated click handler: AIS popup buddy-toggle links tag themselves
+    // with data-ona-buddy so we can route them to Blazor without leaking a
+    // callback through each popup's HTML.
+    mapEl.addEventListener('click', (e) => {
+        const a = e.target && e.target.closest ? e.target.closest('a[data-ona-buddy]') : null;
+        if (!a || !dotNetRef) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dotNetRef.invokeMethodAsync('OnToggleBuddy',
+            a.getAttribute('data-ctx') || '',
+            a.getAttribute('data-mmsi') || null,
+            a.getAttribute('data-nm') || null,
+            a.getAttribute('data-is') === '1');
+    });
+
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.
     // Debounced: skip events caused by programmatic panTo (follow mode) and coalesce
     // rapid user interactions into a single callback.
@@ -606,11 +621,18 @@ export function updateAisTargets(vessels) {
         const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
         const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?name=${esc(mmsi)}` : '';
 
+        // Buddy toggle: inline data attributes let us hook a delegated click
+        // below without escaping a callback through string concatenation.
+        const buddyLabel = v.buddy ? '\u2605 Remove buddy' : '\u2606 Add buddy';
+        const buddyAttrs = `data-ona-buddy="1" data-ctx="${esc(v.context)}" data-mmsi="${esc(mmsi || '')}"`
+            + ` data-nm="${esc(v.name || '')}" data-is="${v.buddy ? '1' : '0'}"`;
+
         let linksHtml = '';
         if (mmsi) {
-            linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:10px">` +
+            linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:10px;flex-wrap:wrap">` +
                 `<a href="${mtUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">MarineTraffic</a>` +
                 `<a href="${vfUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">VesselFinder</a>` +
+                `<a href="#" ${buddyAttrs} style="color:#facc15;font-size:11px;text-decoration:none">${buddyLabel}</a>` +
                 `</div>`;
         }
 
