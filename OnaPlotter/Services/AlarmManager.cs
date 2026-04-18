@@ -158,6 +158,11 @@ public sealed class AlarmManager : IAlarmManager
 
     public Task SnoozeAsync(AlarmInfo alarm)
     {
+        // Life-safety alarms (SART / MOB / EPIRB) refuse snooze even
+        // if asked. Belt-and-braces with the UI hiding the button --
+        // a programmatic caller or a rogue JS call shouldn't be able
+        // to silence a beacon.
+        if (!alarm.Snoozeable) return Task.CompletedTask;
         if (alarm.TargetKey is null) return Task.CompletedTask;
         var now = _now();
         var label = alarm.TargetLabel ?? alarm.TargetKey;

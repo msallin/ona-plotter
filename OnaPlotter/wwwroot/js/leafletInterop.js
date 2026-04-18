@@ -260,6 +260,7 @@ function makeRadarSvg(fill, size) {
 // Icon caches (one per source x colour x category combo).
 const aisIconCache = {};
 const radarIconCache = {};
+const sartIconCache = {};
 function getAisIcon(color, category) {
     const key = `${color}|${category || ''}`;
     if (!aisIconCache[key]) {
@@ -272,6 +273,52 @@ function getRadarIcon(color) {
         radarIconCache[color] = makeIcon(makeRadarSvg(color, 22), 22);
     }
     return radarIconCache[color];
+}
+
+// Classify an AIS MMSI as a distress-transmitter category.
+// 970xxxxxx = AIS SART (from a life raft), 972xxxxxx = MOB beacon,
+// 974xxxxxx = AIS EPIRB. ITU-R M.585-9 Annex 1.
+// Null for normal vessel MMSIs and anything that doesn't match the
+// 9-digit pattern.
+function sartCategory(mmsi) {
+    if (typeof mmsi !== 'string' || mmsi.length !== 9) return null;
+    if (mmsi[0] !== '9' || mmsi[1] !== '7') return null;
+    switch (mmsi[2]) {
+        case '0': return 'SART';
+        case '2': return 'MOB';
+        case '4': return 'EPIRB';
+        default: return null;
+    }
+}
+
+// SART / MOB / EPIRB marker: large pulsing red bullseye with the
+// category label inside. Intentionally nothing like the chevron so
+// it reads as "not a vessel, emergency transmitter" at a glance.
+// The CSS .sart-icon class drives the pulse animation.
+function getSartIcon(category) {
+    if (!sartIconCache[category]) {
+        const label = category;
+        const size = 44;
+        const html = `
+            <div class="sart-icon sart-${label.toLowerCase()}">
+                <svg width="${size}" height="${size}" viewBox="-22 -22 44 44">
+                    <circle cx="0" cy="0" r="18" fill="rgba(239,68,68,0.18)"
+                            stroke="#ef4444" stroke-width="2"/>
+                    <circle cx="0" cy="0" r="10" fill="rgba(239,68,68,0.35)"
+                            stroke="#ef4444" stroke-width="1.2"/>
+                    <text x="0" y="3" fill="#fff" font-size="7" font-weight="700"
+                          text-anchor="middle" style="letter-spacing:0.05em;"
+                          paint-order="stroke" stroke="#7f1d1d" stroke-width="0.6">${label}</text>
+                </svg>
+            </div>`;
+        sartIconCache[category] = L.divIcon({
+            className: 'sart-icon-wrapper',
+            html,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+        });
+    }
+    return sartIconCache[category];
 }
 
 // AIS name labels (tooltips).
@@ -674,6 +721,14 @@ export function updateAisTargets(vessels) {
             && cpaInfo.cpa < guardZoneRadiusNm * guardZoneWarningFactor
             && cpaInfo.tcpa < guardZoneLookaheadMin * guardZoneWarningFactor
             && cpaInfo.tcpa > 0;
+        // Distress-transmitter MMSIs (SART/MOB/EPIRB) bypass the
+        // ship-type colour scheme and render as a big pulsing
+        // bullseye so they read as "emergency" at any zoom. We skip
+        // COG rotation for them too (beacons don't have heading, and
+        // a spinning icon would look wrong).
+        const sartCat = sartCategory(v.mmsi);
+        const isSart = sartCat !== null;
+
         // Radar targets use their own outline-triangle icon in a fixed tan
         // tone; AIS targets fall back to the per-ship-type colour scale.
         const isRadar = v.source === 'radar';
@@ -681,7 +736,9 @@ export function updateAisTargets(vessels) {
             ? (isDangerEff ? AIS_COLORS.danger : RADAR_COLOR)
             : aisColor(v.shipType, isDangerEff, v.buddy);
         const category = isRadar ? null : shipTypeCategory(v.shipType);
-        const icon = isRadar ? getRadarIcon(color) : getAisIcon(color, category);
+        const icon = isSart
+            ? getSartIcon(sartCat)
+            : (isRadar ? getRadarIcon(color) : getAisIcon(color, category));
 
         let marker = aisMarkers[v.context];
         if (!marker) {
@@ -691,7 +748,7 @@ export function updateAisTargets(vessels) {
             marker.setLatLng([v.lat, v.lon]);
             marker.setIcon(icon);
         }
-        rotateMarker(marker, v.cogRad ?? v.headingRad);
+        if (!isSart) rotateMarker(marker, v.cogRad ?? v.headingRad);
 
         // Name label visible at zoom >= 12. Prefer resolved external name
         // over raw MMSI so the chart looks clean even for unnamed targets.

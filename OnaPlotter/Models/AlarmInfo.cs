@@ -10,12 +10,17 @@ namespace OnaPlotter.Models;
 /// <param name="TargetLabel">Human-readable name for the target ("MV Aurora",
 /// "123456789"). Used for the snoozed-target chip. Falls back to TargetKey
 /// when null.</param>
+/// <param name="Snoozeable">False for life-safety alarms that must not be
+/// silenced by a passing tap -- SART / MOB / EPIRB beacons, primarily. The
+/// UI hides the Snooze button for these and the manager refuses snooze
+/// requests. Defaults to true for every other alarm type.</param>
 public sealed record AlarmInfo(
     string Title,
     string Message,
     AlarmSeverity Severity,
     string? TargetKey = null,
-    string? TargetLabel = null);
+    string? TargetLabel = null,
+    bool Snoozeable = true);
 
 public enum AlarmSeverity
 {

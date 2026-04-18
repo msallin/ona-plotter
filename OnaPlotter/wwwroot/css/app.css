@@ -1784,6 +1784,22 @@ main:has(.alarm-banner-stack) .hud-top-left {
     text-transform: none;
 }
 
+/* ===== SART / MOB / EPIRB marker =====
+   Life-safety beacon on the chart. Animated pulse so the eye lands
+   on it before any other AIS target, regardless of zoom level. The
+   .sart-icon-wrapper sidesteps Leaflet's default divIcon outline so
+   the circle glow isn't clipped. */
+.sart-icon-wrapper { background: transparent; border: none; }
+.sart-icon {
+    filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.65));
+    animation: sart-pulse 1s ease-in-out infinite;
+    will-change: transform, opacity;
+}
+@keyframes sart-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.18); opacity: 0.85; }
+}
+
 /* ===== Tide card =====
    Conditional: only rendered when the SignalK server actually publishes
    tide data (via mxtide / signalk-tides-api / similar). Stacks above the

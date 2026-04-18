@@ -53,7 +53,7 @@
                         <div class="alarm-body" @onclick="() => DismissOne(a)">
                             <strong>@a.Title</strong> @a.Message
                         </div>
-                        @if (a.TargetKey is not null)
+                        @if (a.TargetKey is not null && a.Snoozeable)
                         {
                             <button class="alarm-snooze" @onclick="() => SnoozeOne(a)" @onclick:stopPropagation
                                     title="Silence this target for @Alarms.SnoozeDurationMinutes minutes">
