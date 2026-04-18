@@ -76,7 +76,15 @@ public sealed class SignalkClient : IAsyncDisposable
         "steering.autopilot.target.headingTrue",
         // Tidal current
         "environment.current.setTrue",
-        "environment.current.drift"
+        "environment.current.drift",
+        // Tide height + next extremes (published by mxtide / signalk-tides-api /
+        // similar plugins). Subscriptions are no-ops when no plugin is
+        // present -- the paths just never emit.
+        "environment.tide.heightNow",
+        "environment.tide.heightHigh",
+        "environment.tide.heightLow",
+        "environment.tide.timeHigh",
+        "environment.tide.timeLow"
     ];
 
     private static readonly string[] AisPaths =

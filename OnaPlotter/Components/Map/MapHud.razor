@@ -65,6 +65,35 @@
     </div>
 </div>
 
+@* === Tide card (only when a tide plugin is feeding data) === *@
+@if (HasTideData)
+{
+    <div class="hud hud-tide">
+        <div class="hud-panel">
+            <div class="hud-label">Tide</div>
+            @if (Data.TideHeightNow is double h)
+            {
+                <div class="hud-value tide-height" title="Height above chart datum">
+                    @h.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">m</span>
+                    <span class="tide-arrow" aria-label="@TideDirectionLabel">@TideArrow</span>
+                </div>
+            }
+            @if (NextExtreme is var (label, height, time))
+            {
+                <div class="tide-next">
+                    <span class="tide-next-label">@label</span>
+                    <span class="tide-next-val">
+                        @height.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">m</span>
+                    </span>
+                    <span class="tide-next-time" title="@time.ToLocalTime().ToString("HH:mm")">
+                        @FormatInterval(time)
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+}
+
 @* === Bottom-Right: Heading compass === *@
 <div class="hud hud-bottom-right">
     <div class="hud-panel" style="text-align:center;">
@@ -225,6 +254,47 @@
 
     private bool IsBelowDepthThreshold =>
         Data.Depth is double d && DepthAlarmThreshold > 0 && d < DepthAlarmThreshold;
+
+    // --- Tide ---------------------------------------------------------
+    // True when at least the current height is published; lets the HUD
+    // hide entirely on servers without a tide plugin rather than
+    // showing an empty card.
+    private bool HasTideData =>
+        Data.TideHeightNow is not null
+        || Data.TideTimeHigh is not null
+        || Data.TideTimeLow is not null;
+
+    /// <summary>The next high or low water, whichever comes first.
+    /// Returns null when the tide plugin isn't publishing extremes yet.</summary>
+    private (string Label, double Height, DateTime Time)? NextExtreme
+    {
+        get
+        {
+            var now = DateTime.UtcNow;
+            DateTime? hi = Data.TideTimeHigh > now ? Data.TideTimeHigh : null;
+            DateTime? lo = Data.TideTimeLow > now ? Data.TideTimeLow : null;
+            if (hi is null && lo is null) return null;
+            if (hi is not null && (lo is null || hi < lo))
+                return ("HW", Data.TideHeightHigh ?? double.NaN, hi.Value);
+            return ("LW", Data.TideHeightLow ?? double.NaN, lo!.Value);
+        }
+    }
+
+    /// <summary>Up arrow when the next extreme is HW (flood), down when
+    /// LW (ebb). Shown next to the current height so the rise/fall
+    /// direction reads at a glance without having to read the time.</summary>
+    private string TideArrow => NextExtreme?.Label == "HW" ? "\u25B2" : "\u25BC";
+    private string TideDirectionLabel => NextExtreme?.Label == "HW" ? "flooding" : "ebbing";
+
+    private static string FormatInterval(DateTime futureUtc)
+    {
+        var span = futureUtc - DateTime.UtcNow;
+        if (span.TotalSeconds <= 0) return "now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m";
+        int hours = (int)span.TotalHours;
+        int minutes = (int)(span.TotalMinutes - hours * 60);
+        return minutes == 0 ? $"{hours}h" : $"{hours}h{minutes:D2}";
+    }
 
     private string WindAngleDegStr =>
         Data.WindAngleApparent is not null

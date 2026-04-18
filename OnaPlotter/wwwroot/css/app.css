@@ -1751,6 +1751,50 @@ main:has(.alarm-banner-stack) .hud-top-left {
     background: rgba(30, 5, 5, 0.92);
 }
 
+/* ===== Tide card =====
+   Conditional: only rendered when the SignalK server actually publishes
+   tide data (via mxtide / signalk-tides-api / similar). Stacks above the
+   depth panel in the bottom-left column; depth panel is ~110px tall with
+   the threshold label, so 140px keeps a small gap. */
+.hud-tide {
+    bottom: 140px;
+    left: 12px;
+}
+@media (max-width: 600px) {
+    .hud-tide { bottom: 200px; left: 8px; }
+}
+.tide-height {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+.tide-arrow {
+    font-size: 0.85rem;
+    opacity: 0.85;
+}
+.tide-next {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 6px;
+    align-items: baseline;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+.tide-next-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.5);
+}
+.tide-next-val { font-variant-numeric: tabular-nums; }
+.tide-next-time {
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.55);
+}
+
 /* ===== Autopilot Panel =====
    Stacks above the HDG compass (.hud-bottom-right, bottom:12px, height ~110px).
    Needs ~130 px of clear air below it for a small gap. */

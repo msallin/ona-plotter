@@ -224,4 +224,48 @@ public class NavigationDataTests
         nav.SetTimestamp("2025-01-01T00:00:00Z");
         await Assert.That(nav.LastTimestamp).IsEqualTo("2025-01-01T00:00:00Z");
     }
+
+    // --- Tide (from signalk-tides-api / mxtide / similar) ---
+
+    [Test]
+    public async Task Apply_TideHeights_SetsProperties()
+    {
+        var nav = new NavigationData();
+        nav.Apply("environment.tide.heightNow", JsonSerializer.SerializeToElement(1.8));
+        nav.Apply("environment.tide.heightHigh", JsonSerializer.SerializeToElement(3.2));
+        nav.Apply("environment.tide.heightLow", JsonSerializer.SerializeToElement(0.4));
+
+        await Assert.That(nav.TideHeightNow).IsEqualTo(1.8);
+        await Assert.That(nav.TideHeightHigh).IsEqualTo(3.2);
+        await Assert.That(nav.TideHeightLow).IsEqualTo(0.4);
+    }
+
+    [Test]
+    public async Task ApplyString_TideTimes_ParsedAsUtc()
+    {
+        // Tide-plugin timestamps are ISO 8601. Accept both explicit-UTC
+        // and unqualified forms; the model must pin Kind=Utc either way
+        // so downstream comparisons against DateTime.UtcNow are sound.
+        var nav = new NavigationData();
+        nav.ApplyString("environment.tide.timeHigh", "2026-04-18T14:32:00Z");
+        nav.ApplyString("environment.tide.timeLow", "2026-04-18T20:48:00");
+
+        await Assert.That(nav.TideTimeHigh).IsNotNull();
+        await Assert.That(nav.TideTimeHigh!.Value.Kind).IsEqualTo(DateTimeKind.Utc);
+        await Assert.That(nav.TideTimeHigh.Value.Hour).IsEqualTo(14);
+        await Assert.That(nav.TideTimeHigh.Value.Minute).IsEqualTo(32);
+
+        await Assert.That(nav.TideTimeLow).IsNotNull();
+        await Assert.That(nav.TideTimeLow!.Value.Kind).IsEqualTo(DateTimeKind.Utc);
+    }
+
+    [Test]
+    public async Task ApplyString_TideTime_InvalidString_LeavesNull()
+    {
+        var nav = new NavigationData();
+        // Malformed timestamp should be swallowed (no exception bubbling
+        // up to crash the delta-receive loop) and the property stays null.
+        nav.ApplyString("environment.tide.timeHigh", "not-a-date");
+        await Assert.That(nav.TideTimeHigh).IsNull();
+    }
 }

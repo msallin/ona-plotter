@@ -52,6 +52,15 @@ public sealed class NavigationData
     public double? CurrentSet { get; private set; }   // Direction current flows TO (radians)
     public double? CurrentDrift { get; private set; }  // Speed of current (m/s)
 
+    // Tide height + next high/low (published by plugins like mxtide /
+    // signalk-tides-api). Heights are metres above chart datum; times
+    // are UTC. All optional -- silent if no plugin is installed.
+    public double? TideHeightNow { get; private set; }
+    public double? TideHeightHigh { get; private set; }
+    public double? TideHeightLow { get; private set; }
+    public DateTime? TideTimeHigh { get; private set; }
+    public DateTime? TideTimeLow { get; private set; }
+
     /// <summary>
     /// Applies a single SignalK path/value pair to the navigation state.
     /// Returns true if the value was recognized and applied.
@@ -131,6 +140,15 @@ public sealed class NavigationData
                     break;
                 case "environment.current.drift":
                     CurrentDrift = value;
+                    break;
+                case "environment.tide.heightNow":
+                    TideHeightNow = value;
+                    break;
+                case "environment.tide.heightHigh":
+                    TideHeightHigh = value;
+                    break;
+                case "environment.tide.heightLow":
+                    TideHeightLow = value;
                     break;
                 default:
                     return false;
@@ -240,11 +258,31 @@ public sealed class NavigationData
                 case "steering.autopilot.state":
                     AutopilotState = value;
                     break;
+                case "environment.tide.timeHigh":
+                    TideTimeHigh = ParseUtc(value);
+                    break;
+                case "environment.tide.timeLow":
+                    TideTimeLow = ParseUtc(value);
+                    break;
                 default:
                     return false;
             }
         }
         return true;
+    }
+
+    // Tide-plugin timestamps come as ISO 8601 strings. Accept either
+    // "...Z" or an unqualified string (which we then pin to UTC) so
+    // downstream code comparing against UtcNow doesn't get bitten by
+    // Kind=Unspecified.
+    private static DateTime? ParseUtc(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (!DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+                out var dt))
+            return null;
+        return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
     }
 
     private static double? ConvertToDouble(object? raw)

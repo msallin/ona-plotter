@@ -150,6 +150,68 @@
     </div>
 </div>
 
+@* === Tide (conditional: only when a tide plugin publishes data) === *@
+@if (HasTideData)
+{
+    <h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">Tide</h6>
+    <div class="row g-3 mb-4">
+        @if (Data.TideHeightNow is double hNow)
+        {
+            <div class="col-md-4 col-sm-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="card-subtitle mb-1 text-muted">Height now</h6>
+                        <p class="card-text display-6">
+                            @hNow.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                        </p>
+                        <small class="text-muted">m above datum</small>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (Data.TideTimeHigh is DateTime th && th > DateTime.UtcNow)
+        {
+            <div class="col-md-4 col-sm-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="card-subtitle mb-1 text-muted">Next HW</h6>
+                        <p class="card-text display-6" style="font-size:1.6rem;">
+                            @th.ToLocalTime().ToString("HH:mm")
+                        </p>
+                        <small class="text-muted">
+                            @if (Data.TideHeightHigh is double hh)
+                            {
+                                @:@hh.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) m,
+                            }
+                            @FormatDashInterval(th)
+                        </small>
+                    </div>
+                </div>
+            </div>
+        }
+        @if (Data.TideTimeLow is DateTime tl && tl > DateTime.UtcNow)
+        {
+            <div class="col-md-4 col-sm-6">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6 class="card-subtitle mb-1 text-muted">Next LW</h6>
+                        <p class="card-text display-6" style="font-size:1.6rem;">
+                            @tl.ToLocalTime().ToString("HH:mm")
+                        </p>
+                        <small class="text-muted">
+                            @if (Data.TideHeightLow is double hl)
+                            {
+                                @:@hl.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) m,
+                            }
+                            @FormatDashInterval(tl)
+                        </small>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
 @* === Active Route (conditional) === *@
 @if (Data.HasActiveCourse)
 {
@@ -262,6 +324,21 @@
         >= 0.80 => "depth-warn",
         _ => "depth-danger"
     };
+
+    private bool HasTideData =>
+        Data.TideHeightNow is not null
+        || Data.TideTimeHigh is not null
+        || Data.TideTimeLow is not null;
+
+    private static string FormatDashInterval(DateTime futureUtc)
+    {
+        var span = futureUtc - DateTime.UtcNow;
+        if (span.TotalSeconds <= 0) return "now";
+        if (span.TotalMinutes < 60) return $"in {(int)span.TotalMinutes}m";
+        int hours = (int)span.TotalHours;
+        int minutes = (int)(span.TotalMinutes - hours * 60);
+        return minutes == 0 ? $"in {hours}h" : $"in {hours}h{minutes:D2}";
+    }
 
     protected override async Task OnInitializedAsync()
     {
