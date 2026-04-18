@@ -87,13 +87,16 @@ Write-Host "Staged at $WebappStaging" -ForegroundColor Green
 $RemotePath = "~/.signalk/node_modules/$WebappName"
 Write-Host "Deploying to $SshTarget : $RemotePath ..." -ForegroundColor Cyan
 
-# Verify we can reach the host and that ~/.signalk exists. Echos a clear
-# message rather than the opaque "ssh mkdir failed".
-Write-Host "Testing SSH connection..." -ForegroundColor DarkGray
-$sshTest = ssh -o BatchMode=yes -o ConnectTimeout=8 $SshTarget 'test -d ~/.signalk && echo OK' 2>&1
+# Verify we can reach the host and that ~/.signalk exists. A password
+# prompt here is fine - we just want the whole script to stop on the
+# probe rather than halfway through with a cryptic "mkdir failed".
+# (No BatchMode=yes: that would refuse to prompt for a password, which
+# makes the probe fail on a Pi that still uses password auth.)
+Write-Host "Testing SSH connection (may prompt for password)..." -ForegroundColor DarkGray
+$sshTest = ssh -o ConnectTimeout=10 $SshTarget 'test -d ~/.signalk && echo OK' 2>&1
 if ($LASTEXITCODE -ne 0 -or $sshTest -notmatch "OK") {
     Write-Host $sshTest -ForegroundColor Yellow
-    throw "SSH to $SshTarget failed. Check: (1) key-based auth (ssh-copy-id), (2) `~/.signalk` exists on the target, (3) host key is trusted (ssh once manually)."
+    throw "SSH to $SshTarget failed. Check: (1) you can 'ssh $SshTarget' manually, (2) ~/.signalk exists on the target, (3) ssh-copy-id if you'd like password-less deploys."
 }
 
 # Create remote directory (wipe old install). Keep the two ops separate so
