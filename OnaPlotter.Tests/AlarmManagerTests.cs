@@ -1,5 +1,6 @@
 using OnaPlotter.Models;
 using OnaPlotter.Services;
+using OnaPlotter.Services.Alarms;
 
 namespace OnaPlotter.Tests;
 
@@ -63,14 +64,20 @@ public class AlarmManagerTests
     {
         var clock = new MutableClock();
         var settings = new FixedSettings();
-        // Reflection access to the internal constructor.
+        IAlarmRule[] rules =
+        [
+            new ShallowAlarmRule(),
+            new CpaAlarmRule(),
+            new WindShiftAlarmRule(),
+        ];
+        // Reflection access to the internal clock-injecting constructor.
         var mgr = (AlarmManager)Activator.CreateInstance(
             typeof(AlarmManager),
             bindingAttr: System.Reflection.BindingFlags.Instance
                        | System.Reflection.BindingFlags.NonPublic
                        | System.Reflection.BindingFlags.Public,
             binder: null,
-            args: [(Func<DateTime>)(() => clock.Now)],
+            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
             culture: null)!;
         int fires = 0;
         mgr.OnAlarmChanged += _ => fires++;
