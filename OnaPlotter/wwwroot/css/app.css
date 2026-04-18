@@ -1181,13 +1181,31 @@ main:has(.alarm-banner-stack) .hud-top-left {
     .alarm-log-btn { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
 }
 
+/* Full-screen tap-outside backdrop. Rendered alongside the panel in
+   MainLayout so a touch outside the sheet dismisses it; on desktop the
+   backdrop is invisible but still there so the Log-button toggle isn't
+   the only exit. */
+.alarm-log-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-modal) - 1);
+    background: transparent;
+}
+@media (max-width: 600px) {
+    .alarm-log-backdrop { background: rgba(0, 0, 0, 0.35); }
+}
+
+/* Desktop: dropdown anchored under the top-row Log button.
+   Phone (<=600px): bottom-sheet that slides up from the bottom edge,
+   full-width with rounded top corners, bigger max-height so the list is
+   actually readable. Uses a flex column so the scroll lives on the list
+   and the header stays pinned. */
 .alarm-log-panel {
     position: fixed;
     top: 3rem;
     right: 12px;
     width: min(360px, calc(100vw - 24px));
     max-height: 60vh;
-    overflow-y: auto;
     z-index: var(--z-modal);
     background: rgba(16, 20, 28, 0.96);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1195,13 +1213,58 @@ main:has(.alarm-banner-stack) .hud-top-left {
     color: #e2e8f0;
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    animation: alarm-log-pop 0.18s ease-out;
 }
+@media (max-width: 600px) {
+    .alarm-log-panel {
+        top: auto;
+        right: 0;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        max-height: 75vh;
+        border-radius: 16px 16px 0 0;
+        border-left: none;
+        border-right: none;
+        border-bottom: none;
+        padding-bottom: env(safe-area-inset-bottom);
+        animation: alarm-log-slide-up 0.22s ease-out;
+    }
+}
+@keyframes alarm-log-pop {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes alarm-log-slide-up {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+}
+
+/* Grab-handle bar visible only on the bottom-sheet variant, purely
+   visual -- the panel isn't actually draggable, but the handle is a
+   universally-understood "this is a sheet, tap outside or the X to
+   close" signal. */
+.alarm-log-handle { display: none; }
+@media (max-width: 600px) {
+    .alarm-log-handle {
+        display: block;
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.25);
+        margin: 8px auto 4px;
+    }
+}
+
 .alarm-log-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 10px 14px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
 }
 .alarm-log-close {
     background: none;
@@ -1212,12 +1275,20 @@ main:has(.alarm-banner-stack) .hud-top-left {
     padding: 2px 8px;
 }
 .alarm-log-close:hover { color: #f1f5f9; }
+@media (pointer: coarse) {
+    .alarm-log-close { min-height: 44px; min-width: 44px; font-size: 1.2rem; }
+}
 .alarm-log-empty { padding: 20px; color: #64748b; text-align: center; font-size: 0.85rem; }
 .alarm-log-list {
     list-style: none;
     margin: 0;
     padding: 0;
+    overflow-y: auto;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
 }
+/* Desktop layout: four columns (time / title / reason / message) all
+   on one line. Works for typical viewports >= 320px panel width. */
 .alarm-log-item {
     display: grid;
     grid-template-columns: auto auto auto 1fr;
@@ -1226,6 +1297,23 @@ main:has(.alarm-banner-stack) .hud-top-left {
     font-size: 0.78rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
     align-items: baseline;
+}
+/* Phone layout: stack to two rows. Top row: time + title + reason;
+   bottom row: the message. Grid columns auto-size so the title stays
+   bold and obvious, the reason stays in the meta line. */
+@media (max-width: 600px) {
+    .alarm-log-item {
+        grid-template-columns: auto 1fr auto;
+        grid-template-areas:
+            "time  title  reason"
+            "msg   msg    msg";
+        padding: 10px 16px;
+        gap: 4px 8px;
+    }
+    .alarm-log-time { grid-area: time; }
+    .alarm-log-title { grid-area: title; }
+    .alarm-log-reason { grid-area: reason; }
+    .alarm-log-msg { grid-area: msg; padding-top: 2px; }
 }
 .alarm-log-item:last-child { border-bottom: none; }
 .alarm-log-time { color: #64748b; font-variant-numeric: tabular-nums; font-size: 0.72rem; }

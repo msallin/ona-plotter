@@ -82,7 +82,12 @@
 
         @if (alarmLogOpen)
         {
+            @* Backdrop: tap anywhere outside the panel to dismiss. Invisible
+               on desktop (just serves as an outside-click target), dimmed
+               on phone under the bottom-sheet so the sheet reads as modal. *@
+            <div class="alarm-log-backdrop" @onclick="ToggleAlarmLog"></div>
             <div class="alarm-log-panel" @onclick:stopPropagation>
+                <div class="alarm-log-handle" aria-hidden="true"></div>
                 <div class="alarm-log-header">
                     <strong>Alarm log</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>
