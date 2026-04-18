@@ -45,8 +45,13 @@ pocket. All layout is responsive and touch-tuned (WCAG-sized tap targets under
 - Laylines, MOB marker, bearing/distance measurement (double-click), race timer,
   N-Up / C-Up / H-Up orientation.
 - GPX import/export.
+- Geolocated notes: long-press → *Add Note*, drop a title+body pin at any chart
+  point. Rendered as a muted slate-blue folded-page icon (distinct from
+  waypoints and routes); click to read or delete. Round-trips the SignalK
+  `resources/notes` API so freeboard-sk and other clients see the same notes.
 - Keyboard shortcuts (F, O, N, A, M, T, L, R, ?, Esc); long-press or right-click
-  for the context menu (*Create Waypoint*, *Navigate Here*, *Stop Navigation*).
+  for the context menu (*Create Waypoint*, *Add Note*, *Navigate Here*,
+  *Route with wind*, *Stop Navigation*).
 
 ### Other pages
 - **Dashboard** — speed, course, position, depth, wind at-a-glance.

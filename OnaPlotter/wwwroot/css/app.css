@@ -1988,6 +1988,58 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 220px;
 }
 
+/* Note dialog extends the waypoint dialog with a larger footprint since
+   the description field wants room. Multiline textarea; mobile gets the
+   full viewport minus margin. */
+.note-dialog { min-width: 300px; max-width: min(92vw, 460px); }
+.note-dialog-body {
+    margin-top: 8px;
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+    line-height: 1.4;
+}
+
+/* Note popup: muted slate-blue accent matching the pin colour. Title
+   bold, body pre-wrapped (line breaks preserved), delete button stays
+   visually quiet until hover to avoid the "I might click it by accident"
+   fear. */
+.note-popup .leaflet-popup-content-wrapper {
+    background: rgba(20, 26, 38, 0.96);
+    color: #e2e8f0;
+    border-radius: 6px;
+    border: 1px solid rgba(139, 157, 195, 0.4);
+}
+.note-popup .leaflet-popup-tip { background: rgba(20, 26, 38, 0.96); }
+.note-popup-inner { padding: 2px 4px; min-width: 180px; }
+.note-popup-title { font-weight: 600; color: #cfd8ea; margin-bottom: 4px; }
+.note-popup-body {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    line-height: 1.35;
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.note-delete-btn {
+    background: transparent;
+    color: #94a3b8;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.note-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border-color: #ef4444;
+}
+@media (pointer: coarse) {
+    .note-delete-btn { min-height: 36px; padding: 8px 14px; font-size: 0.85rem; }
+}
+
 /* ===== SailSteer Display ===== */
 
 .sailsteer-container {

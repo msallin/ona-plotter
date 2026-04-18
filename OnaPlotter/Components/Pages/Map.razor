@@ -13,6 +13,7 @@
 @inject IChartApi ChartApi
 @inject IRouteApi RouteApi
 @inject IWaypointApi WaypointApi
+@inject INoteApi NoteApi
 @inject ICourseApi CourseApi
 @inject IAutopilotApi AutopilotApi
 @inject ITrackApi TrackApi
@@ -95,6 +96,7 @@
     {
         <div class="map-context-menu" style="left:@(contextMenuX)px; top:@(contextMenuY)px;">
             <button class="ctx-menu-item" @onclick="CreateWaypointHere">Create Waypoint</button>
+            <button class="ctx-menu-item" @onclick="CreateNoteHere">Add Note</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
             <button class="ctx-menu-item" @onclick="RouteWithWindHere"
                     disabled="@(!Polar.HasPolar)"
@@ -118,6 +120,23 @@
             <div style="display:flex; gap:6px; margin-top:8px;">
                 <button class="map-btn active" @onclick="SaveWaypoint">Save</button>
                 <button class="map-btn" @onclick="() => waypointDialogVisible = false">Cancel</button>
+            </div>
+        </div>
+    }
+
+    @* === Note Dialog === *@
+    @if (noteDialogVisible)
+    {
+        <div class="waypoint-dialog note-dialog">
+            <div class="hud-label" style="margin-bottom:8px;">Add Note</div>
+            <input type="text" class="route-name-input" aria-label="Note title"
+                   placeholder="Title" @bind="newNoteTitle" @bind:event="oninput" />
+            <textarea class="route-name-input note-dialog-body" aria-label="Note description"
+                      placeholder="Description (optional)" rows="4"
+                      @bind="newNoteDescription" @bind:event="oninput"></textarea>
+            <div style="display:flex; gap:6px; margin-top:8px;">
+                <button class="map-btn active" @onclick="SaveNote">Save</button>
+                <button class="map-btn" @onclick="() => noteDialogVisible = false">Cancel</button>
             </div>
         </div>
     }
@@ -214,6 +233,11 @@
     private string newWaypointName = "";
     private List<SignalkWaypoint> loadedWaypoints = [];
     private IReadOnlyList<SignalkBuddy> loadedBuddies = [];
+    // Note state.
+    private bool noteDialogVisible;
+    private string newNoteTitle = "";
+    private string newNoteDescription = "";
+    private List<SignalkNote> loadedNotes = [];
     // Race timer.
     private bool raceTimerActive;
     private bool shortcutsVisible;
@@ -477,6 +501,7 @@
         availableCharts = await SafeLoad(() => ChartApi.GetAllAsync(), "charts") ?? [];
         availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? [];
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? [];
+        loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? [];
 
         // Optional: buddy-list plugin. Silently no-ops if not installed.
         // The returned list seeds AisStore so vessels tracked later get
@@ -497,6 +522,16 @@
         {
             if (wp.Latitude is not null && wp.Longitude is not null)
                 await module.InvokeVoidAsync("addWaypointMarker", wp.Id, wp.Latitude, wp.Longitude, wp.Name);
+        }
+
+        // Draw note markers. Notes use a bare position (not a GeoJSON
+        // Feature); GetAllAsync has already filtered out entries without
+        // a position, so the nullability check is just defensive.
+        foreach (var n in loadedNotes)
+        {
+            if (n.Position is not null)
+                await module.InvokeVoidAsync("addNoteMarker",
+                    n.Id, n.Position.Latitude, n.Position.Longitude, n.Title, n.Description);
         }
 
         // Restore persisted settings (including enabled charts/routes) before
@@ -1075,6 +1110,50 @@
             await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         Toasts.Success($"Saved waypoint '{name}'");
+    }
+
+    private void CreateNoteHere()
+    {
+        contextMenuVisible = false;
+        noteDialogVisible = true;
+        newNoteTitle = "";
+        newNoteDescription = "";
+    }
+
+    private async Task SaveNote()
+    {
+        noteDialogVisible = false;
+        string title = string.IsNullOrWhiteSpace(newNoteTitle) ? $"Note {DateTime.Now:HH:mm}" : newNoteTitle;
+        string description = newNoteDescription ?? "";
+        string? id;
+        try { id = await NoteApi.CreateAsync(title, description, contextMenuLat, contextMenuLon); }
+        catch (Exception ex) { Toasts.Error($"Save note failed: {ex.Message}"); return; }
+
+        if (id is null) { Toasts.Error("Save note failed: server rejected"); return; }
+
+        if (module is not null)
+            await module.InvokeVoidAsync("addNoteMarker", id, contextMenuLat, contextMenuLon, title, description);
+        loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? loadedNotes;
+        Toasts.Success($"Saved note '{title}'");
+    }
+
+    /// <summary>Invoked from the JS popup's Delete button. Round-trips
+    /// DELETE to the server, then removes the marker. Called via
+    /// <c>dotNetRef.invokeMethodAsync('DeleteNote', id)</c>.</summary>
+    [JSInvokable]
+    public async Task DeleteNote(string id)
+    {
+        try
+        {
+            var ok = await NoteApi.DeleteAsync(id);
+            if (!ok) { Toasts.Error("Delete note failed: server rejected"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Delete note failed: {ex.Message}"); return; }
+
+        if (module is not null)
+            await module.InvokeVoidAsync("removeNoteMarker", id);
+        loadedNotes = loadedNotes.Where(n => n.Id != id).ToList();
+        Toasts.Show("Note deleted", ToastService.ToastLevel.Info);
     }
 
     /// <summary>

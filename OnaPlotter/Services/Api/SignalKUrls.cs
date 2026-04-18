@@ -13,6 +13,7 @@ public static class SignalKUrls
     public const string ChartsPath = "/signalk/v1/api/resources/charts";
     public const string RoutesPath = "/signalk/v2/api/resources/routes";
     public const string WaypointsPath = "/signalk/v2/api/resources/waypoints";
+    public const string NotesPath = "/signalk/v2/api/resources/notes";
     public const string TrackPath = "/signalk/v1/api/self/track";
 
     public const string CoursePath = "/signalk/v2/api/navigation/course";
@@ -34,6 +35,7 @@ public static class SignalKUrls
 
     public static string Route(string id) => $"{RoutesPath}/{Uri.EscapeDataString(id)}";
     public static string Waypoint(string id) => $"{WaypointsPath}/{Uri.EscapeDataString(id)}";
+    public static string Note(string id) => $"{NotesPath}/{Uri.EscapeDataString(id)}";
 
     public static string Track(string timespan, string resolution) =>
         $"{TrackPath}?timespan={Uri.EscapeDataString(timespan)}&resolution={Uri.EscapeDataString(resolution)}";

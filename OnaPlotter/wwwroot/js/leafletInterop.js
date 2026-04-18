@@ -1519,6 +1519,99 @@ export function removeWaypointMarker(id) {
     }
 }
 
+// --- Note Markers ---
+// Geolocated text annotations (SignalK /resources/notes). Rendered as a
+// small folded-page pin that reads distinct from waypoints (circular)
+// and routes (amber line). Click opens a popup with title + description
+// and a Delete button that round-trips to C# via the cached dotNetRef.
+
+const noteMarkers = {};
+const NOTE_COLOR = '#8b9dc3';         // muted slate-blue; cool accent amid the warm earth palette
+const NOTE_COLOR_STROKE = '#4a5a7a';
+
+function makeNoteIcon() {
+    // Folded-page pin, 20x24. Subtle drop shadow so it reads on land or
+    // water. Anchor is bottom-centre so the tip of the pin lands on the
+    // map coordinate.
+    const svg = `
+        <svg width="20" height="24" viewBox="0 0 20 24" xmlns="http://www.w3.org/2000/svg"
+             style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));">
+            <path d="M3 2 L14 2 L17 5 L17 18 L3 18 Z"
+                  fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2"
+                  stroke-linejoin="round"/>
+            <path d="M14 2 L14 5 L17 5" fill="none"
+                  stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2" stroke-linejoin="round"/>
+            <line x1="6" y1="8"  x2="14" y2="8"  stroke="${NOTE_COLOR_STROKE}" stroke-width="0.9" opacity="0.7"/>
+            <line x1="6" y1="11" x2="14" y2="11" stroke="${NOTE_COLOR_STROKE}" stroke-width="0.9" opacity="0.7"/>
+            <line x1="6" y1="14" x2="11" y2="14" stroke="${NOTE_COLOR_STROKE}" stroke-width="0.9" opacity="0.7"/>
+            <polygon points="10,18 7,22 13,22" fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2" stroke-linejoin="round"/>
+        </svg>`;
+    return L.divIcon({
+        className: 'note-icon',
+        html: svg,
+        iconSize: [20, 24],
+        iconAnchor: [10, 24],
+        popupAnchor: [0, -22],
+    });
+}
+
+let noteIconCached = null;
+function getNoteIcon() {
+    if (!noteIconCached) noteIconCached = makeNoteIcon();
+    return noteIconCached;
+}
+
+export function addNoteMarker(id, lat, lon, title, description) {
+    if (!map || noteMarkers[id]) return;
+    const marker = L.marker([lat, lon], { icon: getNoteIcon() }).addTo(map);
+    marker.bindPopup(buildNotePopupHtml(id, title, description), {
+        className: 'note-popup',
+        maxWidth: 280,
+        autoClose: true,
+    });
+    // Wire up the delete button when the popup opens. We query within the
+    // popup DOM so an id collision with something else on the page can't
+    // hijack the click.
+    marker.on('popupopen', (ev) => {
+        const el = ev.popup.getElement();
+        if (!el) return;
+        const btn = el.querySelector('.note-delete-btn');
+        if (btn && !btn._wired) {
+            btn._wired = true;
+            btn.addEventListener('click', () => {
+                if (dotNetRef) dotNetRef.invokeMethodAsync('DeleteNote', id);
+            });
+        }
+    });
+    noteMarkers[id] = marker;
+}
+
+function buildNotePopupHtml(id, title, description) {
+    const safeTitle = esc(title || '(untitled)');
+    const safeDesc = description ? esc(description).replace(/\n/g, '<br/>') : '';
+    return `
+        <div class="note-popup-inner">
+            <div class="note-popup-title">${safeTitle}</div>
+            ${safeDesc ? `<div class="note-popup-body">${safeDesc}</div>` : ''}
+            <button class="note-delete-btn" type="button">Delete</button>
+        </div>`;
+}
+
+export function removeNoteMarker(id) {
+    if (noteMarkers[id] && map) {
+        map.removeLayer(noteMarkers[id]);
+        delete noteMarkers[id];
+    }
+}
+
+export function clearNotes() {
+    if (!map) return;
+    for (const id of Object.keys(noteMarkers)) {
+        map.removeLayer(noteMarkers[id]);
+        delete noteMarkers[id];
+    }
+}
+
 // --- Weather Overlay ---
 
 let weatherLayer = null;
