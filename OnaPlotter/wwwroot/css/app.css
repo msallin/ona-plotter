@@ -2219,6 +2219,39 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 220px;
 }
 
+/* ===== Polar upload status ===== */
+/* Replaces the bare "Polar loaded: X TWA rows..." muted text with a
+   coloured pill so success and failure read at a glance. Failure
+   shows the exact parse error (not just a toast) so the user can
+   look at the message while inspecting their CSV. */
+.polar-status {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 8px 0;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    border-radius: 5px;
+    border: 1px solid transparent;
+}
+.polar-status-icon {
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.polar-status-ok {
+    background: var(--sev-ok-bg);
+    border-color: var(--sev-ok);
+    color: var(--sev-ok);
+}
+.polar-status-error {
+    background: var(--sev-danger-bg);
+    border-color: var(--sev-danger);
+    color: var(--sev-danger);
+    font-family: var(--bs-font-monospace, monospace);
+    word-break: break-word;
+}
+
 /* ===== Polar plot (Settings page) ===== */
 /* Renders the loaded boat polar as a classic radial diagram so the user
    can sanity-check the numbers they just uploaded. Responsive: shrinks

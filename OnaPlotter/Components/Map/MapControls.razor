@@ -55,15 +55,16 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers" title="Layers panel">
+    <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
+            title="@LayersTitle">
         <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
-        <span class="ctrl-lbl">Layers</span>
+        <span class="ctrl-lbl">@LayersLabel</span>
     </button>
 </div>
 
 @code {
     [Parameter] public bool Follow { get; set; }
-    [Parameter] public string OrientationLabel { get; set; } = "N-Up";
+    [Parameter] public string OrientationLabel { get; set; } = "N\u2191";
     [Parameter] public bool NightMode { get; set; }
     [Parameter] public bool AnchorActive { get; set; }
     [Parameter] public bool MobActive { get; set; }
@@ -72,6 +73,24 @@
     [Parameter] public bool RaceTimerActive { get; set; }
     [Parameter] public string RaceTimerLabel { get; set; } = "";
     [Parameter] public bool LayersPanelOpen { get; set; }
+
+    /// <summary>Charts + routes currently enabled by the user. Shown as
+    /// a badge on the Layers button so it's obvious when data is hidden
+    /// ("Layers 0" = a blank map, the classic what's-wrong-with-this-app
+    /// moment).</summary>
+    [Parameter] public int EnabledLayerCount { get; set; }
+
+    /// <summary>Total available charts + routes. Shows as the denominator
+    /// of the badge.</summary>
+    [Parameter] public int TotalLayerCount { get; set; }
+
+    private string LayersLabel =>
+        TotalLayerCount > 0 ? $"Layers {EnabledLayerCount}/{TotalLayerCount}" : "Layers";
+
+    private string LayersTitle =>
+        TotalLayerCount > 0
+            ? $"Layers panel -- {EnabledLayerCount} of {TotalLayerCount} enabled"
+            : "Layers panel";
 
     [Parameter] public EventCallback OnToggleFollow { get; set; }
     [Parameter] public EventCallback OnCycleOrientation { get; set; }

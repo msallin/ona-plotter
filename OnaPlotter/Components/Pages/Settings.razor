@@ -131,12 +131,24 @@
                 <label class="form-label">Boat Polars</label>
                 @if (Polar.HasPolar)
                 {
-                    <p class="text-muted" style="font-size:0.8rem;">
-                        Polar loaded: @Polar.TwaValues.Length TWA rows, @Polar.TwsValues.Length TWS columns
-                        (TWS @Polar.TwsValues[0]-@Polar.TwsValues[^1] kn)
+                    <p class="polar-status polar-status-ok">
+                        <span class="polar-status-icon">&#10003;</span>
+                        Loaded: @Polar.TwaValues.Length TWA rows &times; @Polar.TwsValues.Length TWS columns
+                        (TWS @Polar.TwsValues[0]&ndash;@Polar.TwsValues[^1] kn)
                     </p>
                     @RenderPolarPlot()
                     <button class="btn btn-sm btn-outline-danger mt-2" @onclick="ClearPolar">Remove Polar</button>
+                }
+                else if (polarError is not null)
+                {
+                    <p class="polar-status polar-status-error">
+                        <span class="polar-status-icon">&#9888;</span>
+                        Import failed: @polarError
+                    </p>
+                    <p class="text-muted" style="font-size:0.8rem;">
+                        Format: first column = TWA (degrees), header row = TWS (knots), cells = target speed (knots).
+                        Separator is comma, semicolon, or tab. Decimals must use '.'.
+                    </p>
                 }
                 else
                 {
@@ -269,19 +281,29 @@
         ("red",   "Red",   "Pure red, preserves dark-adapted vision."),
     ];
 
+    private string? polarError;
+
     private async Task HandlePolarUpload(InputFileChangeEventArgs e)
     {
+        polarError = null;
         try
         {
             using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: 1024 * 1024));
             string csv = await reader.ReadToEndAsync();
             await Polar.ImportAsync(csv);
             Toasts.Success($"Polar loaded: {Polar.TwaValues.Length} TWA rows");
-            StateHasChanged();
         }
         catch (Exception ex)
         {
+            // Surface the exact parse error on the Settings page (not just
+            // a transient toast) so the user can read the message while
+            // inspecting their CSV.
+            polarError = ex.Message;
             Toasts.Error($"Polar import failed: {ex.Message}");
+        }
+        finally
+        {
+            StateHasChanged();
         }
     }
 
