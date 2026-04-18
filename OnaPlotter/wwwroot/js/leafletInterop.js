@@ -1583,8 +1583,14 @@ export function addWaypointMarker(id, lat, lon, name) {
 // and a Delete button that round-trips to C# via the cached dotNetRef.
 
 const noteMarkers = new MarkerLayer();
-const NOTE_COLOR = '#8b9dc3';         // muted slate-blue; cool accent amid the warm earth palette
-const NOTE_COLOR_STROKE = '#4a5a7a';
+// Note pin colour: darker amber in the same user-annotation family as
+// routes (#e09f3e) and waypoints (#c76f51). Deliberate move from the
+// previous slate-blue -- blue-on-blue-water tested poorly, and one
+// hue family across all user-placed objects is visually coherent.
+// Shape (folded-page vs circle vs line) carries the "this is a note"
+// signal, not hue.
+const NOTE_COLOR = '#c8892e';
+const NOTE_COLOR_STROKE = '#7a5418';
 
 function makeNoteIcon() {
     // Folded-page pin, 20x24. Subtle drop shadow so it reads on land or
@@ -1705,8 +1711,12 @@ export function openNotePopup(id) {
 // via a polygon-approximation.
 
 const regionLayers = new MarkerLayer();
-const REGION_STROKE = '#9b8aa7';
-const REGION_FILL = 'rgba(155, 138, 167, 0.18)';
+// Region stroke: amber-gold in the user-annotation family. Same
+// rationale as notes: one hue family for every user-placed object,
+// shape carries the meaning. Lighter than the note pin so a pin
+// over a region doesn't read as "same colour blob".
+const REGION_STROKE = '#d4a850';
+const REGION_FILL = 'rgba(212, 168, 80, 0.18)';
 
 // rings: [[[lat, lon], ...], ...]  -- one or more outer rings.
 // A MultiPolygon region passes multiple rings; most regions are a

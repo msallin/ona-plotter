@@ -16,6 +16,29 @@
     --sk-cyan: #22d3ee;
     --sk-purple: #c4b5fd;
 
+    /* ----- Severity triad (traffic light) -----
+       Reference these from every status-coloured surface (depth,
+       alarm banner, CPA lines, tide chip, etc). Bright intentionally:
+       safety-critical. */
+    --sev-ok:        #22c55e;
+    --sev-warn:      #f59e0b;
+    --sev-danger:    #ef4444;
+    --sev-ok-bg:     rgba(34, 197, 94, 0.15);
+    --sev-warn-bg:   rgba(245, 158, 11, 0.15);
+    --sev-danger-bg: rgba(239, 68, 68, 0.18);
+
+    /* ----- User-annotation hue family -----
+       Notes and regions are USER-placed, same family as routes. Amber
+       anchor hue, with lightness variation by object type. Picking
+       one hue means a colour-blind helmsman can still tell user-
+       annotations from chart data because the shape does the work. */
+    --ann-route:      #e09f3e;       /* amber primary (also ROUTE_COLOR in JS) */
+    --ann-waypoint:   #c76f51;       /* terracotta (warmer shift of amber) */
+    --ann-note:       #c8892e;       /* darker amber, reads as route-adjacent */
+    --ann-note-stroke:#7a5418;
+    --ann-region:     #d4a850;       /* lighter amber-gold (same family as route) */
+    --ann-region-fill:rgba(212, 168, 80, 0.18);
+
     /* Chrome palette (sidebar + top bar). Keep separate from content vars
        so the sidebar can have its own depth treatment on either theme. */
     --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
@@ -1407,7 +1430,11 @@ main:has(.alarm-banner-stack) .hud-top-left {
 }
 
 /* Red-shift instrument SVGs (Gauges, SailSteer, WindRose) for night vision.
-   Preset-specific filters so amber reads amber and red reads pure red. */
+   Preset-specific filters so amber reads amber and red reads pure red.
+   NB: the map SVG icons (AIS triangles, radar outlines, SART bullseye)
+   are NOT filtered -- the AIS palette carries ship-type meaning via
+   hue and hue-rotate would silently destroy that. Leaflet containers
+   opt out explicitly below. */
 .night-mode-global article svg {
     filter: hue-rotate(-30deg) saturate(0.6) brightness(0.8);
 }
@@ -1416,6 +1443,13 @@ main:has(.alarm-banner-stack) .hud-top-left {
 }
 .night-mode-global.night-mode-red article svg {
     filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(3) brightness(0.7);
+}
+/* Opt-out: map markers keep their semantic colours in all night presets.
+   Higher specificity (three class tokens) beats the rules above. */
+.night-mode-global .leaflet-container svg,
+.night-mode-global.night-mode-amber .leaflet-container svg,
+.night-mode-global.night-mode-red .leaflet-container svg {
+    filter: none;
 }
 
 .night-mode-global .top-row {
@@ -2249,14 +2283,14 @@ main:has(.alarm-banner-stack) .hud-top-left {
    visually quiet until hover to avoid the "I might click it by accident"
    fear. */
 .note-popup .leaflet-popup-content-wrapper {
-    background: rgba(20, 26, 38, 0.96);
+    background: rgba(30, 22, 14, 0.96);
     color: #e2e8f0;
     border-radius: 6px;
-    border: 1px solid rgba(139, 157, 195, 0.4);
+    border: 1px solid rgba(200, 137, 46, 0.45);    /* --ann-note accent */
 }
-.note-popup .leaflet-popup-tip { background: rgba(20, 26, 38, 0.96); }
+.note-popup .leaflet-popup-tip { background: rgba(30, 22, 14, 0.96); }
 .note-popup-inner { padding: 2px 4px; min-width: 180px; }
-.note-popup-title { font-weight: 600; color: #cfd8ea; margin-bottom: 4px; }
+.note-popup-title { font-weight: 600; color: #f0d49c; margin-bottom: 4px; }
 .note-popup-body {
     color: #cbd5e1;
     font-size: 0.85rem;
@@ -2312,18 +2346,19 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 0;
 }
 
-/* Region popup: same muted lavender-gray family as the polygon stroke
-   so the popup reads as "from this shape". Matches the note popup
-   skeleton otherwise. */
+/* Region popup: amber-gold accent matching the polygon stroke so the
+   popup reads as "from this shape". Same user-annotation hue family
+   as the note popup; popup background tone slightly lighter than
+   notes so stacked popups still tell apart. */
 .region-popup .leaflet-popup-content-wrapper {
-    background: rgba(22, 20, 28, 0.96);
+    background: rgba(36, 28, 18, 0.96);
     color: #e2e8f0;
     border-radius: 6px;
-    border: 1px solid rgba(155, 138, 167, 0.45);
+    border: 1px solid rgba(212, 168, 80, 0.50);    /* --ann-region accent */
 }
-.region-popup .leaflet-popup-tip { background: rgba(22, 20, 28, 0.96); }
+.region-popup .leaflet-popup-tip { background: rgba(36, 28, 18, 0.96); }
 .region-popup-inner { padding: 2px 4px; min-width: 180px; }
-.region-popup-title { font-weight: 600; color: #d8cfe4; margin-bottom: 4px; }
+.region-popup-title { font-weight: 600; color: #f5dca3; margin-bottom: 4px; }
 .region-popup-body {
     color: #cbd5e1;
     font-size: 0.85rem;
