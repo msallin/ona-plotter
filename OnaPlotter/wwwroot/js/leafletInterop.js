@@ -64,13 +64,38 @@ let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThres
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
 let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
 
+// Shared bookkeeping for every by-id layer dict on the map: charts,
+// routes, waypoints, notes, regions, and any future resource layer.
+// The class only tracks the Leaflet layer and manages removal; call
+// sites still call layer.addTo(map) themselves so they can stage
+// layers inside layerGroups or control add-ordering. Keeps remove /
+// clear consistent: `if (layer && map) map.removeLayer(layer)` gets
+// written once, not six times.
+class MarkerLayer {
+    constructor() { this.items = {}; }
+    has(id) { return Object.prototype.hasOwnProperty.call(this.items, id); }
+    get(id) { return this.items[id]; }
+    keys() { return Object.keys(this.items); }
+    set(id, layer) { this.items[id] = layer; }
+    remove(id) {
+        const layer = this.items[id];
+        if (layer) {
+            if (map) map.removeLayer(layer);
+            delete this.items[id];
+        }
+    }
+    clear() {
+        for (const id of Object.keys(this.items)) this.remove(id);
+    }
+}
+
 // Chart layers from SignalK.
-const chartLayers = {};  // keyed by chart identifier
+const chartLayers = new MarkerLayer();  // keyed by chart identifier
 let osmBaseLayer = null;
 let seaBaseLayer = null;
 
 // Routes and server track.
-const routeLayers = {};  // keyed by route ID
+const routeLayers = new MarkerLayer();  // keyed by route ID
 let serverTrackLayer = null;
 
 // Active route navigation.
@@ -1098,7 +1123,7 @@ export function setNightMode(enabled) {
 // Add a chart tile layer from SignalK.
 // bounds is [west, south, east, north] or null.
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
-    if (!map || chartLayers[id]) return false;
+    if (!map || chartLayers.has(id)) return false;
     const opts = {
         minZoom: minZoom || 1,
         maxZoom: maxZoom || 18,
@@ -1116,20 +1141,14 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     const layer = L.tileLayer(tileUrl, opts);
     layer.addTo(map);
     layer.setZIndex(50);
-    chartLayers[id] = layer;
+    chartLayers.set(id, layer);
     return true;
 }
 
-export function removeChartLayer(id) {
-    const layer = chartLayers[id];
-    if (layer && map) {
-        map.removeLayer(layer);
-        delete chartLayers[id];
-    }
-}
+export function removeChartLayer(id) { chartLayers.remove(id); }
 
 export function setChartLayerOpacity(id, opacity) {
-    const layer = chartLayers[id];
+    const layer = chartLayers.get(id);
     if (layer) layer.setOpacity(opacity);
 }
 
@@ -1141,7 +1160,7 @@ const ROUTE_COLOR = '#e09f3e';
 
 // Add a route as a polyline. coords is [[lat, lon], ...].
 export function addRoute(id, name, coords) {
-    if (!map || routeLayers[id]) return;
+    if (!map || routeLayers.has(id)) return;
     const line = L.polyline(coords, {
         color: ROUTE_COLOR, weight: 2.5, opacity: 0.8, dashArray: '8,6'
     }).addTo(map);
@@ -1154,13 +1173,10 @@ export function addRoute(id, name, coords) {
         dot.bindTooltip(name ? `${name} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
         dot.addTo(group);
     }
-    routeLayers[id] = group;
+    routeLayers.set(id, group);
 }
 
-export function removeRoute(id) {
-    const layer = routeLayers[id];
-    if (layer && map) { map.removeLayer(layer); delete routeLayers[id]; }
-}
+export function removeRoute(id) { routeLayers.remove(id); }
 
 // --- Server Track ---
 
@@ -1494,14 +1510,14 @@ export function loadRouteForEdit(coords) {
 
 // --- Waypoint Markers ---
 
-const waypointMarkers = {};
+const waypointMarkers = new MarkerLayer();
 
 // Waypoint marker colour. Terracotta is a step warmer/redder than the
 // route amber so a bare waypoint reads distinct from a route dot.
 const WAYPOINT_COLOR = '#c76f51';
 
 export function addWaypointMarker(id, lat, lon, name) {
-    if (!map || waypointMarkers[id]) return;
+    if (!map || waypointMarkers.has(id)) return;
     const marker = L.circleMarker([lat, lon], {
         radius: 6, color: WAYPOINT_COLOR, fillColor: WAYPOINT_COLOR, fillOpacity: 1, weight: 2
     }).addTo(map);
@@ -1509,15 +1525,10 @@ export function addWaypointMarker(id, lat, lon, name) {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
-    waypointMarkers[id] = marker;
+    waypointMarkers.set(id, marker);
 }
 
-export function removeWaypointMarker(id) {
-    if (waypointMarkers[id] && map) {
-        map.removeLayer(waypointMarkers[id]);
-        delete waypointMarkers[id];
-    }
-}
+export function removeWaypointMarker(id) { waypointMarkers.remove(id); }
 
 // --- Note Markers ---
 // Geolocated text annotations (SignalK /resources/notes). Rendered as a
@@ -1525,7 +1536,7 @@ export function removeWaypointMarker(id) {
 // and routes (amber line). Click opens a popup with title + description
 // and a Delete button that round-trips to C# via the cached dotNetRef.
 
-const noteMarkers = {};
+const noteMarkers = new MarkerLayer();
 const NOTE_COLOR = '#8b9dc3';         // muted slate-blue; cool accent amid the warm earth palette
 const NOTE_COLOR_STROKE = '#4a5a7a';
 
@@ -1562,7 +1573,7 @@ function getNoteIcon() {
 }
 
 export function addNoteMarker(id, lat, lon, title, description) {
-    if (!map || noteMarkers[id]) return;
+    if (!map || noteMarkers.has(id)) return;
     const marker = L.marker([lat, lon], { icon: getNoteIcon() }).addTo(map);
     marker.bindPopup(buildNotePopupHtml(id, title, description), {
         className: 'note-popup',
@@ -1573,7 +1584,7 @@ export function addNoteMarker(id, lat, lon, title, description) {
     // popup DOM so an id collision with something else on the page can't
     // hijack the click.
     marker.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.note-delete-btn', 'DeleteNote', id));
-    noteMarkers[id] = marker;
+    noteMarkers.set(id, marker);
 }
 
 // Two-step confirm wiring for a popup's delete button. First click
@@ -1621,20 +1632,9 @@ function buildNotePopupHtml(id, title, description) {
         </div>`;
 }
 
-export function removeNoteMarker(id) {
-    if (noteMarkers[id] && map) {
-        map.removeLayer(noteMarkers[id]);
-        delete noteMarkers[id];
-    }
-}
+export function removeNoteMarker(id) { noteMarkers.remove(id); }
 
-export function clearNotes() {
-    if (!map) return;
-    for (const id of Object.keys(noteMarkers)) {
-        map.removeLayer(noteMarkers[id]);
-        delete noteMarkers[id];
-    }
-}
+export function clearNotes() { noteMarkers.clear(); }
 
 // Pan the map to a given lat/lon without changing the current zoom.
 // Used by the layers-panel "Focus" button on notes (and potentially
@@ -1647,7 +1647,7 @@ export function panTo(lat, lon) {
 // Open the popup on a note marker if it's currently rendered. No-op
 // when the id isn't present (note not yet loaded, or notes hidden).
 export function openNotePopup(id) {
-    const m = noteMarkers[id];
+    const m = noteMarkers.get(id);
     if (m) m.openPopup();
 }
 
@@ -1658,7 +1658,7 @@ export function openNotePopup(id) {
 // palette. Phase 1 shows them; Phase 2 lets the user create circles
 // via a polygon-approximation.
 
-const regionLayers = {};
+const regionLayers = new MarkerLayer();
 const REGION_STROKE = '#9b8aa7';
 const REGION_FILL = 'rgba(155, 138, 167, 0.18)';
 
@@ -1666,7 +1666,7 @@ const REGION_FILL = 'rgba(155, 138, 167, 0.18)';
 // A MultiPolygon region passes multiple rings; most regions are a
 // single Polygon, so `rings` is a one-element array.
 export function addRegion(id, rings, title, description) {
-    if (!map || regionLayers[id]) return;
+    if (!map || regionLayers.has(id)) return;
     if (!Array.isArray(rings) || rings.length === 0) return;
     const group = L.layerGroup();
     const popupHtml = buildRegionPopupHtml(id, title, description);
@@ -1683,7 +1683,7 @@ export function addRegion(id, rings, title, description) {
         group.addLayer(poly);
     }
     group.addTo(map);
-    regionLayers[id] = group;
+    regionLayers.set(id, group);
 }
 
 function buildRegionPopupHtml(id, title, description) {
@@ -1697,26 +1697,15 @@ function buildRegionPopupHtml(id, title, description) {
         </div>`;
 }
 
-export function removeRegion(id) {
-    if (regionLayers[id] && map) {
-        map.removeLayer(regionLayers[id]);
-        delete regionLayers[id];
-    }
-}
+export function removeRegion(id) { regionLayers.remove(id); }
 
-export function clearRegions() {
-    if (!map) return;
-    for (const id of Object.keys(regionLayers)) {
-        map.removeLayer(regionLayers[id]);
-        delete regionLayers[id];
-    }
-}
+export function clearRegions() { regionLayers.clear(); }
 
 // Pan to a region and open its popup. Accepts the first ring and
 // uses its bounds so we frame whatever the user clicked in the
 // Layers panel.
 export function focusRegion(id, firstRing) {
-    const layer = regionLayers[id];
+    const layer = regionLayers.get(id);
     if (!layer || !map) return;
     if (Array.isArray(firstRing) && firstRing.length > 0) {
         const bounds = L.latLngBounds(firstRing);
@@ -1936,8 +1925,8 @@ export function dispose() {
     boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
     osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
     weatherRouteLayer = null;
-    for (const id of Object.keys(chartLayers)) delete chartLayers[id];
-    for (const id of Object.keys(routeLayers)) delete routeLayers[id];
+    chartLayers.clear();
+    routeLayers.clear();
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];
     bearingLine = null; bearingLabel = null;
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
@@ -1951,7 +1940,9 @@ export function dispose() {
     weatherLayer = null;
     routeEditMode = false; routeEditLayer = null;
     routeEditCoords = []; routeEditMarkers = []; routeEditLine = null;
-    for (const id of Object.keys(waypointMarkers)) delete waypointMarkers[id];
+    waypointMarkers.clear();
+    noteMarkers.clear();
+    regionLayers.clear();
     for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
     for (const ctx of Object.keys(aisCpaOwnLines)) delete aisCpaOwnLines[ctx];
