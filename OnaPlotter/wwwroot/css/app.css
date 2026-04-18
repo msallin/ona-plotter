@@ -1023,7 +1023,11 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 
 /* ===== Alarm Banner ===== */
 
-/* Stack container - fixed-positions itself; children stack vertically. */
+/* Stack container - fixed-positions itself; children stack vertically.
+   On narrow screens (< 900px) banners span the full width, matching
+   mobile-native "alert bar" UX. On wide helm displays (>= 900px) the
+   stack compresses to a centred 680px column so three alarms don't
+   swallow the top ~180px of the map viewport on a 1920px screen. */
 .alarm-banner-stack {
     position: fixed;
     top: 3rem; /* below the sticky top bar */
@@ -1032,6 +1036,22 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     z-index: var(--z-modal);
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+}
+@media (min-width: 900px) {
+    .alarm-banner-stack {
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
+        max-width: 680px;
+        width: max-content;
+    }
+    .alarm-banner-stack > .alarm-banner {
+        border-radius: 0 0 8px 8px;
+    }
+    .alarm-banner-stack > .alarm-banner:first-child {
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    }
 }
 .alarm-banner {
     padding: 10px 16px;
@@ -1069,7 +1089,7 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 }
 .alarm-snooze:hover { background: rgba(0, 0, 0, 0.5); }
 @media (pointer: coarse) {
-    .alarm-snooze { min-height: 36px; padding: 6px 14px; font-size: 0.85rem; }
+    .alarm-snooze { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
 }
 
 @media (min-width: 641px) {
@@ -1891,6 +1911,18 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     .nearest-wp-chip { min-height: 40px; }
 }
 
+/* Depth-alarm non-colour affordance. The hud-value already goes red
+   when depth < threshold; the ⚠ glyph gives a colour-blind sailor
+   a shape-based signal so they're not relying on hue alone. */
+.depth-warn-glyph {
+    display: inline-block;
+    margin-left: 6px;
+    font-size: 0.7em;
+    color: var(--sev-danger);
+    vertical-align: middle;
+    animation: alarm-flash 1s ease-in-out infinite;
+}
+
 /* ===== Depth + tide row =====
    Tide data (from mxtide / openwatersio / similar) lives inside the
    depth panel as a subtle one-liner. Only rendered when a plugin
@@ -2399,7 +2431,7 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     border-color: #ef4444;
 }
 @media (pointer: coarse) {
-    .note-delete-btn { min-height: 36px; padding: 8px 14px; font-size: 0.85rem; }
+    .note-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
 }
 /* First-tap state on a resource delete button. Full red fill so the
    confirm intent is obvious; second tap within 3s actually deletes. */
@@ -2467,7 +2499,7 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     border-color: #ef4444;
 }
 @media (pointer: coarse) {
-    .region-delete-btn { min-height: 36px; padding: 8px 14px; font-size: 0.85rem; }
+    .region-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
 }
 
 /* ===== SailSteer Display ===== */

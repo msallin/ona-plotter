@@ -58,7 +58,13 @@
 <div class="hud hud-bottom-left">
     <div class="hud-panel">
         <div class="hud-label">Depth</div>
-        <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span></div>
+        <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
+            {
+                @* Non-colour signal: below-threshold depth gets a warning
+                   glyph that colour-blind sailors can read. Paired with the
+                   traffic-light colouring so both channels carry the signal. *@
+                <span class="depth-warn-glyph" aria-label="depth below alarm threshold">&#9888;</span>
+            }</div>
         @if (DepthAlarmThreshold > 0)
         {
             <div class="hud-threshold @(IsBelowDepthThreshold ? "threshold-active" : "")"
