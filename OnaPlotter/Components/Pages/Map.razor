@@ -961,6 +961,10 @@
         {
             Toasts.Success(currentlyBuddy ? $"Removed {friendly} from buddies" : $"Added {friendly} to buddies");
             await RefreshBuddiesAsync();
+            // Force an immediate AIS re-push so the open popup (and all
+            // vessel markers) rebind with the new buddy flag - otherwise
+            // the captain waits up to AisPushIntervalMs to see the change.
+            await PushAisTargets();
         }
         else
         {

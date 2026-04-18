@@ -30,9 +30,33 @@ const AIS_TRAIL_SECONDS = 60;
 // Best-effort external-lookup cache for vessels whose SignalK feed hasn't
 // yet delivered a static-data AIS message (message 5 / 24). Keyed by MMSI.
 // A value of null means "looked up and came back empty" — prevents endless
-// retries. Survives for the lifetime of the map module.
-const vesselNameCache = {};
+// retries. Bounded: on insert past VESSEL_NAME_CACHE_MAX we drop the oldest
+// entry. A Map is used because its iteration is insertion-ordered, so the
+// first key is the oldest, which is all we need for a simple LRU with
+// promote-on-hit.
+const VESSEL_NAME_CACHE_MAX = 500;
+const vesselNameCache = new Map();
 const vesselNameInflight = {};
+
+function vesselNameCacheGet(mmsi) {
+    if (!vesselNameCache.has(mmsi)) return undefined;
+    const v = vesselNameCache.get(mmsi);
+    // Promote: re-insert at the end so a recently-used entry isn't next to evict.
+    vesselNameCache.delete(mmsi);
+    vesselNameCache.set(mmsi, v);
+    return v;
+}
+
+function vesselNameCacheSet(mmsi, name) {
+    if (vesselNameCache.has(mmsi)) vesselNameCache.delete(mmsi);
+    vesselNameCache.set(mmsi, name);
+    while (vesselNameCache.size > VESSEL_NAME_CACHE_MAX) {
+        const oldest = vesselNameCache.keys().next().value;
+        vesselNameCache.delete(oldest);
+    }
+}
+
+function vesselNameCacheHas(mmsi) { return vesselNameCache.has(mmsi); }
 
 // Guard zone: collision-alarm envelope drawn around own boat.
 let guardZoneRing = null;
@@ -114,20 +138,24 @@ function makeIcon(html, size) {
 // reserved for MOB and collision alarms.
 const selfIcon = makeIcon(makeBoatSvg('#ec4899', 30, true), 30);
 
-// AIS colors: muted, harmonious palette. Readable against dark map tiles.
+// AIS colour palette. Tuned for blue water: all warm/earth hues so
+// every vessel reads clearly against OSM/OpenSeaMap tiles. Matches the
+// route and waypoint colours for a coherent chart look. Any change
+// here should ripple to the route/waypoint colours below so the
+// palette stays in one place.
 const AIS_COLORS = {
-    cargo: '#86efac',     // soft green
-    tanker: '#fdba74',    // warm peach
-    passenger: '#c4b5fd', // soft violet
-    fishing: '#fde68a',   // pale gold
-    sailing: '#7dd3fc',   // sky blue
-    pleasure: '#7dd3fc',
-    tug: '#fed7aa',       // light sand
-    military: '#fca5a5',  // muted red
-    sar: '#fca5a5',
-    default: '#d4d4d8',   // neutral gray (less garish than amber)
-    danger: '#f87171',    // warm red for CPA danger
-    buddy: '#facc15'      // saturated gold; also gets a star badge
+    cargo:     '#7d9b76',    // sage green - commercial bulk
+    tanker:    '#c9a27e',    // warm tan - oil / liquid
+    passenger: '#b589b0',    // muted plum - civilian
+    fishing:   '#d4a850',    // muted gold - nets
+    sailing:   '#e28862',    // warm coral - replaces sky blue that vanished on water
+    pleasure:  '#f2b785',    // pale apricot - same family
+    tug:       '#c0a080',    // warm beige
+    military:  '#8a7a7a',    // muted brown-gray
+    sar:       '#d17056',    // terracotta - "rescue orange" toned down
+    default:   '#e0c9a6',    // warm cream for unclassified targets (was pale gray, muddy on water)
+    danger:    '#c4453e',    // warm brick - CPA alarm
+    buddy:     '#e9c46a'     // honey gold - also gets a star glyph
 };
 
 function aisColor(shipType, isDanger, isBuddy) {
@@ -565,7 +593,7 @@ export function updateAisTargets(vessels) {
         // Name label visible at zoom >= 12. Prefer resolved external name
         // over raw MMSI so the chart looks clean even for unnamed targets.
         // Buddies get a star prefix.
-        const resolvedName = v.name || (v.mmsi ? vesselNameCache[v.mmsi] : null);
+        const resolvedName = v.name || (v.mmsi ? vesselNameCacheGet(v.mmsi) : null);
         const baseName = resolvedName || (v.mmsi ? v.mmsi : null);
         const displayName = baseName ? (v.buddy ? '\u2605 ' + baseName : baseName) : null;
         if (displayName) {
@@ -594,10 +622,11 @@ export function updateAisTargets(vessels) {
         // callsign > MMSI. For unnamed vessels, kick off an external lookup
         // in the background; next update tick will pick up the resolved name.
         let displayTitle;
+        const cachedName = mmsi ? vesselNameCacheGet(mmsi) : undefined;
         if (name) {
             displayTitle = name;
-        } else if (mmsi && vesselNameCache[mmsi]) {
-            displayTitle = esc(vesselNameCache[mmsi]);
+        } else if (cachedName) {
+            displayTitle = esc(cachedName);
         } else if (callsign) {
             displayTitle = callsign;
         } else if (mmsi) {
@@ -605,7 +634,7 @@ export function updateAisTargets(vessels) {
         } else {
             displayTitle = 'Unknown';
         }
-        if (!name && mmsi && !(mmsi in vesselNameCache)) {
+        if (!name && mmsi && !vesselNameCacheHas(mmsi)) {
             resolveVesselName(v.context, mmsi);
         }
         if (v.buddy) displayTitle = '\u2605 ' + displayTitle;
@@ -644,7 +673,7 @@ export function updateAisTargets(vessels) {
                 `</div>`;
         }
 
-        marker.bindPopup(
+        const popupHtml =
             `<div class="ais-popup-content">` +
             `<div class="ais-popup-title">${displayTitle}</div>` +
             (type ? `<div class="ais-popup-type">${type}</div>` : '') +
@@ -660,9 +689,18 @@ export function updateAisTargets(vessels) {
               colregsHtml +
             `</table>` +
             linksHtml +
-            `</div>`,
-            { closeButton: false, maxWidth: 280, className: 'ais-popup' }
-        );
+            `</div>`;
+
+        // If the popup is already bound (common - repeated update ticks),
+        // use setPopupContent so an open popup updates live (the buddy
+        // toggle relies on this to show the new Remove/Add label without
+        // a close-reopen round-trip). Otherwise bindPopup for the first time.
+        if (marker.getPopup()) {
+            marker.setPopupContent(popupHtml);
+        } else {
+            marker.bindPopup(popupHtml,
+                { closeButton: false, maxWidth: 280, className: 'ais-popup' });
+        }
 
         // Trail: last AIS_TRAIL_SECONDS of positions, drawn as a fading line.
         // We only push when the position actually changes to avoid empty ticks.
@@ -1019,17 +1057,21 @@ export function setChartLayerOpacity(id, opacity) {
 
 // --- Routes ---
 
+// Route polyline colour. Warm amber contrasts cleanly with OSM blue
+// water and doesn't clash with AIS ship colours (same family).
+const ROUTE_COLOR = '#e09f3e';
+
 // Add a route as a polyline. coords is [[lat, lon], ...].
 export function addRoute(id, name, coords) {
     if (!map || routeLayers[id]) return;
     const line = L.polyline(coords, {
-        color: '#a78bfa', weight: 2.5, opacity: 0.8, dashArray: '8,6'
+        color: ROUTE_COLOR, weight: 2.5, opacity: 0.8, dashArray: '8,6'
     }).addTo(map);
     // Waypoint dots at each coordinate.
     const group = L.layerGroup([line]).addTo(map);
     for (let i = 0; i < coords.length; i++) {
         const dot = L.circleMarker(coords[i], {
-            radius: 4, color: '#a78bfa', fillColor: '#a78bfa', fillOpacity: 1, weight: 1
+            radius: 4, color: ROUTE_COLOR, fillColor: ROUTE_COLOR, fillOpacity: 1, weight: 1
         });
         dot.bindTooltip(name ? `${name} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
         dot.addTo(group);
@@ -1307,10 +1349,14 @@ export function loadRouteForEdit(coords) {
 
 const waypointMarkers = {};
 
+// Waypoint marker colour. Terracotta is a step warmer/redder than the
+// route amber so a bare waypoint reads distinct from a route dot.
+const WAYPOINT_COLOR = '#c76f51';
+
 export function addWaypointMarker(id, lat, lon, name) {
     if (!map || waypointMarkers[id]) return;
     const marker = L.circleMarker([lat, lon], {
-        radius: 6, color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1, weight: 2
+        radius: 6, color: WAYPOINT_COLOR, fillColor: WAYPOINT_COLOR, fillOpacity: 1, weight: 2
     }).addTo(map);
     marker.bindTooltip(name || id.substring(0, 8), {
         permanent: false, direction: 'right', offset: [10, 0],
