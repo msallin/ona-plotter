@@ -339,6 +339,24 @@ article.content:has(.map-container) {
     margin-left: 3px;
 }
 
+/* Depth alarm threshold label under the depth HUD value. Muted by
+   default so it's glanceable context ("you'll hear an alarm below
+   this"); switches to a pulsing danger-red when the current depth is
+   actually below the threshold - that's the value Skip asked for on
+   the helm: the exact number that just triggered the audio. */
+.hud-threshold {
+    font-size: 0.6rem;
+    color: rgba(255,255,255,0.35);
+    margin-top: 3px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+.hud-threshold.threshold-active {
+    color: #ef4444;
+    font-weight: 600;
+    animation: alarm-flash 1s ease-in-out infinite;
+}
+
 /* Position display in HUD */
 .hud-position {
     font-size: 0.7rem;
@@ -1219,7 +1237,10 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .alarm-log-autocleared .alarm-log-title { color: #4ade80; }
 
 /* ===== Global Night Mode ===== */
-/* Red-shifted dark mode for all pages (preserves night vision). */
+/* Red-shifted dark mode for all pages (preserves night vision). The base
+   class sets the "soft" preset variables; .night-mode-amber and
+   .night-mode-red override onto a brighter amber or single-channel red
+   for helmers who want more or less colour warmth after dark. */
 .night-mode-global {
     --sk-bg: #1a0505;
     --sk-surface: #200808;
@@ -1228,6 +1249,30 @@ main:has(.alarm-banner-stack) .hud-top-left {
     --sk-text: #ffcccc;
     --sk-text-muted: #996666;
     --sk-accent: #cc4444;
+}
+
+/* Preset: Amber. Brighter, warmer than soft; good around dusk when the
+   eye is still partly day-adapted and pure red feels dim. */
+.night-mode-global.night-mode-amber {
+    --sk-bg: #1a1000;
+    --sk-surface: #2a1a00;
+    --sk-surface-hover: #3a2608;
+    --sk-border: #3a2810;
+    --sk-text: #ffcc80;
+    --sk-text-muted: #b39060;
+    --sk-accent: #e69100;
+}
+
+/* Preset: Red. Classic single-channel helm red; darkest, least blue,
+   best for long watches where dark adaptation matters. */
+.night-mode-global.night-mode-red {
+    --sk-bg: #0a0000;
+    --sk-surface: #1a0000;
+    --sk-surface-hover: #240404;
+    --sk-border: #401010;
+    --sk-accent: #ff3030;
+    --sk-text: #ff8080;
+    --sk-text-muted: #a04040;
 }
 
 .night-mode-global .card {
@@ -1251,9 +1296,16 @@ main:has(.alarm-banner-stack) .hud-top-left {
     opacity: 0.8;
 }
 
-/* Red-shift instrument SVGs (Gauges, SailSteer, WindRose) for night vision. */
+/* Red-shift instrument SVGs (Gauges, SailSteer, WindRose) for night vision.
+   Preset-specific filters so amber reads amber and red reads pure red. */
 .night-mode-global article svg {
     filter: hue-rotate(-30deg) saturate(0.6) brightness(0.8);
+}
+.night-mode-global.night-mode-amber article svg {
+    filter: hue-rotate(-45deg) saturate(0.8) brightness(0.85);
+}
+.night-mode-global.night-mode-red article svg {
+    filter: grayscale(1) sepia(1) hue-rotate(-50deg) saturate(3) brightness(0.7);
 }
 
 .night-mode-global .top-row {

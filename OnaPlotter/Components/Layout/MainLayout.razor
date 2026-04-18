@@ -10,7 +10,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<div class="page theme-@Settings.Theme @(Settings.NightMode ? "night-mode-global" : "")">
+<div class="page theme-@Settings.Theme @(Settings.NightMode ? $"night-mode-global night-mode-{Settings.NightModePreset}" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>

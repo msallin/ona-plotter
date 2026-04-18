@@ -154,6 +154,24 @@
                     <label class="form-check-label">Night Mode</label>
                 </div>
                 <small class="text-muted">Red-shifted display for night vision. Overlays on any theme.</small>
+                @if (AppSettings.NightMode)
+                {
+                    <div class="btn-group mt-2" role="group" aria-label="Night mode preset">
+                        @foreach (var (val, label, tip) in NightPresets)
+                        {
+                            <input type="radio" class="btn-check" name="night-preset"
+                                   id="@($"night-{val}")" autocomplete="off"
+                                   checked="@(AppSettings.NightModePreset == val)"
+                                   @onchange="() => OnNightPresetChanged(val)" />
+                            <label class="btn btn-outline-secondary btn-sm" for="@($"night-{val}")"
+                                   title="@tip">@label</label>
+                        }
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        Soft: warm low-contrast. Amber: brighter for dusk. Red: single-channel, preserves
+                        dark-adapted vision.
+                    </small>
+                }
             </div>
         </div>
     </div>
@@ -196,7 +214,17 @@
         await AppSettings.SetNightModeAsync(val);
     }
 
+    private async Task OnNightPresetChanged(string value)
+        => await AppSettings.SetNightModePresetAsync(value);
+
     private async Task OnThemeChanged(string value) => await AppSettings.SetThemeAsync(value);
+
+    private static readonly (string val, string label, string tip)[] NightPresets =
+    [
+        ("soft",  "Soft",  "Warm low-contrast red shift; default."),
+        ("amber", "Amber", "Brighter amber, good around dusk."),
+        ("red",   "Red",   "Pure red, preserves dark-adapted vision."),
+    ];
 
     private async Task HandlePolarUpload(InputFileChangeEventArgs e)
     {

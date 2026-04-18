@@ -55,6 +55,13 @@
     <div class="hud-panel">
         <div class="hud-label">Depth</div>
         <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span></div>
+        @if (DepthAlarmThreshold > 0)
+        {
+            <div class="hud-threshold @(IsBelowDepthThreshold ? "threshold-active" : "")"
+                 title="Depth alarm threshold (from Settings)">
+                alarm &lt;@DepthAlarmThreshold.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)m
+            </div>
+        }
     </div>
 </div>
 
@@ -210,6 +217,14 @@
 
     /// <summary>Fired by the Stop Navigation button on the route panel.</summary>
     [Parameter] public EventCallback OnStopNavigation { get; set; }
+
+    /// <summary>Depth alarm threshold in metres. Rendered as a small
+    /// "alarm <3.0m" label under the depth value so the captain knows
+    /// exactly what number will trigger the audible alarm. 0 to hide.</summary>
+    [Parameter] public double DepthAlarmThreshold { get; set; }
+
+    private bool IsBelowDepthThreshold =>
+        Data.Depth is double d && DepthAlarmThreshold > 0 && d < DepthAlarmThreshold;
 
     private string WindAngleDegStr =>
         Data.WindAngleApparent is not null

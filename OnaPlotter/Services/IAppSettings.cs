@@ -8,6 +8,13 @@ public interface IAppSettings
 {
     bool NightMode { get; }
 
+    /// <summary>Night-mode flavour. "soft" is the light-red default (warm
+    /// amber with a touch of blue); "amber" is warmer and brighter for
+    /// sunset; "red" is the classic helm-at-night single-channel red that
+    /// preserves dark-adapted vision. Only meaningful when
+    /// <see cref="NightMode"/> is true.</summary>
+    string NightModePreset { get; }
+
     /// <summary>"system" (follow OS prefers-color-scheme), "light", or "dark".
     /// Independent of <see cref="NightMode"/> which applies a red-shift on top
     /// of whichever base palette is active.</summary>
@@ -45,6 +52,7 @@ public interface IAppSettings
 
     Task InitializeAsync();
     Task SetNightModeAsync(bool value);
+    Task SetNightModePresetAsync(string value);
     Task SetThemeAsync(string value);
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);

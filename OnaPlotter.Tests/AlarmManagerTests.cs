@@ -11,6 +11,7 @@ public class AlarmManagerTests
     private sealed class FixedSettings : IAppSettings
     {
         public bool NightMode => false;
+        public string NightModePreset => "soft";
         public string Theme => "dark";
         public string MapOrientation => "north";
         public bool FollowBoat => true;
@@ -26,6 +27,7 @@ public class AlarmManagerTests
         public event Action? OnSettingsChanged { add { } remove { } }
         public Task InitializeAsync() => Task.CompletedTask;
         public Task SetNightModeAsync(bool v) => Task.CompletedTask;
+        public Task SetNightModePresetAsync(string v) => Task.CompletedTask;
         public Task SetThemeAsync(string v) => Task.CompletedTask;
         public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
         public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
