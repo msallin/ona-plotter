@@ -19,6 +19,7 @@
     /* Chrome palette (sidebar + top bar). Keep separate from content vars
        so the sidebar can have its own depth treatment on either theme. */
     --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
+    --sk-sidebar-border: transparent;
     --sk-sidebar-text: rgba(255, 255, 255, 0.65);
     --sk-sidebar-text-active: #ffffff;
     --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
@@ -60,10 +61,12 @@
     --sk-accent: #0369a1;             /* sky-700 - readable on white */
     --sk-accent-dim: #075985;         /* sky-800 */
 
-    /* Chrome palette for light mode: subtle cool gradient for the sidebar
-       so it stands apart from the content area without shouting. */
-    --sk-sidebar-bg: linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%);
-    --sk-sidebar-text: #475569;       /* slate-600 */
+    /* Chrome palette for light mode. The sidebar reads darker than the
+       content area so the visual anchor is obvious in direct sunlight on
+       a laptop screen; a right border adds a final crisp edge. */
+    --sk-sidebar-bg: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
+    --sk-sidebar-border: #64748b;
+    --sk-sidebar-text: #334155;       /* slate-700 */
     --sk-sidebar-text-active: #0f172a;
     --sk-sidebar-hover-bg: rgba(15, 23, 42, 0.06);
     --sk-sidebar-active-bg: rgba(15, 23, 42, 0.10);
@@ -86,6 +89,7 @@
         --sk-accent: #60a5fa;
         --sk-accent-dim: #3b82f6;
         --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
+        --sk-sidebar-border: transparent;
         --sk-sidebar-text: rgba(255, 255, 255, 0.65);
         --sk-sidebar-text-active: #ffffff;
         --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
@@ -1084,6 +1088,38 @@ main:has(.alarm-banner) .hud-top-left {
     .hud-autopilot { right: 8px; }
     /* Tighter control bar on mobile -> recompute panel-bottom. */
     :root { --ctrl-bar-height: 56px; }
+}
+
+/* Portrait tablet (iPad held upright). Width is ~768-1024 in portrait;
+   the top-center hud-route panel collides with the top-right wind panel
+   because they share horizontal real estate. Shift route to below-wind
+   and shrink the anchor panel so it doesn't overlap the control bar. */
+@media (orientation: portrait) and (min-width: 601px) and (max-width: 1024px) {
+    .hud-route {
+        top: auto;
+        bottom: calc(var(--panel-bottom) + 140px);
+        max-width: 280px;
+    }
+    .hud-anchor {
+        bottom: calc(var(--panel-bottom) + 80px);
+    }
+    /* Autopilot moves further up so it clears the relocated route panel. */
+    .hud-autopilot {
+        bottom: calc(var(--panel-bottom) + 300px);
+    }
+}
+
+/* Narrow portrait phones: same problem, even more compact. Route panel
+   tucks above the control bar and the anchor panel sits above it. */
+@media (orientation: portrait) and (max-width: 600px) {
+    .hud-route {
+        top: auto;
+        bottom: calc(var(--panel-bottom) + 110px);
+        left: 8px;
+        right: 8px;
+        transform: none;
+        max-width: none;
+    }
 }
 
 /* Tablet landscape: slightly tighter HUD */

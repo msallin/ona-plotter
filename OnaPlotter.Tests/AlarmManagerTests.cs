@@ -20,6 +20,7 @@ public class AlarmManagerTests
         public double GuardZoneLookaheadMinutes { get; set; } = 10.0;
         public double GuardZoneWarningFactor { get; set; } = 2.0;
         public double WindShiftAlarmThreshold { get; set; } = 15.0;
+        public double WindShiftLookbackMinutes { get; set; } = 5.0;
         public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
         public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
         public event Action? OnSettingsChanged { add { } remove { } }
@@ -34,6 +35,7 @@ public class AlarmManagerTests
         public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;
         public Task SetGuardZoneWarningFactorAsync(double v) => Task.CompletedTask;
         public Task SetWindShiftAlarmThresholdAsync(double v) => Task.CompletedTask;
+        public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
         public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
         public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
     }

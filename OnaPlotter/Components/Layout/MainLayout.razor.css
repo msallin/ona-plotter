@@ -10,6 +10,7 @@ main {
 
 .sidebar {
     background: var(--sk-sidebar-bg);
+    border-right: 1px solid var(--sk-sidebar-border);
 }
 
 .top-row {

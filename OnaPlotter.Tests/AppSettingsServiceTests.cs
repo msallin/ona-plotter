@@ -139,6 +139,20 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task WindShiftLookback_RoundTrip()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetWindShiftLookbackMinutesAsync(2);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.WindShiftLookbackMinutes).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task GuardZoneLookahead_RoundTrip()
     {
         var kv = new InMemoryKv();

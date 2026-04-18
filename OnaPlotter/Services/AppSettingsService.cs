@@ -27,6 +27,7 @@ public sealed class AppSettingsService : IAppSettings
     public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
     public double GuardZoneWarningFactor { get; private set; } = 2.0;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
+    public double WindShiftLookbackMinutes { get; private set; } = 5.0;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -54,6 +55,7 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
             GuardZoneWarningFactor = await LoadDouble("guardZoneWarningFactor", 2.0);
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
+            WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             _initialized = true;
@@ -135,6 +137,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         WindShiftAlarmThreshold = value;
         await Save("windShiftAlarmThreshold", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetWindShiftLookbackMinutesAsync(double value)
+    {
+        WindShiftLookbackMinutes = value;
+        await Save("windShiftLookbackMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

@@ -33,6 +33,11 @@ public interface IAppSettings
     double GuardZoneWarningFactor { get; }
 
     double WindShiftAlarmThreshold { get; }
+
+    /// <summary>Minutes of lookback used to detect a wind shift. Racing
+    /// crews typically want 1-2 min; cruisers want 10-15. Configurable so
+    /// the alarm is useful on either side of that spread.</summary>
+    double WindShiftLookbackMinutes { get; }
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -49,6 +54,7 @@ public interface IAppSettings
     Task SetGuardZoneLookaheadMinutesAsync(double value);
     Task SetGuardZoneWarningFactorAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
+    Task SetWindShiftLookbackMinutesAsync(double value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
 }
