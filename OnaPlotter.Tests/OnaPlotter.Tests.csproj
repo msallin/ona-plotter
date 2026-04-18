@@ -9,6 +9,11 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" Version="*" />
+    <!-- bUnit for Blazor component-level tests. Gives us DOM snapshot
+         assertions, event dispatch, service mocks - catches regressions
+         in Razor markup that neither the C# unit tests nor Playwright
+         would surface cheaply. -->
+    <PackageReference Include="bunit" Version="1.*" />
   </ItemGroup>
 
   <ItemGroup>
