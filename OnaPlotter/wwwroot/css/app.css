@@ -695,12 +695,15 @@ article.content:has(.map-container) {
         height: 20px;
     }
     .layer-search {
+        min-height: 44px;
         padding: 10px 12px;
         font-size: 0.9rem;
     }
     .section-toggle {
-        padding: 6px 0;
-        font-size: 0.8rem;
+        min-height: 44px;
+        padding: 12px 0;
+        font-size: 0.85rem;
+        align-items: center;
     }
     /* Autopilot buttons */
     .ap-btn {
@@ -1059,6 +1062,45 @@ main:has(.alarm-banner-stack) .hud-top-left {
 @keyframes alarm-flash {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.6; }
+}
+
+/* ===== First-run touch coachmark ===== */
+/* Hidden everywhere except coarse-pointer devices (touchscreens). A small
+   floating hint anchored near the map bottom-centre; tap to dismiss, auto-
+   dismisses after 6s, and the flag is persisted so it only shows once per
+   device. Discoverability for the long-press context menu. */
+.touch-coachmark {
+    display: none;
+    position: fixed;
+    bottom: 88px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--z-modal);
+    padding: 10px 18px;
+    background: rgba(16, 20, 28, 0.94);
+    color: #e2e8f0;
+    font-size: 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    animation: coachmark-pop 0.3s ease-out, coachmark-pulse 2s ease-in-out 0.3s infinite;
+    pointer-events: auto;
+    max-width: calc(100vw - 40px);
+    text-align: center;
+}
+@media (pointer: coarse) {
+    .touch-coachmark { display: block; }
+}
+@keyframes coachmark-pop {
+    from { transform: translate(-50%, 12px); opacity: 0; }
+    to { transform: translate(-50%, 0); opacity: 1; }
+}
+@keyframes coachmark-pulse {
+    0%, 100% { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }
+    50% { box-shadow: 0 6px 20px rgba(96, 165, 250, 0.3), 0 0 0 4px rgba(96, 165, 250, 0.1); }
 }
 
 /* ===== Snoozed-target chips ===== */
@@ -1770,8 +1812,8 @@ main:has(.alarm-banner-stack) .hud-top-left {
 
 @media (pointer: coarse) {
     .chart-quick-chip {
-        min-height: 36px;
-        padding: 6px 14px;
+        min-height: 44px;
+        padding: 10px 14px;
         font-size: 0.8rem;
         display: flex;
         align-items: center;

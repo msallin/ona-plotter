@@ -21,6 +21,7 @@
 @inject IPolarService Polar
 @inject IAppSettings Settings
 @inject IToastService Toasts
+@inject IKeyValueStore Kv
 @inject IJSRuntime JS
 
 <PageTitle>Map</PageTitle>
@@ -66,6 +67,16 @@
     @if (shortcutsVisible)
     {
         <MapShortcutsOverlay OnDismiss="() => shortcutsVisible = false" />
+    }
+
+    @* First-run long-press hint. CSS gates on `@@media (pointer: coarse)`
+       so desktop users never see it. Dismisses on tap or after 6s; the
+       dismissal flag is stored in KV so it only shows once per device. *@
+    @if (touchCoachmarkVisible)
+    {
+        <div class="touch-coachmark" @onclick="DismissTouchCoachmark">
+            <span>Tip: long-press the map for options</span>
+        </div>
     }
 
     @if (routeEditMode)
@@ -426,6 +437,14 @@
     private bool serverAnchorDrawn;
     private double lastPushedAnchorRadius;
 
+    /// <summary>First-run long-press hint state. Shown once per device on
+    /// touch devices only (gated in CSS via <c>@@media (pointer: coarse)</c>).
+    /// Stored behind a KV flag so desktop-devtools and QA runs also see
+    /// it once, not every reload.</summary>
+    private const string TouchCoachmarkKey = "hints.mapLongPress.dismissed";
+    private bool touchCoachmarkVisible;
+    private System.Threading.Timer? touchCoachmarkTimer;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -524,6 +543,35 @@
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
 
         await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
+
+        await MaybeShowTouchCoachmarkAsync();
+    }
+
+    private async Task MaybeShowTouchCoachmarkAsync()
+    {
+        try
+        {
+            var dismissed = await Kv.GetAsync(TouchCoachmarkKey);
+            if (dismissed == "1") return;
+            touchCoachmarkVisible = true;
+            StateHasChanged();
+            // Auto-dismiss after a generous window so someone glancing
+            // up from a chart plot still catches it.
+            touchCoachmarkTimer = new System.Threading.Timer(
+                _ => _ = InvokeAsync(async () => await DismissTouchCoachmark()),
+                null, 6_000, Timeout.Infinite);
+        }
+        catch (Exception) { /* KV unavailable in some test hosts; degrade silently. */ }
+    }
+
+    private async Task DismissTouchCoachmark()
+    {
+        if (!touchCoachmarkVisible) return;
+        touchCoachmarkVisible = false;
+        touchCoachmarkTimer?.Dispose();
+        touchCoachmarkTimer = null;
+        try { await Kv.SetAsync(TouchCoachmarkKey, "1"); } catch { }
+        StateHasChanged();
     }
 
     private async Task PushGuardZoneAsync()
@@ -1498,6 +1546,7 @@
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();
+        if (touchCoachmarkTimer is not null) await touchCoachmarkTimer.DisposeAsync();
         if (module is not null)
         {
             try

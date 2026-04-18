@@ -140,9 +140,11 @@
     private IJSObjectReference? audioModule;
     private System.Threading.Timer? staleCheckTimer;
     private System.Threading.Timer? snoozeCountdownTimer;
+    private System.Threading.Timer? firstRunOfflineTimer;
     private volatile bool wasDisconnected;
     private volatile bool wasStale;
     private bool alarmLogOpen;
+    private bool firstRunOfflineToastShown;
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -246,7 +248,24 @@
             await Settings.InitializeAsync();
             StateHasChanged();
             audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
+
+            // First-run offline guidance. If we never connect within 5s of
+            // the app loading, surface a toast pointing at the SignalK
+            // config. Silenced on subsequent reconnect failures so it
+            // doesn't spam the user with repeat-info on every flaky wifi
+            // moment. One shot per session.
+            firstRunOfflineTimer = new System.Threading.Timer(
+                _ => _ = InvokeAsync(MaybeShowFirstRunOfflineToast),
+                null, 5_000, Timeout.Infinite);
         }
+    }
+
+    private void MaybeShowFirstRunOfflineToast()
+    {
+        if (firstRunOfflineToastShown) return;
+        if (SignalkClient.IsConnected) return;
+        firstRunOfflineToastShown = true;
+        Toasts.Warning("SignalK server unreachable. Check the server URL in wwwroot/appsettings.json, or run OnaPlotter as a SignalK webapp.");
     }
 
     private async void HandleConnectionChanged()
@@ -375,6 +394,7 @@
         Alarms.OnAlarmsChanged -= HandleAlarmsChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
+        if (firstRunOfflineTimer is not null) await firstRunOfflineTimer.DisposeAsync();
         if (audioModule is not null)
         {
             try
