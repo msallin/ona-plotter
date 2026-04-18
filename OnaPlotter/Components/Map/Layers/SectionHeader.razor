@@ -1,6 +1,8 @@
 @* Collapsible section header used by every sub-section of the Layers panel.
    Owns nothing but its own expanded/collapsed toggle; the parent section
-   owns the bool. *@
+   owns the bool. ChildContent renders inside the header, right-aligned,
+   for things like a "Show/Hide on map" chip that shouldn't trigger the
+   collapse. *@
 
 <div class="chart-panel-header section-toggle" @onclick="OnToggle">
     <span class="toggle-arrow">@(Expanded ? "v" : ">")</span>
@@ -9,6 +11,10 @@
     {
         <span class="section-count">@Count</span>
     }
+    @if (ChildContent is not null)
+    {
+        <span class="section-header-extra">@ChildContent</span>
+    }
 </div>
 
 @code {
@@ -16,4 +22,5 @@
     [Parameter] public int? Count { get; set; }
     [Parameter] public bool Expanded { get; set; }
     [Parameter] public EventCallback OnToggle { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 }

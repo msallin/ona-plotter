@@ -1612,6 +1612,21 @@ export function clearNotes() {
     }
 }
 
+// Pan the map to a given lat/lon without changing the current zoom.
+// Used by the layers-panel "Focus" button on notes (and potentially
+// other resources that need a "show me where this is" action).
+export function panTo(lat, lon) {
+    if (!map) return;
+    map.panTo([lat, lon]);
+}
+
+// Open the popup on a note marker if it's currently rendered. No-op
+// when the id isn't present (note not yet loaded, or notes hidden).
+export function openNotePopup(id) {
+    const m = noteMarkers[id];
+    if (m) m.openPopup();
+}
+
 // --- Weather Overlay ---
 
 let weatherLayer = null;

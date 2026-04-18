@@ -1,0 +1,50 @@
+@using OnaPlotter.Models
+
+@* Server-stored notes with a "Focus" button that pans the map to the
+   note and opens its popup. The whole section can be hidden (global
+   visibility toggle in the header) so a chart covered in old notes
+   doesn't drown the primary chart data. *@
+
+@if (Notes.Count == 0) return;
+
+<SectionHeader Title="Notes" Count="@Notes.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded">
+    <label class="notes-visible-toggle"
+           title="@(Visible ? "Hide all notes on map" : "Show all notes on map")"
+           @onclick:stopPropagation>
+        <input type="checkbox" checked="@Visible"
+               @onchange="e => OnToggleVisible.InvokeAsync((bool)(e.Value ?? false))" />
+        <span>Show</span>
+    </label>
+</SectionHeader>
+
+@if (expanded)
+{
+    @foreach (var n in Notes)
+    {
+        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="chart-item-body">
+                <div class="chart-name">@(string.IsNullOrWhiteSpace(n.Title) ? "(untitled)" : n.Title)</div>
+                @if (!string.IsNullOrWhiteSpace(n.Description))
+                {
+                    <div class="chart-desc">@Truncate(n.Description!, 60)</div>
+                }
+            </div>
+            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                    @onclick="() => OnFocus.InvokeAsync(n)">Focus</button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkNote> Notes { get; set; } = [];
+    [Parameter] public bool Visible { get; set; } = true;
+    [Parameter] public EventCallback<SignalkNote> OnFocus { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
+
+    private bool expanded = true;
+
+    private static string Truncate(string s, int n)
+        => s.Length <= n ? s : s[..n] + "...";
+}

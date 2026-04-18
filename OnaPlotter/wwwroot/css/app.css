@@ -1517,6 +1517,28 @@ main:has(.alarm-banner-stack) .hud-top-left {
     margin-left: auto;
 }
 
+/* Extra per-section controls rendered inside the SectionHeader. Sits
+   to the right of the count; stops propagation so a click doesn't
+   collapse the section. */
+.section-header-extra {
+    margin-left: 8px;
+    font-size: 0.7rem;
+}
+
+.notes-visible-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    opacity: 0.75;
+}
+.notes-visible-toggle:hover { opacity: 1; }
+.notes-visible-toggle input[type="checkbox"] { margin: 0; cursor: pointer; }
+@media (pointer: coarse) {
+    .notes-visible-toggle { font-size: 0.8rem; padding: 4px 0; }
+    .notes-visible-toggle input[type="checkbox"] { width: 18px; height: 18px; }
+}
+
 .chart-item-body {
     min-width: 0;
     flex: 1;

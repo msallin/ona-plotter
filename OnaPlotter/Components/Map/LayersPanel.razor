@@ -26,6 +26,11 @@
     <WaypointsSection Waypoints="LoadedWaypoints"
                       OnNavigate="OnNavigateToWaypoint" />
 
+    <NotesSection Notes="LoadedNotes"
+                  Visible="NotesVisible"
+                  OnFocus="OnFocusNote"
+                  OnToggleVisible="OnToggleNotesVisible" />
+
     <BuddiesSection Buddies="Buddies"
                     Vessels="Vessels"
                     OnFocus="OnFocusVessel"
@@ -57,12 +62,14 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> FilteredCharts { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> FilteredRoutes { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> LoadedWaypoints { get; set; } = [];
+    [Parameter] public IReadOnlyList<SignalkNote> LoadedNotes { get; set; } = [];
     [Parameter] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
     [Parameter] public IReadOnlyList<SignalkBuddy> Buddies { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledCharts { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
+    [Parameter] public bool NotesVisible { get; set; } = true;
 
     [Parameter] public string LayerFilter { get; set; } = "";
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
@@ -71,6 +78,8 @@
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
+    [Parameter] public EventCallback<SignalkNote> OnFocusNote { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleNotesVisible { get; set; }
     [Parameter] public EventCallback<string> OnFocusVessel { get; set; }
     [Parameter] public EventCallback OnRefreshBuddies { get; set; }
     [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }

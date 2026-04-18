@@ -168,6 +168,10 @@
                      FilteredCharts="FilteredCharts"
                      FilteredRoutes="FilteredRoutes"
                      LoadedWaypoints="loadedWaypoints"
+                     LoadedNotes="loadedNotes"
+                     NotesVisible="notesVisible"
+                     OnFocusNote="FocusNote"
+                     OnToggleNotesVisible="ToggleNotesVisible"
                      Vessels="@BuildVesselList()"
                      Buddies="loadedBuddies"
                      EnabledCharts="enabledCharts"
@@ -238,6 +242,7 @@
     private string newNoteTitle = "";
     private string newNoteDescription = "";
     private List<SignalkNote> loadedNotes = [];
+    private bool notesVisible = true;
     // Race timer.
     private bool raceTimerActive;
     private bool shortcutsVisible;
@@ -381,6 +386,43 @@
         if (module is null) return;
         chartPanelOpen = false;
         try { await module.InvokeVoidAsync("focusVessel", context); }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task FocusNote(SignalkNote note)
+    {
+        if (module is null || note.Position is null) return;
+        chartPanelOpen = false;
+        try
+        {
+            await module.InvokeVoidAsync("panTo", note.Position.Latitude, note.Position.Longitude);
+            await module.InvokeVoidAsync("openNotePopup", note.Id);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task ToggleNotesVisible(bool visible)
+    {
+        notesVisible = visible;
+        if (module is null) return;
+        try
+        {
+            if (visible)
+            {
+                foreach (var n in loadedNotes)
+                {
+                    if (n.Position is null) continue;
+                    await module.InvokeVoidAsync("addNoteMarker",
+                        n.Id, n.Position.Latitude, n.Position.Longitude, n.Title, n.Description);
+                }
+            }
+            else
+            {
+                await module.InvokeVoidAsync("clearNotes");
+            }
+        }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
