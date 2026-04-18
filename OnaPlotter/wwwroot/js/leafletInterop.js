@@ -3,7 +3,7 @@
 
 import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          haversineMeters, bearingDeg, destPoint, vectorEnd,
-         computeCpa, speedColor, speedBucket } from './geoMath.js';
+         speedColor, speedBucket } from './geoMath.js';
 
 let map = null;
 let boatMarker = null;
@@ -651,8 +651,12 @@ export function updateAisTargets(vessels) {
         seen.add(v.context);
         if (v.lat == null || v.lon == null || !isFinite(v.lat) || !isFinite(v.lon)) continue;
 
-        const cpaInfo = computeCpa(selfLat, selfLon, selfCogRad, selfSogMs,
-                                    v.lat, v.lon, v.cogRad, v.sogMs);
+        // CPA + TCPA come pre-computed from the C# side (Utilities/Cpa)
+        // so the map marker path and the Layers-panel list can't disagree.
+        // Shape the expected record for the rest of the loop.
+        const cpaInfo = (v.cpaNm != null && v.tcpaMin != null)
+            ? { cpa: v.cpaNm, tcpa: v.tcpaMin }
+            : null;
         const isDanger = cpaInfo
             && cpaInfo.cpa < guardZoneRadiusNm
             && cpaInfo.tcpa < guardZoneLookaheadMin

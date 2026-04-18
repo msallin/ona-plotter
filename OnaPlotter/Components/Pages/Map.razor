@@ -875,12 +875,29 @@
                 .Where(v => v.Latitude is not null && v.Longitude is not null)
                 .Select(v =>
                 {
+                    // Pre-compute COLREGS + CPA in C#. The router's JS
+                    // used to run its own computeCpa per vessel per push;
+                    // lifting it up means (a) single source of truth
+                    // with Utilities/Cpa.cs + CpaTests, and (b) the
+                    // BuildVesselList / PushAisTargets paths can't drift.
+                    double? cpaNm = null;
+                    double? tcpaMin = null;
                     string? colregsLabel = null;
                     string? colregsRole = null;
                     if (ownLat is not null && ownLon is not null
                         && ownCog is not null && ownSog is not null
                         && v.CourseOverGround is not null && v.SpeedOverGround is not null)
                     {
+                        var cpa = Cpa.Compute(
+                            ownLat.Value, ownLon.Value, ownCog, ownSog,
+                            v.Latitude!.Value, v.Longitude!.Value,
+                            v.CourseOverGround, v.SpeedOverGround);
+                        if (cpa is { } c)
+                        {
+                            cpaNm = c.CpaNm;
+                            tcpaMin = c.TcpaMin;
+                        }
+
                         var r = Colregs.Classify(
                             ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
                             v.Latitude!.Value, v.Longitude!.Value,
@@ -912,6 +929,8 @@
                         sartCategory = sartCat,       // "SART"/"MOB"/"EPIRB" or null
                         glyphCategory,                 // "sail"/"fish"/"commercial"/"service"/null
                         shipColor = OnaPlotter.Utilities.AisPalette.ShipTypeColor(v.ShipType),
+                        cpaNm,                         // nautical miles or null
+                        tcpaMin,                       // minutes or null
                         colregsLabel,
                         colregsRole
                     };

@@ -5,7 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     haversineMeters, bearingDeg, destPoint, vectorEnd,
-    computeCpa, speedColor, speedBucket,
+    speedColor, speedBucket,
     RAD, DEG, NM_PER_METER
 } from './geoMath.js';
 
@@ -101,50 +101,6 @@ describe('vectorEnd', () => {
         const result = vectorEnd(47, 8, 0, 5); // 5 m/s north
         assert.ok(result !== null);
         assert.ok(result[0] > 47); // moved north
-    });
-});
-
-// --- computeCpa ---
-
-describe('computeCpa', () => {
-    it('returns null if any COG/SOG is null', () => {
-        assert.equal(computeCpa(0, 0, null, 5, 1, 1, 0, 5), null);
-        assert.equal(computeCpa(0, 0, 0, null, 1, 1, 0, 5), null);
-        assert.equal(computeCpa(0, 0, 0, 5, 1, 1, null, 5), null);
-        assert.equal(computeCpa(0, 0, 0, 5, 1, 1, 0, null), null);
-    });
-
-    it('returns null if both stationary', () => {
-        assert.equal(computeCpa(0, 0, 0, 0, 1, 1, 0, 0), null);
-    });
-
-    it('returns CPA result for head-on vessels', () => {
-        // Vessel 1 heading north, vessel 2 heading south, on same line
-        const result = computeCpa(0, 0, 0, 5, 1, 0, Math.PI, 5);
-        assert.ok(result !== null);
-        assert.ok(result.cpa >= 0);
-        assert.ok(result.tcpa > 0);
-    });
-
-    it('returns null for diverging vessels (CPA in past)', () => {
-        // Both heading away from each other
-        const result = computeCpa(0, 0, Math.PI, 5, 1, 0, 0, 5);
-        assert.equal(result, null);
-    });
-
-    it('parallel courses at distance give tcpa=0', () => {
-        // Both heading north at same speed, 1 degree apart
-        const result = computeCpa(0, 0, 0, 5, 0, 1, 0, 5);
-        assert.ok(result !== null);
-        assert.equal(result.tcpa, 0);
-        assert.ok(result.cpa > 0);
-    });
-
-    it('CPA values are in nautical miles and minutes', () => {
-        const result = computeCpa(47, 8, 0, 5, 47.01, 8.01, Math.PI, 5);
-        assert.ok(result !== null);
-        assert.ok(result.cpa >= 0, 'CPA should be non-negative nm');
-        assert.ok(result.tcpa >= 0, 'TCPA should be non-negative minutes');
     });
 });
 

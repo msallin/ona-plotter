@@ -40,44 +40,6 @@ export function vectorEnd(lat, lon, cogRad, sogMs) {
     return destPoint(lat, lon, cogRad, sogMs * VECTOR_MINUTES * 60);
 }
 
-/**
- * Closest Point of Approach calculation.
- * Returns { cpa (nm), tcpa (minutes) } or null.
- */
-export function computeCpa(lat1, lon1, cog1, sog1, lat2, lon2, cog2, sog2) {
-    if (cog1 == null || sog1 == null || cog2 == null || sog2 == null) return null;
-    if (sog1 < 0.1 && sog2 < 0.1) return null;
-
-    const midLat = (lat1 + lat2) / 2;
-    const cosLat = Math.cos(midLat * RAD);
-    const mPerDegLat = 111320;
-    const mPerDegLon = 111320 * cosLat;
-
-    const x1 = 0, y1 = 0;
-    const x2 = (lon2 - lon1) * mPerDegLon;
-    const y2 = (lat2 - lat1) * mPerDegLat;
-
-    const vx1 = Math.sin(cog1) * sog1, vy1 = Math.cos(cog1) * sog1;
-    const vx2 = Math.sin(cog2) * sog2, vy2 = Math.cos(cog2) * sog2;
-
-    const dvx = vx1 - vx2, dvy = vy1 - vy2;
-    const dpx = x1 - x2, dpy = y1 - y2;
-
-    const a = dvx*dvx + dvy*dvy;
-    if (a < 0.001) {
-        const dist = Math.sqrt(dpx*dpx + dpy*dpy);
-        return { cpa: dist * NM_PER_METER, tcpa: 0 };
-    }
-
-    const t = -(dpx*dvx + dpy*dvy) / a;
-    if (t < 0) return null;
-
-    const cx = dpx + dvx*t, cy = dpy + dvy*t;
-    const cpaDist = Math.sqrt(cx*cx + cy*cy);
-
-    return { cpa: cpaDist * NM_PER_METER, tcpa: t / 60 };
-}
-
 /** Speed-to-color mapping: sogMs -> CSS rgb string. Blue(0) -> Green(3kn) -> Yellow(6+kn). */
 export function speedColor(sogMs) {
     if (sogMs == null) return '#3b82f6';
