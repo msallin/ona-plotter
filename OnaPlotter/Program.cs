@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IChartApi, ChartApi>();
 builder.Services.AddSingleton<IRouteApi, RouteApi>();
 builder.Services.AddSingleton<IWaypointApi, WaypointApi>();
 builder.Services.AddSingleton<INoteApi, NoteApi>();
+builder.Services.AddSingleton<IRegionApi, RegionApi>();
 builder.Services.AddSingleton<ICourseApi, CourseApi>();
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();

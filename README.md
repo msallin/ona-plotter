@@ -49,9 +49,15 @@ pocket. All layout is responsive and touch-tuned (WCAG-sized tap targets under
   point. Rendered as a muted slate-blue folded-page icon (distinct from
   waypoints and routes); click to read or delete. Round-trips the SignalK
   `resources/notes` API so freeboard-sk and other clients see the same notes.
+- Regions: long-press → *Add Region* to drop a translucent circle with title
+  and description (100m / 250m / 500m / 1nm / 2nm presets). Circles are
+  emitted as 32-vertex Polygon approximations on the wire so freeboard-sk
+  and any GeoJSON-aware consumer see the same shape. Polygon regions
+  created elsewhere render too; Layers panel has a Show/Hide toggle and a
+  Focus-to-bounds button per region.
 - Keyboard shortcuts (F, O, N, A, M, T, L, R, ?, Esc); long-press or right-click
-  for the context menu (*Create Waypoint*, *Add Note*, *Navigate Here*,
-  *Route with wind*, *Stop Navigation*).
+  for the context menu (*Create Waypoint*, *Add Note*, *Add Region*,
+  *Navigate Here*, *Route with wind*, *Stop Navigation*).
 
 ### Other pages
 - **Dashboard** — speed, course, position, depth, wind at-a-glance.

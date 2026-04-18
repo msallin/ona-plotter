@@ -1627,6 +1627,91 @@ export function openNotePopup(id) {
     if (m) m.openPopup();
 }
 
+// --- Region (polygon/circle areas) ---
+// Rendered as translucent filled polygons with a stronger border.
+// Colour is a muted lavender-gray that doesn't collide with routes
+// (amber), waypoints (terracotta), notes (slate-blue) or the AIS
+// palette. Phase 1 shows them; Phase 2 lets the user create circles
+// via a polygon-approximation.
+
+const regionLayers = {};
+const REGION_STROKE = '#9b8aa7';
+const REGION_FILL = 'rgba(155, 138, 167, 0.18)';
+
+// rings: [[[lat, lon], ...], ...]  -- one or more outer rings.
+// A MultiPolygon region passes multiple rings; most regions are a
+// single Polygon, so `rings` is a one-element array.
+export function addRegion(id, rings, title, description) {
+    if (!map || regionLayers[id]) return;
+    if (!Array.isArray(rings) || rings.length === 0) return;
+    const group = L.layerGroup();
+    const popupHtml = buildRegionPopupHtml(id, title, description);
+    for (const ring of rings) {
+        const poly = L.polygon(ring, {
+            color: REGION_STROKE,
+            fillColor: REGION_STROKE,
+            fillOpacity: 0.18,
+            weight: 1.8,
+            opacity: 0.85,
+        });
+        poly.bindPopup(popupHtml, { className: 'region-popup', maxWidth: 280 });
+        poly.on('popupopen', (ev) => {
+            const el = ev.popup.getElement();
+            if (!el) return;
+            const btn = el.querySelector('.region-delete-btn');
+            if (btn && !btn._wired) {
+                btn._wired = true;
+                btn.addEventListener('click', () => {
+                    if (dotNetRef) dotNetRef.invokeMethodAsync('DeleteRegion', id);
+                });
+            }
+        });
+        group.addLayer(poly);
+    }
+    group.addTo(map);
+    regionLayers[id] = group;
+}
+
+function buildRegionPopupHtml(id, title, description) {
+    const safeTitle = esc(title || '(untitled region)');
+    const safeDesc = description ? esc(description).replace(/\n/g, '<br/>') : '';
+    return `
+        <div class="region-popup-inner">
+            <div class="region-popup-title">${safeTitle}</div>
+            ${safeDesc ? `<div class="region-popup-body">${safeDesc}</div>` : ''}
+            <button class="region-delete-btn" type="button">Delete</button>
+        </div>`;
+}
+
+export function removeRegion(id) {
+    if (regionLayers[id] && map) {
+        map.removeLayer(regionLayers[id]);
+        delete regionLayers[id];
+    }
+}
+
+export function clearRegions() {
+    if (!map) return;
+    for (const id of Object.keys(regionLayers)) {
+        map.removeLayer(regionLayers[id]);
+        delete regionLayers[id];
+    }
+}
+
+// Pan to a region and open its popup. Accepts the first ring and
+// uses its bounds so we frame whatever the user clicked in the
+// Layers panel.
+export function focusRegion(id, firstRing) {
+    const layer = regionLayers[id];
+    if (!layer || !map) return;
+    if (Array.isArray(firstRing) && firstRing.length > 0) {
+        const bounds = L.latLngBounds(firstRing);
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    }
+    // Open popup on the first polygon in the group.
+    layer.eachLayer(l => { if (l.openPopup) l.openPopup(); return false; });
+}
+
 // --- Weather Overlay ---
 
 let weatherLayer = null;

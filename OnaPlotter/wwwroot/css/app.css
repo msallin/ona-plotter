@@ -2191,6 +2191,59 @@ main:has(.alarm-banner-stack) .hud-top-left {
     .note-delete-btn { min-height: 36px; padding: 8px 14px; font-size: 0.85rem; }
 }
 
+/* Region radius chips in the Add Region dialog. Mirrors the route-name
+   input family so the dialog reads as the same visual component. */
+.region-radius-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+.region-radius-chips .map-btn {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    min-width: 0;
+}
+
+/* Region popup: same muted lavender-gray family as the polygon stroke
+   so the popup reads as "from this shape". Matches the note popup
+   skeleton otherwise. */
+.region-popup .leaflet-popup-content-wrapper {
+    background: rgba(22, 20, 28, 0.96);
+    color: #e2e8f0;
+    border-radius: 6px;
+    border: 1px solid rgba(155, 138, 167, 0.45);
+}
+.region-popup .leaflet-popup-tip { background: rgba(22, 20, 28, 0.96); }
+.region-popup-inner { padding: 2px 4px; min-width: 180px; }
+.region-popup-title { font-weight: 600; color: #d8cfe4; margin-bottom: 4px; }
+.region-popup-body {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    line-height: 1.35;
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.region-delete-btn {
+    background: transparent;
+    color: #94a3b8;
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.region-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border-color: #ef4444;
+}
+@media (pointer: coarse) {
+    .region-delete-btn { min-height: 36px; padding: 8px 14px; font-size: 0.85rem; }
+}
+
 /* ===== SailSteer Display ===== */
 
 .sailsteer-container {
