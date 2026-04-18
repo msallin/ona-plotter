@@ -429,17 +429,36 @@ public sealed class SignalkClient : IAsyncDisposable
     /// </summary>
     private void RouteRadarDelta(string path, object? value)
     {
-        // path segments: radars . <radarId> . targets . <targetId> . <field...>
-        var parts = path.Split('.');
-        if (parts.Length < 5) return;
-        if (!string.Equals(parts[0], "radars", StringComparison.Ordinal)) return;
-        if (!string.Equals(parts[2], "targets", StringComparison.Ordinal)) return;
-
-        string radarId = parts[1];
-        string targetId = parts[3];
-        string field = string.Join('.', parts, 4, parts.Length - 4);
+        if (TryParseRadarTargetPath(path) is not var (radarId, targetId, field)) return;
         string ctx = $"{AisStore.RadarContextPrefix}{radarId}.{targetId}";
         _ais.Apply(ctx, field, value);
+    }
+
+    /// <summary>
+    /// Parses <c>radars.&lt;radarId&gt;.targets.&lt;targetId&gt;.&lt;field&gt;</c>
+    /// by splitting on the literal <c>.targets.</c> separator instead of on
+    /// <c>.</c>, so radar IDs containing dots (e.g. an IPv4-style hardware
+    /// identifier) parse correctly. Returns <c>null</c> for anything that
+    /// doesn't match the expected shape.
+    /// </summary>
+    internal static (string radarId, string targetId, string field)? TryParseRadarTargetPath(string path)
+    {
+        if (!path.StartsWith("radars.", StringComparison.Ordinal)) return null;
+
+        const string sep = ".targets.";
+        int sepIdx = path.IndexOf(sep, StringComparison.Ordinal);
+        if (sepIdx < 0) return null;
+
+        string radarId = path.Substring("radars.".Length, sepIdx - "radars.".Length);
+        if (radarId.Length == 0) return null;
+
+        string after = path[(sepIdx + sep.Length)..];
+        int dot = after.IndexOf('.');
+        if (dot <= 0 || dot == after.Length - 1) return null;
+
+        string targetId = after[..dot];
+        string field = after[(dot + 1)..];
+        return (radarId, targetId, field);
     }
 
     /// <summary>

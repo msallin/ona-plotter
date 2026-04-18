@@ -102,12 +102,16 @@ public sealed class AlarmManager : IAlarmManager
 
     private void SetAlarm(AlarmInfo next, IAlarmRule rule)
     {
-        // Same rule + same target already showing - update the message in
-        // place, don't fire OnAlarmChanged for a message-only update so
-        // the audio driver doesn't re-arm on every tick.
+        // Same rule + same target + same severity: update the message in
+        // place, don't re-fire OnAlarmChanged for a message-only update so
+        // the audio driver doesn't re-arm on every tick. A *severity*
+        // escalation (e.g. Warn -> Danger) DOES re-fire so the audio
+        // cadence updates - that's a safety-relevant change the captain
+        // needs to hear.
         if (ActiveAlarm is not null
             && ActiveAlarm.Title == next.Title
-            && ActiveAlarm.TargetKey == next.TargetKey)
+            && ActiveAlarm.TargetKey == next.TargetKey
+            && ActiveAlarm.Severity == next.Severity)
         {
             if (ActiveAlarm.Message != next.Message)
             {

@@ -16,6 +16,12 @@ public sealed class WeatherForecastApi : IWeatherForecastApi
         _logger = logger;
     }
 
+    /// <summary>Hard timeout per request. The default HttpClient timeout on
+    /// flaky public wifi can stretch to ~30s; we'd rather fail fast and let
+    /// the user retry than block the weather-route UI behind a stalled
+    /// socket.</summary>
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
+
     public async Task<WindForecast?> GetAsync(
         double latitude, double longitude, int forecastHours = 72, CancellationToken ct = default)
     {
@@ -32,16 +38,24 @@ public sealed class WeatherForecastApi : IWeatherForecastApi
             + $"&forecast_days={days.ToString(inv)}"
             + "&timezone=UTC";
 
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(RequestTimeout);
+
         try
         {
-            using var res = await _http.GetAsync(url, ct);
+            using var res = await _http.GetAsync(url, timeoutCts.Token);
             if (!res.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Open-Meteo returned {Status}", res.StatusCode);
                 return null;
             }
-            var body = await res.Content.ReadFromJsonAsync<OpenMeteoResponse>(cancellationToken: ct);
+            var body = await res.Content.ReadFromJsonAsync<OpenMeteoResponse>(cancellationToken: timeoutCts.Token);
             return Parse(latitude, longitude, body, hours);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Open-Meteo request timed out after {Timeout}s", RequestTimeout.TotalSeconds);
+            return null;
         }
         catch (HttpRequestException ex)
         {
