@@ -286,6 +286,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     dotNetRef = dotNetObjRef;
 
     map = L.map(elementId, { zoomControl: false }).setView([lat, lon], zoom);
+    // Drop the "Leaflet |" prefix from the attribution bar. The actual
+    // OSM / OpenSeaMap attribution stays (ODbL / CC-BY-SA require it);
+    // the Leaflet credit is courtesy and removable.
+    map.attributionControl.setPrefix(false);
 
     // Zoom control in top-right to avoid HUD overlap.
     L.control.zoom({ position: 'topright' }).addTo(map);

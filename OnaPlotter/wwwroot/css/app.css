@@ -1156,6 +1156,22 @@ main:has(.alarm-banner) .hud-top-left {
 }
 
 /* Chart picker panel */
+/* Map attribution bar: OSM / OpenSeaMap credits must stay visible per
+   their licences, but the default white block shouts. Dim + shrink to a
+   subtle caption so it's readable but not fighting the chart. */
+.leaflet-control-attribution {
+    background: rgba(10, 12, 18, 0.55) !important;
+    color: rgba(255, 255, 255, 0.55) !important;
+    font-size: 10px !important;
+    padding: 1px 6px !important;
+}
+.leaflet-control-attribution a {
+    color: rgba(255, 255, 255, 0.75) !important;
+}
+@media (max-width: 600px) {
+    .leaflet-control-attribution { font-size: 9px !important; }
+}
+
 /* Invisible full-area catcher that dismisses the Layers panel on a
    click outside it. Sits one layer below the panel; the panel itself
    stops click propagation so taps inside it don't reach this. */
