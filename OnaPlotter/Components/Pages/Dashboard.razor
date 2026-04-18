@@ -353,46 +353,17 @@
         await Polar.InitializeAsync();
     }
 
-    // SignalK can push position / speed / wind updates at 10+ Hz on a
-    // well-instrumented boat. The Dashboard has no moving parts that
-    // benefit from rendering that fast; 4 Hz is enough for every tile
-    // to feel live without burning the CPU on StateHasChanged. We use
-    // leading-edge + trailing-edge throttling: fire immediately on the
-    // first delta after idle, queue at most one trailing render so a
-    // burst ending mid-window still updates the UI cleanly.
-    private static readonly TimeSpan DashboardMinRenderInterval = TimeSpan.FromMilliseconds(250);
-    private DateTime _lastRender = DateTime.MinValue;
-    private System.Threading.Timer? _trailingRenderTimer;
-
+    // SignalK-side subscription period (1 Hz ideal policy) already
+    // caps how often Dashboard gets re-rendered, so no client-side
+    // throttle is needed here. See SignalkClient.StandardSubscriptionPeriodMs.
     private async void HandleDataChanged()
     {
-        try
-        {
-            var now = DateTime.UtcNow;
-            var elapsed = now - _lastRender;
-            if (elapsed >= DashboardMinRenderInterval)
-            {
-                _lastRender = now;
-                await InvokeAsync(StateHasChanged);
-            }
-            else if (_trailingRenderTimer is null)
-            {
-                int delayMs = (int)(DashboardMinRenderInterval - elapsed).TotalMilliseconds;
-                _trailingRenderTimer = new System.Threading.Timer(_ =>
-                {
-                    _trailingRenderTimer?.Dispose();
-                    _trailingRenderTimer = null;
-                    _lastRender = DateTime.UtcNow;
-                    _ = InvokeAsync(StateHasChanged);
-                }, null, delayMs, System.Threading.Timeout.Infinite);
-            }
-        }
+        try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
     }
 
     public void Dispose()
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
-        _trailingRenderTimer?.Dispose();
     }
 }

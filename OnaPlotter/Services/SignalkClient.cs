@@ -18,6 +18,24 @@ public sealed class SignalkClient : IAsyncDisposable
     private const int ReceiveBufferBytes = 8 * 1024;
     private const int StaleDataThresholdSec = 5;
 
+    /// <summary>
+    /// Default SignalK subscription period for our standard paths:
+    /// position / speed / heading / wind / depth / course / autopilot /
+    /// tide. 1000 ms with <c>policy: "ideal"</c> caps per-path updates
+    /// at 1 Hz on the server side, coalescing the 10+ Hz firehose a
+    /// well-instrumented N2K bus produces. Cuts websocket bytes and
+    /// downstream Blazor renders without any client-side throttling.
+    /// </summary>
+    public const int StandardSubscriptionPeriodMs = 1_000;
+
+    /// <summary>
+    /// Tighter period for Raw-Stream user-added subscriptions. The
+    /// RawStream page is for inspecting live data; a 200 ms cap
+    /// (5 Hz ceiling under <c>policy: "instant"</c>) keeps the display
+    /// feeling real-time without drowning the viewer.
+    /// </summary>
+    public const int RawStreamSubscriptionPeriodMs = 200;
+
     private readonly NavigationData _data;
     private readonly TrackBuffer _track;
     private readonly AisStore _ais;
@@ -173,11 +191,17 @@ public sealed class SignalkClient : IAsyncDisposable
                 OnConnectionChanged?.Invoke();
                 backoffMs = InitialBackoffMs;
 
-                // Subscribe to the paths the app needs.
+                // Subscribe to the paths the app needs. Standard paths
+                // (nav / wind / depth / alarms) get a 1 Hz period cap
+                // per path -- plenty for the HUD, a big data-volume win
+                // over NMEA2000's native 10 Hz. Extra paths added by
+                // the RawStream page use the instant-with-minPeriod
+                // profile so the viewer sees live deltas.
                 await SendSubscriptionAsync("vessels.self", SelfPaths);
                 await SendSubscriptionAsync("vessels.*", AisPaths);
                 if (_extraPaths.Count > 0)
-                    await SendSubscriptionAsync("vessels.self", _extraPaths);
+                    await SendSubscriptionAsync("vessels.self", _extraPaths,
+                        periodMs: RawStreamSubscriptionPeriodMs, policy: "instant");
 
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
@@ -477,7 +501,8 @@ public sealed class SignalkClient : IAsyncDisposable
     public async Task SubscribeExtraPathAsync(string path)
     {
         if (_extraPaths.Add(path))
-            await SendSubscriptionAsync("vessels.self", [path]);
+            await SendSubscriptionAsync("vessels.self", [path],
+                periodMs: RawStreamSubscriptionPeriodMs, policy: "instant");
     }
 
     /// <summary>
@@ -491,14 +516,27 @@ public sealed class SignalkClient : IAsyncDisposable
 
     public IReadOnlyCollection<string> CoreSelfPaths => SelfPaths;
 
-    private async Task SendSubscriptionAsync(string context, IEnumerable<string> paths)
+    /// <summary>
+    /// Sends a SignalK subscribe request with a per-path period + policy.
+    /// Defaults are the <see cref="StandardSubscriptionPeriodMs"/> + "ideal"
+    /// profile, which caps updates at 1 Hz and lets the server coalesce
+    /// bursts. RawStream usage overrides with a shorter period and "instant"
+    /// policy so raw deltas keep flowing.
+    /// </summary>
+    private async Task SendSubscriptionAsync(string context, IEnumerable<string> paths,
+        int periodMs = StandardSubscriptionPeriodMs, string policy = "ideal")
     {
         if (_ws is null || _ws.State != WebSocketState.Open) return;
 
         var message = JsonSerializer.Serialize(new
         {
             context,
-            subscribe = paths.Select(p => new { path = p })
+            subscribe = paths.Select(p => new
+            {
+                path = p,
+                period = periodMs,
+                policy,
+            })
         });
         await SendRawAsync(message);
     }
