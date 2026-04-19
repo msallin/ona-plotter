@@ -1013,8 +1013,9 @@
         if (Data.Heading is not null) lastHeading = Data.Heading;
 
         // Auto-flip Night mode near / past civil twilight if enabled.
-        // Throttled to once per 30 s because sun altitude changes slowly
-        // and we don't want to thrash JS + settings writes on every delta.
+        // Throttled to once per 30 s because sun altitude changes slowly.
+        // Must sit after the mapInitialized guard so we don't try to
+        // push setNightMode at a not-yet-imported module.
         await CheckAutoNightAsync();
 
         try
@@ -2133,7 +2134,13 @@
     private async Task CentreOnBoat()
     {
         if (module is null) return;
-        if (Data.Latitude is not double lat || Data.Longitude is not double lon) return;
+        if (Data.Latitude is not double lat || Data.Longitude is not double lon)
+        {
+            // Silent no-op would look like a dead button at the helm;
+            // tell the user WHY the tap did nothing.
+            Toasts.Show("No GPS fix yet");
+            return;
+        }
         try { await module.InvokeVoidAsync("panTo", lat, lon); }
         catch (JSDisconnectedException) { }
     }

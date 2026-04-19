@@ -67,13 +67,19 @@
                                anchor alarm or a grounding warning shouldn't
                                clear from a pocket brush or an accidental
                                double-tap; the captain has to mean it.
-                               Mirrors the autopilot engage pattern. *@
+                               Keyboard parity: Space-held on a focused
+                               banner runs the same hold. Mirrors the
+                               autopilot engage pattern. *@
                             <div class="alarm-body alarm-body-hold @(HoldingAlarmKey == AlarmKeyOf(a) ? "alarm-holding" : "")"
+                                 role="button" tabindex="0"
+                                 aria-label="@($"{a.Title} alarm -- hold to dismiss")"
                                  @onpointerdown="() => StartAlarmHold(a)"
                                  @onpointerup="EndAlarmHold"
                                  @onpointerleave="EndAlarmHold"
                                  @onpointercancel="EndAlarmHold"
-                                 title="Hold to dismiss">
+                                 @onkeydown="(e) => OnAlarmKeyDown(e, a)"
+                                 @onkeyup="OnAlarmKeyUp"
+                                 title="Hold (or hold Space) to dismiss">
                                 <strong>@a.Title</strong> @a.Message
                                 <span class="alarm-hold-hint">hold to dismiss</span>
                             </div>
@@ -391,13 +397,32 @@
 
     private void EndAlarmHold()
     {
-        _alarmHoldCts?.Cancel();
-        _alarmHoldCts = null;
+        if (_alarmHoldCts is { } cts)
+        {
+            cts.Cancel();
+            cts.Dispose();
+            _alarmHoldCts = null;
+        }
         if (HoldingAlarmKey is not null)
         {
             HoldingAlarmKey = null;
             _ = InvokeAsync(StateHasChanged);
         }
+    }
+
+    // Keyboard parity for Danger-alarm dismissal. Space or Enter held
+    // for the same duration as a mouse press-and-hold dismisses the
+    // alarm; key-repeat is suppressed so the hold starts on the first
+    // fire only. Keyup ends the hold (cancels if < 1 s).
+    private void OnAlarmKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, AlarmInfo a)
+    {
+        if (e.Repeat) return;
+        if (e.Key == " " || e.Key == "Enter") StartAlarmHold(a);
+    }
+
+    private void OnAlarmKeyUp(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == " " || e.Key == "Enter") EndAlarmHold();
     }
 
     private async Task RunToastAction(ToastService.Toast t)

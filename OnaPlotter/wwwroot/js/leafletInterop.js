@@ -875,19 +875,24 @@ export function updateAisTargets(vessels) {
         // on live targets first. SART pulses regardless (life-safety
         // beacons can drop out briefly and still matter); buddies
         // also keep full opacity because the "where's my friend"
-        // workflow tolerates lateness.
-        if (!isSart && !v.buddy) {
-            const ageSec = v.ageSec ?? 0;
+        // workflow tolerates lateness. When a previously-faded target
+        // flips to SART/buddy status mid-session we MUST clear the
+        // opacity style we wrote earlier, otherwise it stays dim.
+        {
             const el = marker.getElement();
             if (el) {
-                if (ageSec >= 300) {
-                    el.style.opacity = '0.25';     // >5 min, effectively gone
-                } else if (ageSec >= 30) {
-                    // Linear fade from 1.0 at 30 s to 0.35 at 5 min.
-                    const t = (ageSec - 30) / (300 - 30);
-                    el.style.opacity = (1 - 0.65 * t).toFixed(2);
+                if (isSart || v.buddy) {
+                    if (el.style.opacity !== '') el.style.opacity = '';
                 } else {
-                    el.style.opacity = '';         // fresh
+                    const ageSec = v.ageSec ?? 0;
+                    let op;
+                    if (ageSec >= 300)      op = '0.25';     // >5 min
+                    else if (ageSec >= 30)  op = (1 - 0.65 * (ageSec - 30) / 270).toFixed(2);
+                    else                    op = '';         // fresh
+                    // Only write when the bucket actually changes; 200+
+                    // vessels in a harbour re-writing style every tick
+                    // invalidates layout for nothing.
+                    if (el.style.opacity !== op) el.style.opacity = op;
                 }
             }
         }

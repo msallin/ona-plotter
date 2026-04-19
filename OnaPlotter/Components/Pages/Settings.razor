@@ -312,9 +312,14 @@
     private async Task OnWaypointArrivalChanged(ChangeEventArgs e)
     {
         // 0 disables -- the rule returns null when the configured radius
-        // is <= 0. Ceiling at 1000 m matches the number input attribute.
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0 && val <= 1000)
-            await AppSettings.SetWaypointArrivalRadiusMetersAsync(val);
+        // is <= 0. Clamp rather than silently drop so a user who types
+        // 5000 gets a useful 1000 m instead of wondering why nothing
+        // changed. Toast if the clamp kicked in.
+        if (!double.TryParse(e.Value?.ToString(), out double raw)) return;
+        double clamped = System.Math.Clamp(raw, 0, 1000);
+        if (System.Math.Abs(clamped - raw) > 0.001)
+            Toasts.Show($"Clamped to {clamped:F0} m (range 0–1000)");
+        await AppSettings.SetWaypointArrivalRadiusMetersAsync(clamped);
     }
 
     private async Task OnLookaheadChanged(ChangeEventArgs e)

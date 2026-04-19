@@ -1211,9 +1211,9 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 }
 .alarm-body-hold .alarm-hold-hint {
     display: block;
-    font-size: 0.65rem;
+    font-size: 0.8rem;
     font-weight: 500;
-    opacity: 0.6;
+    opacity: 0.85;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-top: 2px;
@@ -2614,24 +2614,30 @@ main:has(.alarm-banner-stack) .hud-top-left {
     display: none !important;
 }
 /* Tiny exit chip, top-right. Big enough to tap in a swell but small
-   enough not to compete with the chart. */
+   enough not to compete with the chart. env(safe-area-inset-*) keeps
+   the chip clear of the iPad notch / rounded corners when the map is
+   fullscreen. Solid background + blur so it stays readable over any
+   chart tile underneath (85%-alpha on slate-blue water failed AA). */
 .dark-ops-exit {
     position: absolute;
-    top: 10px;
-    right: 10px;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: calc(10px + env(safe-area-inset-right, 0px));
     z-index: var(--z-modal);
-    background: rgba(15, 17, 22, 0.85);
-    color: rgba(255, 255, 255, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(15, 17, 22, 0.95);
+    color: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 4px;
     padding: 6px 10px;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(4px);
 }
-.dark-ops-exit:hover {
-    background: rgba(30, 34, 44, 0.95);
-    border-color: rgba(255, 255, 255, 0.45);
+.dark-ops-exit:hover,
+.dark-ops-exit:focus {
+    background: rgba(30, 34, 44, 1);
+    border-color: rgba(255, 255, 255, 0.55);
+    outline: none;
 }
 @media (pointer: coarse) {
     .dark-ops-exit { min-height: 40px; padding: 10px 14px; }

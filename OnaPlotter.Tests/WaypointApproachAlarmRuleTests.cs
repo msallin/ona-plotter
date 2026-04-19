@@ -123,4 +123,38 @@ public class WaypointApproachAlarmRuleTests
         // walk forward to handle lines without losing the banner.
         await Assert.That(new WaypointApproachAlarmRule().AutoClear).IsFalse();
     }
+
+    [Test]
+    public async Task TargetKey_Is_Per_Waypoint_So_Banners_Dont_Collapse()
+    {
+        // A multi-leg route must produce a DISTINCT banner + audio per
+        // waypoint. A null TargetKey would collapse every APPROACH into
+        // the same stack slot; the next alarm would silently overwrite
+        // the previous one's message.
+        var rule = new WaypointApproachAlarmRule();
+        var nearA = BuildNav(47.4, 8.5, distMeters: 30);
+        var nearB = BuildNav(47.5, 8.6, distMeters: 30);
+
+        var a = rule.Check(Ctx(nearA, 50));
+        var b = rule.Check(Ctx(nearB, 50));
+        await Assert.That(a!.TargetKey).IsNotNull();
+        await Assert.That(b!.TargetKey).IsNotNull();
+        await Assert.That(a.TargetKey).IsNotEqualTo(b.TargetKey);
+    }
+
+    [Test]
+    public async Task Waypoint_Identity_Tolerates_Sub_Centimetre_Jitter()
+    {
+        // SignalK re-emission can drift a waypoint's lat/lon by float-
+        // precision noise from JSON round-trip and plugin recomputation.
+        // Exact equality would see jitter as "new waypoint" and re-fire
+        // mid-dwell. 1e-7 deg ≈ 1 cm jitter must NOT re-trigger.
+        var rule = new WaypointApproachAlarmRule();
+        var first  = BuildNav(47.4,        8.5,        distMeters: 30);
+        var jitter = BuildNav(47.4 + 1e-7, 8.5 + 1e-7, distMeters: 30);
+
+        await Assert.That(rule.Check(Ctx(first,  50))).IsNotNull();
+        // Same waypoint within epsilon -- must stay silent.
+        await Assert.That(rule.Check(Ctx(jitter, 50))).IsNull();
+    }
 }

@@ -26,6 +26,13 @@ public sealed class WaypointApproachAlarmRule : IAlarmRule
     // we'll fire on the next crossing.
     private (double? Lat, double? Lon) _alarmedFor;
 
+    // Epsilon for waypoint-identity comparison. JSON round-trip + per-
+    // plugin recomputation can drift a few µ-deg between deltas for the
+    // *same* waypoint; exact double equality would see drift as a fresh
+    // waypoint and re-fire mid-dwell. 1e-6 deg ≈ 11 cm -- well under any
+    // realistic arrival radius and well above round-trip jitter.
+    private const double WaypointIdentityEpsilon = 1e-6;
+
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
         if (!ctx.Data.HasActiveCourse) { _alarmedFor = (null, null); return null; }
@@ -46,15 +53,26 @@ public sealed class WaypointApproachAlarmRule : IAlarmRule
         }
 
         // Inside the radius. If we've already alarmed for THIS waypoint
-        // on this entry, stay silent -- the user either dismissed it or
-        // it's still latched in the banner.
-        if (wpLat == _alarmedFor.Lat && wpLon == _alarmedFor.Lon) return null;
+        // on this entry, stay silent. Epsilon comparison on lat + lon
+        // defends against float-precision jitter from the server.
+        if (_alarmedFor.Lat is double prevLat && _alarmedFor.Lon is double prevLon
+            && System.Math.Abs(wpLat.Value - prevLat) < WaypointIdentityEpsilon
+            && System.Math.Abs(wpLon.Value - prevLon) < WaypointIdentityEpsilon)
+        {
+            return null;
+        }
 
         _alarmedFor = (wpLat, wpLon);
+        // Per-waypoint TargetKey gives each arrival a distinct banner +
+        // audio ping. Without it, a multi-leg route collapses every
+        // APPROACH into the same (title, null) slot and the next
+        // alarm silently overwrites the previous message.
+        string targetKey = $"{wpLat.Value:F5}|{wpLon.Value:F5}";
         return new AlarmInfo(
             Title: Title,
             Message: $"{dist:F0} m to {ctx.Data.ActiveRouteName ?? "waypoint"}",
             Severity: AlarmSeverity.Warn,
+            TargetKey: targetKey,
             TimeToEventMinutes: 0);
     }
 }
