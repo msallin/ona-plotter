@@ -38,15 +38,22 @@ you reach for them.
 ### While sailing (situational awareness)
 
 - **HUD in the four corners.** SOG/COG/position (top-left), apparent + true
-  wind with direction arrows (top-right), depth with traffic-light colouring
-  and the alarm threshold visible (bottom-left), heading compass with arrow
-  needle (bottom-right).
+  wind with direction arrows (top-right), depth + tide countdown with
+  traffic-light colouring and the alarm threshold visible (bottom-left),
+  heading compass with arrow needle (bottom-right).
 - **Own-vessel track**, speed-coloured; magenta arrow so the boat stays
   visible over blue water.
 - **AIS targets.** Ship-type-coloured triangles with COG vector, 60-second
-  fading trail, permanent name label (SignalK name → MMSI fallback), small
-  type-glyph overlay (diamond / net / dot / plus) so deuteranopes can still
-  tell sail from fishing from commercial.
+  fading trail, permanent name label. Names are seeded from the SignalK
+  REST snapshot on connect (so vessels that have already broadcast static
+  data show their name instead of a bare MMSI on first paint), then kept
+  current via delta stream. Small type-glyph overlay (diamond / net / dot /
+  plus) so deuteranopes can still tell sail from fishing from commercial.
+- **CPA danger pulse.** Targets whose CPA drops into the danger band get a
+  pulsing red ring on the chart plus a two-line label (vessel name on top,
+  CPA / TCPA below) so a glance answers "which boat is on a collision
+  track". Red crossing lines project both own-boat and target to their
+  predicted CPA.
 - **Radar ARPA targets** from [Mayara](https://github.com/MarineYachtRadar/mayara-server)
   render as outline triangles next to AIS with the same collision pipeline.
   Zero client config; if the plugin's present, targets show up.
@@ -54,49 +61,82 @@ you reach for them.
   to MarineTraffic and VesselFinder.
 - **Tide card** (when a plugin is feeding `environment.tide.*`): current
   height, flood/ebb arrow, countdown to next HW or LW with station name.
-  Card hides entirely on installs without a tide plugin.
+  Folded into the bottom-left depth panel so "water under boat now" and
+  "where it's heading" sit together. Card hides entirely on installs
+  without a tide plugin.
 - **Anchor watch.** Manual drop from current position, or server-driven via
   [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin)
   with live radius and drag alarm.
+- **Sailing mode** (Cruise / Race) in Settings. Light preset that surfaces
+  mode-specific overlays (Race HUD with target boat speed and optimal TWA
+  from your polar) without locking out features. Individual toggles still
+  work in either mode.
 
 ### Planning and routing
 
+- **Add button** in the control bar (or long-press the chart) opens a
+  create menu: Waypoint, Note, Region, or *Route with wind*. Tap-anchored
+  at the map centre when you use the button, long-press-anchored at the
+  touch point. Keyboard-only users have parity with touch.
 - **Routes + waypoints** (SignalK-managed): load, toggle visibility, edit on
-  the map (tap to add WP, drag to move, undo, save). Stop Navigation chip
+  the map. Edit mode: tap to add WP, drag to move (with a dashed ghost
+  line from the original position and a live Δ-distance label), a numbered
+  waypoint list floats top-right with per-row remove, undo pops the last
+  add. Empty route name saves as `Route yyyyMMdd`. Stop Navigation chip
   appears when a route is active.
-- **Notes.** Long-press → *Add Note*, drop a title+body pin anywhere on the
-  chart. Rendered as a slate-blue folded-page icon; click to read or delete.
-- **Regions.** Long-press → *Add Region* for a translucent circle with
-  title/description and a radius preset (100m / 250m / 500m / 1nm / 2nm).
-  Polygon regions created elsewhere render too.
-- **Weather routing.** Right-click → *Route with wind* for an isochrone
-  route from here to any map point. Uses Open-Meteo wind + your uploaded
-  polars. Details: [docs/weather-routing.md](docs/weather-routing.md).
-- **Laylines** to the active waypoint, **bearing/distance measurement**
-  on double-click, **N-Up / C-Up / H-Up** orientation cycle.
+- **Notes.** Drop a title+body pin anywhere on the chart; rendered as a
+  slate-blue folded-page icon, click to read or delete.
+- **Regions.** Translucent circle with title/description and a radius
+  preset (100m / 250m / 500m / 1nm / 2nm). Polygon regions created
+  elsewhere render too.
+- **Weather routing** (isochrone expansion over Open-Meteo wind plus your
+  polar, with the tidal-current vector folded in when the tide plugin
+  feeds it). Details: [docs/weather-routing.md](docs/weather-routing.md).
+- **Laylines** to the active waypoint, **persistent measurement tool**
+  (multi-segment ruler, distance totals), **N↑ / C↑ / H↑** orientation
+  cycle.
 - **GPX import/export** for routes and waypoints.
 
 ### Safety and alarms
 
 - **[Collision detection](docs/collision-detection.md).** CPA/TCPA
   projection with crossing-situation classification (COLREGS), per-target
-  snooze, moored-vessel auto-mute, red/amber crossing lines on the map.
-- **Stacked alarm banner.** Up to three concurrent alarms, severity-ordered.
-  **Snooze 10 m** silences a specific vessel; snoozed-target chips with
-  countdown appear below the banner, tap to un-silence. **Log** button
-  opens the last 20 alarms with dismissal reason (user / auto-cleared).
+  snooze (persisted across reload), moored-vessel auto-mute, pulsing
+  danger ring on targets, red/amber crossing lines on the map.
+- **Life-safety beacons.** SART / MOB / EPIRB AIS transmissions trigger a
+  non-snoozeable alarm and render a pulsing red bullseye on the chart.
+- **Anchor-tide alarm.** When the tide plugin is feeding predictions, the
+  anchor watch projects the current swing-radius bottom to next LW; if
+  predicted depth hits zero within the anchor circle the alarm fires early
+  enough to reset before grounding.
+- **Stacked alarm banner.** Up to three concurrent alarms, stack ordered
+  by (severity, time-to-event, priority) so SHALLOW at TTI=0 beats pending
+  CPA regardless of rule priority. **Snooze 10 m** silences a specific
+  vessel; snoozed-target chips with countdown appear below the banner,
+  tap to un-silence. **Log** button opens the last 20 alarms with
+  dismissal reason (user / auto-cleared).
 - **MOB marker** with pulsing red pin, one-tap drop.
 - **Vessel list** in the Layers panel, sorted by TCPA (most pressing threat
   first), tap to centre + popup.
 
 ### Nice to have
 
-- Server-side **track history** (last 24h), **tidal current arrow**,
-  OpenWeatherMap/RainViewer **weather overlay**, OpenSeaMap overlay
-  (auto-enabled on first run).
+- Server-side **24h track history** (handles both LineString and
+  MultiLineString shapes from the SignalK track endpoint).
+- **Rain-radar overlay** (RainViewer, overzooms cleanly past its native
+  z=12 ceiling so pinching in blurs rather than errors out). OpenSeaMap
+  overlay auto-enabled on first run.
+- **Chart overzoom.** Every chart tile layer uses `maxNativeZoom` +
+  `maxZoom 22`, so pinching past a chart's published max zoom scales the
+  last valid tile up instead of going blank. The Layers panel shows an
+  always-visible "active stack" chip list so it's clear which charts are
+  drawn and in what order.
+- **Legend button** leftmost on the control bar opens a modal key to
+  every symbol on the chart (own boat, AIS shapes, CPA danger, SART,
+  routes, waypoints, notes, regions, guard zone).
 - **Race timer** with 5-minute countdown, "GO!" at zero.
 - Context menu via **long-press (700 ms)** or right-click. First-run
-  coachmark on touch devices so the long-press affordance is discoverable.
+  welcome card and touch coachmark gate on versioned KV keys.
 
 ## Other pages
 - **Dashboard** — speed, course, position, depth, wind, tide and polar
@@ -130,13 +170,18 @@ chip flips to **Stale** and a soft audio alarm plays. On full disconnect the
 alarm repeats every 3 s until the socket reconnects.
 
 ### Settings that survive a reload
-- Theme (System/Light/Dark), Night Mode
+- Theme (System/Light/Dark), Night Mode + preset (Soft/Amber/Red)
 - Map orientation, Follow-boat toggle, Laylines visibility
+- Sailing mode (Cruise / Race)
 - Alarm thresholds (depth, guard zone CPA, guard zone lookahead, wind shift)
+- Per-target alarm snoozes (so a 10-minute silence on one vessel survives
+  a page reload)
 - The exact set of enabled chart overlays and routes
+- First-run welcome + touch coachmark dismissal flags
 
-All of this lives in `localStorage` via `IKeyValueStore`; Polar data is stored
-separately under its own key.
+All of this lives in `localStorage` via `IKeyValueStore`, with versioned
+keys (`.v1` suffix) so schema changes can migrate cleanly. Polar data is
+stored separately under its own key.
 
 ### Collision detection
 A proper CPA/TCPA model rather than a proximity beeper. Configurable guard-zone
@@ -185,23 +230,25 @@ result, hide dependent UI if it's absent.
 
 On the Map page:
 
-| Key   | Action                           |
-|-------|----------------------------------|
-| `F`   | Toggle follow-boat               |
-| `O`   | Cycle orientation (N/C/H-up)     |
-| `N`   | Toggle night mode                |
-| `A`   | Toggle anchor watch              |
-| `M`   | Drop MOB marker                  |
-| `T`   | Fit track in viewport            |
-| `L`   | Toggle laylines                  |
-| `R`   | Start/stop race timer            |
-| `?`   | Show the shortcut card           |
-| `Esc` | Dismiss the shortcut card        |
+| Key   | Action                                       |
+|-------|----------------------------------------------|
+| `F`   | Toggle follow-boat                           |
+| `O`   | Cycle orientation (N↑ / C↑ / H↑)             |
+| `N`   | Toggle night mode                            |
+| `A`   | Toggle anchor watch                          |
+| `M`   | Drop MOB marker                              |
+| `T`   | Fit track in viewport                        |
+| `L`   | Toggle laylines                              |
+| `D`   | Toggle measurement (distance) mode           |
+| `R`   | Start/stop race timer                        |
+| `?`   | Show the shortcut card                       |
+| `Esc` | Dismiss the shortcut card / exit measure     |
 
 Double-click the map to toggle a bearing/distance line from own-boat to the
 click point. Long-press or right-click for the context menu (Create
 Waypoint / Add Note / Add Region / Navigate Here / Route with wind / Stop
-Navigation).
+Navigation). Same actions are reachable from the **Add** button in the
+bottom control bar for keyboard-only users.
 
 ### Small robustness touches
 - All SignalK resource fetches (`ChartApi`, `RouteApi`, `WaypointApi`) use a
@@ -253,11 +300,13 @@ Browser (Blazor WASM)                          SignalK server
 - **`SignalkClient`** owns the WebSocket, parses SignalK deltas, and fans them
   out to `NavigationData` (own vessel fields), `TrackBuffer` (rolling track),
   and `AisStore` (other vessels).
-- **`Components/Map/*`** are focused children of `Pages/Map.razor`: `MapHud` for
-  the four-corner instrument panels plus route/anchor/autopilot, `MapControls`
-  for the bottom button bar, `RouteEditPanel` for the editing overlay,
-  `LayersPanel` for charts/routes/waypoints/vessels/track/weather, and
-  `MapShortcutsOverlay` for the keyboard help card.
+- **`Components/Map/*`** are focused children of `Pages/Map.razor`: `MapHud`
+  for the four-corner instrument panels plus route / anchor / autopilot,
+  `MapControls` for the bottom button bar, `RouteEditPanel` for the editing
+  overlay, `LayersPanel` hosting per-resource `*Section.razor` rows
+  (Charts / Routes / Waypoints / Notes / Regions / Vessels / Buddies /
+  Weather / TrackHistory), `MapShortcutsOverlay` for keyboard help, and
+  `LegendOverlay` for the symbol-key modal.
 - **`Services/Api/*`** are thin HTTP clients, one per concern. They return
   typed data or throw `HttpRequestException`; the caller decides whether to
   surface a toast or rethrow.
@@ -304,7 +353,9 @@ by editing `OnaPlotter/wwwroot/appsettings.json`; set `ServerUrl` to
 ### Tests
 
 ```bash
-# C# unit tests (~270 at time of writing)
+# C# unit + bUnit tests (~370 at time of writing).
+# .NET 10 SDK dropped VSTest dispatch, so `dotnet test` is NOT the
+# path -- TUnit runs as an executable via `dotnet run`.
 dotnet run --project OnaPlotter.Tests
 
 # JS math tests
@@ -323,9 +374,14 @@ regression test.
 
 ## Future plans
 
-- [ ] COLREGS crossing-category labels (head-on / port / stbd / overtaking)
-- [ ] Offline tile download for the current viewport
 - [ ] Polygon regions via freeform drawing (circles and server-supplied
       polygons already work)
-- [ ] Tide-aware weather routing: add the tidal-current vector to the
-      polar-derived boat speed inside `IsochroneRouter`
+- [ ] Offline tile / MBTiles chart download for the current viewport
+- [ ] Auto-routing around land, which is gated on vector charts; we
+      only have raster PNG tiles today, so this needs S-57 vector
+      parsing + a coastline rasteriser before it's worth scoping.
+- [ ] Mode-specific default presets (Race auto-enables laylines, etc.)
+- [ ] Click-to-expand on the four corner HUD panels for more detail
+      (VMG, signed AWA/TWA, HDG magnetic vs true, depth offset)
+- [ ] Light-theme polish pass -- most panels still have hardcoded dark
+      backgrounds, so picking Light flips the chrome but not the body.
