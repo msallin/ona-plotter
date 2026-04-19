@@ -161,16 +161,27 @@ const NauticalScale = L.Control.Scale.extend({
         return container;
     },
     _update() {
+        if (!this._nauticalLine) return;
+        const size = this._map.getSize();
+        if (size.x <= 0) return;  // layout not settled -- Leaflet re-fires on move
         const bounds = this._map.getBounds();
         const centerLat = bounds.getCenter().lat;
         const halfWorldMeters = 6378137 * Math.PI * Math.cos(centerLat * Math.PI / 180);
         const dist = halfWorldMeters * (bounds.getNorthEast().lng - bounds.getSouthWest().lng) / 180;
-        const maxMeters = dist * (this.options.maxWidth / this._map.getSize().x);
+        const maxMeters = dist * (this.options.maxWidth / size.x);
+        if (!isFinite(maxMeters) || maxMeters <= 0) return;
         const nm = maxMeters / 1852;
-        // Pick a round number in NM. Matches Leaflet's own _getRoundNum.
         const d = this._getRoundNum(nm);
+        if (!isFinite(d) || d <= 0) return;
         this._nauticalLine.style.width = ((d * 1852) / maxMeters * this.options.maxWidth) + 'px';
+        // cbl (cables) = 0.1 nm. Below 1 nm the bar is small enough that a
+        // more granular unit reads better than "0.5 nm".
         this._nauticalLine.innerHTML = d < 1 ? `${(d * 10).toFixed(0)} cbl` : `${d} nm`;
+    },
+    onRemove(map) {
+        // Avoid leaking the move listener when the control (or map) is torn
+        // down. Leaflet's built-in L.Control.Scale does the same.
+        map.off(this.options.updateWhenIdle ? 'moveend' : 'move', this._update, this);
     }
 });
 
@@ -2385,6 +2396,38 @@ function buildRegionPopupHtml(id, title, description) {
 export function removeRegion(id) { regionLayers.remove(id); }
 
 export function clearRegions() { regionLayers.clear(); }
+
+// ---- Region circle preview ----------------------------------------
+// Light-weight circle drawn while the Add-Region dialog is open in
+// Circle mode. Shares the region amber so the user sees the final
+// shape at real size before committing. Replaced on every radius tap.
+
+let circlePreviewLayer = null;
+
+export function setCirclePreview(lat, lon, radiusMeters) {
+    if (!map) return;
+    if (circlePreviewLayer) {
+        circlePreviewLayer.setLatLng([lat, lon]);
+        circlePreviewLayer.setRadius(radiusMeters);
+        return;
+    }
+    circlePreviewLayer = L.circle([lat, lon], {
+        radius: radiusMeters,
+        color: REGION_STROKE,
+        fillColor: REGION_STROKE,
+        fillOpacity: 0.12,
+        weight: 1.6,
+        dashArray: '4,4',
+        interactive: false,
+    }).addTo(map);
+}
+
+export function clearCirclePreview() {
+    if (circlePreviewLayer && map) {
+        map.removeLayer(circlePreviewLayer);
+        circlePreviewLayer = null;
+    }
+}
 
 // Pan to a region and open its popup. Accepts the first ring and
 // uses its bounds so we frame whatever the user clicked in the

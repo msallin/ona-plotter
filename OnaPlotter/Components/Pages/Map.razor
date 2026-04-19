@@ -25,12 +25,15 @@
 @inject IToastService Toasts
 @inject IKeyValueStore Kv
 @inject IAlarmManager Alarms
+@inject DeadmanTracker DeadmanTracker
 @inject IJSRuntime JS
 
 <PageTitle>Map</PageTitle>
 
-<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "") @(darkOps ? "dark-ops" : "") mode-@Settings.SailingMode"
-     @onfullscreenchange="OnFullscreenChange">
+<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "") @(darkOps ? "dark-ops" : "") @(Settings.BigType ? "big-type" : "") mode-@Settings.SailingMode"
+     @onfullscreenchange="OnFullscreenChange"
+     @onpointerdown="TouchDeadman"
+     @onkeydown="TouchDeadman">
     <div id="mapDiv"></div>
 
     @* Connection status chip. Rendered unconditionally; CSS hides it
@@ -270,10 +273,10 @@
             <div class="region-mode-toggle" role="tablist" aria-label="Region shape">
                 <button class="map-btn @(newRegionMode == "circle" ? "active" : "")"
                         role="tab" aria-selected="@(newRegionMode == "circle")"
-                        @onclick='() => newRegionMode = "circle"' type="button">Circle</button>
+                        @onclick='() => SetRegionMode("circle")' type="button">Circle</button>
                 <button class="map-btn @(newRegionMode == "polygon" ? "active" : "")"
                         role="tab" aria-selected="@(newRegionMode == "polygon")"
-                        @onclick='() => newRegionMode = "polygon"' type="button">Polygon</button>
+                        @onclick='() => SetRegionMode("polygon")' type="button">Polygon</button>
             </div>
             @if (newRegionMode == "circle")
             {
@@ -287,12 +290,12 @@
                     @foreach (var (m, label) in RegionRadiusPresets)
                     {
                         <button class="map-btn @(newRegionRadiusMeters == m ? "active" : "")"
-                                @onclick="() => newRegionRadiusMeters = m" type="button">@label</button>
+                                @onclick="() => PickRegionRadius(m)" type="button">@label</button>
                     }
                 </div>
                 <div style="display:flex; gap:6px; margin-top:10px;">
                     <button class="map-btn active" @onclick="SaveRegion">Save</button>
-                    <button class="map-btn" @onclick="() => regionDialogVisible = false">Cancel</button>
+                    <button class="map-btn" @onclick="CancelRegionDialog">Cancel</button>
                 </div>
             }
             else
@@ -303,7 +306,7 @@
                 </p>
                 <div style="display:flex; gap:6px;">
                     <button class="map-btn active" @onclick="StartPolygonFromDialog">Start drawing</button>
-                    <button class="map-btn" @onclick="() => regionDialogVisible = false">Cancel</button>
+                    <button class="map-btn" @onclick="CancelRegionDialog">Cancel</button>
                 </div>
             }
         </div>
@@ -1289,7 +1292,7 @@
     {
         fabMenuOpen = false;
         if (!await SetTargetToMapCenterAsync()) return;
-        CreateRegionHere();
+        await CreateRegionHere();
     }
 
     // Called from the Add Region dialog when the user picks Polygon and
@@ -1299,6 +1302,7 @@
     private async Task StartPolygonFromDialog()
     {
         regionDialogVisible = false;
+        await ClearCirclePreview();  // user picked polygon, kill the circle ghost
         await StartPolygonEdit();
     }
 
@@ -2010,6 +2014,12 @@
         if (module is not null)
             await module.InvokeVoidAsync("setNightMode", nightMode);
     }
+
+    // Deadman refresh. Wired to pointerdown + keydown at the map-container
+    // level; any pointer or key event resets the inactivity timer. Keeping
+    // it sync (no await) so it never slows down input handling; the
+    // tracker is a lock-free field write.
+    private void TouchDeadman() => DeadmanTracker.Touch();
 
     // Auto-night plumbing. Dormant unless the user opts in via Settings
     // AND the server publishes environment.sun.altitude. A manual Night

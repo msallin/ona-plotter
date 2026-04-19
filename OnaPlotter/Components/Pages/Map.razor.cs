@@ -167,18 +167,66 @@ public partial class Map
         (3_704, "2 nm"),
     ];
 
-    private void CreateRegionHere()
+    private async Task CreateRegionHere()
     {
         contextMenuVisible = false;
         regionDialogVisible = true;
         newRegionTitle = "";
         newRegionDescription = "";
         newRegionRadiusMeters = 250;
+        // Default mode is the last pick (newRegionMode persists within the
+        // session); draw the preview immediately if circle is the choice
+        // so the user sees the real size before touching a radius chip.
+        if (newRegionMode == "circle") await UpdateCirclePreview();
+    }
+
+    // Mode switch from the dialog toggle. Clears the preview when the
+    // user flips to Polygon because the polygon flow doesn't use it.
+    private async Task SetRegionMode(string mode)
+    {
+        newRegionMode = mode;
+        if (mode == "circle") await UpdateCirclePreview();
+        else await ClearCirclePreview();
+    }
+
+    // Radius chip click. Persist the pick via newRegionRadiusMeters and
+    // refresh the preview so the user can tune the size visually.
+    private async Task PickRegionRadius(double meters)
+    {
+        newRegionRadiusMeters = meters;
+        await UpdateCirclePreview();
+    }
+
+    private async Task UpdateCirclePreview()
+    {
+        if (module is null) return;
+        try
+        {
+            await module.InvokeVoidAsync("setCirclePreview",
+                contextMenuLat, contextMenuLon, newRegionRadiusMeters);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ClearCirclePreview()
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("clearCirclePreview"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    // Cancel button path. Close the dialog AND clear the preview so we
+    // don't leave a ghost circle floating over the map.
+    private async Task CancelRegionDialog()
+    {
+        regionDialogVisible = false;
+        await ClearCirclePreview();
     }
 
     private async Task SaveRegion()
     {
         regionDialogVisible = false;
+        await ClearCirclePreview();
         string title = string.IsNullOrWhiteSpace(newRegionTitle)
             ? $"Region {DateTime.Now:HH:mm}"
             : newRegionTitle;

@@ -72,6 +72,17 @@ public interface IAppSettings
     /// Default 30 m.</summary>
     double ManualAnchorRadiusMeters { get; }
 
+    /// <summary>Deadman / watch-timer interval in minutes. If the user
+    /// has not interacted with the Map page for this long, the DEADMAN
+    /// alarm fires. 0 disables the feature entirely. Default 0 (off) --
+    /// the rule is useful on solo watches but distracting otherwise.</summary>
+    double DeadmanTimeoutMinutes { get; }
+
+    /// <summary>Big-type mode: scales the four corner HUD values up so
+    /// they're readable from across a cockpit (older eyes, 21" helm
+    /// screen, sunlight). Pure CSS via a .big-type class on .page.</summary>
+    bool BigType { get; }
+
     /// <summary>High-level sailing mode: "cruise" (default -- navigation
     /// emphasis, depth / anchor / route) or "race" (performance emphasis,
     /// laylines / optimal TWA / target speed). Discriminator used by the
@@ -119,6 +130,8 @@ public interface IAppSettings
     Task SetBoatDraftMetersAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
+    Task SetDeadmanTimeoutMinutesAsync(double value);
+    Task SetBigTypeAsync(bool value);
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);

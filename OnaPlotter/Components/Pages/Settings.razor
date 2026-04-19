@@ -113,6 +113,25 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
+                <label class="form-label">Deadman Watch Timer</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="0" max="120"
+                           value="@AppSettings.DeadmanTimeoutMinutes"
+                           @onchange="(e) => OnDeadmanTimeoutChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">
+                    Fires a DEADMAN alarm if the Map page sees no interaction for this
+                    many minutes. Safety net for solo watches. Set to 0 to disable.
+                    Any tap / key / pointer event resets the timer.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
                 <label class="form-label">Guard Zone Lookahead</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="1" max="60"
@@ -291,6 +310,18 @@
                     A manual Night tap suppresses the auto-flip for 1 hour so the app
                     doesn't fight your choice.
                 </small>
+
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           checked="@AppSettings.BigType"
+                           @onchange="OnBigTypeChanged" />
+                    <label class="form-check-label">Big-type HUD values</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Scales the four corner HUD numbers up so they read from across a
+                    cockpit or on a 21&quot; helm screen. Useful for older eyes or bright
+                    sunlight.
+                </small>
             </div>
         </div>
     </div>
@@ -320,6 +351,15 @@
         if (System.Math.Abs(clamped - raw) > 0.001)
             Toasts.Show($"Clamped to {clamped:F0} m (range 0–1000)");
         await AppSettings.SetWaypointArrivalRadiusMetersAsync(clamped);
+    }
+
+    private async Task OnDeadmanTimeoutChanged(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), out double raw)) return;
+        double clamped = System.Math.Clamp(raw, 0, 120);
+        if (System.Math.Abs(clamped - raw) > 0.001)
+            Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
+        await AppSettings.SetDeadmanTimeoutMinutesAsync(clamped);
     }
 
     private async Task OnLookaheadChanged(ChangeEventArgs e)
@@ -380,6 +420,12 @@
     {
         bool val = e.Value is bool b && b;
         await AppSettings.SetNightModeAutoAsync(val);
+    }
+
+    private async Task OnBigTypeChanged(ChangeEventArgs e)
+    {
+        bool val = e.Value is bool b && b;
+        await AppSettings.SetBigTypeAsync(val);
     }
 
     private async Task OnThemeChanged(string value) => await AppSettings.SetThemeAsync(value);

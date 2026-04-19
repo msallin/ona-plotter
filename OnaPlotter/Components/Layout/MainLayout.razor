@@ -392,11 +392,11 @@
     }
 
     // --- Hold-to-dismiss for Danger alarms ---
-    // 1 s press-and-hold is long enough that a pocket brush or an
-    // accidental tap does nothing, short enough that a deliberate press
-    // feels responsive. The .alarm-holding class drives a fill animation
-    // during the wait; mirrors the autopilot engage pattern.
-    private const int AlarmHoldMs = 1000;
+    // 600 ms matches the autopilot engage hold: long enough to defeat a
+    // pocket brush, short enough that a deliberate press feels snappy.
+    // The .alarm-holding class drives a fill animation during the wait;
+    // both this value and the CSS animation duration must stay in sync.
+    private const int AlarmHoldMs = 600;
     private string? HoldingAlarmKey;
     private CancellationTokenSource? _alarmHoldCts;
 
@@ -404,9 +404,18 @@
 
     private void StartAlarmHold(AlarmInfo a)
     {
-        _alarmHoldCts?.Cancel();
+        if (_alarmHoldCts is { } prev)
+        {
+            prev.Cancel();
+            prev.Dispose();
+        }
         _alarmHoldCts = new CancellationTokenSource();
         HoldingAlarmKey = AlarmKeyOf(a);
+        // Explicit render so the .alarm-holding class is applied on THIS
+        // frame. Blazor auto-renders after event handlers, but on some
+        // touch devices the subsequent pointerup fires before the render
+        // tick and the user sees no sweep animation.
+        _ = InvokeAsync(StateHasChanged);
         _ = RunAlarmHoldAsync(a, _alarmHoldCts.Token);
     }
 

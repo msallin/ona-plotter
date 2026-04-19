@@ -51,20 +51,57 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
         <span class="ctrl-lbl">Fit</span>
     </button>
-    <button class="ctrl-btn" @onclick="OnCentreOnBoat"
-            title="Centre on boat (one-shot; doesn't engage Follow)">
-        <span class="ctrl-ico">@((MarkupString)Icons.Centre)</span>
-        <span class="ctrl-lbl">Centre</span>
-    </button>
-    <button class="ctrl-btn @(LaylinesVisible ? "active" : "")" @onclick="OnToggleLaylines" title="Laylines (L)">
-        <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
-        <span class="ctrl-lbl">Laylines</span>
-    </button>
-    <button class="ctrl-btn @(MeasureActive ? "active" : "")" @onclick="OnToggleMeasure"
-            title="Measure (D) -- tap to drop ruler points">
-        <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
-        <span class="ctrl-lbl">Measure</span>
-    </button>
+    @* Low-frequency view tools tucked into a More menu so the main bar
+       doesn't run to 13 buttons on a phone. Anything the user actively
+       engages (Measure on, Laylines on) stays on the main bar so the
+       "I turned this on" state is always visible -- overflow-hidden
+       active toggles would be a footgun. *@
+    @if (LaylinesVisible)
+    {
+        <button class="ctrl-btn active" @onclick="OnToggleLaylines" title="Laylines (L)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
+            <span class="ctrl-lbl">Laylines</span>
+        </button>
+    }
+    @if (MeasureActive)
+    {
+        <button class="ctrl-btn active" @onclick="OnToggleMeasure"
+                title="Measure (D) -- tap to drop ruler points">
+            <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
+            <span class="ctrl-lbl">Measure</span>
+        </button>
+    }
+    <div class="ctrl-more-wrap">
+        <button class="ctrl-btn @(MoreMenuOpen ? "active" : "")" @onclick="ToggleMoreMenu"
+                title="More tools: Centre, Laylines, Measure">
+            <span class="ctrl-ico">@((MarkupString)Icons.More)</span>
+            <span class="ctrl-lbl">More</span>
+        </button>
+        @if (MoreMenuOpen)
+        {
+            <div class="ctrl-more-menu" @onclick:stopPropagation>
+                <button class="ctrl-more-item" @onclick="() => Select(OnCentreOnBoat)"
+                        title="Centre on boat (one-shot; doesn't engage Follow)">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Centre)</span>
+                    <span>Centre on boat</span>
+                </button>
+                @if (!LaylinesVisible)
+                {
+                    <button class="ctrl-more-item" @onclick="() => Select(OnToggleLaylines)">
+                        <span class="ctrl-more-ico">@((MarkupString)Icons.Laylines)</span>
+                        <span>Laylines (L)</span>
+                    </button>
+                }
+                @if (!MeasureActive)
+                {
+                    <button class="ctrl-more-item" @onclick="() => Select(OnToggleMeasure)">
+                        <span class="ctrl-more-ico">@((MarkupString)Icons.Measure)</span>
+                        <span>Measure (D)</span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
 
     <div class="ctrl-sep"></div>
 
@@ -73,13 +110,17 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
         <span class="ctrl-lbl">Add</span>
     </button>
-    @if (!RouteEditMode)
-    {
-        <button class="ctrl-btn" @onclick="OnStartRouteEdit" title="Create a new route">
-            <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
-            <span class="ctrl-lbl">Route</span>
-        </button>
-    }
+    @* Route button stays visible during edit -- disappearing mid-tap was
+       disorienting ("where did my button go?"). Active styling + disabled
+       flag tells the user they're already editing; the Save/Cancel sit
+       on the route-edit panel above. *@
+    <button class="ctrl-btn @(RouteEditMode ? "active" : "")"
+            @onclick="OnStartRouteEdit"
+            disabled="@RouteEditMode"
+            title="@(RouteEditMode ? "Editing a route -- see the panel above" : "Create a new route")">
+        <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
+        <span class="ctrl-lbl">Route</span>
+    </button>
     @* Race timer is only relevant in Race mode. Keep it visible while
        actively counting down even if the user flips modes mid-sequence
        so the start doesn't vanish on them. *@
@@ -184,5 +225,19 @@
             return;
         }
         await OnToggleNight.InvokeAsync();
+    }
+
+    // --- More overflow menu ---
+    // Local-only state because the menu is scoped to this component;
+    // closing on selection means the next tap starts fresh.
+    private bool MoreMenuOpen;
+    private void ToggleMoreMenu() => MoreMenuOpen = !MoreMenuOpen;
+
+    // Invoke the chosen action and close the menu. Keeping the close
+    // in one place avoids every item having to remember to do it.
+    private async Task Select(EventCallback cb)
+    {
+        MoreMenuOpen = false;
+        await cb.InvokeAsync();
     }
 }

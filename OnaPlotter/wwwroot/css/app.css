@@ -1228,8 +1228,9 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     bottom: 0;
     height: 100%;
     width: 0;
-    background: rgba(255, 255, 255, 0.18);
-    animation: alarm-hold-fill 1000ms linear forwards;
+    background: rgba(255, 255, 255, 0.24);
+    /* Duration matches MainLayout.AlarmHoldMs -- keep in sync. */
+    animation: alarm-hold-fill 600ms linear forwards;
     pointer-events: none;
 }
 @keyframes alarm-hold-fill {
@@ -1820,42 +1821,32 @@ main:has(.alarm-banner-stack) .hud-top-left {
     color: #f0d49c !important;
 }
 
-/* Bottom-left Leaflet stack holds the metric scale, the nautical scale
-   and the zoom badge. Default Leaflet stacks them vertically; we want
-   them in one horizontal row so the captain reads "N m / N nm / z X"
-   at a single glance. The row sits just above the map-controls bar so
-   it's out of the depth HUD's way but still in the "chart scale" zone
-   of the screen -- hud-bottom-left shifts right to .map-chart-scale
-   clearance via its own media rule below. */
+/* Scale bars + zoom badge in a horizontal row, bottom-left corner of
+   the map. Leaflet's default bottom-left stack is vertical via floats;
+   we flip it to flex-row so "N m / N nm / z N" reads in one glance.
+   Don't touch `bottom` / `left` -- let Leaflet own its placement so we
+   don't accidentally hide the stack or fight iOS safe-area insets. */
 .leaflet-bottom.leaflet-left {
-    bottom: calc(var(--panel-bottom) + 2px) !important;
-    left: 12px !important;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-end;
-    gap: 8px;
-    z-index: var(--z-hud);
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-end !important;
+    gap: 6px;
 }
 .leaflet-bottom.leaflet-left > .leaflet-control {
-    margin: 0 !important;
     float: none !important;
     clear: none !important;
+    margin: 0 !important;
+    flex: 0 0 auto;
 }
-/* When the scale+zoom row is present, lift the depth HUD above it so
-   they don't collide on narrow layouts. ~38px = scale-bar height + a
-   little gap; applied whenever .hud-bottom-left is in the same layout
-   (always, on the Map page). */
+/* Lift the depth HUD above the scale/zoom row so they don't collide
+   in the bottom-left corner. Scale bars are ~30 px; 38 px offset clears
+   them with a small gap. */
 .hud-bottom-left {
-    bottom: calc(12px + 38px) !important;
+    bottom: 48px !important;
 }
-/* Narrow phones: lift further so the row doesn't collide with the
-   wrapped control bar. */
 @media (max-width: 600px) {
-    .leaflet-bottom.leaflet-left {
-        bottom: calc(var(--panel-bottom) + 8px) !important;
-    }
     .hud-bottom-left {
-        bottom: calc(12px + 44px) !important;
+        bottom: 52px !important;
     }
 }
 
@@ -2361,6 +2352,58 @@ main:has(.alarm-banner-stack) .hud-top-left {
     font-style: italic;
 }
 
+/* More-menu overflow (Centre, Laylines, Measure). Pops straight up from
+   the button; the button itself stays in the main bar as the anchor. */
+.ctrl-more-wrap {
+    position: relative;
+    display: inline-flex;
+}
+.ctrl-more-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 180px;
+    padding: 4px;
+    background: rgba(20, 26, 38, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    z-index: var(--z-controls);
+    animation: fab-pop 0.16s ease-out;
+}
+.ctrl-more-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 40px;
+    padding: 6px 10px;
+    background: transparent;
+    color: #e2e8f0;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.ctrl-more-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+.ctrl-more-ico {
+    width: 20px;
+    height: 20px;
+    color: #93c5fd;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+@media (pointer: coarse) {
+    .ctrl-more-item { min-height: 44px; font-size: 0.9rem; }
+}
+
 /* ===== Chart legend =====
    Collapsible section at the bottom of the Layers panel. Explains
    every recognised chart symbol in one line + a colour swatch so a
@@ -2672,6 +2715,33 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .map-container.dark-ops .ona-zoom-badge {
     display: none !important;
 }
+
+/* Big-type mode: scales the four corner HUD values up so they read
+   from across a cockpit / helm. CSS-only; triggered by a Settings
+   toggle that adds .big-type to .map-container. Labels + position
+   readout get a proportional bump too. */
+.map-container.big-type .hud-value {
+    font-size: 2.2rem;
+}
+.map-container.big-type .hud-value.hud-primary {
+    font-size: 3.4rem;
+}
+.map-container.big-type .hud-label {
+    font-size: 0.75rem;
+}
+.map-container.big-type .hud-position {
+    font-size: 0.9rem;
+}
+.map-container.big-type .hud-extra {
+    font-size: 0.9rem;
+}
+.map-container.big-type .hud-extra-k {
+    font-size: 0.72rem;
+}
+.map-container.big-type .depth-tide-row {
+    font-size: 0.92rem;
+}
+
 /* Tiny exit chip, top-right. Big enough to tap in a swell but small
    enough not to compete with the chart. env(safe-area-inset-*) keeps
    the chip clear of the iPad notch / rounded corners when the map is

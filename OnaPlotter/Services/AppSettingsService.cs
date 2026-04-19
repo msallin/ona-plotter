@@ -33,6 +33,8 @@ public sealed class AppSettingsService : IAppSettings
     public double BoatDraftMeters { get; private set; } = 1.5;
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
+    public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
+    public bool BigType { get; private set; } = false;
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
@@ -71,6 +73,8 @@ public sealed class AppSettingsService : IAppSettings
             BoatDraftMeters = await LoadDouble("boatDraftMeters", 1.5);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
+            DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
+            BigType = await LoadBool("bigType.v1", false);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
@@ -225,6 +229,20 @@ public sealed class AppSettingsService : IAppSettings
     {
         ManualAnchorRadiusMeters = value;
         await Save("manualAnchorRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetDeadmanTimeoutMinutesAsync(double value)
+    {
+        DeadmanTimeoutMinutes = value;
+        await Save("deadmanTimeoutMinutes.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetBigTypeAsync(bool value)
+    {
+        BigType = value;
+        await Save("bigType.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 
