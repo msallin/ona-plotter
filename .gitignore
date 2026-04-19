@@ -26,3 +26,8 @@ deploy/staging/
 ## Playwright (running from repo root or UiTests)
 test-results/
 playwright-report/
+
+# Coverage + Stryker artefacts (local dev only).
+coverage-report/
+coverage.cobertura.xml
+StrykerOutput/

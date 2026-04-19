@@ -12,18 +12,27 @@ const FUZZ_SEED = parseInt(process.env.FUZZ_SEED ?? `${Date.now() & 0x7fffffff}`
 const FUZZ_CLICKS = parseInt(process.env.FUZZ_CLICKS ?? '40', 10);
 
 // Selectors the fuzzer is allowed to click. Each is considered non-destructive.
+// Updated for the More-menu reshuffle (Night / Laylines / Measure live in
+// the overflow now) and the unicode orientation glyphs (N↑ / C↑ / H↑).
 const SAFE_CLICK_SELECTORS = [
     '.map-controls .ctrl-btn:has-text("Follow")',
     '.map-controls .ctrl-btn:has-text("Free")',
-    '.map-controls .ctrl-btn:has-text("N-Up"), .ctrl-btn:has-text("C-Up"), .ctrl-btn:has-text("H-Up")',
-    '.map-controls .ctrl-btn:has-text("Night")',
+    '.map-controls .ctrl-btn[title*="orientation"]',
     '.map-controls .ctrl-btn:has-text("Fit")',
-    '.map-controls .ctrl-btn:has-text("Laylines")',
+    '.map-controls .ctrl-btn:has-text("Centre")',
     '.map-controls .ctrl-btn:has-text("Layers")',
+    '.map-controls .ctrl-btn:has-text("More")',
+    '.ctrl-more-item',                           // Legend/Night/Laylines/Measure
+    '.map-fab-item',                             // Add-menu items
     '.chart-quick-chip',
     '.chart-item .chart-item-body',
+    '.chart-active-chip .chart-reorder-btn',
     '.vessel-row',
     '.section-toggle',
+    '.hud-top-left .hud-panel',                  // HUD click-to-expand
+    '.hud-top-right .hud-panel',
+    '.hud-bottom-left .hud-panel',
+    '.hud-bottom-right .hud-panel',
 ];
 
 // Title kept static so Playwright's worker process can re-attach to the

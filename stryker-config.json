@@ -1,0 +1,20 @@
+{
+    "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-net/master/docs/stryker-config.schema.json",
+    "stryker-config": {
+        "project": "OnaPlotter/OnaPlotter.csproj",
+        "test-projects": ["OnaPlotter.Tests/OnaPlotter.Tests.csproj"],
+        "mutate": [
+            "OnaPlotter/Services/Alarms/**/*.cs",
+            "OnaPlotter/Utilities/Cpa.cs",
+            "OnaPlotter/Utilities/Colregs.cs",
+            "OnaPlotter/Utilities/AisSart.cs",
+            "OnaPlotter/Utilities/AisPalette.cs",
+            "OnaPlotter/Services/DeadmanTracker.cs",
+            "OnaPlotter/Services/AisStore.cs"
+        ],
+        "reporters": ["progress", "cleartext", "html"],
+        "thresholds": { "high": 85, "low": 60, "break": 0 },
+        "concurrency": 4,
+        "coverage-analysis": "perTest"
+    }
+}

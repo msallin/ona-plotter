@@ -92,7 +92,18 @@ mode-specific overlays; every individual toggle still works in either mode.
 - One test file per alarm rule, branch coverage for each early-return path.
 - Playwright in `OnaPlotter.UiTests` -- UI-only, no SignalK server needed. Fuzz
   knobs (`FUZZ_SEED`, `FUZZ_CLICKS`) documented in its own README.
-- No Stryker yet; run it when coverage drifts under 80% or a module feels thin.
+- Coverage: `dotnet run --project OnaPlotter.Tests -- --coverage` produces a
+  TRX-adjacent `.coverage` file; merge with `dotnet-coverage merge ... -f
+  cobertura` and run `reportgenerator` for a readable summary. Utilities,
+  alarm rules, API clients, and `AisStore` sit 85-100%. Razor pages drag
+  the overall line rate to ~28% because Map.razor is 2000 lines of view
+  code; don't chase that number directly, add bUnit tests for any stateful
+  sub-component instead.
+- Stryker is BLOCKED on .NET 10: stryker-net hasn't shipped
+  Microsoft.Testing.Platform support yet (issue #3094). Until it does,
+  mutation testing is manual -- walk the alarm rules by eye after any
+  change, or temporarily flip the test project back to VSTest for a
+  one-off Stryker run in a branch.
 
 ## After a non-trivial change
 
