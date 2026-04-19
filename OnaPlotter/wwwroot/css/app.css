@@ -1197,6 +1197,45 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     flex: 1;
     cursor: pointer;
 }
+
+/* Danger-alarm body: hold-to-dismiss. Same sweep pattern as the
+   autopilot engage button so the interaction grammar matches. The
+   "hold to dismiss" hint is muted unless the user is pressing;
+   it becomes louder during the hold so the helmsman knows something
+   is happening. */
+.alarm-body-hold {
+    position: relative;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.alarm-body-hold .alarm-hold-hint {
+    display: block;
+    font-size: 0.65rem;
+    font-weight: 500;
+    opacity: 0.6;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+}
+.alarm-body-hold.alarm-holding .alarm-hold-hint {
+    opacity: 1;
+}
+.alarm-body-hold.alarm-holding::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 100%;
+    width: 0;
+    background: rgba(255, 255, 255, 0.18);
+    animation: alarm-hold-fill 1000ms linear forwards;
+    pointer-events: none;
+}
+@keyframes alarm-hold-fill {
+    from { width: 0; }
+    to   { width: 100%; }
+}
 .alarm-snooze {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid currentColor;
@@ -2547,6 +2586,55 @@ main:has(.alarm-banner-stack) .hud-top-left {
 @keyframes ap-hold-fill {
     from { width: 0; }
     to   { width: 100%; }
+}
+
+/* ===== Dark Ops =====
+   Chrome-off mode for long offshore watches. The map + the alarm
+   banner remain; everything else hides. Explicit opt-in via a long-
+   press on the Night button; Esc or the Exit chip brings chrome back.
+   Intentionally aggressive -- if you want a subtler declutter, use
+   Fullscreen + Night mode instead. */
+.map-container.dark-ops .map-controls,
+.map-container.dark-ops .hud-top-left,
+.map-container.dark-ops .hud-top-right,
+.map-container.dark-ops .hud-bottom-left,
+.map-container.dark-ops .hud-bottom-right,
+.map-container.dark-ops .hud-race,
+.map-container.dark-ops .hud-autopilot,
+.map-container.dark-ops .chart-panel,
+.map-container.dark-ops .chart-quick-bar,
+.map-container.dark-ops .route-edit-bar,
+.map-container.dark-ops .route-edit-hint,
+.map-container.dark-ops .route-edit-list,
+.map-container.dark-ops .conn-chip,
+.map-container.dark-ops .leaflet-control-zoom,
+.map-container.dark-ops .leaflet-control-scale,
+.map-container.dark-ops .ona-fs-control,
+.map-container.dark-ops .ona-zoom-badge {
+    display: none !important;
+}
+/* Tiny exit chip, top-right. Big enough to tap in a swell but small
+   enough not to compete with the chart. */
+.dark-ops-exit {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: var(--z-modal);
+    background: rgba(15, 17, 22, 0.85);
+    color: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.dark-ops-exit:hover {
+    background: rgba(30, 34, 44, 0.95);
+    border-color: rgba(255, 255, 255, 0.45);
+}
+@media (pointer: coarse) {
+    .dark-ops-exit { min-height: 40px; padding: 10px 14px; }
 }
 
 /* ===== Map Rotation (Course-up / Head-up) ===== */

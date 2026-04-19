@@ -61,9 +61,29 @@
                 {
                     <div class="alarm-banner @(a.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")"
                          @key="(a.Title, a.TargetKey)">
-                        <div class="alarm-body" @onclick="() => DismissOne(a)">
-                            <strong>@a.Title</strong> @a.Message
-                        </div>
+                        @if (a.Severity == AlarmSeverity.Danger)
+                        {
+                            @* Hold-to-dismiss on Danger alarms. A drag-
+                               anchor alarm or a grounding warning shouldn't
+                               clear from a pocket brush or an accidental
+                               double-tap; the captain has to mean it.
+                               Mirrors the autopilot engage pattern. *@
+                            <div class="alarm-body alarm-body-hold @(HoldingAlarmKey == AlarmKeyOf(a) ? "alarm-holding" : "")"
+                                 @onpointerdown="() => StartAlarmHold(a)"
+                                 @onpointerup="EndAlarmHold"
+                                 @onpointerleave="EndAlarmHold"
+                                 @onpointercancel="EndAlarmHold"
+                                 title="Hold to dismiss">
+                                <strong>@a.Title</strong> @a.Message
+                                <span class="alarm-hold-hint">hold to dismiss</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alarm-body" @onclick="() => DismissOne(a)">
+                                <strong>@a.Title</strong> @a.Message
+                            </div>
+                        }
                         @if (a.TargetKey is not null && a.Snoozeable)
                         {
                             <button class="alarm-snooze" @onclick="() => SnoozeOne(a)" @onclick:stopPropagation
@@ -336,6 +356,49 @@
     private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);
     private async Task SnoozeOne(AlarmInfo alarm) => await Alarms.SnoozeAsync(alarm);
     private async Task UnsnoozeOne(string targetKey) => await Alarms.UnsnoozeAsync(targetKey);
+
+    // --- Hold-to-dismiss for Danger alarms ---
+    // 1 s press-and-hold is long enough that a pocket brush or an
+    // accidental tap does nothing, short enough that a deliberate press
+    // feels responsive. The .alarm-holding class drives a fill animation
+    // during the wait; mirrors the autopilot engage pattern.
+    private const int AlarmHoldMs = 1000;
+    private string? HoldingAlarmKey;
+    private CancellationTokenSource? _alarmHoldCts;
+
+    private static string AlarmKeyOf(AlarmInfo a) => $"{a.Title}|{a.TargetKey}";
+
+    private void StartAlarmHold(AlarmInfo a)
+    {
+        _alarmHoldCts?.Cancel();
+        _alarmHoldCts = new CancellationTokenSource();
+        HoldingAlarmKey = AlarmKeyOf(a);
+        _ = RunAlarmHoldAsync(a, _alarmHoldCts.Token);
+    }
+
+    private async Task RunAlarmHoldAsync(AlarmInfo a, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(AlarmHoldMs, ct);
+            if (ct.IsCancellationRequested) return;
+            HoldingAlarmKey = null;
+            await Alarms.DismissAsync(a);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* released before the threshold */ }
+    }
+
+    private void EndAlarmHold()
+    {
+        _alarmHoldCts?.Cancel();
+        _alarmHoldCts = null;
+        if (HoldingAlarmKey is not null)
+        {
+            HoldingAlarmKey = null;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
 
     private async Task RunToastAction(ToastService.Toast t)
     {

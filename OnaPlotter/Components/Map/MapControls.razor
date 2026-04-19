@@ -23,7 +23,13 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Compass)</span>
         <span class="ctrl-lbl">@OrientationLabel</span>
     </button>
-    <button class="ctrl-btn @(NightMode ? "active" : "")" @onclick="OnToggleNight" title="Night mode (N)">
+    <button class="ctrl-btn @(NightMode ? "active" : "")"
+            @onclick="NightClicked"
+            @onpointerdown="StartNightHold"
+            @onpointerup="EndNightHold"
+            @onpointerleave="EndNightHold"
+            @onpointercancel="EndNightHold"
+            title="Night mode (N) -- hold for Dark Ops (chrome-off)">
         <span class="ctrl-ico">@((MarkupString)Icons.Moon)</span>
         <span class="ctrl-lbl">Night</span>
     </button>
@@ -124,4 +130,57 @@
     [Parameter] public EventCallback OnToggleLayers { get; set; }
     [Parameter] public EventCallback OnToggleLegend { get; set; }
     [Parameter] public EventCallback OnToggleFab { get; set; }
+
+    /// <summary>Fires on a long-press of the Night button. Parent uses
+    /// this to toggle "Dark Ops" -- the chrome-off mode for long
+    /// offshore watches where the helmsman wants nothing competing
+    /// with the chart + alarms.</summary>
+    [Parameter] public EventCallback OnToggleDarkOps { get; set; }
+
+    // --- Night-button long-press detection ----------------------
+    // 500 ms is long enough that a normal Night tap doesn't trip it.
+    // Cancelling the hold also suppresses the subsequent click so the
+    // user doesn't get both a Dark Ops flip AND a Night toggle.
+    private const int NightHoldMs = 500;
+    private CancellationTokenSource? _nightHoldCts;
+    private bool _nightHoldFired;
+
+    private void StartNightHold()
+    {
+        _nightHoldCts?.Cancel();
+        _nightHoldCts = new CancellationTokenSource();
+        _nightHoldFired = false;
+        _ = RunNightHoldAsync(_nightHoldCts.Token);
+    }
+
+    private async Task RunNightHoldAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(NightHoldMs, ct);
+            if (ct.IsCancellationRequested) return;
+            _nightHoldFired = true;
+            await OnToggleDarkOps.InvokeAsync();
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void EndNightHold()
+    {
+        _nightHoldCts?.Cancel();
+        _nightHoldCts = null;
+    }
+
+    // Click-AFTER-pointerup is the mouse / touch sequence we intercept.
+    // When the hold already fired the dark-ops toggle, swallow the click
+    // so Night doesn't also toggle on top. Otherwise propagate normally.
+    private async Task NightClicked()
+    {
+        if (_nightHoldFired)
+        {
+            _nightHoldFired = false;
+            return;
+        }
+        await OnToggleNight.InvokeAsync();
+    }
 }

@@ -28,7 +28,7 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "") mode-@Settings.SailingMode"
+<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "") @(darkOps ? "dark-ops" : "") mode-@Settings.SailingMode"
      @onfullscreenchange="OnFullscreenChange">
     <div id="mapDiv"></div>
 
@@ -48,6 +48,14 @@
             SailingMode="@Settings.SailingMode"
             Polar="Polar"
             OnStopNavigation="StopNavigation" />
+
+    @* Dark Ops exit chip. Only rendered when Dark Ops is active; a tiny
+       top-right button so the helm has a visible way out besides Esc. *@
+    @if (darkOps)
+    {
+        <button class="dark-ops-exit" @onclick="ToggleDarkOps"
+                title="Exit Dark Ops (Esc)">Exit Dark Ops</button>
+    }
 
 
     <MapControls Follow="follow"
@@ -73,6 +81,7 @@
                  OnToggleMeasure="ToggleMeasure"
                  OnStartRouteEdit="StartRouteEdit"
                  OnToggleRaceTimer="ToggleRaceTimer"
+                 OnToggleDarkOps="ToggleDarkOps"
                  SailingMode="@Settings.SailingMode"
                  OnToggleLayers="ToggleLayersPanel"
                  OnToggleLegend="() => legendOpen = !legendOpen"
@@ -366,6 +375,11 @@
     private DotNetObjectReference<Map>? dotNetRef;
     private bool follow;
     private bool nightMode;
+    // Dark Ops: hides every non-essential chrome element so the chart
+    // and alarm banner are the only things competing for the helm's
+    // eye. Kept off by default; triggered by a long-press on the Night
+    // button and exited via the small exit chip or Esc.
+    private bool darkOps;
     private bool mobActive;
     private bool anchorManualActive;
     private bool mapInitialized;
@@ -907,6 +921,7 @@
                 if (polygonEditMode) { await CancelPolygonEdit(); }
                 if (fabMenuOpen) { fabMenuOpen = false; }
                 if (legendOpen) { legendOpen = false; }
+                if (darkOps) { darkOps = false; }
                 shortcutsVisible = false;
                 break;
         }
@@ -1930,6 +1945,18 @@
         await Settings.SetNightModeAsync(nightMode);
         if (module is not null)
             await module.InvokeVoidAsync("setNightMode", nightMode);
+    }
+
+    /// <summary>
+    /// Dark Ops: chrome-off mode for long offshore watches. Map + alarms
+    /// remain; control bar, HUDs, overlays all hide. Toggle via long-press
+    /// on the Night button, or Esc. Ephemeral (not persisted) because the
+    /// helm wants this only for the current watch.
+    /// </summary>
+    private void ToggleDarkOps()
+    {
+        darkOps = !darkOps;
+        StateHasChanged();
     }
 
     private async Task ToggleMob()
