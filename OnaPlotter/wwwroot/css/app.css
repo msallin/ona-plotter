@@ -1,4 +1,14 @@
-/* Dark nautical theme for OnaPlotter. */
+/* Dark nautical theme for OnaPlotter.
+
+   Canonical media-query breakpoints (use these; don't add new ones):
+     (max-width: 640px)   -- phone portrait
+     (max-width: 820px)   -- tablet portrait / phone landscape
+     (max-width: 1024px)  -- laptop small
+     (pointer: coarse)    -- touch devices regardless of width
+     (max-height: 500px) and (orientation: landscape) -- phone landscape
+   Old stale values (600, 641, 900) exist in a few rules for grandfathered
+   behaviour; migrating those carries regression risk without clear benefit,
+   so leave in place and use the canonical set for new rules. */
 
 :root {
     /* Color palette */
@@ -274,7 +284,10 @@ h2 {
 }
 .connection-retry:hover { background: var(--sev-warn-bg); }
 @media (pointer: coarse) {
-    .connection-retry { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
+    /* 44px to clear WCAG 2.5.5 target size. Earlier 32px failed on
+       touch -- the connection chip is something a user only taps when
+       already frustrated (wifi's dropped), so missing it hurts more. */
+    .connection-retry { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
 }
 
 /* Form controls in dark theme */
@@ -717,6 +730,59 @@ article.content:has(.map-container) {
     background: rgba(200, 60, 60, 0.25);
     color: #fff;
     box-shadow: inset 0 0 0 1px rgba(200, 60, 60, 0.5);
+}
+
+/* Night-mode coverage for Bootstrap button classes used on the Settings
+   page (Night/Day toggle, sailing-mode group, "Remove Polar"). Without
+   these rules the outline buttons stay white on the red-shifted bg and
+   the Night/Day toggle itself becomes the most glaring element in a
+   page that's supposed to preserve dark adaptation. */
+.night-mode .btn-outline-secondary,
+.night-mode-global .btn-outline-secondary {
+    color: #ffb8b8;
+    border-color: rgba(255, 100, 100, 0.3);
+    background: rgba(30, 5, 5, 0.5);
+}
+.night-mode .btn-outline-secondary:hover,
+.night-mode-global .btn-outline-secondary:hover,
+.night-mode .btn-check:checked + .btn-outline-secondary,
+.night-mode-global .btn-check:checked + .btn-outline-secondary {
+    background: rgba(180, 40, 40, 0.3);
+    border-color: rgba(180, 40, 40, 0.6);
+    color: #ffd4d4;
+}
+.night-mode .btn-outline-danger,
+.night-mode-global .btn-outline-danger {
+    color: #ff8080;
+    border-color: rgba(255, 60, 60, 0.4);
+    background: rgba(40, 5, 5, 0.5);
+}
+.night-mode .btn-outline-danger:hover,
+.night-mode-global .btn-outline-danger:hover {
+    background: rgba(200, 40, 40, 0.25);
+    color: #ffb0b0;
+}
+
+/* Autopilot hold-to-engage buttons. These live in the HUD-autopilot
+   panel and use their own .ap-mode-btn class; without these rules they
+   stayed white-on-red in night mode while the surrounding panel red-
+   shifted, making the buttons stand out awkwardly. */
+.night-mode .ap-mode-btn,
+.night-mode-global .ap-mode-btn {
+    color: #ffb8b8;
+    border-color: rgba(255, 100, 100, 0.25);
+    background: rgba(30, 5, 5, 0.7);
+}
+.night-mode .ap-mode-btn:hover,
+.night-mode-global .ap-mode-btn:hover {
+    border-color: rgba(255, 100, 100, 0.5);
+    color: #ffd4d4;
+}
+.night-mode .ap-mode-btn.active,
+.night-mode-global .ap-mode-btn.active {
+    background: rgba(200, 60, 60, 0.3);
+    border-color: rgba(200, 60, 60, 0.6);
+    color: #fff;
 }
 
 /* Leaflet popup overrides for dark theme */
@@ -1198,6 +1264,14 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     align-items: center;
     justify-content: center;
     gap: 12px;
+    flex-wrap: wrap;         /* narrow viewport: buttons drop below text */
+}
+/* On phones, stack Snooze + Next WP under the alarm message instead of
+   squeezing them in a row. Keeps both buttons full-width so they hit
+   the WCAG target size without fighting for horizontal space. */
+@media (max-width: 600px) {
+    .alarm-banner .alarm-snooze,
+    .alarm-banner .alarm-action { flex: 1 1 auto; min-width: 140px; }
 }
 /* Within the stack, only the top alarm pulses. Lower entries stay
    steady so the viewport isn't a disco. */
@@ -1272,7 +1346,54 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     font-weight: 600;
 }
 @media (pointer: coarse) {
-    .alarm-snooze { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
+    .alarm-snooze,
+    .alarm-action { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
+}
+
+/* Route / polygon editing mode cue. Thin amber inset border + crosshair
+   cursor on the map surface so the helm knows any tap will add / move a
+   vertex. Without a visual cue the field study showed helm users
+   forgetting they were in edit mode and being surprised when a pan
+   attempt dropped a waypoint. */
+.map-container.editing #mapDiv {
+    outline: 3px solid var(--sk-orange);
+    outline-offset: -3px;
+    cursor: crosshair;
+}
+.map-container.editing #mapDiv .leaflet-interactive { cursor: crosshair; }
+.map-container.editing::before {
+    content: "EDITING";
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--z-controls);
+    background: var(--sk-orange);
+    color: #000;
+    padding: 3px 12px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    pointer-events: none;
+    animation: edit-pulse 2s ease-in-out infinite;
+}
+@keyframes edit-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.6; }
+}
+
+/* Anchor-tide checklist tick colours. Use the --sev-* tokens so the
+   night-mode red-preset (and any future theme) can override a single
+   variable instead of multiple hard-coded hex. Danger-red on a red-bg
+   night preset was invisible before this. */
+.anchor-tide-check .check-ok { color: var(--sev-ok); font-weight: 600; }
+.anchor-tide-check .check-bad { color: var(--sev-danger); font-weight: 600; }
+.night-mode-global.night-mode-red .anchor-tide-check .check-bad {
+    /* Swap the missing-prereq glyph from danger-red (invisible against
+       red bg) to warn-amber so the user still sees it. */
+    color: var(--sev-warn);
 }
 
 /* Settings filter highlight. Brief amber underline on the matched
@@ -1547,7 +1668,11 @@ main:has(.alarm-banner-stack) .hud-top-left {
     flex-direction: column;
     animation: alarm-log-pop 0.18s ease-out;
 }
-@media (max-width: 600px) {
+/* 640 / 641 matches the snooze-chips breakpoint so a 620 px tablet
+   doesn't get the desktop drawer with mobile snooze-chip placement
+   (the earlier mismatch dropped chips to the left while the drawer
+   stayed side-anchored, splitting alarm UI across two layouts). */
+@media (max-width: 640px) {
     .alarm-log-panel {
         top: auto;
         right: 0;

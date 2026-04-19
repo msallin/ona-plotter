@@ -250,21 +250,21 @@
         <div class="card">
             <div class="card-body">
                 <label class="form-label">Anchor Tide Alarm setup</label>
-                <ul class="list-unstyled mb-0" style="font-size:0.85rem;">
+                <ul class="list-unstyled mb-0 anchor-tide-check" style="font-size:0.85rem;">
                     <li>
-                        <span style="color:@(AppSettings.BoatDraftMeters > 0 ? "#22c55e" : "#ef4444");">
+                        <span class="@(AppSettings.BoatDraftMeters > 0 ? "check-ok" : "check-bad")">
                             @(AppSettings.BoatDraftMeters > 0 ? "\u2713" : "\u2717")
                         </span>
                         Boat draft &gt; 0 (currently @AppSettings.BoatDraftMeters.ToString("F1") m)
                     </li>
                     <li>
-                        <span style="color:@(AppSettings.AnchorTideSafetyMargin > 0 ? "#22c55e" : "#ef4444");">
+                        <span class="@(AppSettings.AnchorTideSafetyMargin > 0 ? "check-ok" : "check-bad")">
                             @(AppSettings.AnchorTideSafetyMargin > 0 ? "\u2713" : "\u2717")
                         </span>
                         Safety margin &gt; 0 (currently @AppSettings.AnchorTideSafetyMargin.ToString("F1") m)
                     </li>
                     <li>
-                        <span style="color:@(SignalkClient.Data.Depth is not null ? "#22c55e" : "#ef4444");">
+                        <span class="@(SignalkClient.Data.Depth is not null ? "check-ok" : "check-bad")">
                             @(SignalkClient.Data.Depth is not null ? "\u2713" : "\u2717")
                         </span>
                         Live depth from SignalK
@@ -272,7 +272,7 @@
                         else { <span class="text-muted">&mdash; needs a depth sounder feeding the bus</span> }
                     </li>
                     <li>
-                        <span style="color:@(SignalkClient.Data.TideHeightNow is not null ? "#22c55e" : "#ef4444");">
+                        <span class="@(SignalkClient.Data.TideHeightNow is not null ? "check-ok" : "check-bad")">
                             @(SignalkClient.Data.TideHeightNow is not null ? "\u2713" : "\u2717")
                         </span>
                         Tide data
