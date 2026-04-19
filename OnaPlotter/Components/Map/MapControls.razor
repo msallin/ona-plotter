@@ -1,17 +1,26 @@
 @using OnaPlotter.Utilities
 
-@* Bottom control bar. Left-most slot is the Legend key (low-frequency
-   but highest discoverability need -- "what does that symbol mean"),
-   then the four groups: view (follow/orientation/night), safety
-   (anchor/MOB), navigation (fit/laylines/measure), create (add/route/
-   race), and finally Layers on the far right. *@
+@* Bottom control bar.
+
+   Layout: More (overflow) is leftmost, then navigation grouping
+   (Follow / Orient / Centre), safety (Anchor / MOB), view (Fit), create
+   (Add / Route / Race), and finally Layers. "Less-essential" toggles
+   (Legend / Night / Laylines / Measure) live inside the More menu; the
+   More button shows a dot when any of its contents are active so an
+   "on" state doesn't hide behind a closed menu. *@
 
 <div class="map-controls">
-    <button class="ctrl-btn @(LegendOpen ? "active" : "")" @onclick="OnToggleLegend"
-            title="Map legend: what every symbol means">
-        <span class="ctrl-ico">@((MarkupString)Icons.Legend)</span>
-        <span class="ctrl-lbl">Legend</span>
-    </button>
+    @* Overflow menu anchor. Shows a dot badge when any contained
+       toggle is currently active so the helm can tell at a glance that
+       Night, Laylines, or Measure are on without opening the menu. *@
+    <div class="ctrl-more-wrap">
+        <button class="ctrl-btn @(MoreMenuOpen ? "active" : "") @(AnyMoreItemActive ? "ctrl-btn-dot" : "")"
+                @onclick="ToggleMoreMenu"
+                title="More: Legend, Night, Laylines, Measure">
+            <span class="ctrl-ico">@((MarkupString)Icons.More)</span>
+            <span class="ctrl-lbl">More</span>
+        </button>
+    </div>
 
     <div class="ctrl-sep"></div>
 
@@ -23,15 +32,10 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Compass)</span>
         <span class="ctrl-lbl">@OrientationLabel</span>
     </button>
-    <button class="ctrl-btn @(NightMode ? "active" : "")"
-            @onclick="NightClicked"
-            @onpointerdown="StartNightHold"
-            @onpointerup="EndNightHold"
-            @onpointerleave="EndNightHold"
-            @onpointercancel="EndNightHold"
-            title="Night mode (N) -- hold for Dark Ops (chrome-off)">
-        <span class="ctrl-ico">@((MarkupString)Icons.Moon)</span>
-        <span class="ctrl-lbl">Night</span>
+    <button class="ctrl-btn" @onclick="OnCentreOnBoat"
+            title="Centre on boat (one-shot; doesn't engage Follow)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Centre)</span>
+        <span class="ctrl-lbl">Centre</span>
     </button>
 
     <div class="ctrl-sep"></div>
@@ -51,57 +55,6 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
         <span class="ctrl-lbl">Fit</span>
     </button>
-    @* Low-frequency view tools tucked into a More menu so the main bar
-       doesn't run to 13 buttons on a phone. Anything the user actively
-       engages (Measure on, Laylines on) stays on the main bar so the
-       "I turned this on" state is always visible -- overflow-hidden
-       active toggles would be a footgun. *@
-    @if (LaylinesVisible)
-    {
-        <button class="ctrl-btn active" @onclick="OnToggleLaylines" title="Laylines (L)">
-            <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
-            <span class="ctrl-lbl">Laylines</span>
-        </button>
-    }
-    @if (MeasureActive)
-    {
-        <button class="ctrl-btn active" @onclick="OnToggleMeasure"
-                title="Measure (D) -- tap to drop ruler points">
-            <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
-            <span class="ctrl-lbl">Measure</span>
-        </button>
-    }
-    <div class="ctrl-more-wrap">
-        <button class="ctrl-btn @(MoreMenuOpen ? "active" : "")" @onclick="ToggleMoreMenu"
-                title="More tools: Centre, Laylines, Measure">
-            <span class="ctrl-ico">@((MarkupString)Icons.More)</span>
-            <span class="ctrl-lbl">More</span>
-        </button>
-        @if (MoreMenuOpen)
-        {
-            <div class="ctrl-more-menu" @onclick:stopPropagation>
-                <button class="ctrl-more-item" @onclick="() => Select(OnCentreOnBoat)"
-                        title="Centre on boat (one-shot; doesn't engage Follow)">
-                    <span class="ctrl-more-ico">@((MarkupString)Icons.Centre)</span>
-                    <span>Centre on boat</span>
-                </button>
-                @if (!LaylinesVisible)
-                {
-                    <button class="ctrl-more-item" @onclick="() => Select(OnToggleLaylines)">
-                        <span class="ctrl-more-ico">@((MarkupString)Icons.Laylines)</span>
-                        <span>Laylines (L)</span>
-                    </button>
-                }
-                @if (!MeasureActive)
-                {
-                    <button class="ctrl-more-item" @onclick="() => Select(OnToggleMeasure)">
-                        <span class="ctrl-more-ico">@((MarkupString)Icons.Measure)</span>
-                        <span>Measure (D)</span>
-                    </button>
-                }
-            </div>
-        }
-    </div>
 
     <div class="ctrl-sep"></div>
 
@@ -111,9 +64,8 @@
         <span class="ctrl-lbl">Add</span>
     </button>
     @* Route button stays visible during edit -- disappearing mid-tap was
-       disorienting ("where did my button go?"). Active styling + disabled
-       flag tells the user they're already editing; the Save/Cancel sit
-       on the route-edit panel above. *@
+       disorienting. Active styling + disabled flag tells the user they're
+       already editing; Save/Cancel live on the route-edit panel above. *@
     <button class="ctrl-btn @(RouteEditMode ? "active" : "")"
             @onclick="OnStartRouteEdit"
             disabled="@RouteEditMode"
@@ -121,9 +73,6 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
         <span class="ctrl-lbl">Route</span>
     </button>
-    @* Race timer is only relevant in Race mode. Keep it visible while
-       actively counting down even if the user flips modes mid-sequence
-       so the start doesn't vanish on them. *@
     @if (SailingMode == "race" || RaceTimerActive)
     {
         <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
@@ -140,6 +89,41 @@
         <span class="ctrl-lbl">Layers</span>
     </button>
 </div>
+
+@* More menu + backdrop, rendered outside .map-controls so the menu can
+   float above without being constrained by the bar's layout, and clicks
+   on the backdrop dismiss it. *@
+@if (MoreMenuOpen)
+{
+    <div class="ctrl-more-backdrop" @onclick="CloseMoreMenu"></div>
+    <div class="ctrl-more-menu" @onclick:stopPropagation>
+        <button class="ctrl-more-item @(LegendOpen ? "ctrl-more-active" : "")"
+                @onclick="() => Select(OnToggleLegend)">
+            <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
+            <span>Legend</span>
+        </button>
+        <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
+                @onclick="NightClicked"
+                @onpointerdown="StartNightHold"
+                @onpointerup="EndNightHold"
+                @onpointerleave="EndNightHold"
+                @onpointercancel="EndNightHold"
+                title="Night mode (N) -- hold for Dark Ops">
+            <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
+            <span>Night @(NightMode ? "(on)" : "")</span>
+        </button>
+        <button class="ctrl-more-item @(LaylinesVisible ? "ctrl-more-active" : "")"
+                @onclick="() => Select(OnToggleLaylines)">
+            <span class="ctrl-more-ico">@((MarkupString)Icons.Laylines)</span>
+            <span>Laylines @(LaylinesVisible ? "(on)" : "") (L)</span>
+        </button>
+        <button class="ctrl-more-item @(MeasureActive ? "ctrl-more-active" : "")"
+                @onclick="() => Select(OnToggleMeasure)">
+            <span class="ctrl-more-ico">@((MarkupString)Icons.Measure)</span>
+            <span>Measure @(MeasureActive ? "(on)" : "") (D)</span>
+        </button>
+    </div>
+}
 
 @code {
     [Parameter] public bool Follow { get; set; }
@@ -171,19 +155,29 @@
     [Parameter] public EventCallback OnToggleLayers { get; set; }
     [Parameter] public EventCallback OnToggleLegend { get; set; }
     [Parameter] public EventCallback OnToggleFab { get; set; }
-
-    /// <summary>Fires on a long-press of the Night button. Parent uses
-    /// this to toggle "Dark Ops" -- the chrome-off mode for long
-    /// offshore watches where the helmsman wants nothing competing
-    /// with the chart + alarms.</summary>
     [Parameter] public EventCallback OnToggleDarkOps { get; set; }
 
-    // --- Night-button long-press detection ----------------------
-    // 700 ms matches the long-press envelope used by the map context
-    // menu (agents.md) -- keeping the tactile vocabulary consistent so
-    // "long-press" means the same thing everywhere. Cancelling the
-    // hold also suppresses the subsequent click so the user doesn't
-    // get both a Dark Ops flip AND a Night toggle.
+    // Dot indicator on the More button when any of its contents is on,
+    // so Night / Laylines / Measure being active is visible without
+    // opening the menu.
+    private bool AnyMoreItemActive => NightMode || LaylinesVisible || MeasureActive;
+
+    // --- More overflow menu ---
+    private bool MoreMenuOpen;
+    private void ToggleMoreMenu() => MoreMenuOpen = !MoreMenuOpen;
+    private void CloseMoreMenu() => MoreMenuOpen = false;
+
+    private async Task Select(EventCallback cb)
+    {
+        MoreMenuOpen = false;
+        await cb.InvokeAsync();
+    }
+
+    // --- Night-button long-press for Dark Ops -----------------------
+    // 700 ms matches the long-press envelope used elsewhere. The hold
+    // runs inside the More menu, because that's where Night now lives.
+    // _nightHoldFired guards the click handler from toggling Night on
+    // top of the dark-ops flip.
     private const int NightHoldMs = 700;
     private CancellationTokenSource? _nightHoldCts;
     private bool _nightHoldFired;
@@ -203,6 +197,7 @@
             await Task.Delay(NightHoldMs, ct);
             if (ct.IsCancellationRequested) return;
             _nightHoldFired = true;
+            MoreMenuOpen = false;
             await OnToggleDarkOps.InvokeAsync();
         }
         catch (OperationCanceledException) { }
@@ -214,9 +209,6 @@
         _nightHoldCts = null;
     }
 
-    // Click-AFTER-pointerup is the mouse / touch sequence we intercept.
-    // When the hold already fired the dark-ops toggle, swallow the click
-    // so Night doesn't also toggle on top. Otherwise propagate normally.
     private async Task NightClicked()
     {
         if (_nightHoldFired)
@@ -224,20 +216,7 @@
             _nightHoldFired = false;
             return;
         }
-        await OnToggleNight.InvokeAsync();
-    }
-
-    // --- More overflow menu ---
-    // Local-only state because the menu is scoped to this component;
-    // closing on selection means the next tap starts fresh.
-    private bool MoreMenuOpen;
-    private void ToggleMoreMenu() => MoreMenuOpen = !MoreMenuOpen;
-
-    // Invoke the chosen action and close the menu. Keeping the close
-    // in one place avoids every item having to remember to do it.
-    private async Task Select(EventCallback cb)
-    {
         MoreMenuOpen = false;
-        await cb.InvokeAsync();
+        await OnToggleNight.InvokeAsync();
     }
 }

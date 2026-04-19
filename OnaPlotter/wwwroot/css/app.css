@@ -2352,18 +2352,40 @@ main:has(.alarm-banner-stack) .hud-top-left {
     font-style: italic;
 }
 
-/* More-menu overflow (Centre, Laylines, Measure). Pops straight up from
-   the button; the button itself stays in the main bar as the anchor. */
+/* More-menu overflow (Legend / Night / Laylines / Measure). Pops UP
+   from the leftmost slot of the control bar. Rendered as a sibling of
+   .map-controls (not a child) so it escapes the bar's flex layout; a
+   full-screen backdrop below catches outside clicks to dismiss. */
 .ctrl-more-wrap {
     position: relative;
     display: inline-flex;
 }
-.ctrl-more-menu {
+/* Dot on the More button when any contained toggle is active, so an
+   "on" state doesn't hide behind a closed menu. */
+.ctrl-btn-dot::after {
+    content: "";
     position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    min-width: 180px;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--sev-warn);
+    box-shadow: 0 0 4px var(--sev-warn);
+}
+.ctrl-btn { position: relative; }  /* anchor for ::after */
+
+.ctrl-more-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-controls) - 1);
+    background: transparent;
+}
+.ctrl-more-menu {
+    position: fixed;
+    bottom: calc(var(--panel-bottom) + 2px);
+    left: 12px;
+    min-width: 200px;
     padding: 4px;
     background: rgba(20, 26, 38, 0.96);
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -2371,7 +2393,7 @@ main:has(.alarm-banner-stack) .hud-top-left {
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(6px);
     z-index: var(--z-controls);
-    animation: fab-pop 0.16s ease-out;
+    animation: fab-pop-up 0.16s ease-out;
 }
 .ctrl-more-item {
     display: flex;
@@ -2391,6 +2413,10 @@ main:has(.alarm-banner-stack) .hud-top-left {
 }
 .ctrl-more-item:hover {
     background: rgba(255, 255, 255, 0.08);
+}
+.ctrl-more-item.ctrl-more-active {
+    background: rgba(96, 165, 250, 0.18);
+    color: #93c5fd;
 }
 .ctrl-more-ico {
     width: 20px;
@@ -2443,6 +2469,19 @@ main:has(.alarm-banner-stack) .hud-top-left {
    solid swatch of the right hue anchors the name in the reader's
    memory well enough. */
 .legend-own        { background: #ec4899; }                   /* magenta */
+/* COG-vector swatch: dashed pink line like the actual overlay. Built
+   as a repeating linear-gradient so the swatch reads as "line" at
+   a glance. */
+.legend-cog-vector {
+    background: linear-gradient(90deg,
+        transparent 0, transparent 3px,
+        #f9a8d4 3px, #f9a8d4 9px,
+        transparent 9px, transparent 15px,
+        #f9a8d4 15px, #f9a8d4 21px);
+    height: 4px;
+    align-self: center;
+    border-radius: 2px;
+}
 .legend-ais-sail   { background: #e28862; }                   /* warm coral */
 .legend-ais-fish   { background: #d4a850; }                   /* muted gold */
 .legend-ais-commercial { background: #7d9b76; }               /* sage green */

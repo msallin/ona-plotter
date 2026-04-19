@@ -228,6 +228,11 @@ public sealed class SignalkClient : IAsyncDisposable
                 // just leaves names to trickle in via live deltas.
                 _ = Task.Run(() => SeedVesselNamesFromRestAsync(ct), ct);
 
+                // Identify ourselves via REST so we can filter own-boat out
+                // of the AIS list even on servers that never emit a hello
+                // with "self" or push own-boat only as "vessels.<urn>".
+                _ = Task.Run(() => ResolveSelfContextFromRestAsync(ct), ct);
+
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
 
@@ -318,16 +323,19 @@ public sealed class SignalkClient : IAsyncDisposable
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("self", out var selfProp))
                     {
-                        _selfContext = selfProp.GetString() ?? "";
-                        _logger.LogInformation("Self context: {Self}", _selfContext);
+                        SetSelfContext(selfProp.GetString());
                     }
                 }
                 return;
             }
 
-            bool isSelf = string.IsNullOrEmpty(delta.Context)
-                || delta.Context == "vessels.self"
-                || delta.Context == _selfContext;
+            // Own-boat identification. Own-boat data may arrive BEFORE the
+            // hello message resolves _selfContext, or on servers that only
+            // emit the URN form ("vessels.urn:mrn:imo:mmsi:..."). Match all
+            // three shapes: empty, "vessels.self", and the normalised
+            // _selfContext. SetSelfContext also retro-evicts any vessel
+            // we stored in AIS before we knew who we were.
+            bool isSelf = IsSelfContext(delta.Context);
 
             if (isSelf)
                 ProcessSelfDelta(delta);
@@ -343,6 +351,41 @@ public sealed class SignalkClient : IAsyncDisposable
             // Don't let a single bad message crash the receive loop.
             _logger.LogWarning(ex, "Error processing SignalK message");
         }
+    }
+
+    /// <summary>
+    /// Normalises the self identifier supplied by the server's hello
+    /// message and retro-evicts any vessel we may have stored in
+    /// <see cref="AisStore"/> for that context before we knew about it.
+    /// Servers supply self either as "vessels.urn:mrn:imo:mmsi:..." OR
+    /// just "urn:mrn:imo:mmsi:..."; we store the prefixed form so
+    /// equality checks against delta contexts (always prefixed) match.
+    /// </summary>
+    internal void SetSelfContext(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            _selfContext = "";
+            return;
+        }
+        _selfContext = raw.StartsWith("vessels.", StringComparison.Ordinal)
+            ? raw
+            : "vessels." + raw;
+        _logger.LogInformation("Self context: {Self}", _selfContext);
+
+        // Retro-evict: if an AIS delta for this context arrived before
+        // the hello (or from a server that never sends "vessels.self"),
+        // we'll have own-boat sitting in the AIS list. Remove it and
+        // blocklist so subsequent deltas can't re-add.
+        _ais.Evict(_selfContext);
+    }
+
+    internal bool IsSelfContext(string? context)
+    {
+        if (string.IsNullOrEmpty(context)) return true;
+        if (context == "vessels.self") return true;
+        if (string.IsNullOrEmpty(_selfContext)) return false;
+        return context == _selfContext;
     }
 
     private void ProcessSelfDelta(SignalkDelta delta)
@@ -631,6 +674,29 @@ public sealed class SignalkClient : IAsyncDisposable
     /// Never throws: any network or parse failure is logged at Warning.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Asks SignalK who "self" is by hitting /signalk/v1/api/self. That
+    /// endpoint returns just the self URN (as a JSON string), which
+    /// lets us tag own-boat even when the delta stream never publishes
+    /// the hello envelope or uses only the prefixed-URN form.
+    /// </summary>
+    private async Task ResolveSelfContextFromRestAsync(CancellationToken ct)
+    {
+        try
+        {
+            var url = _baseUrl.Combine("/signalk/v1/api/self");
+            using var res = await _http.GetAsync(url, ct);
+            if (!res.IsSuccessStatusCode) return;
+            var raw = (await res.Content.ReadAsStringAsync(ct)).Trim().Trim('"');
+            if (!string.IsNullOrWhiteSpace(raw)) SetSelfContext(raw);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "REST self-context resolution failed");
+        }
+    }
+
     private async Task SeedVesselNamesFromRestAsync(CancellationToken ct)
     {
         try

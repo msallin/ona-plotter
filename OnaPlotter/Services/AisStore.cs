@@ -34,6 +34,10 @@ public sealed class AisStore
 
     public void Apply(string context, string path, object? value)
     {
+        // Block-list guard: once SignalkClient identifies the self-URN,
+        // any further deltas on that context are dropped so own-boat
+        // can't re-emerge in the AIS list after a manual or late evict.
+        if (_blocklist.Contains(context)) return;
         var vessel = _vessels.GetOrAdd(context, ctx =>
         {
             var v = new AisVessel(ctx);
@@ -129,6 +133,24 @@ public sealed class AisStore
             OnAisUpdated?.Invoke();
         }
     }
+
+    /// <summary>
+    /// Removes a context from the store -- used once SignalkClient learns
+    /// the self-URN AFTER own-boat deltas were already routed to AIS
+    /// (hello message arrives late, or server doesn't send "vessels.self"
+    /// at all and only uses the URN form). Also registers the context in
+    /// a blocklist so later deltas on the same context are ignored.
+    /// </summary>
+    public void Evict(string context)
+    {
+        if (string.IsNullOrEmpty(context)) return;
+        _blocklist.Add(context);
+        if (_vessels.TryRemove(context, out _))
+            Interlocked.Increment(ref _version);
+        OnAisUpdated?.Invoke();
+    }
+
+    private readonly HashSet<string> _blocklist = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Overwrites the vessel name, typically from an external enrichment source

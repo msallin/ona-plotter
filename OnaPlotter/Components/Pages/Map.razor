@@ -128,7 +128,7 @@
         <div class="welcome-card" @onclick:stopPropagation role="dialog"
              aria-labelledby="welcome-title">
             <h3 id="welcome-title">Welcome aboard</h3>
-            <p class="welcome-sub">Three things to get you sailing:</p>
+            <p class="welcome-sub">Four things to get you sailing:</p>
             <ol class="welcome-steps">
                 <li>
                     <strong>Turn on a chart.</strong> Tap
@@ -144,6 +144,13 @@
                     <strong>Long-press the map</strong> (or right-click) for
                     options: Create Waypoint, Add Note, Add Region,
                     Navigate Here, Route with wind.
+                </li>
+                <li>
+                    <strong>Check the <span class="welcome-kbd">More</span>
+                    button</strong> (leftmost on the bottom bar) for the
+                    symbol <em>Legend</em>, Night mode, Laylines and
+                    Measure. A dot on the button means something in there
+                    is currently on.
                 </li>
             </ol>
             <button class="welcome-dismiss map-btn active" @onclick="DismissWelcome">

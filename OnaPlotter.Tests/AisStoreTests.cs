@@ -255,4 +255,44 @@ public class AisStoreTests
 
         await Assert.That(raised).IsEqualTo(1);
     }
+
+    [Test]
+    public async Task Evict_Removes_And_Blocks_Re_Add()
+    {
+        // The "self arrived late" scenario: own-boat was stored as AIS
+        // before SignalkClient learned the self URN. Evict must drop the
+        // entry AND ensure subsequent deltas on that context don't
+        // re-create it.
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        const string self = "vessels.urn:mrn:imo:mmsi:999999999";
+
+        store.Apply(self, "navigation.position", pos);
+        await Assert.That(store.Count).IsEqualTo(1);
+
+        store.Evict(self);
+        await Assert.That(store.Count).IsEqualTo(0);
+
+        // Further deltas on the evicted context must be ignored.
+        store.Apply(self, "navigation.position", pos);
+        store.Apply(self, "name", JsonSerializer.SerializeToElement("Own Boat"));
+        await Assert.That(store.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Evict_Fires_OnAisUpdated_For_Map_Refresh()
+    {
+        // Removal must push the vessel list to subscribers; otherwise the
+        // Map page keeps rendering the ghost marker for own-boat-as-AIS
+        // until another vessel update lands.
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:foo", "navigation.position", pos);
+
+        int raised = 0;
+        store.OnAisUpdated += () => raised++;
+        store.Evict("vessels.urn:foo");
+
+        await Assert.That(raised).IsEqualTo(1);
+    }
 }

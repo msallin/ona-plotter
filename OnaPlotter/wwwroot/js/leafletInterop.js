@@ -564,6 +564,16 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // featureGroup (not layerGroup) so zoomToTrack can call getBounds() on it.
     trackLayer = L.featureGroup().addTo(map);
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
+    // Bind an empty popup and rebuild its content on every open so the
+    // numbers match the current NavigationData snapshot rather than a
+    // frozen one from the last click. updatePosition passes lat/lon and
+    // the other fields; we stash them on the marker for popupopen to
+    // read without closing over state that might drift.
+    boatMarker.bindPopup('', { className: 'ais-popup', maxWidth: 260 });
+    boatMarker.on('popupopen', () => {
+        const data = boatMarker._onaSelfData || {};
+        boatMarker.setPopupContent(buildSelfPopupHtml(data));
+    });
     boatVector = L.polyline([], { color: '#f9a8d4', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
 
     // Map click: in route edit mode, add waypoint. In measurement
@@ -699,6 +709,10 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     if (!map || !boatMarker) return;
 
     selfLat = lat; selfLon = lon; selfCogRad = cogRad; selfSogMs = sogMs;
+
+    // Stash the latest snapshot on the marker so popupopen can render
+    // fresh numbers without a closed-over stale copy.
+    boatMarker._onaSelfData = { lat, lon, headingRad, cogRad, sogMs };
 
     boatMarker.setLatLng([lat, lon]);
     rotateMarker(boatMarker, headingRad ?? cogRad);
@@ -2380,6 +2394,28 @@ export function addRegion(id, rings, title, description) {
     }
     group.addTo(map);
     regionLayers.set(id, group);
+}
+
+// Own-boat popup: same shape as the AIS popup minus the vessel-lookup
+// links / buddy toggle. Rebuilt on every popupopen from the marker's
+// latest data snapshot so the numbers track nav updates live.
+function buildSelfPopupHtml(data) {
+    const lat = data.lat, lon = data.lon;
+    const sog = data.sogMs != null ? (data.sogMs * 1.94384).toFixed(1) : '--';
+    const cogDeg = data.cogRad != null ? (data.cogRad * DEG).toFixed(0) : '--';
+    const hdgDeg = data.headingRad != null ? (data.headingRad * DEG).toFixed(0) : '--';
+    const pos = (lat != null && lon != null)
+        ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+        : '--';
+    return `<div class="ais-popup-content">` +
+        `<div class="ais-popup-title">&#9733; Own boat</div>` +
+        `<table class="ais-popup-table">` +
+            `<tr><td>Pos</td><td>${pos}</td></tr>` +
+            `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
+            `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
+            `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
+        `</table>` +
+        `</div>`;
 }
 
 function buildRegionPopupHtml(id, title, description) {
