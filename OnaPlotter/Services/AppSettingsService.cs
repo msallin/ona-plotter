@@ -18,6 +18,7 @@ public sealed class AppSettingsService : IAppSettings
     private bool _initialized;
 
     public bool NightMode { get; private set; }
+    public bool NightModeAuto { get; private set; } = false;
     public string NightModePreset { get; private set; } = "soft";
     public string Theme { get; private set; } = "system";
     public string MapOrientation { get; private set; } = "north";
@@ -54,6 +55,7 @@ public sealed class AppSettingsService : IAppSettings
         {
             if (_initialized) return;
             NightMode = await LoadBool("nightMode", false);
+            NightModeAuto = await LoadBool("nightModeAuto.v1", false);
             NightModePreset = NormalizeNightPreset(await LoadString("nightModePreset"));
             Theme = NormalizeTheme(await LoadString("theme"));
             MapOrientation = await LoadString("mapOrientation") ?? "north";
@@ -85,6 +87,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         NightMode = value;
         await Save("nightMode", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetNightModeAutoAsync(bool value)
+    {
+        NightModeAuto = value;
+        await Save("nightModeAuto.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

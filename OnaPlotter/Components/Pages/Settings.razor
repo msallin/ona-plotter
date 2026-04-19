@@ -279,6 +279,18 @@
                         dark-adapted vision.
                     </small>
                 }
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           checked="@AppSettings.NightModeAuto"
+                           @onchange="OnNightAutoChanged" />
+                    <label class="form-check-label">Auto flip at dusk</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Uses the SignalK <code>environment.sun.altitude</code> path (install a
+                    solar-position plugin). Flips on near civil twilight, off past dawn.
+                    A manual Night tap suppresses the auto-flip for 1 hour so the app
+                    doesn't fight your choice.
+                </small>
             </div>
         </div>
     </div>
@@ -358,6 +370,12 @@
 
     private async Task OnNightPresetChanged(string value)
         => await AppSettings.SetNightModePresetAsync(value);
+
+    private async Task OnNightAutoChanged(ChangeEventArgs e)
+    {
+        bool val = e.Value is bool b && b;
+        await AppSettings.SetNightModeAutoAsync(val);
+    }
 
     private async Task OnThemeChanged(string value) => await AppSettings.SetThemeAsync(value);
 

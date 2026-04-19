@@ -1012,6 +1012,11 @@
         // Keep the sticky last-heading field current for the HUD compass needle.
         if (Data.Heading is not null) lastHeading = Data.Heading;
 
+        // Auto-flip Night mode near / past civil twilight if enabled.
+        // Throttled to once per 30 s because sun altitude changes slowly
+        // and we don't want to thrash JS + settings writes on every delta.
+        await CheckAutoNightAsync();
+
         try
         {
             if (Data.Latitude is not null && Data.Longitude is not null)
@@ -1946,10 +1951,48 @@
 
     private async Task ToggleNightMode()
     {
+        _lastManualNightToggleUtc = DateTime.UtcNow;
         nightMode = !nightMode;
         await Settings.SetNightModeAsync(nightMode);
         if (module is not null)
             await module.InvokeVoidAsync("setNightMode", nightMode);
+    }
+
+    // Auto-night plumbing. Dormant unless the user opts in via Settings
+    // AND the server publishes environment.sun.altitude. A manual Night
+    // tap within the last hour suppresses the auto-flip so a helmsman
+    // who wants day-mode at dusk isn't fought.
+    private const double NightSunAltitudeThresholdRad = -0.1;  // ~civil twilight
+    private const int ManualNightOverrideMinutes = 60;
+    private DateTime? _lastManualNightToggleUtc;
+    private DateTime _lastAutoNightCheckUtc = DateTime.MinValue;
+
+    private async Task CheckAutoNightAsync()
+    {
+        if (!Settings.NightModeAuto) return;
+        if (Data.SunAltitude is not double alt) return;
+
+        var now = DateTime.UtcNow;
+        // 30 s throttle -- sun altitude changes at ~0.004 rad/min so we
+        // don't need sub-minute responsiveness.
+        if ((now - _lastAutoNightCheckUtc).TotalSeconds < 30) return;
+        _lastAutoNightCheckUtc = now;
+
+        // Respect recent manual toggles.
+        if (_lastManualNightToggleUtc is DateTime t
+            && (now - t).TotalMinutes < ManualNightOverrideMinutes) return;
+
+        bool wantNight = alt < NightSunAltitudeThresholdRad;
+        if (wantNight == nightMode) return;
+
+        nightMode = wantNight;
+        await Settings.SetNightModeAsync(nightMode);
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("setNightMode", nightMode); }
+            catch (JSDisconnectedException) { return; }
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>

@@ -62,6 +62,13 @@ public sealed class NavigationData
     public DateTime? TideTimeLow { get; private set; }
     public string? TideStationName { get; private set; }
 
+    /// <summary>Sun altitude in radians above the horizon. Positive =
+    /// sun above horizon (day); negative = below (night). Typical
+    /// thresholds: 0 rad = sunset/sunrise; -0.1 rad ≈ civil twilight;
+    /// -0.21 rad ≈ nautical twilight. Null on servers without a solar-
+    /// position plugin.</summary>
+    public double? SunAltitude { get; private set; }
+
     /// <summary>
     /// Applies a single SignalK path/value pair to the navigation state.
     /// Returns true if the value was recognized and applied.
@@ -150,6 +157,9 @@ public sealed class NavigationData
                     break;
                 case "environment.tide.heightLow":
                     TideHeightLow = value;
+                    break;
+                case "environment.sun.altitude":
+                    SunAltitude = value;
                     break;
                 default:
                     return false;

@@ -8,6 +8,13 @@ public interface IAppSettings
 {
     bool NightMode { get; }
 
+    /// <summary>When true, Night mode auto-engages based on SignalK's
+    /// <c>environment.sun.altitude</c> (civil-twilight threshold). A
+    /// manual toggle in the last hour suppresses the auto-flip so a
+    /// helmsman who wants day mode at dusk isn't fought. Default OFF --
+    /// plenty of sailors prefer to decide themselves.</summary>
+    bool NightModeAuto { get; }
+
     /// <summary>Night-mode flavour. "soft" is the light-red default (warm
     /// amber with a touch of blue); "amber" is warmer and brighter for
     /// sunset; "red" is the classic helm-at-night single-channel red that
@@ -90,6 +97,7 @@ public interface IAppSettings
 
     Task InitializeAsync();
     Task SetNightModeAsync(bool value);
+    Task SetNightModeAutoAsync(bool value);
     Task SetNightModePresetAsync(string value);
     Task SetThemeAsync(string value);
     Task SetMapOrientationAsync(string value);

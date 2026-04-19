@@ -111,7 +111,14 @@ public sealed class SignalkClient : IAsyncDisposable
         "environment.tide.heightLow",
         "environment.tide.timeHigh",
         "environment.tide.timeLow",
-        "environment.tide.stationName"
+        "environment.tide.stationName",
+        // Sun altitude in radians above the horizon. Published by SignalK
+        // implementations that include a solar-position calculator
+        // (signalk-derived-data and similar). Drives the auto-night-mode
+        // flip: altitude < -0.1 rad (~civil twilight) = night-eligible.
+        // Paths just never emit on servers without such a plugin; the
+        // auto toggle stays dormant and the user can flip Night manually.
+        "environment.sun.altitude"
     ];
 
     private static readonly string[] AisPaths =
