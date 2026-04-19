@@ -85,6 +85,12 @@ public interface IAppSettings
     /// day value applies at night too.</summary>
     double DeadmanNightMinutes { get; }
 
+    /// <summary>How long a snooze silences a specific alarm target, in
+    /// minutes. Default 10. Short (5 min) for busy harbours where
+    /// threats resolve fast; long (30-60 min) for a distant freighter
+    /// that will stay in range for hours. Clamped to 1+ by the manager.</summary>
+    int SnoozeDurationMinutes { get; }
+
     /// <summary>Big-type mode: scales the four corner HUD values up so
     /// they're readable from across a cockpit (older eyes, 21" helm
     /// screen, sunlight). Pure CSS via a .big-type class on .page.</summary>
@@ -139,6 +145,7 @@ public interface IAppSettings
     Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetDeadmanTimeoutMinutesAsync(double value);
     Task SetDeadmanNightMinutesAsync(double value);
+    Task SetSnoozeDurationMinutesAsync(int value);
     Task SetBigTypeAsync(bool value);
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);

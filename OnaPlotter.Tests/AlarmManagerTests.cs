@@ -232,6 +232,56 @@ public class AlarmManagerTests
         return (mgr, clock, settings);
     }
 
+    // Variant that wires IAppSettings so the manager's SnoozeDurationMinutes
+    // reflects the user's choice instead of the fallback const.
+    private static (AlarmManager mgr, MutableClock clock, FakeSettings settings)
+        NewMgrWithSettings(FakeSettings settings, params IAlarmRule[] rules)
+    {
+        var clock = new MutableClock();
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now),
+                   (IKeyValueStore?)null, (IAppSettings?)settings],
+            culture: null)!;
+        return (mgr, clock, settings);
+    }
+
+    [Test]
+    public async Task SnoozeDuration_ComesFromSettings_NotTheConst()
+    {
+        // User set 30 min in Settings -> snoozing an alarm quiets it for
+        // 30 min, not the 10-min fallback. Asserts both the exposed
+        // SnoozeDurationMinutes getter and the SnoozedTarget's ExpiresAt.
+        var settings = new FakeSettings { SnoozeDurationMinutes = 30 };
+        var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, clock, _) = NewMgrWithSettings(settings, cpa);
+
+        await Assert.That(mgr.SnoozeDurationMinutes).IsEqualTo(30);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.SnoozeAsync(mgr.ActiveAlarm!);
+
+        var snoozed = mgr.SnoozedTargets.Single(s => s.TargetKey == "vessels.x");
+        var duration = snoozed.ExpiresAt - clock.Now;
+        await Assert.That((int)duration.TotalMinutes).IsEqualTo(30);
+    }
+
+    [Test]
+    public async Task SnoozeDuration_FallsBackToConst_WhenNoSettingsWired()
+    {
+        // Tests using the legacy 2-arg ctor (no settings) still get the
+        // 10-min default. Regression guard against the const being
+        // silently dropped to 0 or some other value mid-refactor.
+        var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, _, _) = NewMgrWith(cpa);
+
+        await Assert.That(mgr.SnoozeDurationMinutes).IsEqualTo(AlarmManager.SnoozeMinutes);
+    }
+
     [Test]
     public async Task MultipleRulesFire_StackedBySeverityThenPriority()
     {

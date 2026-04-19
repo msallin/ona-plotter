@@ -153,6 +153,18 @@
                     <span class="input-group-text">min</span>
                 </div>
                 <small class="text-muted">Only vessels whose CPA occurs within this window raise the alarm.</small>
+                <label class="form-label mt-2">Snooze duration</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="120"
+                           value="@AppSettings.SnoozeDurationMinutes"
+                           @onchange="(e) => OnSnoozeDurationChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">
+                    How long the "Snooze" button silences a specific alarm target.
+                    Short (5 min) for busy harbours; long (30-60 min) for a distant
+                    freighter that will stay in range for hours.
+                </small>
             </div>
         </div>
     </div>
@@ -382,6 +394,15 @@
         if (System.Math.Abs(clamped - raw) > 0.001)
             Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
         await AppSettings.SetDeadmanNightMinutesAsync(clamped);
+    }
+
+    private async Task OnSnoozeDurationChanged(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int raw)) return;
+        int clamped = System.Math.Clamp(raw, 1, 120);
+        if (clamped != raw)
+            Toasts.Show($"Clamped to {clamped} min (range 1–120)");
+        await AppSettings.SetSnoozeDurationMinutesAsync(clamped);
     }
 
     private async Task OnLookaheadChanged(ChangeEventArgs e)

@@ -8,6 +8,10 @@ public sealed class AlarmManager : IAlarmManager
     /// on high-rate SignalK deltas.</summary>
     public const int EvaluationIntervalMs = 1_000;
 
+    /// <summary>Fallback snooze duration used when no IAppSettings is wired
+    /// (legacy test ctors). Production callers override via IAppSettings
+    /// so the user can set a shorter / longer snooze to match the
+    /// passage style -- loitering fishing fleet vs. a distant freighter.</summary>
     public const int SnoozeMinutes = 10;
 
     /// <summary>After a dismiss, suppress re-firing the same (title, target)
@@ -39,6 +43,7 @@ public sealed class AlarmManager : IAlarmManager
     private readonly Dictionary<string, SnoozedTarget> _snoozed = [];
     private readonly Func<DateTime> _now;
     private readonly IKeyValueStore? _kv;
+    private readonly IAppSettings? _settings;
     private bool _initialized;
 
     // Active alarms keyed by (Title, TargetKey) so the same rule firing on
@@ -75,33 +80,47 @@ public sealed class AlarmManager : IAlarmManager
         .Take(MaxActiveAlarms)
         .ToList();
 
+    public int HiddenAlarmsCount => Math.Max(0, _active.Count - MaxActiveAlarms);
+
     public IReadOnlyList<SnoozedTarget> SnoozedTargets => _snoozed.Values
         .OrderBy(s => s.ExpiresAt)
         .ToList();
 
     public IReadOnlyList<DismissedAlarm> DismissedHistory => _history.AsReadOnly();
 
-    public int SnoozeDurationMinutes => SnoozeMinutes;
+    public int SnoozeDurationMinutes =>
+        // User-configurable via IAppSettings. Falls back to the 10-min
+        // default when settings aren't wired (test ctors, DI ordering
+        // race). Clamp at 1 min minimum -- zero would snooze forever.
+        (_settings?.SnoozeDurationMinutes is int m && m > 0) ? m : SnoozeMinutes;
 
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
-    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv)
-        : this(rules, () => DateTime.UtcNow, kv) { }
+    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings)
+        : this(rules, () => DateTime.UtcNow, kv, settings) { }
 
     // Two-arg overload for tests that don't care about persistence.
     // Keeps the `args: [rules, now]` Activator.CreateInstance pattern
-    // working after the KV field landed.
+    // working.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now)
-        : this(rules, now, null) { }
+        : this(rules, now, null, null) { }
+
+    // Three-arg overload kept so existing tests invoking Activator with
+    // `(rules, now, kv)` still resolve. Defaults settings to null -> the
+    // SnoozeDurationMinutes fallback applies.
+    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
+        IKeyValueStore? kv)
+        : this(rules, now, kv, null) { }
 
     // Full-arg internal ctor.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
-        IKeyValueStore? kv)
+        IKeyValueStore? kv, IAppSettings? settings)
     {
         _rules = rules.OrderBy(r => r.Priority).ToList();
         _now = now;
         _kv = kv;
+        _settings = settings;
     }
 
     public async Task InitializeAsync()
@@ -252,7 +271,7 @@ public sealed class AlarmManager : IAlarmManager
         var now = _now();
         var label = alarm.TargetLabel ?? alarm.TargetKey;
         _snoozed[alarm.TargetKey] = new SnoozedTarget(
-            alarm.TargetKey, label, now.AddMinutes(SnoozeMinutes));
+            alarm.TargetKey, label, now.AddMinutes(SnoozeDurationMinutes));
 
         // Remove every active alarm referring to this target, not just the
         // snoozed one - all CPA fields for "vessels.a" should go quiet

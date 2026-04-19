@@ -827,6 +827,11 @@
         welcomeVisible = false;
         try { await Kv.SetAsync(WelcomeKey, "1"); } catch { }
         StateHasChanged();
+        // After dismissing the welcome card, chain the touch coachmark so
+        // first-run users still learn about long-press. Without this the
+        // coachmark was suppressed (blocked on first visit), then never
+        // surfaced on session 2 for users who don't return quickly.
+        await MaybeShowTouchCoachmarkAsync();
     }
 
     private async Task MaybeShowTouchCoachmarkAsync()

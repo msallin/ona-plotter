@@ -1275,6 +1275,26 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     .alarm-snooze { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
 }
 
+/* Overflow hint when _active alarm count exceeds MaxActiveAlarms so the
+   banner doesn't silently hide lower-priority alarms. Muted grey so it
+   doesn't compete with the Warn / Danger colours above it. */
+.alarm-overflow {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.7);
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    -webkit-tap-highlight-color: transparent;
+    margin-top: 2px;
+}
+.alarm-overflow:hover { background: rgba(255, 255, 255, 0.08); }
+@media (pointer: coarse) {
+    .alarm-overflow { min-height: 40px; font-size: 0.85rem; }
+}
+
 @media (min-width: 641px) {
     .alarm-banner { left: 220px; } /* clear the sidebar */
 }

@@ -30,6 +30,7 @@ internal sealed class FakeSettings : IAppSettings
     public double ManualAnchorRadiusMeters { get; set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; set; } = 0.0;
     public double DeadmanNightMinutes { get; set; } = 15.0;
+    public int SnoozeDurationMinutes { get; set; } = 10;
     public bool BigType { get; set; } = false;
     public string SailingMode { get; set; } = "cruise";
     public bool KeepScreenAwake { get; set; } = true;
@@ -59,6 +60,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetManualAnchorRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetDeadmanTimeoutMinutesAsync(double v) { DeadmanTimeoutMinutes = v; return Task.CompletedTask; }
     public Task SetDeadmanNightMinutesAsync(double v) { DeadmanNightMinutes = v; return Task.CompletedTask; }
+    public Task SetSnoozeDurationMinutesAsync(int v) { SnoozeDurationMinutes = v; return Task.CompletedTask; }
     public Task SetBigTypeAsync(bool v) => Task.CompletedTask;
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;

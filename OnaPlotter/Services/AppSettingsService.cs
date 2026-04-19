@@ -35,6 +35,7 @@ public sealed class AppSettingsService : IAppSettings
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
     public double DeadmanNightMinutes { get; private set; } = 15.0;
+    public int SnoozeDurationMinutes { get; private set; } = 10;
     public bool BigType { get; private set; } = false;
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
@@ -76,6 +77,7 @@ public sealed class AppSettingsService : IAppSettings
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
             DeadmanNightMinutes = await LoadDouble("deadmanNightMinutes.v1", 15.0);
+            SnoozeDurationMinutes = (int)await LoadDouble("snoozeDurationMinutes.v1", 10.0);
             BigType = await LoadBool("bigType.v1", false);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
@@ -245,6 +247,16 @@ public sealed class AppSettingsService : IAppSettings
     {
         DeadmanNightMinutes = value;
         await Save("deadmanNightMinutes.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetSnoozeDurationMinutesAsync(int value)
+    {
+        // Clamp 1 min minimum (zero would snooze forever -- that's dismiss).
+        // Upper bound 120 to keep a runaway value from locking an alarm
+        // quiet for days after a power cycle.
+        SnoozeDurationMinutes = System.Math.Clamp(value, 1, 120);
+        await Save("snoozeDurationMinutes.v1", SnoozeDurationMinutes.ToString(CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

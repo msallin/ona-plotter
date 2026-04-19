@@ -23,6 +23,12 @@ public interface IAlarmManager
     /// exceeded.</summary>
     IReadOnlyList<AlarmInfo> ActiveAlarms { get; }
 
+    /// <summary>How many alarms are currently hidden by the cap on
+    /// <see cref="ActiveAlarms"/>. UI uses this to show a "+N more"
+    /// affordance so the user knows dismissing the top alarm will
+    /// reveal another beneath. Zero when the stack is under cap.</summary>
+    int HiddenAlarmsCount { get; }
+
     /// <summary>Targets the user has silenced, newest first. Each entry
     /// includes a label and expiry so the UI can render a countdown chip.</summary>
     IReadOnlyList<SnoozedTarget> SnoozedTargets { get; }

@@ -55,6 +55,7 @@
             var activeAlarms = Alarms.ActiveAlarms;
             var snoozed = Alarms.SnoozedTargets;
         }
+        @{ var hiddenAlarms = Alarms.HiddenAlarmsCount; }
         @if (activeAlarms.Count > 0)
         {
             <div class="alarm-banner-stack">
@@ -111,6 +112,19 @@
                             </button>
                         }
                     </div>
+                }
+                @if (hiddenAlarms > 0)
+                {
+                    @* Overflow hint: tells the helm that dismissing the top
+                       alarm will reveal another one beneath. Clicking opens
+                       the alarm log where the full list lives. Matches the
+                       banner styling so it doesn't draw more attention than
+                       the actual alarms above it. *@
+                    <button class="alarm-overflow"
+                            @onclick="ToggleAlarmLog"
+                            title="Open alarm log to see all @(activeAlarms.Count + hiddenAlarms) active alarms">
+                        +@hiddenAlarms more (tap to open log)
+                    </button>
                 }
             </div>
         }
