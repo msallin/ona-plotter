@@ -33,6 +33,7 @@ public sealed class AppSettingsService : IAppSettings
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
+    public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -68,6 +69,7 @@ public sealed class AppSettingsService : IAppSettings
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
+            WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
@@ -198,6 +200,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         KeepScreenAwake = value;
         await Save("keepScreenAwake.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetWaypointArrivalRadiusMetersAsync(double value)
+    {
+        WaypointArrivalRadiusMeters = value;
+        await Save("waypointArrivalRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

@@ -70,6 +70,13 @@ public interface IAppSettings
     /// sailors can turn it off if running on battery without shore power.
     /// </summary>
     bool KeepScreenAwake { get; }
+
+    /// <summary>Waypoint arrival radius in metres. The WaypointApproach
+    /// alarm fires when the distance-to-go to the active course's next
+    /// waypoint drops below this threshold. Defaults to 50 m -- tight
+    /// enough to mean "you've arrived", wide enough to account for GPS
+    /// jitter and typical inshore turn radii.</summary>
+    double WaypointArrivalRadiusMeters { get; }
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -98,6 +105,7 @@ public interface IAppSettings
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);
+    Task SetWaypointArrivalRadiusMetersAsync(double value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
     Task SetChartOrderAsync(IEnumerable<string> ids);

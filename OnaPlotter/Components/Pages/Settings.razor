@@ -95,6 +95,24 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
+                <label class="form-label">Waypoint Arrival Radius</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="5" min="0" max="1000"
+                           value="@AppSettings.WaypointArrivalRadiusMeters"
+                           @onchange="(e) => OnWaypointArrivalChanged(e)" />
+                    <span class="input-group-text">m</span>
+                </div>
+                <small class="text-muted">
+                    Distance at which an active-course waypoint triggers the APPROACH
+                    alarm. Set to 0 to disable. Typical inshore: 30-50 m.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
                 <label class="form-label">Guard Zone Lookahead</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="1" max="60"
@@ -277,6 +295,14 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetCpaAlarmThresholdAsync(val);
+    }
+
+    private async Task OnWaypointArrivalChanged(ChangeEventArgs e)
+    {
+        // 0 disables -- the rule returns null when the configured radius
+        // is <= 0. Ceiling at 1000 m matches the number input attribute.
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0 && val <= 1000)
+            await AppSettings.SetWaypointArrivalRadiusMetersAsync(val);
     }
 
     private async Task OnLookaheadChanged(ChangeEventArgs e)

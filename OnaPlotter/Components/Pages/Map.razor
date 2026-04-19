@@ -1172,7 +1172,12 @@
                         cpaNm,                         // nautical miles or null
                         tcpaMin,                       // minutes or null
                         colregsLabel,
-                        colregsRole
+                        colregsRole,
+                        // Seconds since we last heard from this target. JS
+                        // uses it to fade stale markers (>30 s) so the
+                        // chart visually distinguishes a live target from
+                        // a ghost that hasn't updated in minutes.
+                        ageSec = (int)(DateTime.UtcNow - v.LastSeen).TotalSeconds
                     };
                 }).ToArray();
             await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);

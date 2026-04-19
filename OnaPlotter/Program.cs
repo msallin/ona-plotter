@@ -29,6 +29,7 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ShallowAlar
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorTideAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();
 
 // SignalK REST API clients (one per concern).

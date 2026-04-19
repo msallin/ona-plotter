@@ -28,6 +28,7 @@ internal sealed class FakeSettings : IAppSettings
     public double AnchorTideSafetyMargin { get; set; } = 1.0;
     public string SailingMode { get; set; } = "cruise";
     public bool KeepScreenAwake { get; set; } = true;
+    public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
     public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
     public IReadOnlyList<string> ChartOrder => [];
@@ -51,6 +52,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;
+    public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetChartOrderAsync(IEnumerable<string> ids) => Task.CompletedTask;

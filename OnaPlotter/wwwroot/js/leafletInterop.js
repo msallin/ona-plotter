@@ -869,6 +869,29 @@ export function updateAisTargets(vessels) {
             if (el) el.classList.toggle('cpa-pulse', isDangerEff);
         }
 
+        // Vessel staleness. Anything not heard from in >30 s is
+        // geometrically stale -- its rendered position is a guess,
+        // not a fix. Fade the marker + trail so the helm's eye lands
+        // on live targets first. SART pulses regardless (life-safety
+        // beacons can drop out briefly and still matter); buddies
+        // also keep full opacity because the "where's my friend"
+        // workflow tolerates lateness.
+        if (!isSart && !v.buddy) {
+            const ageSec = v.ageSec ?? 0;
+            const el = marker.getElement();
+            if (el) {
+                if (ageSec >= 300) {
+                    el.style.opacity = '0.25';     // >5 min, effectively gone
+                } else if (ageSec >= 30) {
+                    // Linear fade from 1.0 at 30 s to 0.35 at 5 min.
+                    const t = (ageSec - 30) / (300 - 30);
+                    el.style.opacity = (1 - 0.65 * t).toFixed(2);
+                } else {
+                    el.style.opacity = '';         // fresh
+                }
+            }
+        }
+
         // Name label visible at zoom >= 12. Prefer resolved external name
         // over raw MMSI so the chart looks clean even for unnamed targets.
         // Buddies get a star prefix.
