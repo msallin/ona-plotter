@@ -355,6 +355,16 @@
     <div class="hud hud-route">
         <div class="hud-panel route-panel">
             <div class="hud-label">@(Data.ActiveRouteName ?? "Active Route")</div>
+            @if (WaypointArrivalRadiusMeters <= 0)
+            {
+                @* APPROACH alarm is disabled (arrival radius 0). The
+                   captain will reach the waypoint with no prompt to
+                   turn; flag that clearly next to the route numbers. *@
+                <div class="rule-dormant-hint"
+                     title="Set a waypoint-arrival radius in Settings to enable the APPROACH alarm">
+                    &#9888; APPROACH alarm off (radius 0 m)
+                </div>
+            }
             <div class="route-info-grid">
                 <div>
                     <div class="hud-label">DTW</div>
@@ -404,6 +414,17 @@
     <div class="hud hud-anchor">
         <div class="hud-panel anchor-panel @AnchorAlarmClass">
             <div class="hud-label">Anchor Watch</div>
+            @if (AnchorTideDormantReason() is string reason)
+            {
+                @* Silent rules are worse than absent ones. If the
+                   tide-aware alarm can't arm because of missing config,
+                   say so right next to the anchor card where the captain
+                   will look for it. *@
+                <div class="rule-dormant-hint"
+                     title="Configure in Settings to enable the tide-aware grounding alarm">
+                    &#9888; @reason
+                </div>
+            }
             <div class="anchor-info-row">
                 @if (Data.AnchorCurrentRadius is not null)
                 {
@@ -517,6 +538,16 @@
     /// <summary>Current manual-anchor radius (metres). Shown on the HUD
     /// card and highlighted in the chip row.</summary>
     [Parameter] public double ManualAnchorRadiusMeters { get; set; } = 30;
+
+    /// <summary>User's configured waypoint arrival radius in metres;
+    /// 0 means the APPROACH alarm is disabled. Drives the route-card
+    /// dormancy hint so a silent rule doesn't surprise the helm.</summary>
+    [Parameter] public double WaypointArrivalRadiusMeters { get; set; } = 50;
+
+    /// <summary>Boat draft in metres from Settings. Drives the anchor-
+    /// card dormancy hint: the tide-aware ANCHOR TIDE alarm needs a
+    /// non-zero draft to compute LW clearance.</summary>
+    [Parameter] public double BoatDraftMeters { get; set; } = 1.5;
 
     /// <summary>Invoked when the user picks a new radius from the inline
     /// chips. The caller persists it to IAppSettings and re-draws the
@@ -769,6 +800,20 @@
     private string AnchorDistClass =>
         AnchorDragging ? "depth-danger"
         : Data.AnchorCurrentRadius is not null ? "depth-ok" : "";
+
+    /// <summary>
+    /// Explains why the ANCHOR TIDE alarm can't fire right now, or returns
+    /// null when it's fully armed. The rule needs two things the user must
+    /// configure -- boat draft and a tide feed -- plus an active anchor.
+    /// Each missing piece is surfaced as a short actionable hint; if
+    /// everything is there, no hint.
+    /// </summary>
+    private string? AnchorTideDormantReason()
+    {
+        if (BoatDraftMeters <= 0) return "Set boat draft in Settings for tide-aware anchor alarm";
+        if (!HasTideData) return "No tide data (install a SignalK tide plugin)";
+        return null;
+    }
 
     private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize)
     {

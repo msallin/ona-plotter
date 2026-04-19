@@ -7,6 +7,7 @@
 @inject IAppSettings Settings
 @inject IToastService Toasts
 @inject IAlarmManager Alarms
+@inject OnaPlotter.Services.Api.ICourseApi CourseApi
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
@@ -89,6 +90,18 @@
                             <div class="alarm-body" @onclick="() => DismissOne(a)">
                                 <strong>@a.Title</strong> @a.Message
                             </div>
+                        }
+                        @if (a.Title == "APPROACH")
+                        {
+                            @* One-tap "arrived, on to the next leg" for
+                               multi-WP routes. Hits the SignalK /nextPoint
+                               PUT which increments the server-side pointIndex;
+                               the active-course delta flips to the new leg
+                               and the banner auto-clears on the next tick. *@
+                            <button class="alarm-action" @onclick="() => NextWaypoint(a)" @onclick:stopPropagation
+                                    title="Advance the active route to the next waypoint">
+                                Next WP
+                            </button>
                         }
                         @if (a.TargetKey is not null && a.Snoozeable)
                         {
@@ -362,6 +375,21 @@
     private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);
     private async Task SnoozeOne(AlarmInfo alarm) => await Alarms.SnoozeAsync(alarm);
     private async Task UnsnoozeOne(string targetKey) => await Alarms.UnsnoozeAsync(targetKey);
+
+    // Advance the active route one leg and dismiss the APPROACH alarm
+    // that prompted it. Both halves matter: if we don't dismiss, the
+    // alarm sits on the stack until the boat physically leaves the
+    // radius. Any failure toasts so a bad network blip is visible.
+    private async Task NextWaypoint(AlarmInfo alarm)
+    {
+        try
+        {
+            bool ok = await CourseApi.AdvanceActiveRouteAsync();
+            if (!ok) { Toasts.Error("Next WP failed: server rejected"); return; }
+            await Alarms.DismissAsync(alarm);
+        }
+        catch (Exception ex) { Toasts.Error($"Next WP failed: {ex.Message}"); }
+    }
 
     // --- Hold-to-dismiss for Danger alarms ---
     // 1 s press-and-hold is long enough that a pocket brush or an

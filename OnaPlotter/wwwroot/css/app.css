@@ -1236,7 +1236,8 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     from { width: 0; }
     to   { width: 100%; }
 }
-.alarm-snooze {
+.alarm-snooze,
+.alarm-action {
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid currentColor;
     color: inherit;
@@ -1247,7 +1248,14 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     white-space: nowrap;
     -webkit-tap-highlight-color: transparent;
 }
-.alarm-snooze:hover { background: rgba(0, 0, 0, 0.5); }
+.alarm-snooze:hover,
+.alarm-action:hover { background: rgba(0, 0, 0, 0.5); }
+/* Primary action (Next WP) on the APPROACH banner gets a subtle
+   fill so it reads as "do the thing" vs. Snooze's "silence the thing". */
+.alarm-action {
+    background: rgba(255, 255, 255, 0.15);
+    font-weight: 600;
+}
 @media (pointer: coarse) {
     .alarm-snooze { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
 }
@@ -1810,6 +1818,45 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .ona-scale-nm {
     border-color: rgba(224, 159, 62, 0.55) !important;
     color: #f0d49c !important;
+}
+
+/* Bottom-left Leaflet stack holds the metric scale, the nautical scale
+   and the zoom badge. Default Leaflet stacks them vertically; we want
+   them in one horizontal row so the captain reads "N m / N nm / z X"
+   at a single glance. The row sits just above the map-controls bar so
+   it's out of the depth HUD's way but still in the "chart scale" zone
+   of the screen -- hud-bottom-left shifts right to .map-chart-scale
+   clearance via its own media rule below. */
+.leaflet-bottom.leaflet-left {
+    bottom: calc(var(--panel-bottom) + 2px) !important;
+    left: 12px !important;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 8px;
+    z-index: var(--z-hud);
+}
+.leaflet-bottom.leaflet-left > .leaflet-control {
+    margin: 0 !important;
+    float: none !important;
+    clear: none !important;
+}
+/* When the scale+zoom row is present, lift the depth HUD above it so
+   they don't collide on narrow layouts. ~38px = scale-bar height + a
+   little gap; applied whenever .hud-bottom-left is in the same layout
+   (always, on the Map page). */
+.hud-bottom-left {
+    bottom: calc(12px + 38px) !important;
+}
+/* Narrow phones: lift further so the row doesn't collide with the
+   wrapped control bar. */
+@media (max-width: 600px) {
+    .leaflet-bottom.leaflet-left {
+        bottom: calc(var(--panel-bottom) + 8px) !important;
+    }
+    .hud-bottom-left {
+        bottom: calc(12px + 44px) !important;
+    }
 }
 
 /* Zoom-level badge (bottom-right). Subtle in the default state; flips to
@@ -3397,6 +3444,20 @@ main:has(.alarm-banner-stack) .hud-top-left {
     flex-wrap: wrap;
     gap: 3px;
     margin-top: 6px;
+}
+
+/* Dormant-rule hint. Amber so it reads as "something to action" but
+   subtle enough that it doesn't scream for attention when the rule
+   that's dormant isn't currently relevant to what the boat is doing. */
+.rule-dormant-hint {
+    margin-top: 6px;
+    padding: 4px 8px;
+    font-size: 0.7rem;
+    color: var(--sev-warn);
+    background: var(--sev-warn-bg);
+    border-left: 3px solid var(--sev-warn);
+    border-radius: 3px;
+    line-height: 1.3;
 }
 .anchor-radius-chips .map-btn {
     font-size: 0.7rem;

@@ -24,6 +24,7 @@
 @inject IAppSettings Settings
 @inject IToastService Toasts
 @inject IKeyValueStore Kv
+@inject IAlarmManager Alarms
 @inject IJSRuntime JS
 
 <PageTitle>Map</PageTitle>
@@ -49,6 +50,8 @@
             Polar="Polar"
             ManualAnchorActive="anchorManualActive"
             ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
+            WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
+            BoatDraftMeters="Settings.BoatDraftMeters"
             OnSetAnchorRadius="SetManualAnchorRadius"
             OnStopNavigation="StopNavigation" />
 
@@ -1641,6 +1644,35 @@
         {
             Toasts.Error("Buddy update failed (plugin installed & auth?)");
         }
+    }
+
+    /// <summary>
+    /// Called from the AIS popup's "Snooze alarm" link. Looks up any
+    /// active alarm on this vessel (CPA is the common one) and silences
+    /// it via AlarmManager.SnoozeAsync. If no alarm is currently active
+    /// on the target, nothing happens -- we don't "pre-silence" a
+    /// future alarm because the AlarmManager tracks snoozes per-target
+    /// which already covers the common "this boat is a false positive,
+    /// mute it for 10 min" workflow once the first alarm fires.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnSnoozeVessel(string context, string? name)
+    {
+        // AlarmManager snooze is per-target-key; AIS contexts are the
+        // canonical target key. Find the active CPA alarm on that
+        // context and snooze it.
+        var active = Alarms.ActiveAlarms.FirstOrDefault(a => a.TargetKey == context);
+        if (active is null)
+        {
+            // The popup only shows Snooze when CPA is in the warn/danger
+            // band, but the push payload we read from can lag the
+            // AlarmManager by a tick. Toast a friendly no-op rather than
+            // silently do nothing.
+            Toasts.Show($"No active alarm on {name ?? "vessel"}");
+            return;
+        }
+        await Alarms.SnoozeAsync(active);
+        Toasts.Success($"Snoozed {name ?? "vessel"} for {Alarms.SnoozeDurationMinutes} min");
     }
 
     /// <summary>Re-fetches the buddy list from the plugin and retags all

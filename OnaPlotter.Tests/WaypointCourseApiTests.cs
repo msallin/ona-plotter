@@ -144,6 +144,40 @@ public class WaypointCourseApiTests
     }
 
     [Test]
+    public async Task CourseApi_AdvanceActiveRoute_PutsNextPointEndpoint()
+    {
+        // Server owns the pointIndex; the client just pings the Next-WP
+        // endpoint. An empty body is enough -- no payload is defined on
+        // /activeRoute/nextPoint.
+        string? capturedUrl = null;
+        HttpMethod? capturedMethod = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedUrl = req.RequestUri?.AbsoluteUri;
+            capturedMethod = req.Method;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var ok = await api.AdvanceActiveRouteAsync();
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
+        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute/nextPoint");
+    }
+
+    [Test]
+    public async Task CourseApi_AdvanceActiveRoute_SurfacesServerFailure()
+    {
+        // 404 means no active route -- caller should see false so the
+        // "Next WP failed" toast fires instead of swallowing silently.
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.NotFound));
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        await Assert.That(await api.AdvanceActiveRouteAsync()).IsFalse();
+    }
+
+    [Test]
     public async Task CourseApi_Clear_DeletesCourse()
     {
         string? capturedUrl = null;

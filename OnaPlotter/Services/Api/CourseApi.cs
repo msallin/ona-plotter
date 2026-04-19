@@ -51,6 +51,17 @@ public sealed class CourseApi : ICourseApi
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> AdvanceActiveRouteAsync(CancellationToken ct = default)
+    {
+        // Empty body PUT: SignalK's activeRoute/nextPoint endpoint
+        // increments the server-side pointIndex by 1. Returns 404 when
+        // no active route exists -- caller reads IsSuccessStatusCode.
+        var url = _baseUrl.Combine(SignalKUrls.CourseActiveRouteNextPointPath);
+        using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+        using var response = await _http.PutAsync(url, content, ct);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<bool> ClearAsync(CancellationToken ct = default)
     {
         var url = _baseUrl.Combine(SignalKUrls.CoursePath);
