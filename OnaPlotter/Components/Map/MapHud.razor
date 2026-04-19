@@ -8,20 +8,64 @@
    bottom-right (heading compass), centered-top route panel, anchor watch,
    and autopilot control. All purely data-driven; state lives in the parent. *@
 
-@* === Top-Left: Speed (primary), Course, Position === *@
+@* === Top-Left: Speed (primary), Course, Position ===
+   Click to expand with VMG / XTE (when an active course exists) and a
+   DMS-formatted position below the decimal one. The panel stays docked
+   in its corner; only its height grows, which avoids shoving the map
+   controls around. *@
 <div class="hud hud-top-left">
-    <div class="hud-panel">
+    <div class="hud-panel @(expandedHud == "tl" ? "hud-panel-expanded" : "")"
+         @onclick='() => ToggleExpanded("tl")' @onclick:stopPropagation
+         title="Click for more detail">
         <div class="hud-label">SOG</div>
         <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
         <div class="hud-label" style="margin-top:4px;">COG</div>
         <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
         <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
+        @if (expandedHud == "tl")
+        {
+            <div class="hud-extra">
+                @if (PositionDms is not null)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">DMS</span>
+                        <span class="hud-extra-v">@PositionDms</span>
+                    </div>
+                }
+                @if (Data.CourseNextPointVmg is not null)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">VMG</span>
+                        <span class="hud-extra-v">@Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span></span>
+                    </div>
+                }
+                @if (Data.CrossTrackError is not null)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">XTE</span>
+                        <span class="hud-extra-v @Format.XteClass(Data.CrossTrackError)">@Format.Xte(Data.CrossTrackError)</span>
+                    </div>
+                }
+                @if (LeewayDeg is int lw)
+                {
+                    <div class="hud-extra-row" title="COG - HDG. Positive = boat drifting to starboard.">
+                        <span class="hud-extra-k">Drift</span>
+                        <span class="hud-extra-v">@(lw > 0 ? "+" : "")@lw&deg;</span>
+                    </div>
+                }
+            </div>
+        }
     </div>
 </div>
 
-@* === Top-Right: Wind (apparent + true when available) === *@
+@* === Top-Right: Wind (apparent + true when available) ===
+   Expanded: port/starboard-labelled angles, TWD absolute from north,
+   Beaufort labels for the speeds. *@
 <div class="hud hud-top-right">
-    <div class="hud-panel" style="text-align:center;">
+    <div class="hud-panel @(expandedHud == "tr" ? "hud-panel-expanded" : "")"
+         style="text-align:center;"
+         @onclick='() => ToggleExpanded("tr")' @onclick:stopPropagation
+         title="Click for more detail">
         <div class="hud-label">AWA / AWS</div>
         @if (Data.WindSpeedApparent is not null)
         {
@@ -48,6 +92,39 @@
                 <div class="hud-value" style="font-size:1rem;">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></div>
             </div>
         }
+        @if (expandedHud == "tr")
+        {
+            <div class="hud-extra">
+                @if (SignedAwa is string awa)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">AWA</span>
+                        <span class="hud-extra-v">@awa</span>
+                    </div>
+                }
+                @if (SignedTwa is string twa)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">TWA</span>
+                        <span class="hud-extra-v">@twa</span>
+                    </div>
+                }
+                @if (Data.WindDirectionTrue is not null)
+                {
+                    <div class="hud-extra-row" title="True wind direction (compass, from)">
+                        <span class="hud-extra-k">TWD</span>
+                        <span class="hud-extra-v">@Format.Degrees(Data.WindDirectionTrue)&deg;</span>
+                    </div>
+                }
+                @if (BeaufortLabel(Data.WindSpeedTrue ?? Data.WindSpeedApparent) is string bf)
+                {
+                    <div class="hud-extra-row" title="Beaufort scale for true wind">
+                        <span class="hud-extra-k">Bft</span>
+                        <span class="hud-extra-v">@bf</span>
+                    </div>
+                }
+            </div>
+        }
     </div>
 </div>
 
@@ -57,7 +134,9 @@
    boat NOW (depth) and where it's heading (tide). Depth alarm threshold
    still lives here; a tide row appears only when the plugin publishes. *@
 <div class="hud hud-bottom-left">
-    <div class="hud-panel">
+    <div class="hud-panel @(expandedHud == "bl" ? "hud-panel-expanded" : "")"
+         @onclick='() => ToggleExpanded("bl")' @onclick:stopPropagation
+         title="Click for more detail">
         <div class="hud-label">Depth</div>
         <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
             {
@@ -84,6 +163,42 @@
                 <span class="depth-tide-height">
                     @height.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)m
                 </span>
+            </div>
+        }
+        @if (expandedHud == "bl")
+        {
+            <div class="hud-extra">
+                @if (Data.TideHeightNow is double th)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">Tide now</span>
+                        <span class="hud-extra-v">@th.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">m</span></span>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">Station</span>
+                        <span class="hud-extra-v">@Data.TideStationName</span>
+                    </div>
+                }
+                @if (Data.CurrentDrift is double drift && Data.CurrentSet is double set)
+                {
+                    <div class="hud-extra-row" title="Tidal-current set (direction) and drift (speed)">
+                        <span class="hud-extra-k">Current</span>
+                        <span class="hud-extra-v">
+                            @((drift * Format.MsToKnots).ToString("F1", System.Globalization.CultureInfo.InvariantCulture))<span class="hud-unit">kn</span>
+                            &nbsp;@Format.Degrees(set)<span class="hud-unit">&deg;</span>
+                        </span>
+                    </div>
+                }
+                @if (HasTideData)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">Phase</span>
+                        <span class="hud-extra-v">@TideDirectionLabel</span>
+                    </div>
+                }
             </div>
         }
     </div>
@@ -153,9 +268,15 @@
     </div>
 }
 
-@* === Bottom-Right: Heading compass === *@
+@* === Bottom-Right: Heading compass ===
+   Expanded: COG next to HDG and their signed delta (boat's apparent
+   leeway/drift angle), plus the autopilot target heading when the
+   autopilot is engaged. *@
 <div class="hud hud-bottom-right">
-    <div class="hud-panel" style="text-align:center;">
+    <div class="hud-panel @(expandedHud == "br" ? "hud-panel-expanded" : "")"
+         style="text-align:center;"
+         @onclick='() => ToggleExpanded("br")' @onclick:stopPropagation
+         title="Click for more detail">
         <div class="hud-label">HDG</div>
         <svg width="52" height="52" viewBox="-26 -26 52 52">
             <circle cx="0" cy="0" r="24" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
@@ -172,6 +293,39 @@
             <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
         </svg>
         <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;</span></div>
+        @if (expandedHud == "br")
+        {
+            <div class="hud-extra">
+                @if (Data.CourseOverGround is not null)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">COG</span>
+                        <span class="hud-extra-v">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></span>
+                    </div>
+                }
+                @if (LeewayDeg is int lw)
+                {
+                    <div class="hud-extra-row" title="Signed delta between COG and HDG; rough leeway indicator.">
+                        <span class="hud-extra-k">Drift</span>
+                        <span class="hud-extra-v">@(lw > 0 ? "+" : "")@lw&deg;</span>
+                    </div>
+                }
+                @if (Data.AutopilotState is { } ap)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">AP</span>
+                        <span class="hud-extra-v">@ap.ToUpperInvariant()</span>
+                    </div>
+                    @if (Data.AutopilotTargetHeading is not null)
+                    {
+                        <div class="hud-extra-row">
+                            <span class="hud-extra-k">AP tgt</span>
+                            <span class="hud-extra-v">@Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span></span>
+                        </div>
+                    }
+                }
+            </div>
+        }
     </div>
 </div>
 
@@ -320,6 +474,102 @@
 
     private bool IsBelowDepthThreshold =>
         Data.Depth is double d && DepthAlarmThreshold > 0 && d < DepthAlarmThreshold;
+
+    // --- HUD click-to-expand ----------------------------------------
+    // Track at most one expanded panel at a time ("tl" / "tr" / "bl" /
+    // "br"); clicking the same corner toggles it closed. Keeps the
+    // decision point in one place so future expanded panels inherit
+    // the "only one open" behaviour without extra wiring.
+    private string? expandedHud;
+
+    private void ToggleExpanded(string corner)
+    {
+        expandedHud = expandedHud == corner ? null : corner;
+    }
+
+    // --- Expanded-panel data helpers --------------------------------
+    // Position in degrees-minutes-seconds. Complements the decimal
+    // format shown in the compact view -- some captains prefer DMS.
+    private string? PositionDms
+    {
+        get
+        {
+            if (Data.Latitude is not double lat || Data.Longitude is not double lon) return null;
+            return $"{ToDms(lat, true)} / {ToDms(lon, false)}";
+        }
+    }
+
+    private static string ToDms(double value, bool isLatitude)
+    {
+        double abs = Math.Abs(value);
+        int deg = (int)abs;
+        double rem = (abs - deg) * 60;
+        int min = (int)rem;
+        double sec = (rem - min) * 60;
+        string hemisphere = isLatitude
+            ? (value >= 0 ? "N" : "S")
+            : (value >= 0 ? "E" : "W");
+        return $"{deg}\u00B0{min:D2}\u2032{sec:F1}\u2033 {hemisphere}";
+    }
+
+    // Apparent wind angle shown as "35\u00B0 STBD" / "90\u00B0 PORT". SignalK
+    // publishes the angle in radians relative to bow (positive starboard).
+    private string? SignedAwa => FormatSignedAngle(Data.WindAngleApparent);
+    private string? SignedTwa => FormatSignedAngle(Data.WindAngleTrue);
+
+    private static string? FormatSignedAngle(double? rad)
+    {
+        if (rad is not double v) return null;
+        double deg = v * RadToDeg;
+        string side = deg >= 0 ? "STBD" : "PORT";
+        return $"{(int)Math.Round(Math.Abs(deg))}\u00B0 {side}";
+    }
+
+    // Leeway proxy: signed difference between COG and HDG, in degrees.
+    // Positive means the boat's ground track is starboard of its heading
+    // (wind / current pushing it right). Not a true leeway angle because
+    // tidal current + windage both contribute; useful as an indicator.
+    private int? LeewayDeg
+    {
+        get
+        {
+            if (Data.CourseOverGround is not double cog || Data.Heading is not double hdg) return null;
+            double delta = (cog - hdg) * RadToDeg;
+            // Normalise to [-180, 180].
+            while (delta > 180) delta -= 360;
+            while (delta < -180) delta += 360;
+            // 1-degree threshold avoids jitter showing as "leeway" when
+            // the boat is tracking its heading within sensor noise.
+            int rounded = (int)Math.Round(delta);
+            return Math.Abs(rounded) >= 1 ? rounded : null;
+        }
+    }
+
+    // Beaufort scale lookup for wind speed in m/s. Returns "F<n> <label>"
+    // so a sailor can correlate measured speed with qualitative forecast
+    // language. Returns null below the first scale break (Calm, <0.3 m/s)
+    // so the row hides rather than shows "F0 Calm" on every sheltered
+    // marina.
+    private static string? BeaufortLabel(double? speedMs)
+    {
+        if (speedMs is not double s || double.IsNaN(s)) return null;
+        return s switch
+        {
+            < 0.3  => null,             // Calm -- hide the row
+            < 1.5  => "F1 Light air",
+            < 3.3  => "F2 Light breeze",
+            < 5.5  => "F3 Gentle",
+            < 7.9  => "F4 Moderate",
+            < 10.7 => "F5 Fresh",
+            < 13.8 => "F6 Strong",
+            < 17.1 => "F7 Near gale",
+            < 20.7 => "F8 Gale",
+            < 24.4 => "F9 Strong gale",
+            < 28.4 => "F10 Storm",
+            < 32.6 => "F11 Violent storm",
+            _      => "F12 Hurricane",
+        };
+    }
 
     // --- Race HUD gating ---------------------------------------------
     private bool ShowRacePanel =>

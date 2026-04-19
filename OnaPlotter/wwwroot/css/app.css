@@ -377,6 +377,56 @@ article.content:has(.map-container) {
     pointer-events: none;
     user-select: none;
     border: 1px solid rgba(255,255,255,0.06);
+    transition: padding 0.12s ease, max-width 0.12s ease;
+}
+/* Only the four corner HUD panels are clickable-to-expand. Enabling
+   pointer-events here (not on the base .hud-panel) keeps Leaflet map
+   panning working under the other HUDs -- route / anchor / autopilot
+   --, which have their own buttons for the clickable bits. */
+.hud-top-left .hud-panel,
+.hud-top-right .hud-panel,
+.hud-bottom-left .hud-panel,
+.hud-bottom-right .hud-panel {
+    pointer-events: auto;
+    cursor: pointer;
+}
+/* Expanded state: extra rows render below the compact view; width
+   grows modestly so the detail fits without crowding the map. */
+.hud-panel-expanded {
+    padding-bottom: 12px;
+    min-width: 180px;
+    border-color: rgba(224, 159, 62, 0.45); /* route amber accent */
+}
+
+/* Extra-detail rows inside an expanded HUD panel. */
+.hud-extra {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+.hud-extra-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+.hud-extra-k {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+.hud-extra-v {
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
+    white-space: nowrap;
 }
 
 /* All four corner HUD panels share the same 12 px edge inset. The
