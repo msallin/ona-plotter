@@ -30,16 +30,32 @@ public sealed class DeadmanAlarmRule : IAlarmRule
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
-        double minutes = ctx.Settings.DeadmanTimeoutMinutes;
+        // Night mode runs a tighter watch window if the user has set one
+        // (default 15 min). Sleeping watchkeepers in the cockpit want a
+        // shorter leash than the daytime 0-off default.
+        double minutes = ctx.Settings.NightMode && ctx.Settings.DeadmanNightMinutes > 0
+            ? ctx.Settings.DeadmanNightMinutes
+            : ctx.Settings.DeadmanTimeoutMinutes;
         if (minutes <= 0) return null;   // feature disabled
 
         var elapsed = ctx.Now - _tracker.LastInteractionUtc;
         if (elapsed.TotalMinutes < minutes) return null;
 
+        // Escalate to Danger if the user has slept past 2x the configured
+        // window. Warn severity is the 3-second cadence; Danger is 1-second,
+        // louder, and requires hold-to-dismiss. This is the "still there?"
+        // becoming "WAKE UP" transition -- matches ship's-watch practice
+        // where the deck speaker gets triggered after a missed first check.
+        // Honoured by the dismiss-cooldown escalation-bypass so a warn
+        // dismiss doesn't silence a subsequent danger.
+        var severity = elapsed.TotalMinutes >= 2 * minutes
+            ? AlarmSeverity.Danger
+            : AlarmSeverity.Warn;
+
         return new AlarmInfo(
             Title: Title,
             Message: $"No interaction for {(int)elapsed.TotalMinutes} min -- still there?",
-            Severity: AlarmSeverity.Warn,
+            Severity: severity,
             // TTI=0: "happening now", pins it above a pending CPA at TTI=5min.
             TimeToEventMinutes: 0);
     }

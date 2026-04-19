@@ -78,4 +78,74 @@ public class DeadmanAlarmRuleTests
     {
         await Assert.That(new DeadmanAlarmRule(new DeadmanTracker()).AutoClear).IsTrue();
     }
+
+    [Test]
+    public async Task Escalates_To_Danger_Past_Double_The_Window()
+    {
+        // After 2x the timeout without interaction, the warn-level
+        // "still there?" becomes a danger-level "WAKE UP". Sleeping
+        // watchkeeper may have already slept through the first Warn.
+        var now = DateTime.UtcNow;
+        var tracker = new DeadmanTracker();
+        tracker.ForceLastInteraction(now.AddMinutes(-11));
+        var rule = new DeadmanAlarmRule(tracker);
+
+        // Timeout 5 min, elapsed 11 min > 2x5 = 10 min -> Danger.
+        var alarm = rule.Check(Ctx(now, 5));
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
+
+        // At the boundary (exactly 2x), Danger kicks in. This is the
+        // branch that would off-by-one if someone wrote `>` instead of `>=`.
+        tracker.ForceLastInteraction(now.AddMinutes(-10));
+        alarm = rule.Check(Ctx(now, 5));
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
+
+        // Just under 2x -> still Warn.
+        tracker.ForceLastInteraction(now.AddMinutes(-9));
+        alarm = rule.Check(Ctx(now, 5));
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+    }
+
+    [Test]
+    public async Task Night_Mode_Uses_Shorter_Window_When_Configured()
+    {
+        // Night-mode-on with a 15 min override shortens the watch
+        // window from the day value (say, 0 / off). A 16-min idle
+        // triggers at night but wouldn't have during the day.
+        var now = DateTime.UtcNow;
+        var tracker = new DeadmanTracker();
+        tracker.ForceLastInteraction(now.AddMinutes(-16));
+        var rule = new DeadmanAlarmRule(tracker);
+
+        var dayCtx = new AlarmEvaluationContext(new NavigationData(), [],
+            new FakeSettings { DeadmanTimeoutMinutes = 0, DeadmanNightMinutes = 15, NightMode = false },
+            now, _ => false);
+        await Assert.That(rule.Check(dayCtx)).IsNull();
+
+        var nightCtx = new AlarmEvaluationContext(new NavigationData(), [],
+            new FakeSettings { DeadmanTimeoutMinutes = 0, DeadmanNightMinutes = 15, NightMode = true },
+            now, _ => false);
+        var alarm = rule.Check(nightCtx);
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+    }
+
+    [Test]
+    public async Task Night_Override_Zero_Falls_Back_To_Day_Value()
+    {
+        // Users who don't want a night-specific override set DeadmanNightMinutes
+        // to 0; the day value applies at night too (legacy behaviour).
+        var now = DateTime.UtcNow;
+        var tracker = new DeadmanTracker();
+        tracker.ForceLastInteraction(now.AddMinutes(-6));
+        var rule = new DeadmanAlarmRule(tracker);
+
+        var ctx = new AlarmEvaluationContext(new NavigationData(), [],
+            new FakeSettings { DeadmanTimeoutMinutes = 5, DeadmanNightMinutes = 0, NightMode = true },
+            now, _ => false);
+
+        // Day value (5 min) applied because night override is 0. 6 > 5 -> fire.
+        await Assert.That(rule.Check(ctx)).IsNotNull();
+    }
 }

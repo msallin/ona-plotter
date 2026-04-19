@@ -27,6 +27,7 @@
 @inject IAlarmManager Alarms
 @inject DeadmanTracker DeadmanTracker
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>Map</PageTitle>
 
@@ -1329,6 +1330,7 @@
         routeEditMode = true;
         routeEditName = "";
         routeEditStats = "0 WP / 0 nm";
+        InstallEditNavGuard();
         if (module is not null)
             await module.InvokeVoidAsync("startRouteEdit");
         // Poll stats twice a second while editing.
@@ -1341,6 +1343,7 @@
         routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
+        RemoveEditNavGuard();
         if (module is not null)
             await module.InvokeVoidAsync("stopRouteEdit");
     }
@@ -1372,6 +1375,7 @@
         routeEditMode = true;
         routeEditName = route.Name ?? "";
         chartPanelOpen = false; // Close layers panel so user can see the map.
+        InstallEditNavGuard();
         await module.InvokeVoidAsync("loadRouteForEdit", (object)coords.ToArray());
         routeStatsTimer = new System.Threading.Timer(_ => _ = UpdateRouteStats(), null, RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
         await UpdateRouteStats();
@@ -1441,6 +1445,7 @@
             routeEditCoords = null;
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;
+            RemoveEditNavGuard();
             await module.InvokeVoidAsync("stopRouteEdit");
             return;
         }
@@ -1470,6 +1475,7 @@
         routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
+        RemoveEditNavGuard();
         await module.InvokeVoidAsync("stopRouteEdit");
     }
 
@@ -1486,6 +1492,7 @@
         polygonEditName = "";
         polygonEditStats = "0 vertices";
         polygonEditCoords = null;
+        InstallEditNavGuard();
         if (module is not null)
         {
             try { await module.InvokeVoidAsync("startPolygonEdit"); }
@@ -1502,6 +1509,7 @@
         polygonEditCoords = null;
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
+        RemoveEditNavGuard();
         if (module is not null)
         {
             try { await module.InvokeVoidAsync("stopPolygonEdit"); }
@@ -1575,6 +1583,7 @@
             polygonEditCoords = null;
             polygonStatsTimer?.Dispose();
             polygonStatsTimer = null;
+            RemoveEditNavGuard();
             try { await module.InvokeVoidAsync("stopPolygonEdit"); }
             catch (JSDisconnectedException) { }
             return;
@@ -1600,6 +1609,7 @@
         polygonEditCoords = null;
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
+        RemoveEditNavGuard();
         try { await module.InvokeVoidAsync("stopPolygonEdit"); }
         catch (JSDisconnectedException) { }
     }
@@ -2120,6 +2130,19 @@
         }
         else if (mobActive)
         {
+            // Guard against false-trigger clears: a kid leaning on the button,
+            // a double-tap in heavy seas, or an accidental keyboard 'M' while
+            // typing in a note. If this IS the real event, a one-second delay
+            // + confirm is trivial compared to a lost crewmember.
+            bool ok;
+            try
+            {
+                ok = await JS.InvokeAsync<bool>("confirm",
+                    "Clear the MOB marker? Confirm only if the crew member is safely back aboard.");
+            }
+            catch (JSDisconnectedException) { return; }
+            if (!ok) return;
+
             await module.InvokeVoidAsync("clearMob");
             mobActive = false;
         }
@@ -2320,11 +2343,44 @@
         });
     }
 
+    // --- unsaved-changes guard for in-app navigation -----------------
+    // Registered while route-edit or polygon-edit is active so switching
+    // to Dashboard / Settings / etc. prompts before discarding the edit.
+    // Browser-level navigation (close tab, back) is handled JS-side via
+    // beforeunload in the same `startRouteEdit` / `startPolygonEdit`
+    // module calls. RegisterLocationChangingHandler returns IDisposable;
+    // disposing cancels the registration.
+    private IDisposable? editNavGuard;
+
+    private void InstallEditNavGuard()
+    {
+        if (editNavGuard is not null) return;
+        editNavGuard = Nav.RegisterLocationChangingHandler(async ctx =>
+        {
+            if (!routeEditMode && !polygonEditMode) return;
+            bool ok;
+            try
+            {
+                ok = await JS.InvokeAsync<bool>("confirm",
+                    "You have an unsaved edit. Leave and discard it?");
+            }
+            catch (JSDisconnectedException) { return; }
+            if (!ok) ctx.PreventNavigation();
+        });
+    }
+
+    private void RemoveEditNavGuard()
+    {
+        editNavGuard?.Dispose();
+        editNavGuard = null;
+    }
+
     public async ValueTask DisposeAsync()
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
+        RemoveEditNavGuard();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();

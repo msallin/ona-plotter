@@ -34,6 +34,7 @@ public sealed class AppSettingsService : IAppSettings
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
+    public double DeadmanNightMinutes { get; private set; } = 15.0;
     public bool BigType { get; private set; } = false;
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
@@ -74,6 +75,7 @@ public sealed class AppSettingsService : IAppSettings
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
+            DeadmanNightMinutes = await LoadDouble("deadmanNightMinutes.v1", 15.0);
             BigType = await LoadBool("bigType.v1", false);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
@@ -236,6 +238,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         DeadmanTimeoutMinutes = value;
         await Save("deadmanTimeoutMinutes.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetDeadmanNightMinutesAsync(double value)
+    {
+        DeadmanNightMinutes = value;
+        await Save("deadmanNightMinutes.v1", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

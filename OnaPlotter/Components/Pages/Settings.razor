@@ -123,7 +123,20 @@
                 <small class="text-muted">
                     Fires a DEADMAN alarm if the Map page sees no interaction for this
                     many minutes. Safety net for solo watches. Set to 0 to disable.
-                    Any tap / key / pointer event resets the timer.
+                    Any tap / key / pointer event resets the timer. Escalates to
+                    Danger severity past 2x this window.
+                </small>
+                <label class="form-label mt-2">Night-mode deadman</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="0" max="120"
+                           value="@AppSettings.DeadmanNightMinutes"
+                           @onchange="(e) => OnDeadmanNightChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">
+                    Used instead of the day value while Night Mode is on. Default 15 min
+                    -- a sleep-rotation guard for solo watches. 0 falls back to the day
+                    value (no night override).
                 </small>
             </div>
         </div>
@@ -360,6 +373,15 @@
         if (System.Math.Abs(clamped - raw) > 0.001)
             Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
         await AppSettings.SetDeadmanTimeoutMinutesAsync(clamped);
+    }
+
+    private async Task OnDeadmanNightChanged(ChangeEventArgs e)
+    {
+        if (!double.TryParse(e.Value?.ToString(), out double raw)) return;
+        double clamped = System.Math.Clamp(raw, 0, 120);
+        if (System.Math.Abs(clamped - raw) > 0.001)
+            Toasts.Show($"Clamped to {clamped:F0} min (range 0–120)");
+        await AppSettings.SetDeadmanNightMinutesAsync(clamped);
     }
 
     private async Task OnLookaheadChanged(ChangeEventArgs e)

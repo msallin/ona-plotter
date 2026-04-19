@@ -78,6 +78,13 @@ public interface IAppSettings
     /// the rule is useful on solo watches but distracting otherwise.</summary>
     double DeadmanTimeoutMinutes { get; }
 
+    /// <summary>Deadman interval used when <see cref="NightMode"/> is
+    /// active. Defaults to 15 min -- a reasonable sleep-rotation guard
+    /// for solo watchkeepers. Overrides <see cref="DeadmanTimeoutMinutes"/>
+    /// when night is on; reverts on day. 0 disables the override so the
+    /// day value applies at night too.</summary>
+    double DeadmanNightMinutes { get; }
+
     /// <summary>Big-type mode: scales the four corner HUD values up so
     /// they're readable from across a cockpit (older eyes, 21" helm
     /// screen, sunlight). Pure CSS via a .big-type class on .page.</summary>
@@ -131,6 +138,7 @@ public interface IAppSettings
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetDeadmanTimeoutMinutesAsync(double value);
+    Task SetDeadmanNightMinutesAsync(double value);
     Task SetBigTypeAsync(bool value);
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);
