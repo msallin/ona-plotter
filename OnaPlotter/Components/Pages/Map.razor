@@ -886,13 +886,18 @@
 
     // Minimal swallower for fire-and-forget module calls from sync
     // event handlers. Matches the JSDisconnected / ObjectDisposed
-    // defence we apply at every other interop site.
+    // defence we apply at every other interop site; also catches
+    // JSException so a buggy JS call can't take down the render pass.
     private async Task InvokeVoidSafeAsync(string identifier, params object?[] args)
     {
         if (module is null) return;
         try { await module.InvokeVoidAsync(identifier, args); }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[interop] {identifier}: {ex.Message}");
+        }
     }
 
     [JSInvokable]
@@ -1095,6 +1100,16 @@
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+        catch (JSException ex)
+        {
+            // A JS-side regression in any of updatePosition / setCourseLine
+            // / setLaylines etc. used to bubble into Blazor's error UI and
+            // freeze the render pass -- that's what hid the own-boat marker
+            // in the chartLayers crash. Swallow + log so the UI stays live
+            // and the browser console still surfaces the regression for
+            // the dev. We fire at 1 Hz; a toast per tick would be spam.
+            Console.Error.WriteLine($"[interop] HandleDataChanged: {ex.Message}");
+        }
     }
 
     private async Task PushAisTargets()
@@ -1187,6 +1202,13 @@
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+        catch (JSException ex)
+        {
+            // Hot path (every AIS tick). See HandleDataChanged for the
+            // rationale: silent-but-logged stops a JS regression from
+            // taking down the whole map UI.
+            Console.Error.WriteLine($"[interop] PushAisTargets: {ex.Message}");
+        }
     }
 
     private async Task ToggleFollow()
