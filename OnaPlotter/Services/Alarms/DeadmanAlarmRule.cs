@@ -36,7 +36,6 @@ public sealed class DeadmanAlarmRule : IAlarmRule
         var elapsed = ctx.Now - _tracker.LastInteractionUtc;
         if (elapsed.TotalMinutes < minutes) return null;
 
-        int overshootSec = (int)(elapsed.TotalSeconds - minutes * 60);
         return new AlarmInfo(
             Title: Title,
             Message: $"No interaction for {(int)elapsed.TotalMinutes} min -- still there?",

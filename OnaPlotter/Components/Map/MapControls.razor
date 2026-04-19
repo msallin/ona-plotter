@@ -16,7 +16,9 @@
     <div class="ctrl-more-wrap">
         <button class="ctrl-btn @(MoreMenuOpen ? "active" : "") @(AnyMoreItemActive ? "ctrl-btn-dot" : "")"
                 @onclick="ToggleMoreMenu"
-                title="More: Legend, Night, Laylines, Measure">
+                aria-haspopup="menu"
+                aria-expanded="@(MoreMenuOpen ? "true" : "false")"
+                title="@MoreButtonTitle">
             <span class="ctrl-ico">@((MarkupString)Icons.More)</span>
             <span class="ctrl-lbl">More</span>
         </button>
@@ -162,6 +164,23 @@
     // opening the menu.
     private bool AnyMoreItemActive => NightMode || LaylinesVisible || MeasureActive;
 
+    // Dynamic tooltip: when items are active it reads "More (on: Night,
+    // Laylines)" so the dot badge's meaning is discoverable on hover /
+    // keyboard focus without opening the menu.
+    private string MoreButtonTitle
+    {
+        get
+        {
+            var on = new List<string>(3);
+            if (NightMode) on.Add("Night");
+            if (LaylinesVisible) on.Add("Laylines");
+            if (MeasureActive) on.Add("Measure");
+            return on.Count == 0
+                ? "More: Legend, Night, Laylines, Measure"
+                : "More (on: " + string.Join(", ", on) + ")";
+        }
+    }
+
     // --- More overflow menu ---
     private bool MoreMenuOpen;
     private void ToggleMoreMenu() => MoreMenuOpen = !MoreMenuOpen;
@@ -184,7 +203,14 @@
 
     private void StartNightHold()
     {
-        _nightHoldCts?.Cancel();
+        // Dispose the prior CTS, don't just cancel-and-drop; matches the
+        // fix for MainLayout's _alarmHoldCts so we don't leak a token
+        // allocation on repeated presses.
+        if (_nightHoldCts is { } prev)
+        {
+            prev.Cancel();
+            prev.Dispose();
+        }
         _nightHoldCts = new CancellationTokenSource();
         _nightHoldFired = false;
         _ = RunNightHoldAsync(_nightHoldCts.Token);
@@ -205,8 +231,12 @@
 
     private void EndNightHold()
     {
-        _nightHoldCts?.Cancel();
-        _nightHoldCts = null;
+        if (_nightHoldCts is { } cts)
+        {
+            cts.Cancel();
+            cts.Dispose();
+            _nightHoldCts = null;
+        }
     }
 
     private async Task NightClicked()

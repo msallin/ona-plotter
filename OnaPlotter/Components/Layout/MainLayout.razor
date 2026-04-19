@@ -380,13 +380,28 @@
     // that prompted it. Both halves matter: if we don't dismiss, the
     // alarm sits on the stack until the boat physically leaves the
     // radius. Any failure toasts so a bad network blip is visible.
+    //
+    // End-of-route signal: some servers clear the active course on the
+    // last leg's arrival, others hold the final waypoint and refuse
+    // "nextPoint". We listen for either signal -- SignalkClient fires
+    // NavigationData.HasActiveCourse -> false on route clear -- and
+    // show an explicit "arrived at final WP" toast so the helm isn't
+    // left wondering whether the tap worked.
     private async Task NextWaypoint(AlarmInfo alarm)
     {
+        bool hadCourseBefore = SignalkClient.Data.HasActiveCourse;
         try
         {
             bool ok = await CourseApi.AdvanceActiveRouteAsync();
             if (!ok) { Toasts.Error("Next WP failed: server rejected"); return; }
             await Alarms.DismissAsync(alarm);
+
+            // Brief settle window so the delta for the new leg (or the
+            // course-cleared signal) reaches NavigationData, then check
+            // whether we just consumed the last waypoint.
+            await Task.Delay(400);
+            if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
+                Toasts.Success("Arrived at final waypoint");
         }
         catch (Exception ex) { Toasts.Error($"Next WP failed: {ex.Message}"); }
     }

@@ -13,6 +13,10 @@ public sealed class AisStore
     private readonly ConcurrentDictionary<string, AisVessel> _vessels = new();
     private readonly HashSet<string> _buddyContexts = new(StringComparer.Ordinal);
     private readonly Lock _buddyLock = new();
+    // Block-listed contexts (own-boat, identified after the fact). Uses
+    // ConcurrentDictionary so reads in Apply() on the WebSocket thread
+    // don't race a write from Evict() or a future UI-thread caller.
+    private readonly ConcurrentDictionary<string, byte> _blocklist = new(StringComparer.Ordinal);
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(2);
 
@@ -37,7 +41,7 @@ public sealed class AisStore
         // Block-list guard: once SignalkClient identifies the self-URN,
         // any further deltas on that context are dropped so own-boat
         // can't re-emerge in the AIS list after a manual or late evict.
-        if (_blocklist.Contains(context)) return;
+        if (_blocklist.ContainsKey(context)) return;
         var vessel = _vessels.GetOrAdd(context, ctx =>
         {
             var v = new AisVessel(ctx);
@@ -144,13 +148,11 @@ public sealed class AisStore
     public void Evict(string context)
     {
         if (string.IsNullOrEmpty(context)) return;
-        _blocklist.Add(context);
+        _blocklist.TryAdd(context, 0);
         if (_vessels.TryRemove(context, out _))
             Interlocked.Increment(ref _version);
         OnAisUpdated?.Invoke();
     }
-
-    private readonly HashSet<string> _blocklist = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Overwrites the vessel name, typically from an external enrichment source
