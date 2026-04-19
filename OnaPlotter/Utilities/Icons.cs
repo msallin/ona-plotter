@@ -23,6 +23,10 @@ public static class Icons
     // Fit bounds: four corners pointing inward.
     public const string Fit = Wrap + "<path d=\"M9 3H5a2 2 0 0 0-2 2v4\"/><path d=\"M15 3h4a2 2 0 0 1 2 2v4\"/><path d=\"M3 15v4a2 2 0 0 0 2 2h4\"/><path d=\"M21 15v4a2 2 0 0 1-2 2h-4\"/>" + End;
 
+    // Centre-on-boat: crosshair + dot. One-shot "pan here" vs the Follow
+    // icon which implies continuous lock.
+    public const string Centre = Wrap + "<circle cx=\"12\" cy=\"12\" r=\"3\" fill=\"currentColor\"/><path d=\"M12 2v4M12 18v4M2 12h4M18 12h4\"/>" + End;
+
     // Laylines: two diverging lines from bottom.
     public const string Laylines = Wrap + "<path d=\"M12 22 L4 4\"/><path d=\"M12 22 L20 4\"/><circle cx=\"12\" cy=\"22\" r=\"1\" fill=\"currentColor\"/>" + End;
 

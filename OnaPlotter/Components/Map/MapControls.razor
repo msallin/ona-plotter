@@ -45,6 +45,11 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
         <span class="ctrl-lbl">Fit</span>
     </button>
+    <button class="ctrl-btn" @onclick="OnCentreOnBoat"
+            title="Centre on boat (one-shot; doesn't engage Follow)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Centre)</span>
+        <span class="ctrl-lbl">Centre</span>
+    </button>
     <button class="ctrl-btn @(LaylinesVisible ? "active" : "")" @onclick="OnToggleLaylines" title="Laylines (L)">
         <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
         <span class="ctrl-lbl">Laylines</span>
@@ -69,10 +74,16 @@
             <span class="ctrl-lbl">Route</span>
         </button>
     }
-    <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
-        <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
-        <span class="ctrl-lbl">@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
-    </button>
+    @* Race timer is only relevant in Race mode. Keep it visible while
+       actively counting down even if the user flips modes mid-sequence
+       so the start doesn't vanish on them. *@
+    @if (SailingMode == "race" || RaceTimerActive)
+    {
+        <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
+            <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
+            <span class="ctrl-lbl">@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
+        </button>
+    }
 
     <div class="ctrl-sep"></div>
 
@@ -97,6 +108,7 @@
     [Parameter] public bool LayersPanelOpen { get; set; }
     [Parameter] public bool LegendOpen { get; set; }
     [Parameter] public bool FabMenuOpen { get; set; }
+    [Parameter] public string SailingMode { get; set; } = "cruise";
 
     [Parameter] public EventCallback OnToggleFollow { get; set; }
     [Parameter] public EventCallback OnCycleOrientation { get; set; }
@@ -104,6 +116,7 @@
     [Parameter] public EventCallback OnToggleAnchor { get; set; }
     [Parameter] public EventCallback OnToggleMob { get; set; }
     [Parameter] public EventCallback OnZoomToTrack { get; set; }
+    [Parameter] public EventCallback OnCentreOnBoat { get; set; }
     [Parameter] public EventCallback OnToggleLaylines { get; set; }
     [Parameter] public EventCallback OnToggleMeasure { get; set; }
     [Parameter] public EventCallback OnStartRouteEdit { get; set; }

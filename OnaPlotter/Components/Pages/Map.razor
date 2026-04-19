@@ -67,10 +67,12 @@
                  OnToggleAnchor="ToggleAnchor"
                  OnToggleMob="ToggleMob"
                  OnZoomToTrack="ZoomToTrack"
+                 OnCentreOnBoat="CentreOnBoat"
                  OnToggleLaylines="ToggleLaylines"
                  OnToggleMeasure="ToggleMeasure"
                  OnStartRouteEdit="StartRouteEdit"
                  OnToggleRaceTimer="ToggleRaceTimer"
+                 SailingMode="@Settings.SailingMode"
                  OnToggleLayers="ToggleLayersPanel"
                  OnToggleLegend="() => legendOpen = !legendOpen"
                  FabMenuOpen="fabMenuOpen"
@@ -2006,6 +2008,20 @@
     {
         if (module is not null)
             await module.InvokeVoidAsync("zoomToTrack");
+    }
+
+    /// <summary>
+    /// One-shot pan to own-boat at the current zoom level. Distinct from
+    /// Follow, which continuously re-centres on every position update.
+    /// A helmsman panning the chart to look ahead wants a single "take
+    /// me back to me" tap without engaging the lock.
+    /// </summary>
+    private async Task CentreOnBoat()
+    {
+        if (module is null) return;
+        if (Data.Latitude is not double lat || Data.Longitude is not double lon) return;
+        try { await module.InvokeVoidAsync("panTo", lat, lon); }
+        catch (JSDisconnectedException) { }
     }
 
     private async Task ToggleFullscreen()

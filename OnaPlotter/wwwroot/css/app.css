@@ -1753,6 +1753,45 @@ main:has(.alarm-banner-stack) .hud-top-left {
     .leaflet-control-attribution { font-size: 9px !important; }
 }
 
+/* Scale bars -- Leaflet's default km/m line plus our nautical-miles
+   sibling. Both are dark-on-dim so they don't compete with the chart. */
+.leaflet-control-scale-line {
+    background: rgba(10, 12, 18, 0.55) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    border-top: none !important;
+    font-size: 10px !important;
+    text-shadow: none !important;
+    padding: 1px 5px 2px !important;
+    line-height: 1.1 !important;
+}
+.leaflet-control-scale-line:first-child {
+    border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+.ona-scale-nm {
+    border-color: rgba(224, 159, 62, 0.55) !important;
+    color: #f0d49c !important;
+}
+
+/* Zoom-level badge (bottom-right). Subtle in the default state; flips to
+   amber tint when the top chart's native max is exceeded (overzoom). */
+.ona-zoom-badge {
+    background: rgba(10, 12, 18, 0.6);
+    color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    user-select: none;
+}
+.ona-zoom-badge-over {
+    color: #f0d49c;
+    border-color: rgba(224, 159, 62, 0.55);
+    background: rgba(30, 20, 8, 0.65);
+}
+
 /* Invisible full-area catcher that dismisses the Layers panel on a
    click outside it. Sits one layer below the panel; the panel itself
    stops click propagation so taps inside it don't reach this. */

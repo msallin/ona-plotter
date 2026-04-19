@@ -94,6 +94,64 @@ const chartLayers = new MarkerLayer();  // keyed by chart identifier
 let osmBaseLayer = null;
 let seaBaseLayer = null;
 
+// Zoom-level badge (bottom-right). Assigned in initMap so the control
+// exists before the first zoomend fires.
+let zoomBadge = null;
+
+// Nautical-miles scale control. Leaflet bundles metric + imperial; the
+// nautical scale is identical in shape but divides by 1852 m/nm. We
+// subclass L.Control.Scale so we get the same "nice round number"
+// rendering behaviour for free.
+const NauticalScale = L.Control.Scale.extend({
+    options: { metric: false, imperial: false, nautical: true },
+    onAdd(map) {
+        const className = 'leaflet-control-scale';
+        const container = L.DomUtil.create('div', className);
+        this._nauticalLine = L.DomUtil.create('div', 'leaflet-control-scale-line ona-scale-nm', container);
+        map.on(this.options.updateWhenIdle ? 'moveend' : 'move', this._update, this);
+        map.whenReady(this._update, this);
+        return container;
+    },
+    _update() {
+        const bounds = this._map.getBounds();
+        const centerLat = bounds.getCenter().lat;
+        const halfWorldMeters = 6378137 * Math.PI * Math.cos(centerLat * Math.PI / 180);
+        const dist = halfWorldMeters * (bounds.getNorthEast().lng - bounds.getSouthWest().lng) / 180;
+        const maxMeters = dist * (this.options.maxWidth / this._map.getSize().x);
+        const nm = maxMeters / 1852;
+        // Pick a round number in NM. Matches Leaflet's own _getRoundNum.
+        const d = this._getRoundNum(nm);
+        this._nauticalLine.style.width = ((d * 1852) / maxMeters * this.options.maxWidth) + 'px';
+        this._nauticalLine.innerHTML = d < 1 ? `${(d * 10).toFixed(0)} cbl` : `${d} nm`;
+    }
+});
+
+// Zoom-level badge. Shows "z N" at glance, flips to amber with
+// "z N (native K)" when the map is zoomed past the top chart's native
+// max so sailors know tiles are being scaled up rather than fresh.
+const ZoomBadge = L.Control.extend({
+    onAdd() {
+        this._el = L.DomUtil.create('div', 'ona-zoom-badge');
+        L.DomEvent.disableClickPropagation(this._el);
+        return this._el;
+    },
+    update() {
+        if (!this._el || !this._map) return;
+        const z = this._map.getZoom();
+        let topNative = 0;
+        for (const native of chartNativeMax.values()) {
+            if (native > topNative) topNative = native;
+        }
+        if (topNative > 0 && z > topNative) {
+            this._el.textContent = `z ${z} (native ${topNative})`;
+            this._el.classList.add('ona-zoom-badge-over');
+        } else {
+            this._el.textContent = `z ${z}`;
+            this._el.classList.remove('ona-zoom-badge-over');
+        }
+    }
+});
+
 // Routes and server track.
 const routeLayers = new MarkerLayer();  // keyed by route ID
 let serverTrackLayer = null;
@@ -397,6 +455,22 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Listen for native fullscreen changes to keep the icon in sync.
     document.addEventListener('fullscreenchange', syncFsIcon);
     document.addEventListener('webkitfullscreenchange', syncFsIcon);
+
+    // Scale bar in the bottom-left. Metric ON (km/m) + Nautical ON
+    // (custom subclass below, since Leaflet's built-in is only metric /
+    // imperial). Imperial OFF -- nobody plots in miles at sea. The
+    // nautical line is what a sailor reads; metric is the sanity
+    // check against the chart's km grid.
+    L.control.scale({ metric: true, imperial: false, maxWidth: 140, position: 'bottomleft' }).addTo(map);
+    new NauticalScale({ position: 'bottomleft', maxWidth: 140 }).addTo(map);
+
+    // Zoom-level badge, bottom-right, above the Leaflet attribution. A
+    // small "z 14" chip that turns amber when the top chart is overzooming
+    // (map zoom > native) so the helmsman knows tiles are stretched.
+    zoomBadge = new ZoomBadge({ position: 'bottomright' });
+    zoomBadge.addTo(map);
+    map.on('zoomend', () => zoomBadge.update());
+    zoomBadge.update();
 
     // keepBuffer bumped above the default 2 so tiles stay in memory a
     // few rings further out; panning back doesn't re-request. Cheap
@@ -1310,7 +1384,10 @@ export function setChartLayerOrder(orderedIds) {
 // If two charts share the top native, both overzoom -- harmless since
 // the later-added one draws on top anyway.
 function recomputeChartOverzoom() {
-    if (chartLayers.map.size === 0) return;
+    if (chartLayers.map.size === 0) {
+        if (zoomBadge) zoomBadge.update();
+        return;
+    }
     let topNative = 0;
     for (const native of chartNativeMax.values()) {
         if (native > topNative) topNative = native;
@@ -1326,6 +1403,7 @@ function recomputeChartOverzoom() {
             layer.redraw();
         }
     }
+    if (zoomBadge) zoomBadge.update();
 }
 
 // --- Routes ---
