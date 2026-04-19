@@ -38,6 +38,23 @@ const AIS_TRAIL_SECONDS = 60;
 // promote-on-hit.
 const VESSEL_NAME_CACHE_MAX = 500;
 const vesselNameCache = new Map();
+
+// Set of MMSIs we've already kicked a flag-image fetch for. The flag
+// lives behind /signalk/v2/api/resources/flags/mmsi/{mmsi} via the
+// signalk-flags plugin; lazy-loading only on popup-open gave a visible
+// flash as the user scrolled through AIS targets in a busy harbour.
+// Pre-warming on the first updateAisTargets tick lets the browser cache
+// handle subsequent opens. Size unbounded; in a typical passage this
+// sits at a few hundred entries -- trivial.
+const flagsPrewarmed = new Set();
+function prewarmFlag(mmsi) {
+    if (!mmsi || flagsPrewarmed.has(mmsi)) return;
+    flagsPrewarmed.add(mmsi);
+    const img = new Image();
+    // Image() doesn't block, no onerror noise (plugin-missing fetches
+    // are absorbed silently since no element is attached to the DOM).
+    img.src = `/signalk/v2/api/resources/flags/mmsi/${encodeURIComponent(mmsi)}`;
+}
 const vesselNameInflight = {};
 
 function vesselNameCacheGet(mmsi) {
@@ -831,6 +848,10 @@ export function updateAisTargets(vessels) {
     for (const v of vessels) {
         seen.add(v.context);
         if (v.lat == null || v.lon == null || !isFinite(v.lat) || !isFinite(v.lon)) continue;
+
+        // Pre-fetch the country flag on first sight so the AIS popup
+        // doesn't flash while it loads the SVG on first click.
+        if (v.mmsi) prewarmFlag(v.mmsi);
 
         // CPA + TCPA come pre-computed from the C# side (Utilities/Cpa)
         // so the map marker path and the Layers-panel list can't disagree.
