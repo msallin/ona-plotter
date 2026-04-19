@@ -2030,6 +2030,59 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     color: rgba(255, 255, 255, 0.55);
 }
 
+/* ===== Race HUD =====
+   Compact performance card in the top-right, below the wind panel.
+   Only visible in Race mode with a polar loaded. Shows target vs
+   actual boat speed (colour-coded to performance %), the optimal
+   TWA for the current tack, and how far off optimal we are. */
+.hud-race {
+    top: 196px;
+    right: 12px;
+}
+@media (max-width: 600px) {
+    .hud-race { top: 240px; right: 8px; }
+}
+.race-panel { min-width: 150px; font-size: 0.8rem; }
+.race-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 0;
+    font-variant-numeric: tabular-nums;
+}
+.race-k {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.5);
+    text-transform: uppercase;
+}
+.race-v { color: rgba(255, 255, 255, 0.95); font-weight: 600; }
+.race-perf {
+    margin-left: 6px;
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.65);
+    font-weight: 500;
+}
+.race-opt {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px;
+    font-variant-numeric: tabular-nums;
+}
+.race-opt-delta {
+    margin-left: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.race-opt-on   { color: var(--sev-ok); }
+.race-opt-near { color: var(--sev-warn); }
+.race-opt-far  { color: var(--sev-danger); }
+
 /* ===== Autopilot Panel =====
    Stacks above the HDG compass (.hud-bottom-right, bottom:12px, height ~110px).
    Needs ~130 px of clear air below it for a small gap. */

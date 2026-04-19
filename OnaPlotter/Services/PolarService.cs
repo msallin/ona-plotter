@@ -97,6 +97,44 @@ public sealed class PolarService : IPolarService
         return result;
     }
 
+    public OptimalPoint? GetOptimalUpwind(double twsKn) => Optimal(twsKn, upwind: true);
+    public OptimalPoint? GetOptimalDownwind(double twsKn) => Optimal(twsKn, upwind: false);
+
+    /// <summary>
+    /// Scans the polar at 1-degree resolution using bilinear-interpolated
+    /// boat speed and picks the TWA that maximises |VMG|. 1-degree sweep
+    /// catches peaks that lie between the polar's TWA rows (typical
+    /// polars are 5- or 10-degree stepped, so the optimum rarely sits
+    /// exactly on a row). Returns null when no candidate produces a
+    /// meaningful boat speed.
+    /// </summary>
+    private OptimalPoint? Optimal(double twsKn, bool upwind)
+    {
+        if (!HasPolar) return null;
+        double bestVmg = 0;
+        double bestTwa = 0, bestBsp = 0;
+        bool any = false;
+        // TWA range: [20, 90] upwind (inside no-go is no-go), [90, 170] downwind.
+        int loTwa = upwind ? 20 : 90;
+        int hiTwa = upwind ? 90 : 170;
+        for (int t = loTwa; t <= hiTwa; t++)
+        {
+            double? bsp = GetTargetSpeed(t, twsKn);
+            if (bsp is null || bsp <= 0) continue;
+            // Upwind: VMG positive along the wind axis. Downwind: away
+            // from the wind, so the useful quantity is |BSP * cos(TWA)|.
+            double vmg = bsp.Value * Math.Abs(Math.Cos(t * Math.PI / 180.0));
+            if (!any || vmg > bestVmg)
+            {
+                bestVmg = vmg;
+                bestTwa = t;
+                bestBsp = bsp.Value;
+                any = true;
+            }
+        }
+        return any ? new OptimalPoint(bestTwa, bestBsp, bestVmg) : null;
+    }
+
     // Finds bracketing indices + interpolation fraction. Clamps to edges if out-of-range.
     private static (int lo, int hi, double frac) Bracket(double[] axis, double v)
     {

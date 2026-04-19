@@ -157,4 +157,84 @@ public class PolarServiceTests
         public Task RemoveAsync(string key, CancellationToken ct = default)
         { _store.Remove(key); return Task.CompletedTask; }
     }
+
+    // --- Optimal VMG --------------------------------------------
+
+    [Test]
+    public async Task GetOptimalUpwind_NoPolar_ReturnsNull()
+    {
+        await Assert.That(NewService().GetOptimalUpwind(10)).IsNull();
+    }
+
+    [Test]
+    public async Task GetOptimalUpwind_LandsInUpwindRange()
+    {
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var opt = svc.GetOptimalUpwind(10);
+        await Assert.That(opt).IsNotNull();
+        // Must be in the upwind quadrant (we search 20..90 deg).
+        await Assert.That(opt!.Value.TwaDeg >= 20).IsTrue();
+        await Assert.That(opt.Value.TwaDeg <= 90).IsTrue();
+        // VMG is positive along the wind axis upwind.
+        await Assert.That(opt.Value.VmgKn > 0).IsTrue();
+    }
+
+    [Test]
+    public async Task GetOptimalDownwind_LandsInDownwindRange()
+    {
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var opt = svc.GetOptimalDownwind(10);
+        await Assert.That(opt).IsNotNull();
+        await Assert.That(opt!.Value.TwaDeg >= 90).IsTrue();
+        await Assert.That(opt.Value.TwaDeg <= 170).IsTrue();
+        await Assert.That(opt.Value.VmgKn > 0).IsTrue();
+    }
+
+    [Test]
+    public async Task GetOptimalUpwind_MaximisesVmgRelativeToNeighbours()
+    {
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var opt = svc.GetOptimalUpwind(10);
+        await Assert.That(opt).IsNotNull();
+
+        // Anywhere else in the upwind quadrant produces lower VMG.
+        var optTwa = opt!.Value.TwaDeg;
+        foreach (int twa in new[] { 25, 40, 55, 70, 85 })
+        {
+            if (Math.Abs(twa - optTwa) < 3) continue;       // near the peak
+            double? bsp = svc.GetTargetSpeed(twa, 10);
+            if (bsp is null) continue;
+            double vmg = bsp.Value * Math.Abs(Math.Cos(twa * Math.PI / 180.0));
+            await Assert.That(vmg <= opt.Value.VmgKn + 1e-6).IsTrue();
+        }
+    }
+
+    [Test]
+    public async Task GetOptimal_ZeroWind_DoesNotThrow()
+    {
+        // Zero TWS is below the sample polar's lowest column (6 kn).
+        // GetTargetSpeed clamps at the boundary -- documented behaviour,
+        // treats "below sample range" as "use the lowest row". A strict
+        // out-of-range null would be more correct for extrapolation but
+        // every existing caller (Dashboard, router) handles the clamped
+        // value fine. What we DO NOT accept is a throw, a NaN, or an
+        // infinity -- those would crash the router's frontier expansion
+        // silently.
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var opt = svc.GetOptimalUpwind(0);
+        if (opt is not null)
+        {
+            await Assert.That(double.IsNaN(opt.Value.VmgKn)).IsFalse();
+            await Assert.That(double.IsInfinity(opt.Value.VmgKn)).IsFalse();
+            await Assert.That(opt.Value.VmgKn >= 0).IsTrue();
+        }
+    }
 }

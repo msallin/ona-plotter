@@ -1,5 +1,6 @@
 @using OnaPlotter.Models
 @using OnaPlotter.Utilities
+@using OnaPlotter.Services
 @using OnaPlotter.Services.Api
 
 @* All the floating HUD panels overlaid on the map:
@@ -87,6 +88,70 @@
         }
     </div>
 </div>
+
+@* === Race HUD (race mode + polar + wind; otherwise hidden) ===
+   Compact performance card: current TWA, target boat speed from the
+   polar, actual speed, optimal TWA for the current tack. Only shown
+   in Race mode so cruisers don't get numbers they don't need, and
+   only when the data behind each number is actually present (no
+   polar -> card hidden; no wind -> hidden). *@
+@if (ShowRacePanel)
+{
+    <div class="hud hud-race">
+        <div class="hud-panel race-panel">
+            <div class="hud-label">Race</div>
+            @{
+                int twaDeg = (int)Math.Round(Math.Abs(Data.WindAngleTrue!.Value * RadToDeg));
+                double twsKn = Data.WindSpeedTrue!.Value * Format.MsToKnots;
+                double? targetKn = Polar?.GetTargetSpeed(twaDeg, twsKn);
+                double? actualKn = Data.SpeedOverGround.HasValue
+                    ? Data.SpeedOverGround.Value * Format.MsToKnots : null;
+                var opt = IsUpwind(twaDeg)
+                    ? Polar?.GetOptimalUpwind(twsKn)
+                    : Polar?.GetOptimalDownwind(twsKn);
+                // Performance ratio used for the colour-coded class.
+                double? perf = (targetKn is > 0 && actualKn is not null)
+                    ? actualKn / targetKn.Value : null;
+                string perfClass = perf switch
+                {
+                    null => "",
+                    >= 0.95 => "depth-ok",
+                    >= 0.80 => "depth-warn",
+                    _       => "depth-danger",
+                };
+            }
+            <div class="race-row">
+                <span class="race-k">TWA</span>
+                <span class="race-v">@twaDeg&deg;</span>
+            </div>
+            @if (targetKn is not null && actualKn is not null)
+            {
+                <div class="race-row">
+                    <span class="race-k">Target</span>
+                    <span class="race-v">@targetKn.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">kn</span></span>
+                </div>
+                <div class="race-row @perfClass">
+                    <span class="race-k">SOG</span>
+                    <span class="race-v">@actualKn.Value.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">kn</span></span>
+                    @if (perf is not null)
+                    {
+                        <span class="race-perf">@((perf.Value * 100).ToString("F0"))%</span>
+                    }
+                </div>
+            }
+            @if (opt is { } o)
+            {
+                <div class="race-opt" title="@($"VMG {o.VmgKn:F1}kn @ {o.BspKn:F1}kn BSP")">
+                    <span class="race-k">Opt TWA</span>
+                    <span class="race-v">@((int)Math.Round(o.TwaDeg))&deg;</span>
+                    <span class="race-opt-delta @OptDeltaClass(twaDeg, (int)Math.Round(o.TwaDeg))">
+                        @FormatOptDelta(twaDeg, (int)Math.Round(o.TwaDeg))
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+}
 
 @* === Bottom-Right: Heading compass === *@
 <div class="hud hud-bottom-right">
@@ -246,8 +311,48 @@
     /// exactly what number will trigger the audible alarm. 0 to hide.</summary>
     [Parameter] public double DepthAlarmThreshold { get; set; }
 
+    /// <summary>"cruise" or "race". Gates the race HUD card.</summary>
+    [Parameter] public string SailingMode { get; set; } = "cruise";
+
+    /// <summary>Polar service for target-speed + optimal-TWA lookup.
+    /// Optional -- the race card hides when null or no polar is loaded.</summary>
+    [Parameter] public IPolarService? Polar { get; set; }
+
     private bool IsBelowDepthThreshold =>
         Data.Depth is double d && DepthAlarmThreshold > 0 && d < DepthAlarmThreshold;
+
+    // --- Race HUD gating ---------------------------------------------
+    private bool ShowRacePanel =>
+        SailingMode == "race"
+        && Polar is { HasPolar: true }
+        && Data.WindAngleTrue.HasValue
+        && Data.WindSpeedTrue.HasValue
+        && Data.SpeedOverGround.HasValue;
+
+    // Upwind = TWA closer to 0 than to 180. Simpler test than a fixed
+    // threshold because "upwind" shifts with your polar: a modern
+    // fractional rig goes upwind to 30 deg, a classic full-keeler
+    // only to 45. <90 is the safe line.
+    private static bool IsUpwind(int twaDeg) => twaDeg <= 90;
+
+    /// <summary>Difference between actual TWA and optimal TWA as a
+    /// signed angle + "PT/STB" compass direction for the needed tack.
+    /// Zero means we're at the peak; positive means the optimal is a
+    /// higher angle (bear away); negative means lower (head up).</summary>
+    private static string FormatOptDelta(int actualTwa, int optTwa)
+    {
+        int delta = optTwa - actualTwa;
+        if (delta == 0) return "on";
+        return delta > 0 ? $"+{delta}\u00B0" : $"{delta}\u00B0";
+    }
+
+    private static string OptDeltaClass(int actualTwa, int optTwa)
+    {
+        int absDelta = Math.Abs(optTwa - actualTwa);
+        if (absDelta <= 2) return "race-opt-on";
+        if (absDelta <= 6) return "race-opt-near";
+        return "race-opt-far";
+    }
 
     // --- Tide ---------------------------------------------------------
     // True when at least the current height is published; lets the HUD
