@@ -165,3 +165,8 @@ showed those strings as their default value.
   but not implemented; requires a per-panel expanded-state model and
   CSS. Candidate: a single `expandedHud` string in Map.razor and a
   `hud-panel-expanded` class with extra rows.
+- Light theme polish. Only the outer chrome (sidebar, top-row, page
+  background) flips when theme=Light; most panels (chart-panel, HUD,
+  alarm banners, dialogs) have hardcoded dark backgrounds so the
+  result looks jarring. Needs a systemic pass to thread `--sk-surface`
+  through every `rgba(15,17,22,...)` site.

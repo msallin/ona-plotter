@@ -1923,15 +1923,21 @@ export function focusRegion(id, firstRing) {
 
 let weatherLayer = null;
 
-// Add OpenWeatherMap wind speed overlay. Requires a free API key from openweathermap.org.
-// Tile URL: https://tile.openweathermap.org/map/{layer}/{z}/{x}/{y}.png?appid={key}
+// Weather / radar overlay. Currently wired to RainViewer radar-precipitation
+// tiles, which top out around z=12 server-side. We cap fetches at that
+// level via maxNativeZoom and let Leaflet upscale (maxZoom 22 to match
+// the map) so pinching further in just blurs the nowcast instead of
+// erroring out with "zoom level not supported" from the upstream CDN.
+// (OpenWeatherMap would need an API key -- not threaded through yet.)
 export function setWeatherOverlay(tileUrl) {
     clearWeatherOverlay();
     if (!map || !tileUrl) return;
     weatherLayer = L.tileLayer(tileUrl, {
-        maxZoom: 15,
+        maxNativeZoom: 12,
+        maxZoom: 22,
         opacity: 0.5,
-        attribution: '&copy; OpenWeatherMap'
+        errorTileUrl: '',
+        attribution: '&copy; RainViewer'
     }).addTo(map);
     weatherLayer.setZIndex(40); // Below chart layers (50) but above base map.
 }

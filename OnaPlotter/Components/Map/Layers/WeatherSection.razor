@@ -1,5 +1,7 @@
-@* Toggle for the weather tile overlay (OpenWeatherMap when a key is
-   configured, RainViewer radar otherwise). *@
+@* Toggle for the weather tile overlay. Currently RainViewer
+   precipitation radar; the label below reflects what's actually rendered
+   so users don't expect a wind stream. OpenWeatherMap wind is on the
+   wishlist (needs an API key -- see agents.md). *@
 
 <SectionHeader Title="Weather Overlay"
                Expanded="@expanded"
@@ -10,8 +12,8 @@
         <input type="checkbox" checked="@Visible"
                @onchange="(e) => OnToggle.InvokeAsync((bool)(e.Value ?? false))" />
         <div class="chart-item-body">
-            <div class="chart-name">Wind Speed (OWM)</div>
-            <div class="chart-desc">OpenWeatherMap wind overlay</div>
+            <div class="chart-name">Rain radar</div>
+            <div class="chart-desc">RainViewer nowcast (precipitation, not wind)</div>
         </div>
     </label>
 }

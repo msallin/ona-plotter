@@ -1309,7 +1309,13 @@
             await module.InvokeVoidAsync("stopRouteEdit");
             return;
         }
-        string name = string.IsNullOrWhiteSpace(routeEditName) ? $"Route {DateTime.Now:HH:mm}" : routeEditName;
+        // Empty name -> date-stamped default. yyyyMMdd is monotonically
+        // sortable in the routes list, which matters more than time-of-day
+        // (most users create a few routes per day; "Route 14:30" starts
+        // to look identical after a week).
+        string name = string.IsNullOrWhiteSpace(routeEditName)
+            ? $"Route {DateTime.Now:yyyyMMdd}"
+            : routeEditName;
         bool ok;
         try { ok = await RouteApi.SaveAsync(name, coords); }
         catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
