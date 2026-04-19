@@ -14,9 +14,12 @@ public sealed class ShallowAlarmRule : IAlarmRule
     {
         var d = ctx.Data.Depth;
         if (d is null || d >= ctx.Settings.DepthAlarmThreshold) return null;
+        // SHALLOW is happening now -- TTI=0 pins it above any pending
+        // danger alarm (a CPA still 5min out).
         return new AlarmInfo(
-            Title,
-            $"Depth {d:F1}m < {ctx.Settings.DepthAlarmThreshold:F1}m",
-            AlarmSeverity.Danger);
+            Title: Title,
+            Message: $"Depth {d:F1}m < {ctx.Settings.DepthAlarmThreshold:F1}m",
+            Severity: AlarmSeverity.Danger,
+            TimeToEventMinutes: 0);
     }
 }

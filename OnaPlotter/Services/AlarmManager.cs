@@ -37,8 +37,18 @@ public sealed class AlarmManager : IAlarmManager
 
     public AlarmInfo? ActiveAlarm => ActiveAlarms.Count > 0 ? ActiveAlarms[0] : null;
 
+    // Ordering:
+    //   1. Severity descending (Danger before Warn)
+    //   2. Time-to-event ascending (most imminent first); alarms with
+    //      no TTI (null) sort last within the tier since a time-aware
+    //      threat is more actionable than a latched notification
+    //   3. Rule priority ascending as the tie-break
+    // Effect: if SHALLOW (TTI=0) and CPA (TCPA=5min) both fire at
+    // Danger severity, SHALLOW surfaces first because it's happening
+    // now, independent of rule-priority numbers.
     public IReadOnlyList<AlarmInfo> ActiveAlarms => _active.Values
         .OrderByDescending(e => e.Info.Severity)
+        .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
         .ThenBy(e => e.Rule.Priority)
         .Select(e => e.Info)
         .Take(MaxActiveAlarms)

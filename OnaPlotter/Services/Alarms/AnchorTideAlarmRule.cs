@@ -72,19 +72,23 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         var mm = (int)Math.Round((hoursToLw - hh) * 60);
         string when = hh == 0 ? $"{mm}min" : $"{hh}h{mm:D2}";
 
+        double minutesToLw = hoursToLw * 60;
+
         if (clearance <= 0)
         {
             // Keel hits bottom at LW.
             double shortfall = -clearance;
             return new AlarmInfo(
-                Title,
-                $"Keel touches bottom at LW in {when} ({shortfall:F1}m short)",
-                AlarmSeverity.Danger);
+                Title: Title,
+                Message: $"Keel touches bottom at LW in {when} ({shortfall:F1}m short)",
+                Severity: AlarmSeverity.Danger,
+                TimeToEventMinutes: minutesToLw);
         }
 
         return new AlarmInfo(
-            Title,
-            $"Low clearance at LW in {when}: {clearance:F1}m under keel",
-            AlarmSeverity.Warn);
+            Title: Title,
+            Message: $"Low clearance at LW in {when}: {clearance:F1}m under keel",
+            Severity: AlarmSeverity.Warn,
+            TimeToEventMinutes: minutesToLw);
     }
 }

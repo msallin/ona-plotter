@@ -14,13 +14,19 @@ namespace OnaPlotter.Models;
 /// silenced by a passing tap -- SART / MOB / EPIRB beacons, primarily. The
 /// UI hides the Snooze button for these and the manager refuses snooze
 /// requests. Defaults to true for every other alarm type.</param>
+/// <param name="TimeToEventMinutes">Optional estimated minutes until the
+/// predicted event. 0 means "happening now" (SHALLOW, SART). CPA uses
+/// its TCPA. ANCHOR TIDE uses hours-to-LW. Null means time-irrelevant
+/// (latched wind-shift notification). Used by the manager to order
+/// same-severity alarms so the most time-critical one surfaces first.</param>
 public sealed record AlarmInfo(
     string Title,
     string Message,
     AlarmSeverity Severity,
     string? TargetKey = null,
     string? TargetLabel = null,
-    bool Snoozeable = true);
+    bool Snoozeable = true,
+    double? TimeToEventMinutes = null);
 
 public enum AlarmSeverity
 {

@@ -52,11 +52,12 @@ public sealed class CpaAlarmRule : IAlarmRule
 
             string name = v.Name ?? v.Mmsi ?? "vessel";
             return new AlarmInfo(
-                Title,
-                $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
-                AlarmSeverity.Danger,
-                v.Context,
-                name);
+                Title: Title,
+                Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
+                Severity: AlarmSeverity.Danger,
+                TargetKey: v.Context,
+                TargetLabel: name,
+                TimeToEventMinutes: cpa.Value.TcpaMin);
         }
         return null;
     }

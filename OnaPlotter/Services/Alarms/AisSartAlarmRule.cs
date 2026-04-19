@@ -64,7 +64,8 @@ public sealed class AisSartAlarmRule : IAlarmRule
             Severity: AlarmSeverity.Danger,
             TargetKey: nearest.Context,
             TargetLabel: name,
-            Snoozeable: false);     // life-safety: no snooze
+            Snoozeable: false,                   // life-safety: no snooze
+            TimeToEventMinutes: 0);              // a beacon is live, not pending
     }
 
     /// <summary>Equirectangular approximation, fine for at-a-glance
