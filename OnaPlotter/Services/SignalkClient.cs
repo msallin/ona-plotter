@@ -47,6 +47,11 @@ public sealed class SignalkClient : IAsyncDisposable
     private ClientWebSocket? _ws;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
 
+    // Fired when the user pokes "Reconnect now" via <see cref="ReconnectNow"/>.
+    // The reconnect loop breaks its backoff Task.Delay on this token and
+    // resets backoffMs so the next connect attempt is immediate.
+    private CancellationTokenSource? _backoffCts;
+
     // Extra paths subscribed to by the RawStream page (re-applied on reconnect).
     private readonly HashSet<string> _extraPaths = [];
 
@@ -235,16 +240,42 @@ public sealed class SignalkClient : IAsyncDisposable
             IsConnected = false;
             OnConnectionChanged?.Invoke();
 
+            // Linked delay token: cancels either when the whole client
+            // is disposed (ct) OR when the user asks for an immediate
+            // retry via ReconnectNow (_backoffCts). The two dispositions
+            // are distinguished inside the catch so we exit on disposal
+            // but loop on user-retry with a reset backoff.
+            _backoffCts?.Dispose();
+            _backoffCts = new CancellationTokenSource();
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _backoffCts.Token);
             try
             {
-                await Task.Delay(backoffMs, ct);
+                await Task.Delay(backoffMs, linked.Token);
                 backoffMs = Math.Min(backoffMs * 2, MaxBackoffMs);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;              // client disposed
             }
             catch (OperationCanceledException)
             {
-                return;
+                // User tapped Reconnect now -- break out of the delay and
+                // retry immediately. Reset the backoff so the next drop
+                // doesn't inherit a fast-retry cadence.
+                backoffMs = InitialBackoffMs;
             }
         }
+    }
+
+    /// <summary>
+    /// Cancel the current reconnect-backoff delay (if any) and retry
+    /// immediately. No-op when already connected. Safe to call from UI
+    /// threads; the receive loop handles the cancellation inline.
+    /// </summary>
+    public void ReconnectNow()
+    {
+        if (IsConnected) return;
+        try { _backoffCts?.Cancel(); } catch (ObjectDisposedException) { }
     }
 
     private void ProcessMessage(string json)
@@ -583,6 +614,7 @@ public sealed class SignalkClient : IAsyncDisposable
             catch (OperationCanceledException) { }
         }
 
+        _backoffCts?.Dispose();
         _sendLock.Dispose();
     }
 }

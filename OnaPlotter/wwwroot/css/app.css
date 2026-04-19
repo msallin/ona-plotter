@@ -220,6 +220,26 @@ h2 {
 }
 .connection-dot.connected { background-color: var(--sk-green); }
 .connection-dot.disconnected { background-color: var(--sk-red); }
+.connection-dot.stale { background-color: var(--sev-warn); }
+
+/* Retry button -- only rendered when offline. Compact so it fits
+   inside the top-row beside the chip without bumping the layout. */
+.connection-retry {
+    margin-left: 8px;
+    padding: 2px 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--sev-warn);
+    background: transparent;
+    border: 1px solid var(--sev-warn);
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.connection-retry:hover { background: var(--sev-warn-bg); }
+@media (pointer: coarse) {
+    .connection-retry { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
+}
 
 /* Form controls in dark theme */
 .form-check-input {

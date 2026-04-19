@@ -21,6 +21,17 @@
                 <span class="connection-dot @DotClass"></span>
                 @ConnectionLabel
             </span>
+            @* When offline, surface a Retry button right next to the
+               chip. Cancels the current reconnect backoff so the next
+               attempt is immediate -- no waiting out the 30s cap.
+               Hidden when connected. *@
+            @if (!SignalkClient.IsConnected)
+            {
+                <button class="connection-retry" @onclick="ReconnectNow"
+                        title="Try reconnecting now (bypasses the backoff delay)">
+                    Retry
+                </button>
+            }
 
             @{
                 var historyCount = Alarms.DismissedHistory.Count;
@@ -243,6 +254,16 @@
     {
         await Settings.SetNightModeAsync(!Settings.NightMode);
         StateHasChanged();
+    }
+
+    private void ReconnectNow()
+    {
+        // Signals the receive loop to bypass its current backoff delay.
+        // The connection chip rerenders via HandleConnectionChanged once
+        // the new ConnectAsync resolves (success) or fails (another loop
+        // with a reset backoff).
+        SignalkClient.ReconnectNow();
+        Toasts.Show("Reconnecting...", ToastService.ToastLevel.Info, durationSec: 3);
     }
 
     private void ToggleAlarmLog()
