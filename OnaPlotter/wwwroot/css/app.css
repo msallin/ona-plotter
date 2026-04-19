@@ -1384,6 +1384,44 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     50%      { opacity: 0.6; }
 }
 
+/* MOB-clear confirmation modal. Re-uses the welcome-card dimensions +
+   backdrop so it matches the app's modal vocabulary. Danger-bordered
+   because confirming here clears a life-safety marker. Default focus
+   is "Cancel" (autofocus in Razor) so a stray Enter / Space doesn't
+   wipe a real MOB. */
+.mob-clear-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: var(--z-modal);
+    width: min(92vw, 440px);
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
+    border: 2px solid var(--sev-danger);
+    border-radius: 10px;
+    padding: 22px 26px;
+    box-shadow: var(--panel-shadow);
+    animation: welcome-pop 0.22s ease-out;
+}
+.mob-clear-modal h3 {
+    margin: 0 0 10px 0;
+    font-size: 1.2rem;
+    color: var(--sev-danger);
+}
+.mob-clear-modal p {
+    margin: 0 0 18px 0;
+    color: #cbd5e1;
+    font-size: 0.92rem;
+    line-height: 1.5;
+}
+.mob-clear-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+.mob-clear-actions .map-btn { min-width: 120px; min-height: 44px; }
+
 /* Anchor-tide checklist tick colours. Use the --sev-* tokens so the
    night-mode red-preset (and any future theme) can override a single
    variable instead of multiple hard-coded hex. Danger-red on a red-bg

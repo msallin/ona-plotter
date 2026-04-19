@@ -19,6 +19,7 @@
    keyboard. Clearing the input removes the highlight. *@
 <div class="mb-3" style="max-width: 600px;">
     <input type="search" class="form-control" placeholder="Find a setting (e.g. depth, snooze, polar)..."
+           aria-label="Find a setting"
            value="@settingsFilter"
            @oninput="(e) => OnSettingsFilterInput(e)" />
 </div>
@@ -81,6 +82,7 @@
                 <label class="form-label">Depth Alarm</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.5" min="0" max="50"
+                           aria-label="Depth alarm threshold in meters"
                            value="@AppSettings.DepthAlarmThreshold"
                            @onchange="(e) => OnDepthChanged(e)" />
                     <span class="input-group-text">m</span>
@@ -96,6 +98,7 @@
                 <label class="form-label">Guard Zone (CPA)</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.1" min="0" max="5"
+                           aria-label="CPA guard zone radius in nautical miles"
                            value="@AppSettings.CpaAlarmThreshold"
                            @onchange="(e) => OnCpaChanged(e)" />
                     <span class="input-group-text">nm</span>
@@ -111,6 +114,7 @@
                 <label class="form-label">Waypoint Arrival Radius</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="5" min="0" max="1000"
+                           aria-label="Waypoint arrival radius in meters"
                            value="@AppSettings.WaypointArrivalRadiusMeters"
                            @onchange="(e) => OnWaypointArrivalChanged(e)" />
                     <span class="input-group-text">m</span>
@@ -129,6 +133,7 @@
                 <label class="form-label">Deadman Watch Timer</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="0" max="120"
+                           aria-label="Deadman watch timer in minutes, 0 disables"
                            value="@AppSettings.DeadmanTimeoutMinutes"
                            @onchange="(e) => OnDeadmanTimeoutChanged(e)" />
                     <span class="input-group-text">min</span>
@@ -142,6 +147,7 @@
                 <label class="form-label mt-2">Night-mode deadman</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="0" max="120"
+                           aria-label="Night-mode deadman timer in minutes, 0 uses day value"
                            value="@AppSettings.DeadmanNightMinutes"
                            @onchange="(e) => OnDeadmanNightChanged(e)" />
                     <span class="input-group-text">min</span>
@@ -161,6 +167,7 @@
                 <label class="form-label">Guard Zone Lookahead</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="1" max="60"
+                           aria-label="Guard zone lookahead in minutes"
                            value="@AppSettings.GuardZoneLookaheadMinutes"
                            @onchange="(e) => OnLookaheadChanged(e)" />
                     <span class="input-group-text">min</span>
@@ -169,6 +176,7 @@
                 <label class="form-label mt-2">Snooze duration</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="1" max="120"
+                           aria-label="Snooze duration in minutes"
                            value="@AppSettings.SnoozeDurationMinutes"
                            @onchange="(e) => OnSnoozeDurationChanged(e)" />
                     <span class="input-group-text">min</span>
@@ -188,6 +196,7 @@
                 <label class="form-label">Wind Shift Alarm</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="5" min="5" max="90"
+                           aria-label="Wind shift alarm threshold in degrees"
                            value="@AppSettings.WindShiftAlarmThreshold"
                            @onchange="(e) => OnWindShiftChanged(e)" />
                     <span class="input-group-text">deg</span>
@@ -203,6 +212,7 @@
                 <label class="form-label">Wind Shift Lookback</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="1" min="1" max="30"
+                           aria-label="Wind shift lookback window in minutes"
                            value="@AppSettings.WindShiftLookbackMinutes"
                            @onchange="(e) => OnWindShiftLookbackChanged(e)" />
                     <span class="input-group-text">min</span>
@@ -218,6 +228,7 @@
                 <label class="form-label">Boat Draft</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.1" min="0" max="10"
+                           aria-label="Boat draft in meters"
                            value="@AppSettings.BoatDraftMeters"
                            @onchange="(e) => OnBoatDraftChanged(e)" />
                     <span class="input-group-text">m</span>
@@ -233,6 +244,7 @@
                 <label class="form-label">Anchor Tide Safety Margin</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.1" min="0" max="5"
+                           aria-label="Anchor tide safety margin in meters"
                            value="@AppSettings.AnchorTideSafetyMargin"
                            @onchange="(e) => OnAnchorTideMarginChanged(e)" />
                     <span class="input-group-text">m</span>
@@ -325,7 +337,14 @@
                         Upload a CSV polar file. Format: first column = TWA (degrees), header row = TWS (knots), cells = target speed (knots).
                     </p>
                 }
-                <details class="mt-2" style="font-size:0.78rem; color:var(--sk-text-muted, #94a3b8);">
+                @* The <details> `open` attribute is boolean-present: any
+                   value (even "False") keeps it open. Render the attribute
+                   conditionally so false actually collapses it. ontoggle
+                   doesn't bubble but fires on the element itself, which
+                   is enough for Blazor to catch. *@
+                <details class="mt-2" style="font-size:0.78rem; color:var(--sk-text-muted, #94a3b8);"
+                         open="@(polarHelpOpen ? "open" : null)"
+                         @ontoggle="OnPolarHelpToggle">
                     <summary style="cursor:pointer; user-select:none;">What's a polar &mdash; and a sample</summary>
                     <div style="padding-top:6px; line-height:1.5;">
                         A polar is a table of your boat's target boat speed (BSP)
@@ -441,6 +460,17 @@
 
 @code {
     private string settingsFilter = "";
+
+    // Track the polar-help <details> open state ourselves so a parent
+    // re-render (SignalkClient data change, polar upload complete, etc.)
+    // doesn't collapse the block the user just opened. <details> with a
+    // bound `open` attribute keeps the DOM in sync with Blazor.
+    private bool polarHelpOpen = false;
+
+    private void OnPolarHelpToggle(EventArgs _)
+    {
+        polarHelpOpen = !polarHelpOpen;
+    }
 
     private async Task OnSettingsFilterInput(ChangeEventArgs e)
     {

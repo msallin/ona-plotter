@@ -166,6 +166,32 @@
         </div>
     }
 
+    @* MOB clear confirm. Custom modal rather than JS confirm() because
+       native confirm on iPad landscape doesn't reflow long text and
+       the Cancel / OK labels can't be customised. The default focus is
+       on Cancel so a careless Enter on a physical keyboard doesn't
+       clear a real MOB. *@
+    @if (mobClearConfirmVisible)
+    {
+        <div class="welcome-backdrop" @onclick="() => MobClearConfirm(false)"></div>
+        <div class="mob-clear-modal" @onclick:stopPropagation role="dialog"
+             aria-labelledby="mob-clear-title" aria-describedby="mob-clear-body">
+            <h3 id="mob-clear-title">Clear MOB marker?</h3>
+            <p id="mob-clear-body">
+                Confirm <strong>only</strong> if the crew member is safely back aboard.
+                The marker drop time and position will be cleared.
+            </p>
+            <div class="mob-clear-actions">
+                <button class="map-btn" @onclick="() => MobClearConfirm(false)" autofocus>
+                    Cancel
+                </button>
+                <button class="map-btn ctrl-btn-danger" @onclick="() => MobClearConfirm(true)">
+                    Confirm clear
+                </button>
+            </div>
+        </div>
+    }
+
     @if (routeEditMode)
     {
         <RouteEditPanel Name="@routeEditName"
@@ -1447,6 +1473,10 @@
         var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
         if (coords is null || coords.Length < 2)
         {
+            // Save button is now disabled in this state, but belt-and-braces
+            // in case a race gets us here anyway (keyboard shortcut, JS
+            // interop lag). Toast so the helm knows WHY nothing saved.
+            Toasts.Show("Add at least 2 waypoints before saving");
             routeEditMode = false;
             routeEditCoords = null;
             routeStatsTimer?.Dispose();
@@ -1585,6 +1615,7 @@
         catch (JSDisconnectedException) { return; }
         if (coords is null || coords.Length < 3)
         {
+            Toasts.Show("Add at least 3 vertices before saving");
             polygonEditMode = false;
             polygonEditCoords = null;
             polygonStatsTimer?.Dispose();
@@ -2125,6 +2156,29 @@
         StateHasChanged();
     }
 
+    // --- MOB clear confirmation ---------------------------------------
+    // TaskCompletionSource-backed await-modal pattern so ToggleMob can
+    // await the user's Cancel / Confirm decision from the Blazor modal.
+    // Keeps the code linear without a callback mess or re-entry bugs.
+    private bool mobClearConfirmVisible;
+    private TaskCompletionSource<bool>? mobClearTcs;
+
+    private Task<bool> AskMobClearAsync()
+    {
+        mobClearTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        mobClearConfirmVisible = true;
+        StateHasChanged();
+        return mobClearTcs.Task;
+    }
+
+    private void MobClearConfirm(bool ok)
+    {
+        mobClearConfirmVisible = false;
+        mobClearTcs?.TrySetResult(ok);
+        mobClearTcs = null;
+        StateHasChanged();
+    }
+
     private async Task ToggleMob()
     {
         if (module is null) return;
@@ -2139,14 +2193,10 @@
             // Guard against false-trigger clears: a kid leaning on the button,
             // a double-tap in heavy seas, or an accidental keyboard 'M' while
             // typing in a note. If this IS the real event, a one-second delay
-            // + confirm is trivial compared to a lost crewmember.
-            bool ok;
-            try
-            {
-                ok = await JS.InvokeAsync<bool>("confirm",
-                    "Clear the MOB marker? Confirm only if the crew member is safely back aboard.");
-            }
-            catch (JSDisconnectedException) { return; }
+            // + confirm is trivial compared to a lost crewmember. Uses a
+            // Blazor modal instead of JS confirm() so iPad landscape reads
+            // the full message and the "Cancel" button takes default focus.
+            bool ok = await AskMobClearAsync();
             if (!ok) return;
 
             await module.InvokeVoidAsync("clearMob");

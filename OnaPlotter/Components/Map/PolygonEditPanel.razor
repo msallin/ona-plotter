@@ -39,9 +39,12 @@
     <input type="text" class="route-name-input" aria-label="Region name"
            placeholder="Region name" value="@Name" @oninput="OnNameInput" />
     <span class="route-edit-stats">@Stats</span>
-    <button class="map-btn" @onclick="OnUndo" title="Remove last vertex">Undo</button>
+    <button class="map-btn" @onclick="OnUndo"
+            disabled="@((Coords?.Length ?? 0) == 0)"
+            title="@((Coords?.Length ?? 0) == 0 ? "Nothing to undo" : "Remove last vertex")">Undo</button>
     <button class="map-btn active" @onclick="OnSave"
-            disabled="@(Coords is null || Coords.Length < 3)">Save</button>
+            disabled="@(Coords is null || Coords.Length < 3)"
+            title="@(Coords is null || Coords.Length < 3 ? "Need at least 3 vertices" : "Save region")">Save</button>
     <button class="map-btn" @onclick="OnCancel">Cancel</button>
 </div>
 

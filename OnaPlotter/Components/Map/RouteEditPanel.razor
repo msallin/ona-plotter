@@ -43,8 +43,12 @@
     <input type="text" class="route-name-input" aria-label="Route name"
            value="@Name" @oninput="OnNameInput" />
     <span class="route-edit-stats">@Stats</span>
-    <button class="map-btn" @onclick="OnUndo" title="Remove last waypoint">Undo</button>
-    <button class="map-btn active" @onclick="OnSave">Save</button>
+    <button class="map-btn" @onclick="OnUndo"
+            disabled="@((Coords?.Length ?? 0) == 0)"
+            title="@((Coords?.Length ?? 0) == 0 ? "Nothing to undo" : "Remove last waypoint")">Undo</button>
+    <button class="map-btn active" @onclick="OnSave"
+            disabled="@((Coords?.Length ?? 0) < 2)"
+            title="@((Coords?.Length ?? 0) < 2 ? "Need at least 2 waypoints" : "Save route")">Save</button>
     <button class="map-btn" @onclick="OnCancel">Cancel</button>
 </div>
 
