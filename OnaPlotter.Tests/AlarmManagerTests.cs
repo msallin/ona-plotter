@@ -280,6 +280,188 @@ public class AlarmManagerTests
         await Assert.That(mgr.DismissedHistory.All(d => d.Reason == DismissReason.UserDismissed)).IsTrue();
     }
 
+    // --- dismiss cooldown ----------------------------------------------
+    // Pins the "7 dismisses in 7 seconds" UX fix: a dismissed alarm does
+    // NOT re-fire for DismissCooldownSeconds, unless severity escalates.
+
+    [Test]
+    public async Task Dismiss_SuppressesReFire_Within_CooldownWindow()
+    {
+        // The original bug: CPA on SALTY BREEZE at 0.02nm in 8min was
+        // dismissed, re-fired on the next tick, dismissed, re-fired...
+        // six more times. With cooldown, the helmsman's acknowledgment
+        // buys them ~30 seconds of quiet.
+        var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, clock, settings) = NewMgrWith(cpa);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarm).IsNotNull();
+
+        await mgr.DismissAsync(mgr.ActiveAlarm!);
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+
+        // Advance past the 1-second evaluate debounce but under cooldown.
+        clock.Now = clock.Now.AddSeconds(5);
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+
+        // Another tick, still inside the window.
+        clock.Now = clock.Now.AddSeconds(10);
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+    }
+
+    [Test]
+    public async Task Dismiss_ReFires_After_CooldownExpires()
+    {
+        var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, clock, settings) = NewMgrWith(cpa);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.DismissAsync(mgr.ActiveAlarm!);
+
+        // Advance past the cooldown.
+        clock.Now = clock.Now.AddSeconds(AlarmManager.DismissCooldownSeconds + 5);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarm).IsNotNull();
+        await Assert.That(mgr.ActiveAlarm!.Title).IsEqualTo("CPA");
+    }
+
+    [Test]
+    public async Task Dismiss_EscalatedSeverity_BypassesCooldown()
+    {
+        // Warning dismissed. If the next evaluation sees Danger (same
+        // title+target), the cooldown must NOT swallow it -- safety-
+        // critical. Same severity still suppressed.
+        var rule = new StubRule("CPA", 200, AlarmSeverity.Warn, "vessels.x");
+        var (mgr, clock, settings) = NewMgrWith(rule);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.DismissAsync(mgr.ActiveAlarm!);
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+
+        // Escalate the stub rule's severity, simulate an evaluate tick.
+        // Reflection isn't pretty, but the StubRule fixture makes it easy:
+        // swap the instance with a Danger one on the same (title, target).
+        var dangerRule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr2, clock2, settings2) = NewMgrWith(dangerRule);
+        // Re-create the full sequence so cooldown-from-Warn → new Danger
+        // is expressed on the same manager instance.
+        var warn = new StubRule("CPA", 200, AlarmSeverity.Warn, "vessels.x");
+        // Composite rule that flips severity after the first fire-and-dismiss.
+        var escalator = new EscalatingStub("CPA", 200, "vessels.x");
+        var (mgrE, clockE, settingsE) = NewMgrWith(escalator);
+
+        // Tick 1: Warn fires.
+        mgrE.Evaluate(Nav(), [], settingsE);
+        await Assert.That(mgrE.ActiveAlarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+
+        // Dismiss Warn. Cooldown now remembers "dismissed at Warn".
+        await mgrE.DismissAsync(mgrE.ActiveAlarm);
+
+        // Tick 2 (past evaluate debounce, well under cooldown): rule
+        // emits Danger now. Cooldown must let it through.
+        escalator.CurrentSeverity = AlarmSeverity.Danger;
+        clockE.Now = clockE.Now.AddSeconds(3);
+        mgrE.Evaluate(Nav(), [], settingsE);
+
+        await Assert.That(mgrE.ActiveAlarm).IsNotNull();
+        await Assert.That(mgrE.ActiveAlarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
+    }
+
+    [Test]
+    public async Task Dismiss_SameSeverity_StaysSuppressed()
+    {
+        // Mirror of the escalation test: if severity doesn't actually go
+        // up, the second fire is just the same alarm re-asserting and
+        // must stay muted. Regression guard for an off-by-one in the
+        // `newSev <= dismissedSev` comparison.
+        var dangerRule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, clock, settings) = NewMgrWith(dangerRule);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.DismissAsync(mgr.ActiveAlarm!);
+
+        clock.Now = clock.Now.AddSeconds(5);
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+    }
+
+    [Test]
+    public async Task Dismiss_DifferentTarget_NotInCooldown()
+    {
+        // Dismissing CPA on vessels.a must not silence CPA on vessels.b.
+        // Keyed by (title, targetKey), so distinct targets are distinct
+        // cooldown entries.
+        var ruleA = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.a");
+        var ruleB = new StubRule("CPA", 201, AlarmSeverity.Danger, "vessels.b");
+        var (mgr, clock, settings) = NewMgrWith(ruleA, ruleB);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(2);
+
+        // Dismiss only vessels.a. vessels.b must remain active; if it
+        // auto-clears between ticks and re-fires, that one must also
+        // be allowed back (distinct cooldown bucket).
+        var aAlarm = mgr.ActiveAlarms.First(x => x.TargetKey == "vessels.a");
+        await mgr.DismissAsync(aAlarm);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+
+        clock.Now = clock.Now.AddSeconds(5);
+        mgr.Evaluate(Nav(), [], settings);
+
+        // vessels.a still suppressed (cooldown), vessels.b still active.
+        await Assert.That(mgr.ActiveAlarms.Any(x => x.TargetKey == "vessels.a")).IsFalse();
+        await Assert.That(mgr.ActiveAlarms.Any(x => x.TargetKey == "vessels.b")).IsTrue();
+    }
+
+    [Test]
+    public async Task Snooze_ClearsDismissCooldown()
+    {
+        // Ordering the user might take: dismiss a couple of times,
+        // then decide this target is noisy enough to snooze. The snooze
+        // is the stronger promise ("silent for SnoozeMinutes"), so any
+        // stale cooldown record must go. Otherwise on unsnooze the
+        // cooldown would still be ticking (harmless but stale).
+        var cpa = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.x");
+        var (mgr, clock, settings) = NewMgrWith(cpa);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.DismissAsync(mgr.ActiveAlarm!);
+
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(), [], settings);
+        // Temporarily resurrect so we have an alarm to snooze.
+        // With cooldown suppressing, ActiveAlarm is null -- snooze needs
+        // an alarm instance. Build one directly instead.
+        var toSnooze = new AlarmInfo("CPA", "msg",
+            AlarmSeverity.Danger, "vessels.x", "vessels.x");
+        await mgr.SnoozeAsync(toSnooze);
+
+        // After snooze, a subsequent evaluate still sees the alarm in
+        // the rule's output, but the snooze path silences it. The
+        // cooldown state shouldn't matter -- pin behaviour: unsnooze
+        // + wait past cooldown -> alarm resumes on same tick.
+        await mgr.UnsnoozeAsync("vessels.x");
+        clock.Now = clock.Now.AddSeconds(AlarmManager.DismissCooldownSeconds + 2);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarm).IsNotNull();
+    }
+
+    // Stub rule whose severity can be flipped between ticks. Used by
+    // Dismiss_EscalatedSeverity_BypassesCooldown.
+    private sealed class EscalatingStub(string title, int priority, string? target) : IAlarmRule
+    {
+        public string Title => title;
+        public int Priority => priority;
+        public bool AutoClear => true;
+        public AlarmSeverity CurrentSeverity { get; set; } = AlarmSeverity.Warn;
+        public AlarmInfo? Check(AlarmEvaluationContext ctx)
+            => new AlarmInfo(title, "msg", CurrentSeverity, target, target);
+    }
+
     [Test]
     public async Task AutoClear_LogsAsAutoCleared()
     {

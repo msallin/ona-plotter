@@ -10,6 +10,15 @@ public sealed class AlarmManager : IAlarmManager
 
     public const int SnoozeMinutes = 10;
 
+    /// <summary>After a dismiss, suppress re-firing the same (title, target)
+    /// for this many seconds unless the severity escalates. Sized at 30s so
+    /// a persistent threat re-asserts soon enough to matter, but the helm
+    /// gets a chance to process / act / call on VHF without mashing dismiss
+    /// seven times (which is what the CPA-at-0.02nm alarm log showed before
+    /// this landed). Escalation (Warning -> Danger) bypasses the cooldown
+    /// so we never hide a worsening situation.</summary>
+    public const int DismissCooldownSeconds = 30;
+
     /// <summary>Hard cap on the banner stack size. Beyond this a lower-
     /// priority alarm is dropped; it will re-add on the next tick if still
     /// live. Keeps the banner from burying the viewport when everything
@@ -38,6 +47,11 @@ public sealed class AlarmManager : IAlarmManager
     // so auto-clear / latch behaviour survives severity/message updates.
     private readonly Dictionary<AlarmKey, ActiveEntry> _active = [];
     private readonly List<DismissedAlarm> _history = [];
+    // Per-key cooldown window after a dismiss. Keyed the same as _active
+    // so a CPA dismiss on "vessels.a" doesn't silence CPA on "vessels.b".
+    // Stores both the expiry instant AND the severity at dismiss time so
+    // an escalation (Warn -> Danger) can bypass the window.
+    private readonly Dictionary<AlarmKey, DismissCooldown> _dismissCooldown = [];
 
     private DateTime _lastEvaluation = DateTime.MinValue;
     private AlarmInfo? _lastTop;
@@ -132,6 +146,7 @@ public sealed class AlarmManager : IAlarmManager
         _lastEvaluation = now;
 
         SweepExpiredSnoozes(now);
+        SweepExpiredDismissCooldowns(now);
 
         var ctx = new AlarmEvaluationContext(data, vessels, settings, now, IsSnoozed);
 
@@ -181,6 +196,11 @@ public sealed class AlarmManager : IAlarmManager
             }
             else
             {
+                // New (or re-emerging) alarm. Check the dismiss-cooldown:
+                // the helmsman already told us they saw this exact
+                // (title, target); don't immediately re-fire, unless
+                // severity has escalated since then.
+                if (IsInDismissCooldown(key, info.Severity, now)) continue;
                 _active[key] = new ActiveEntry(info, rule);
                 changed = true;
             }
@@ -193,8 +213,11 @@ public sealed class AlarmManager : IAlarmManager
     {
         if (_active.Count == 0) return Task.CompletedTask;
         var now = _now();
-        foreach (var e in _active.Values)
+        foreach (var (key, e) in _active)
+        {
             LogHistory(e.Info, now, DismissReason.UserDismissed);
+            RecordDismissCooldown(key, e.Info.Severity, now);
+        }
         _active.Clear();
         FireAlarmsChanged();
         return Task.CompletedTask;
@@ -204,7 +227,9 @@ public sealed class AlarmManager : IAlarmManager
     {
         var key = new AlarmKey(alarm.Title, alarm.TargetKey);
         if (!_active.Remove(key, out var removed)) return Task.CompletedTask;
-        LogHistory(removed.Info, _now(), DismissReason.UserDismissed);
+        var now = _now();
+        LogHistory(removed.Info, now, DismissReason.UserDismissed);
+        RecordDismissCooldown(key, removed.Info.Severity, now);
         FireAlarmsChanged();
         return Task.CompletedTask;
     }
@@ -239,6 +264,13 @@ public sealed class AlarmManager : IAlarmManager
             LogHistory(_active[key].Info, now, DismissReason.UserSnoozed);
             _active.Remove(key);
         }
+
+        // Snooze is stronger than dismiss-cooldown; drop any cooldowns
+        // for this target so the UI state doesn't carry stale "I saw
+        // this" records behind the longer snooze window.
+        var coolKeys = _dismissCooldown.Keys
+            .Where(k => k.TargetKey == alarm.TargetKey).ToList();
+        foreach (var k in coolKeys) _dismissCooldown.Remove(k);
 
         FireAlarmsChanged();
         return PersistSnoozesAsync();
@@ -301,6 +333,38 @@ public sealed class AlarmManager : IAlarmManager
         return false;
     }
 
+    private void RecordDismissCooldown(AlarmKey key, AlarmSeverity severity, DateTime now)
+    {
+        _dismissCooldown[key] = new DismissCooldown(
+            now.AddSeconds(DismissCooldownSeconds), severity);
+    }
+
+    /// <summary>True if the alarm should be suppressed this tick. Cooldown
+    /// silences re-fires of the same (title, target) at the same or lower
+    /// severity; an escalation (Warning -> Danger) bypasses because the
+    /// helmsman's earlier acknowledgment doesn't cover the worsened case.</summary>
+    private bool IsInDismissCooldown(AlarmKey key, AlarmSeverity newSeverity, DateTime now)
+    {
+        if (!_dismissCooldown.TryGetValue(key, out var c)) return false;
+        if (now >= c.Until)
+        {
+            _dismissCooldown.Remove(key);
+            return false;
+        }
+        // Escalation breaks the cooldown. Equal severity is still suppressed
+        // -- the helmsman already acknowledged this exposure.
+        return newSeverity <= c.DismissedAtSeverity;
+    }
+
+    private void SweepExpiredDismissCooldowns(DateTime now)
+    {
+        if (_dismissCooldown.Count == 0) return;
+        var expired = _dismissCooldown.Where(kv => now >= kv.Value.Until)
+                                      .Select(kv => kv.Key).ToList();
+        foreach (var k in expired) _dismissCooldown.Remove(k);
+    }
+
     private readonly record struct AlarmKey(string Title, string? TargetKey);
     private readonly record struct ActiveEntry(AlarmInfo Info, IAlarmRule Rule);
+    private readonly record struct DismissCooldown(DateTime Until, AlarmSeverity DismissedAtSeverity);
 }
