@@ -1,0 +1,74 @@
+@* Freeform-polygon drawing overlay. Mirrors RouteEditPanel: hint banner
+   at the top, numbered vertex list anchored top-right, name input + save
+   bar above the bottom controls. Parent polls getPolygonEditCoords +
+   getPolygonEditStats on a timer so the list + stats stay in sync with
+   drag operations on the JS side. *@
+
+<div class="route-edit-hint">
+    Tap map to add polygon vertices. Drag to reposition. Needs at least 3.
+</div>
+
+@if (Coords is { Length: > 0 })
+{
+    <div class="route-edit-list" aria-label="Polygon vertices">
+        <div class="route-edit-list-header">
+            <span>Vertices</span>
+            <span class="route-edit-list-count">@Coords.Length</span>
+        </div>
+        <ol class="route-edit-list-items">
+            @for (int i = 0; i < Coords.Length; i++)
+            {
+                var idx = i;
+                var c = Coords[idx];
+                <li class="route-edit-wp-row">
+                    <span class="route-edit-wp-badge">@(idx + 1)</span>
+                    <span class="route-edit-wp-coord">@FormatCoord(c)</span>
+                    <button class="route-edit-wp-remove"
+                            title="Remove vertex @(idx + 1)"
+                            aria-label="Remove vertex @(idx + 1)"
+                            @onclick="() => OnRemoveVertex.InvokeAsync(idx)">
+                        ×
+                    </button>
+                </li>
+            }
+        </ol>
+    </div>
+}
+
+<div class="route-edit-bar">
+    <input type="text" class="route-name-input" aria-label="Region name"
+           placeholder="Region name" value="@Name" @oninput="OnNameInput" />
+    <span class="route-edit-stats">@Stats</span>
+    <button class="map-btn" @onclick="OnUndo" title="Remove last vertex">Undo</button>
+    <button class="map-btn active" @onclick="OnSave"
+            disabled="@(Coords is null || Coords.Length < 3)">Save</button>
+    <button class="map-btn" @onclick="OnCancel">Cancel</button>
+</div>
+
+@code {
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public EventCallback<string> NameChanged { get; set; }
+    [Parameter] public string Stats { get; set; } = "";
+    [Parameter] public double[][]? Coords { get; set; }
+    [Parameter] public EventCallback OnUndo { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<int> OnRemoveVertex { get; set; }
+
+    private async Task OnNameInput(ChangeEventArgs e)
+    {
+        Name = e.Value?.ToString() ?? "";
+        await NameChanged.InvokeAsync(Name);
+    }
+
+    // "48.2144° N, 11.5753° E" -- matches RouteEditPanel so the two
+    // editing flows feel identical at a glance.
+    private static string FormatCoord(double[] c)
+    {
+        if (c is null || c.Length < 2) return "";
+        double lat = c[0], lon = c[1];
+        string ns = lat >= 0 ? "N" : "S";
+        string ew = lon >= 0 ? "E" : "W";
+        return $"{System.Math.Abs(lat):F4}\u00B0 {ns}, {System.Math.Abs(lon):F4}\u00B0 {ew}";
+    }
+}

@@ -56,10 +56,36 @@ public sealed class RegionApi : IRegionApi
         return regions;
     }
 
-    public async Task<string?> CreateCircleAsync(string name, string description,
+    public Task<string?> CreateCircleAsync(string name, string description,
         double lat, double lon, double radiusMeters, CancellationToken ct = default)
     {
         var ring = BuildCircleRing(lat, lon, radiusMeters, CircleVertexCount);
+        return PostPolygonAsync(name, description, ring, ct);
+    }
+
+    public Task<string?> CreatePolygonAsync(string name, string description,
+        double[][] vertices, CancellationToken ct = default)
+    {
+        // Freeform polygon: map the [lat, lon] Leaflet vertices back to
+        // GeoJSON [lon, lat] order and close the ring by repeating the
+        // first vertex at the end.
+        if (vertices is null || vertices.Length < 3) return Task.FromResult<string?>(null);
+        var ring = new double[vertices.Length + 1][];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            if (vertices[i] is null || vertices[i].Length < 2) return Task.FromResult<string?>(null);
+            ring[i] = [vertices[i][1], vertices[i][0]];
+        }
+        ring[vertices.Length] = ring[0];
+        return PostPolygonAsync(name, description, ring, ct);
+    }
+
+    /// <summary>Posts the common body shape for both circle-derived and
+    /// freeform polygons. Factored out so the two CreateXxxAsync methods
+    /// differ only in how they build their ring.</summary>
+    private async Task<string?> PostPolygonAsync(string name, string description,
+        double[][] ring, CancellationToken ct)
+    {
         // GeoJSON Polygon coordinates: array of linear rings; index 0 is
         // the outer ring, remaining indices are holes (we have none).
         var coordinates = new[] { ring };

@@ -3,12 +3,24 @@ using OnaPlotter.Models;
 namespace OnaPlotter.Services.Api;
 
 /// <summary>CRUD for SignalK regions (polygonal areas on the chart).
-/// Creation via this client is limited to circle-approximating
-/// polygons; Freeboard-compatible polygon drawing is a future phase.</summary>
+/// Supports two creation modes: a radius-based circle (approximated as
+/// a 32-vertex polygon on the wire) and a freeform polygon from a list
+/// of [lat, lon] vertices.</summary>
 public interface IRegionApi
 {
     Task<List<SignalkRegion>> GetAllAsync(CancellationToken ct = default);
+
     Task<string?> CreateCircleAsync(string name, string description,
         double lat, double lon, double radiusMeters, CancellationToken ct = default);
+
+    /// <summary>
+    /// Creates a freeform polygon region from a list of <c>[lat, lon]</c>
+    /// vertices (Leaflet order). The first vertex is automatically
+    /// repeated at the end to close the ring, per GeoJSON. Requires at
+    /// least 3 distinct vertices; returns <c>null</c> otherwise.
+    /// </summary>
+    Task<string?> CreatePolygonAsync(string name, string description,
+        double[][] vertices, CancellationToken ct = default);
+
     Task<bool> DeleteAsync(string id, CancellationToken ct = default);
 }

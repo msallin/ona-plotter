@@ -162,6 +162,18 @@
                         OnRemoveWaypoint="RemoveRouteWaypoint" />
     }
 
+    @if (polygonEditMode)
+    {
+        <PolygonEditPanel Name="@polygonEditName"
+                          NameChanged="v => polygonEditName = v"
+                          Stats="@polygonEditStats"
+                          Coords="polygonEditCoords"
+                          OnUndo="UndoLastPolygonVertex"
+                          OnSave="SavePolygonRegion"
+                          OnCancel="CancelPolygonEdit"
+                          OnRemoveVertex="RemovePolygonVertex" />
+    }
+
     @* === Add-menu popover ===
        The Add button in the bottom control bar (MapControls) flips
        fabMenuOpen. The menu pops UP from the bar bottom-left so it
@@ -183,7 +195,11 @@
             </button>
             <button class="map-fab-item" @onclick="FabCreateRegion">
                 <span class="map-fab-ico">&#9711;</span>
-                <span>Region</span>
+                <span>Region (circle)</span>
+            </button>
+            <button class="map-fab-item" @onclick="FabDrawPolygon">
+                <span class="map-fab-ico">&#11039;</span>
+                <span>Region (polygon)</span>
             </button>
             <button class="map-fab-item" @onclick="FabRouteWithWind"
                     disabled="@(!Polar.HasPolar)"
@@ -201,7 +217,8 @@
         <div class="map-context-menu" style="left:@(contextMenuX)px; top:@(contextMenuY)px;">
             <button class="ctx-menu-item" @onclick="CreateWaypointHere">Create Waypoint</button>
             <button class="ctx-menu-item" @onclick="CreateNoteHere">Add Note</button>
-            <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region</button>
+            <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region (circle)</button>
+            <button class="ctx-menu-item" @onclick="StartPolygonFromContextMenu">Draw Polygon</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
             <button class="ctx-menu-item" @onclick="RouteWithWindHere"
                     disabled="@(!Polar.HasPolar)"
@@ -367,6 +384,14 @@
     private string routeEditStats = "0 WP / 0 nm";
     private double[][]? routeEditCoords;
     private System.Threading.Timer? routeStatsTimer;
+    // Polygon-region editing state. Lives alongside route edit because the
+    // two modes are mutually exclusive (same map-click handler dispatch)
+    // and share the same poll-timer pattern.
+    private bool polygonEditMode;
+    private string polygonEditName = "";
+    private string polygonEditStats = "0 vertices";
+    private double[][]? polygonEditCoords;
+    private System.Threading.Timer? polygonStatsTimer;
     // Context menu and waypoint state.
     private bool contextMenuVisible;
     private double contextMenuLat, contextMenuLon;
@@ -1180,6 +1205,20 @@
         CreateRegionHere();
     }
 
+    private async Task FabDrawPolygon()
+    {
+        fabMenuOpen = false;
+        await StartPolygonEdit();
+    }
+
+    // Long-press / right-click context menu entry. Dismiss the menu
+    // first so it doesn't block the first vertex click.
+    private async Task StartPolygonFromContextMenu()
+    {
+        contextMenuVisible = false;
+        await StartPolygonEdit();
+    }
+
     private async Task FabRouteWithWind()
     {
         fabMenuOpen = false;
@@ -1336,6 +1375,123 @@
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
         await module.InvokeVoidAsync("stopRouteEdit");
+    }
+
+    // --- Polygon-region editing ------------------------------------
+    // Same poll cadence as route editing; reuses RouteStatsPollIntervalMs.
+    private async Task StartPolygonEdit()
+    {
+        // Mutually exclusive with route editing.
+        if (routeEditMode) await CancelRouteEdit();
+        polygonEditMode = true;
+        polygonEditName = "";
+        polygonEditStats = "0 vertices";
+        polygonEditCoords = null;
+        if (module is not null)
+            await module.InvokeVoidAsync("startPolygonEdit");
+        polygonStatsTimer = new System.Threading.Timer(
+            _ => _ = UpdatePolygonStats(), null,
+            RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
+    }
+
+    private async Task CancelPolygonEdit()
+    {
+        polygonEditMode = false;
+        polygonEditCoords = null;
+        polygonStatsTimer?.Dispose();
+        polygonStatsTimer = null;
+        if (module is not null)
+            await module.InvokeVoidAsync("stopPolygonEdit");
+    }
+
+    private async Task UndoLastPolygonVertex()
+    {
+        if (module is not null)
+            await module.InvokeVoidAsync("undoLastPolygonVertex");
+        await UpdatePolygonStats();
+    }
+
+    private async Task UpdatePolygonStats()
+    {
+        if (module is null) return;
+        try
+        {
+            var stats = await module.InvokeAsync<double[]>("getPolygonEditStats");
+            var coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords");
+            bool dirty = false;
+            if (stats is not null && stats.Length == 2)
+            {
+                int n = (int)stats[0];
+                double area = stats[1];
+                var s = n < 3
+                    ? $"{n} vertices"
+                    : $"{n} vertices / {FormatArea(area)}";
+                if (s != polygonEditStats) { polygonEditStats = s; dirty = true; }
+            }
+            if (coords is not null && !CoordsEqual(coords, polygonEditCoords))
+            {
+                polygonEditCoords = coords;
+                dirty = true;
+            }
+            if (dirty) await InvokeAsync(StateHasChanged);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    // Metric area formatter. Under 1 ha show square metres; above,
+    // switch to hectares or km^2 -- matches what sailors expect for
+    // anchorage / no-go zones.
+    private static string FormatArea(double squareMeters)
+    {
+        if (squareMeters < 10_000) return $"{squareMeters:F0} m\u00B2";
+        if (squareMeters < 1_000_000) return $"{squareMeters / 10_000:F2} ha";
+        return $"{squareMeters / 1_000_000:F2} km\u00B2";
+    }
+
+    private async Task RemovePolygonVertex(int index)
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("removePolygonEditVertex", index); }
+        catch (JSDisconnectedException) { return; }
+        await UpdatePolygonStats();
+    }
+
+    private async Task SavePolygonRegion()
+    {
+        if (module is null) return;
+        var coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords");
+        if (coords is null || coords.Length < 3)
+        {
+            polygonEditMode = false;
+            polygonEditCoords = null;
+            polygonStatsTimer?.Dispose();
+            polygonStatsTimer = null;
+            await module.InvokeVoidAsync("stopPolygonEdit");
+            return;
+        }
+        string name = string.IsNullOrWhiteSpace(polygonEditName)
+            ? $"Region {DateTime.Now:yyyyMMdd-HHmm}"
+            : polygonEditName;
+        string? id;
+        try { id = await RegionApi.CreatePolygonAsync(name, "", coords); }
+        catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); id = null; }
+
+        if (!string.IsNullOrEmpty(id))
+        {
+            Toasts.Success($"Saved region '{name}' ({coords.Length} vertices)");
+            loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? loadedRegions;
+            RebuildFilteredLayers();
+        }
+        else if (Toasts.Active.Count == 0)
+        {
+            Toasts.Error("Failed to save region");
+        }
+        polygonEditMode = false;
+        polygonEditCoords = null;
+        polygonStatsTimer?.Dispose();
+        polygonStatsTimer = null;
+        await module.InvokeVoidAsync("stopPolygonEdit");
     }
 
     // --- Context Menu & Waypoints ---

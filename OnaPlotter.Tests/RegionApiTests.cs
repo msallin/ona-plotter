@@ -156,6 +156,80 @@ public class RegionApiTests
     }
 
     [Test]
+    public async Task CreatePolygon_Closes_Ring_And_Swaps_To_GeoJson_Order()
+    {
+        // Freeform polygon: C# side sends [lat, lon] Leaflet order, API
+        // has to emit GeoJSON [lon, lat] order and auto-close by repeating
+        // the first vertex. Freeboard-SK consumers assume a closed ring.
+        string? capturedBody = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("\"rgn-poly-1\""),
+            };
+        });
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var vertices = new[]
+        {
+            new[] { 47.40, 8.50 },
+            new[] { 47.41, 8.51 },
+            new[] { 47.42, 8.50 },
+        };
+        var id = await api.CreatePolygonAsync("Triangle", "T-test", vertices);
+
+        await Assert.That(id).IsEqualTo("rgn-poly-1");
+        await Assert.That(capturedBody).IsNotNull();
+        // GeoJSON [lon, lat] ordering (first vertex).
+        await Assert.That(capturedBody).Contains("[8.5,47.4]");
+        // Ring must be closed; first vertex repeats at the end. The JSON
+        // serializer emits the ring inline so we can find the closing
+        // pair after the last distinct vertex.
+        int firstIdx = capturedBody!.IndexOf("[8.5,47.4]");
+        int lastIdx = capturedBody.LastIndexOf("[8.5,47.4]");
+        await Assert.That(lastIdx).IsGreaterThan(firstIdx);
+        await Assert.That(capturedBody).Contains("\"type\":\"Polygon\"");
+        await Assert.That(capturedBody).Contains("\"name\":\"Triangle\"");
+    }
+
+    [Test]
+    public async Task CreatePolygon_Rejects_Fewer_Than_Three_Vertices()
+    {
+        // A single-vertex "polygon" would round-trip as a degenerate ring
+        // that later GetAllAsync would drop anyway; fail fast here.
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("\"never\"") });
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var two = new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.5 } };
+        await Assert.That(await api.CreatePolygonAsync("Too short", "", two)).IsNull();
+
+        await Assert.That(await api.CreatePolygonAsync("Empty", "", System.Array.Empty<double[]>())).IsNull();
+
+        await Assert.That(await api.CreatePolygonAsync("Null", "", null!)).IsNull();
+    }
+
+    [Test]
+    public async Task CreatePolygon_Rejects_Bad_Vertex_Shape()
+    {
+        // A vertex with only one component shouldn't crash the serializer
+        // mid-request; reject before we send.
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("\"never\"") });
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var bad = new[]
+        {
+            new[] { 47.4, 8.5 },
+            new[] { 47.5 },          // only lat; no lon
+            new[] { 47.6, 8.6 },
+        };
+        await Assert.That(await api.CreatePolygonAsync("Bad", "", bad)).IsNull();
+    }
+
+    [Test]
     public async Task Delete_UrlEncodesId()
     {
         string? capturedUrl = null;

@@ -131,6 +131,35 @@ an executable via `dotnet run`.
   flaky wifi with half-configured plugins; any exception that reaches
   Blazor's error UI is a user-visible failure.
 
+## After each task (process)
+
+The product is safety-critical and has to feel world-class. Run this
+after every non-trivial change; skip rounds that genuinely have no
+findings. Keep it pedantic but never let perfect be the enemy of good.
+
+1. **Review** — mimic formal inspection. Pretend you're presenting to
+   senior engineers who know the domain cold. Four focused rounds,
+   each with its own heading:
+   - Functional correctness
+   - Maintainability
+   - Performance
+   - UX
+   Fix what you find. Flag larger refactors without doing them.
+2. **Test coverage**
+   - Unit tests: 100% of the unit under change. Equivalence classes
+     for every input, plus boundary + realistic values.
+   - Integration tests: the important end-to-end flows (resource CRUD,
+     subscription reconnect, alarm lifecycle).
+   - UI smoke via Playwright for the most important + easy-to-test
+     flows. Don't chase every permutation.
+3. **Stryker** — run periodically (not every commit) once coverage
+   drifts or a module feels under-tested. Mutation kill-rate is the
+   real signal, not line coverage.
+4. **Sailor-persona check** — from time to time, sanity-check the
+   product through two personas (offshore cruiser + race crew) and
+   flag gaps that only show up under real use. Add new feature
+   candidates to the "Currently open" section here.
+
 ## Razor binding gotcha
 
 `Param="var"` on a **string**-typed parameter is a literal, not an
@@ -149,10 +178,11 @@ showed those strings as their default value.
 
 ## Currently open
 
-- Polygon regions via freeform drawing (circles + server polygons
-  work; no drawing UX yet)
 - Mode-specific default presets (Race auto-enables laylines, etc.)
-- Offline tile / MBTiles chart download
+- Tile / chart caching for a smooth local experience. App is always
+  online (Pi + wifi on the boat), so offline isn't the goal; the goal
+  is "don't re-download tiles we already have this session". Candidate:
+  Leaflet tile layer with Cache API or IndexedDB prefetch.
 - Auto-routing around land / into the wind is gated on vector charts.
   We only have raster PNG tiles today; S-57 vector parsing plus a
   coastline rasteriser would need to land first. Big-enough feature
@@ -160,13 +190,9 @@ showed those strings as their default value.
 - Vessel-name display: REST snapshot now seeds names for already-known
   vessels on connect. Still need external-lookup fallback for vessels
   that have never sent AIS msg 5/24.
-- Click-to-expand on the four corner HUD panels to surface more
-  detail (VMG, signed AWA/TWA, HDG mag vs true, depth offset). Scoped
-  but not implemented; requires a per-panel expanded-state model and
-  CSS. Candidate: a single `expandedHud` string in Map.razor and a
-  `hud-panel-expanded` class with extra rows.
-- Light theme polish. Only the outer chrome (sidebar, top-row, page
-  background) flips when theme=Light; most panels (chart-panel, HUD,
-  alarm banners, dialogs) have hardcoded dark backgrounds so the
-  result looks jarring. Needs a systemic pass to thread `--sk-surface`
-  through every `rgba(15,17,22,...)` site.
+- Light-theme pass beyond chrome-docked panels. The base tokens
+  (--panel-bg et al.) are in place but deep-map floaters (HUD, route
+  edit, FAB menu) stay dark by design. Settings / Dashboard inherit
+  --sk-surface so they're already coherent. Next step if wanted: light
+  variants of the HUD panels too, trading map-tile contrast for
+  consistency.
