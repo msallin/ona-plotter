@@ -51,6 +51,25 @@
     --sk-top-row-text: #8a919c;
     --sk-top-row-border: #363b44;
 
+    /* Panel / modal palette. Two tiers:
+       - `--panel-bg`: floating panels docked in page chrome (Layers list,
+         alarm log, full-screen modals like Shortcuts / Legend / Welcome,
+         dialog boxes). Flips to a bright card in light theme.
+       - `--panel-bg-map`: panels that float OVER the map tiles (route
+         edit bar, context menu, FAB menu, nearest-WP chip). Stay dark
+         in every theme -- the map tiles are the "background" and these
+         panels need contrast against blue water / satellite imagery.
+       Text / border tokens follow the panel background. */
+    --panel-bg:          rgba(15, 17, 22, 0.92);
+    --panel-bg-strong:   rgba(16, 20, 28, 0.96);
+    --panel-text:        #e2e8f0;
+    --panel-text-muted:  #94a3b8;
+    --panel-border:      rgba(255, 255, 255, 0.12);
+    --panel-shadow:      0 12px 24px rgba(0, 0, 0, 0.4);
+    /* Map overlays keep the dark tier regardless of theme. */
+    --panel-bg-map:      rgba(15, 17, 22, 0.92);
+    --panel-bg-map-text: #e2e8f0;
+
     /* Z-index stack. Use these consistently to avoid layering conflicts. */
     --z-map-layer: 10;
     --z-hud: 500;
@@ -96,6 +115,15 @@
     --sk-top-row-bg: #ffffff;
     --sk-top-row-text: #475569;
     --sk-top-row-border: #e2e8f0;
+
+    /* Panel overrides. Chrome-docked / modal panels flip to bright cards;
+       map-overlay panels (--panel-bg-map) stay dark for tile contrast. */
+    --panel-bg:         rgba(255, 255, 255, 0.96);
+    --panel-bg-strong:  rgba(255, 255, 255, 0.98);
+    --panel-text:       #0f172a;
+    --panel-text-muted: #475569;
+    --panel-border:     rgba(15, 23, 42, 0.14);
+    --panel-shadow:     0 12px 24px rgba(15, 23, 42, 0.18);
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the
@@ -120,6 +148,14 @@
         --sk-top-row-bg: #1a1d23;
         --sk-top-row-text: #8a919c;
         --sk-top-row-border: #363b44;
+
+        /* Snap panel tokens back to the dark defaults. */
+        --panel-bg:         rgba(15, 17, 22, 0.92);
+        --panel-bg-strong:  rgba(16, 20, 28, 0.96);
+        --panel-text:       #e2e8f0;
+        --panel-text-muted: #94a3b8;
+        --panel-border:     rgba(255, 255, 255, 0.12);
+        --panel-shadow:     0 12px 24px rgba(0, 0, 0, 0.4);
     }
 }
 
@@ -946,19 +982,19 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 }
 
 .shortcuts-card {
-    background: rgba(15, 18, 25, 0.98);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--panel-bg-strong);
+    border: 1px solid var(--panel-border);
     border-radius: 12px;
     padding: 20px 24px;
     max-width: 420px;
-    color: var(--sk-text);
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    color: var(--panel-text);
+    box-shadow: var(--panel-shadow);
 }
 
 .shortcuts-card h5 {
     margin: 0 0 14px;
     font-size: 1rem;
-    color: #fff;
+    color: var(--panel-text);
     letter-spacing: 0.02em;
 }
 
@@ -1182,12 +1218,12 @@ main:has(.alarm-banner-stack) .hud-top-left {
     transform: translate(-50%, -50%);
     z-index: var(--z-modal);
     width: min(92vw, 440px);
-    background: rgba(20, 26, 38, 0.98);
-    color: #e2e8f0;
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
     border: 1px solid rgba(224, 159, 62, 0.5);
     border-radius: 10px;
     padding: 22px 26px;
-    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--panel-shadow);
     animation: welcome-pop 0.22s ease-out;
 }
 .welcome-card h3 {
@@ -1357,11 +1393,11 @@ main:has(.alarm-banner-stack) .hud-top-left {
     width: min(360px, calc(100vw - 72px));
     max-height: 60vh;
     z-index: var(--z-modal);
-    background: rgba(16, 20, 28, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: var(--panel-bg-strong);
+    border: 1px solid var(--panel-border);
     border-radius: 8px;
-    color: #e2e8f0;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+    color: var(--panel-text);
+    box-shadow: var(--panel-shadow);
     backdrop-filter: blur(8px);
     display: flex;
     flex-direction: column;
@@ -1435,22 +1471,22 @@ main:has(.alarm-banner-stack) .hud-top-left {
     align-items: center;
     justify-content: space-between;
     padding: 10px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid var(--panel-border);
     flex-shrink: 0;
 }
 .alarm-log-close {
     background: none;
     border: none;
-    color: #94a3b8;
+    color: var(--panel-text-muted);
     font-size: 1rem;
     cursor: pointer;
     padding: 2px 8px;
 }
-.alarm-log-close:hover { color: #f1f5f9; }
+.alarm-log-close:hover { color: var(--panel-text); }
 @media (pointer: coarse) {
     .alarm-log-close { min-height: 44px; min-width: 44px; font-size: 1.2rem; }
 }
-.alarm-log-empty { padding: 20px; color: #64748b; text-align: center; font-size: 0.85rem; }
+.alarm-log-empty { padding: 20px; color: var(--panel-text-muted); text-align: center; font-size: 0.85rem; }
 .alarm-log-list {
     list-style: none;
     margin: 0;
@@ -1467,7 +1503,7 @@ main:has(.alarm-banner-stack) .hud-top-left {
     gap: 8px;
     padding: 8px 14px;
     font-size: 0.78rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--panel-border);
     align-items: baseline;
 }
 /* Phone layout: stack to two rows. Top row: time + title + reason;
@@ -1488,10 +1524,10 @@ main:has(.alarm-banner-stack) .hud-top-left {
     .alarm-log-msg { grid-area: msg; padding-top: 2px; }
 }
 .alarm-log-item:last-child { border-bottom: none; }
-.alarm-log-time { color: #64748b; font-variant-numeric: tabular-nums; font-size: 0.72rem; }
-.alarm-log-title { color: #cbd5e1; font-weight: 600; }
-.alarm-log-reason { color: #94a3b8; font-size: 0.72rem; }
-.alarm-log-msg { color: #94a3b8; }
+.alarm-log-time { color: var(--panel-text-muted); font-variant-numeric: tabular-nums; font-size: 0.72rem; }
+.alarm-log-title { color: var(--panel-text); font-weight: 600; }
+.alarm-log-reason { color: var(--panel-text-muted); font-size: 0.72rem; }
+.alarm-log-msg { color: var(--panel-text-muted); }
 .alarm-log-userdismissed .alarm-log-title { color: #f87171; }
 .alarm-log-usersnoozed .alarm-log-title { color: #fbbf24; }
 .alarm-log-autocleared .alarm-log-title { color: #4ade80; }
@@ -1684,7 +1720,9 @@ main:has(.alarm-banner-stack) .hud-top-left {
     left: 50%;
     transform: translateX(-50%);
     z-index: var(--z-controls);
-    background: rgba(15, 17, 22, 0.92);
+    background: var(--panel-bg);
+    color: var(--panel-text);
+    border: 1px solid var(--panel-border);
     backdrop-filter: blur(6px);
     border-radius: 8px;
     padding: 10px 14px;
@@ -1773,11 +1811,12 @@ main:has(.alarm-banner-stack) .hud-top-left {
     background: rgba(30, 5, 5, 0.92);
 }
 
-/* Layer search input */
+/* Layer search input. Neutral input surface that works on either
+   theme -- darker than --panel-bg on light, lighter on dark. */
 .layer-search {
     width: 100%;
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--sk-surface);
+    border: 1px solid var(--sk-border);
     border-radius: 6px;
     padding: 5px 10px;
     font-size: 0.8rem;
@@ -2786,12 +2825,14 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 900;
-    background: rgba(15, 17, 22, 0.95);
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
     backdrop-filter: blur(6px);
     border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.15);
+    border: 1px solid var(--panel-border);
     padding: 16px 20px;
     min-width: 220px;
+    box-shadow: var(--panel-shadow);
 }
 
 /* ===== Polar upload status ===== */
