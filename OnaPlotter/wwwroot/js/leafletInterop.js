@@ -4,7 +4,8 @@
 import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          haversineMeters, bearingDeg, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
-import { isOverlayChart, computeOverzoom } from './chartOverzoom.js';
+import { isOverlayChart, computeOverzoom, applyOverzoom } from './chartOverzoom.js';
+import { MarkerLayer } from './markerLayer.js';
 
 let map = null;
 let boatMarker = null;
@@ -65,30 +66,11 @@ let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThres
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
 let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
 
-// Shared bookkeeping for every by-id layer dict on the map: charts,
-// routes, waypoints, notes, regions, and any future resource layer.
-// The class only tracks the Leaflet layer and manages removal; call
-// sites still call layer.addTo(map) themselves so they can stage
-// layers inside layerGroups or control add-ordering. Keeps remove /
-// clear consistent: `if (layer && map) map.removeLayer(layer)` gets
-// written once, not six times.
-class MarkerLayer {
-    constructor() { this.items = {}; }
-    has(id) { return Object.prototype.hasOwnProperty.call(this.items, id); }
-    get(id) { return this.items[id]; }
-    keys() { return Object.keys(this.items); }
-    set(id, layer) { this.items[id] = layer; }
-    remove(id) {
-        const layer = this.items[id];
-        if (layer) {
-            if (map) map.removeLayer(layer);
-            delete this.items[id];
-        }
-    }
-    clear() {
-        for (const id of Object.keys(this.items)) this.remove(id);
-    }
-}
+// MarkerLayer now lives in markerLayer.js so it's unit-testable in
+// node (see markerLayer.test.js). Each instance needs a reference to
+// the Leaflet map for removeLayer() -- since `map` gets assigned in
+// initMap *after* these dicts are constructed, MarkerLayer takes the
+// map reference lazily via setMap() below, once initMap runs.
 
 // Chart layers from SignalK.
 const chartLayers = new MarkerLayer();  // keyed by chart identifier
@@ -476,6 +458,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // OSM / OpenSeaMap attribution stays (ODbL / CC-BY-SA require it);
     // the Leaflet credit is courtesy and removable.
     map.attributionControl.setPrefix(false);
+
+    // Hook the newly-created Leaflet map into each MarkerLayer dict so
+    // remove() / clear() can pull layers off the map. Done here rather
+    // than in the ctor because module-scope `new MarkerLayer()` runs
+    // before initMap, when `map` is still null.
+    for (const ml of [chartLayers, routeLayers, waypointMarkers, noteMarkers, regionLayers]) {
+        ml.setMap(map);
+    }
 
     // Zoom control in top-right to avoid HUD overlap.
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -1531,33 +1521,22 @@ export function setChartLayerOrder(orderedIds) {
 // If two charts share the top native, both overzoom -- harmless since
 // the later-added one draws on top anyway.
 function recomputeChartOverzoom() {
-    // MarkerLayer stores its layers under `.items` (a plain object),
-    // not `.map`. The old code accessed `chartLayers.map` -- which is
-    // undefined on MarkerLayer -- so any call here threw JSException
-    // and the whole toggle-a-chart flow bubbled into Blazor's error UI.
-    // The crash only surfaced when SignalK actually returned charts
-    // (openplotter deployments with signalk-charts-plugin); setups
-    // without charts never hit the bad line.
-    const ids = chartLayers.keys();
-    if (ids.length === 0) {
-        if (zoomBadge) zoomBadge.update();
-        return;
-    }
-    // Pure decision in chartOverzoom.js; this function just applies
-    // the result to the live Leaflet layers.
-    const effective = computeOverzoom(chartNativeMax, chartOverlay);
-    for (const id of ids) {
-        const layer = chartLayers.get(id);
-        if (!layer) continue;
-        const effMax = effective.get(id) ?? (chartNativeMax.get(id) || 18);
-        if (layer.options.maxZoom !== effMax) {
-            layer.options.maxZoom = effMax;
-            // Leaflet reads options.maxZoom on tile-visibility checks.
-            // redraw() forces it to recompute which tiles to paint at
-            // the current map zoom, which is what we actually want.
-            layer.redraw();
-        }
-    }
+    // Everything is in chartOverzoom.js now; this function is just the
+    // glue that feeds it the live MarkerLayer + mutates layer.options.
+    applyOverzoom(
+        chartLayers.keys(),
+        chartNativeMax,
+        chartOverlay,
+        (id) => chartLayers.get(id),
+        (_id, layer, effMax) => {
+            if (layer.options.maxZoom !== effMax) {
+                layer.options.maxZoom = effMax;
+                // Leaflet reads options.maxZoom on tile-visibility
+                // checks; redraw() forces it to recompute which tiles
+                // to paint at the current map zoom.
+                layer.redraw();
+            }
+        });
     if (zoomBadge) zoomBadge.update();
 }
 

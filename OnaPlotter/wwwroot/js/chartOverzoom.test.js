@@ -3,7 +3,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isOverlayChart, computeOverzoom } from './chartOverzoom.js';
+import { isOverlayChart, computeOverzoom, applyOverzoom } from './chartOverzoom.js';
+import { MarkerLayer } from './markerLayer.js';
 
 // --- isOverlayChart -------------------------------------------------
 
@@ -152,5 +153,96 @@ describe('computeOverzoom', () => {
         const a = computeOverzoom(m({ a: 12, b: 18 }), s());
         const b = computeOverzoom(m({ a: 12, b: 18 }), s());
         assert.deepEqual([...a.entries()], [...b.entries()]);
+    });
+});
+
+// --- applyOverzoom ---------------------------------------------------
+//
+// The side-effecting sibling of computeOverzoom. Tests run against a
+// real MarkerLayer instance (not a MockMap) because the ORIGINAL bug
+// that motivated this suite -- `chartLayers.map.size is undefined` --
+// only manifests when callers reach for a shape MarkerLayer doesn't
+// have. Plugging in a real MarkerLayer here pins the integration point.
+
+describe('applyOverzoom', () => {
+    // Fake Leaflet layer: just a plain object with options.maxZoom and
+    // a redraw() spy. That's the only contract applyOverzoom needs.
+    function fakeLayer(nativeMax) {
+        const l = { options: { maxZoom: nativeMax }, redraws: 0 };
+        l.redraw = () => l.redraws++;
+        return l;
+    }
+
+    it('empty id list is a no-op (early return, no getLayer calls)', () => {
+        let getLayerCalls = 0;
+        let setEffMaxCalls = 0;
+        applyOverzoom([], new Map(), new Set(),
+            () => { getLayerCalls++; return null; },
+            () => { setEffMaxCalls++; });
+        assert.equal(getLayerCalls, 0);
+        assert.equal(setEffMaxCalls, 0);
+    });
+
+    it('null id list is a no-op (defensive)', () => {
+        // recomputeChartOverzoom used to early-return on size === 0;
+        // applyOverzoom should be equally lenient so the caller can
+        // just pass the keys array without guarding.
+        let called = false;
+        applyOverzoom(null, new Map(), new Set(), () => null, () => { called = true; });
+        assert.equal(called, false);
+    });
+
+    it('updates each layer via setEffMax with the computed maxZoom', () => {
+        // Use a REAL MarkerLayer as the layer backing store so the call
+        // `(id) => chartLayers.get(id)` passed from recomputeChartOverzoom
+        // exercises the actual API shape. This is the test that would
+        // have caught the original `chartLayers.map.size` bug.
+        const chartLayers = new MarkerLayer(null);
+        const a = fakeLayer(12);
+        const b = fakeLayer(18);
+        chartLayers.set('wide', a);
+        chartLayers.set('detailed', b);
+        const nativeMax = new Map([['wide', 12], ['detailed', 18]]);
+
+        const applied = new Map();
+        applyOverzoom(chartLayers.keys(), nativeMax, new Set(),
+            (id) => chartLayers.get(id),
+            (id, layer, effMax) => applied.set(id, effMax));
+
+        // 'wide' not top-native -> pinned. 'detailed' top -> overzoomed.
+        assert.equal(applied.get('wide'), 12);
+        assert.equal(applied.get('detailed'), 22);
+    });
+
+    it('skips ids whose layer lookup returns falsy', () => {
+        // Between recomputeChartOverzoom reading keys() and calling
+        // getLayer, a concurrent remove might nil out a layer. Defensive
+        // skip rather than letting `layer.options` explode.
+        const nativeMax = new Map([['a', 18], ['b', 18]]);
+        const setCalls = [];
+        applyOverzoom(['a', 'b'], nativeMax, new Set(),
+            (id) => id === 'a' ? { options: {} } : null,
+            (id, _layer, effMax) => setCalls.push([id, effMax]));
+        assert.deepEqual(setCalls.map(c => c[0]), ['a']);
+    });
+
+    it('regression: real chartLayers + overlay exclusion yields base overzoom', () => {
+        // The end-to-end shape of the OPENSEAMAP regression, wired up
+        // through a real MarkerLayer -- i.e. exactly the code path
+        // that crashed in production before the fix.
+        const chartLayers = new MarkerLayer(null);
+        chartLayers.set('noaa', fakeLayer(17));
+        chartLayers.set('openseamap', fakeLayer(19));
+        const nativeMax = new Map([['noaa', 17], ['openseamap', 19]]);
+        const overlays = new Set(['openseamap']);
+
+        const applied = new Map();
+        applyOverzoom(chartLayers.keys(), nativeMax, overlays,
+            (id) => chartLayers.get(id),
+            (id, _layer, effMax) => applied.set(id, effMax));
+
+        assert.equal(applied.get('noaa'), 22,
+            'base chart must overzoom even when the overlay native is higher');
+        assert.equal(applied.get('openseamap'), 23);
     });
 });

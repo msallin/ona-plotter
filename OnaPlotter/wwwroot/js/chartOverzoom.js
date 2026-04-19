@@ -60,3 +60,29 @@ export function computeOverzoom(nativeMax, overlays) {
     }
     return out;
 }
+
+/**
+ * Apply the overzoom decision to a collection of Leaflet chart layers.
+ * Separated from `computeOverzoom` so the pure-arithmetic half stays
+ * free of side effects, and from `recomputeChartOverzoom` in
+ * leafletInterop.js so the side-effect half is testable with stubbed
+ * layers. Catches the class of "typed a property the layer dict
+ * doesn't have" bugs that crashed addChartLayer in production.
+ *
+ * @param {string[]} ids - chart ids to update (typically chartLayers.keys())
+ * @param {Map<string, number>} nativeMax - chart id -> native maxZoom
+ * @param {Set<string>} overlays - ids of overlay charts
+ * @param {(id: string) => any} getLayer - fetches the Leaflet layer for an id
+ * @param {(id: string, layer: any, effMax: number) => void} setEffMax -
+ *        side-effecting callback that applies the new effective maxZoom
+ */
+export function applyOverzoom(ids, nativeMax, overlays, getLayer, setEffMax) {
+    if (!ids || ids.length === 0) return;
+    const effective = computeOverzoom(nativeMax, overlays);
+    for (const id of ids) {
+        const layer = getLayer(id);
+        if (!layer) continue;
+        const effMax = effective.get(id) ?? (nativeMax.get(id) || 18);
+        setEffMax(id, layer, effMax);
+    }
+}

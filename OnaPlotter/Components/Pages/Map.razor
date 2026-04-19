@@ -1877,6 +1877,16 @@
                     chart.Bounds);
             }
             catch (JSDisconnectedException) { return; }
+            catch (JSException ex)
+            {
+                // A JS-side regression (wrong object shape, missing layer
+                // type, etc.) must not bubble into Blazor's error UI and
+                // freeze the render pass -- that's what hid the own-boat
+                // marker on the "chartLayers.map is undefined" crash.
+                // Toast the user, log the detail, stay alive.
+                Toasts.Error($"Chart {chart.Name}: could not enable ({ex.Message})");
+                return;
+            }
             enabledCharts.Add(chart.Identifier);
             // Seed the chart order with any newly-seen id so user-driven
             // reorders have something to reorder. Append -- new charts go
@@ -1891,6 +1901,11 @@
         {
             try { await module.InvokeVoidAsync("removeChartLayer", chart.Identifier); }
             catch (JSDisconnectedException) { return; }
+            catch (JSException ex)
+            {
+                Toasts.Error($"Chart {chart.Name}: could not disable ({ex.Message})");
+                return;
+            }
             enabledCharts.Remove(chart.Identifier);
         }
         await Settings.SetEnabledChartsAsync(enabledCharts);
@@ -1924,6 +1939,13 @@
         // Push the new draw order to JS so z-index on each layer matches.
         try { await module.InvokeVoidAsync("setChartLayerOrder", order.ToArray()); }
         catch (JSDisconnectedException) { }
+        catch (JSException ex)
+        {
+            // Symptom of the "reorder button does nothing" bug: a JS
+            // exception in setChartLayerOrder silently wedges the UI.
+            // Toast so the user sees something happened.
+            Toasts.Error($"Reorder failed ({ex.Message})");
+        }
 
         StateHasChanged();
     }
