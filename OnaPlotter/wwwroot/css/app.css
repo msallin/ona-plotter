@@ -1943,6 +1943,66 @@ main:has(.alarm-banner-stack) .hud-top-left {
     50%      { transform: scale(1.18); opacity: 0.85; }
 }
 
+/* ===== Chart legend =====
+   Collapsible section at the bottom of the Layers panel. Explains
+   every recognised chart symbol in one line + a colour swatch so a
+   newcomer can answer "what's the slate-blue pin?" without reading
+   the docs. Collapsed by default -- regular users don't need it in
+   their way. */
+.legend-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 8px 0;
+    font-size: 0.72rem;
+}
+.legend-list li {
+    display: grid;
+    grid-template-columns: 24px auto 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 4px 4px 8px;
+    line-height: 1.25;
+}
+.legend-name {
+    color: var(--sk-text);
+    font-weight: 600;
+    white-space: nowrap;
+}
+.legend-desc { color: var(--sk-text-muted); }
+.legend-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: transparent;
+    display: inline-block;
+    flex-shrink: 0;
+}
+/* Each swatch is a simple fill -- fidelity to the actual icon
+   (SVG chevron etc.) would double the CSS for almost no gain; a
+   solid swatch of the right hue anchors the name in the reader's
+   memory well enough. */
+.legend-own        { background: #ec4899; }                   /* magenta */
+.legend-ais-sail   { background: #e28862; }                   /* warm coral */
+.legend-ais-fish   { background: #d4a850; }                   /* muted gold */
+.legend-ais-commercial { background: #7d9b76; }               /* sage green */
+.legend-buddy      { background: #e9c46a; }                   /* honey gold */
+.legend-danger     { background: #c4453e; }                   /* warm brick */
+.legend-sart       { background: #ef4444; }                   /* pure red */
+.legend-radar      { background: transparent;
+                     border: 2px solid #b08d5a; }             /* tan outline */
+.legend-route      { background: transparent;
+                     border-top: 3px dashed #e09f3e;
+                     margin-top: 8px;
+                     height: 4px;
+                     border-radius: 0; }
+.legend-waypoint   { background: #c76f51; border-radius: 50%; }
+.legend-note       { background: #c8892e; }                   /* --ann-note */
+.legend-region     { background: rgba(212, 168, 80, 0.3);
+                     border: 1px solid #d4a850; }             /* --ann-region */
+.legend-guard      { background: transparent;
+                     border: 2px dashed #c4453e;
+                     border-radius: 50%; }
+
 /* ===== Nearest-waypoint chip =====
    Anchored top-centre just under the top row. Shows the closest
    saved waypoint when there's no active course. Tapping pans to it
