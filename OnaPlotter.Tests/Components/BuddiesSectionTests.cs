@@ -20,6 +20,10 @@ public class BuddiesSectionTests
             SogKn: null, ShipType: null, IsBuddy: true,
             ColregsLabel: null, ColregsRole: null);
 
+    // Sections start collapsed; expand before asserting on inner rows.
+    private static void Expand(IRenderedComponent<BuddiesSection> cut) =>
+        cut.Find(".section-toggle").Click();
+
     [Test]
     public async Task BuddyWithNoMatchingVessel_Shows_NotInAisRange()
     {
@@ -27,6 +31,7 @@ public class BuddiesSectionTests
         var cut = ctx.RenderComponent<BuddiesSection>(p => p
             .Add(x => x.Buddies, new[] { Buddy("urn:mrn:imo:mmsi:1234", "Friend") })
             .Add(x => x.Vessels, Array.Empty<VesselListEntry>()));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("Friend");
         await Assert.That(cut.Markup).Contains("Not in AIS range");
@@ -41,6 +46,7 @@ public class BuddiesSectionTests
             .Add(x => x.Vessels, new[] {
                 Vessel("vessels.urn:mrn:imo:mmsi:1234", "Friend Live", "1234", distNm: 2.4)
             }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("2.4 nm");
         await Assert.That(cut.Markup).DoesNotContain("Not in AIS range");
@@ -58,6 +64,7 @@ public class BuddiesSectionTests
             .Add(x => x.Vessels, new[] {
                 Vessel("vessels.urn:mrn:imo:mmsi:1234", "Different Boat", "1234", distNm: 5.0)
             }));
+        Expand(cut);
 
         // Different vessel's distance must NOT leak into the buddy row.
         await Assert.That(cut.Markup).Contains("Boat 1234 Doe");

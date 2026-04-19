@@ -1346,12 +1346,15 @@ main:has(.alarm-banner-stack) .hud-top-left {
    Phone (<=600px): bottom-sheet that slides up from the bottom edge,
    full-width with rounded top corners, bigger max-height so the list is
    actually readable. Uses a flex column so the scroll lives on the list
-   and the header stays pinned. */
+   and the header stays pinned.
+   Right offset (56 px) clears Leaflet's top-right zoom+fullscreen stack
+   (~34 px of buttons plus a 16 px gutter) so the panel never sits under
+   the native controls. */
 .alarm-log-panel {
     position: fixed;
     top: 3rem;
-    right: 12px;
-    width: min(360px, calc(100vw - 24px));
+    right: 56px;
+    width: min(360px, calc(100vw - 72px));
     max-height: 60vh;
     z-index: var(--z-modal);
     background: rgba(16, 20, 28, 0.96);
@@ -2119,15 +2122,14 @@ main:has(.alarm-banner-stack) .map-fab-wrap { top: 112px; }
                      border-radius: 50%; }
 
 /* ===== Nearest-waypoint chip =====
-   Anchored top-centre just under the top row. Shows the closest
-   saved waypoint when there's no active course. Tapping pans to it
-   (a one-tap "show me that waypoint" shortcut). Visually sits
-   between the top HUDs, never blocks the map more than a single
-   row of text. Hidden via .nearest-wp-chip-hidden when an active
-   course fills the same vertical slot. */
+   Anchored top-centre BELOW the chart-quick-bar. The chart bar can wrap
+   to two rows when many overlays are enabled, so we sit ~84 px from the
+   top (10 px bar start + ~60 px two-row wrap + breathing room). Hidden
+   via .nearest-wp-chip-hidden when an active course fills the same
+   vertical slot. */
 .nearest-wp-chip {
     position: fixed;
-    top: 3.2rem;
+    top: 5.25rem;
     left: 50%;
     transform: translateX(-50%);
     z-index: var(--z-hud);
@@ -2162,7 +2164,7 @@ main:has(.alarm-banner-stack) .map-fab-wrap { top: 112px; }
 /* Push below the alarm-banner-stack when it's visible so the chip
    never hides under an alarm. */
 main:has(.alarm-banner-stack) .nearest-wp-chip {
-    top: calc(3rem + 56px);
+    top: calc(5.25rem + 56px);
 }
 @media (max-width: 600px) {
     .nearest-wp-chip {
@@ -2837,6 +2839,19 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     min-height: 80px;
     font-family: inherit;
     line-height: 1.4;
+}
+
+/* Note / region / waypoint dialogs: stack inputs vertically. The base
+   .route-name-input is inline with a fixed 150 px width (so it fits
+   beside other controls on the route-edit bar), which would otherwise
+   leave the title and description sharing a row in these dialogs. */
+.waypoint-dialog .route-name-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+.waypoint-dialog .route-name-input + .route-name-input {
+    margin-top: 8px;
 }
 
 /* Note popup: muted slate-blue accent matching the pin colour. Title

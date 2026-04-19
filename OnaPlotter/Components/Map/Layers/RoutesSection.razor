@@ -36,7 +36,7 @@
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggle { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEdit { get; set; }
 
-    private bool expanded = true;
+    private bool expanded = false;
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
 }

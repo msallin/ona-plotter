@@ -79,6 +79,7 @@
                  RaceTimerActive="raceTimerActive"
                  RaceTimerLabel="@FormatRaceTimer()"
                  LayersPanelOpen="chartPanelOpen"
+                 LegendOpen="legendOpen"
                  EnabledLayerCount="enabledCharts.Count + enabledRoutes.Count"
                  TotalLayerCount="availableCharts.Count + availableRoutes.Count"
                  OnToggleFollow="ToggleFollow"
@@ -91,11 +92,17 @@
                  OnToggleMeasure="ToggleMeasure"
                  OnStartRouteEdit="StartRouteEdit"
                  OnToggleRaceTimer="ToggleRaceTimer"
-                 OnToggleLayers="ToggleLayersPanel" />
+                 OnToggleLayers="ToggleLayersPanel"
+                 OnToggleLegend="() => legendOpen = !legendOpen" />
 
     @if (shortcutsVisible)
     {
         <MapShortcutsOverlay OnDismiss="() => shortcutsVisible = false" />
+    }
+
+    @if (legendOpen)
+    {
+        <LegendOverlay OnDismiss="() => legendOpen = false" />
     }
 
     @* First-run long-press hint. CSS gates on `@@media (pointer: coarse)`
@@ -145,7 +152,7 @@
 
     @if (routeEditMode)
     {
-        <RouteEditPanel Name="routeEditName"
+        <RouteEditPanel Name="@routeEditName"
                         NameChanged="v => routeEditName = v"
                         Stats="@routeEditStats"
                         Coords="routeEditCoords"
@@ -318,7 +325,7 @@
                      EnabledRoutes="enabledRoutes"
                      ServerTrackVisible="serverTrackVisible"
                      WeatherOverlayVisible="weatherOverlayVisible"
-                     LayerFilter="layerFilter"
+                     LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
                      OnToggleChart="OnToggleChartCallback"
                      OnToggleRoute="OnToggleRouteCallback"
@@ -363,6 +370,7 @@
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
+    private bool legendOpen;
     private int laylinesSkip;  // Throttle: update laylines every 5th position fix.
     private string mapOrientation = "north"; // "north", "course", "head"
     private string mapOrientationLabel = "N\u2191";

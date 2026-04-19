@@ -34,7 +34,7 @@
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigate { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
-    private bool expanded = true;
+    private bool expanded = false;
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
 

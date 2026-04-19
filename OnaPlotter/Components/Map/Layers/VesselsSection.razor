@@ -53,7 +53,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
     [Parameter] public EventCallback<string> OnFocus { get; set; }
 
-    private bool expanded = true;
+    private bool expanded = false;
 
     private static string VesselRowClass(VesselListEntry v)
     {

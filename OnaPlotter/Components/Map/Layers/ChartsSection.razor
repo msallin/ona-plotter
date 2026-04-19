@@ -34,5 +34,7 @@
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
     [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggle { get; set; }
 
-    private bool expanded = true;
+    // Collapsed by default -- the Layers panel opens compact, the user
+    // expands only the sections they need. See agents.md "UX principles".
+    private bool expanded = false;
 }

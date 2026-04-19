@@ -33,18 +33,18 @@
                    OnEdit="OnEditRoute" />
 
     <WaypointsSection Waypoints="LoadedWaypoints"
-                      LayerFilter="LayerFilter"
+                      LayerFilter="@LayerFilter"
                       OnNavigate="OnNavigateToWaypoint" />
 
     <NotesSection Notes="LoadedNotes"
                   Visible="NotesVisible"
-                  LayerFilter="LayerFilter"
+                  LayerFilter="@LayerFilter"
                   OnFocus="OnFocusNote"
                   OnToggleVisible="OnToggleNotesVisible" />
 
     <RegionsSection Regions="LoadedRegions"
                     Visible="RegionsVisible"
-                    LayerFilter="LayerFilter"
+                    LayerFilter="@LayerFilter"
                     OnFocus="OnFocusRegion"
                     OnToggleVisible="OnToggleRegionsVisible" />
 
@@ -61,8 +61,6 @@
 
     <WeatherSection Visible="WeatherOverlayVisible"
                     OnToggle="OnToggleWeatherOverlay" />
-
-    <LegendSection />
 
     <div style="margin-top:8px; border-top:1px solid var(--sk-border); padding-top:8px; display:flex; gap:6px;">
         <label class="map-btn gpx-btn">

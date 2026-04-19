@@ -25,6 +25,12 @@ public class NotesSectionTests
         return n;
     }
 
+    // Sections render collapsed by default (UX principle: panel opens
+    // compact). Every test below that asserts on inner content first
+    // clicks the header to expand.
+    private static void Expand(IRenderedComponent<NotesSection> cut) =>
+        cut.Find(".section-toggle").Click();
+
     [Test]
     public async Task EmptyList_SectionHidden()
     {
@@ -43,6 +49,7 @@ public class NotesSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp patch"), Note("n2", "Reef") }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("Kelp patch");
         await Assert.That(cut.Markup).Contains("Reef");
@@ -56,6 +63,7 @@ public class NotesSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "") }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("(untitled)");
     }
@@ -67,6 +75,7 @@ public class NotesSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Title", desc: longDesc) }));
+        Expand(cut);
 
         // The 80-char description should be truncated to 60 chars + "..."
         await Assert.That(cut.Markup).Contains(new string('x', 60) + "...");
@@ -83,6 +92,7 @@ public class NotesSectionTests
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
             .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkNote>(
                 this, n => focused = n)));
+        Expand(cut);
 
         cut.Find("button.map-btn").Click();
 

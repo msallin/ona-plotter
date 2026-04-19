@@ -50,7 +50,7 @@
     [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
-    private bool expanded = true;
+    private bool expanded = false;
 
     private static string Truncate(string s, int n)
         => s.Length <= n ? s : s[..n] + "...";

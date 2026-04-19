@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using OnaPlotter.Models;
+using OnaPlotter.Services.Api;
 
 namespace OnaPlotter.Services;
 
@@ -40,6 +41,8 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly TrackBuffer _track;
     private readonly AisStore _ais;
     private readonly Uri _wsUri;
+    private readonly HttpClient _http;
+    private readonly ISignalKBaseUrl _baseUrl;
     private string _selfContext;
     private readonly ILogger<SignalkClient> _logger;
     private CancellationTokenSource? _cts;
@@ -158,13 +161,15 @@ public sealed class SignalkClient : IAsyncDisposable
     public bool IsDataStale => IsConnected
         && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
 
-    public SignalkClient(OnaPlotter.Services.Api.ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
-        TrackBuffer track, AisStore ais)
+    public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
+        TrackBuffer track, AisStore ais, HttpClient http)
     {
         _logger = logger;
         _data = new NavigationData();
         _track = track;
         _ais = ais;
+        _http = http;
+        _baseUrl = baseUrl;
         _wsUri = baseUrl.StreamUri();
         _selfContext = "";
     }
@@ -207,6 +212,14 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (_extraPaths.Count > 0)
                     await SendSubscriptionAsync("vessels.self", _extraPaths,
                         periodMs: RawStreamSubscriptionPeriodMs, policy: "instant");
+
+                // SignalK "ideal" subscriptions only send deltas as values
+                // change; static AIS data (names, MMSI) received BEFORE we
+                // connected is never replayed over the stream. Seed those
+                // from the REST snapshot so vessels show their name instead
+                // of a bare MMSI on first paint. Best-effort -- any failure
+                // just leaves names to trickle in via live deltas.
+                _ = Task.Run(() => SeedVesselNamesFromRestAsync(ct), ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
@@ -598,6 +611,113 @@ public sealed class SignalkClient : IAsyncDisposable
         {
             _sendLock.Release();
         }
+    }
+
+    /// <summary>
+    /// One-shot REST fetch of every vessel known to the server, walking the
+    /// tree for static-data leaves (name / mmsi / callsign / ship type /
+    /// position) and feeding them to <see cref="AisStore"/> as if they had
+    /// arrived on the delta stream. Bridges the gap where SignalK's
+    /// subscription stream only sends values as they change.
+    /// <para>
+    /// Never throws: any network or parse failure is logged at Warning.
+    /// </para>
+    /// </summary>
+    private async Task SeedVesselNamesFromRestAsync(CancellationToken ct)
+    {
+        try
+        {
+            var url = _baseUrl.Combine("/signalk/v1/api/vessels");
+            using var res = await _http.GetAsync(url, ct);
+            if (!res.IsSuccessStatusCode) return;
+
+            using var stream = await res.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+
+            int seeded = 0;
+            foreach (var vesselProp in doc.RootElement.EnumerateObject())
+            {
+                if (ct.IsCancellationRequested) break;
+                // Each property key is the short vessel id ("urn:mrn:imo:mmsi:...");
+                // AIS contexts on the delta stream use "vessels." prefix.
+                string context = vesselProp.Name.StartsWith("vessels.", StringComparison.Ordinal)
+                    ? vesselProp.Name
+                    : $"vessels.{vesselProp.Name}";
+                if (ApplyRestVesselTree(context, vesselProp.Value)) seeded++;
+            }
+            if (seeded > 0)
+                _logger.LogInformation("Seeded static data for {Count} vessels from REST snapshot", seeded);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "REST vessel-snapshot seed failed (names will trickle in via deltas)");
+        }
+    }
+
+    /// <summary>
+    /// Walks the value tree for a single vessel and forwards the leaves
+    /// <see cref="AisVessel.Apply"/> understands. Returns true if any leaf
+    /// was applied so the caller can count "interesting" vessels.
+    /// </summary>
+    private bool ApplyRestVesselTree(string context, JsonElement vessel)
+    {
+        if (vessel.ValueKind != JsonValueKind.Object) return false;
+        bool any = false;
+
+        // SignalK wraps leaf values as { "value": ..., "timestamp": ... }
+        // -- so "name" might be under vessel.name.value or vessel.name
+        // depending on the server. Try both shapes.
+        any |= TryApplyScalar(context, "name", vessel, "name");
+        any |= TryApplyScalar(context, "mmsi", vessel, "mmsi");
+        if (vessel.TryGetProperty("communication", out var comm)
+            && comm.ValueKind == JsonValueKind.Object)
+        {
+            any |= TryApplyScalar(context, "communication.callsignVhf", comm, "callsignVhf");
+        }
+        if (vessel.TryGetProperty("design", out var design)
+            && design.ValueKind == JsonValueKind.Object
+            && design.TryGetProperty("aisShipType", out var typeWrap))
+        {
+            var typeVal = UnwrapValue(typeWrap);
+            if (typeVal.ValueKind != JsonValueKind.Undefined && typeVal.ValueKind != JsonValueKind.Null)
+            {
+                _ais.Apply(context, "design.aisShipType", typeVal);
+                any = true;
+            }
+        }
+        if (vessel.TryGetProperty("navigation", out var nav)
+            && nav.ValueKind == JsonValueKind.Object
+            && nav.TryGetProperty("position", out var posWrap))
+        {
+            var posVal = UnwrapValue(posWrap);
+            if (posVal.ValueKind == JsonValueKind.Object)
+            {
+                _ais.Apply(context, "navigation.position", posVal);
+                any = true;
+            }
+        }
+        return any;
+    }
+
+    private bool TryApplyScalar(string context, string path, JsonElement parent, string key)
+    {
+        if (!parent.TryGetProperty(key, out var wrap)) return false;
+        var val = UnwrapValue(wrap);
+        if (val.ValueKind != JsonValueKind.String) return false;
+        _ais.Apply(context, path, val);
+        return true;
+    }
+
+    // Returns the wrapped .value if this is a SignalK leaf, otherwise the
+    // element itself. Some servers publish bare scalars; most wrap them.
+    private static JsonElement UnwrapValue(JsonElement el)
+    {
+        if (el.ValueKind == JsonValueKind.Object
+            && el.TryGetProperty("value", out var inner))
+            return inner;
+        return el;
     }
 
     public async ValueTask DisposeAsync()

@@ -60,6 +60,11 @@
 
     <div class="ctrl-sep"></div>
 
+    <button class="ctrl-btn @(LegendOpen ? "active" : "")" @onclick="OnToggleLegend"
+            title="Map legend: what every symbol means">
+        <span class="ctrl-ico">@((MarkupString)Icons.Legend)</span>
+        <span class="ctrl-lbl">Legend</span>
+    </button>
     <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
             title="@LayersTitle">
         <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
@@ -79,6 +84,7 @@
     [Parameter] public bool RaceTimerActive { get; set; }
     [Parameter] public string RaceTimerLabel { get; set; } = "";
     [Parameter] public bool LayersPanelOpen { get; set; }
+    [Parameter] public bool LegendOpen { get; set; }
 
     /// <summary>Charts + routes currently enabled by the user. Shown as
     /// a badge on the Layers button so it's obvious when data is hidden
@@ -109,4 +115,5 @@
     [Parameter] public EventCallback OnStartRouteEdit { get; set; }
     [Parameter] public EventCallback OnToggleRaceTimer { get; set; }
     [Parameter] public EventCallback OnToggleLayers { get; set; }
+    [Parameter] public EventCallback OnToggleLegend { get; set; }
 }

@@ -22,6 +22,10 @@ public class RegionsSectionTests
         return r;
     }
 
+    // Sections start collapsed; expand before asserting on inner content.
+    private static void Expand(IRenderedComponent<RegionsSection> cut) =>
+        cut.Find(".section-toggle").Click();
+
     [Test]
     public async Task EmptyList_SectionHidden()
     {
@@ -41,6 +45,7 @@ public class RegionsSectionTests
                 Region("r1", "Anchorage"),
                 Region("r2", "No-go zone"),
             }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("Anchorage");
         await Assert.That(cut.Markup).Contains("No-go zone");
@@ -56,6 +61,7 @@ public class RegionsSectionTests
             .Add(x => x.Regions, new[] { Region("r1", "Anchorage") })
             .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkRegion>(
                 this, r => focused = r)));
+        Expand(cut);
 
         cut.Find("button.map-btn").Click();
 

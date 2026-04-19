@@ -21,12 +21,17 @@ public class VesselsSectionTests
             SogKn: null, ShipType: null, IsBuddy: buddy,
             ColregsLabel: colregsLabel, ColregsRole: colregsRole);
 
+    // Sections start collapsed; expand before asserting on inner rows.
+    private static void Expand(IRenderedComponent<VesselsSection> cut) =>
+        cut.Find(".section-toggle").Click();
+
     [Test]
     public async Task DangerClass_AppliedWhen_Cpa_BelowPointFive_Tcpa_Below10()
     {
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("c1", "Near", cpa: 0.3, tcpa: 5) }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("vessel-danger");
         await Assert.That(cut.Markup).DoesNotContain("vessel-warn");
@@ -38,6 +43,7 @@ public class VesselsSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("c1", "Nearish", cpa: 0.8, tcpa: 15) }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("vessel-warn");
     }
@@ -48,6 +54,7 @@ public class VesselsSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("c1", "Safe", cpa: 3.0, tcpa: 30) }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).DoesNotContain("vessel-danger");
         await Assert.That(cut.Markup).DoesNotContain("vessel-warn");
@@ -59,6 +66,7 @@ public class VesselsSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("c1", "Morning Star", buddy: true) }));
+        Expand(cut);
 
         // U+2605 is the black star used as the buddy glyph.
         await Assert.That(cut.Markup).Contains("\u2605 Morning Star");
@@ -72,6 +80,7 @@ public class VesselsSectionTests
             .Add(x => x.Vessels, new[] {
                 V("c1", "Ship", colregsLabel: "Crossing (stbd)", colregsRole: "Give way")
             }));
+        Expand(cut);
 
         await Assert.That(cut.Markup).Contains("Crossing (stbd)");
         await Assert.That(cut.Markup).Contains("Give way");
@@ -86,6 +95,7 @@ public class VesselsSectionTests
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("vessels.ctx1", "Foo") })
             .Add(x => x.OnFocus, EventCallback.Factory.Create<string>(this, s => focused = s)));
+        Expand(cut);
 
         cut.Find(".vessel-row").Click();
 

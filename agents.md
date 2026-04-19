@@ -36,7 +36,8 @@ an executable via `dotnet run`.
 - `OnaPlotter/Components/Pages/*.razor` -- top-level pages (Map,
   Dashboard, Gauges, SailSteer, WindRose, RawStream, History, Settings).
 - `OnaPlotter/Components/Map/*` -- Map sub-components: `MapHud`,
-  `MapControls`, `LayersPanel`, `RouteEditPanel`, `MapShortcutsOverlay`.
+  `MapControls`, `LayersPanel`, `RouteEditPanel`, `MapShortcutsOverlay`,
+  `LegendOverlay`.
 - `OnaPlotter/Components/Map/Layers/*Section.razor` -- per-resource
   rows in the Layers panel (Charts / Routes / Waypoints / Notes /
   Regions / Vessels / Buddies / Weather / Legend / TrackHistory).
@@ -130,11 +131,32 @@ an executable via `dotnet run`.
   flaky wifi with half-configured plugins; any exception that reaches
   Blazor's error UI is a user-visible failure.
 
+## Razor binding gotcha
+
+`Param="var"` on a **string**-typed parameter is a literal, not an
+expression. Blazor doesn't scan enclosing C# for an identifier named
+"var". Always prefix with `@` for string parameters:
+
+```razor
+<RouteEditPanel Name="@routeEditName" />     @* correct *@
+<RouteEditPanel Name="routeEditName" />      @* passes the 14-char literal *@
+```
+
+Typed (`bool` / `int` / collection) parameters don't have this trap --
+the type mismatch forces expression interpretation. This bit us on
+`LayerFilter="LayerFilter"` and `Name="routeEditName"`; the fields
+showed those strings as their default value.
+
 ## Currently open
 
 - Polygon regions via freeform drawing (circles + server polygons
   work; no drawing UX yet)
-- FAB with radial menu (keyboard-parity for the context menu)
-- Route-edit waypoint list + drag ghost feedback
 - Mode-specific default presets (Race auto-enables laylines, etc.)
 - Offline tile / MBTiles chart download
+- Auto-routing around land / into the wind is gated on vector charts.
+  We only have raster PNG tiles today; S-57 vector parsing plus a
+  coastline rasteriser would need to land first. Big-enough feature
+  that it should be planned deliberately, not scoped in here.
+- Vessel-name display: REST snapshot now seeds names for already-known
+  vessels on connect. Still need external-lookup fallback for vessels
+  that have never sent AIS msg 5/24.
