@@ -1,0 +1,71 @@
+# Local development SignalK server with canned fake data, for testing
+# OnaPlotter without a real boat or openplotter host.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.dev.yml up -d       # start
+#   docker compose -f docker/docker-compose.dev.yml down         # stop
+#   docker compose -f docker/docker-compose.dev.yml logs -f sk   # follow
+#
+# Then point OnaPlotter at http://localhost:3000 by editing
+# OnaPlotter/wwwroot/appsettings.json:
+#   "SignalK": { "ServerUrl": "http://localhost:3000" }
+#
+# The fake-data container posts deltas on a fixed loop so position,
+# wind, depth, and a handful of AIS targets are always live.
+
+services:
+  sk:
+    image: signalk/signalk-server:latest
+    container_name: ona-sk-dev
+    depends_on:
+      - fake-data
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist SK's per-install state (plugin activations, KV store)
+      # across restarts so the dev config doesn't need to re-bootstrap
+      # every time. A named volume is fine; the host path is only used
+      # for the initial config seed.
+      - sk-data:/home/node/.signalk
+      - ./signalk-config/settings.json:/home/node/.signalk/settings.json:ro
+      # security.json with allow_readonly so anonymous GETs on
+      # /signalk/v1/api/* return data without a token. Writes still
+      # require auth, but we inject deltas via TCP (fake-data), not HTTP.
+      - ./signalk-config/security.json:/home/node/.signalk/security.json:ro
+    environment:
+      # Run as the node user; default uid/gid on the image is 1000.
+      # Avoid root so volume-mounted files on Linux hosts stay owned
+      # by the developer, not root.
+      - NODE_ENV=production
+    healthcheck:
+      # Image ships curl, not wget. /signalk is the discovery endpoint and
+      # always returns 200 once the server is up.
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/signalk"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  fake-data:
+    build:
+      context: ./fake-data
+      dockerfile: Dockerfile
+    container_name: ona-fake-data
+    # Listens on 10111 for SK to connect via its providers/tcp. SK
+    # starts AFTER fake-data is up so the first connect succeeds;
+    # either direction auto-reconnects on the other side's restart.
+    expose:
+      - "10111"
+    environment:
+      # Deterministic seed so scripted scenarios (MOB, CPA, shallow)
+      # reproduce across runs. Override to randomise.
+      - FAKE_SEED=42
+      # Tick rate in ms. Default 1000 matches a typical SK delta cadence;
+      # lower for stress testing, higher for quiet sessions.
+      - FAKE_TICK_MS=1000
+      - FAKE_LISTEN_PORT=10111
+    restart: unless-stopped
+
+volumes:
+  sk-data:

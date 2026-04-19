@@ -1,0 +1,8 @@
+{
+  "name": "ona-fake-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Posts canned SignalK deltas for OnaPlotter dev.",
+  "dependencies": {}
+}

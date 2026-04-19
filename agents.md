@@ -18,6 +18,14 @@ Local dev: `dotnet workload install wasm-tools`, then `dotnet run --project OnaP
 App starts on `http://localhost:5282/`. Point at a server via `wwwroot/appsettings.json`;
 `ServerUrl: "auto"` uses the page origin when deployed as a SignalK webapp.
 
+**Dev SignalK server without a boat.** `scripts/dev-sk.sh up` spins up a
+containerised signalk-server + a fake-data pump (position circling a 1 km loop,
+5 AIS targets, wind + depth). Config lives in `docker/`. After `up`, point
+`appsettings.json` at `http://localhost:3000`. Seed is deterministic
+(`FAKE_SEED=42`) so scripted scenarios reproduce across runs. Stop with
+`scripts/dev-sk.sh down`. Current scope is Phase 1 (own vessel + AIS + wind +
+depth); tide / charts / MOB-injection scenarios are next.
+
 ## Scope
 
 Safety-critical marine chartplotter. Blazor WASM, net10.0, no server-side Blazor.

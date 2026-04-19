@@ -1,0 +1,10 @@
+{
+  "strategy": "./tokensecurity",
+  "allow_readonly": true,
+  "expiration": "1d",
+  "secretKey": "dev-secret-not-for-production",
+  "users": [],
+  "devices": [],
+  "immutableConfig": false,
+  "acls": []
+}

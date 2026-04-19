@@ -1,0 +1,37 @@
+{
+  "interfaces": {
+    "plugins": true
+  },
+  "settings": {
+    "ssl": false,
+    "port": 3000,
+    "mdns": false
+  },
+  "vessel": {
+    "name": "OnaPlotter Dev",
+    "mmsi": "211000001",
+    "flag": "DE",
+    "draft": { "current": 1.8, "minimum": 1.5, "maximum": 2.0 }
+  },
+  "pipedProviders": [
+    {
+      "id": "fake-data-tcp",
+      "pipeElements": [
+        {
+          "type": "providers/tcp",
+          "options": {
+            "host": "fake-data",
+            "port": 10111
+          }
+        },
+        {
+          "type": "providers/liner"
+        },
+        {
+          "type": "providers/from_json"
+        }
+      ],
+      "enabled": true
+    }
+  ]
+}
