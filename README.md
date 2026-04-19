@@ -40,7 +40,11 @@ you reach for them.
 - **HUD in the four corners.** SOG/COG/position (top-left), apparent + true
   wind with direction arrows (top-right), depth + tide countdown with
   traffic-light colouring and the alarm threshold visible (bottom-left),
-  heading compass with arrow needle (bottom-right).
+  heading compass with arrow needle (bottom-right). **Click any corner** to
+  expand it for the second-tier detail: DMS position + VMG + XTE + drift
+  top-left; port/starboard-labelled AWA/TWA, TWD, Beaufort label top-right;
+  tide station + tidal current set/drift bottom-left; COG + drift +
+  autopilot state bottom-right. Enter / Space / Esc work for keyboard users.
 - **Own-vessel track**, speed-coloured; magenta arrow so the boat stays
   visible over blue water.
 - **AIS targets.** Ship-type-coloured triangles with COG vector, 60-second
@@ -86,9 +90,15 @@ you reach for them.
   appears when a route is active.
 - **Notes.** Drop a title+body pin anywhere on the chart; rendered as a
   slate-blue folded-page icon, click to read or delete.
-- **Regions.** Translucent circle with title/description and a radius
-  preset (100m / 250m / 500m / 1nm / 2nm). Polygon regions created
-  elsewhere render too.
+- **Regions.** Two creation modes:
+  - **Circle** — title/description + a radius preset (100m / 250m / 500m /
+    1nm / 2nm).
+  - **Polygon** — freeform draw. Tap the map to drop numbered vertices,
+    drag to reposition (with a dashed ghost back to the original position
+    and a live Δ-distance label), per-row remove in the top-right vertex
+    list. Live area readout (m² → ha → km² as it scales); Save enables
+    once three vertices are down. Polygon regions created elsewhere
+    (Freeboard-SK, other plugins) render the same way.
 - **Weather routing** (isochrone expansion over Open-Meteo wind plus your
   polar, with the tidal-current vector folded in when the tide plugin
   feeds it). Details: [docs/weather-routing.md](docs/weather-routing.md).
@@ -131,6 +141,11 @@ you reach for them.
   last valid tile up instead of going blank. The Layers panel shows an
   always-visible "active stack" chip list so it's clear which charts are
   drawn and in what order.
+- **Smooth-pan tile retention.** Tiles use `keepBuffer: 4` (one ring more
+  than the Leaflet default) and `updateWhenIdle: false` so panning
+  streams new tiles continuously and doesn't re-fetch tiles the user
+  just pan-zoomed away from. Targeted at the "Pi on local wifi, always
+  on" deployment -- offline never happens, jitter-free panning does.
 - **Legend button** leftmost on the control bar opens a modal key to
   every symbol on the chart (own boat, AIS shapes, CPA danger, SART,
   routes, waypoints, notes, regions, guard zone).
@@ -374,14 +389,14 @@ regression test.
 
 ## Future plans
 
-- [ ] Polygon regions via freeform drawing (circles and server-supplied
-      polygons already work)
-- [ ] Offline tile / MBTiles chart download for the current viewport
 - [ ] Auto-routing around land, which is gated on vector charts; we
       only have raster PNG tiles today, so this needs S-57 vector
       parsing + a coastline rasteriser before it's worth scoping.
 - [ ] Mode-specific default presets (Race auto-enables laylines, etc.)
-- [ ] Click-to-expand on the four corner HUD panels for more detail
-      (VMG, signed AWA/TWA, HDG magnetic vs true, depth offset)
-- [ ] Light-theme polish pass -- most panels still have hardcoded dark
-      backgrounds, so picking Light flips the chrome but not the body.
+- [ ] Tile / chart caching across reloads -- Service-Worker-backed
+      Cache API so re-opening the app doesn't re-fetch tiles already
+      seen this session. Leaflet in-memory cache + HTTP cache cover
+      the common case today.
+- [ ] External vessel-name lookup for AIS targets that never emit
+      msg 5 / 24. The REST snapshot seed closes the on-connect gap;
+      the remaining gap is long-running unmapped MMSIs.
