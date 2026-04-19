@@ -2581,6 +2581,134 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     box-shadow: 0 0 4px rgba(0,0,0,0.4);
 }
 
+/* Hollow ghost circle shown while a waypoint is being dragged, anchored
+   at the original (pre-drag) position. Reads as "what it was" while the
+   solid numbered marker follows the cursor. */
+.edit-wp-ghost-icon { background: none !important; border: none !important; }
+.edit-wp-ghost-circle {
+    width: 20px;
+    height: 20px;
+    margin: 2px;
+    border-radius: 50%;
+    background: rgba(167, 139, 250, 0.15);
+    border: 2px dashed #a78bfa;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+}
+
+/* In-panel waypoint list. Top-right so it stays clear of the FAB
+   (top-left) and the bottom control bar. Max-height keeps it from
+   blanketing the map on long routes; internal scroll takes over. */
+.route-edit-list {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: var(--z-controls);
+    background: rgba(15, 17, 22, 0.92);
+    backdrop-filter: blur(6px);
+    border-radius: 8px;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    color: var(--sk-text);
+    width: 220px;
+    max-height: 50vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    font-size: 0.78rem;
+}
+
+.route-edit-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+    color: #c4b5fd;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+}
+
+.route-edit-list-count {
+    background: rgba(167, 139, 250, 0.2);
+    color: #e0e7ff;
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.route-edit-list-items {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    overflow-y: auto;
+}
+
+.route-edit-wp-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    font-variant-numeric: tabular-nums;
+}
+.route-edit-wp-row:hover { background: rgba(255, 255, 255, 0.04); }
+
+.route-edit-wp-badge {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #a78bfa;
+    color: #1a1206;
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.route-edit-wp-coord {
+    flex: 1 1 auto;
+    color: #e2e8f0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.route-edit-wp-remove {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.route-edit-wp-remove:hover,
+.route-edit-wp-remove:focus {
+    background: rgba(220, 38, 38, 0.18);
+    color: #fecaca;
+    border-color: rgba(220, 38, 38, 0.4);
+    outline: none;
+}
+
+/* Touch -- pinch the row tighter but keep the tap target on the × big
+   enough to hit reliably (44x44 min per Apple HIG). */
+@media (pointer: coarse) {
+    .route-edit-list { width: 200px; font-size: 0.8rem; }
+    .route-edit-wp-row { padding: 6px 10px; }
+    .route-edit-wp-remove {
+        width: 32px;
+        height: 32px;
+        font-size: 1.1rem;
+    }
+}
+
 /* ===== Map Context Menu ===== */
 
 .map-context-menu {

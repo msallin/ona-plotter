@@ -148,9 +148,11 @@
         <RouteEditPanel Name="routeEditName"
                         NameChanged="v => routeEditName = v"
                         Stats="@routeEditStats"
+                        Coords="routeEditCoords"
                         OnUndo="UndoLastWaypoint"
                         OnSave="SaveRoute"
-                        OnCancel="CancelRouteEdit" />
+                        OnCancel="CancelRouteEdit"
+                        OnRemoveWaypoint="RemoveRouteWaypoint" />
     }
 
     @* === Floating action button (keyboard + touch parity for long-press) ===
@@ -368,6 +370,7 @@
     private bool routeEditMode;
     private string routeEditName = "";
     private string routeEditStats = "0 WP / 0 nm";
+    private double[][]? routeEditCoords;
     private System.Threading.Timer? routeStatsTimer;
     // Context menu and waypoint state.
     private bool contextMenuVisible;
@@ -1205,6 +1208,7 @@
     private async Task CancelRouteEdit()
     {
         routeEditMode = false;
+        routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
         if (module is not null)
@@ -1248,17 +1252,53 @@
         if (module is null) return;
         try
         {
+            // Fetch stats + coords together so the in-panel waypoint list
+            // stays in sync with the polyline. Both round-trips are cheap
+            // (JS-side arrays), but we still only do one render afterwards.
             var stats = await module.InvokeAsync<double[]>("getEditRouteStats");
+            var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
+            bool dirty = false;
             if (stats is not null && stats.Length == 2)
             {
                 int wpCount = (int)stats[0];
                 double nm = stats[1];
-                routeEditStats = $"{wpCount} WP / {nm:F1} nm";
-                await InvokeAsync(StateHasChanged);
+                var s = $"{wpCount} WP / {nm:F1} nm";
+                if (s != routeEditStats) { routeEditStats = s; dirty = true; }
             }
+            if (coords is not null && !CoordsEqual(coords, routeEditCoords))
+            {
+                routeEditCoords = coords;
+                dirty = true;
+            }
+            if (dirty) await InvokeAsync(StateHasChanged);
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+    }
+
+    // Shallow check so we don't render the whole panel 2 times/second
+    // just because the polling loop fired; a drag will almost always
+    // change one row and we want to re-render then, but if nothing moved
+    // we don't.
+    private static bool CoordsEqual(double[][]? a, double[][]? b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i].Length != b[i].Length) return false;
+            for (int j = 0; j < a[i].Length; j++)
+                if (a[i][j] != b[i][j]) return false;
+        }
+        return true;
+    }
+
+    private async Task RemoveRouteWaypoint(int index)
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("removeRouteEditWaypoint", index); }
+        catch (JSDisconnectedException) { return; }
+        await UpdateRouteStats();
     }
 
     private async Task SaveRoute()
@@ -1268,6 +1308,7 @@
         if (coords is null || coords.Length < 2)
         {
             routeEditMode = false;
+            routeEditCoords = null;
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;
             await module.InvokeVoidAsync("stopRouteEdit");
@@ -1290,6 +1331,7 @@
             Toasts.Error("Failed to save route");
         }
         routeEditMode = false;
+        routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
         await module.InvokeVoidAsync("stopRouteEdit");

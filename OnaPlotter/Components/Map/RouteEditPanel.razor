@@ -1,9 +1,44 @@
-@* Route-edit overlay: hint banner at the top, name input + stats + buttons
-   above the control bar. Visible only while the parent is in edit mode. *@
+@* Route-edit overlay: hint banner at the top, a numbered waypoint list
+   anchored top-left, and the control bar above the bottom controls.
+   Visible only while the parent is in edit mode.
+
+   The list is a mirror of the JS routeEditCoords array; the parent
+   polls getEditRouteCoords on a timer (same one that updates Stats)
+   and re-renders this panel with the new Coords array. Per-row remove
+   buttons round-trip through the parent back to JS so numbering stays
+   consistent. *@
 
 <div class="route-edit-hint">
     Tap map to add waypoints. Drag waypoints to reposition.
 </div>
+
+@if (Coords is { Length: > 0 })
+{
+    <div class="route-edit-list" aria-label="Route waypoints">
+        <div class="route-edit-list-header">
+            <span>Waypoints</span>
+            <span class="route-edit-list-count">@Coords.Length</span>
+        </div>
+        <ol class="route-edit-list-items">
+            @for (int i = 0; i < Coords.Length; i++)
+            {
+                var idx = i;
+                var c = Coords[idx];
+                <li class="route-edit-wp-row">
+                    <span class="route-edit-wp-badge">@(idx + 1)</span>
+                    <span class="route-edit-wp-coord">@FormatCoord(c)</span>
+                    <button class="route-edit-wp-remove"
+                            title="Remove waypoint @(idx + 1)"
+                            aria-label="Remove waypoint @(idx + 1)"
+                            @onclick="() => OnRemoveWaypoint.InvokeAsync(idx)">
+                        ×
+                    </button>
+                </li>
+            }
+        </ol>
+    </div>
+}
+
 <div class="route-edit-bar">
     <input type="text" class="route-name-input" aria-label="Route name"
            value="@Name" @oninput="OnNameInput" />
@@ -17,13 +52,26 @@
     [Parameter] public string Name { get; set; } = "";
     [Parameter] public EventCallback<string> NameChanged { get; set; }
     [Parameter] public string Stats { get; set; } = "";
+    [Parameter] public double[][]? Coords { get; set; }
     [Parameter] public EventCallback OnUndo { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<int> OnRemoveWaypoint { get; set; }
 
     private async Task OnNameInput(ChangeEventArgs e)
     {
         Name = e.Value?.ToString() ?? "";
         await NameChanged.InvokeAsync(Name);
+    }
+
+    // "48.2144° N, 11.5753° E" style. Keeps the panel scannable at a
+    // glance without needing the user to interpret signed degrees.
+    private static string FormatCoord(double[] c)
+    {
+        if (c is null || c.Length < 2) return "";
+        double lat = c[0], lon = c[1];
+        string ns = lat >= 0 ? "N" : "S";
+        string ew = lon >= 0 ? "E" : "W";
+        return $"{System.Math.Abs(lat):F4}\u00B0 {ns}, {System.Math.Abs(lon):F4}\u00B0 {ew}";
     }
 }

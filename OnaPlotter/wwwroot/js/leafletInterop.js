@@ -1511,6 +1511,65 @@ function redrawEditLine() {
     }
 }
 
+// Attach drag handlers with a "ghost" visual: during drag we leave the
+// original position visible as a hollow ghost marker and draw a dashed
+// rubber-band line from it to the live cursor, with a tooltip showing the
+// delta distance. This matches what Axiom/Aqua Map do when repositioning
+// a waypoint -- the sailor always sees "how far from where it was".
+function bindEditMarker(marker, idx) {
+    let ghostLine = null;
+    let ghostMarker = null;
+    let origLL = null;
+
+    marker.on('dragstart', (e) => {
+        origLL = e.target.getLatLng();
+        ghostMarker = L.marker(origLL, {
+            icon: L.divIcon({
+                className: 'edit-wp-ghost-icon',
+                html: '<div class="edit-wp-ghost-circle"></div>',
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            }),
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: 500
+        }).addTo(routeEditLayer);
+        ghostLine = L.polyline([origLL, origLL], {
+            color: '#a78bfa', weight: 1.5, opacity: 0.7, dashArray: '3,4',
+            interactive: false
+        }).addTo(routeEditLayer);
+        // Bind once; setTooltipContent on each drag event is cheaper than
+        // rebinding a fresh tooltip at ~60 Hz during a long drag. We
+        // reposition explicitly via setLatLng, so no `sticky` needed.
+        ghostLine.bindTooltip('\u0394 0 m', {
+            permanent: true, direction: 'center',
+            className: 'measure-tooltip'
+        }).openTooltip(origLL);
+    });
+
+    marker.on('drag', (e) => {
+        const ll = e.target.getLatLng();
+        routeEditCoords[idx] = [ll.lat, ll.lng];
+        redrawEditLine();
+        if (ghostLine && origLL) {
+            ghostLine.setLatLngs([origLL, ll]);
+            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
+            const label = dm < 1000 ? `\u0394 ${dm.toFixed(0)} m` : `\u0394 ${(dm * NM_PER_METER).toFixed(2)} nm`;
+            ghostLine.setTooltipContent(label);
+            const tt = ghostLine.getTooltip();
+            if (tt) tt.setLatLng(ll);
+        }
+    });
+
+    marker.on('dragend', () => {
+        if (ghostMarker && routeEditLayer) routeEditLayer.removeLayer(ghostMarker);
+        if (ghostLine && routeEditLayer) routeEditLayer.removeLayer(ghostLine);
+        ghostMarker = null;
+        ghostLine = null;
+        origLL = null;
+    });
+}
+
 function addEditWaypoint(lat, lon) {
     const idx = routeEditCoords.length;
     routeEditCoords.push([lat, lon]);
@@ -1521,11 +1580,7 @@ function addEditWaypoint(lat, lon) {
         zIndexOffset: 800
     }).addTo(routeEditLayer);
 
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        routeEditCoords[idx] = [ll.lat, ll.lng];
-        redrawEditLine();
-    });
+    bindEditMarker(marker, idx);
 
     routeEditMarkers.push(marker);
     redrawEditLine();
@@ -1556,6 +1611,35 @@ export function undoLastEditWaypoint() {
     const last = routeEditMarkers.pop();
     if (last && routeEditLayer) routeEditLayer.removeLayer(last);
     redrawEditLine();
+}
+
+// Remove a specific waypoint by index (called from the in-panel list).
+// Removing the middle of an N-point route means every subsequent marker's
+// number changes, so we tear down the dragging markers and rebuild from
+// the coord array. The polyline is re-used (setLatLngs) for cheapness.
+export function removeRouteEditWaypoint(index) {
+    if (index < 0 || index >= routeEditCoords.length) return;
+    routeEditCoords.splice(index, 1);
+    for (const m of routeEditMarkers) {
+        if (routeEditLayer) routeEditLayer.removeLayer(m);
+    }
+    routeEditMarkers = [];
+    for (let i = 0; i < routeEditCoords.length; i++) {
+        const [lat, lon] = routeEditCoords[i];
+        const marker = L.marker([lat, lon], {
+            icon: makeEditWpIcon(i + 1),
+            draggable: true,
+            zIndexOffset: 800
+        }).addTo(routeEditLayer);
+        bindEditMarker(marker, i);
+        routeEditMarkers.push(marker);
+    }
+    if (routeEditCoords.length < 2 && routeEditLine && routeEditLayer) {
+        routeEditLayer.removeLayer(routeEditLine);
+        routeEditLine = null;
+    } else {
+        redrawEditLine();
+    }
 }
 
 // Returns [waypointCount, totalDistanceNm]
