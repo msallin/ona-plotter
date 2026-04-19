@@ -1531,14 +1531,24 @@ export function setChartLayerOrder(orderedIds) {
 // If two charts share the top native, both overzoom -- harmless since
 // the later-added one draws on top anyway.
 function recomputeChartOverzoom() {
-    if (chartLayers.map.size === 0) {
+    // MarkerLayer stores its layers under `.items` (a plain object),
+    // not `.map`. The old code accessed `chartLayers.map` -- which is
+    // undefined on MarkerLayer -- so any call here threw JSException
+    // and the whole toggle-a-chart flow bubbled into Blazor's error UI.
+    // The crash only surfaced when SignalK actually returned charts
+    // (openplotter deployments with signalk-charts-plugin); setups
+    // without charts never hit the bad line.
+    const ids = chartLayers.keys();
+    if (ids.length === 0) {
         if (zoomBadge) zoomBadge.update();
         return;
     }
     // Pure decision in chartOverzoom.js; this function just applies
     // the result to the live Leaflet layers.
     const effective = computeOverzoom(chartNativeMax, chartOverlay);
-    for (const [id, layer] of chartLayers.map.entries()) {
+    for (const id of ids) {
+        const layer = chartLayers.get(id);
+        if (!layer) continue;
         const effMax = effective.get(id) ?? (chartNativeMax.get(id) || 18);
         if (layer.options.maxZoom !== effMax) {
             layer.options.maxZoom = effMax;
