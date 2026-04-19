@@ -153,6 +153,52 @@
                         OnCancel="CancelRouteEdit" />
     }
 
+    @* === Floating action button (keyboard + touch parity for long-press) ===
+       Anchored top-left so it doesn't collide with Leaflet's zoom
+       controls (top-right) or the bottom control bar. Click expands
+       into a vertical menu of the primary create actions -- same
+       set as the right-click / long-press context menu but targeting
+       the current map center. Gives desktop-keyboard users a route
+       that doesn't require right-click-sensitive devices and
+       discover-ability to new users who haven't seen the coachmark. *@
+    @if (fabMenuOpen)
+    {
+        <div class="map-fab-backdrop" @onclick="() => fabMenuOpen = false"></div>
+    }
+    <div class="map-fab-wrap">
+        <button class="map-fab @(fabMenuOpen ? "open" : "")"
+                @onclick="ToggleFabMenu"
+                title="Create at map center (long-press the map to target a specific point)"
+                aria-label="Create menu"
+                aria-expanded="@fabMenuOpen.ToString().ToLowerInvariant()">
+            <span class="map-fab-glyph">+</span>
+        </button>
+        @if (fabMenuOpen)
+        {
+            <div class="map-fab-menu" @onclick:stopPropagation>
+                <button class="map-fab-item" @onclick="FabCreateWaypoint">
+                    <span class="map-fab-ico">&#9675;</span>
+                    <span>Waypoint</span>
+                </button>
+                <button class="map-fab-item" @onclick="FabCreateNote">
+                    <span class="map-fab-ico">&#9783;</span>
+                    <span>Note</span>
+                </button>
+                <button class="map-fab-item" @onclick="FabCreateRegion">
+                    <span class="map-fab-ico">&#9711;</span>
+                    <span>Region</span>
+                </button>
+                <button class="map-fab-item" @onclick="FabRouteWithWind"
+                        disabled="@(!Polar.HasPolar)"
+                        title="@(Polar.HasPolar ? "Isochrone weather routing from here to map center" : "Upload a polar in Settings first")">
+                    <span class="map-fab-ico">&#9784;</span>
+                    <span>Route with wind</span>
+                </button>
+                <small class="map-fab-hint">target: map center</small>
+            </div>
+        }
+    </div>
+
     @* === Context Menu (right-click) === *@
     @if (contextMenuVisible)
     {
@@ -314,6 +360,7 @@
     private bool courseLineDrawn;
     private bool laylinesVisible;
     private bool measureActive;
+    private bool fabMenuOpen;
     private int laylinesSkip;  // Throttle: update laylines every 5th position fix.
     private string mapOrientation = "north"; // "north", "course", "head"
     private string mapOrientationLabel = "N\u2191";
@@ -1087,6 +1134,59 @@
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+    }
+
+    // --- FAB (floating action button) --------------------------------
+    // The FAB gives keyboard / mouse-only users a discoverable route
+    // into the same actions the right-click / long-press context menu
+    // offers. The actions reuse the Create*Here handlers; before
+    // delegating, we ask JS for the current map center and stash it in
+    // contextMenuLat/Lon so the existing handlers don't need to know
+    // whether they were invoked from a tap or the FAB.
+
+    private void ToggleFabMenu() => fabMenuOpen = !fabMenuOpen;
+
+    private async Task<bool> SetTargetToMapCenterAsync()
+    {
+        if (module is null) return false;
+        try
+        {
+            var center = await module.InvokeAsync<double[]>("getMapCenter");
+            if (center is null || center.Length < 2) return false;
+            contextMenuLat = center[0];
+            contextMenuLon = center[1];
+            return true;
+        }
+        catch (JSDisconnectedException) { return false; }
+        catch (ObjectDisposedException) { return false; }
+    }
+
+    private async Task FabCreateWaypoint()
+    {
+        fabMenuOpen = false;
+        if (!await SetTargetToMapCenterAsync()) return;
+        CreateWaypointHere();
+    }
+
+    private async Task FabCreateNote()
+    {
+        fabMenuOpen = false;
+        if (!await SetTargetToMapCenterAsync()) return;
+        CreateNoteHere();
+    }
+
+    private async Task FabCreateRegion()
+    {
+        fabMenuOpen = false;
+        if (!await SetTargetToMapCenterAsync()) return;
+        CreateRegionHere();
+    }
+
+    private async Task FabRouteWithWind()
+    {
+        fabMenuOpen = false;
+        if (!await SetTargetToMapCenterAsync()) return;
+        await RouteWithWindHere();
     }
 
     // --- Route Editing ---

@@ -1722,6 +1722,15 @@ export function panTo(lat, lon) {
     map.panTo([lat, lon]);
 }
 
+// Return the current map centre as [lat, lon]. Used by the FAB
+// menu so Create-at-map-centre actions can reuse the same target
+// fields the context-menu handlers already write.
+export function getMapCenter() {
+    if (!map) return null;
+    const c = map.getCenter();
+    return [c.lat, c.lng];
+}
+
 // Open the popup on a note marker if it's currently rendered. No-op
 // when the id isn't present (note not yet loaded, or notes hidden).
 export function openNotePopup(id) {

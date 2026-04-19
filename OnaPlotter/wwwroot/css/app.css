@@ -1958,6 +1958,106 @@ main:has(.alarm-banner-stack) .hud-top-left {
     50%      { transform: scale(1.18); opacity: 0.85; }
 }
 
+/* ===== Floating Action Button =====
+   Top-left of the map, opposite the Leaflet zoom controls. On click
+   expands into a vertical menu of the create actions that the
+   long-press context menu also offers -- keyboard / mouse-only
+   users now have a discoverable entry point that doesn't require
+   right-click sensitivity or a long-press affordance. The menu
+   targets the current map centre, telegraphed by the 'target: map
+   center' hint at the bottom. */
+.map-fab-wrap {
+    position: fixed;
+    top: 68px;
+    left: 12px;
+    z-index: var(--z-controls);
+    pointer-events: none;
+}
+.map-fab-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--z-controls) - 1);
+    background: transparent;
+}
+.map-fab-wrap > * { pointer-events: auto; }
+main:has(.alarm-banner-stack) .map-fab-wrap { top: 112px; }
+
+.map-fab {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(224, 159, 62, 0.95);         /* --ann-route amber */
+    color: #1a1206;
+    border: none;
+    font-size: 1.6rem;
+    font-weight: 600;
+    line-height: 1;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.18s ease, background 0.18s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.map-fab:hover { background: #edad4d; }
+.map-fab.open {
+    transform: rotate(45deg);
+    background: #f4bc6a;
+}
+.map-fab-glyph { display: block; margin-top: -2px; }
+.map-fab-menu {
+    position: absolute;
+    top: 52px;
+    left: 0;
+    min-width: 200px;
+    padding: 6px;
+    background: rgba(20, 26, 38, 0.96);
+    border: 1px solid rgba(224, 159, 62, 0.45);
+    border-radius: 8px;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    animation: fab-pop 0.16s ease-out;
+}
+@keyframes fab-pop {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.map-fab-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    background: transparent;
+    color: #e2e8f0;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.map-fab-item:hover:not(:disabled) {
+    background: rgba(224, 159, 62, 0.18);
+    color: #f0d49c;
+}
+.map-fab-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.map-fab-ico {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+    color: #e09f3e;
+}
+.map-fab-hint {
+    display: block;
+    padding: 4px 12px 2px;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-style: italic;
+}
+
 /* ===== Chart legend =====
    Collapsible section at the bottom of the Layers panel. Explains
    every recognised chart symbol in one line + a colour swatch so a
