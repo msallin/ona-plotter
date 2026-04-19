@@ -73,17 +73,18 @@ public class BuddiesSectionTests
     }
 
     [Test]
-    public async Task RefreshButton_Fires_OnRefresh()
+    public async Task No_Refresh_Button_In_Section()
     {
+        // The Refresh button was pulled (user feedback -- the buddy list
+        // refreshes itself on reconnect / on the BuddyList seed, the
+        // in-panel button was visual noise). If it comes back, ship an
+        // explicit Parameter + test; don't leak the old title back in.
         using var ctx = new Bunit.TestContext();
-        int fires = 0;
         var cut = ctx.RenderComponent<BuddiesSection>(p => p
             .Add(x => x.Buddies, new[] { Buddy("urn:mrn:imo:mmsi:1", "A") })
-            .Add(x => x.Vessels, Array.Empty<VesselListEntry>())
-            .Add(x => x.OnRefresh, EventCallback.Factory.Create(this, () => fires++)));
+            .Add(x => x.Vessels, Array.Empty<VesselListEntry>()));
 
-        cut.Find("button[title='Re-fetch the buddy list from the plugin']").Click();
-
-        await Assert.That(fires).IsEqualTo(1);
+        await Assert.That(cut.FindAll("button[title='Re-fetch the buddy list from the plugin']").Count)
+            .IsEqualTo(0);
     }
 }
