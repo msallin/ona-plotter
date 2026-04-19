@@ -144,6 +144,11 @@ public partial class Map
 
     // ---- Region (create, save, delete, focus, show/hide) -------------
     private bool regionDialogVisible;
+    // "circle" -- quick radius preset; "polygon" -- freeform draw. Mode
+    // toggle lives inside the Add Region dialog; we keep the last choice
+    // as the default for next time so a user who mostly draws polygons
+    // doesn't re-pick every time.
+    private string newRegionMode = "circle";
     private string newRegionTitle = "";
     private string newRegionDescription = "";
     private double newRegionRadiusMeters = 250;

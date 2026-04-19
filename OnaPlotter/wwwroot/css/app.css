@@ -3031,6 +3031,20 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 0;
 }
 
+/* Circle / Polygon tab strip at the top of the Add Region dialog.
+   Two map-btn tabs side-by-side; the active one picks up the existing
+   .map-btn.active styling so it reads as the current choice. */
+.region-mode-toggle {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+.region-mode-toggle .map-btn {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+}
+
 /* Region popup: amber-gold accent matching the polygon stroke so the
    popup reads as "from this shape". Same user-annotation hue family
    as the note popup; popup background tone slightly lighter than

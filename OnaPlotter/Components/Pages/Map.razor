@@ -176,11 +176,7 @@
             </button>
             <button class="map-fab-item" @onclick="FabCreateRegion">
                 <span class="map-fab-ico">&#9711;</span>
-                <span>Region (circle)</span>
-            </button>
-            <button class="map-fab-item" @onclick="FabDrawPolygon">
-                <span class="map-fab-ico">&#11039;</span>
-                <span>Region (polygon)</span>
+                <span>Region</span>
             </button>
             <button class="map-fab-item" @onclick="FabRouteWithWind"
                     disabled="@(!Polar.HasPolar)"
@@ -198,8 +194,7 @@
         <div class="map-context-menu" style="left:@(contextMenuX)px; top:@(contextMenuY)px;">
             <button class="ctx-menu-item" @onclick="CreateWaypointHere">Create Waypoint</button>
             <button class="ctx-menu-item" @onclick="CreateNoteHere">Add Note</button>
-            <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region (circle)</button>
-            <button class="ctx-menu-item" @onclick="StartPolygonFromContextMenu">Draw Polygon</button>
+            <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
             <button class="ctx-menu-item" @onclick="RouteWithWindHere"
                     disabled="@(!Polar.HasPolar)"
@@ -244,28 +239,55 @@
         </div>
     }
 
-    @* === Region Dialog (circle only in this phase) === *@
+    @* === Region Dialog ===
+       Mode toggle at the top picks Circle or Polygon. Circle keeps the
+       fast path (radius preset + Save = done). Polygon hands off to the
+       on-map drawing flow -- the dialog closes, polygon-edit mode starts,
+       and the user collects name / description there so we don't ask
+       for them twice. *@
     @if (regionDialogVisible)
     {
         <div class="waypoint-dialog note-dialog">
-            <div class="hud-label" style="margin-bottom:8px;">Add Region (circle)</div>
-            <input type="text" class="route-name-input" aria-label="Region title"
-                   placeholder="Title" @bind="newRegionTitle" @bind:event="oninput" />
-            <textarea class="route-name-input note-dialog-body" aria-label="Region description"
-                      placeholder="Description (optional)" rows="3"
-                      @bind="newRegionDescription" @bind:event="oninput"></textarea>
-            <div class="hud-label" style="margin-top:10px;">Radius</div>
-            <div class="region-radius-chips">
-                @foreach (var (m, label) in RegionRadiusPresets)
-                {
-                    <button class="map-btn @(newRegionRadiusMeters == m ? "active" : "")"
-                            @onclick="() => newRegionRadiusMeters = m" type="button">@label</button>
-                }
+            <div class="hud-label" style="margin-bottom:8px;">Add Region</div>
+            <div class="region-mode-toggle" role="tablist" aria-label="Region shape">
+                <button class="map-btn @(newRegionMode == "circle" ? "active" : "")"
+                        role="tab" aria-selected="@(newRegionMode == "circle")"
+                        @onclick='() => newRegionMode = "circle"' type="button">Circle</button>
+                <button class="map-btn @(newRegionMode == "polygon" ? "active" : "")"
+                        role="tab" aria-selected="@(newRegionMode == "polygon")"
+                        @onclick='() => newRegionMode = "polygon"' type="button">Polygon</button>
             </div>
-            <div style="display:flex; gap:6px; margin-top:10px;">
-                <button class="map-btn active" @onclick="SaveRegion">Save</button>
-                <button class="map-btn" @onclick="() => regionDialogVisible = false">Cancel</button>
-            </div>
+            @if (newRegionMode == "circle")
+            {
+                <input type="text" class="route-name-input" aria-label="Region title"
+                       placeholder="Title" @bind="newRegionTitle" @bind:event="oninput" />
+                <textarea class="route-name-input note-dialog-body" aria-label="Region description"
+                          placeholder="Description (optional)" rows="3"
+                          @bind="newRegionDescription" @bind:event="oninput"></textarea>
+                <div class="hud-label" style="margin-top:10px;">Radius</div>
+                <div class="region-radius-chips">
+                    @foreach (var (m, label) in RegionRadiusPresets)
+                    {
+                        <button class="map-btn @(newRegionRadiusMeters == m ? "active" : "")"
+                                @onclick="() => newRegionRadiusMeters = m" type="button">@label</button>
+                    }
+                </div>
+                <div style="display:flex; gap:6px; margin-top:10px;">
+                    <button class="map-btn active" @onclick="SaveRegion">Save</button>
+                    <button class="map-btn" @onclick="() => regionDialogVisible = false">Cancel</button>
+                </div>
+            }
+            else
+            {
+                <p style="font-size:0.82rem; color: var(--sk-text-muted); margin:6px 0 12px;">
+                    Tap the map to drop each vertex. Drag to reposition; per-row × removes.
+                    Name + description come after you save the shape.
+                </p>
+                <div style="display:flex; gap:6px;">
+                    <button class="map-btn active" @onclick="StartPolygonFromDialog">Start drawing</button>
+                    <button class="map-btn" @onclick="() => regionDialogVisible = false">Cancel</button>
+                </div>
+            }
         </div>
     }
 
@@ -1196,17 +1218,13 @@
         CreateRegionHere();
     }
 
-    private async Task FabDrawPolygon()
+    // Called from the Add Region dialog when the user picks Polygon and
+    // clicks "Start drawing". Closes the dialog, hands off to polygon
+    // edit mode. Name + description are collected in PolygonEditPanel
+    // so we don't ask for them twice.
+    private async Task StartPolygonFromDialog()
     {
-        fabMenuOpen = false;
-        await StartPolygonEdit();
-    }
-
-    // Long-press / right-click context menu entry. Dismiss the menu
-    // first so it doesn't block the first vertex click.
-    private async Task StartPolygonFromContextMenu()
-    {
-        contextMenuVisible = false;
+        regionDialogVisible = false;
         await StartPolygonEdit();
     }
 
