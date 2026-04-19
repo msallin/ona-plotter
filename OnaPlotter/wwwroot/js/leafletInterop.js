@@ -398,9 +398,20 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     document.addEventListener('fullscreenchange', syncFsIcon);
     document.addEventListener('webkitfullscreenchange', syncFsIcon);
 
+    // keepBuffer bumped above the default 2 so tiles stay in memory a
+    // few rings further out; panning back doesn't re-request. Cheap
+    // memory, noticeable smoothness on the Pi-local-wifi setup where
+    // re-fetch RTT is low but visible.
+    // updateWhenIdle=false: stream tiles during pan (not only at pan-
+    // end). Leaflet's default flips to true on mobile user-agents; we
+    // override because our "mobile" is an iPad in the cockpit where
+    // the user wants the map to feel alive, not freeze mid-drag.
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 22,
+        keepBuffer: 4,
+        updateWhenIdle: false,
+        crossOrigin: 'anonymous',
         attribution: '&copy; OpenStreetMap contributors',
         referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
@@ -408,6 +419,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 22,
+        keepBuffer: 4,
+        updateWhenIdle: false,
+        crossOrigin: 'anonymous',
         attribution: '&copy; OpenSeaMap',
         opacity: 0.8,
         referrerPolicy: 'strict-origin-when-cross-origin'
@@ -1240,6 +1254,12 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
         maxNativeZoom: native,
         maxZoom: Math.max(native + 4, 22),
         opacity: opacity || 0.8,
+        // keepBuffer + updateWhenIdle match base layers; don't re-fetch
+        // chart tiles when the user zig-zags back into territory they
+        // just panned away from.
+        keepBuffer: 4,
+        updateWhenIdle: false,
+        crossOrigin: 'anonymous',
         attribution: '',
         errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.
     };
@@ -1714,8 +1734,9 @@ let polygonEditMarkers = [];
 let polygonEditShape = null;   // L.polygon once there are >= 3 vertices
 let polygonEditLine = null;    // L.polyline for 2-vertex preview
 
-const POLYGON_FILL  = 'rgba(212, 168, 80, 0.18)';  // --ann-region-fill
 const POLYGON_COLOR = '#d4a850';                    // --ann-region
+// fillOpacity below drives the translucent fill; the colour is reused
+// as both stroke and fill so we don't need a separate fill token.
 
 function makePolygonVertexIcon(num) {
     return L.divIcon({
@@ -1871,9 +1892,19 @@ export function removePolygonEditVertex(index) {
         if (polygonEditLayer) polygonEditLayer.removeLayer(m);
     }
     polygonEditMarkers = [];
-    const coords = polygonEditCoords.slice();
-    polygonEditCoords = [];
-    for (const [lat, lon] of coords) addPolygonVertexInternal(lat, lon);
+    // Rebuild markers without re-entering addPolygonVertexInternal (which
+    // would redraw the polygon per vertex -- O(n^2)). Build the markers
+    // in one pass, then call redrawPolygonShape() once at the end.
+    for (let i = 0; i < polygonEditCoords.length; i++) {
+        const [lat, lon] = polygonEditCoords[i];
+        const marker = L.marker([lat, lon], {
+            icon: makePolygonVertexIcon(i + 1),
+            draggable: true, zIndexOffset: 800
+        }).addTo(polygonEditLayer);
+        bindPolygonVertex(marker, i);
+        polygonEditMarkers.push(marker);
+    }
+    redrawPolygonShape();
 }
 
 // --- Waypoint Markers ---

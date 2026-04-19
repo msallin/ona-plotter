@@ -212,6 +212,27 @@ public class RegionApiTests
     }
 
     [Test]
+    public async Task CreatePolygon_Returns_Null_On_Server_Error()
+    {
+        // Pi drops the POST (500, 404, network error mid-flight). Caller
+        // uses the null return to show the "Failed to save region"
+        // toast and keep the user on the polygon-edit overlay so they
+        // can retry without losing their vertices.
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var vertices = new[]
+        {
+            new[] { 47.4, 8.5 },
+            new[] { 47.5, 8.5 },
+            new[] { 47.5, 8.6 },
+        };
+        var id = await api.CreatePolygonAsync("Retry me", "", vertices);
+        await Assert.That(id).IsNull();
+    }
+
+    [Test]
     public async Task CreatePolygon_Rejects_Bad_Vertex_Shape()
     {
         // A vertex with only one component shouldn't crash the serializer

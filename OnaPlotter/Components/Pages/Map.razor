@@ -853,6 +853,12 @@
             case "?": shortcutsVisible = !shortcutsVisible; break;
             case "escape":
                 if (measureActive) { await ToggleMeasure(); }
+                // Esc also cancels in-progress route / polygon edits so
+                // the user can bail without reaching for the mouse.
+                if (routeEditMode) { await CancelRouteEdit(); }
+                if (polygonEditMode) { await CancelPolygonEdit(); }
+                if (fabMenuOpen) { fabMenuOpen = false; }
+                if (legendOpen) { legendOpen = false; }
                 shortcutsVisible = false;
                 break;
         }
@@ -1379,6 +1385,9 @@
 
     // --- Polygon-region editing ------------------------------------
     // Same poll cadence as route editing; reuses RouteStatsPollIntervalMs.
+    // Every JS interop call catches JSDisconnectedException so a page
+    // switch mid-edit (fast nav, server disconnect) doesn't surface a
+    // torn-down-module exception to Blazor's error UI. See agents.md.
     private async Task StartPolygonEdit()
     {
         // Mutually exclusive with route editing.
@@ -1388,7 +1397,10 @@
         polygonEditStats = "0 vertices";
         polygonEditCoords = null;
         if (module is not null)
-            await module.InvokeVoidAsync("startPolygonEdit");
+        {
+            try { await module.InvokeVoidAsync("startPolygonEdit"); }
+            catch (JSDisconnectedException) { return; }
+        }
         polygonStatsTimer = new System.Threading.Timer(
             _ => _ = UpdatePolygonStats(), null,
             RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
@@ -1401,13 +1413,17 @@
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
         if (module is not null)
-            await module.InvokeVoidAsync("stopPolygonEdit");
+        {
+            try { await module.InvokeVoidAsync("stopPolygonEdit"); }
+            catch (JSDisconnectedException) { }
+        }
     }
 
     private async Task UndoLastPolygonVertex()
     {
-        if (module is not null)
-            await module.InvokeVoidAsync("undoLastPolygonVertex");
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("undoLastPolygonVertex"); }
+        catch (JSDisconnectedException) { return; }
         await UpdatePolygonStats();
     }
 
@@ -1460,14 +1476,17 @@
     private async Task SavePolygonRegion()
     {
         if (module is null) return;
-        var coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords");
+        double[][]? coords;
+        try { coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords"); }
+        catch (JSDisconnectedException) { return; }
         if (coords is null || coords.Length < 3)
         {
             polygonEditMode = false;
             polygonEditCoords = null;
             polygonStatsTimer?.Dispose();
             polygonStatsTimer = null;
-            await module.InvokeVoidAsync("stopPolygonEdit");
+            try { await module.InvokeVoidAsync("stopPolygonEdit"); }
+            catch (JSDisconnectedException) { }
             return;
         }
         string name = string.IsNullOrWhiteSpace(polygonEditName)
@@ -1491,7 +1510,8 @@
         polygonEditCoords = null;
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
-        await module.InvokeVoidAsync("stopPolygonEdit");
+        try { await module.InvokeVoidAsync("stopPolygonEdit"); }
+        catch (JSDisconnectedException) { }
     }
 
     // --- Context Menu & Waypoints ---
@@ -1979,6 +1999,7 @@
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();
+        if (polygonStatsTimer is not null) await polygonStatsTimer.DisposeAsync();
         if (touchCoachmarkTimer is not null) await touchCoachmarkTimer.DisposeAsync();
         if (module is not null)
         {

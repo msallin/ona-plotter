@@ -15,7 +15,11 @@
    controls around. *@
 <div class="hud hud-top-left">
     <div class="hud-panel @(expandedHud == "tl" ? "hud-panel-expanded" : "")"
+         role="button" tabindex="0"
+         aria-expanded="@(expandedHud == "tl" ? "true" : "false")"
+         aria-label="Speed, course, position -- click for more detail"
          @onclick='() => ToggleExpanded("tl")' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, "tl")'
          title="Click for more detail">
         <div class="hud-label">SOG</div>
         <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
@@ -64,7 +68,11 @@
 <div class="hud hud-top-right">
     <div class="hud-panel @(expandedHud == "tr" ? "hud-panel-expanded" : "")"
          style="text-align:center;"
+         role="button" tabindex="0"
+         aria-expanded="@(expandedHud == "tr" ? "true" : "false")"
+         aria-label="Wind -- click for more detail"
          @onclick='() => ToggleExpanded("tr")' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, "tr")'
          title="Click for more detail">
         <div class="hud-label">AWA / AWS</div>
         @if (Data.WindSpeedApparent is not null)
@@ -135,7 +143,11 @@
    still lives here; a tide row appears only when the plugin publishes. *@
 <div class="hud hud-bottom-left">
     <div class="hud-panel @(expandedHud == "bl" ? "hud-panel-expanded" : "")"
+         role="button" tabindex="0"
+         aria-expanded="@(expandedHud == "bl" ? "true" : "false")"
+         aria-label="Depth and tide -- click for more detail"
          @onclick='() => ToggleExpanded("bl")' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, "bl")'
          title="Click for more detail">
         <div class="hud-label">Depth</div>
         <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
@@ -275,7 +287,11 @@
 <div class="hud hud-bottom-right">
     <div class="hud-panel @(expandedHud == "br" ? "hud-panel-expanded" : "")"
          style="text-align:center;"
+         role="button" tabindex="0"
+         aria-expanded="@(expandedHud == "br" ? "true" : "false")"
+         aria-label="Heading compass -- click for more detail"
          @onclick='() => ToggleExpanded("br")' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, "br")'
          title="Click for more detail">
         <div class="hud-label">HDG</div>
         <svg width="52" height="52" viewBox="-26 -26 52 52">
@@ -485,6 +501,22 @@
     private void ToggleExpanded(string corner)
     {
         expandedHud = expandedHud == corner ? null : corner;
+    }
+
+    // Keyboard parity with the mouse click. Enter / Space match the
+    // implicit button behaviour; Esc collapses without swallowing.
+    private void OnHudKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string corner)
+    {
+        switch (e.Key)
+        {
+            case "Enter":
+            case " ":
+                ToggleExpanded(corner);
+                break;
+            case "Escape":
+                if (expandedHud == corner) expandedHud = null;
+                break;
+        }
     }
 
     // --- Expanded-panel data helpers --------------------------------

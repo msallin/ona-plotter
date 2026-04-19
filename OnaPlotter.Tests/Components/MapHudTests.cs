@@ -143,6 +143,40 @@ public class MapHudTests
     }
 
     [Test]
+    public async Task Panel_Has_Button_Role_And_Aria_Expanded_For_Keyboard_Users()
+    {
+        // The four corner panels are plain divs with @onclick; explicit
+        // role="button" + tabindex + aria-expanded is what tells screen
+        // readers and Tab navigation this is an actionable element.
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, new NavigationData());
+        var panel = cut.Find(".hud-top-left .hud-panel");
+
+        await Assert.That(panel.GetAttribute("role")).IsEqualTo("button");
+        await Assert.That(panel.GetAttribute("tabindex")).IsEqualTo("0");
+        await Assert.That(panel.GetAttribute("aria-expanded")).IsEqualTo("false");
+
+        panel.Click();
+        await Assert.That(panel.GetAttribute("aria-expanded")).IsEqualTo("true");
+    }
+
+    [Test]
+    public async Task Enter_Key_Toggles_Panel()
+    {
+        // Keyboard parity with mouse click. Enter / Space match implicit
+        // button behaviour.
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, new NavigationData());
+        var panel = cut.Find(".hud-top-left .hud-panel");
+
+        panel.KeyDown("Enter");
+        await Assert.That(panel.ClassList).Contains("hud-panel-expanded");
+
+        panel.KeyDown("Escape");
+        await Assert.That(panel.ClassList.Contains("hud-panel-expanded")).IsFalse();
+    }
+
+    [Test]
     public async Task Expanded_BottomRight_Shows_Leeway_When_Cog_And_Hdg_Differ()
     {
         using var ctx = new Bunit.TestContext();
