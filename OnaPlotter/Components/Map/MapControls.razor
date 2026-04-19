@@ -138,10 +138,12 @@
     [Parameter] public EventCallback OnToggleDarkOps { get; set; }
 
     // --- Night-button long-press detection ----------------------
-    // 500 ms is long enough that a normal Night tap doesn't trip it.
-    // Cancelling the hold also suppresses the subsequent click so the
-    // user doesn't get both a Dark Ops flip AND a Night toggle.
-    private const int NightHoldMs = 500;
+    // 700 ms matches the long-press envelope used by the map context
+    // menu (agents.md) -- keeping the tactile vocabulary consistent so
+    // "long-press" means the same thing everywhere. Cancelling the
+    // hold also suppresses the subsequent click so the user doesn't
+    // get both a Dark Ops flip AND a Night toggle.
+    private const int NightHoldMs = 700;
     private CancellationTokenSource? _nightHoldCts;
     private bool _nightHoldFired;
 

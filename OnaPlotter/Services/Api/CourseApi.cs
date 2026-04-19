@@ -32,6 +32,25 @@ public sealed class CourseApi : ICourseApi
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> SetActiveRouteAsync(string routeId, int pointIndex = 0,
+        bool reverse = false, CancellationToken ct = default)
+    {
+        // SignalK v2 active-route body shape matches what Freeboard-SK
+        // sends: href is the v1 relative resource path (NOT the v2 full
+        // API path), pointIndex is zero-based, reverse flips the leg
+        // direction. Servers that don't honour pointIndex will default
+        // to the first leg, which is still the common case.
+        var body = new
+        {
+            href = $"/resources/routes/{Uri.EscapeDataString(routeId)}",
+            pointIndex,
+            reverse
+        };
+        var url = _baseUrl.Combine(SignalKUrls.CourseActiveRoutePath);
+        using var response = await _http.PutAsJsonAsync(url, body, ct);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<bool> ClearAsync(CancellationToken ct = default)
     {
         var url = _baseUrl.Combine(SignalKUrls.CoursePath);

@@ -65,6 +65,13 @@ public interface IAppSettings
     /// mud where the boat can settle.</summary>
     double AnchorTideSafetyMargin { get; }
 
+    /// <summary>Radius (metres) used when the user drops a manual anchor
+    /// from the Map page. The plugin-driven anchor alarm keeps its own
+    /// radius and ignores this value. Persists the last choice so a
+    /// captain who always sets 50 m doesn't have to re-pick every night.
+    /// Default 30 m.</summary>
+    double ManualAnchorRadiusMeters { get; }
+
     /// <summary>High-level sailing mode: "cruise" (default -- navigation
     /// emphasis, depth / anchor / route) or "race" (performance emphasis,
     /// laylines / optimal TWA / target speed). Discriminator used by the
@@ -111,6 +118,7 @@ public interface IAppSettings
     Task SetWindShiftLookbackMinutesAsync(double value);
     Task SetBoatDraftMetersAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
+    Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);

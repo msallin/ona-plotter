@@ -1949,6 +1949,18 @@ main:has(.alarm-banner-stack) .hud-top-left {
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
+/* Route-row action buttons (Go / Edit). Compact so two fit on a
+   phone row; 32 px height on coarse pointers meets the touch target
+   minimum without blowing the layout. */
+.route-action-btn {
+    font-size: 0.68rem;
+    padding: 3px 8px;
+    min-width: 0;
+}
+@media (pointer: coarse) {
+    .route-action-btn { font-size: 0.78rem; padding: 6px 12px; min-height: 32px; }
+}
+
 .chart-item:last-child { border-bottom: none; }
 
 .chart-item input[type="checkbox"] {
@@ -3374,6 +3386,30 @@ main:has(.alarm-banner-stack) .hud-top-left {
     display: flex;
     gap: 14px;
     margin-top: 4px;
+}
+
+/* Inline radius chips for the manual-drop anchor. Only shown when the
+   user dropped the anchor via the button -- server-plugin anchors own
+   their own radius and never render these. Compact row so the HUD card
+   doesn't balloon. */
+.anchor-radius-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 6px;
+}
+.anchor-radius-chips .map-btn {
+    font-size: 0.7rem;
+    padding: 3px 7px;
+    min-width: 0;
+    pointer-events: auto;
+}
+@media (pointer: coarse) {
+    .anchor-radius-chips .map-btn {
+        font-size: 0.78rem;
+        padding: 6px 10px;
+        min-height: 32px;
+    }
 }
 
 .anchor-alarm {

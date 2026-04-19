@@ -24,8 +24,12 @@
                     }
                 </div>
             </label>
-            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                    @onclick="() => OnEdit.InvokeAsync(route)" title="Edit route">Edit</button>
+            <button class="map-btn route-action-btn"
+                    @onclick="() => OnNavigate.InvokeAsync(route)"
+                    title="Start navigating this route">Go</button>
+            <button class="map-btn route-action-btn"
+                    @onclick="() => OnEdit.InvokeAsync(route)"
+                    title="Edit route">Edit</button>
         </div>
     }
 }
@@ -35,6 +39,10 @@
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggle { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEdit { get; set; }
+
+    /// <summary>Fired by the Go button; parent activates the route on the
+    /// SignalK server and starts the leg-by-leg course-delta flow.</summary>
+    [Parameter] public EventCallback<SignalkRoute> OnNavigate { get; set; }
 
     private bool expanded = false;
 

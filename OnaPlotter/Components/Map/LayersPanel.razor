@@ -31,7 +31,8 @@
     <RoutesSection Routes="FilteredRoutes"
                    Enabled="EnabledRoutes"
                    OnToggle="OnToggleRoute"
-                   OnEdit="OnEditRoute" />
+                   OnEdit="OnEditRoute"
+                   OnNavigate="OnNavigateRoute" />
 
     <WaypointsSection Waypoints="LoadedWaypoints"
                       LayerFilter="@LayerFilter"
@@ -97,6 +98,7 @@
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
+    [Parameter] public EventCallback<SignalkRoute> OnNavigateRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnFocusNote { get; set; }
     [Parameter] public EventCallback<bool> OnToggleNotesVisible { get; set; }

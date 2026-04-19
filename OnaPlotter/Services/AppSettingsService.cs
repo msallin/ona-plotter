@@ -32,6 +32,7 @@ public sealed class AppSettingsService : IAppSettings
     public double WindShiftLookbackMinutes { get; private set; } = 5.0;
     public double BoatDraftMeters { get; private set; } = 1.5;
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
+    public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
@@ -69,6 +70,7 @@ public sealed class AppSettingsService : IAppSettings
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
             BoatDraftMeters = await LoadDouble("boatDraftMeters", 1.5);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
+            ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
@@ -216,6 +218,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         WaypointArrivalRadiusMeters = value;
         await Save("waypointArrivalRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetManualAnchorRadiusMetersAsync(double value)
+    {
+        ManualAnchorRadiusMeters = value;
+        await Save("manualAnchorRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

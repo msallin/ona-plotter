@@ -96,6 +96,54 @@ public class WaypointCourseApiTests
     }
 
     [Test]
+    public async Task CourseApi_SetActiveRoute_PutsFreeboardShape()
+    {
+        // Freeboard-SK compat: href uses the v1 relative resource path,
+        // not the v2 full API path. pointIndex and reverse must be
+        // serialised even at their defaults so the server sees the
+        // expected shape. Without this, OnaPlotter can save a route
+        // but has no way to start it.
+        string? capturedUrl = null;
+        string? capturedBody = null;
+        HttpMethod? capturedMethod = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedUrl = req.RequestUri?.AbsoluteUri;
+            capturedMethod = req.Method;
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var ok = await api.SetActiveRouteAsync("rte-123", pointIndex: 2, reverse: true);
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
+        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute");
+        await Assert.That(capturedBody).Contains("\"href\":\"/resources/routes/rte-123\"");
+        await Assert.That(capturedBody).Contains("\"pointIndex\":2");
+        await Assert.That(capturedBody).Contains("\"reverse\":true");
+    }
+
+    [Test]
+    public async Task CourseApi_SetActiveRoute_EncodesIdWithSpecials()
+    {
+        string? capturedBody = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        await api.SetActiveRouteAsync("my route/01");
+
+        // The slash would otherwise split the href into two segments; URL
+        // encoding keeps the id intact for server lookup.
+        await Assert.That(capturedBody).Contains("/resources/routes/my%20route%2F01");
+    }
+
+    [Test]
     public async Task CourseApi_Clear_DeletesCourse()
     {
         string? capturedUrl = null;

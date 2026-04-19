@@ -19,6 +19,7 @@ public static class SignalKUrls
 
     public const string CoursePath = "/signalk/v2/api/navigation/course";
     public const string CourseDestinationPath = "/signalk/v2/api/navigation/course/destination";
+    public const string CourseActiveRoutePath = "/signalk/v2/api/navigation/course/activeRoute";
 
     public const string AutopilotStatePath = "/signalk/v2/api/vessels/self/steering/autopilot/state";
     public const string AutopilotAdjustHeadingPath = "/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";

@@ -398,17 +398,20 @@
     </div>
 }
 
-@* === Anchor watch (server-driven) === *@
-@if (Data.AnchorActive)
+@* === Anchor watch (server-driven OR manual drop) === *@
+@if (Data.AnchorActive || ManualAnchorActive)
 {
     <div class="hud hud-anchor">
         <div class="hud-panel anchor-panel @AnchorAlarmClass">
             <div class="hud-label">Anchor Watch</div>
             <div class="anchor-info-row">
-                <div>
-                    <div class="hud-label">Dist</div>
-                    <div class="hud-value route-value @AnchorDistClass">@Format.MetersDual(Data.AnchorCurrentRadius)</div>
-                </div>
+                @if (Data.AnchorCurrentRadius is not null)
+                {
+                    <div>
+                        <div class="hud-label">Dist</div>
+                        <div class="hud-value route-value @AnchorDistClass">@Format.MetersDual(Data.AnchorCurrentRadius)</div>
+                    </div>
+                }
                 @if (Data.AnchorMaxRadius is not null)
                 {
                     <div>
@@ -416,7 +419,28 @@
                         <div class="hud-value route-value">@Format.MetersDual(Data.AnchorMaxRadius)</div>
                     </div>
                 }
+                @if (ManualAnchorActive)
+                {
+                    <div>
+                        <div class="hud-label">Radius</div>
+                        <div class="hud-value route-value">@ManualAnchorRadiusMeters.ToString("F0")<span class="hud-unit">m</span></div>
+                    </div>
+                }
             </div>
+            @if (ManualAnchorActive && OnSetAnchorRadius.HasDelegate)
+            {
+                @* Inline radius chips for the manual-drop path. The plugin-
+                   driven alarm owns its own radius on the server, so we
+                   suppress the chips when Data.AnchorActive is true. *@
+                <div class="anchor-radius-chips">
+                    @foreach (var r in AnchorRadiusPresets)
+                    {
+                        <button class="map-btn @(Math.Abs(ManualAnchorRadiusMeters - r) < 0.5 ? "active" : "")"
+                                @onclick="() => OnSetAnchorRadius.InvokeAsync(r)"
+                                type="button">@r.ToString("F0")m</button>
+                    }
+                </div>
+            }
         </div>
     </div>
 }
@@ -484,6 +508,24 @@
     /// "alarm <3.0m" label under the depth value so the captain knows
     /// exactly what number will trigger the audible alarm. 0 to hide.</summary>
     [Parameter] public double DepthAlarmThreshold { get; set; }
+
+    /// <summary>True when the user dropped a manual anchor via the Anchor
+    /// button (as opposed to the plugin-driven server-side alarm).
+    /// Enables the inline radius chips.</summary>
+    [Parameter] public bool ManualAnchorActive { get; set; }
+
+    /// <summary>Current manual-anchor radius (metres). Shown on the HUD
+    /// card and highlighted in the chip row.</summary>
+    [Parameter] public double ManualAnchorRadiusMeters { get; set; } = 30;
+
+    /// <summary>Invoked when the user picks a new radius from the inline
+    /// chips. The caller persists it to IAppSettings and re-draws the
+    /// anchor circle via JS.</summary>
+    [Parameter] public EventCallback<double> OnSetAnchorRadius { get; set; }
+
+    /// <summary>Presets in metres. 20 / 30 / 50 / 75 / 100 / 150 m covers
+    /// 3:1 scope in 5 m + to light-tackle moorings without hand-typing.</summary>
+    private static readonly double[] AnchorRadiusPresets = [20, 30, 50, 75, 100, 150];
 
     /// <summary>Signed depth trend in metres per minute over the last
     /// minute. Positive = getting deeper; negative = shallower. Null

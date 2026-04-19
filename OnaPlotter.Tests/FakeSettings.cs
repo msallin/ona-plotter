@@ -27,6 +27,7 @@ internal sealed class FakeSettings : IAppSettings
     public double WindShiftLookbackMinutes { get; set; } = 5.0;
     public double BoatDraftMeters { get; set; } = 1.5;
     public double AnchorTideSafetyMargin { get; set; } = 1.0;
+    public double ManualAnchorRadiusMeters { get; set; } = 30.0;
     public string SailingMode { get; set; } = "cruise";
     public bool KeepScreenAwake { get; set; } = true;
     public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
@@ -52,6 +53,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
     public Task SetBoatDraftMetersAsync(double v) => Task.CompletedTask;
     public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
+    public Task SetManualAnchorRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;
     public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;

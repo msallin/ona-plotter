@@ -47,6 +47,9 @@
             DepthTrendMetersPerMinute="depthTrendMpm"
             SailingMode="@Settings.SailingMode"
             Polar="Polar"
+            ManualAnchorActive="anchorManualActive"
+            ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
+            OnSetAnchorRadius="SetManualAnchorRadius"
             OnStopNavigation="StopNavigation" />
 
     @* Dark Ops exit chip. Only rendered when Dark Ops is active; a tiny
@@ -350,6 +353,7 @@
                      OnReorderChart="OnReorderChartCallback"
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
+                     OnNavigateRoute="NavigateRoute"
                      OnNavigateToWaypoint="NavigateToWaypoint"
                      OnFocusVessel="FocusVessel"
                      OnToggleServerTrack="ToggleServerTrack"
@@ -1718,6 +1722,22 @@
         catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
     }
 
+    /// <summary>
+    /// Activates a saved multi-waypoint route on the SignalK server. From
+    /// that point on the course delta stream drives the active-route HUD
+    /// card leg-by-leg, and the APPROACH alarm fires at each waypoint.
+    /// </summary>
+    private async Task NavigateRoute(SignalkRoute route)
+    {
+        try
+        {
+            bool ok = await CourseApi.SetActiveRouteAsync(route.Id);
+            if (ok) Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
+            else Toasts.Error("Start route failed: server rejected");
+        }
+        catch (Exception ex) { Toasts.Error($"Start route failed: {ex.Message}"); }
+    }
+
     private async Task ToggleWeatherOverlay(bool enabled)
     {
         weatherOverlayVisible = enabled;
@@ -2034,7 +2054,12 @@
 
         if (!anchorManualActive && Data.Latitude is not null && Data.Longitude is not null)
         {
-            await module.InvokeVoidAsync("setAnchor", Data.Latitude, Data.Longitude, 30);
+            // Use the user's last-chosen radius. Default 30 m on first
+            // use; persists across sessions via IAppSettings.
+            await module.InvokeVoidAsync("setAnchor",
+                Data.Latitude, Data.Longitude, Settings.ManualAnchorRadiusMeters);
+            anchorManualLat = Data.Latitude.Value;
+            anchorManualLon = Data.Longitude.Value;
             anchorManualActive = true;
         }
         else if (anchorManualActive)
@@ -2042,6 +2067,28 @@
             await module.InvokeVoidAsync("clearAnchor");
             anchorManualActive = false;
         }
+    }
+
+    // Origin of the manual anchor drop. Captured at toggle-on time so the
+    // radius chips can re-draw the circle at the same centre without
+    // needing a fresh GPS fix.
+    private double anchorManualLat;
+    private double anchorManualLon;
+
+    /// <summary>
+    /// Updates the manual anchor's radius live without clearing the drop
+    /// point. Called from the inline chips on the anchor HUD card.
+    /// </summary>
+    private async Task SetManualAnchorRadius(double radiusMeters)
+    {
+        if (!anchorManualActive || module is null) return;
+        await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
+        try
+        {
+            await module.InvokeVoidAsync("setAnchor",
+                anchorManualLat, anchorManualLon, radiusMeters);
+        }
+        catch (JSDisconnectedException) { }
     }
 
     /// <summary>
