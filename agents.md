@@ -89,6 +89,15 @@ webapp. Pointing a remote server via `SignalK:ServerUrl` sends the flag request
 to the wrong host; the image 404s and hides silently via `onerror`. Good
 enough for a nice-to-have; don't make anything safety-critical depend on it.
 
+**Chart overzoom vs overlays.** `recomputeChartOverzoom()` in
+`leafletInterop.js` picks the chart with the highest native maxZoom and
+stretches it past its limit so the detailed base chart keeps painting when the
+helmsman zooms in. Overlays (OpenSeaMap seamarks, anything whose id is
+`openseamap` / contains `seamark` or whose tile URL has `/seamark/`) are
+excluded from the "top native" race, otherwise the overlay's native 18 beats
+a base chart's native 17 and the base chart disappears past its limit. New
+overlay plugins: either match the same heuristic or extend `isOverlayChart`.
+
 **Cruise/Race mode is a preset, not a lockout.** Mode flips defaults and surfaces
 mode-specific overlays; every individual toggle still works in either mode.
 

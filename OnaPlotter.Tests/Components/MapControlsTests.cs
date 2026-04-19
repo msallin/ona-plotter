@@ -153,6 +153,51 @@ public class MapControlsTests
     }
 
     [Test]
+    public async Task Fab_Menu_Opens_Inside_Wrap_So_It_Anchors_To_Add_Button()
+    {
+        // The Add flyout used to render at the Map.razor level with
+        // position: fixed / left: 12px, which landed it below More instead
+        // of above Add. Moving the menu inside a .ctrl-more-wrap around
+        // the Add button makes position: absolute anchor to Add itself.
+        // Regression guard: when FabMenuOpen, the menu markup exists as a
+        // descendant of a .ctrl-more-wrap (not a standalone sibling).
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, p => p.Add(x => x.FabMenuOpen, true));
+
+        // Two .ctrl-more-wrap divs exist (More, Add); at least one of
+        // them must contain a .ctrl-more-menu so the flyout is anchored.
+        var wraps = cut.FindAll(".ctrl-more-wrap");
+        var wrapsWithMenu = wraps.Count(w =>
+            w.QuerySelector(".ctrl-more-menu") is not null);
+        await Assert.That(wrapsWithMenu).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task Fab_Route_With_Wind_Disabled_Without_Polar()
+    {
+        // Isochrone routing needs a polar CSV. Without one, the item is
+        // rendered but disabled -- surfacing discoverability ("the feature
+        // exists, here's why it's off") rather than hiding it.
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, p => p
+            .Add(x => x.FabMenuOpen, true)
+            .Add(x => x.HasPolar, false));
+
+        var routeItem = cut.FindAll(".ctrl-more-item")
+            .FirstOrDefault(b => b.TextContent.Contains("Route with wind"));
+        await Assert.That(routeItem).IsNotNull();
+        await Assert.That(routeItem!.HasAttribute("disabled")).IsTrue();
+
+        // With polar, enabled.
+        var cut2 = Render(ctx, p => p
+            .Add(x => x.FabMenuOpen, true)
+            .Add(x => x.HasPolar, true));
+        var routeItem2 = cut2.FindAll(".ctrl-more-item")
+            .First(b => b.TextContent.Contains("Route with wind"));
+        await Assert.That(routeItem2.HasAttribute("disabled")).IsFalse();
+    }
+
+    [Test]
     public async Task Route_Button_Stays_Visible_With_Active_Class_During_Edit()
     {
         // A disappearing button mid-edit was disorienting. Regression

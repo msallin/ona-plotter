@@ -93,11 +93,42 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn @(FabMenuOpen ? "active" : "")" @onclick="OnToggleFab"
-            title="Add waypoint / note / region at map centre">
-        <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
-        <span class="ctrl-lbl">Add</span>
-    </button>
+    @* Add button + its flyout menu. Menu lives inside the wrap so
+       position: absolute anchors above the button, same pattern as More.
+       Previously the menu rendered in Map.razor with a fixed left: 12px
+       which put it under More on the left edge of the bar rather than
+       above the Add button. *@
+    <div class="ctrl-more-wrap">
+        <button class="ctrl-btn @(FabMenuOpen ? "active" : "")" @onclick="OnToggleFab"
+                title="Add waypoint / note / region at map centre">
+            <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
+            <span class="ctrl-lbl">Add</span>
+        </button>
+        @if (FabMenuOpen)
+        {
+            <div class="ctrl-more-menu" @onclick:stopPropagation>
+                <button class="ctrl-more-item" @onclick="() => SelectFab(OnFabCreateWaypoint)">
+                    <span class="ctrl-more-ico">&#9675;</span>
+                    <span>Waypoint</span>
+                </button>
+                <button class="ctrl-more-item" @onclick="() => SelectFab(OnFabCreateNote)">
+                    <span class="ctrl-more-ico">&#9783;</span>
+                    <span>Note</span>
+                </button>
+                <button class="ctrl-more-item" @onclick="() => SelectFab(OnFabCreateRegion)">
+                    <span class="ctrl-more-ico">&#9711;</span>
+                    <span>Region</span>
+                </button>
+                <button class="ctrl-more-item" @onclick="() => SelectFab(OnFabRouteWithWind)"
+                        disabled="@(!HasPolar)"
+                        title="@(HasPolar ? "Isochrone weather routing from here to map center" : "Upload a polar in Settings first")">
+                    <span class="ctrl-more-ico">&#9784;</span>
+                    <span>Route with wind</span>
+                </button>
+                <small class="map-fab-hint">target: map centre</small>
+            </div>
+        }
+    </div>
     @* Route button stays visible during edit -- disappearing mid-tap was
        disorienting. Active styling + disabled flag tells the user they're
        already editing; Save/Cancel live on the route-edit panel above. *@
@@ -162,6 +193,11 @@
     [Parameter] public EventCallback OnToggleLayers { get; set; }
     [Parameter] public EventCallback OnToggleLegend { get; set; }
     [Parameter] public EventCallback OnToggleFab { get; set; }
+    [Parameter] public EventCallback OnFabCreateWaypoint { get; set; }
+    [Parameter] public EventCallback OnFabCreateNote { get; set; }
+    [Parameter] public EventCallback OnFabCreateRegion { get; set; }
+    [Parameter] public EventCallback OnFabRouteWithWind { get; set; }
+    [Parameter] public bool HasPolar { get; set; }
     [Parameter] public EventCallback OnToggleDarkOps { get; set; }
 
     // Dot indicator on the More button when any of its contents is on,
@@ -196,6 +232,11 @@
         MoreMenuOpen = false;
         await cb.InvokeAsync();
     }
+
+    // Close the Add flyout then invoke the picked action. The owner toggles
+    // FabMenuOpen but we can't flip it here (it's a [Parameter]), so we rely
+    // on the callback's own handler to set FabMenuOpen = false on Map.razor.
+    private async Task SelectFab(EventCallback cb) => await cb.InvokeAsync();
 
     // --- Night-button long-press for Dark Ops -----------------------
     // 700 ms matches the long-press envelope used elsewhere. The hold
