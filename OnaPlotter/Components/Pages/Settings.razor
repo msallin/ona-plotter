@@ -6,10 +6,22 @@
 @inject IPolarService Polar
 @inject IToastService Toasts
 @inject OnaPlotter.Services.SignalkClient SignalkClient
+@inject IJSRuntime JS
 
 <PageTitle>Settings</PageTitle>
 
 <h2>Settings</h2>
+
+@* Quick-jump filter. Matches against every form-label on the page;
+   first match gets a subtle highlight and scrolls into view. Page is
+   ~600 lines and growing -- Ctrl-F works but scrolls past group
+   headings, and the helm screen doesn't always have a physical
+   keyboard. Clearing the input removes the highlight. *@
+<div class="mb-3" style="max-width: 600px;">
+    <input type="search" class="form-control" placeholder="Find a setting (e.g. depth, snooze, polar)..."
+           value="@settingsFilter"
+           @oninput="(e) => OnSettingsFilterInput(e)" />
+</div>
 
 <div class="row g-4" style="max-width: 600px;">
 
@@ -428,6 +440,21 @@
 </div>
 
 @code {
+    private string settingsFilter = "";
+
+    private async Task OnSettingsFilterInput(ChangeEventArgs e)
+    {
+        settingsFilter = e.Value?.ToString() ?? "";
+        // Delegate the DOM walk to JS: enumerates all .form-label
+        // elements, finds the first whose text contains the query,
+        // scrolls it into view, and applies a transient highlight.
+        // Keeps the C# side stateless (no per-card hide logic) so the
+        // page doesn't churn through a big re-render on every keystroke.
+        try { await JS.InvokeVoidAsync("onaSettingsFilter", settingsFilter); }
+        catch (JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException) { }
+    }
+
     private async Task OnDepthChanged(ChangeEventArgs e)
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)

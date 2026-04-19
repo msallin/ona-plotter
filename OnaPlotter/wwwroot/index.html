@@ -35,6 +35,24 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('service-worker.js');
         }
+
+        // Settings page filter helper. Settings.razor calls this on every
+        // keystroke in the "Find a setting" input: scroll the first
+        // matching form-label into view and add a .settings-highlight
+        // class for a second. Empty query clears any existing highlight.
+        window.onaSettingsFilter = function (query) {
+            const all = document.querySelectorAll('.form-label');
+            all.forEach(el => el.classList.remove('settings-highlight'));
+            const q = (query || '').trim().toLowerCase();
+            if (!q) return;
+            for (const label of all) {
+                if (label.textContent.toLowerCase().includes(q)) {
+                    label.classList.add('settings-highlight');
+                    label.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return;
+                }
+            }
+        };
     </script>
 </body>
 
