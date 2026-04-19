@@ -26,6 +26,9 @@ public static class Icons
     // Laylines: two diverging lines from bottom.
     public const string Laylines = Wrap + "<path d=\"M12 22 L4 4\"/><path d=\"M12 22 L20 4\"/><circle cx=\"12\" cy=\"22\" r=\"1\" fill=\"currentColor\"/>" + End;
 
+    // Measure: ruler-ish diagonal with two tick marks.
+    public const string Measure = Wrap + "<path d=\"M3 17 L17 3\"/><path d=\"M7 17 L11 13\" stroke-width=\"1.3\"/><path d=\"M13 11 L17 7\" stroke-width=\"1.3\"/><circle cx=\"3\" cy=\"17\" r=\"1.4\" fill=\"currentColor\"/><circle cx=\"17\" cy=\"3\" r=\"1.4\" fill=\"currentColor\"/>" + End;
+
     // Route: connected waypoints.
     public const string Route = Wrap + "<circle cx=\"5\" cy=\"6\" r=\"2\"/><circle cx=\"19\" cy=\"18\" r=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"1.5\" fill=\"currentColor\"/><path d=\"M7 7 l4 4 M13 13 l4.5 4\" stroke-dasharray=\"3,2\"/>" + End;
 

@@ -38,6 +38,11 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Laylines)</span>
         <span class="ctrl-lbl">Laylines</span>
     </button>
+    <button class="ctrl-btn @(MeasureActive ? "active" : "")" @onclick="OnToggleMeasure"
+            title="Measure (D) -- tap to drop ruler points">
+        <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
+        <span class="ctrl-lbl">Measure</span>
+    </button>
 
     <div class="ctrl-sep"></div>
 
@@ -69,6 +74,7 @@
     [Parameter] public bool AnchorActive { get; set; }
     [Parameter] public bool MobActive { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
+    [Parameter] public bool MeasureActive { get; set; }
     [Parameter] public bool RouteEditMode { get; set; }
     [Parameter] public bool RaceTimerActive { get; set; }
     [Parameter] public string RaceTimerLabel { get; set; } = "";
@@ -99,6 +105,7 @@
     [Parameter] public EventCallback OnToggleMob { get; set; }
     [Parameter] public EventCallback OnZoomToTrack { get; set; }
     [Parameter] public EventCallback OnToggleLaylines { get; set; }
+    [Parameter] public EventCallback OnToggleMeasure { get; set; }
     [Parameter] public EventCallback OnStartRouteEdit { get; set; }
     [Parameter] public EventCallback OnToggleRaceTimer { get; set; }
     [Parameter] public EventCallback OnToggleLayers { get; set; }

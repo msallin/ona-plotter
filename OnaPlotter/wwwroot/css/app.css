@@ -694,6 +694,21 @@ article.content:has(.map-container) {
 }
 .bearing-tooltip::before { display: none !important; }
 
+/* Measurement-tool segment tooltips. Same skeleton as bearing-
+   tooltip but amber-framed to match the ruler polyline. */
+.measure-tooltip {
+    background: rgba(30, 34, 44, 0.92) !important;
+    border: 1px solid rgba(233, 196, 106, 0.55) !important;
+    color: #f0d49c !important;
+    font-size: 11.5px !important;
+    font-weight: 500 !important;
+    padding: 4px 10px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35) !important;
+    line-height: 1.3 !important;
+}
+.measure-tooltip::before { display: none !important; }
+
 /* COG vector time/distance label */
 .vector-label {
     background: rgba(30, 34, 44, 0.85) !important;

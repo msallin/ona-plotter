@@ -412,10 +412,15 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
     boatVector = L.polyline([], { color: '#f9a8d4', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
 
-    // Map click: in route edit mode, add waypoint. Otherwise just dismiss menus.
+    // Map click: in route edit mode, add waypoint. In measurement
+    // mode, drop a measurement point. Otherwise just dismiss menus.
     map.on('click', (e) => {
         if (routeEditMode) {
             addEditWaypoint(e.latlng.lat, e.latlng.lng);
+            return;
+        }
+        if (measureActive) {
+            addMeasurePoint(e.latlng.lat, e.latlng.lng);
             return;
         }
         if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu');
@@ -1030,6 +1035,69 @@ function drawBearingLine(lat, lon) {
 function clearBearingLine() {
     if (bearingLine) { map.removeLayer(bearingLine); bearingLine = null; }
     if (bearingLabel) { map.removeLayer(bearingLabel); bearingLabel = null; }
+}
+
+// --- Persistent measurement tool ---
+// Multi-segment ruler: clicks drop measurement points, each segment
+// is labelled with bearing + distance, running total shown on the
+// last point. Intentionally NOT anchored to own-boat (the dblclick
+// helper above covers that) -- this is for chart planning, e.g.
+// summing the distance of a route before you create it.
+let measureActive = false;
+let measurePoints = [];     // [[lat, lon], ...]
+const measureLayers = [];    // parallel array of L.Polyline / L.Marker
+
+export function setMeasureMode(active) {
+    measureActive = !!active;
+    if (!measureActive) clearMeasure();
+    if (map) {
+        // Visual hint: crosshair cursor when in measurement mode.
+        map.getContainer().style.cursor = measureActive ? 'crosshair' : '';
+    }
+}
+
+export function clearMeasure() {
+    for (const layer of measureLayers) {
+        if (map) map.removeLayer(layer);
+    }
+    measureLayers.length = 0;
+    measurePoints = [];
+}
+
+function addMeasurePoint(lat, lon) {
+    if (!map) return;
+    measurePoints.push([lat, lon]);
+
+    // A big enough dot to tap-to-delete later; also a waypoint-style visual.
+    const dot = L.circleMarker([lat, lon], {
+        radius: 5, color: '#e9c46a', fillColor: '#e9c46a',
+        fillOpacity: 1, weight: 2
+    }).addTo(map);
+    measureLayers.push(dot);
+
+    if (measurePoints.length >= 2) {
+        const a = measurePoints[measurePoints.length - 2];
+        const b = measurePoints[measurePoints.length - 1];
+        const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
+        const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
+        const seg = L.polyline([a, b], {
+            color: '#e9c46a', weight: 2, dashArray: '6,4', opacity: 0.85
+        }).addTo(map);
+        measureLayers.push(seg);
+
+        const totalDist = measurePoints.slice(1).reduce((acc, p, i) => {
+            return acc + haversineMeters(measurePoints[i][0], measurePoints[i][1], p[0], p[1]);
+        }, 0) * NM_PER_METER;
+
+        const tooltip = L.tooltip({
+            permanent: true, direction: 'right', offset: [8, 0],
+            className: 'measure-tooltip'
+        })
+            .setLatLng(b)
+            .setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${totalDist.toFixed(2)} nm`)
+            .addTo(map);
+        measureLayers.push(tooltip);
+    }
 }
 
 // --- MOB ---
