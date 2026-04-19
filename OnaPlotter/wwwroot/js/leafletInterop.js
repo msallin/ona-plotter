@@ -349,7 +349,11 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     if (map) map.remove();
     dotNetRef = dotNetObjRef;
 
-    map = L.map(elementId, { zoomControl: false }).setView([lat, lon], zoom);
+    // maxZoom 22 lets chart tiles overzoom past their native limit (we
+    // set maxNativeZoom on chart layers to cap the tile fetch and then
+    // let Leaflet scale the last valid tile up). Base OSM still caps at
+    // its own maxZoom via the per-layer option, so we don't hit 404s.
+    map = L.map(elementId, { zoomControl: false, maxZoom: 22 }).setView([lat, lon], zoom);
     // Drop the "Leaflet |" prefix from the attribution bar. The actual
     // OSM / OpenSeaMap attribution stays (ODbL / CC-BY-SA require it);
     // the Leaflet credit is courtesy and removable.
@@ -395,13 +399,15 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     document.addEventListener('webkitfullscreenchange', syncFsIcon);
 
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 22,
         attribution: '&copy; OpenStreetMap contributors',
         referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
 
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-        maxZoom: 19,
+        maxNativeZoom: 19,
+        maxZoom: 22,
         attribution: '&copy; OpenSeaMap',
         opacity: 0.8,
         referrerPolicy: 'strict-origin-when-cross-origin'
@@ -713,6 +719,16 @@ export function updateAisTargets(vessels) {
         }
         if (!isSart) rotateMarker(marker, v.cogRad ?? v.headingRad);
 
+        // Pulse an expanding red ring around any AIS / radar target
+        // whose CPA is in the "danger" band (matches the AIS_DANGER_COLOR
+        // tint on the chevron). Adds a .cpa-pulse class to the marker
+        // element, which the CSS drives via ::after. SART gets its own
+        // pulse so we skip it here to avoid double-pulsing.
+        if (!isSart) {
+            const el = marker.getElement();
+            if (el) el.classList.toggle('cpa-pulse', isDangerEff);
+        }
+
         // Name label visible at zoom >= 12. Prefer resolved external name
         // over raw MMSI so the chart looks clean even for unnamed targets.
         // Buddies get a star prefix.
@@ -860,7 +876,13 @@ export function updateAisTargets(vessels) {
 
             const midLat = (ownCpa[0] + tgtCpa[0]) / 2;
             const midLon = (ownCpa[1] + tgtCpa[1]) / 2;
-            const labelText = `${cpaInfo.cpa.toFixed(2)} nm · T-${cpaInfo.tcpa.toFixed(0)}m`;
+            // Label now leads with the target name (or MMSI fallback) so a
+            // sailor glancing at the chart knows WHICH vessel is on a
+            // collision track without having to click the marker. Format:
+            //   MV Aurora
+            //   0.42 nm · T-5m
+            const cpaName = baseName || 'Unknown';
+            const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)} nm · T-${cpaInfo.tcpa.toFixed(0)}m`;
             let lbl = aisCpaLabels[v.context];
             if (!lbl) {
                 lbl = L.tooltip({
@@ -1203,9 +1225,16 @@ export function setNightMode(enabled) {
 // bounds is [west, south, east, north] or null.
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     if (!map || chartLayers.has(id)) return false;
+    // Overzoom: the chart's published maxZoom becomes maxNativeZoom, while
+    // the visual maxZoom is bumped so Leaflet scales the highest tile up
+    // instead of going blank when the user pinches past the chart's
+    // native limit. Commercial plotters do this by default; sailors
+    // expect to be able to zoom into a harbour view.
+    const native = maxZoom || 18;
     const opts = {
         minZoom: minZoom || 1,
-        maxZoom: maxZoom || 18,
+        maxNativeZoom: native,
+        maxZoom: Math.max(native + 4, 22),
         opacity: opacity || 0.8,
         attribution: '',
         errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.

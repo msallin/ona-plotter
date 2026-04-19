@@ -160,3 +160,8 @@ showed those strings as their default value.
 - Vessel-name display: REST snapshot now seeds names for already-known
   vessels on connect. Still need external-lookup fallback for vessels
   that have never sent AIS msg 5/24.
+- Click-to-expand on the four corner HUD panels to surface more
+  detail (VMG, signed AWA/TWA, HDG mag vs true, depth offset). Scoped
+  but not implemented; requires a per-panel expanded-state model and
+  CSS. Candidate: a single `expandedHud` string in Map.razor and a
+  `hud-panel-expanded` class with extra rows.

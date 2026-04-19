@@ -80,8 +80,6 @@
                  RaceTimerLabel="@FormatRaceTimer()"
                  LayersPanelOpen="chartPanelOpen"
                  LegendOpen="legendOpen"
-                 EnabledLayerCount="enabledCharts.Count + enabledRoutes.Count"
-                 TotalLayerCount="availableCharts.Count + availableRoutes.Count"
                  OnToggleFollow="ToggleFollow"
                  OnCycleOrientation="CycleMapOrientation"
                  OnToggleNight="ToggleNightMode"
@@ -93,7 +91,9 @@
                  OnStartRouteEdit="StartRouteEdit"
                  OnToggleRaceTimer="ToggleRaceTimer"
                  OnToggleLayers="ToggleLayersPanel"
-                 OnToggleLegend="() => legendOpen = !legendOpen" />
+                 OnToggleLegend="() => legendOpen = !legendOpen"
+                 FabMenuOpen="fabMenuOpen"
+                 OnToggleFab="ToggleFabMenu" />
 
     @if (shortcutsVisible)
     {
@@ -162,51 +162,38 @@
                         OnRemoveWaypoint="RemoveRouteWaypoint" />
     }
 
-    @* === Floating action button (keyboard + touch parity for long-press) ===
-       Anchored top-left so it doesn't collide with Leaflet's zoom
-       controls (top-right) or the bottom control bar. Click expands
-       into a vertical menu of the primary create actions -- same
-       set as the right-click / long-press context menu but targeting
-       the current map center. Gives desktop-keyboard users a route
-       that doesn't require right-click-sensitive devices and
-       discover-ability to new users who haven't seen the coachmark. *@
+    @* === Add-menu popover ===
+       The Add button in the bottom control bar (MapControls) flips
+       fabMenuOpen. The menu pops UP from the bar bottom-left so it
+       doesn't cover the map; backdrop swallows outside clicks. The
+       item set mirrors the right-click / long-press context menu,
+       but targets the current map centre for keyboard-only users
+       and first-runners who haven't discovered long-press yet. *@
     @if (fabMenuOpen)
     {
         <div class="map-fab-backdrop" @onclick="() => fabMenuOpen = false"></div>
+        <div class="map-fab-menu map-fab-menu-bar" @onclick:stopPropagation>
+            <button class="map-fab-item" @onclick="FabCreateWaypoint">
+                <span class="map-fab-ico">&#9675;</span>
+                <span>Waypoint</span>
+            </button>
+            <button class="map-fab-item" @onclick="FabCreateNote">
+                <span class="map-fab-ico">&#9783;</span>
+                <span>Note</span>
+            </button>
+            <button class="map-fab-item" @onclick="FabCreateRegion">
+                <span class="map-fab-ico">&#9711;</span>
+                <span>Region</span>
+            </button>
+            <button class="map-fab-item" @onclick="FabRouteWithWind"
+                    disabled="@(!Polar.HasPolar)"
+                    title="@(Polar.HasPolar ? "Isochrone weather routing from here to map center" : "Upload a polar in Settings first")">
+                <span class="map-fab-ico">&#9784;</span>
+                <span>Route with wind</span>
+            </button>
+            <small class="map-fab-hint">target: map centre</small>
+        </div>
     }
-    <div class="map-fab-wrap">
-        <button class="map-fab @(fabMenuOpen ? "open" : "")"
-                @onclick="ToggleFabMenu"
-                title="Create at map center (long-press the map to target a specific point)"
-                aria-label="Create menu"
-                aria-expanded="@fabMenuOpen.ToString().ToLowerInvariant()">
-            <span class="map-fab-glyph">+</span>
-        </button>
-        @if (fabMenuOpen)
-        {
-            <div class="map-fab-menu" @onclick:stopPropagation>
-                <button class="map-fab-item" @onclick="FabCreateWaypoint">
-                    <span class="map-fab-ico">&#9675;</span>
-                    <span>Waypoint</span>
-                </button>
-                <button class="map-fab-item" @onclick="FabCreateNote">
-                    <span class="map-fab-ico">&#9783;</span>
-                    <span>Note</span>
-                </button>
-                <button class="map-fab-item" @onclick="FabCreateRegion">
-                    <span class="map-fab-ico">&#9711;</span>
-                    <span>Region</span>
-                </button>
-                <button class="map-fab-item" @onclick="FabRouteWithWind"
-                        disabled="@(!Polar.HasPolar)"
-                        title="@(Polar.HasPolar ? "Isochrone weather routing from here to map center" : "Upload a polar in Settings first")">
-                    <span class="map-fab-ico">&#9784;</span>
-                    <span>Route with wind</span>
-                </button>
-                <small class="map-fab-hint">target: map center</small>
-            </div>
-        }
-    </div>
 
     @* === Context Menu (right-click) === *@
     @if (contextMenuVisible)

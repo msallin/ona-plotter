@@ -1,8 +1,12 @@
 @* Modal card listing every symbol the map can display. Opens via the
    Legend button in the bottom control bar. Same dismissal contract as
    MapShortcutsOverlay: backdrop click and the [Close] button both
-   invoke OnDismiss. The content mirrors the old LegendSection that
-   used to live inside the Layers panel -- see commit history. *@
+   invoke OnDismiss.
+
+   Descriptions are deliberately colour-free -- the swatch to the left
+   shows the colour; the text explains the SHAPE and MEANING. Saying
+   "magenta chevron" when the user can already see the magenta chevron
+   is just noise. *@
 
 <div class="shortcuts-overlay" @onclick="OnDismiss">
     <div class="shortcuts-card legend-card" @onclick:stopPropagation>
@@ -11,17 +15,17 @@
             <li>
                 <span class="legend-swatch legend-own"></span>
                 <span class="legend-name">Own boat</span>
-                <span class="legend-desc">Magenta chevron; arrow points along COG.</span>
+                <span class="legend-desc">Chevron points along COG.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-ais-sail"></span>
                 <span class="legend-name">AIS sail / pleasure</span>
-                <span class="legend-desc">Warm coral chevron + diamond glyph.</span>
+                <span class="legend-desc">Chevron + diamond glyph.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-ais-fish"></span>
                 <span class="legend-name">AIS fishing</span>
-                <span class="legend-desc">Gold chevron + crossed-nets glyph.</span>
+                <span class="legend-desc">Chevron + crossed-nets glyph.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-ais-commercial"></span>
@@ -31,53 +35,49 @@
             <li>
                 <span class="legend-swatch legend-buddy"></span>
                 <span class="legend-name">Buddy</span>
-                <span class="legend-desc">Honey-gold; star prefix on the label. Collision alarm suppressed.</span>
+                <span class="legend-desc">Star prefix on label. Collision alarm suppressed.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-danger"></span>
                 <span class="legend-name">CPA danger</span>
-                <span class="legend-desc">Red tint on AIS / radar + red crossing line to own-boat.</span>
+                <span class="legend-desc">Pulsing target + crossing line to own-boat.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-sart"></span>
                 <span class="legend-name">SART / MOB / EPIRB</span>
-                <span class="legend-desc">Pulsing red bullseye. Life-safety alarm cannot be snoozed.</span>
+                <span class="legend-desc">Pulsing bullseye. Life-safety, cannot be snoozed.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-radar"></span>
                 <span class="legend-name">Radar ARPA</span>
-                <span class="legend-desc">Tan outline triangle -- Mayara / similar plugin.</span>
+                <span class="legend-desc">Outline triangle -- Mayara / similar plugin.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-route"></span>
                 <span class="legend-name">Route</span>
-                <span class="legend-desc">Amber dashed line, waypoint dots at each turn.</span>
+                <span class="legend-desc">Dashed line, waypoint dots at each turn.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-waypoint"></span>
                 <span class="legend-name">Waypoint</span>
-                <span class="legend-desc">Terracotta circle. Tap in the panel to navigate.</span>
+                <span class="legend-desc">Circle. Tap in the panel to navigate.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-note"></span>
                 <span class="legend-name">Note</span>
-                <span class="legend-desc">Amber folded-page pin with title and body text.</span>
+                <span class="legend-desc">Folded-page pin with title and body text.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-region"></span>
                 <span class="legend-name">Region</span>
-                <span class="legend-desc">Amber-gold polygon (anchorage / no-go / area of interest).</span>
+                <span class="legend-desc">Polygon: anchorage / no-go / area of interest.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-guard"></span>
                 <span class="legend-name">Guard zone</span>
-                <span class="legend-desc">Dashed red ring around own-boat. CPA alarm trigger radius.</span>
+                <span class="legend-desc">Dashed ring around own-boat. CPA alarm trigger radius.</span>
             </li>
         </ul>
-        <div class="shortcuts-hint">
-            Hue system: amber = user annotations, warm earth palette = AIS/radar,
-            red = alarm severity. See agents.md.
-        </div>
     </div>
 </div>
 

@@ -1,8 +1,26 @@
 @using OnaPlotter.Models
 
-@* Chart overlays (tile layers) toggleable from the Layers panel. *@
+@* Chart overlays (tile layers). Two parts:
+     1. A compact "active stack" row rendered above the collapsible list,
+        always visible (even when Charts is collapsed), showing which
+        charts are currently layered on the map and in order. The topmost
+        chip is the chart drawn last / on top.
+     2. The full checkbox list, gated on expand. *@
 
 @if (Charts.Count == 0) return;
+
+@if (ActiveStack.Count > 0)
+{
+    <div class="chart-active-stack" title="Charts currently on the map, top of list = top of stack">
+        @foreach (var chart in ActiveStack)
+        {
+            <span class="chart-active-chip"
+                  title="@(chart.Description ?? chart.Name)">
+                @chart.Name
+            </span>
+        }
+    </div>
+}
 
 <SectionHeader Title="Charts" Count="@Charts.Count"
                Expanded="@expanded"
@@ -37,4 +55,10 @@
     // Collapsed by default -- the Layers panel opens compact, the user
     // expands only the sections they need. See agents.md "UX principles".
     private bool expanded = false;
+
+    // Order mirrors Charts[] filtering, which already preserves Charts'
+    // own order (server-sent list). Last-in-list is top-of-stack because
+    // that's the draw order (later .addTo() is painted on top).
+    private List<SignalkChart> ActiveStack =>
+        Charts.Where(c => Enabled.Contains(c.Identifier)).Reverse().ToList();
 }

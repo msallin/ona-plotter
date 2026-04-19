@@ -1714,6 +1714,29 @@ main:has(.alarm-banner-stack) .hud-top-left {
     text-align: center;
 }
 
+/* Active chart stack at the top of the Charts section. Always visible,
+   even when the Charts list is collapsed. Each chip is one currently-
+   enabled chart; chips stack top-down, topmost chip = top of draw
+   stack on the map (last .addTo wins). */
+.chart-active-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 8px;
+}
+.chart-active-chip {
+    background: rgba(224, 159, 62, 0.14);
+    border: 1px solid rgba(224, 159, 62, 0.4);
+    color: #f0d49c;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .chart-item {
     display: flex;
     align-items: center;
@@ -1961,6 +1984,37 @@ main:has(.alarm-banner-stack) .hud-top-left {
     50%      { transform: scale(1.18); opacity: 0.85; }
 }
 
+/* CPA-danger pulse on AIS / radar markers. Expanding red ring makes a
+   colliding target stand out even when the chevron is tiny at low zoom.
+   Cleaner UX than relying on colour alone (which fails colour-blind
+   users and competes with chart tile blue).
+   The ::after ring is rendered inside the marker element's local box,
+   so it tracks the marker's rotation + translation for free. */
+.boat-icon.cpa-pulse {
+    position: relative;
+    overflow: visible;
+}
+.boat-icon.cpa-pulse::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    margin: -5px 0 0 -5px;
+    border-radius: 50%;
+    border: 2px solid rgba(239, 68, 68, 0.9);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+    animation: cpa-danger-pulse 1.1s ease-out infinite;
+    pointer-events: none;
+    will-change: transform, opacity;
+}
+@keyframes cpa-danger-pulse {
+    0%   { transform: scale(1);   opacity: 1; }
+    80%  { transform: scale(3.2); opacity: 0; }
+    100% { transform: scale(3.2); opacity: 0; }
+}
+
 /* ===== Floating Action Button =====
    Top-left of the map, opposite the Leaflet zoom controls. On click
    expands into a vertical menu of the create actions that the
@@ -1969,46 +2023,15 @@ main:has(.alarm-banner-stack) .hud-top-left {
    right-click sensitivity or a long-press affordance. The menu
    targets the current map centre, telegraphed by the 'target: map
    center' hint at the bottom. */
-.map-fab-wrap {
-    position: fixed;
-    top: 68px;
-    left: 12px;
-    z-index: var(--z-controls);
-    pointer-events: none;
-}
+/* Backdrop swallows outside-clicks for the Add-menu popover. The
+   standalone top-left FAB was replaced by an "Add" button in the
+   bottom control bar (too loud as a floating orange disc). */
 .map-fab-backdrop {
     position: fixed;
     inset: 0;
     z-index: calc(var(--z-controls) - 1);
     background: transparent;
 }
-.map-fab-wrap > * { pointer-events: auto; }
-main:has(.alarm-banner-stack) .map-fab-wrap { top: 112px; }
-
-.map-fab {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: rgba(224, 159, 62, 0.95);         /* --ann-route amber */
-    color: #1a1206;
-    border: none;
-    font-size: 1.6rem;
-    font-weight: 600;
-    line-height: 1;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition: transform 0.18s ease, background 0.18s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.map-fab:hover { background: #edad4d; }
-.map-fab.open {
-    transform: rotate(45deg);
-    background: #f4bc6a;
-}
-.map-fab-glyph { display: block; margin-top: -2px; }
 .map-fab-menu {
     position: absolute;
     top: 52px;
@@ -2021,9 +2044,25 @@ main:has(.alarm-banner-stack) .map-fab-wrap { top: 112px; }
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(6px);
     animation: fab-pop 0.16s ease-out;
+    z-index: var(--z-controls);
+}
+/* Variant anchored to the bottom control bar instead of the top-left
+   FAB. Pops UP (not down) just above the control bar and sits left-of-
+   centre so it never covers the Layers / Legend / Race buttons on the
+   right. */
+.map-fab-menu-bar {
+    position: fixed;
+    top: auto;
+    bottom: calc(var(--panel-bottom) + 6px);
+    left: 12px;
+    animation: fab-pop-up 0.16s ease-out;
 }
 @keyframes fab-pop {
     from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fab-pop-up {
+    from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 .map-fab-item {
@@ -3068,12 +3107,17 @@ main:has(.alarm-banner-stack) .nearest-wp-chip {
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
     color: #fff !important;
     font-size: 11px !important;
-    font-weight: 600 !important;
-    padding: 2px 6px !important;
+    font-weight: 500 !important;
+    padding: 3px 8px !important;
     border-radius: 4px !important;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
-    white-space: nowrap;
+    /* Label is multi-line (vessel name on line 1, CPA / TCPA on line 2);
+       centre the text, keep line-height tight. */
+    text-align: center !important;
+    line-height: 1.25 !important;
+    white-space: normal;
 }
+.cpa-label strong { font-weight: 700; font-size: 11.5px; }
 .cpa-label::before { display: none !important; }
 .cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
 .cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }

@@ -1,9 +1,20 @@
 @using OnaPlotter.Utilities
 
-@* Bottom control bar: follow, orientation, night, anchor, MOB, fit, laylines,
-   route, race timer, layers. Grouped by function with vertical separators. *@
+@* Bottom control bar. Left-most slot is the Legend key (low-frequency
+   but highest discoverability need -- "what does that symbol mean"),
+   then the four groups: view (follow/orientation/night), safety
+   (anchor/MOB), navigation (fit/laylines/measure), create (add/route/
+   race), and finally Layers on the far right. *@
 
 <div class="map-controls">
+    <button class="ctrl-btn @(LegendOpen ? "active" : "")" @onclick="OnToggleLegend"
+            title="Map legend: what every symbol means">
+        <span class="ctrl-ico">@((MarkupString)Icons.Legend)</span>
+        <span class="ctrl-lbl">Legend</span>
+    </button>
+
+    <div class="ctrl-sep"></div>
+
     <button class="ctrl-btn @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
         <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
         <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
@@ -46,6 +57,11 @@
 
     <div class="ctrl-sep"></div>
 
+    <button class="ctrl-btn @(FabMenuOpen ? "active" : "")" @onclick="OnToggleFab"
+            title="Add waypoint / note / region at map centre">
+        <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
+        <span class="ctrl-lbl">Add</span>
+    </button>
     @if (!RouteEditMode)
     {
         <button class="ctrl-btn" @onclick="OnStartRouteEdit" title="Create a new route">
@@ -60,15 +76,10 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn @(LegendOpen ? "active" : "")" @onclick="OnToggleLegend"
-            title="Map legend: what every symbol means">
-        <span class="ctrl-ico">@((MarkupString)Icons.Legend)</span>
-        <span class="ctrl-lbl">Legend</span>
-    </button>
     <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
-            title="@LayersTitle">
+            title="Layers panel">
         <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
-        <span class="ctrl-lbl">@LayersLabel</span>
+        <span class="ctrl-lbl">Layers</span>
     </button>
 </div>
 
@@ -85,24 +96,7 @@
     [Parameter] public string RaceTimerLabel { get; set; } = "";
     [Parameter] public bool LayersPanelOpen { get; set; }
     [Parameter] public bool LegendOpen { get; set; }
-
-    /// <summary>Charts + routes currently enabled by the user. Shown as
-    /// a badge on the Layers button so it's obvious when data is hidden
-    /// ("Layers 0" = a blank map, the classic what's-wrong-with-this-app
-    /// moment).</summary>
-    [Parameter] public int EnabledLayerCount { get; set; }
-
-    /// <summary>Total available charts + routes. Shows as the denominator
-    /// of the badge.</summary>
-    [Parameter] public int TotalLayerCount { get; set; }
-
-    private string LayersLabel =>
-        TotalLayerCount > 0 ? $"Layers {EnabledLayerCount}/{TotalLayerCount}" : "Layers";
-
-    private string LayersTitle =>
-        TotalLayerCount > 0
-            ? $"Layers panel -- {EnabledLayerCount} of {TotalLayerCount} enabled"
-            : "Layers panel";
+    [Parameter] public bool FabMenuOpen { get; set; }
 
     [Parameter] public EventCallback OnToggleFollow { get; set; }
     [Parameter] public EventCallback OnCycleOrientation { get; set; }
@@ -116,4 +110,5 @@
     [Parameter] public EventCallback OnToggleRaceTimer { get; set; }
     [Parameter] public EventCallback OnToggleLayers { get; set; }
     [Parameter] public EventCallback OnToggleLegend { get; set; }
+    [Parameter] public EventCallback OnToggleFab { get; set; }
 }
