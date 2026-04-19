@@ -156,6 +156,10 @@
                    glyph that colour-blind sailors can read. Paired with the
                    traffic-light colouring so both channels carry the signal. *@
                 <span class="depth-warn-glyph" aria-label="depth below alarm threshold">&#9888;</span>
+            }@if (FormatDepthTrend() is string trendLabel)
+            {
+                <span class="depth-trend @DepthTrendClass()"
+                      title="1-minute average change">@((MarkupString)trendLabel)</span>
             }</div>
         @if (DepthAlarmThreshold > 0)
         {
@@ -481,6 +485,11 @@
     /// exactly what number will trigger the audible alarm. 0 to hide.</summary>
     [Parameter] public double DepthAlarmThreshold { get; set; }
 
+    /// <summary>Signed depth trend in metres per minute over the last
+    /// minute. Positive = getting deeper; negative = shallower. Null
+    /// hides the trend glyph (no recent depth samples / plugin absent).</summary>
+    [Parameter] public double? DepthTrendMetersPerMinute { get; set; }
+
     /// <summary>"cruise" or "race". Gates the race HUD card.</summary>
     [Parameter] public string SailingMode { get; set; } = "cruise";
 
@@ -490,6 +499,30 @@
 
     private bool IsBelowDepthThreshold =>
         Data.Depth is double d && DepthAlarmThreshold > 0 && d < DepthAlarmThreshold;
+
+    // --- Depth trend glyph -------------------------------------------
+    // Arrows (not colour) carry the main signal so a colour-blind
+    // helmsman reads "deeper" / "shallower" at a glance. A small
+    // threshold suppresses noise: rates under 0.05 m/min are just
+    // transducer jitter at anchor, not a real trend.
+    private string? FormatDepthTrend()
+    {
+        if (DepthTrendMetersPerMinute is not double mpm) return null;
+        if (double.IsNaN(mpm) || double.IsInfinity(mpm)) return null;
+        if (Math.Abs(mpm) < 0.05) return null;
+        string arrow = mpm < 0 ? "\u2193" : "\u2191";          // ↓ ↑
+        string mag = $"{Math.Abs(mpm):F1}";
+        return $"<span class=\"depth-trend-arrow\">{arrow}</span>&thinsp;{mag}<span class=\"hud-unit\">m/min</span>";
+    }
+
+    // Shallower at a fast rate is the alarm-adjacent case; highlight it
+    // amber to draw the helm's eye. Getting deeper is just information.
+    private string DepthTrendClass()
+    {
+        if (DepthTrendMetersPerMinute is not double mpm) return "";
+        if (mpm <= -0.3) return "depth-trend-warn";
+        return "";
+    }
 
     // --- HUD click-to-expand ----------------------------------------
     // Track at most one expanded panel at a time ("tl" / "tr" / "bl" /

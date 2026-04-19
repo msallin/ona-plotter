@@ -40,6 +40,25 @@
     </div>
 
     <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.KeepScreenAwake"
+                           @onchange="OnKeepScreenAwakeChanged" />
+                    <span class="form-check-label">Keep screen awake on Map page</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Holds a Screen Wake Lock while the Map page is visible so the
+                    tablet doesn't doze mid-watch. Turn off if running on battery
+                    without shore power. Quiet no-op on browsers without Wake Lock
+                    support.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Alarms</h5>
     </div>
 
@@ -292,6 +311,12 @@
 
     private async Task OnSailingModeChanged(string value)
         => await AppSettings.SetSailingModeAsync(value);
+
+    private async Task OnKeepScreenAwakeChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetKeepScreenAwakeAsync(on);
+    }
 
     private static readonly (string val, string label, string tip)[] SailingModes =
     [

@@ -2335,6 +2335,25 @@ main:has(.alarm-banner-stack) .hud-top-left {
     animation: alarm-flash 1s ease-in-out infinite;
 }
 
+/* Depth trend: "↓ 0.3 m/min" chip next to the depth value. Arrow
+   carries the direction, colour (default muted, amber when shallower
+   >=0.3 m/min) carries the urgency. Small so it doesn't compete with
+   the depth number itself. */
+.depth-trend {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 0.55em;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.65);
+    vertical-align: middle;
+    font-variant-numeric: tabular-nums;
+}
+.depth-trend-arrow { font-size: 1.1em; margin-right: 1px; }
+.depth-trend.depth-trend-warn {
+    color: var(--sev-warn);
+    font-weight: 600;
+}
+
 /* ===== Depth + tide row =====
    Tide data (from mxtide / openwatersio / similar) lives inside the
    depth panel as a subtle one-liner. Only rendered when a plugin

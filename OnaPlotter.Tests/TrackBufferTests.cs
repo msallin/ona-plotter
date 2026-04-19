@@ -111,4 +111,94 @@ public class TrackBufferTests
         await Assert.That(snap1.Length).IsEqualTo(1);
         await Assert.That(snap2.Length).IsEqualTo(2);
     }
+
+    // --- Depth trend ----------------------------------------------------
+
+    private static TrackPoint DepthSample(DateTime t, double depth) =>
+        new(t, 0, 0, null, null, null, null, null, null, null, depth);
+
+    [Test]
+    public async Task DepthTrend_NullWithoutEnoughSamples()
+    {
+        var buf = new TrackBuffer(10);
+        await Assert.That(buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1))).IsNull();
+
+        buf.Add(DepthSample(DateTime.UtcNow, 5.0));
+        await Assert.That(buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1))).IsNull();
+    }
+
+    [Test]
+    public async Task DepthTrend_Ignores_Samples_Without_Depth()
+    {
+        // Track points flow in whenever ANY nav value changes, not just
+        // depth. The trend calc must ignore null-depth points so the
+        // result reflects actual depth change, not sample frequency.
+        // Use a 5-min window so clock-slip between the test's UtcNow
+        // snapshot and the implementation's doesn't push the oldest
+        // sample just outside the window.
+        var now = DateTime.UtcNow;
+        var buf = new TrackBuffer(10);
+        buf.Add(DepthSample(now.AddMinutes(-1), 5.0));
+        buf.Add(new TrackPoint(now.AddSeconds(-30), 0, 0, null, null, null, null, null, null, null)); // no depth
+        buf.Add(DepthSample(now, 4.0));
+
+        var mpm = buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(5));
+        await Assert.That(mpm).IsNotNull();
+        await Assert.That(mpm!.Value).IsEqualTo(-1.0).Within(0.05);
+    }
+
+    [Test]
+    public async Task DepthTrend_Positive_When_Getting_Deeper()
+    {
+        var now = DateTime.UtcNow;
+        var buf = new TrackBuffer(10);
+        buf.Add(DepthSample(now.AddMinutes(-1), 4.0));
+        buf.Add(DepthSample(now, 6.0));
+
+        var mpm = buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(5));
+        await Assert.That(mpm).IsNotNull();
+        await Assert.That(mpm!.Value).IsEqualTo(2.0).Within(0.1);
+    }
+
+    [Test]
+    public async Task DepthTrend_Negative_When_Getting_Shallower()
+    {
+        var now = DateTime.UtcNow;
+        var buf = new TrackBuffer(10);
+        buf.Add(DepthSample(now.AddMinutes(-1), 8.0));
+        buf.Add(DepthSample(now, 5.0));
+
+        var mpm = buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(5));
+        await Assert.That(mpm).IsNotNull();
+        await Assert.That(mpm!.Value).IsEqualTo(-3.0).Within(0.2);
+    }
+
+    [Test]
+    public async Task DepthTrend_ZeroSpread_ReturnsNull()
+    {
+        // Two samples at the same instant shouldn't divide-by-zero.
+        var now = DateTime.UtcNow;
+        var buf = new TrackBuffer(10);
+        buf.Add(DepthSample(now, 5.0));
+        buf.Add(DepthSample(now, 4.0));
+
+        await Assert.That(buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1))).IsNull();
+    }
+
+    [Test]
+    public async Task DepthTrend_Skips_Points_Older_Than_Window()
+    {
+        // An old sample from before the lookback window shouldn't anchor
+        // the trend; the next-oldest IN the window should.
+        var now = DateTime.UtcNow;
+        var buf = new TrackBuffer(10);
+        buf.Add(DepthSample(now.AddMinutes(-10), 2.0));        // outside window
+        buf.Add(DepthSample(now.AddSeconds(-30), 5.0));        // inside window (older)
+        buf.Add(DepthSample(now, 5.5));                         // inside window (newest)
+
+        var mpm = buf.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1));
+        // (5.5 - 5.0) / 0.5 min = 1.0 m/min, NOT based on the -10 min sample.
+        await Assert.That(mpm).IsNotNull();
+        await Assert.That(mpm!.Value).IsEqualTo(1.0).Within(0.1);
+    }
 }

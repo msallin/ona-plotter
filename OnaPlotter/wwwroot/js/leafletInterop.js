@@ -98,6 +98,54 @@ let seaBaseLayer = null;
 // exists before the first zoomend fires.
 let zoomBadge = null;
 
+// ---- Screen Wake Lock ------------------------------------------
+// Browser API available in Chrome / Edge / recent Safari + iOS. The
+// sentinel is held on the window object so a page navigation doesn't
+// stack duplicate locks. Re-acquires on visibilitychange because iOS
+// releases on background automatically.
+let _wakeLockSentinel = null;
+let _wakeLockWanted = false;
+
+async function _acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    if (_wakeLockSentinel) return;
+    try {
+        _wakeLockSentinel = await navigator.wakeLock.request('screen');
+        _wakeLockSentinel.addEventListener('release', () => { _wakeLockSentinel = null; });
+    } catch {
+        // Permission denied, battery-saver, etc. -- nothing we can do.
+        _wakeLockSentinel = null;
+    }
+}
+
+function _releaseWakeLock() {
+    const s = _wakeLockSentinel;
+    _wakeLockSentinel = null;
+    if (s) { try { s.release(); } catch { /* already released */ } }
+}
+
+// Public API called from C# when the user toggles the setting or the
+// Map page mounts / unmounts.
+export async function setWakeLock(on) {
+    _wakeLockWanted = on;
+    if (on) {
+        await _acquireWakeLock();
+        // iOS Safari releases the lock when the page is hidden; re-acquire
+        // when we come back. Registered once; safe to re-register because
+        // duplicates are no-ops in event-target semantics.
+        if (!window._onaWakeLockVisibility) {
+            window._onaWakeLockVisibility = () => {
+                if (_wakeLockWanted && document.visibilityState === 'visible') {
+                    _acquireWakeLock();
+                }
+            };
+            document.addEventListener('visibilitychange', window._onaWakeLockVisibility);
+        }
+    } else {
+        _releaseWakeLock();
+    }
+}
+
 // Nautical-miles scale control. Leaflet bundles metric + imperial; the
 // nautical scale is identical in shape but divides by 1852 m/nm. We
 // subclass L.Control.Scale so we get the same "nice round number"

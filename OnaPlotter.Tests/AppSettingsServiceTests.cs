@@ -321,4 +321,27 @@ public class AppSettingsServiceTests
         await svc.InitializeAsync();
         await Assert.That(svc.ChartOrder.Count).IsEqualTo(0);
     }
+
+    [Test]
+    public async Task KeepScreenAwake_DefaultsTrue()
+    {
+        // Default ON: a plotter going to sleep mid-watch is a safety
+        // regression. Opt-out, not opt-in.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.KeepScreenAwake).IsTrue();
+    }
+
+    [Test]
+    public async Task KeepScreenAwake_RoundTrip()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetKeepScreenAwakeAsync(false);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.KeepScreenAwake).IsFalse();
+    }
 }

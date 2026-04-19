@@ -44,6 +44,7 @@
     <MapHud Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
             DepthAlarmThreshold="Settings.DepthAlarmThreshold"
+            DepthTrendMetersPerMinute="depthTrendMpm"
             SailingMode="@Settings.SailingMode"
             Polar="Polar"
             OnStopNavigation="StopNavigation" />
@@ -629,6 +630,12 @@
         && Data.AnchorMaxRadius is not null
         && Data.AnchorCurrentRadius > Data.AnchorMaxRadius;
 
+    // Depth trend over the last minute, in metres per minute.
+    // Computed lazily from TrackBuffer; null when we don't have enough
+    // samples yet or the depth plugin isn't publishing.
+    private double? depthTrendMpm =>
+        TrackBuffer.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1));
+
     // Track whether we've already drawn the server anchor on the map.
     private bool serverAnchorDrawn;
     private double lastPushedAnchorRadius;
@@ -727,6 +734,16 @@
         // Restore persisted settings (including enabled charts/routes) before
         // applying defaults so user choices survive a reload.
         await Settings.InitializeAsync();
+
+        // Engage screen wake lock if the user has opted in (default ON).
+        // Silently no-ops on browsers that don't support the API. module
+        // is set earlier in OnAfterRenderAsync; this path only runs when
+        // the import succeeded so module is non-null here.
+        if (Settings.KeepScreenAwake)
+        {
+            try { await module.InvokeVoidAsync("setWakeLock", true); }
+            catch (JSDisconnectedException) { }
+        }
 
         if (Settings.EnabledChartIds.Count > 0)
         {
@@ -843,7 +860,29 @@
 
     // Fire-and-forget on the settings-changed event. PushGuardZoneAsync swallows
     // expected disposal races so nothing escapes as an unobserved task exception.
-    private void HandleSettingsChanged() => _ = PushGuardZoneAsync();
+    private void HandleSettingsChanged()
+    {
+        _ = PushGuardZoneAsync();
+        // Propagate KeepScreenAwake toggles live; a user flipping the
+        // switch from Settings should see the lock engage / release
+        // immediately, not only after navigating back to the Map page.
+        if (module is not null)
+        {
+            var wanted = Settings.KeepScreenAwake;
+            _ = InvokeVoidSafeAsync("setWakeLock", (object)wanted);
+        }
+    }
+
+    // Minimal swallower for fire-and-forget module calls from sync
+    // event handlers. Matches the JSDisconnected / ObjectDisposed
+    // defence we apply at every other interop site.
+    private async Task InvokeVoidSafeAsync(string identifier, params object?[] args)
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync(identifier, args); }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
 
     [JSInvokable]
     public async Task OnKeyShortcut(string key)
@@ -2091,6 +2130,9 @@
                 await module.InvokeVoidAsync("clearCurrentArrow");
                 await module.InvokeVoidAsync("clearWeatherOverlay");
                 await module.InvokeVoidAsync("disableKeyboardShortcuts");
+                // Release the wake lock when navigating off the Map page;
+                // other pages don't need the screen pinned on.
+                await module.InvokeVoidAsync("setWakeLock", false);
                 await module.InvokeVoidAsync("dispose");
                 await module.DisposeAsync();
             }

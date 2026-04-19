@@ -60,4 +60,48 @@ public sealed class TrackBuffer
     {
         get { lock (_lock) { return _count; } }
     }
+
+    /// <summary>
+    /// Returns the signed change in depth over the given lookback window,
+    /// in metres per minute. Positive = depth increasing (deeper);
+    /// negative = decreasing (shallower). Returns null when there's
+    /// insufficient data (no depth samples in the window, or the buffer
+    /// doesn't yet span the window).
+    /// </summary>
+    /// <remarks>
+    /// Uses the first and last depth samples in the window for a
+    /// coarse linear rate. Finer-grained fit (least squares) would
+    /// be noise-smoothed but this is good enough for a helm indicator
+    /// that answers "getting shallower fast?" in a tidal channel.
+    /// </remarks>
+    public double? GetDepthTrendMetersPerMinute(TimeSpan window)
+    {
+        if (window.TotalSeconds <= 0) return null;
+        lock (_lock)
+        {
+            if (_count < 2) return null;
+            // Walk newest-to-oldest; collect the newest sample with a
+            // depth, then the oldest-but-still-in-window sample.
+            var now = DateTime.UtcNow;
+            var cutoff = now - window;
+            TrackPoint? newest = null;
+            TrackPoint? oldestInWindow = null;
+            for (int i = 0; i < _count; i++)
+            {
+                int idx = (_head - 1 - i + _buffer.Length) % _buffer.Length;
+                var p = _buffer[idx];
+                if (p.Depth is null) continue;
+                if (newest is null) newest = p;
+                if (p.Timestamp < cutoff) break;
+                oldestInWindow = p;
+            }
+            if (newest is null || oldestInWindow is null) return null;
+            if (newest.Timestamp == oldestInWindow.Timestamp) return null;
+
+            double dMetres = newest.Depth!.Value - oldestInWindow.Depth!.Value;
+            double dMinutes = (newest.Timestamp - oldestInWindow.Timestamp).TotalMinutes;
+            if (dMinutes < 0.05) return null; // <3 s spread is noise
+            return dMetres / dMinutes;
+        }
+    }
 }

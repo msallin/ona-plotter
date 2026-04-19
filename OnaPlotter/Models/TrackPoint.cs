@@ -10,4 +10,5 @@ public sealed record TrackPoint(
     double? WindAngleApparent,
     double? WindSpeedApparent,
     double? WindAngleTrue,
-    double? WindSpeedTrue);
+    double? WindSpeedTrue,
+    double? Depth = null);

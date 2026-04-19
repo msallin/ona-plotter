@@ -473,7 +473,8 @@ public sealed class SignalkClient : IAsyncDisposable
                     _data.WindAngleApparent,
                     _data.WindSpeedApparent,
                     _data.WindAngleTrue,
-                    _data.WindSpeedTrue));
+                    _data.WindSpeedTrue,
+                    _data.Depth));
             }
 
             OnDataChanged?.Invoke();

@@ -64,6 +64,12 @@ public interface IAppSettings
     /// Map page to show / hide race-specific overlays without forcing a
     /// mode toggle on every switch.</summary>
     string SailingMode { get; }
+
+    /// <summary>When true, hold a Screen Wake Lock while the app is in the
+    /// foreground so the tablet doesn't go to sleep mid-watch. Default ON;
+    /// sailors can turn it off if running on battery without shore power.
+    /// </summary>
+    bool KeepScreenAwake { get; }
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -91,6 +97,7 @@ public interface IAppSettings
     Task SetBoatDraftMetersAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetSailingModeAsync(string value);
+    Task SetKeepScreenAwakeAsync(bool value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
     Task SetChartOrderAsync(IEnumerable<string> ids);

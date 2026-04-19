@@ -32,6 +32,7 @@ public sealed class AppSettingsService : IAppSettings
     public double BoatDraftMeters { get; private set; } = 1.5;
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
     public string SailingMode { get; private set; } = "cruise";
+    public bool KeepScreenAwake { get; private set; } = true;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -66,6 +67,7 @@ public sealed class AppSettingsService : IAppSettings
             BoatDraftMeters = await LoadDouble("boatDraftMeters", 1.5);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
+            KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
@@ -189,6 +191,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         SailingMode = NormalizeSailingMode(value);
         await Save("sailingMode", SailingMode);
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetKeepScreenAwakeAsync(bool value)
+    {
+        KeepScreenAwake = value;
+        await Save("keepScreenAwake.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 
