@@ -78,4 +78,11 @@ public interface IAlarmManager
 
     /// <summary>Default snooze duration. Exposed so the UI can show "Snooze 10 m".</summary>
     int SnoozeDurationMinutes { get; }
+
+    /// <summary>Loads persisted snooze state from
+    /// <see cref="IKeyValueStore"/>. Called once at app startup; safe
+    /// to call again (no-op after the first). Failures (no storage,
+    /// malformed JSON) degrade silently so a bad cache never blocks
+    /// the rest of the app's boot.</summary>
+    Task InitializeAsync();
 }

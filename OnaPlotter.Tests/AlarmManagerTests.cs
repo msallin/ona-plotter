@@ -456,6 +456,121 @@ public class AlarmManagerTests
                 TimeToEventMinutes: tti);
     }
 
+    // --- Snooze persistence ----------------------------------------
+
+    private sealed class InMemoryKv : IKeyValueStore
+    {
+        private readonly Dictionary<string, string> _s = [];
+        public Task<string?> GetAsync(string k, CancellationToken ct = default)
+            => Task.FromResult(_s.TryGetValue(k, out var v) ? v : null);
+        public Task SetAsync(string k, string v, CancellationToken ct = default)
+        { _s[k] = v; return Task.CompletedTask; }
+        public Task RemoveAsync(string k, CancellationToken ct = default)
+        { _s.Remove(k); return Task.CompletedTask; }
+    }
+
+    private static AlarmManager NewMgrWithKv(IKeyValueStore kv, MutableClock clock, params IAlarmRule[] rules)
+    {
+        return (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now), kv],
+            culture: null)!;
+    }
+
+    [Test]
+    public async Task Snooze_PersistsToKv()
+    {
+        var kv = new InMemoryKv();
+        var clock = new MutableClock();
+        var settings = new FakeSettings();
+        var rule = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
+        var mgr = NewMgrWithKv(kv, clock, rule);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await mgr.SnoozeActiveAsync();
+
+        // KV now has the snooze record.
+        var raw = await kv.GetAsync("alarmSnoozes.v1");
+        await Assert.That(raw).IsNotNull();
+        await Assert.That(raw!.Contains("vessels.x")).IsTrue();
+    }
+
+    [Test]
+    public async Task Snooze_RestoredFromKvOnInitialize()
+    {
+        // Simulate a page reload: KV has a snooze record from a previous
+        // session. Initialise should pick it up and treat it as active.
+        var kv = new InMemoryKv();
+        var clock = new MutableClock();
+        var future = clock.Now.AddMinutes(5);
+        var seed = new[] { new SnoozedTarget("vessels.x", "Ferry", future) };
+        await kv.SetAsync("alarmSnoozes.v1",
+            System.Text.Json.JsonSerializer.Serialize(seed));
+
+        var rule = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
+        var mgr = NewMgrWithKv(kv, clock, rule);
+        await mgr.InitializeAsync();
+
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(1);
+        await Assert.That(mgr.SnoozedTargets[0].TargetKey).IsEqualTo("vessels.x");
+    }
+
+    [Test]
+    public async Task Snooze_InitializeDropsExpiredEntries()
+    {
+        // A snooze that expired before we loaded must not be resurrected
+        // as "active, expires in the past" -- otherwise IsSnoozed would
+        // false-positive until the next sweep.
+        var kv = new InMemoryKv();
+        var clock = new MutableClock();
+        var past = clock.Now.AddMinutes(-1);
+        var seed = new[] { new SnoozedTarget("vessels.gone", "Gone", past) };
+        await kv.SetAsync("alarmSnoozes.v1",
+            System.Text.Json.JsonSerializer.Serialize(seed));
+
+        var mgr = NewMgrWithKv(kv, clock);
+        await mgr.InitializeAsync();
+
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Snooze_MalformedKv_DoesNotThrow_StartsEmpty()
+    {
+        // Malformed JSON in the KV store (corrupted, old-format, whatever).
+        // Must not crash the manager; must start empty so the rest of
+        // the app boots.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("alarmSnoozes.v1", "{ garbage");
+        var mgr = NewMgrWithKv(kv, new MutableClock());
+
+        await mgr.InitializeAsync();          // must not throw
+
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Unsnooze_RemovesFromKv()
+    {
+        var kv = new InMemoryKv();
+        var clock = new MutableClock();
+        var settings = new FakeSettings();
+        var rule = new StubRule("A", 100, AlarmSeverity.Danger, "vessels.x");
+        var mgr = NewMgrWithKv(kv, clock, rule);
+        mgr.Evaluate(Nav(), [], settings);
+        await mgr.SnoozeActiveAsync();
+
+        await mgr.UnsnoozeAsync("vessels.x");
+
+        var raw = await kv.GetAsync("alarmSnoozes.v1");
+        // Either gone or an empty JSON array.
+        await Assert.That(raw is null || raw == "[]").IsTrue();
+    }
+
     [Test]
     public async Task OnAlarmChanged_FiresOnlyOnTopChange()
     {

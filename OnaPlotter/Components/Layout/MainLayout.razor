@@ -276,6 +276,11 @@
         if (firstRender)
         {
             await Settings.InitializeAsync();
+            // Rehydrate snoozed targets from the KV store so a reload
+            // doesn't forget that the ferry is silenced for another 4
+            // minutes. Safe to call before anything is rendered; the
+            // OnAlarmsChanged event fires if anything was loaded.
+            await Alarms.InitializeAsync();
             StateHasChanged();
             audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
 

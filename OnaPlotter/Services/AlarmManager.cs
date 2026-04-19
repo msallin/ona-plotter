@@ -21,9 +21,16 @@ public sealed class AlarmManager : IAlarmManager
     /// a post-mortem without inflating memory on long watches.</summary>
     public const int MaxDismissedHistory = 20;
 
+    /// <summary>KV key for the persisted snooze list. Versioned so a
+    /// schema change (e.g. adding a per-rule snooze, or switching to a
+    /// binary format) can be migrated cleanly.</summary>
+    private const string SnoozeStorageKey = "alarmSnoozes.v1";
+
     private readonly IReadOnlyList<IAlarmRule> _rules;
     private readonly Dictionary<string, SnoozedTarget> _snoozed = [];
     private readonly Func<DateTime> _now;
+    private readonly IKeyValueStore? _kv;
+    private bool _initialized;
 
     // Active alarms keyed by (Title, TargetKey) so the same rule firing on
     // a different target counts as a different alarm (two CPA threats, or
@@ -65,14 +72,57 @@ public sealed class AlarmManager : IAlarmManager
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
-    public AlarmManager(IEnumerable<IAlarmRule> rules)
-        : this(rules, () => DateTime.UtcNow) { }
+    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv)
+        : this(rules, () => DateTime.UtcNow, kv) { }
 
-    // Injectable clock for tests.
+    // Two-arg overload for tests that don't care about persistence.
+    // Keeps the `args: [rules, now]` Activator.CreateInstance pattern
+    // working after the KV field landed.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now)
+        : this(rules, now, null) { }
+
+    // Full-arg internal ctor.
+    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
+        IKeyValueStore? kv)
     {
         _rules = rules.OrderBy(r => r.Priority).ToList();
         _now = now;
+        _kv = kv;
+    }
+
+    public async Task InitializeAsync()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        if (_kv is null) return;
+        try
+        {
+            var raw = await _kv.GetAsync(SnoozeStorageKey);
+            if (string.IsNullOrWhiteSpace(raw)) return;
+            var loaded = System.Text.Json.JsonSerializer.Deserialize<SnoozedTarget[]>(raw);
+            if (loaded is null) return;
+            var now = _now();
+            foreach (var s in loaded)
+            {
+                // Drop already-expired entries so they don't linger.
+                if (s.ExpiresAt > now && !string.IsNullOrEmpty(s.TargetKey))
+                    _snoozed[s.TargetKey] = s;
+            }
+            if (_snoozed.Count > 0) OnAlarmsChanged?.Invoke();
+        }
+        catch (Exception) { /* malformed JSON / storage issue - start empty */ }
+    }
+
+    private async Task PersistSnoozesAsync()
+    {
+        if (_kv is null) return;
+        try
+        {
+            var arr = _snoozed.Values.ToArray();
+            var json = System.Text.Json.JsonSerializer.Serialize(arr);
+            await _kv.SetAsync(SnoozeStorageKey, json);
+        }
+        catch (Exception) { /* don't let storage hiccups surface as alarm-stack errors */ }
     }
 
     public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings)
@@ -191,14 +241,14 @@ public sealed class AlarmManager : IAlarmManager
         }
 
         FireAlarmsChanged();
-        return Task.CompletedTask;
+        return PersistSnoozesAsync();
     }
 
     public Task UnsnoozeAsync(string targetKey)
     {
         if (!_snoozed.Remove(targetKey)) return Task.CompletedTask;
         FireAlarmsChanged();
-        return Task.CompletedTask;
+        return PersistSnoozesAsync();
     }
 
     private void LogHistory(AlarmInfo info, DateTime at, DismissReason reason)
@@ -235,7 +285,12 @@ public sealed class AlarmManager : IAlarmManager
     {
         if (_snoozed.Count == 0) return;
         var expired = _snoozed.Where(kv => now >= kv.Value.ExpiresAt).Select(kv => kv.Key).ToList();
+        if (expired.Count == 0) return;
         foreach (var k in expired) _snoozed.Remove(k);
+        // Fire-and-forget: persist the shrunk list so a reload won't
+        // see already-expired entries. Safe to race with other
+        // PersistSnoozes calls because the write is full-replace.
+        _ = PersistSnoozesAsync();
     }
 
     private bool IsSnoozed(string targetKey)
