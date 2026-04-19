@@ -1,23 +1,36 @@
 @using OnaPlotter.Models
 
 @* Chart overlays (tile layers). Two parts:
-     1. A compact "active stack" row rendered above the collapsible list,
-        always visible (even when Charts is collapsed), showing which
-        charts are currently layered on the map and in order. The topmost
-        chip is the chart drawn last / on top.
-     2. The full checkbox list, gated on expand. *@
+     1. Active stack row above the collapsible list, always visible. Shows
+        which charts are currently drawn and in what order. Each chip has
+        up / down buttons so the user can re-rank the draw stack (top of
+        the list = top of the map, i.e. the chart drawn last).
+     2. Full checkbox list, gated on expand, to turn charts on/off. *@
 
 @if (Charts.Count == 0) return;
 
 @if (ActiveStack.Count > 0)
 {
-    <div class="chart-active-stack" title="Charts currently on the map, top of list = top of stack">
-        @foreach (var chart in ActiveStack)
+    <div class="chart-active-stack" title="Draw order -- top of list draws on top">
+        @for (int i = 0; i < ActiveStack.Count; i++)
         {
-            <span class="chart-active-chip"
-                  title="@(chart.Description ?? chart.Name)">
-                @chart.Name
-            </span>
+            var chart = ActiveStack[i];
+            var idx = i;
+            <div class="chart-active-chip" title="@(chart.Description ?? chart.Name)">
+                <span class="chart-active-name">@chart.Name</span>
+                <span class="chart-active-actions">
+                    <button class="chart-reorder-btn"
+                            disabled="@(idx == 0)"
+                            title="Move up"
+                            aria-label="Move @chart.Name up"
+                            @onclick="() => OnReorder.InvokeAsync((chart, -1))">&#9650;</button>
+                    <button class="chart-reorder-btn"
+                            disabled="@(idx == ActiveStack.Count - 1)"
+                            title="Move down"
+                            aria-label="Move @chart.Name down"
+                            @onclick="() => OnReorder.InvokeAsync((chart, 1))">&#9660;</button>
+                </span>
+            </div>
         }
     </div>
 }
@@ -52,13 +65,17 @@
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
     [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggle { get; set; }
 
+    /// <summary>Reorder callback. Second tuple value is direction:
+    /// -1 = move up (toward top of stack), +1 = move down.</summary>
+    [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorder { get; set; }
+
     // Collapsed by default -- the Layers panel opens compact, the user
     // expands only the sections they need. See agents.md "UX principles".
     private bool expanded = false;
 
-    // Order mirrors Charts[] filtering, which already preserves Charts'
-    // own order (server-sent list). Last-in-list is top-of-stack because
-    // that's the draw order (later .addTo() is painted on top).
+    // ActiveStack[0] = top of map (last drawn). Charts list is in draw
+    // order (first added, rendered first / bottom); reverse so the chip
+    // list reads top-down "what's on top" which is more intuitive.
     private List<SignalkChart> ActiveStack =>
         Charts.Where(c => Enabled.Contains(c.Identifier)).Reverse().ToList();
 }

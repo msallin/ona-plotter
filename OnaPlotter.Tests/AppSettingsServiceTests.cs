@@ -275,4 +275,50 @@ public class AppSettingsServiceTests
         await svc.InitializeAsync();
         await Assert.That(svc.SailingMode).IsEqualTo("cruise");
     }
+
+    [Test]
+    public async Task ChartOrder_RoundTrip_Preserves_Order()
+    {
+        // Unlike EnabledChartIds (HashSet; order is not meaningful),
+        // ChartOrder is an ordered list because the user explicitly
+        // asked for a specific draw stack. Reload has to preserve it.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetChartOrderAsync(["base", "seamap", "harbour"]);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+
+        await Assert.That(svc2.ChartOrder.Count).IsEqualTo(3);
+        await Assert.That(svc2.ChartOrder[0]).IsEqualTo("base");
+        await Assert.That(svc2.ChartOrder[1]).IsEqualTo("seamap");
+        await Assert.That(svc2.ChartOrder[2]).IsEqualTo("harbour");
+    }
+
+    [Test]
+    public async Task ChartOrder_Dedupes_And_Drops_Empty()
+    {
+        // Defensive: a reorder path with duplicates or a stray empty id
+        // would otherwise persist garbage. Dedupe on write so reload is
+        // deterministic.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+
+        await svc.SetChartOrderAsync(["a", "b", "a", "", "c", "b"]);
+
+        await Assert.That(svc.ChartOrder.Count).IsEqualTo(3);
+        await Assert.That(svc.ChartOrder[0]).IsEqualTo("a");
+        await Assert.That(svc.ChartOrder[1]).IsEqualTo("b");
+        await Assert.That(svc.ChartOrder[2]).IsEqualTo("c");
+    }
+
+    [Test]
+    public async Task ChartOrder_Empty_By_Default()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartOrder.Count).IsEqualTo(0);
+    }
 }

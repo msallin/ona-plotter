@@ -29,6 +29,7 @@ internal sealed class FakeSettings : IAppSettings
     public string SailingMode { get; set; } = "cruise";
     public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
+    public IReadOnlyList<string> ChartOrder => [];
 
     public event Action? OnSettingsChanged { add { } remove { } }
 
@@ -50,4 +51,5 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
+    public Task SetChartOrderAsync(IEnumerable<string> ids) => Task.CompletedTask;
 }

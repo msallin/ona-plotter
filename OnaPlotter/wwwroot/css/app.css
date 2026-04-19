@@ -1817,12 +1817,47 @@ main:has(.alarm-banner-stack) .hud-top-left {
     border: 1px solid rgba(224, 159, 62, 0.4);
     color: #f0d49c;
     border-radius: 4px;
-    padding: 3px 8px;
+    padding: 3px 6px 3px 8px;
     font-size: 0.72rem;
     font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.chart-active-name {
+    flex: 1 1 auto;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.chart-active-actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    gap: 2px;
+}
+.chart-reorder-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: transparent;
+    color: #f0d49c;
+    border: 1px solid rgba(224, 159, 62, 0.25);
+    border-radius: 3px;
+    font-size: 0.65rem;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.chart-reorder-btn:hover:not(:disabled) {
+    background: rgba(224, 159, 62, 0.22);
+    border-color: rgba(224, 159, 62, 0.6);
+}
+.chart-reorder-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+@media (pointer: coarse) {
+    .chart-reorder-btn { width: 30px; height: 30px; font-size: 0.8rem; }
 }
 
 .chart-item {
@@ -2248,62 +2283,6 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .legend-guard      { background: transparent;
                      border: 2px dashed #c4453e;
                      border-radius: 50%; }
-
-/* ===== Nearest-waypoint chip =====
-   Anchored top-centre BELOW the chart-quick-bar. The chart bar can wrap
-   to two rows when many overlays are enabled, so we sit ~84 px from the
-   top (10 px bar start + ~60 px two-row wrap + breathing room). Hidden
-   via .nearest-wp-chip-hidden when an active course fills the same
-   vertical slot. */
-.nearest-wp-chip {
-    position: fixed;
-    top: 5.25rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: var(--z-hud);
-    display: inline-flex;
-    align-items: baseline;
-    gap: 10px;
-    padding: 6px 14px;
-    background: rgba(16, 20, 28, 0.85);
-    color: rgba(255, 255, 255, 0.88);
-    border: 1px solid rgba(224, 159, 62, 0.45);    /* --ann-route */
-    border-radius: 999px;
-    font-size: 0.78rem;
-    font-variant-numeric: tabular-nums;
-    cursor: pointer;
-    backdrop-filter: blur(6px);
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.15s ease;
-}
-.nearest-wp-chip:hover {
-    background: rgba(30, 38, 52, 0.95);
-    border-color: rgba(224, 159, 62, 0.7);
-}
-.nearest-wp-label {
-    font-size: 0.62rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: rgba(224, 159, 62, 0.95);
-}
-.nearest-wp-name { font-weight: 600; color: rgba(255, 255, 255, 0.95); }
-.nearest-wp-dist,
-.nearest-wp-brg { color: rgba(255, 255, 255, 0.7); }
-/* Push below the alarm-banner-stack when it's visible so the chip
-   never hides under an alarm. */
-main:has(.alarm-banner-stack) .nearest-wp-chip {
-    top: calc(5.25rem + 56px);
-}
-@media (max-width: 600px) {
-    .nearest-wp-chip {
-        font-size: 0.72rem;
-        padding: 4px 10px;
-        gap: 6px;
-    }
-}
-@media (pointer: coarse) {
-    .nearest-wp-chip { min-height: 40px; }
-}
 
 /* Depth-alarm non-colour affordance. The hud-value already goes red
    when depth < threshold; the ⚠ glyph gives a colour-blind sailor

@@ -35,8 +35,10 @@ public sealed class AppSettingsService : IAppSettings
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
+    private readonly List<string> _chartOrder = [];
     public IReadOnlySet<string> EnabledChartIds => _enabledChartIds;
     public IReadOnlySet<string> EnabledRouteIds => _enabledRouteIds;
+    public IReadOnlyList<string> ChartOrder => _chartOrder;
 
     public event Action? OnSettingsChanged;
 
@@ -66,6 +68,7 @@ public sealed class AppSettingsService : IAppSettings
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
+            LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
             _initialized = true;
         }
         finally
@@ -209,6 +212,17 @@ public sealed class AppSettingsService : IAppSettings
         await Save("enabledRouteIds", string.Join('\n', _enabledRouteIds));
     }
 
+    public async Task SetChartOrderAsync(IEnumerable<string> ids)
+    {
+        _chartOrder.Clear();
+        foreach (var id in ids)
+        {
+            if (!string.IsNullOrEmpty(id) && !_chartOrder.Contains(id)) _chartOrder.Add(id);
+        }
+        await Save("chartOrder.v1", string.Join('\n', _chartOrder));
+        OnSettingsChanged?.Invoke();
+    }
+
     // --- storage helpers: swallow read errors (missing key = default), propagate write errors ---
 
     private async Task Save(string key, string value)
@@ -237,6 +251,16 @@ public sealed class AppSettingsService : IAppSettings
     }
 
     private static void LoadIdsInto(string? raw, HashSet<string> target)
+    {
+        target.Clear();
+        if (string.IsNullOrEmpty(raw)) return;
+        foreach (var id in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            target.Add(id);
+    }
+
+    // Ordered variant: preserves list order (unlike HashSet) so
+    // `chartOrder.v1` round-trips the user's chosen draw order exactly.
+    private static void LoadIdsInto(string? raw, List<string> target)
     {
         target.Clear();
         if (string.IsNullOrEmpty(raw)) return;

@@ -67,6 +67,12 @@ public interface IAppSettings
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
+    /// <summary>User-preferred chart draw order (list of identifiers, first
+    /// = bottom of stack, last = top). Charts that aren't in this list
+    /// render in server-provided order after any ordered charts. Empty on
+    /// first run; populated as the user toggles / reorders.</summary>
+    IReadOnlyList<string> ChartOrder { get; }
+
     event Action? OnSettingsChanged;
 
     Task InitializeAsync();
@@ -87,4 +93,5 @@ public interface IAppSettings
     Task SetSailingModeAsync(string value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
+    Task SetChartOrderAsync(IEnumerable<string> ids);
 }

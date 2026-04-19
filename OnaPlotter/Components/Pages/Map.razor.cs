@@ -256,47 +256,6 @@ public partial class Map
         catch (ObjectDisposedException) { }
     }
 
-    // ---- Nearest-waypoint chip ---------------------------------------
-    // Pre-computed from loadedWaypoints + own-boat position on every
-    // render. Chip rendering in Map.razor gates on this being non-null
-    // AND no active route (the route HUD covers the "heading to" case).
-    private (SignalkWaypoint Wp, double Nm, double BearingDeg)? NearestWp
-    {
-        get
-        {
-            if (Data.Latitude is not double ownLat) return null;
-            if (Data.Longitude is not double ownLon) return null;
-            if (loadedWaypoints.Count == 0) return null;
-
-            SignalkWaypoint? best = null;
-            double bestNm = double.MaxValue;
-            double bestBrg = 0;
-            foreach (var wp in loadedWaypoints)
-            {
-                if (wp.Latitude is not double wpLat || wp.Longitude is not double wpLon) continue;
-                double nm = HaversineNm(ownLat, ownLon, wpLat, wpLon);
-                if (nm < bestNm)
-                {
-                    bestNm = nm;
-                    bestBrg = BearingDeg(ownLat, ownLon, wpLat, wpLon);
-                    best = wp;
-                }
-            }
-            return best is null ? null : (best, bestNm, bestBrg);
-        }
-    }
-
-    private async Task FocusWaypoint(SignalkWaypoint wp)
-    {
-        if (module is null || wp.Latitude is null || wp.Longitude is null) return;
-        try
-        {
-            await module.InvokeVoidAsync("panTo", wp.Latitude.Value, wp.Longitude.Value);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
-    }
-
     // ---- Weather routing (isochrone over wind forecast) --------------
     /// <summary>
     /// Kicks off isochrone weather routing from the current own-boat

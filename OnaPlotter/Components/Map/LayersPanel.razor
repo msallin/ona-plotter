@@ -25,7 +25,8 @@
 
     <ChartsSection Charts="FilteredCharts"
                    Enabled="EnabledCharts"
-                   OnToggle="OnToggleChart" />
+                   OnToggle="OnToggleChart"
+                   OnReorder="OnReorderChart" />
 
     <RoutesSection Routes="FilteredRoutes"
                    Enabled="EnabledRoutes"
@@ -93,6 +94,7 @@
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
 
     [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggleChart { get; set; }
+    [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }

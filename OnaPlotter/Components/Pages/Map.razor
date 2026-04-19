@@ -48,25 +48,6 @@
             Polar="Polar"
             OnStopNavigation="StopNavigation" />
 
-    @* Nearest-waypoint chip. Only shows when we have own-boat position,
-       at least one waypoint, and no active route (the route HUD already
-       tells you where you're heading). One-tap shortcut that saves
-       opening the Layers panel + scrolling to find the closest target
-       -- a common sailor workflow before setting a destination. *@
-    @if (!Data.HasActiveCourse && NearestWp is { } nearest)
-    {
-        <button class="nearest-wp-chip" @onclick="() => FocusWaypoint(nearest.Wp)"
-                title="@($"Pan to {nearest.Wp.Name ?? nearest.Wp.Id}")">
-            <span class="nearest-wp-label">NEAREST WP</span>
-            <span class="nearest-wp-name">@(nearest.Wp.Name ?? nearest.Wp.Id[..Math.Min(8, nearest.Wp.Id.Length)])</span>
-            <span class="nearest-wp-dist">
-                @nearest.Nm.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)<span class="hud-unit">nm</span>
-            </span>
-            <span class="nearest-wp-brg">
-                @((int)Math.Round(nearest.BearingDeg))<span class="hud-unit">&deg;</span>
-            </span>
-        </button>
-    }
 
     <MapControls Follow="follow"
                  OrientationLabel="@mapOrientationLabel"
@@ -332,6 +313,7 @@
                      LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
                      OnToggleChart="OnToggleChartCallback"
+                     OnReorderChart="OnReorderChartCallback"
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
                      OnNavigateToWaypoint="NavigateToWaypoint"
@@ -435,6 +417,9 @@
 
     private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
         ToggleChart(t.chart, t.enabled);
+
+    private Task OnReorderChartCallback((SignalkChart chart, int direction) t) =>
+        ReorderChart(t.chart, t.direction);
 
     private Task OnToggleRouteCallback((SignalkRoute route, bool enabled) t) =>
         ToggleRoute(t.route, t.enabled);
@@ -669,6 +654,7 @@
         // installed, webapp running standalone for dev). Degrade gracefully
         // - the map itself is still usable without these.
         availableCharts = await SafeLoad(() => ChartApi.GetAllAsync(), "charts") ?? [];
+        ApplyChartOrder();
         availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? [];
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? [];
         loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? [];
@@ -1756,17 +1742,78 @@
 
         if (enabled)
         {
-            await module.InvokeVoidAsync("addChartLayer",
-                chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18, 0.8,
-                chart.Bounds);
+            try
+            {
+                await module.InvokeVoidAsync("addChartLayer",
+                    chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18, 0.8,
+                    chart.Bounds);
+            }
+            catch (JSDisconnectedException) { return; }
             enabledCharts.Add(chart.Identifier);
+            // Seed the chart order with any newly-seen id so user-driven
+            // reorders have something to reorder. Append -- new charts go
+            // to the top of the draw stack (last .addTo wins).
+            if (!Settings.ChartOrder.Contains(chart.Identifier))
+            {
+                await Settings.SetChartOrderAsync(Settings.ChartOrder.Append(chart.Identifier));
+                ApplyChartOrder();
+            }
         }
         else
         {
-            await module.InvokeVoidAsync("removeChartLayer", chart.Identifier);
+            try { await module.InvokeVoidAsync("removeChartLayer", chart.Identifier); }
+            catch (JSDisconnectedException) { return; }
             enabledCharts.Remove(chart.Identifier);
         }
         await Settings.SetEnabledChartsAsync(enabledCharts);
+    }
+
+    /// <summary>
+    /// Moves a chart up (-1) or down (+1) in the draw stack. "Up" in the UI
+    /// means "closer to the top of the rendered map", which is LATER in
+    /// the draw order (later .addTo wins). ApplyChartOrder() reorders
+    /// availableCharts to match, and the JS side re-applies z-index.
+    /// </summary>
+    private async Task ReorderChart(SignalkChart chart, int direction)
+    {
+        if (module is null) return;
+        var order = Settings.ChartOrder.ToList();
+        // Ensure the chart is in the order list; if not, append then reorder.
+        if (!order.Contains(chart.Identifier)) order.Add(chart.Identifier);
+
+        int idx = order.IndexOf(chart.Identifier);
+        // UI convention: up arrow = move toward the top of the stack. In the
+        // order list, top of stack = end (last .addTo). So "up" = +1 index,
+        // "down" = -1. Direction passed in is -1 for up / +1 for down in
+        // the visual list, so flip it here.
+        int swapWith = idx - direction;
+        if (swapWith < 0 || swapWith >= order.Count) return;
+        (order[idx], order[swapWith]) = (order[swapWith], order[idx]);
+
+        await Settings.SetChartOrderAsync(order);
+        ApplyChartOrder();
+
+        // Push the new draw order to JS so z-index on each layer matches.
+        try { await module.InvokeVoidAsync("setChartLayerOrder", order.ToArray()); }
+        catch (JSDisconnectedException) { }
+
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Sorts availableCharts by <see cref="IAppSettings.ChartOrder"/>.
+    /// Charts listed in the order come first (by index); unseen charts
+    /// append in server-provided order.
+    /// </summary>
+    private void ApplyChartOrder()
+    {
+        var order = Settings.ChartOrder;
+        if (order.Count == 0) return;
+        var index = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < order.Count; i++) index[order[i]] = i;
+        availableCharts = availableCharts
+            .OrderBy(c => index.TryGetValue(c.Identifier, out var i) ? i : int.MaxValue)
+            .ToList();
     }
 
     private async Task ToggleRoute(SignalkRoute route, bool enabled)

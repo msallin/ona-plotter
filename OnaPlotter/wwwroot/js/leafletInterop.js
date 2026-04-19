@@ -1241,18 +1241,22 @@ export function setNightMode(enabled) {
 
 // Add a chart tile layer from SignalK.
 // bounds is [west, south, east, north] or null.
+// Per-chart native maxZoom, kept so recomputeChartOverzoom() can tell
+// the top-native chart from the rest after every add/remove.
+const chartNativeMax = new Map();
+
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     if (!map || chartLayers.has(id)) return false;
-    // Overzoom: the chart's published maxZoom becomes maxNativeZoom, while
-    // the visual maxZoom is bumped so Leaflet scales the highest tile up
-    // instead of going blank when the user pinches past the chart's
-    // native limit. Commercial plotters do this by default; sailors
-    // expect to be able to zoom into a harbour view.
     const native = maxZoom || 18;
+    chartNativeMax.set(id, native);
+    // maxZoom is set provisionally to the native cap; recomputeChartOverzoom
+    // below raises it only for the top-native chart. That way a detailed
+    // harbour chart (native 18) kicks in past a wide-area chart (native 12)
+    // instead of the wide-area chart blurring over everything at zoom 20.
     const opts = {
         minZoom: minZoom || 1,
         maxNativeZoom: native,
-        maxZoom: Math.max(native + 4, 22),
+        maxZoom: native,
         opacity: opacity || 0.8,
         // keepBuffer + updateWhenIdle match base layers; don't re-fetch
         // chart tiles when the user zig-zags back into territory they
@@ -1274,10 +1278,55 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     layer.addTo(map);
     layer.setZIndex(50);
     chartLayers.set(id, layer);
+    recomputeChartOverzoom();
     return true;
 }
 
-export function removeChartLayer(id) { chartLayers.remove(id); }
+export function removeChartLayer(id) {
+    chartLayers.remove(id);
+    chartNativeMax.delete(id);
+    recomputeChartOverzoom();
+}
+
+// Apply a user-chosen chart draw order. `orderedIds` is bottom-to-top,
+// matching IAppSettings.ChartOrder convention. Each enabled layer's
+// z-index is updated so Leaflet paints them in the requested order,
+// regardless of .addTo insertion order. Ids not currently enabled are
+// skipped silently -- they'll be positioned when they're re-enabled.
+export function setChartLayerOrder(orderedIds) {
+    if (!map || !orderedIds) return;
+    const base = 50;
+    for (let i = 0; i < orderedIds.length; i++) {
+        const layer = chartLayers.get(orderedIds[i]);
+        if (layer) layer.setZIndex(base + i);
+    }
+    recomputeChartOverzoom();
+}
+
+// Smart overzoom: only the chart with the highest native max gets the
+// "stretch past its native limit" treatment. Lower-native charts keep
+// their maxZoom equal to their native max, so they naturally hide past
+// their native instead of pixel-stretching over a more-detailed chart.
+// If two charts share the top native, both overzoom -- harmless since
+// the later-added one draws on top anyway.
+function recomputeChartOverzoom() {
+    if (chartLayers.map.size === 0) return;
+    let topNative = 0;
+    for (const native of chartNativeMax.values()) {
+        if (native > topNative) topNative = native;
+    }
+    for (const [id, layer] of chartLayers.map.entries()) {
+        const native = chartNativeMax.get(id) || 18;
+        const effMax = native >= topNative ? Math.max(native + 4, 22) : native;
+        if (layer.options.maxZoom !== effMax) {
+            layer.options.maxZoom = effMax;
+            // Leaflet reads options.maxZoom on tile-visibility checks.
+            // redraw() forces it to recompute which tiles to paint at
+            // the current map zoom, which is what we actually want.
+            layer.redraw();
+        }
+    }
+}
 
 // --- Routes ---
 
@@ -1559,9 +1608,64 @@ function redrawEditLine() {
         routeEditLine = L.polyline(routeEditCoords, {
             color: '#a78bfa', weight: 2.5, opacity: 0.8, dashArray: '8,6'
         }).addTo(routeEditLayer);
+        // Click on the dashed line between two waypoints inserts a new
+        // waypoint at the click point, between those two. stopPropagation
+        // prevents the map-level handler (which appends at the end) from
+        // also firing. Wider hit polyline underneath gives a chunkier
+        // tap target without thickening the visible line.
+        routeEditLine.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            insertEditVertexOnSegment(e.latlng);
+        });
     } else if (routeEditLine) {
         routeEditLine.setLatLngs(routeEditCoords);
     }
+}
+
+// Pick the segment closest to `ll` (pixel distance at current zoom, so
+// "close" matches what the user sees), splice the click point in as a
+// new vertex, rebuild numbered markers.
+function insertEditVertexOnSegment(ll) {
+    if (routeEditCoords.length < 2 || !map) return;
+    const p = map.latLngToLayerPoint(ll);
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < routeEditCoords.length - 1; i++) {
+        const a = map.latLngToLayerPoint(L.latLng(routeEditCoords[i][0],     routeEditCoords[i][1]));
+        const b = map.latLngToLayerPoint(L.latLng(routeEditCoords[i + 1][0], routeEditCoords[i + 1][1]));
+        const d = pointToSegmentPixels(p, a, b);
+        if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    // Insert at bestIdx + 1 so the order becomes ... prev, new, next ...
+    routeEditCoords.splice(bestIdx + 1, 0, [ll.lat, ll.lng]);
+    rebuildRouteEditMarkers();
+}
+
+// Euclidean pixel distance from point p to segment ab.
+function pointToSegmentPixels(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = a.x + t * dx, cy = a.y + t * dy;
+    return Math.hypot(p.x - cx, p.y - cy);
+}
+
+function rebuildRouteEditMarkers() {
+    if (!routeEditLayer) return;
+    for (const m of routeEditMarkers) routeEditLayer.removeLayer(m);
+    routeEditMarkers = [];
+    for (let i = 0; i < routeEditCoords.length; i++) {
+        const [lat, lon] = routeEditCoords[i];
+        const marker = L.marker([lat, lon], {
+            icon: makeEditWpIcon(i + 1),
+            draggable: true, zIndexOffset: 800
+        }).addTo(routeEditLayer);
+        bindEditMarker(marker, i);
+        routeEditMarkers.push(marker);
+    }
+    redrawEditLine();
 }
 
 // Attach drag handlers with a "ghost" visual: during drag we leave the
@@ -1673,26 +1777,11 @@ export function undoLastEditWaypoint() {
 export function removeRouteEditWaypoint(index) {
     if (index < 0 || index >= routeEditCoords.length) return;
     routeEditCoords.splice(index, 1);
-    for (const m of routeEditMarkers) {
-        if (routeEditLayer) routeEditLayer.removeLayer(m);
-    }
-    routeEditMarkers = [];
-    for (let i = 0; i < routeEditCoords.length; i++) {
-        const [lat, lon] = routeEditCoords[i];
-        const marker = L.marker([lat, lon], {
-            icon: makeEditWpIcon(i + 1),
-            draggable: true,
-            zIndexOffset: 800
-        }).addTo(routeEditLayer);
-        bindEditMarker(marker, i);
-        routeEditMarkers.push(marker);
-    }
     if (routeEditCoords.length < 2 && routeEditLine && routeEditLayer) {
         routeEditLayer.removeLayer(routeEditLine);
         routeEditLine = null;
-    } else {
-        redrawEditLine();
     }
+    rebuildRouteEditMarkers();
 }
 
 // Returns [waypointCount, totalDistanceNm]
