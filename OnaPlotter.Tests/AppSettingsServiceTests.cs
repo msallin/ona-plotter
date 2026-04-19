@@ -217,4 +217,62 @@ public class AppSettingsServiceTests
         public Task SetAsync(string key, string value, CancellationToken ct = default) => Task.CompletedTask;
         public Task RemoveAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
     }
+
+    // --- Sailing mode ----------------------------------------------
+
+    [Test]
+    public async Task SailingMode_DefaultsToCruise()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.SailingMode).IsEqualTo("cruise");
+    }
+
+    [Test]
+    [Arguments("cruise")]
+    [Arguments("race")]
+    public async Task SailingMode_RoundTripsKnownValues(string mode)
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetSailingModeAsync(mode);
+        await Assert.That(await kv.GetAsync("sailingMode")).IsEqualTo(mode);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.SailingMode).IsEqualTo(mode);
+    }
+
+    [Test]
+    [Arguments("Race")]        // wrong case
+    [Arguments("CRUISE")]
+    [Arguments("fishing")]     // valid nautical concept, not in our enum
+    [Arguments("")]
+    [Arguments("  ")]
+    [Arguments("'; drop table --")] // absurd but cheap insurance
+    public async Task SailingMode_RejectsUnknownValues_FallsBackToCruise(string input)
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetSailingModeAsync(input);
+
+        await Assert.That(svc.SailingMode).IsEqualTo("cruise");
+    }
+
+    [Test]
+    public async Task SailingMode_MalformedStoredValue_FallsBackToCruise()
+    {
+        // Storage was poked with a bad value (corrupted localStorage,
+        // an older build's enum, a manual edit). Loading it must not
+        // throw and must pick a safe default.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("sailingMode", "supersail3000");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.SailingMode).IsEqualTo("cruise");
+    }
 }

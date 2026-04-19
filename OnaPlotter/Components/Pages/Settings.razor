@@ -13,6 +13,33 @@
 <div class="row g-4" style="max-width: 600px;">
 
     <div class="col-12">
+        <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Mode</h5>
+    </div>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Sailing Mode</label>
+                <div class="btn-group w-100" role="group" aria-label="Sailing mode">
+                    @foreach (var (val, label, tip) in SailingModes)
+                    {
+                        <input type="radio" class="btn-check" name="sailing-mode"
+                               id="@($"mode-{val}")" autocomplete="off"
+                               checked="@(AppSettings.SailingMode == val)"
+                               @onchange="() => OnSailingModeChanged(val)" />
+                        <label class="btn btn-outline-secondary btn-sm" for="@($"mode-{val}")"
+                               title="@tip">@label</label>
+                    }
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Cruise: navigation emphasis (depth, anchor, route). Race: performance emphasis
+                    (laylines, optimal TWA, target speed). Individual toggles still work in either mode;
+                    the mode just picks sensible defaults and surfaces mode-specific overlays.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Alarms</h5>
     </div>
 
@@ -262,6 +289,15 @@
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetAnchorTideSafetyMarginAsync(val);
     }
+
+    private async Task OnSailingModeChanged(string value)
+        => await AppSettings.SetSailingModeAsync(value);
+
+    private static readonly (string val, string label, string tip)[] SailingModes =
+    [
+        ("cruise", "Cruise", "Navigation emphasis: depth, anchor, route, AIS."),
+        ("race",   "Race",   "Performance emphasis: laylines, optimal TWA, target speed."),
+    ];
 
     private async Task OnNightModeChanged(ChangeEventArgs e)
     {

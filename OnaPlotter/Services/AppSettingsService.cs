@@ -31,6 +31,7 @@ public sealed class AppSettingsService : IAppSettings
     public double WindShiftLookbackMinutes { get; private set; } = 5.0;
     public double BoatDraftMeters { get; private set; } = 1.5;
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
+    public string SailingMode { get; private set; } = "cruise";
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -62,6 +63,7 @@ public sealed class AppSettingsService : IAppSettings
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
             BoatDraftMeters = await LoadDouble("boatDraftMeters", 1.5);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
+            SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             _initialized = true;
@@ -179,6 +181,19 @@ public sealed class AppSettingsService : IAppSettings
         await Save("anchorTideSafetyMargin", value.ToString("F2", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
+
+    public async Task SetSailingModeAsync(string value)
+    {
+        SailingMode = NormalizeSailingMode(value);
+        await Save("sailingMode", SailingMode);
+        OnSettingsChanged?.Invoke();
+    }
+
+    private static string NormalizeSailingMode(string? raw) => raw switch
+    {
+        "cruise" or "race" => raw,
+        _ => "cruise",
+    };
 
     public async Task SetEnabledChartsAsync(IEnumerable<string> ids)
     {

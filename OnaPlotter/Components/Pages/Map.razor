@@ -28,7 +28,7 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "")"
+<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "") mode-@Settings.SailingMode"
      @onfullscreenchange="OnFullscreenChange">
     <div id="mapDiv"></div>
 

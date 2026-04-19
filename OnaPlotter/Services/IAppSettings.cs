@@ -57,6 +57,13 @@ public interface IAppSettings
     /// <c>draft + margin</c>. Typical is 0.5-1 m; add more for soft
     /// mud where the boat can settle.</summary>
     double AnchorTideSafetyMargin { get; }
+
+    /// <summary>High-level sailing mode: "cruise" (default -- navigation
+    /// emphasis, depth / anchor / route) or "race" (performance emphasis,
+    /// laylines / optimal TWA / target speed). Discriminator used by the
+    /// Map page to show / hide race-specific overlays without forcing a
+    /// mode toggle on every switch.</summary>
+    string SailingMode { get; }
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -77,6 +84,7 @@ public interface IAppSettings
     Task SetWindShiftLookbackMinutesAsync(double value);
     Task SetBoatDraftMetersAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
+    Task SetSailingModeAsync(string value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
 }

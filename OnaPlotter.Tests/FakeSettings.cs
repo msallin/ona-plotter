@@ -26,6 +26,7 @@ internal sealed class FakeSettings : IAppSettings
     public double WindShiftLookbackMinutes { get; set; } = 5.0;
     public double BoatDraftMeters { get; set; } = 1.5;
     public double AnchorTideSafetyMargin { get; set; } = 1.0;
+    public string SailingMode { get; set; } = "cruise";
     public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
 
@@ -46,6 +47,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
     public Task SetBoatDraftMetersAsync(double v) => Task.CompletedTask;
     public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
+    public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
 }
