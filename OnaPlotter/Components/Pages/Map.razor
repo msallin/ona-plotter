@@ -101,7 +101,8 @@
                  OnFabCreateNote="FabCreateNote"
                  OnFabCreateRegion="FabCreateRegion"
                  OnFabRouteWithWind="FabRouteWithWind"
-                 HasPolar="@Polar.HasPolar" />
+                 HasPolar="@Polar.HasPolar"
+                 HasWind="@(Data.WindDirectionTrue is not null)" />
 
     @if (shortcutsVisible)
     {
@@ -206,8 +207,8 @@
             <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
             <button class="ctx-menu-item" @onclick="RouteWithWindHere"
-                    disabled="@(!Polar.HasPolar)"
-                    title="@(Polar.HasPolar ? "Isochrone weather routing" : "Upload a polar in Settings first")">
+                    disabled="@(!Polar.HasPolar || Data.WindDirectionTrue is null)"
+                    title="@(!Polar.HasPolar ? "Upload a polar in Settings first" : Data.WindDirectionTrue is null ? "Polar OK -- waiting for true-wind data" : "Isochrone weather routing")">
                 Route with wind
             </button>
             @if (Data.HasActiveCourse)

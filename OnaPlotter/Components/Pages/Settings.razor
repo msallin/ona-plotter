@@ -5,6 +5,7 @@
 @inject IAppSettings AppSettings
 @inject IPolarService Polar
 @inject IToastService Toasts
+@inject OnaPlotter.Services.SignalkClient SignalkClient
 
 <PageTitle>Settings</PageTitle>
 
@@ -229,6 +230,54 @@
         </div>
     </div>
 
+    @* Checklist card: the tide-aware anchor alarm needs four separate
+       prerequisites (draft, margin, live depth, tide plugin). Walking
+       users through the chain in one place beats a dormancy hint that
+       flags one missing piece at a time on the HUD. *@
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Anchor Tide Alarm setup</label>
+                <ul class="list-unstyled mb-0" style="font-size:0.85rem;">
+                    <li>
+                        <span style="color:@(AppSettings.BoatDraftMeters > 0 ? "#22c55e" : "#ef4444");">
+                            @(AppSettings.BoatDraftMeters > 0 ? "\u2713" : "\u2717")
+                        </span>
+                        Boat draft &gt; 0 (currently @AppSettings.BoatDraftMeters.ToString("F1") m)
+                    </li>
+                    <li>
+                        <span style="color:@(AppSettings.AnchorTideSafetyMargin > 0 ? "#22c55e" : "#ef4444");">
+                            @(AppSettings.AnchorTideSafetyMargin > 0 ? "\u2713" : "\u2717")
+                        </span>
+                        Safety margin &gt; 0 (currently @AppSettings.AnchorTideSafetyMargin.ToString("F1") m)
+                    </li>
+                    <li>
+                        <span style="color:@(SignalkClient.Data.Depth is not null ? "#22c55e" : "#ef4444");">
+                            @(SignalkClient.Data.Depth is not null ? "\u2713" : "\u2717")
+                        </span>
+                        Live depth from SignalK
+                        @if (SignalkClient.Data.Depth is not null) { <span>(@SignalkClient.Data.Depth.Value.ToString("F1") m)</span> }
+                        else { <span class="text-muted">&mdash; needs a depth sounder feeding the bus</span> }
+                    </li>
+                    <li>
+                        <span style="color:@(SignalkClient.Data.TideHeightNow is not null ? "#22c55e" : "#ef4444");">
+                            @(SignalkClient.Data.TideHeightNow is not null ? "\u2713" : "\u2717")
+                        </span>
+                        Tide data
+                        @if (SignalkClient.Data.TideHeightNow is not null)
+                        { <span>(@SignalkClient.Data.TideStationName -- @SignalkClient.Data.TideHeightNow.Value.ToString("F1") m now)</span> }
+                        else { <span class="text-muted">&mdash; install a SignalK tide plugin (e.g. signalk-tides)</span> }
+                    </li>
+                </ul>
+                <small class="text-muted" style="display:block; margin-top:6px;">
+                    All four need to be green for the tide-aware anchor alarm to fire. The
+                    plain manual anchor-drag alarm works without any of this &mdash; it only
+                    needs a GPS fix.
+                </small>
+            </div>
+        </div>
+    </div>
+
     <div class="col-12 mt-3">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Performance</h5>
     </div>
@@ -264,6 +313,32 @@
                         Upload a CSV polar file. Format: first column = TWA (degrees), header row = TWS (knots), cells = target speed (knots).
                     </p>
                 }
+                <details class="mt-2" style="font-size:0.78rem; color:var(--sk-text-muted, #94a3b8);">
+                    <summary style="cursor:pointer; user-select:none;">What's a polar &mdash; and a sample</summary>
+                    <div style="padding-top:6px; line-height:1.5;">
+                        A polar is a table of your boat's target boat speed (BSP)
+                        at each combination of true wind angle (TWA) and true
+                        wind speed (TWS). Used by the Route-with-wind isochrone
+                        router and the race-mode optimal-TWA overlay. Typical
+                        sources: ORC / IRC certificate, builder-published polars,
+                        Expedition / Adrena exports, or your own log-crunch.
+                        <br />
+                        <br />
+                        Minimal 5 kn / 10 kn / 15 kn example (commas shown; tabs
+                        and semicolons also work; decimals must use &quot;.&quot;):
+                        <pre style="background:rgba(255,255,255,0.04); padding:6px 8px; border-radius:4px; margin-top:4px; font-size:0.75rem; overflow-x:auto;">TWA,5,10,15
+32,3.2,5.4,6.2
+45,4.1,6.3,7.0
+60,4.6,6.8,7.4
+90,4.4,6.5,7.2
+120,3.8,5.9,6.7
+150,3.1,5.0,5.9</pre>
+                        First column 0-180 deg TWA, rising. Header row TWS in
+                        knots, rising. Cells in knots. Rows for dead-upwind
+                        (under 30) and dead-downwind (over 170) are optional
+                        &mdash; the router interpolates.
+                    </div>
+                </details>
                 <div class="mt-2">
                     <label class="btn btn-sm btn-outline-secondary" style="cursor:pointer;">
                         Upload Polar CSV

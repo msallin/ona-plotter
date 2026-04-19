@@ -173,28 +173,42 @@ public class MapControlsTests
     }
 
     [Test]
-    public async Task Fab_Route_With_Wind_Disabled_Without_Polar()
+    public async Task Fab_Route_With_Wind_Disabled_Without_Polar_Or_Wind()
     {
-        // Isochrone routing needs a polar CSV. Without one, the item is
-        // rendered but disabled -- surfacing discoverability ("the feature
-        // exists, here's why it's off") rather than hiding it.
+        // Isochrone routing needs a polar AND live true-wind data.
+        // Missing polar: "Upload a polar in Settings first".
+        // Missing wind: "Polar OK -- waiting for true-wind data".
+        // This pins both gates so the UI doesn't regress to enabling
+        // the item when only half the prerequisites are met.
         using var ctx = new Bunit.TestContext();
-        var cut = Render(ctx, p => p
-            .Add(x => x.FabMenuOpen, true)
-            .Add(x => x.HasPolar, false));
 
-        var routeItem = cut.FindAll(".ctrl-more-item")
-            .FirstOrDefault(b => b.TextContent.Contains("Route with wind"));
-        await Assert.That(routeItem).IsNotNull();
-        await Assert.That(routeItem!.HasAttribute("disabled")).IsTrue();
-
-        // With polar, enabled.
-        var cut2 = Render(ctx, p => p
+        // No polar -> disabled regardless of wind.
+        var noPolar = Render(ctx, p => p
             .Add(x => x.FabMenuOpen, true)
-            .Add(x => x.HasPolar, true));
-        var routeItem2 = cut2.FindAll(".ctrl-more-item")
+            .Add(x => x.HasPolar, false)
+            .Add(x => x.HasWind, true));
+        var item1 = noPolar.FindAll(".ctrl-more-item")
             .First(b => b.TextContent.Contains("Route with wind"));
-        await Assert.That(routeItem2.HasAttribute("disabled")).IsFalse();
+        await Assert.That(item1.HasAttribute("disabled")).IsTrue();
+
+        // Polar loaded but no wind -> still disabled, different tooltip.
+        var noWind = Render(ctx, p => p
+            .Add(x => x.FabMenuOpen, true)
+            .Add(x => x.HasPolar, true)
+            .Add(x => x.HasWind, false));
+        var item2 = noWind.FindAll(".ctrl-more-item")
+            .First(b => b.TextContent.Contains("Route with wind"));
+        await Assert.That(item2.HasAttribute("disabled")).IsTrue();
+        await Assert.That(item2.GetAttribute("title")).Contains("waiting for true-wind");
+
+        // Polar + wind -> enabled.
+        var ready = Render(ctx, p => p
+            .Add(x => x.FabMenuOpen, true)
+            .Add(x => x.HasPolar, true)
+            .Add(x => x.HasWind, true));
+        var item3 = ready.FindAll(".ctrl-more-item")
+            .First(b => b.TextContent.Contains("Route with wind"));
+        await Assert.That(item3.HasAttribute("disabled")).IsFalse();
     }
 
     [Test]

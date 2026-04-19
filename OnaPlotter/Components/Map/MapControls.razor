@@ -120,8 +120,8 @@
                     <span>Region</span>
                 </button>
                 <button class="ctrl-more-item" @onclick="() => SelectFab(OnFabRouteWithWind)"
-                        disabled="@(!HasPolar)"
-                        title="@(HasPolar ? "Isochrone weather routing from here to map center" : "Upload a polar in Settings first")">
+                        disabled="@(!HasPolar || !HasWind)"
+                        title="@RouteWithWindTitle">
                     <span class="ctrl-more-ico">&#9784;</span>
                     <span>Route with wind</span>
                 </button>
@@ -198,6 +198,15 @@
     [Parameter] public EventCallback OnFabCreateRegion { get; set; }
     [Parameter] public EventCallback OnFabRouteWithWind { get; set; }
     [Parameter] public bool HasPolar { get; set; }
+    [Parameter] public bool HasWind { get; set; }
+
+    // Two-tier explanation for the Route-with-wind item. Polar missing
+    // and wind missing are both pre-conditions -- saying "enable it"
+    // when only one is met would be misleading.
+    private string RouteWithWindTitle =>
+        !HasPolar ? "Upload a polar in Settings first"
+        : !HasWind ? "Polar OK -- waiting for true-wind data"
+        : "Isochrone weather routing from here to map center";
     [Parameter] public EventCallback OnToggleDarkOps { get; set; }
 
     // Dot indicator on the More button when any of its contents is on,
