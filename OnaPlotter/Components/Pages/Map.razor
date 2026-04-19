@@ -1986,6 +1986,14 @@
         availableCharts = availableCharts
             .OrderBy(c => index.TryGetValue(c.Identifier, out var i) ? i : int.MaxValue)
             .ToList();
+        // Reorder changes the ORDER of availableCharts, not the count --
+        // RebuildFilteredLayers's cache key is count-based, so flush it
+        // explicitly and rebuild now. Without this, the Layers panel's
+        // chip stack kept showing the pre-reorder order and the reorder
+        // button appeared to do nothing (the reorder DID happen, the UI
+        // just didn't reflect it until the next cache miss).
+        lastFilterKey = "";
+        RebuildFilteredLayers();
     }
 
     private async Task ToggleRoute(SignalkRoute route, bool enabled)
