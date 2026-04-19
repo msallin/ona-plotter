@@ -744,6 +744,20 @@ article.content:has(.map-container) {
     color: #fff;
     margin-bottom: 2px;
 }
+/* Country flag served by the signalk-flags plugin. Small, inline with
+   the vessel name. The faint border keeps white flag fields (e.g. JP)
+   readable on the dark popup background. Hidden inline via onerror
+   when the plugin isn't installed. */
+.ais-popup-flag {
+    display: inline-block;
+    width: 18px;
+    height: 12px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 2px;
+    object-fit: cover;
+}
 .ais-popup-type {
     font-size: 11px;
     color: rgba(255,255,255,0.4);
@@ -2291,7 +2305,10 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 200px;
     padding: 6px;
     background: rgba(20, 26, 38, 0.96);
-    border: 1px solid rgba(224, 159, 62, 0.45);
+    /* Blue border / hover / icon to match the More menu. The earlier
+       amber palette made Add feel like a distinct "warning" surface; it
+       is just another overflow menu so it should read the same. */
+    border: 1px solid rgba(96, 165, 250, 0.35);
     border-radius: 8px;
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(6px);
@@ -2334,15 +2351,15 @@ main:has(.alarm-banner-stack) .hud-top-left {
     -webkit-tap-highlight-color: transparent;
 }
 .map-fab-item:hover:not(:disabled) {
-    background: rgba(224, 159, 62, 0.18);
-    color: #f0d49c;
+    background: rgba(96, 165, 250, 0.18);
+    color: #93c5fd;
 }
 .map-fab-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .map-fab-ico {
     font-size: 1rem;
     width: 20px;
     text-align: center;
-    color: #e09f3e;
+    color: #93c5fd;
 }
 .map-fab-hint {
     display: block;
@@ -2381,14 +2398,18 @@ main:has(.alarm-banner-stack) .hud-top-left {
     z-index: calc(var(--z-controls) - 1);
     background: transparent;
 }
+/* Menu anchors to the More button via the surrounding .ctrl-more-wrap
+   (position: relative). Using `absolute` keeps it pinned over the button
+   even when the control bar re-centres on viewport resize, which a
+   `fixed` + `left: 12px` rule got wrong on narrower screens. */
 .ctrl-more-menu {
-    position: fixed;
-    bottom: calc(var(--panel-bottom) + 2px);
-    left: 12px;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
     min-width: 200px;
     padding: 4px;
     background: rgba(20, 26, 38, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(96, 165, 250, 0.35);
     border-radius: 8px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(6px);

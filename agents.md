@@ -82,6 +82,13 @@ testing on a rocking boat with cold fingers.
 **Three independent first-run signals** (welcome card, touch coachmark, offline
 toast) each gate on their own KV key. Don't collapse them.
 
+**Country flag in AIS popup** hits `/signalk/v2/api/resources/flags/mmsi/{mmsi}`
+(the `signalk-flags` plugin). The request is relative, so it resolves against
+the page origin, which is the SignalK server when OnaPlotter is deployed as a
+webapp. Pointing a remote server via `SignalK:ServerUrl` sends the flag request
+to the wrong host; the image 404s and hides silently via `onerror`. Good
+enough for a nice-to-have; don't make anything safety-critical depend on it.
+
 **Cruise/Race mode is a preset, not a lockout.** Mode flips defaults and surfaces
 mode-specific overlays; every individual toggle still works in either mode.
 

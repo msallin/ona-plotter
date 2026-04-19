@@ -1031,9 +1031,20 @@ export function updateAisTargets(vessels) {
                 pieces.join('') + `</div>`;
         }
 
+        // Country flag from the signalk-flags plugin if installed.
+        // Endpoint: /signalk/v2/api/resources/flags/mmsi/{mmsi} returns SVG.
+        // Relative URL resolves against the page origin, which IS the
+        // SignalK server when OnaPlotter is deployed as a webapp. If the
+        // plugin isn't installed the 404 triggers onerror and we hide
+        // the img so there's no broken-image glyph. No fallback fetch
+        // needed -- country is a nice-to-have, not safety-critical.
+        const flagHtml = mmsi
+            ? `<img class="ais-popup-flag" src="/signalk/v2/api/resources/flags/mmsi/${esc(mmsi)}" alt="" onerror="this.style.display='none'">`
+            : '';
+
         const popupHtml =
             `<div class="ais-popup-content">` +
-            `<div class="ais-popup-title">${displayTitle}</div>` +
+            `<div class="ais-popup-title">${flagHtml}${displayTitle}</div>` +
             (type ? `<div class="ais-popup-type">${type}</div>` : '') +
             `<table class="ais-popup-table">` +
               (mmsi ? `<tr><td>MMSI</td><td>${esc(mmsi)}</td></tr>` : '') +
