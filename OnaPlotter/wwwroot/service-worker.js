@@ -1,7 +1,11 @@
 // Service worker for OnaPlotter PWA.
 // Caches the app shell for faster loads; network-first for API calls.
 
-const CACHE_NAME = 'ona-plotter-v2';
+// Bumped v2 -> v3 on the chartOverzoom module extraction so a browser
+// holding the older cache doesn't serve a stale leafletInterop.js that
+// still has the inline overzoom code but tries to import from a
+// chartOverzoom.js module that wasn't cached.
+const CACHE_NAME = 'ona-plotter-v3';
 // Use relative URLs so the worker works both at root and under a subpath
 // (SignalK webapp serves at /signalk-onaplotter/).
 const SCOPE = self.registration ? self.registration.scope : self.location.href;
