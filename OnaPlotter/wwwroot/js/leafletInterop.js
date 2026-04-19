@@ -4,6 +4,7 @@
 import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          haversineMeters, bearingDeg, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
+import { isOverlayChart, computeOverzoom } from './chartOverzoom.js';
 
 let map = null;
 let boatMarker = null;
@@ -1463,20 +1464,6 @@ const chartNativeMax = new Map();
 // prevent the base chart from stretching past its native zoom.
 const chartOverlay = new Set();
 
-// Heuristic overlay detection: the SignalK chart schema has no explicit
-// "isOverlay" flag, so we pattern-match the identifier and tile URL.
-// OpenSeaMap's canonical id is "openseamap" and its URL path segment is
-// "/seamark/". Anything else with "seamark" in the URL is also a marine
-// overlay (sector lights, etc). Base raster charts never match either.
-function isOverlayChart(id, tileUrl) {
-    const lc = (s) => (s || '').toLowerCase();
-    const idl = lc(id);
-    const url = lc(tileUrl);
-    return idl === 'openseamap'
-        || idl.includes('seamark')
-        || url.includes('/seamark/');
-}
-
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     if (!map || chartLayers.has(id)) return false;
     const native = maxZoom || 18;
@@ -1548,22 +1535,11 @@ function recomputeChartOverzoom() {
         if (zoomBadge) zoomBadge.update();
         return;
     }
-    // Pick the top native only from BASE charts. Overlays (OpenSeaMap
-    // seamarks) are ignored for this race -- otherwise the presence of
-    // a native-18 overlay pins every base chart's maxZoom to its own
-    // native, so the detailed base chart hides past e.g. zoom 17 and
-    // the helmsman only sees the overlay stretching into nothing.
-    let topNative = 0;
-    for (const [id, native] of chartNativeMax.entries()) {
-        if (chartOverlay.has(id)) continue;
-        if (native > topNative) topNative = native;
-    }
+    // Pure decision in chartOverzoom.js; this function just applies
+    // the result to the live Leaflet layers.
+    const effective = computeOverzoom(chartNativeMax, chartOverlay);
     for (const [id, layer] of chartLayers.map.entries()) {
-        const native = chartNativeMax.get(id) || 18;
-        // Overlays always get overzoom (they're transparent, so no harm
-        // in stretching). Base charts only if they tie for top-native.
-        const shouldOverzoom = chartOverlay.has(id) || native >= topNative;
-        const effMax = shouldOverzoom ? Math.max(native + 4, 22) : native;
+        const effMax = effective.get(id) ?? (chartNativeMax.get(id) || 18);
         if (layer.options.maxZoom !== effMax) {
             layer.options.maxZoom = effMax;
             // Leaflet reads options.maxZoom on tile-visibility checks.
