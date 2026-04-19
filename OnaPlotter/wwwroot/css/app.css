@@ -1125,6 +1125,75 @@ main:has(.alarm-banner-stack) .hud-top-left {
     50% { opacity: 0.6; }
 }
 
+/* ===== First-run welcome card =====
+   Only shown on the very first visit (gated by hints.welcome.v1 in KV).
+   A centred modal-ish card that lists three concrete onboarding steps
+   so a brand-new user knows how to enable charts, configure their
+   depth alarm, and discover the long-press context menu. The card
+   suppresses the touch coachmark on that first visit -- the long-press
+   tip is already covered by step 3. */
+.welcome-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(3px);
+    z-index: calc(var(--z-modal) - 1);
+    animation: welcome-fade 0.2s ease-out;
+}
+.welcome-card {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: var(--z-modal);
+    width: min(92vw, 440px);
+    background: rgba(20, 26, 38, 0.98);
+    color: #e2e8f0;
+    border: 1px solid rgba(224, 159, 62, 0.5);
+    border-radius: 10px;
+    padding: 22px 26px;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+    animation: welcome-pop 0.22s ease-out;
+}
+.welcome-card h3 {
+    margin: 0 0 6px 0;
+    font-size: 1.25rem;
+    color: #f0d49c;
+    letter-spacing: 0.01em;
+}
+.welcome-sub { color: #94a3b8; margin: 0 0 14px 0; font-size: 0.85rem; }
+.welcome-steps {
+    margin: 0 0 18px 0;
+    padding-left: 1.4em;
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+.welcome-steps li { margin-bottom: 10px; color: #cbd5e1; }
+.welcome-steps strong { color: #e2e8f0; }
+.welcome-kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: rgba(224, 159, 62, 0.18);
+    border: 1px solid rgba(224, 159, 62, 0.5);
+    border-radius: 3px;
+    color: #f0d49c;
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 0.82em;
+}
+.welcome-dismiss {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+@keyframes welcome-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes welcome-pop {
+    from { opacity: 0; transform: translate(-50%, -46%) scale(0.96); }
+    to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
 /* ===== First-run touch coachmark ===== */
 /* Hidden everywhere except coarse-pointer devices (touchscreens). A small
    floating hint anchored near the map bottom-centre; tap to dismiss, auto-

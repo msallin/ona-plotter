@@ -104,6 +104,41 @@
         </div>
     }
 
+    @* First-visit welcome card: three concrete things the user should
+       do to get the app working. Shown once ever per device (KV flag);
+       dismissible via the Got it button. Shows instead of the touch
+       coachmark on first-ever visit since it covers the same ground
+       and more. *@
+    @if (welcomeVisible)
+    {
+        <div class="welcome-backdrop" @onclick="DismissWelcome"></div>
+        <div class="welcome-card" @onclick:stopPropagation role="dialog"
+             aria-labelledby="welcome-title">
+            <h3 id="welcome-title">Welcome aboard</h3>
+            <p class="welcome-sub">Three things to get you sailing:</p>
+            <ol class="welcome-steps">
+                <li>
+                    <strong>Turn on a chart.</strong> Tap
+                    <span class="welcome-kbd">Layers</span> (bottom bar) to
+                    enable the charts your SignalK server provides.
+                </li>
+                <li>
+                    <strong>Set your depth alarm.</strong> Open
+                    <span class="welcome-kbd">Settings</span> and pick a
+                    threshold for your boat's draft.
+                </li>
+                <li>
+                    <strong>Long-press the map</strong> (or right-click) for
+                    options: Create Waypoint, Add Note, Add Region,
+                    Navigate Here, Route with wind.
+                </li>
+            </ol>
+            <button class="welcome-dismiss map-btn active" @onclick="DismissWelcome">
+                Got it
+            </button>
+        </div>
+    }
+
     @if (routeEditMode)
     {
         <RouteEditPanel Name="routeEditName"
@@ -523,6 +558,14 @@
     private bool touchCoachmarkVisible;
     private System.Threading.Timer? touchCoachmarkTimer;
 
+    /// <summary>First-visit welcome card. Versioned KV key so a future
+    /// welcome revision can re-trigger the card ("welcome.v2.dismissed").
+    /// Shown on first-ever run; the touch coachmark (for long-press
+    /// discovery) is suppressed on that first visit because the welcome
+    /// already explains long-press.</summary>
+    private const string WelcomeKey = "hints.welcome.v1.dismissed";
+    private bool welcomeVisible;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -643,7 +686,34 @@
 
         await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
 
-        await MaybeShowTouchCoachmarkAsync();
+        // Welcome card takes precedence over the touch coachmark on
+        // first-ever visit since it covers long-press explicitly.
+        var welcomeShown = await MaybeShowWelcomeAsync();
+        if (!welcomeShown) await MaybeShowTouchCoachmarkAsync();
+    }
+
+    /// <summary>Returns true if the welcome card was shown (gate the
+    /// touch coachmark on this so the two don't pile up on a first
+    /// visit; coachmark gets its chance on the next load instead).</summary>
+    private async Task<bool> MaybeShowWelcomeAsync()
+    {
+        try
+        {
+            var dismissed = await Kv.GetAsync(WelcomeKey);
+            if (dismissed == "1") return false;
+            welcomeVisible = true;
+            StateHasChanged();
+            return true;
+        }
+        catch (Exception) { return false; }
+    }
+
+    private async Task DismissWelcome()
+    {
+        if (!welcomeVisible) return;
+        welcomeVisible = false;
+        try { await Kv.SetAsync(WelcomeKey, "1"); } catch { }
+        StateHasChanged();
     }
 
     private async Task MaybeShowTouchCoachmarkAsync()
