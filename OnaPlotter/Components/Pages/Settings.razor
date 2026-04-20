@@ -373,8 +373,8 @@
                     <div style="padding-top:6px; line-height:1.5;">
                         A polar is a table of your boat's target boat speed (BSP)
                         at each combination of true wind angle (TWA) and true
-                        wind speed (TWS). Used by the Route-with-wind isochrone
-                        router and the race-mode optimal-TWA overlay. Typical
+                        wind speed (TWS). Used by the race-mode optimal-TWA
+                        overlay and the Dashboard performance %. Typical
                         sources: ORC / IRC certificate, builder-published polars,
                         Expedition / Adrena exports, or your own log-crunch.
                         <br />
@@ -671,7 +671,7 @@
         try
         {
             ok = await JS.InvokeAsync<bool>("confirm",
-                "Remove the loaded polar? You'll need to re-upload the CSV to get performance % back on the Dashboard and Route-with-wind working.");
+                "Remove the loaded polar? You'll need to re-upload the CSV to get performance % back on the Dashboard and the race-mode optimal-TWA overlay.");
         }
         catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
         if (!ok) return;

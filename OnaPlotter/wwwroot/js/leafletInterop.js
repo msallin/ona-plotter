@@ -923,6 +923,24 @@ export function updateAisTargets(vessels) {
         if (!marker) {
             marker = L.marker([v.lat, v.lon], { icon }).addTo(map);
             aisMarkers[v.context] = marker;
+            // During route / polygon / measurement edit, a tap on a vessel
+            // should behave like a tap on empty water: append a waypoint,
+            // not open the vessel popup. Without this guard the click
+            // reaches the marker first (Leaflet's default binding), the
+            // popup shows, and the route never picks up the point. We
+            // attach the guard on FIRST CREATE so the once-per-marker
+            // cost is trivial even in 200-vessel harbours.
+            marker.on('click', (ev) => {
+                if (routeEditMode || polygonEditMode || measureActive) {
+                    L.DomEvent.stopPropagation(ev);
+                    L.DomEvent.preventDefault(ev);
+                    const ll = ev.latlng || marker.getLatLng();
+                    if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
+                    else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+                    else                       addMeasurePoint(ll.lat, ll.lng);
+                    marker.closePopup();
+                }
+            });
         } else {
             marker.setLatLng([v.lat, v.lon]);
             marker.setIcon(icon);
@@ -1595,11 +1613,39 @@ function recomputeChartOverzoom() {
 const ROUTE_COLOR = '#e09f3e';
 
 // Add a route as a polyline. coords is [[lat, lon], ...].
+//
+// Clicking the line opens a popup with Activate + Delete so the helm
+// doesn't have to burrow into the Layers panel to do the two most
+// common actions on a saved route. During route-edit / polygon-edit /
+// measure the click is absorbed as a new waypoint instead (same guard
+// as AIS markers) so the user can't accidentally fire Activate/Delete
+// while trying to extend a route.
 export function addRoute(id, name, coords) {
     if (!map || routeLayers.has(id)) return;
     const line = L.polyline(coords, {
         color: ROUTE_COLOR, weight: 2.5, opacity: 0.8, dashArray: '8,6'
     }).addTo(map);
+
+    const nmTotal = routeTotalNauticalMiles(coords);
+    line.bindPopup(buildRoutePopupHtml(id, name, coords.length, nmTotal), {
+        className: 'route-popup', maxWidth: 260, autoClose: true,
+    });
+    line.on('click', (ev) => {
+        if (routeEditMode || polygonEditMode || measureActive) {
+            L.DomEvent.stopPropagation(ev);
+            const ll = ev.latlng;
+            if (!ll) return;
+            if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+            else                       addMeasurePoint(ll.lat, ll.lng);
+            line.closePopup();
+        }
+    });
+    line.on('popupopen', (ev) => {
+        wireRouteActivate(ev.popup, id, name);
+        wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', id);
+    });
+
     // Waypoint dots at each coordinate.
     const group = L.layerGroup([line]).addTo(map);
     for (let i = 0; i < coords.length; i++) {
@@ -1610,6 +1656,45 @@ export function addRoute(id, name, coords) {
         dot.addTo(group);
     }
     routeLayers.set(id, group);
+}
+
+function routeTotalNauticalMiles(coords) {
+    let m = 0;
+    for (let i = 1; i < coords.length; i++) {
+        m += haversineMeters(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]);
+    }
+    return m * NM_PER_METER;
+}
+
+function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
+    const safeName = esc(name || `Route ${id.substring(0, 6)}`);
+    return `
+        <div class="route-popup-body">
+            <div class="route-popup-title">${safeName}</div>
+            <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm</div>
+            <div class="route-popup-actions">
+                <button class="route-activate-btn" type="button">Activate</button>
+                <button class="route-delete-btn" type="button">Delete</button>
+            </div>
+        </div>`;
+}
+
+// Single-tap Activate -- no two-step confirm like delete, because
+// activating a route is non-destructive (the old active course is
+// just replaced on the server side).
+function wireRouteActivate(popup, id, name) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector('.route-activate-btn');
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', async () => {
+        if (dotNetRef) {
+            try { await dotNetRef.invokeMethodAsync('ActivateRouteById', id); }
+            catch (_) { /* disposed or navigation in flight */ }
+        }
+        popup._source?.closePopup();
+    });
 }
 
 export function removeRoute(id) { routeLayers.remove(id); }
@@ -1627,75 +1712,6 @@ export function setServerTrack(coords) {
 
 export function clearServerTrack() {
     if (serverTrackLayer && map) { map.removeLayer(serverTrackLayer); serverTrackLayer = null; }
-}
-
-// --- Weather-routing overlay ---
-//
-// Drawn on top of the chart as a thicker amber polyline with a dashed
-// outline - visually distinct from saved routes (solid amber), the
-// server track (grey), and own-track (speed-coloured). Clears any
-// previous weather route first so re-running replaces, not stacks.
-let weatherRouteLayer = null;
-
-// windSamples (optional): [[lat, lon, dirFromDeg, speedKn], ...] -- small
-// amber arrows drawn along the route so the user can eyeball where the
-// wind swings without leaving the chart. The `dirFromDeg` convention is
-// meteorological (degrees FROM which the wind blows); we rotate the arrow
-// to point WITH the wind (i.e. rotate by dirFromDeg + 180).
-export function setWeatherRoute(coords, windSamples) {
-    clearWeatherRoute();
-    if (!map || !coords || coords.length < 2) return;
-    const layers = [
-        L.polyline(coords, { color: '#000', weight: 5, opacity: 0.35 }),
-        L.polyline(coords, { color: '#e9c46a', weight: 3, opacity: 0.95, dashArray: '10,6' }),
-        L.circleMarker(coords[0],        { radius: 4, color: '#e9c46a', fillColor: '#e9c46a', fillOpacity: 1 }),
-        L.circleMarker(coords[coords.length - 1], { radius: 5, color: '#e9c46a', fillColor: '#fff', fillOpacity: 1, weight: 2 }),
-    ];
-    if (Array.isArray(windSamples)) {
-        for (const s of windSamples) {
-            if (!Array.isArray(s) || s.length < 4) continue;
-            const [lat, lon, dirFromDeg, spdKn] = s;
-            layers.push(L.marker([lat, lon], { icon: makeWindArrowIcon(dirFromDeg, spdKn), interactive: false }));
-        }
-    }
-    weatherRouteLayer = L.layerGroup(layers).addTo(map);
-}
-
-// Small wind-arrow divIcon. Arrow length scales mildly with speed so a
-// 20kn gust reads bigger than a 5kn zephyr; clamped so it doesn't take
-// over the viewport. Rotation uses wind-TO direction (dirFrom + 180).
-function makeWindArrowIcon(dirFromDeg, spdKn) {
-    const size = 36;
-    const dirTo = ((dirFromDeg || 0) + 180) % 360;
-    const spd = Math.max(0, Math.min(40, spdKn || 0));
-    const len = 8 + spd * 0.5;   // 8px at 0kn, 28px at 40kn
-    const half = size / 2;
-    const svg = `
-        <svg width="${size}" height="${size}" viewBox="-${half} -${half} ${size} ${size}"
-             style="transform: rotate(${dirTo}deg); overflow: visible;">
-            <line x1="0" y1="${-len}" x2="0" y2="${len * 0.3}"
-                  stroke="#000" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
-            <line x1="0" y1="${-len}" x2="0" y2="${len * 0.3}"
-                  stroke="#e9c46a" stroke-width="1.6" stroke-linecap="round"/>
-            <polygon points="0,${-len - 3} 3.5,${-len + 4} 0,${-len + 1.5} -3.5,${-len + 4}"
-                     fill="#e9c46a" stroke="#000" stroke-width="0.5" opacity="0.95"/>
-            <text x="0" y="${len + 7}" fill="#e9c46a" stroke="#000" stroke-width="0.4"
-                  text-anchor="middle" font-size="9" font-weight="600"
-                  style="paint-order: stroke; transform: rotate(${-dirTo}deg);
-                         transform-box: fill-box; transform-origin: center;">
-                ${Math.round(spd)}
-            </text>
-        </svg>`;
-    return L.divIcon({
-        className: 'wind-arrow-icon',
-        html: svg,
-        iconSize: [size, size],
-        iconAnchor: [half, half],
-    });
-}
-
-export function clearWeatherRoute() {
-    if (weatherRouteLayer && map) { map.removeLayer(weatherRouteLayer); weatherRouteLayer = null; }
 }
 
 // --- Active Route Navigation ---
@@ -1863,22 +1879,32 @@ function makeEditWpIcon(num) {
     });
 }
 
+let routeEditHitLine = null;   // wide, transparent; used for touch-friendly tapping
+
 function redrawEditLine() {
     if (!routeEditLine && routeEditCoords.length >= 2) {
         routeEditLine = L.polyline(routeEditCoords, {
             color: '#a78bfa', weight: 2.5, opacity: 0.8, dashArray: '8,6'
         }).addTo(routeEditLayer);
-        // Click on the dashed line between two waypoints inserts a new
-        // waypoint at the click point, between those two. stopPropagation
-        // prevents the map-level handler (which appends at the end) from
-        // also firing. Wider hit polyline underneath gives a chunkier
-        // tap target without thickening the visible line.
-        routeEditLine.on('click', (e) => {
+        // Wider, transparent polyline underneath as a chunky hit target.
+        // On a touch screen the 2.5 px visible line is almost impossible
+        // to tap without a stylus; 20 px invisible overlay fixes that
+        // without thickening the rendered line. stopPropagation on both
+        // click handlers prevents the map-level handler (which APPENDS
+        // at the end of the route) from firing in addition to the
+        // insert-between-segment handler.
+        routeEditHitLine = L.polyline(routeEditCoords, {
+            color: '#a78bfa', weight: 20, opacity: 0, interactive: true,
+        }).addTo(routeEditLayer);
+        const onSegmentClick = (e) => {
             L.DomEvent.stopPropagation(e);
             insertEditVertexOnSegment(e.latlng);
-        });
+        };
+        routeEditHitLine.on('click', onSegmentClick);
+        routeEditLine.on('click', onSegmentClick);
     } else if (routeEditLine) {
         routeEditLine.setLatLngs(routeEditCoords);
+        if (routeEditHitLine) routeEditHitLine.setLatLngs(routeEditCoords);
     }
 }
 
@@ -2016,6 +2042,7 @@ export function stopRouteEdit() {
     routeEditCoords = [];
     routeEditMarkers = [];
     routeEditLine = null;
+    routeEditHitLine = null;
 }
 
 export function getEditRouteCoords() {
@@ -2039,7 +2066,9 @@ export function removeRouteEditWaypoint(index) {
     routeEditCoords.splice(index, 1);
     if (routeEditCoords.length < 2 && routeEditLine && routeEditLayer) {
         routeEditLayer.removeLayer(routeEditLine);
+        if (routeEditHitLine) routeEditLayer.removeLayer(routeEditHitLine);
         routeEditLine = null;
+        routeEditHitLine = null;
     }
     rebuildRouteEditMarkers();
 }
@@ -2332,6 +2361,18 @@ export function addNoteMarker(id, lat, lon, title, description) {
         maxWidth: 280,
         autoClose: true,
     });
+    // During edit modes, swallow the click and append to whatever the
+    // user is building. Same guard as AIS markers.
+    marker.on('click', (ev) => {
+        if (routeEditMode || polygonEditMode || measureActive) {
+            L.DomEvent.stopPropagation(ev);
+            const ll = ev.latlng || marker.getLatLng();
+            if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+            else                       addMeasurePoint(ll.lat, ll.lng);
+            marker.closePopup();
+        }
+    });
     // Wire up the delete button when the popup opens. We query within the
     // popup DOM so an id collision with something else on the page can't
     // hijack the click.
@@ -2444,6 +2485,19 @@ export function addRegion(id, rings, title, description) {
             opacity: 0.85,
         });
         poly.bindPopup(popupHtml, { className: 'region-popup', maxWidth: 280 });
+        // Route / polygon / measure edit: clicks on regions append to
+        // the in-progress shape instead of opening the region popup.
+        poly.on('click', (ev) => {
+            if (routeEditMode || polygonEditMode || measureActive) {
+                L.DomEvent.stopPropagation(ev);
+                const ll = ev.latlng;
+                if (!ll) return;
+                if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
+                else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+                else                       addMeasurePoint(ll.lat, ll.lng);
+                poly.closePopup();
+            }
+        });
         poly.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.region-delete-btn', 'DeleteRegion', id));
         group.addLayer(poly);
     }
@@ -2749,7 +2803,6 @@ export function dispose() {
     if (map) { map.remove(); map = null; }
     boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
     osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
-    weatherRouteLayer = null;
     chartLayers.clear();
     routeLayers.clear();
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];

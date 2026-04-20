@@ -19,7 +19,6 @@
 @inject IAutopilotApi AutopilotApi
 @inject ITrackApi TrackApi
 @inject IBuddyListApi BuddyListApi
-@inject IWeatherForecastApi WeatherApi
 @inject IPolarService Polar
 @inject IAppSettings Settings
 @inject IToastService Toasts
@@ -99,10 +98,7 @@
                  OnToggleFab="ToggleFabMenu"
                  OnFabCreateWaypoint="FabCreateWaypoint"
                  OnFabCreateNote="FabCreateNote"
-                 OnFabCreateRegion="FabCreateRegion"
-                 OnFabRouteWithWind="FabRouteWithWind"
-                 HasPolar="@Polar.HasPolar"
-                 HasWind="@(Data.WindDirectionTrue is not null)" />
+                 OnFabCreateRegion="FabCreateRegion" />
 
     @if (shortcutsVisible)
     {
@@ -150,7 +146,7 @@
                 <li>
                     <strong>Long-press the map</strong> (or right-click) for
                     options: Create Waypoint, Add Note, Add Region,
-                    Navigate Here, Route with wind.
+                    Navigate Here.
                 </li>
                 <li>
                     <strong>Check the <span class="welcome-kbd">More</span>
@@ -200,6 +196,7 @@
                         Coords="routeEditCoords"
                         OnUndo="UndoLastWaypoint"
                         OnSave="SaveRoute"
+                        OnSaveAndGo="SaveRouteAndGo"
                         OnCancel="CancelRouteEdit"
                         OnRemoveWaypoint="RemoveRouteWaypoint" />
     }
@@ -232,11 +229,6 @@
             <button class="ctx-menu-item" @onclick="CreateNoteHere">Add Note</button>
             <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
-            <button class="ctx-menu-item" @onclick="RouteWithWindHere"
-                    disabled="@(!Polar.HasPolar || Data.WindDirectionTrue is null)"
-                    title="@(!Polar.HasPolar ? "Upload a polar in Settings first" : Data.WindDirectionTrue is null ? "Polar OK -- waiting for true-wind data" : "Isochrone weather routing")">
-                Route with wind
-            </button>
             @if (Data.HasActiveCourse)
             {
                 <button class="ctx-menu-item ctx-menu-danger" @onclick="StopNavigation">Stop Navigation</button>
@@ -333,11 +325,17 @@
         </div>
     }
 
-    @* === Quick Chart Switcher (visible when layers panel is closed) === *@
+    @* === Quick Chart Switcher (visible when layers panel is closed) ===
+       Sort by Name so the chip positions are stable: the user reported
+       the chips visibly reordering when they clicked one (because the
+       panel was iterating availableCharts which gets sorted by the
+       user's draw-stack ChartOrder after first-enable). The quick bar
+       is about "toggle this chart on/off", not "change the z-stack",
+       so a stable alphabetical order beats mirroring the draw stack. *@
     @if (!chartPanelOpen && availableCharts.Count > 0)
     {
         <div class="chart-quick-bar">
-            @foreach (var chart in availableCharts.Take(6))
+            @foreach (var chart in availableCharts.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).Take(6))
             {
                 bool active = enabledCharts.Contains(chart.Identifier);
                 <button class="chart-quick-chip @(active ? "active" : "")"
@@ -448,10 +446,10 @@
     private double contextMenuLat, contextMenuLon;
     private double contextMenuX, contextMenuY;
     private IReadOnlyList<SignalkBuddy> loadedBuddies = [];
-    // Note / Region / Waypoint CRUD state + RouteWithWindHere live in
-    // the Map.razor.cs code-behind; they all share the context-menu ->
-    // dialog -> POST -> JS-marker shape and moving them out keeps
-    // this file focused on map lifecycle and layout.
+    // Note / Region / Waypoint CRUD state lives in the Map.razor.cs
+    // code-behind; they all share the context-menu -> dialog -> POST ->
+    // JS-marker shape and moving them out keeps this file focused on
+    // map lifecycle and layout.
     // Race timer.
     private bool raceTimerActive;
     private bool shortcutsVisible;
@@ -1354,13 +1352,6 @@
         await StartPolygonEdit();
     }
 
-    private async Task FabRouteWithWind()
-    {
-        fabMenuOpen = false;
-        if (!await SetTargetToMapCenterAsync()) return;
-        await RouteWithWindHere();
-    }
-
     // --- Route Editing ---
 
     private async Task StartRouteEdit()
@@ -1473,7 +1464,14 @@
         await UpdateRouteStats();
     }
 
-    private async Task SaveRoute()
+    // Save + optional auto-activate are the same pipeline; SaveRoute
+    // just stops there, SaveRouteAndGo threads `activate:true` through
+    // so the Layers-panel detour isn't needed for the single most
+    // common follow-up step.
+    private Task SaveRoute() => SaveRouteCore(activate: false);
+    private Task SaveRouteAndGo() => SaveRouteCore(activate: true);
+
+    private async Task SaveRouteCore(bool activate)
     {
         if (module is null) return;
         var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
@@ -1502,11 +1500,27 @@
         try { ok = await RouteApi.SaveAsync(name, coords); }
         catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
 
+        SignalkRoute? newRoute = null;
         if (ok)
         {
             Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
+            // Snapshot pre-save IDs so we can auto-enable the newly-created
+            // route. SignalK's POST response body varies between server
+            // versions (some return { "id": ... }, some just 201 Created),
+            // so a diff against the previous list is more robust than
+            // parsing the response. A naming collision on the same tick
+            // is pathological and the worst case is one unrelated route
+            // gets toggled on -- not destructive.
+            var prevIds = availableRoutes.Select(r => r.Id).ToHashSet();
             availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? availableRoutes;
             PrecomputeRouteBounds();
+            newRoute = availableRoutes
+                .FirstOrDefault(r => !string.IsNullOrEmpty(r.Id) && !prevIds.Contains(r.Id));
+            if (newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
+            {
+                enabledRoutes.Add(newRoute.Id);
+                await Settings.SetEnabledRoutesAsync(enabledRoutes);
+            }
             RebuildFilteredLayers();
         }
         else if (Toasts.Active.Count == 0) // only if we haven't already toasted the exception
@@ -1519,6 +1533,13 @@
         routeStatsTimer = null;
         RemoveEditNavGuard();
         await module.InvokeVoidAsync("stopRouteEdit");
+
+        // Save+Go: activate the route the user just created so the
+        // next heartbeat lights up the course HUD / alarms / leg line.
+        // Deliberately after the stopRouteEdit call so the edit overlay
+        // is gone by the time the active-route overlay appears.
+        if (activate && ok && newRoute is not null)
+            await NavigateRouteInternal(newRoute);
     }
 
     // --- Polygon-region editing ------------------------------------
@@ -1825,16 +1846,7 @@
     /// that point on the course delta stream drives the active-route HUD
     /// card leg-by-leg, and the APPROACH alarm fires at each waypoint.
     /// </summary>
-    private async Task NavigateRoute(SignalkRoute route)
-    {
-        try
-        {
-            bool ok = await CourseApi.SetActiveRouteAsync(route.Id);
-            if (ok) Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
-            else Toasts.Error("Start route failed: server rejected");
-        }
-        catch (Exception ex) { Toasts.Error($"Start route failed: {ex.Message}"); }
-    }
+    private Task NavigateRoute(SignalkRoute route) => NavigateRouteInternal(route);
 
     private async Task ToggleWeatherOverlay(bool enabled)
     {

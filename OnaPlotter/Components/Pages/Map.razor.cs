@@ -8,10 +8,10 @@ namespace OnaPlotter.Components.Pages;
 /// <summary>
 /// Code-behind for the Map page. Holds the CRUD flow for the three
 /// server-stored resources the user can create from the chart --
-/// waypoints, notes, regions -- plus the weather-routing trigger.
-/// These share a shape (context-menu entry -> modal dialog ->
-/// POST -> JS marker draw) and moving them out of the .razor keeps
-/// the markup file focused on layout and core map state.
+/// waypoints, notes, regions. These share a shape (context-menu
+/// entry -> modal dialog -> POST -> JS marker draw) and moving them
+/// out of the .razor keeps the markup file focused on layout and
+/// core map state.
 ///
 /// Razor source-generates the Map class from Map.razor; this partial
 /// composes into the same class. Fields declared here are visible
@@ -271,6 +271,61 @@ public partial class Map
         Toasts.Show("Region deleted", ToastService.ToastLevel.Info);
     }
 
+    // --- Route popup actions -------------------------------------------
+    //
+    // Activated from the tap-to-popup on a saved route polyline. The
+    // popup surfaces Activate + Delete without making the user open the
+    // Layers panel -- the common "pick this route" workflow was a half-
+    // dozen taps via the panel, now it's one tap on the line itself.
+    //
+    // Matching JS calls:
+    //   dotNetRef.invokeMethodAsync('ActivateRouteById', id)
+    //   dotNetRef.invokeMethodAsync('DeleteRouteById', id)
+
+    [JSInvokable]
+    public async Task ActivateRouteById(string id)
+    {
+        var route = availableRoutes.FirstOrDefault(r => r.Id == id);
+        if (route is null) { Toasts.Error("Route not found"); return; }
+        await NavigateRouteInternal(route);
+    }
+
+    [JSInvokable]
+    public async Task DeleteRouteById(string id)
+    {
+        try
+        {
+            var ok = await RouteApi.DeleteAsync(id);
+            if (!ok) { Toasts.Error("Delete route failed: server rejected"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Delete route failed: {ex.Message}"); return; }
+
+        // Strip from enabled + draw order so the UI forgets it too.
+        if (enabledRoutes.Remove(id))
+            await Settings.SetEnabledRoutesAsync(enabledRoutes);
+
+        if (module is not null)
+            try { await module.InvokeVoidAsync("removeRoute", id); }
+            catch (JSDisconnectedException) { }
+
+        availableRoutes = availableRoutes.Where(r => r.Id != id).ToList();
+        Toasts.Show("Route deleted", ToastService.ToastLevel.Info);
+        RebuildFilteredLayers();
+    }
+
+    // Thin wrapper around the private NavigateRoute logic so JSInvokable
+    // activation can reuse it without duplicating the try/catch.
+    private async Task NavigateRouteInternal(SignalkRoute route)
+    {
+        try
+        {
+            bool ok = await CourseApi.SetActiveRouteAsync(route.Id);
+            if (ok) Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
+            else Toasts.Error("Start route failed: server rejected");
+        }
+        catch (Exception ex) { Toasts.Error($"Start route failed: {ex.Message}"); }
+    }
+
     private async Task FocusRegion(SignalkRegion region)
     {
         if (module is null || region.OuterRings.Count == 0) return;
@@ -312,91 +367,4 @@ public partial class Map
         catch (ObjectDisposedException) { }
     }
 
-    // ---- Weather routing (isochrone over wind forecast) --------------
-    /// <summary>
-    /// Kicks off isochrone weather routing from the current own-boat
-    /// position to the point the user right-clicked / long-pressed.
-    /// Fetches a single-point wind forecast from Open-Meteo, runs the
-    /// router with the user's uploaded polars, and draws the result on
-    /// the map. For v1 we assume uniform wind across the whole route --
-    /// adequate for coastal hops up to ~30 nm; a multi-point grid
-    /// sample is a later upgrade.
-    /// </summary>
-    private async Task RouteWithWindHere()
-    {
-        contextMenuVisible = false;
-        if (!Polar.HasPolar) { Toasts.Error("Upload polars in Settings first"); return; }
-        if (Data.Latitude is null || Data.Longitude is null)
-        {
-            Toasts.Error("Own-boat position unknown"); return;
-        }
-
-        double startLat = Data.Latitude.Value, startLon = Data.Longitude.Value;
-        double endLat = contextMenuLat, endLon = contextMenuLon;
-        DateTime now = DateTime.UtcNow;
-
-        Toasts.Show("Computing weather route...", ToastService.ToastLevel.Info, durationSec: 2);
-
-        var forecast = await WeatherApi.GetAsync(startLat, startLon, forecastHours: 24);
-        if (forecast is null) { Toasts.Error("Weather forecast unavailable"); return; }
-
-        // Single-point forecast applied uniformly across the route. The
-        // router lookup returns the nearest-time sample from that series;
-        // spatial variation is ignored for now.
-        WindSample? WindAt(double _lat, double _lon, DateTime t) => forecast.At(t);
-        double? PolarLookup(double twaDeg, double twsKn) => Polar.GetTargetSpeed(twaDeg, twsKn);
-
-        // Tidal/ocean current lookup. Uses the live SignalK
-        // environment.current.* values (set in radians, drift in m/s)
-        // as a constant vector applied everywhere along the route.
-        // That's a strong simplification -- real tides swing over the
-        // next six hours -- but it still meaningfully improves routes
-        // in currenty waters (helps the router choose the tack that
-        // rides the flood instead of stemming it). A proper
-        // time-varying current lookup is the Phase-3 upgrade.
-        Func<double, double, DateTime, CurrentSample?>? currentAt = null;
-        if (Data.CurrentSet is double setRad && Data.CurrentDrift is double driftMs && driftMs > 0.05)
-        {
-            double setDeg = setRad * 180.0 / Math.PI;
-            double speedKn = driftMs * Format.MsToKnots;
-            currentAt = (_lat, _lon, t) => new CurrentSample(t, setDeg, speedKn);
-        }
-
-        var route = IsochroneRouter.Route(
-            startLat, startLon, now,
-            endLat, endLon,
-            WindAt, PolarLookup,
-            current: currentAt,
-            options: new IsochroneRouter.Options(StepMinutes: 10, MaxSteps: 72, ReachNauticalMiles: 0.4));
-
-        if (route is null)
-        {
-            Toasts.Error("No viable route in the next 12 hours (tight no-go angle, or too far)");
-            return;
-        }
-
-        var coords = route.Path.Select(w => new[] { w.Latitude, w.Longitude }).ToArray();
-
-        // Wind-field overlay: sample the forecast at each 3rd waypoint
-        // and pass to JS as [lat, lon, dirFromDeg, speedKn]. Enough points
-        // to let the skipper eyeball where the wind swings along the
-        // route without cluttering the chart with one arrow per step.
-        // `DirectionDeg` is FROM-which (meteorological convention).
-        var windSamples = new List<double[]>();
-        for (int i = 0; i < route.Path.Count; i += 3)
-        {
-            var wp = route.Path[i];
-            var sample = forecast.At(wp.Time);
-            if (sample is null) continue;
-            windSamples.Add([wp.Latitude, wp.Longitude, sample.Value.DirectionDeg, sample.Value.SpeedKn]);
-        }
-
-        if (module is not null)
-            await module.InvokeVoidAsync("setWeatherRoute", (object)coords, (object)windSamples.ToArray());
-
-        var eta = now + route.Duration;
-        Toasts.Success(
-            $"Weather route: {route.TotalNauticalMiles:F1} nm, "
-            + $"ETA {eta.ToLocalTime():HH:mm} (+{route.Duration.Hours}h{route.Duration.Minutes:D2})");
-    }
 }

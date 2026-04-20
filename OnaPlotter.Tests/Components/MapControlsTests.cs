@@ -173,56 +173,36 @@ public class MapControlsTests
     }
 
     [Test]
-    public async Task Fab_Route_With_Wind_Disabled_Without_Polar_Or_Wind()
+    public async Task Add_Button_Marks_Active_While_RouteEditMode_Is_True()
     {
-        // Isochrone routing needs a polar AND live true-wind data.
-        // Missing polar: "Upload a polar in Settings first".
-        // Missing wind: "Polar OK -- waiting for true-wind data".
-        // This pins both gates so the UI doesn't regress to enabling
-        // the item when only half the prerequisites are met.
-        using var ctx = new Bunit.TestContext();
-
-        // No polar -> disabled regardless of wind.
-        var noPolar = Render(ctx, p => p
-            .Add(x => x.FabMenuOpen, true)
-            .Add(x => x.HasPolar, false)
-            .Add(x => x.HasWind, true));
-        var item1 = noPolar.FindAll(".ctrl-more-item")
-            .First(b => b.TextContent.Contains("Route with wind"));
-        await Assert.That(item1.HasAttribute("disabled")).IsTrue();
-
-        // Polar loaded but no wind -> still disabled, different tooltip.
-        var noWind = Render(ctx, p => p
-            .Add(x => x.FabMenuOpen, true)
-            .Add(x => x.HasPolar, true)
-            .Add(x => x.HasWind, false));
-        var item2 = noWind.FindAll(".ctrl-more-item")
-            .First(b => b.TextContent.Contains("Route with wind"));
-        await Assert.That(item2.HasAttribute("disabled")).IsTrue();
-        await Assert.That(item2.GetAttribute("title")).Contains("waiting for true-wind");
-
-        // Polar + wind -> enabled.
-        var ready = Render(ctx, p => p
-            .Add(x => x.FabMenuOpen, true)
-            .Add(x => x.HasPolar, true)
-            .Add(x => x.HasWind, true));
-        var item3 = ready.FindAll(".ctrl-more-item")
-            .First(b => b.TextContent.Contains("Route with wind"));
-        await Assert.That(item3.HasAttribute("disabled")).IsFalse();
-    }
-
-    [Test]
-    public async Task Route_Button_Stays_Visible_With_Active_Class_During_Edit()
-    {
-        // A disappearing button mid-edit was disorienting. Regression
-        // guard: RouteEditMode=true renders the button .active and
-        // disabled, not removed.
+        // Route moved into the Add flyout, so the Add button itself is
+        // the bar-level indicator that a route edit is in progress.
+        // The user needs that visual cue even when the flyout is closed.
         using var ctx = new Bunit.TestContext();
         var cut = Render(ctx, p => p.Add(x => x.RouteEditMode, true));
 
-        var btn = cut.FindAll("button").FirstOrDefault(b => b.TextContent.Contains("Route"));
-        await Assert.That(btn).IsNotNull();
-        await Assert.That(btn!.ClassList).Contains("active");
-        await Assert.That(btn.HasAttribute("disabled")).IsTrue();
+        // Find the bar-level Add button (not a menu item -- the menu is
+        // closed by default so only the toolbar button renders).
+        var addBtn = cut.FindAll("button.ctrl-btn")
+            .FirstOrDefault(b => b.TextContent.Contains("Add"));
+        await Assert.That(addBtn).IsNotNull();
+        await Assert.That(addBtn!.ClassList).Contains("active");
+    }
+
+    [Test]
+    public async Task Route_Menu_Item_Disabled_During_Edit()
+    {
+        // Tapping "Route" while already editing would double-start the
+        // flow. The item must render but be disabled, consistent with
+        // the old button behaviour.
+        using var ctx = new Bunit.TestContext();
+        var cut = Render(ctx, p => p
+            .Add(x => x.FabMenuOpen, true)
+            .Add(x => x.RouteEditMode, true));
+
+        var routeItem = cut.FindAll(".ctrl-more-item")
+            .FirstOrDefault(b => b.TextContent.Contains("Route"));
+        await Assert.That(routeItem).IsNotNull();
+        await Assert.That(routeItem!.HasAttribute("disabled")).IsTrue();
     }
 }

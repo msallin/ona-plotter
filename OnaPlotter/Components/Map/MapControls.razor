@@ -97,10 +97,16 @@
        position: absolute anchors above the button, same pattern as More.
        Previously the menu rendered in Map.razor with a fixed left: 12px
        which put it under More on the left edge of the bar rather than
-       above the Add button. *@
+       above the Add button.
+
+       Route lives inside this menu rather than as its own top-level
+       button -- the bar was getting crowded and "add a new thing to
+       the map" is the shared conceptual bucket. The route icon on the
+       Add button gets an `.active` modifier during edit so the user
+       sees the in-progress state without opening the menu. *@
     <div class="ctrl-more-wrap">
-        <button class="ctrl-btn @(FabMenuOpen ? "active" : "")" @onclick="OnToggleFab"
-                title="Add waypoint / note / region at map centre">
+        <button class="ctrl-btn @(FabMenuOpen || RouteEditMode ? "active" : "")" @onclick="OnToggleFab"
+                title="@(RouteEditMode ? "Editing a route -- see the panel above" : "Add waypoint / note / region / route at map centre")">
             <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
             <span class="ctrl-lbl">Add</span>
         </button>
@@ -119,26 +125,17 @@
                     <span class="ctrl-more-ico">&#9711;</span>
                     <span>Region</span>
                 </button>
-                <button class="ctrl-more-item" @onclick="() => SelectFab(OnFabRouteWithWind)"
-                        disabled="@(!HasPolar || !HasWind)"
-                        title="@RouteWithWindTitle">
-                    <span class="ctrl-more-ico">&#9784;</span>
-                    <span>Route with wind</span>
+                <button class="ctrl-more-item @(RouteEditMode ? "active" : "")"
+                        @onclick="() => SelectFab(OnStartRouteEdit)"
+                        disabled="@RouteEditMode"
+                        title="@(RouteEditMode ? "Already editing a route" : "Start a new route -- tap the map to add waypoints")">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Route)</span>
+                    <span>Route</span>
                 </button>
                 <small class="map-fab-hint">target: map centre</small>
             </div>
         }
     </div>
-    @* Route button stays visible during edit -- disappearing mid-tap was
-       disorienting. Active styling + disabled flag tells the user they're
-       already editing; Save/Cancel live on the route-edit panel above. *@
-    <button class="ctrl-btn @(RouteEditMode ? "active" : "")"
-            @onclick="OnStartRouteEdit"
-            disabled="@RouteEditMode"
-            title="@(RouteEditMode ? "Editing a route -- see the panel above" : "Create a new route")">
-        <span class="ctrl-ico">@((MarkupString)Icons.Route)</span>
-        <span class="ctrl-lbl">Route</span>
-    </button>
     @if (SailingMode == "race" || RaceTimerActive)
     {
         <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
@@ -196,17 +193,6 @@
     [Parameter] public EventCallback OnFabCreateWaypoint { get; set; }
     [Parameter] public EventCallback OnFabCreateNote { get; set; }
     [Parameter] public EventCallback OnFabCreateRegion { get; set; }
-    [Parameter] public EventCallback OnFabRouteWithWind { get; set; }
-    [Parameter] public bool HasPolar { get; set; }
-    [Parameter] public bool HasWind { get; set; }
-
-    // Two-tier explanation for the Route-with-wind item. Polar missing
-    // and wind missing are both pre-conditions -- saying "enable it"
-    // when only one is met would be misleading.
-    private string RouteWithWindTitle =>
-        !HasPolar ? "Upload a polar in Settings first"
-        : !HasWind ? "Polar OK -- waiting for true-wind data"
-        : "Isochrone weather routing from here to map center";
     [Parameter] public EventCallback OnToggleDarkOps { get; set; }
 
     // Dot indicator on the More button when any of its contents is on,

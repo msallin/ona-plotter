@@ -3577,12 +3577,17 @@ main:has(.map-container.big-type) .map-fab-item {
     box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
 }
 
-/* In-panel waypoint list. Top-right so it stays clear of the FAB
-   (top-left) and the bottom control bar. Max-height keeps it from
-   blanketing the map on long routes; internal scroll takes over. */
+/* In-panel waypoint list. Originally top:10/right:10, but Leaflet's
+   zoom + custom-fullscreen controls live in that same corner with a
+   z-index (~1000) above our --z-controls 800, so in fullscreen they
+   drew ON TOP of the panel (user-visible as "route overview covered
+   in fullscreen"). Offsetting down past the Leaflet control stack
+   (~120 px for zoom + fs-button + spacing) keeps both readable without
+   fighting z-index. Max-height keeps the list from blanketing the map
+   on long routes; internal scroll takes over. */
 .route-edit-list {
     position: absolute;
-    top: 10px;
+    top: 130px;
     right: 10px;
     z-index: var(--z-controls);
     background: rgba(15, 17, 22, 0.92);
@@ -3591,7 +3596,7 @@ main:has(.map-container.big-type) .map-fab-item {
     border: 1px solid rgba(167, 139, 250, 0.3);
     color: var(--sk-text);
     width: 220px;
-    max-height: 50vh;
+    max-height: calc(100vh - 220px);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -3956,6 +3961,63 @@ main:has(.map-container.big-type) .map-fab-item {
 }
 @media (pointer: coarse) {
     .region-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
+}
+
+/* Route popup: matches the note/region pattern. Amber background
+   aligned with the polyline colour so it reads as "from this route".
+   Activate is the primary action (accent tint); Delete carries the
+   destructive colour and the two-step confirm (wireDeleteConfirm). */
+.route-popup .leaflet-popup-content-wrapper {
+    background: rgba(34, 24, 14, 0.96);
+    color: #e2e8f0;
+    border-radius: 6px;
+    border: 1px solid rgba(224, 159, 62, 0.55);    /* ROUTE_COLOR accent */
+}
+.route-popup .leaflet-popup-tip { background: rgba(34, 24, 14, 0.96); }
+.route-popup-body { padding: 2px 4px; min-width: 180px; }
+.route-popup-title { font-weight: 600; color: #f1c47c; margin-bottom: 2px; }
+.route-popup-meta {
+    color: #94a3b8;
+    font-size: 0.75rem;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+}
+.route-popup-actions { display: flex; gap: 6px; }
+.route-activate-btn,
+.route-delete-btn {
+    background: transparent;
+    color: #94a3b8;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
+.route-activate-btn {
+    color: #f1c47c;
+    border-color: rgba(224, 159, 62, 0.55);
+}
+.route-activate-btn:hover {
+    background: rgba(224, 159, 62, 0.18);
+    color: #fde0a8;
+    border-color: #e09f3e;
+}
+.route-delete-btn { border-color: rgba(239, 68, 68, 0.4); }
+.route-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border-color: #ef4444;
+}
+/* Two-step destructive-confirm styling matches notes/regions. */
+.route-delete-btn.confirming {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fecaca;
+    border-color: #ef4444;
+}
+@media (pointer: coarse) {
+    .route-activate-btn,
+    .route-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
 }
 
 /* ===== SailSteer Display ===== */

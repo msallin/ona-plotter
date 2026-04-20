@@ -46,9 +46,33 @@ public class RouteEditPanelTests
         var cut = ctx.RenderComponent<RouteEditPanel>(p => p
             .Add(x => x.OnSave, EventCallback.Factory.Create(this, () => fires++)));
 
-        cut.Find("button.active").Click();       // the Save button has .active
+        // Save is no longer the .active button -- Save & Go is (it's the
+        // primary action now). Match by text to keep the test robust to
+        // future styling shuffles.
+        var save = cut.FindAll("button.map-btn")
+            .First(b => b.TextContent.Trim() == "Save");
+        save.Click();
 
         await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SaveAndGoButton_Fires_OnSaveAndGo()
+    {
+        // Save & Go activates the new route immediately after save. Pins
+        // that the callback is wired and distinct from plain OnSave.
+        using var ctx = new Bunit.TestContext();
+        int saveFires = 0, goFires = 0;
+        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+            .Add(x => x.OnSave,      EventCallback.Factory.Create(this, () => saveFires++))
+            .Add(x => x.OnSaveAndGo, EventCallback.Factory.Create(this, () => goFires++)));
+
+        var btn = cut.FindAll("button.map-btn")
+            .First(b => b.TextContent.Contains("Save & Go") || b.TextContent.Contains("Save & Go"));
+        btn.Click();
+
+        await Assert.That(goFires).IsEqualTo(1);
+        await Assert.That(saveFires).IsEqualTo(0);
     }
 
     [Test]
@@ -60,12 +84,14 @@ public class RouteEditPanelTests
             .Add(x => x.OnUndo, EventCallback.Factory.Create(this, () => undo++))
             .Add(x => x.OnCancel, EventCallback.Factory.Create(this, () => cancel++)));
 
-        // Three .map-btn children: Undo, Save (.active), Cancel. Pick by text.
+        // Four .map-btn children: Undo, Save, Save & Go (.active), Cancel.
+        // Pick by text.
         var buttons = cut.FindAll("button.map-btn");
         foreach (var b in buttons)
         {
-            if (b.TextContent.Contains("Undo")) b.Click();
-            if (b.TextContent.Contains("Cancel")) b.Click();
+            var t = b.TextContent.Trim();
+            if (t == "Undo") b.Click();
+            if (t == "Cancel") b.Click();
         }
 
         await Assert.That(undo).IsEqualTo(1);

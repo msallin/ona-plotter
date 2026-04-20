@@ -46,9 +46,16 @@
     <button class="map-btn" @onclick="OnUndo"
             disabled="@((Coords?.Length ?? 0) == 0)"
             title="@((Coords?.Length ?? 0) == 0 ? "Nothing to undo" : "Remove last waypoint")">Undo</button>
-    <button class="map-btn active" @onclick="OnSave"
+    <button class="map-btn" @onclick="OnSave"
             disabled="@((Coords?.Length ?? 0) < 2)"
             title="@((Coords?.Length ?? 0) < 2 ? "Need at least 2 waypoints" : "Save route")">Save</button>
+    @* Save+Go lands the helm on the map with the route already active.
+       The two-step "save, then dig into Layers to activate it" workflow
+       was the most frequent complaint. Reuses Save's disabled gate --
+       you can't Go without at least 2 waypoints. *@
+    <button class="map-btn active" @onclick="OnSaveAndGo"
+            disabled="@((Coords?.Length ?? 0) < 2)"
+            title="@((Coords?.Length ?? 0) < 2 ? "Need at least 2 waypoints" : "Save and start navigating")">Save &amp; Go</button>
     <button class="map-btn" @onclick="OnCancel">Cancel</button>
 </div>
 
@@ -59,6 +66,7 @@
     [Parameter] public double[][]? Coords { get; set; }
     [Parameter] public EventCallback OnUndo { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnSaveAndGo { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback<int> OnRemoveWaypoint { get; set; }
 
