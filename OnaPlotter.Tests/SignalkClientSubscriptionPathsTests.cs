@@ -3,23 +3,26 @@ using OnaPlotter.Services;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins the self / AIS subscription split. vessels.* matches self too,
-/// so any path in both lists would be delivered twice for own-boat --
-/// the user would see "same time, same position 3-4x" in the raw stream
-/// and the HUD would count ticks twice. The receive loop strips
-/// <c>SelfPaths.Except(AisPaths)</c> for the vessels.self subscription;
-/// these tests lock that contract so a future edit doesn't silently
-/// re-introduce the duplicate.
+/// Pins the tier-registry contract used by SignalkClient to build the
+/// subscription set. Each path belongs to exactly one tier; the
+/// ReceiveLoop issues one subscribe per tier with the matching
+/// context + period.
+///
+/// Previous design had overlapping arrays and ran set algebra at
+/// subscribe time; the tests here now verify the cleaner partition
+/// model. If a future edit re-introduces duplication OR puts a
+/// high-dynamic field into SelfSlow, one of these tests surfaces it
+/// before the change lands on CI.
 /// </summary>
 public class SignalkClientSubscriptionPathsTests
 {
     [Test]
     public async Task AisPaths_Contains_Shared_Nav_Fields()
     {
-        // These are the fields AIS vessels *must* publish for the map to
-        // render them. They also happen to be self fields, which is why
-        // the overlap exists at all. If one of these ever leaves AisPaths
-        // we'd stop showing AIS positions.
+        // Shared navigation fields live in the Ais tier -- vessels.*
+        // matches self + others, so own-boat still receives them
+        // without a duplicate self-subscription. If one of these ever
+        // leaves Ais, AIS vessels go dark on the map.
         await Assert.That(SignalkClient.AisPaths).Contains("navigation.position");
         await Assert.That(SignalkClient.AisPaths).Contains("navigation.speedOverGround");
         await Assert.That(SignalkClient.AisPaths).Contains("navigation.courseOverGroundTrue");
@@ -27,50 +30,52 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
-    public async Task SelfOnly_Subscription_Drops_Paths_That_Come_Via_Wildcard()
+    public async Task Tiers_Partition_The_Path_Registry()
     {
-        // The receive loop effectively does this Except() before sending
-        // the vessels.self subscribe. Verify the result excludes every
-        // AIS path so we never ask the server to deliver the same path
-        // under two contexts.
-        var selfOnly = SignalkClient.SelfPaths.Except(SignalkClient.AisPaths).ToArray();
-        foreach (var aisPath in SignalkClient.AisPaths)
+        // Each Paths entry has exactly one tier -- no entry duplication,
+        // no path is both SelfFast and SelfSlow. Trivially true given
+        // PathTier is an enum and each PathSubscription is immutable,
+        // but the test catches the "accidentally listed same path
+        // twice with different tiers" edit.
+        var byPath = SignalkClient.Paths
+            .GroupBy(p => p.Path)
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        foreach (var (path, entries) in byPath)
         {
-            await Assert.That(selfOnly).DoesNotContain(aisPath);
+            await Assert.That(entries.Length).IsEqualTo(1);
         }
     }
 
     [Test]
-    public async Task SelfOnly_Subscription_Keeps_SelfOnly_Paths()
+    public async Task SelfPaths_And_AisPaths_Are_Disjoint()
     {
-        // Self-only fields (depth, wind, anchor) must survive the Except.
-        // If they didn't, the HUD would go dark for own-boat telemetry.
-        var selfOnly = SignalkClient.SelfPaths.Except(SignalkClient.AisPaths).ToArray();
-        await Assert.That(selfOnly).Contains("environment.depth.belowTransducer");
-        await Assert.That(selfOnly).Contains("environment.wind.speedApparent");
-        await Assert.That(selfOnly).Contains("navigation.anchor.position");
-        await Assert.That(selfOnly).Contains("environment.sun");
+        // No overlap in the new model -- Ais-tier paths don't appear
+        // in SelfPaths (which is SelfFast + SelfSlow). Previously the
+        // two sets overlapped and the receive loop had to strip.
+        var overlap = SignalkClient.SelfPaths.Intersect(SignalkClient.AisPaths).ToArray();
+        await Assert.That(overlap.Length).IsEqualTo(0);
     }
 
     [Test]
-    public async Task SelfPaths_Still_Overlaps_AisPaths_So_The_Strip_Is_Meaningful()
+    public async Task SelfOnly_Tier_Keeps_Wind_Depth_Route_Autopilot()
     {
-        // If a future refactor removes the shared paths from SelfPaths
-        // entirely, the Except() becomes a no-op and the comment in
-        // SignalkClient.ReceiveLoopAsync would be misleading. Keep the
-        // overlap intentional: SelfPaths remains the single source of
-        // truth for "what self should see", and the send-time strip is
-        // the duplicate guard.
-        var overlap = SignalkClient.SelfPaths.Intersect(SignalkClient.AisPaths).ToArray();
-        await Assert.That(overlap.Length).IsGreaterThan(0);
+        // Spot-check that the key self-only fields stayed in their
+        // expected tier. If this test fails the field moved to Ais
+        // or got dropped entirely.
+        await Assert.That(SignalkClient.SelfPaths).Contains("environment.depth.belowTransducer");
+        await Assert.That(SignalkClient.SelfPaths).Contains("environment.wind.speedApparent");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.anchor.position");
+        await Assert.That(SignalkClient.SelfPaths).Contains("environment.sun");
+        await Assert.That(SignalkClient.SelfPaths).Contains("steering.autopilot.state");
     }
 
     [Test]
     public async Task SlowSelfPaths_Are_All_In_SelfPaths()
     {
-        // SlowSelfPaths is a SUBSET of SelfPaths; any path listed in
-        // the slow tier must also appear in the master list or the
-        // subscription split below silently drops it.
+        // SelfSlow is a subset of SelfPaths (which is SelfFast + SelfSlow).
+        // Redundant check given the view implementation, but it keeps
+        // the invariant explicit so a refactor can't silently
+        // redefine the relationship.
         foreach (var slow in SignalkClient.SlowSelfPaths)
         {
             await Assert.That(SignalkClient.SelfPaths).Contains(slow);
@@ -78,17 +83,17 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
-    public async Task Fast_And_Slow_Subscription_Sets_Are_Disjoint()
+    public async Task Fast_And_Slow_Tiers_Are_Disjoint()
     {
-        // ReceiveLoopAsync computes FastSelf = SelfPaths \ AisPaths \ SlowSelfPaths.
-        // Pin that those three sets partition SelfPaths cleanly so a
-        // path can't accidentally show up in both the 1 Hz and 10 s
-        // subscriptions (doubling delivery for no reason).
-        var fast = SignalkClient.SelfPaths.Except(SignalkClient.AisPaths)
-                                          .Except(SignalkClient.SlowSelfPaths).ToArray();
-        foreach (var f in fast)
+        // SelfFast and SelfSlow have to be disjoint or the same path
+        // gets subscribed at two different periods -- the server
+        // would deliver it twice.
+        var fastPaths = SignalkClient.Paths
+            .Where(p => p.Tier == SignalkClient.PathTier.SelfFast)
+            .Select(p => p.Path).ToHashSet();
+        foreach (var slow in SignalkClient.SlowSelfPaths)
         {
-            await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain(f);
+            await Assert.That(fastPaths).DoesNotContain(slow);
         }
     }
 
@@ -104,7 +109,19 @@ public class SignalkClientSubscriptionPathsTests
         await Assert.That(SignalkClient.SlowSelfPaths).Contains("environment.tide.heightNow");
         // Position / SOG / COG / heading must NEVER end up in the slow
         // tier -- they're the primary driver of the HUD and alarm eval.
+        // (They live in the Ais tier now, so they're not in SlowSelfPaths
+        // via any path.)
         await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain("navigation.position");
         await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain("navigation.speedOverGround");
+    }
+
+    [Test]
+    public async Task Registry_Includes_Radar_Wildcard()
+    {
+        // Mayara radar ARPA targets arrive under vessels.self at
+        // radars.<rid>.targets.<tid>.*; without this wildcard the
+        // ProcessSelfDelta radar routing never fires. Specific
+        // regression: the tier-refactor must not drop it.
+        await Assert.That(SignalkClient.SelfPaths).Contains("radars.*.targets.*");
     }
 }
