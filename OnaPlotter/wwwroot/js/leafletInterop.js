@@ -490,11 +490,43 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     if (map) map.remove();
     dotNetRef = dotNetObjRef;
 
+    // Detect weak client BEFORE building the map so the renderer choice
+    // below can flip with it. Heuristic: 4-or-fewer logical cores (Pi)
+    // or 'arm'/'raspberry' in the UA. isSlowClient is a module-scope
+    // let because other functions (tile layer creation, AIS updates)
+    // also consult it later.
+    isSlowClient =
+        (typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+            && navigator.hardwareConcurrency <= 4)
+        || /\barm\b|\barmv|raspberry/i.test(
+            typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '');
+
+    // Mirror the flag to the DOM so CSS can strip perf-heavy effects
+    // (backdrop-filter blur passes, drop-shadow filters) on slow
+    // hardware. A single data-attribute drives all the :not(...) overrides
+    // in app.css, so we don't have to thread the flag into every rule.
+    try {
+        document.documentElement.dataset.slowClient = isSlowClient ? '1' : '0';
+    } catch (_) { /* SSR / no DOM -- ignore */ }
+
+    // preferCanvas: true routes all L.polyline / L.polygon / L.circle /
+    // L.circleMarker draw calls through a single HTML canvas instead of
+    // per-layer SVG elements. For 100+ AIS trails / vectors / guard
+    // rings on a Raspi this collapses many compositor layers into one,
+    // cutting both paint cost and memory. Markers with divIcons (boat,
+    // AIS chevrons) stay SVG/HTML so we don't lose their custom styling.
+    // Gated on slow-client so desktop / iPad keep the SVG renderer that
+    // gives crisper outlines at high DPI.
+    //
     // maxZoom 22 lets chart tiles overzoom past their native limit (we
     // set maxNativeZoom on chart layers to cap the tile fetch and then
     // let Leaflet scale the last valid tile up). Base OSM still caps at
     // its own maxZoom via the per-layer option, so we don't hit 404s.
-    map = L.map(elementId, { zoomControl: false, maxZoom: 22 }).setView([lat, lon], zoom);
+    map = L.map(elementId, {
+        zoomControl: false,
+        maxZoom: 22,
+        preferCanvas: isSlowClient,
+    }).setView([lat, lon], zoom);
     // Drop the "Leaflet |" prefix from the attribution bar. The actual
     // OSM / OpenSeaMap attribution stays (ODbL / CC-BY-SA require it);
     // the Leaflet credit is courtesy and removable.
@@ -564,28 +596,28 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     map.on('zoomend', () => zoomBadge.update());
     zoomBadge.update();
 
-    // Detect a weak client so we can bias tile loading / redraw rate
-    // toward performance. Heuristic: 4 or fewer logical cores (typical
-    // Raspberry Pi: 4), or the UA ad-hoc 'linux arm' marker (RPi OS).
-    // isSlowClient toggles updateWhenIdle (tiles load at pan-end, not
-    // during drag) which was the single biggest win in field testing
-    // on a Raspi kiosk. Desktop and iPad keep the fast live-stream
-    // behaviour because their GPUs can keep up with the fetch cadence.
-    isSlowClient =
-        (typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-            && navigator.hardwareConcurrency <= 4)
-        || /\barm\b|\barmv|raspberry/i.test(
-            typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '');
-
+    // isSlowClient was set at the top of initMap; the same flag drives
+    // tile updateWhenIdle here so all perf gates decide together.
+    //
     // keepBuffer bumped above the default 2 so tiles stay in memory a
     // few rings further out; panning back doesn't re-request. Cheap
     // memory, noticeable smoothness on the Pi-local-wifi setup where
     // re-fetch RTT is low but visible.
+    // detectRetina: fetches {z+1} tiles and scales to the display grid
+    // on high-DPI devices (iPad, most phones). Without it Leaflet uses
+    // the raw {z} tile scaled up by devicePixelRatio, which on a DPR=2
+    // iPad renders a 256-px source tile into 512 px of screen -- the
+    // user-visible "tiles are blurry, even without overzoom" bug.
+    // Skipped on slow clients: fetching 4x as many tiles (z+1 quad-tree
+    // child) would more than undo the updateWhenIdle win.
+    const retina = !isSlowClient;
+
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 22,
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
+        detectRetina: retina,
         crossOrigin: 'anonymous',
         attribution: '&copy; OpenStreetMap contributors',
         referrerPolicy: 'strict-origin-when-cross-origin'
@@ -596,6 +628,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         maxZoom: 22,
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
+        detectRetina: retina,
         crossOrigin: 'anonymous',
         attribution: '&copy; OpenSeaMap',
         opacity: 0.8,
@@ -1559,9 +1592,12 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
         // chart tiles when the user zig-zags back into territory they
         // just panned away from. updateWhenIdle follows the client-
         // strength detection -- slow devices defer tile fetches to pan-
-        // end so the drag stays smooth.
+        // end so the drag stays smooth. detectRetina on fast clients
+        // sharpens chart tiles on high-DPI displays (iPad Retina would
+        // otherwise blur the 256-px source up to 512 px of screen).
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
+        detectRetina: !isSlowClient,
         crossOrigin: 'anonymous',
         attribution: '',
         errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.

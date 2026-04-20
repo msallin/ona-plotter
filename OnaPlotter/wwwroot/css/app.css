@@ -4395,3 +4395,23 @@ main:has(.map-container.big-type) .map-fab-item {
 .night-mode .anchor-panel {
     background: rgba(30, 5, 5, 0.92);
 }
+
+/* ===== Slow-client perf overrides =====
+   leafletInterop.js stamps data-slow-client="1" on <html> when it
+   detects a Raspberry-Pi-class device (<= 4 logical cores, or 'arm'
+   in the UA). These overrides kill GPU-expensive effects that
+   made the whole UI feel sluggish on that hardware:
+     - backdrop-filter: each panel does a blur sample + composite pass
+       on every frame it's visible. 20+ panels x a blur kernel was
+       visibly stuttery on a Pi 4; the solid backgrounds read fine
+       without it.
+     - drop-shadow / blur() filters fall in the same bucket.
+     - Some keyframe animations that rely on box-shadow transitions
+       are replaced with transform-only pulses elsewhere; this block
+       handles the cross-cutting "kill all blurs" case.
+   Desktop and iPad keep the original effects for the crisper look
+   their GPUs can afford. */
+html[data-slow-client="1"] * {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
