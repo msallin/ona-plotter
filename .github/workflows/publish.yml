@@ -1,0 +1,135 @@
+name: Publish to npm
+
+# Pattern mirrored from signalk/charts-plugin and
+# signalk/course-provider-plugin: tag-triggered, OIDC trusted publishing,
+# provenance attestation. Two jobs: `release` cuts a GitHub Release from
+# the tag; `publish` stages the SignalK-webapp bundle and pushes to npm.
+#
+# SAFETY GATE (`publish-enabled`): the npm publish step is currently
+# disabled via `if: false` per the repo maintainer's request. The whole
+# packaging pipeline still runs on every tag so a maintainer can
+# inspect the resulting tarball artifact; only the final push is held
+# back. Flip `if: false` to `if: true` (or remove the condition) on the
+# "Publish to npm" step once the maintainer has:
+#   1. Registered the package name on npmjs.com
+#   2. Configured OIDC trusted publishing for this repo
+#      (Package Settings -> Trusted publishers on npmjs.com)
+#
+# Until then CI remains useful -- the tarball is attached to the GitHub
+# Release so anyone can `npm install ./signalk-onaplotter-<ver>.tgz`.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: release
+    permissions:
+      id-token: write   # OIDC trusted publishing (npm provenance)
+      contents: write   # Attach tarball to the GitHub Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Install workloads
+        run: dotnet workload install wasm-tools
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish OnaPlotter (Release + AOT)
+        run: dotnet publish OnaPlotter/OnaPlotter.csproj -c Release -o publish
+
+      - name: Patch index.html base href
+        run: sed -i 's|<base href="/" />|<base href="/signalk-onaplotter/" />|' publish/wwwroot/index.html
+
+      - name: Set appsettings ServerUrl to auto
+        run: |
+          cat > publish/wwwroot/appsettings.json <<'EOF'
+          { "SignalK": { "ServerUrl": "auto" } }
+          EOF
+
+      # Version from the tag -- strip leading 'v'. So tag v1.2.3 maps
+      # to npm version 1.2.3. Pre-release identifiers (-alpha / -beta
+      # / -rc) pass through unchanged and pick up the matching npm
+      # dist-tag in the publish step below.
+      - name: Stage SignalK webapp bundle
+        id: stage
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          stage=staging/signalk-onaplotter
+          mkdir -p "$stage"
+          sed "s|__VERSION__|$version|" deploy/package.json.template > "$stage/package.json"
+          cp -r publish/wwwroot "$stage/public"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "stage=$stage" >> "$GITHUB_OUTPUT"
+          echo "--- package.json ---"
+          cat "$stage/package.json"
+
+      - name: npm pack
+        working-directory: ${{ steps.stage.outputs.stage }}
+        run: npm pack
+
+      # Attach the tarball to the GitHub Release so users who don't
+      # want to depend on npm can grab it directly. Happens even with
+      # publish-to-npm disabled.
+      - name: Attach tarball to release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ steps.stage.outputs.stage }}/signalk-onaplotter-*.tgz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The actual push to npm. DISABLED per repo maintainer's current
+      # policy. Flip `if: false` -> `if: true` once the npm package
+      # name is reserved + OIDC trusted publishing is configured. The
+      # tag-suffix conditional picks the right dist-tag for pre-release
+      # versions; `--provenance` records the CI run in npm's registry
+      # so installers can verify the build.
+      - name: Publish to npm
+        if: false
+        working-directory: ${{ steps.stage.outputs.stage }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if [[ "$tag" == *alpha* ]]; then
+            npm publish --provenance --access public --tag alpha
+          elif [[ "$tag" == *beta* ]]; then
+            npm publish --provenance --access public --tag beta
+          elif [[ "$tag" == *rc* ]]; then
+            npm publish --provenance --access public --tag rc
+          else
+            npm publish --provenance --access public
+          fi

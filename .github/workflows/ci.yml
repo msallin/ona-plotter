@@ -167,3 +167,84 @@ jobs:
       - name: Stop dev SignalK stack
         if: always()
         run: docker compose -f docker/docker-compose.dev.yml down
+
+  # Packages the Release build as the SignalK-webapp NPM shape and
+  # uploads it as an artifact so a maintainer can download, sanity-
+  # check, and then publish manually. Mirrors deploy/deploy.ps1's
+  # staging so the shape the kiosk gets is the shape CI builds.
+  # Actual publish lives in publish.yml and is only wired on a tag.
+  package:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Install workloads
+        run: dotnet workload install wasm-tools
+
+      - name: Publish OnaPlotter (Release + AOT)
+        run: dotnet publish OnaPlotter/OnaPlotter.csproj -c Release -o publish
+
+      # SignalK webapps expect <base href="/{webapp-name}/"> so the
+      # Blazor router resolves correctly when the app is served from
+      # /signalk/apps/<webapp-name>/ on the SK server. See deploy.ps1
+      # for the matching local patch.
+      - name: Patch index.html base href
+        run: |
+          sed -i 's|<base href="/" />|<base href="/signalk-onaplotter/" />|' publish/wwwroot/index.html
+          grep '<base href' publish/wwwroot/index.html
+
+      # Runtime ServerUrl = "auto" tells SignalkClient to use the page
+      # origin, which IS the SignalK host when the app is served as a
+      # webapp. Dev / local builds override this locally.
+      - name: Set appsettings ServerUrl to auto
+        run: |
+          cat > publish/wwwroot/appsettings.json <<'EOF'
+          { "SignalK": { "ServerUrl": "auto" } }
+          EOF
+
+      # Stage the SignalK-webapp layout:
+      #   signalk-onaplotter/
+      #     package.json   (from deploy/package.json.template)
+      #     public/        (Blazor wwwroot)
+      # Version = 0.0.0-ci.<run> so artifacts from different CI runs
+      # don't collide. Real publish rewrites with the tag version.
+      - name: Stage SignalK webapp bundle
+        run: |
+          set -euo pipefail
+          stage=staging/signalk-onaplotter
+          mkdir -p "$stage"
+          version="0.0.0-ci.${{ github.run_number }}"
+          sed "s|__VERSION__|$version|" deploy/package.json.template > "$stage/package.json"
+          cp -r publish/wwwroot "$stage/public"
+          echo "--- package.json ---"
+          cat "$stage/package.json"
+          echo "--- staging tree ---"
+          find "$stage" -maxdepth 2 -type d | sort
+
+      # Pre-flight: make sure the staged folder would actually pack
+      # cleanly. --dry-run doesn't touch the registry but surfaces
+      # any files npm would refuse (tarball-too-big, missing license,
+      # manifest typos, etc).
+      - name: npm pack dry-run
+        working-directory: staging/signalk-onaplotter
+        run: npm pack --dry-run
+
+      # Real tarball for the artifact. Named signalk-onaplotter-*.tgz
+      # so a maintainer can `npm publish <tarball>` if they want.
+      - name: npm pack
+        working-directory: staging/signalk-onaplotter
+        run: npm pack
+
+      - name: Upload webapp bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: signalk-onaplotter-${{ github.run_number }}
+          path: staging/signalk-onaplotter/signalk-onaplotter-*.tgz
+          if-no-files-found: error
+          retention-days: 30
