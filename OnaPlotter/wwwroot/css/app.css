@@ -1647,6 +1647,18 @@ main:has(.alarm-banner-stack) .hud-top-left {
     top: calc(44px + 44px);
 }
 
+/* Same shift when only the snooze / rearm chip row is visible (alarm
+   banner already dismissed but a rule is in cooldown, or a target is
+   snoozed). Without this, the fixed-position chip row at ~96px drops
+   on top of the HUD card's SOG value. Smaller nudge than the banner
+   case -- one chip-row height instead of a full banner. */
+main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-top-left,
+main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-top-right,
+main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-route,
+main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .chart-quick-bar {
+    top: calc(12px + 32px);
+}
+
 .alarm-danger {
     background: rgba(239, 68, 68, 0.2);
     color: #ef4444;
@@ -1779,7 +1791,13 @@ main:has(.alarm-banner-stack) .hud-top-left {
    banner. */
 .snooze-chips {
     position: fixed;
-    top: calc(3rem + 48px);
+    /* Sits just below the top navbar. When an alarm banner is also
+       visible, the rule below (:has(.alarm-banner-stack)) pushes the
+       row down by one banner-row. Previously this was a fixed
+       3rem+48px assuming a banner always accompanied the chips, which
+       put the chips on top of the HUD panel in the rearm-cooldown
+       case (banner already dismissed). */
+    top: calc(3rem + 4px);
     left: 0;
     right: 0;
     z-index: calc(var(--z-modal) - 1);
@@ -1788,6 +1806,9 @@ main:has(.alarm-banner-stack) .hud-top-left {
     gap: 6px;
     padding: 4px 12px;
     pointer-events: none; /* chips themselves re-enable below */
+}
+main:has(.alarm-banner-stack) .snooze-chips {
+    top: calc(3rem + 48px);
 }
 .snooze-chip {
     pointer-events: auto;
