@@ -112,6 +112,7 @@ public partial class Map
         {
             await ToggleNotesVisible(true);
         }
+        await DisableFollowAsync();
         try
         {
             await module.InvokeVoidAsync("panTo", note.Position.Latitude, note.Position.Longitude);
@@ -349,12 +350,31 @@ public partial class Map
         {
             await ToggleRegionsVisible(true);
         }
+        await DisableFollowAsync();
         try
         {
             await module.InvokeVoidAsync("focusRegion", region.Id, region.OuterRings[0]);
         }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>
+    /// Turns off follow-boat mode when the user explicitly pans to
+    /// something on the map (vessel, note, region, waypoint). Without
+    /// this the next position update re-centres on own boat and the
+    /// user sees a flash of the target, then a snap back -- the
+    /// field-reported "goes to wrong location" bug. Shared helper so
+    /// every Focus* path uses the same logic.
+    /// </summary>
+    private async Task DisableFollowAsync()
+    {
+        if (!follow) return;
+        follow = false;
+        await Settings.SetFollowBoatAsync(false);
+        if (module is not null)
+            try { await module.InvokeVoidAsync("setFollow", false); }
+            catch (JSDisconnectedException) { }
     }
 
     private async Task ToggleRegionsVisible(bool visible)

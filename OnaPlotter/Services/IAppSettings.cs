@@ -115,6 +115,14 @@ public interface IAppSettings
     /// enough to mean "you've arrived", wide enough to account for GPS
     /// jitter and typical inshore turn radii.</summary>
     double WaypointArrivalRadiusMeters { get; }
+
+    /// <summary>When true, keyboard-shortcut hints are visible: inline
+    /// "(L)" / "(D)" labels on map control buttons, and the "?" key
+    /// opens the shortcuts dialog. Default OFF -- most users run on a
+    /// touch device where shortcut hints are clutter. Enable for
+    /// desktop-heavy workflows.</summary>
+    bool ShowKeyboardHints { get; }
+
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -150,6 +158,7 @@ public interface IAppSettings
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);
+    Task SetShowKeyboardHintsAsync(bool value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
     Task SetChartOrderAsync(IEnumerable<string> ids);

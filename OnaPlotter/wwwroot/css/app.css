@@ -1126,6 +1126,16 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     box-shadow: var(--panel-shadow);
 }
 
+/* Legend is longer than the shortcuts list and the descriptions need
+   room to breathe -- widen the card specifically for the legend so the
+   descriptions don't wrap to four lines each. Scroll the inner list
+   when the content exceeds the viewport height. */
+.legend-card {
+    max-width: 720px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+}
+
 .shortcuts-card h5 {
     margin: 0 0 14px;
     font-size: 1rem;
@@ -2275,7 +2285,16 @@ main:has(.alarm-banner-stack) .hud-top-left {
     cursor: not-allowed;
 }
 @media (pointer: coarse) {
-    .chart-reorder-btn { width: 30px; height: 30px; font-size: 0.8rem; }
+    /* WCAG minimum tap target is 44x44 px. The 30 px we had before
+       required stylus-level precision on an iPad which was the field
+       complaint ("Layers not touch-friendly"). */
+    .chart-reorder-btn { width: 44px; height: 44px; font-size: 1rem; }
+    .chart-active-chip { padding: 8px 10px; gap: 8px; }
+    .chart-item { padding: 10px 2px; gap: 12px; min-height: 48px; }
+    .chart-item input[type="checkbox"] { width: 24px; height: 24px; }
+    /* Wider panel on touch so the descriptions don't push the reorder
+       controls off-screen on portrait-phone widths. */
+    .chart-panel { min-width: 280px; max-width: 92vw; padding: 14px 16px; }
 }
 
 .chart-item {
@@ -3069,6 +3088,87 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .legend-guard      { background: rgba(245, 158, 11, 0.04);
                      border: 1.5px solid rgba(245, 158, 11, 0.5);
                      border-radius: 50%; }
+
+/* Violet tidal-current arrow drawn on the map from own-boat along the
+   current set direction. Solid line + arrow shape; swatch is a
+   simplified triangle pointer. */
+.legend-current {
+    background: #a78bfa;
+    height: 3px;
+    align-self: center;
+    border-radius: 2px;
+    clip-path: polygon(0 50%, 80% 0, 80% 100%, 0 50%, 100% 50%);
+}
+/* Course-leg line: white dashed between previous and next WP. */
+.legend-course-leg {
+    background: linear-gradient(90deg,
+        rgba(255,255,255,0.6) 0 60%,
+        transparent 60% 100%);
+    background-size: 10px 2px;
+    background-repeat: repeat-x;
+    background-position: center;
+    height: 2px;
+    align-self: center;
+}
+/* Bearing-to-WP: cyan dashed from boat to waypoint. */
+.legend-bearing {
+    background: linear-gradient(90deg,
+        #06b6d4 0 60%,
+        transparent 60% 100%);
+    background-size: 8px 2px;
+    background-repeat: repeat-x;
+    background-position: center;
+    height: 2px;
+    align-self: center;
+}
+/* XTE gradient: bar that fades green -> amber -> red to match the
+   threshold bands the actual tick uses. */
+.legend-xte {
+    background: linear-gradient(90deg, #22c55e 0%, #f59e0b 50%, #ef4444 100%);
+    height: 6px;
+    align-self: center;
+    border-radius: 2px;
+}
+/* Route-edit preview: violet dashed line (the planning polyline). */
+.legend-route-edit {
+    background: transparent;
+    border-top: 3px dashed #a78bfa;
+    margin-top: 8px;
+    height: 4px;
+    border-radius: 0;
+}
+/* Active-WP pulse: violet filled circle like the pulse marker. */
+.legend-active-wp {
+    background: #a78bfa;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.35);
+}
+/* Anchor: pinned marker + alarm-radius circle ghost. Swatch uses the
+   same gold stroke as the ring. */
+.legend-anchor {
+    background: rgba(224, 159, 62, 0.08);
+    border: 1.5px solid #e09f3e;
+    border-radius: 50%;
+}
+/* MOB marker: red pin with white center. */
+.legend-mob {
+    background: #ef4444;
+    border: 2px solid #fff;
+    border-radius: 50%;
+}
+/* Measurement: two-point cyan dashed line, same hue as the bearing
+   overlay so the two share a "tools I draw myself" family. */
+.legend-measure {
+    background: linear-gradient(90deg,
+        #06b6d4 0 50%,
+        transparent 50% 100%);
+    background-size: 6px 2px;
+    background-repeat: repeat-x;
+    background-position: center;
+    height: 2px;
+    align-self: center;
+}
 
 /* Depth-alarm non-colour affordance. The hud-value already goes red
    when depth < threshold; the ⚠ glyph gives a colour-blind sailor

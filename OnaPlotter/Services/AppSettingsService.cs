@@ -40,6 +40,7 @@ public sealed class AppSettingsService : IAppSettings
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
+    public bool ShowKeyboardHints { get; private set; } = false;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -82,6 +83,7 @@ public sealed class AppSettingsService : IAppSettings
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
+            ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
@@ -226,6 +228,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         WaypointArrivalRadiusMeters = value;
         await Save("waypointArrivalRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetShowKeyboardHintsAsync(bool value)
+    {
+        ShowKeyboardHints = value;
+        await Save("showKeyboardHints.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

@@ -79,6 +79,7 @@
                  RaceTimerLabel="@FormatRaceTimer()"
                  LayersPanelOpen="chartPanelOpen"
                  LegendOpen="legendOpen"
+                 ShowKeyboardHints="@Settings.ShowKeyboardHints"
                  OnToggleFollow="ToggleFollow"
                  OnCycleOrientation="CycleMapOrientation"
                  OnToggleNight="ToggleNightMode"
@@ -595,6 +596,14 @@
     {
         if (module is null) return;
         chartPanelOpen = false;
+        // Follow-boat mode re-centres on own boat on every position
+        // update (roughly once per second), so focusVessel's panTo was
+        // being overwritten within 1 s -- the user saw a brief flash
+        // of the selected vessel, then a snap back to own boat. Treat
+        // "tap a vessel in the list" as the user asking for a look at
+        // that vessel; follow has to let go. Keyboard / F-toggle /
+        // Centre-on-boat button are the explicit way back.
+        await DisableFollowAsync();
         try { await module.InvokeVoidAsync("focusVessel", context); }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
@@ -951,7 +960,13 @@
             case "o": await CycleMapOrientation(); break;
             case "r": ToggleRaceTimer(); break;
             case "d": await ToggleMeasure(); break;
-            case "?": shortcutsVisible = !shortcutsVisible; break;
+            case "?":
+                // "?" only opens the shortcuts card when keyboard hints
+                // are enabled in Settings. Default off so touch-only
+                // users don't land on an unexpected modal if they
+                // connect a keyboard and brush the key.
+                if (Settings.ShowKeyboardHints) shortcutsVisible = !shortcutsVisible;
+                break;
             case "escape":
                 if (measureActive) { await ToggleMeasure(); }
                 // Esc also cancels in-progress route / polygon edits so

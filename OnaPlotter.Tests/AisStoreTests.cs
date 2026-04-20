@@ -155,6 +155,34 @@ public class AisStoreTests
     }
 
     [Test]
+    public async Task EmptyPath_IdentityObject_ExtractsNameAndMmsi()
+    {
+        // SignalK servers publish AIS message type 5 (static vessel data)
+        // as { path: "", value: { name, mmsi, ... } } -- a bulk identity
+        // snapshot. The previous flat-path switch didn't handle empty
+        // paths, so vessels in that scenario showed only a MMSI label
+        // on the chart (the "Ship names sometimes missing" bug). This
+        // test pins the fan-out behaviour so a future refactor can't
+        // silently regress back to the flat lookup.
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:888", "navigation.position", pos);
+
+        var identity = JsonSerializer.SerializeToElement(new
+        {
+            name = "SALTY BREEZE",
+            mmsi = "888",
+            communication = new { callsignVhf = "DEV01" }
+        });
+        store.Apply("vessels.urn:mrn:imo:mmsi:888", "", identity);
+
+        var v = store.GetVessels().Single();
+        await Assert.That(v.Name).IsEqualTo("SALTY BREEZE");
+        await Assert.That(v.Mmsi).IsEqualTo("888");
+        await Assert.That(v.Callsign).IsEqualTo("DEV01");
+    }
+
+    [Test]
     public async Task AisVessel_BuddyPathApplied()
     {
         var store = new AisStore();

@@ -46,12 +46,12 @@
                 <button class="ctrl-more-item @(LaylinesVisible ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleLaylines)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Laylines)</span>
-                    <span>Laylines @(LaylinesVisible ? "(on)" : "") (L)</span>
+                    <span>Laylines@(LaylinesVisible ? " (on)" : "")@(ShowKeyboardHints ? " (L)" : "")</span>
                 </button>
                 <button class="ctrl-more-item @(MeasureActive ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleMeasure)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Measure)</span>
-                    <span>Measure @(MeasureActive ? "(on)" : "") (D)</span>
+                    <span>Measure@(MeasureActive ? " (on)" : "")@(ShowKeyboardHints ? " (D)" : "")</span>
                 </button>
             </div>
         }
@@ -194,6 +194,10 @@
     [Parameter] public EventCallback OnFabCreateNote { get; set; }
     [Parameter] public EventCallback OnFabCreateRegion { get; set; }
     [Parameter] public EventCallback OnToggleDarkOps { get; set; }
+    /// <summary>When true, render the inline "(L)" / "(D)" shortcut
+    /// letters on button labels. Driven by IAppSettings.ShowKeyboardHints;
+    /// default off since most users are on touch and don't see them.</summary>
+    [Parameter] public bool ShowKeyboardHints { get; set; }
 
     // Dot indicator on the More button when any of its contents is on,
     // so Night / Laylines / Measure being active is visible without
