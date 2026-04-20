@@ -99,6 +99,7 @@
                         <span class="rawstream-time">@entry.TimeLabel</span>
                         <span class="rawstream-chev">@(expanded ? "\u25BE" : "\u25B8")</span>
                         <span class="rawstream-context" title="@entry.Context">@entry.ContextShort</span>
+                        <span class="rawstream-source" title="@entry.Source">@entry.SourceShort</span>
                         <span class="rawstream-path">@entry.Path</span>
                         <span class="rawstream-value">@entry.ValueSummary</span>
                     </div>
@@ -144,6 +145,7 @@
         int Id,
         DateTime Timestamp,
         string Context,
+        string Source,
         string Path,
         string ValueSummary,
         string PrettyJson,
@@ -159,6 +161,19 @@
                 // urn:mrn:imo:mmsi:123456789 -> 123456789
                 int i = Context.LastIndexOf(':');
                 return i >= 0 && i + 1 < Context.Length ? Context[(i + 1)..] : Context;
+            }
+        }
+        // Trim the source label: "vessel.ny-mxgps-1" -> "mxgps-1".
+        // Sources are usually "<label>.<device-id>" and the label is
+        // noise when the device-id alone is unique. Fallback: last
+        // segment of any dotted source string.
+        public string SourceShort
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Source)) return "";
+                int dot = Source.LastIndexOf('.');
+                return dot >= 0 && dot + 1 < Source.Length ? Source[(dot + 1)..] : Source;
             }
         }
     }
@@ -243,6 +258,27 @@
                        System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
                     ts = parsed;
 
+                // SignalK publishes $source per update object. When two
+                // sensors (e.g. GPS-A + GPS-B) both emit navigation.position,
+                // SK fans them out as separate updates in the same delta,
+                // which looks like "same path at same time 3-4x" in the
+                // raw viewer. Surfacing $source on the row makes it
+                // immediately obvious they're different sources, not a
+                // subscription bug. Fallback to "source" (no $) for
+                // older SK implementations.
+                string source = "";
+                if (up.TryGetProperty("$source", out var srcEl) && srcEl.ValueKind == JsonValueKind.String)
+                    source = srcEl.GetString() ?? "";
+                else if (up.TryGetProperty("source", out var src2El))
+                {
+                    if (src2El.ValueKind == JsonValueKind.String)
+                        source = src2El.GetString() ?? "";
+                    else if (src2El.ValueKind == JsonValueKind.Object
+                        && src2El.TryGetProperty("label", out var lbl)
+                        && lbl.ValueKind == JsonValueKind.String)
+                        source = lbl.GetString() ?? "";
+                }
+
                 if (up.TryGetProperty("values", out var vals) && vals.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var v in vals.EnumerateArray())
@@ -257,6 +293,7 @@
                             Id: nextId++,
                             Timestamp: ts,
                             Context: context,
+                            Source: source,
                             Path: string.IsNullOrEmpty(path) ? "(no path)" : path,
                             ValueSummary: valueSummary,
                             PrettyJson: pretty,
@@ -273,7 +310,7 @@
     }
 
     private LogEntry SingleRaw(string json, string ctx = "", DateTime? ts = null) =>
-        new(nextId++, ts ?? DateTime.UtcNow, ctx, "(raw)", Truncate(json, 60), json, json);
+        new(nextId++, ts ?? DateTime.UtcNow, ctx, "", "(raw)", Truncate(json, 60), json, json);
 
     private static string PrettyPrint(JsonElement el)
     {

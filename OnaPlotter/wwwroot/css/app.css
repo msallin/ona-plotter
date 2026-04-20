@@ -2523,7 +2523,10 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .rawstream-entry.expanded { background: rgba(96,165,250,0.05); }
 .rawstream-row {
     display: grid;
-    grid-template-columns: 70px 14px 68px 1fr 2fr;
+    /* time · chev · context · source · path · value.
+       source column so "same path 3-4x" is visibly distinguishable
+       as different SK sources rather than looking like a bug. */
+    grid-template-columns: 70px 14px 60px 90px 1fr 2fr;
     gap: 8px;
     align-items: baseline;
     padding: 4px 10px;
@@ -2538,6 +2541,14 @@ main:has(.alarm-banner-stack) .hud-top-left {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.rawstream-source {
+    color: var(--sk-purple);
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.8;
 }
 .rawstream-path   {
     color: var(--sk-text);
@@ -2570,15 +2581,17 @@ main:has(.alarm-banner-stack) .hud-top-left {
 @media (max-width: 640px) {
     .rawstream-row {
         grid-template-columns: 52px 14px 1fr;
-        grid-template-rows: auto auto;
+        grid-template-rows: auto auto auto auto;
         grid-template-areas:
             "time chev context"
+            ".    .    source"
             ".    .    path"
             ".    .    value";
     }
     .rawstream-time    { grid-area: time; }
     .rawstream-chev    { grid-area: chev; }
     .rawstream-context { grid-area: context; }
+    .rawstream-source  { grid-area: source; }
     .rawstream-path    { grid-area: path; }
     .rawstream-value   { grid-area: value; }
     .rawstream-search  { width: 100%; }

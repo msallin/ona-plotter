@@ -460,10 +460,11 @@
                     <label class="form-check-label">Auto flip at dusk</label>
                 </div>
                 <small class="text-muted d-block mt-1">
-                    Uses the SignalK <code>environment.sun.altitude</code> path (install a
-                    solar-position plugin). Flips on near civil twilight, off past dawn.
-                    A manual Night tap suppresses the auto-flip for 1 hour so the app
-                    doesn't fight your choice.
+                    Uses <code>environment.sun</code> (day/dawn/dusk/night string) when
+                    your server publishes it, falling back to <code>environment.sun.altitude</code>
+                    (radians, civil-twilight threshold). Install a solar-position plugin
+                    if neither is live. A manual Night tap suppresses the auto-flip for
+                    1 hour so the app doesn't fight your choice.
                 </small>
 
                 <div class="form-check form-switch mt-2">

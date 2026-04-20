@@ -112,12 +112,16 @@ public sealed class SignalkClient : IAsyncDisposable
         "environment.tide.timeHigh",
         "environment.tide.timeLow",
         "environment.tide.stationName",
-        // Sun altitude in radians above the horizon. Published by SignalK
-        // implementations that include a solar-position calculator
-        // (signalk-derived-data and similar). Drives the auto-night-mode
-        // flip: altitude < -0.1 rad (~civil twilight) = night-eligible.
-        // Paths just never emit on servers without such a plugin; the
-        // auto toggle stays dormant and the user can flip Night manually.
+        // Solar state for auto night-mode. Two paths, either of which
+        // drives the flip -- whichever the server's plugin emits:
+        //   environment.sun         -> string: "day" / "dawn" / "dusk" / "night"
+        //                              (preferred; the plugin knows the
+        //                              twilight cutoffs).
+        //   environment.sun.altitude -> double: radians above horizon
+        //                              (fallback; we threshold at -0.1
+        //                              rad ~ civil twilight).
+        // Servers without either plugin get a dormant auto toggle.
+        "environment.sun",
         "environment.sun.altitude"
     ];
 
