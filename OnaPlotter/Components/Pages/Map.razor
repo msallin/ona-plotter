@@ -498,16 +498,29 @@
         }
     }
 
+    // Monotonic counter for in-flight refresh calls. Each call captures
+    // its own sequence number at kick-off and only applies results if
+    // it's still the latest. Without this, a user toggling the panel
+    // rapidly enough to overlap two GET chains would see the LATER
+    // request's payload get overwritten by the EARLIER one on any tick
+    // where the older request completed second -- classic lost-update.
+    private int _resourceRefreshSeq;
+
     private async Task RefreshServerResourcesAsync()
     {
+        int mySeq = System.Threading.Interlocked.Increment(ref _resourceRefreshSeq);
         try
         {
-            var (waypoints, routes, notes, regions) = (
-                await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints"),
-                await SafeLoad(() => RouteApi.GetAllAsync(), "routes"),
-                await SafeLoad(() => NoteApi.GetAllAsync(), "notes"),
-                await SafeLoad(() => RegionApi.GetAllAsync(), "regions")
-            );
+            var waypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints");
+            var routes    = await SafeLoad(() => RouteApi.GetAllAsync(), "routes");
+            var notes     = await SafeLoad(() => NoteApi.GetAllAsync(), "notes");
+            var regions   = await SafeLoad(() => RegionApi.GetAllAsync(), "regions");
+
+            // Drop stale results. If another refresh was kicked off while
+            // we were fetching, its results are fresher; let it win.
+            if (mySeq != System.Threading.Volatile.Read(ref _resourceRefreshSeq))
+                return;
+
             if (waypoints is not null) loadedWaypoints = waypoints;
             if (routes is not null) { availableRoutes = routes; PrecomputeRouteBounds(); }
             if (notes is not null) loadedNotes = notes;
@@ -1612,65 +1625,88 @@
     private async Task SaveRouteCoreInner(bool activate)
     {
         if (module is null) return;
-        var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
-        if (coords is null || coords.Length < 2)
+
+        double[][]? coords = null;
+        try { coords = await module.InvokeAsync<double[][]>("getEditRouteCoords"); }
+        catch (JSDisconnectedException) { /* cleanup runs in finally */ }
+        catch (JSException ex) { Toasts.Error($"Couldn't read route: {ex.Message}"); }
+
+        SignalkRoute? newRoute = null;
+        bool ok = false;
+        try
         {
-            // Save button is now disabled in this state, but belt-and-braces
-            // in case a race gets us here anyway (keyboard shortcut, JS
-            // interop lag). Toast so the helm knows WHY nothing saved.
-            Toasts.Show("Add at least 2 waypoints before saving");
+            if (coords is null || coords.Length < 2)
+            {
+                // Save button is now disabled in this state, but belt-and-braces
+                // in case a race gets us here anyway (keyboard shortcut, JS
+                // interop lag). Toast so the helm knows WHY nothing saved.
+                if (coords is not null)
+                    Toasts.Show("Add at least 2 waypoints before saving");
+                return;
+            }
+            // Empty name -> date-stamped default. yyyyMMdd is monotonically
+            // sortable in the routes list, which matters more than time-of-day
+            // (most users create a few routes per day; "Route 14:30" starts
+            // to look identical after a week).
+            string name = string.IsNullOrWhiteSpace(routeEditName)
+                ? $"Route {DateTime.Now:yyyyMMdd}"
+                : routeEditName;
+            try { ok = await RouteApi.SaveAsync(name, coords); }
+            catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
+
+            if (ok)
+            {
+                Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
+                // Snapshot pre-save IDs so we can auto-enable the newly-created
+                // route. SignalK's POST response body varies between server
+                // versions (some return { "id": ... }, some just 201 Created),
+                // so a diff against the previous list is more robust than
+                // parsing the response. Limitation: in a multi-client
+                // scenario (another plotter saves a route during our same
+                // window) this can grab that route instead; in practice
+                // Save & Go then activates the wrong one. Acceptable for
+                // a solo-plotter workflow; the fix is server-side (return
+                // the id in the POST body, which SK Node Server does in
+                // v2 -- pending upgrade).
+                var prevIds = availableRoutes.Select(r => r.Id).ToHashSet();
+                availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? availableRoutes;
+                PrecomputeRouteBounds();
+                // When multiple "new" ids appear, prefer the one whose name
+                // matches ours -- still heuristic, but tighter than "first
+                // in list".
+                var candidates = availableRoutes
+                    .Where(r => !string.IsNullOrEmpty(r.Id) && !prevIds.Contains(r.Id))
+                    .ToList();
+                newRoute = candidates.FirstOrDefault(r =>
+                    string.Equals(r.Name, name, StringComparison.Ordinal))
+                    ?? candidates.FirstOrDefault();
+                if (newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
+                {
+                    enabledRoutes.Add(newRoute.Id);
+                    await Settings.SetEnabledRoutesAsync(enabledRoutes);
+                }
+                RebuildFilteredLayers();
+            }
+            else if (Toasts.Active.Count == 0) // only if we haven't already toasted the exception
+            {
+                Toasts.Error("Failed to save route");
+            }
+        }
+        finally
+        {
+            // Tear down the edit-mode state regardless of how the save
+            // unwound. Previously a JS exception above left the route-
+            // edit overlay + poll timer + nav-guard installed, and the
+            // user's next interaction landed on a ghost edit session.
             routeEditMode = false;
             routeEditCoords = null;
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;
             RemoveEditNavGuard();
-            await module.InvokeVoidAsync("stopRouteEdit");
-            return;
+            try { await module.InvokeVoidAsync("stopRouteEdit"); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { /* JS already torn down; overlay will go on next init */ }
         }
-        // Empty name -> date-stamped default. yyyyMMdd is monotonically
-        // sortable in the routes list, which matters more than time-of-day
-        // (most users create a few routes per day; "Route 14:30" starts
-        // to look identical after a week).
-        string name = string.IsNullOrWhiteSpace(routeEditName)
-            ? $"Route {DateTime.Now:yyyyMMdd}"
-            : routeEditName;
-        bool ok;
-        try { ok = await RouteApi.SaveAsync(name, coords); }
-        catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
-
-        SignalkRoute? newRoute = null;
-        if (ok)
-        {
-            Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
-            // Snapshot pre-save IDs so we can auto-enable the newly-created
-            // route. SignalK's POST response body varies between server
-            // versions (some return { "id": ... }, some just 201 Created),
-            // so a diff against the previous list is more robust than
-            // parsing the response. A naming collision on the same tick
-            // is pathological and the worst case is one unrelated route
-            // gets toggled on -- not destructive.
-            var prevIds = availableRoutes.Select(r => r.Id).ToHashSet();
-            availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? availableRoutes;
-            PrecomputeRouteBounds();
-            newRoute = availableRoutes
-                .FirstOrDefault(r => !string.IsNullOrEmpty(r.Id) && !prevIds.Contains(r.Id));
-            if (newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
-            {
-                enabledRoutes.Add(newRoute.Id);
-                await Settings.SetEnabledRoutesAsync(enabledRoutes);
-            }
-            RebuildFilteredLayers();
-        }
-        else if (Toasts.Active.Count == 0) // only if we haven't already toasted the exception
-        {
-            Toasts.Error("Failed to save route");
-        }
-        routeEditMode = false;
-        routeEditCoords = null;
-        routeStatsTimer?.Dispose();
-        routeStatsTimer = null;
-        RemoveEditNavGuard();
-        await module.InvokeVoidAsync("stopRouteEdit");
 
         // Save+Go: activate the route the user just created so the
         // next heartbeat lights up the course HUD / alarms / leg line.

@@ -683,6 +683,22 @@ article.content:has(.map-container) {
     border-color: rgba(96, 165, 250, 0.5);
     color: #fff;
 }
+/* Disabled state for any map-btn. Default browser styling on a dark
+   panel was near-identical to the enabled look, so buttons in a
+   "Saving..." / "Starting..." state read as clickable. Clear visual
+   + cursor signal here so a helm under stress can tell the app is
+   busy. */
+.map-btn:disabled,
+.map-btn[disabled] {
+    opacity: 0.45;
+    cursor: progress;
+    filter: saturate(0.6);
+}
+.map-btn:disabled:hover,
+.map-btn[disabled]:hover {
+    background: rgba(30, 34, 44, 0.9);   /* no hover change while disabled */
+    border-color: rgba(255,255,255,0.1);
+}
 
 /* MOB pulsing marker */
 .mob-icon .mob-pulse {
@@ -3845,10 +3861,12 @@ main:has(.map-container.big-type) .map-fab-item {
 @media (pointer: coarse) {
     .route-edit-list { width: 200px; font-size: 0.8rem; }
     .route-edit-wp-row { padding: 6px 10px; }
+    /* 44x44 to match WCAG / Apple HIG per the comment above. Previously
+       32x32 in this block, which the comment itself cited as wrong. */
     .route-edit-wp-remove {
-        width: 32px;
-        height: 32px;
-        font-size: 1.1rem;
+        width: 44px;
+        height: 44px;
+        font-size: 1.2rem;
     }
 }
 

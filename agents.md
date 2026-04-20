@@ -39,7 +39,7 @@ Vulcan / Raymarine Axiom, not Freeboard-SK.
 - `Components/Map/*` -- HUD, controls, per-resource `*Section.razor` rows in LayersPanel
 - `Services/Api/*Api.cs` -- one HTTP client per SignalK resource; share `ResourceHttp`
 - `Services/Alarms/*AlarmRule.cs` -- rule-per-file, DI-registered, `IAlarmRule.Check(ctx)`
-- `Utilities/*.cs` -- pure math (Cpa, IsochroneRouter, Colregs, Format, AisPalette)
+- `Utilities/*.cs` -- pure math (Cpa, Colregs, Format, AisPalette)
 - `wwwroot/js/leafletInterop.js` -- 2000+ lines. **JS is a renderer**; classification
   (ship-type colour, SART, CPA) is resolved in C# and pushed as payload fields.
 

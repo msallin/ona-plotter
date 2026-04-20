@@ -23,9 +23,6 @@ Skip to [Part 2](#part-2--for-developers) if you're here to build or contribute.
   classification, not a proximity beeper. Moored-vessel auto-mute, per-target
   snooze, pulsing danger ring, red/amber crossing lines.
   ([deep dive](docs/collision-detection.md))
-- **Weather routing built in.** Isochrone expansion over Open-Meteo wind + your
-  polar CSV, tidal-current vector folded in when the tide plugin provides it.
-  No server plugin required. ([deep dive](docs/weather-routing.md))
 - **Plugin-aware, not plugin-dependent.** Tide, buddy, anchor-alarm, Mayara
   radar — each lights up its own UI if installed, stays silent if not.
 - **Touch-first.** Long-press context menu, bottom-sheet panels on phones,
@@ -105,8 +102,6 @@ them.
   - **Polygon** — freeform draw. Numbered vertices, draggable with ghost
     feedback, per-row remove, live area readout (m² → ha → km²). Save
     enables at 3 vertices. Server-supplied polygons render the same way.
-- **Weather routing** — isochrone expansion, Open-Meteo wind, tidal-current
-  vector folded in. ([deep dive](docs/weather-routing.md))
 - **Laylines** to the active waypoint, **persistent measurement tool**
   (multi-segment ruler, running total), **N↑ / C↑ / H↑** orientation cycle.
 - **GPX import/export** for routes and waypoints.
@@ -253,7 +248,7 @@ Browser (Blazor WASM)                          SignalK server
 │    PolarService, AppSettings       │        │                      │
 │                                    │        │                      │
 │  Utilities/                        │        │                      │
-│    Cpa, IsochroneRouter, Format    │        │                      │
+│    Cpa, Colregs, Format            │        │                      │
 │                                    │        │                      │
 │  wwwroot/js/leafletInterop.js      │        │                      │
 │  wwwroot/js/audioAlert.js          │        │                      │
@@ -275,11 +270,9 @@ Browser (Blazor WASM)                          SignalK server
 - **`Services/AlarmManager`** owns the alarm stack. Every registered
   `IAlarmRule` (SHALLOW, CPA, WIND SHIFT, SART, ANCHOR-TIDE) gets a shot
   at each eval tick; up to three concurrent alarms surface in the banner.
-- **`Utilities/Cpa.cs`** and **`Utilities/IsochroneRouter.cs`** are the
-  two places substantive navigation math lives (CPA/TCPA projection;
-  isochrone expansion + sector pruning for weather routing).
-  `wwwroot/js/geoMath.js` mirrors the smaller helpers with its own
-  Node test suite.
+- **`Utilities/Cpa.cs`** is where substantive navigation math lives
+  (CPA/TCPA projection). `wwwroot/js/geoMath.js` mirrors the smaller
+  helpers with its own Node test suite.
 
 ### Behaviours worth knowing about
 
