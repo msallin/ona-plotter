@@ -39,6 +39,12 @@ const SAFE_CLICK_SELECTORS = [
 // test between retries. Seed is still deterministic via FUZZ_SEED, logged
 // below so a caught failure can be reproduced.
 test('fuzz map UI', async ({ page }) => {
+    // The per-click budget is bounded (timeout: 2000 + 80-200 ms wait),
+    // but 80 clicks (CI default) can hit the global Playwright 60 s
+    // test timeout when targets are transient and several clicks chew
+    // their full 2 s. Raise the cap to 3 min so a slow CI runner
+    // doesn't false-positive.
+    test.setTimeout(3 * 60 * 1000);
     console.log(`FUZZ_SEED=${FUZZ_SEED} FUZZ_CLICKS=${FUZZ_CLICKS}`);
     const { errors, assertBlazorErrorNotVisible } = collectErrors(page);
     const rng = seededRandom(FUZZ_SEED);

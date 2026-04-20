@@ -112,6 +112,14 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     await depthInput.fill('4.5');
     await depthInput.blur();
 
+    // @onchange fires asynchronously -- SetDepthAlarmThresholdAsync ->
+    // IKeyValueStore.SetAsync crosses into IndexedDB via JS interop.
+    // Without a wait the reload below can race the save and start a
+    // fresh load before the value lands on disk; the test then reads
+    // back the default. 400 ms is comfortably above observed CI
+    // latency for the full save round-trip.
+    await page.waitForTimeout(400);
+
     // Reload and re-read.
     await page.reload();
     await waitForMapReady(page);
@@ -122,6 +130,7 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     const restore = page.locator('input[type="number"]').first();
     await restore.fill('3');
     await restore.blur();
+    await page.waitForTimeout(400);   // same race, same cure
 
     await assertBlazorErrorNotVisible();
 });
