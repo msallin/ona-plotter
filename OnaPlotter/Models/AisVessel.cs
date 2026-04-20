@@ -131,11 +131,37 @@ public sealed class AisVessel
                 }
 
             case "design.aisShipType":
+                // Expected shapes:
+                //   { id: 36, name: "Sailing" }   -> ShipType = "Sailing"
+                //   { id: 60 }                    -> name absent; skip
+                //                                    (previous code stringified the JSON,
+                //                                    producing e.g. '{"id":60}' on
+                //                                    the HUD -- worse than falling back
+                //                                    to the existing value).
+                //   "Sailing"                     -> plain string
+                //   number (enum id only)         -> no human label; skip
                 if (rawValue is JsonElement typeEl)
-                    ShipType = typeEl.TryGetProperty("name", out var n) ? n.GetString() : typeEl.ToString();
-                else
-                    ShipType = rawValue?.ToString();
-                return true;
+                {
+                    if (typeEl.ValueKind == JsonValueKind.Object
+                        && typeEl.TryGetProperty("name", out var n)
+                        && n.ValueKind == JsonValueKind.String)
+                    {
+                        ShipType = n.GetString();
+                        return true;
+                    }
+                    if (typeEl.ValueKind == JsonValueKind.String)
+                    {
+                        ShipType = typeEl.GetString();
+                        return true;
+                    }
+                    return false; // unrecognised shape -- don't clobber with raw JSON text
+                }
+                if (rawValue is string s)
+                {
+                    ShipType = s;
+                    return true;
+                }
+                return false;
 
             case "buddy":
                 bool newBuddy = rawValue switch

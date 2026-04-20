@@ -10,6 +10,7 @@ public interface IToastService
     void Success(string message);
     void Warning(string message);
     void Error(string message);
+    void Info(string message);
 
     /// <summary>Shows a toast with an action button. Returns the toast id
     /// in case the caller wants to dismiss it early.</summary>

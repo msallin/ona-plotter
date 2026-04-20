@@ -397,6 +397,12 @@
     private const int RouteStatsPollIntervalMs = 500;
     private const int RaceTimerTickMs = 1_000;
     private const int LaylinePushEveryNFixes = 5;
+    /// <summary>How often to re-sync waypoints / routes / notes / regions
+    /// from the server. 60 s balances "picks up another plotter's changes
+    /// within a minute" against "don't thrash the REST endpoints on a
+    /// battery-constrained Pi". The Layers-panel-open path still triggers
+    /// an immediate refresh on top of this for when the helm is watching.</summary>
+    private const int ResourcePollIntervalMs = 60_000;
     /// <summary>Below this drift (m/s) the tidal current arrow is suppressed (~0.1 kn).</summary>
     private const double MinCurrentDriftMs = 0.05;
     /// <summary>GPX import size cap to prevent OOM on pathological input.</summary>
@@ -418,6 +424,7 @@
     private bool fullscreen;
     private double? prevLat, prevLon;
     private System.Threading.Timer? aisTimer;
+    private System.Threading.Timer? resourcePollTimer;
     // Active route navigation state.
     private string? lastActiveRouteHref;
     private double[][]? activeRouteCoords;
@@ -650,8 +657,26 @@
         // "tap a vessel in the list" as the user asking for a look at
         // that vessel; follow has to let go. Keyboard / F-toggle /
         // Centre-on-boat button are the explicit way back.
+        bool wasFollowing = follow;
         await DisableFollowAsync();
-        try { await module.InvokeVoidAsync("focusVessel", context); }
+        try
+        {
+            bool found = await module.InvokeAsync<bool>("focusVessel", context);
+            if (!found)
+            {
+                // The JS side couldn't find the marker -- vessel aged
+                // out, AIS filter hid it, or the list was stale.
+                // Toast + put follow back where it was so the helm
+                // doesn't lose their view for a no-op tap.
+                Toasts.Info("Vessel no longer on the chart");
+                if (wasFollowing)
+                {
+                    follow = true;
+                    await Settings.SetFollowBoatAsync(true);
+                    await module.InvokeVoidAsync("setFollow", true);
+                }
+            }
+        }
         catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
@@ -883,6 +908,15 @@
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
+        // Resource re-sync: waypoints / routes / notes / regions added
+        // from another plotter are otherwise invisible until the user
+        // toggles the Layers panel. 60 s poll keeps the list in sync
+        // without hammering the REST endpoints. Initial delay matches
+        // AisPushInitialDelayMs so the first poll doesn't collide with
+        // the page-load resource fetch from OnInitializedAsync.
+        resourcePollTimer = new System.Threading.Timer(
+            _ => _ = RefreshServerResourcesAsync(),
+            null, ResourcePollIntervalMs, ResourcePollIntervalMs);
 
         await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
 
@@ -1486,12 +1520,26 @@
 
     private async Task CancelRouteEdit()
     {
-        // If the user has invested points, tell them so their cancel
-        // feels acknowledged rather than silently vanishing the work.
-        // Esc-triggered cancel with zero points stays quiet.
+        // Discarding significant work should require intent. 2+ waypoints
+        // is the threshold where the helm has genuinely built something
+        // (single point is just a tap, two points is a line they'd rather
+        // not lose). Uses the native confirm() dialog -- same pattern as
+        // the "Remove polar?" prompt in Settings. Empty / single-point
+        // edits skip the prompt so Esc-to-bail still feels immediate.
         int wpCount = routeEditCoords?.Length ?? 0;
+        if (wpCount >= 2)
+        {
+            bool ok;
+            try
+            {
+                ok = await JS.InvokeAsync<bool>("confirm",
+                    $"Discard route in progress ({wpCount} waypoints)?");
+            }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+            if (!ok) return;
+        }
         if (wpCount > 0)
-            Toasts.Show($"Route edit cancelled ({wpCount} WP discarded)", ToastService.ToastLevel.Info);
+            Toasts.Info($"Route edit cancelled ({wpCount} WP discarded)");
 
         routeEditMode = false;
         routeEditCoords = null;
@@ -2443,8 +2491,14 @@
     {
         if (module is null) return;
 
-        // If server-side anchor is active, the button is read-only (controlled by SignalK plugin).
-        if (Data.AnchorActive) return;
+        // Server-side anchor is owned by the SignalK plugin -- the button
+        // can't drop or clear it, so the tap would silently no-op.
+        // Surface that explicitly so the helm knows why nothing happened.
+        if (Data.AnchorActive)
+        {
+            Toasts.Info("Anchor is managed by the SignalK plugin -- raise it from there");
+            return;
+        }
 
         if (!anchorManualActive && Data.Latitude is not null && Data.Longitude is not null)
         {
@@ -2467,6 +2521,16 @@
         }
         else if (anchorManualActive)
         {
+            // CLEARING a live anchor is destructive: the watch ring and
+            // drag alarm both go away. A glove-brush on the button while
+            // moored in heavy weather would silently clear. Require a
+            // confirmation -- matches the JS confirm pattern used for
+            // Settings polar removal and route-edit cancel.
+            bool ok;
+            try { ok = await JS.InvokeAsync<bool>("confirm", "Raise anchor and stop the watch?"); }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+            if (!ok) return;
+
             await module.InvokeVoidAsync("clearAnchor");
             anchorManualActive = false;
         }
@@ -2681,6 +2745,7 @@
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         RemoveEditNavGuard();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
+        if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();
         if (polygonStatsTimer is not null) await polygonStatsTimer.DisposeAsync();

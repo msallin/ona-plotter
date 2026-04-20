@@ -1398,13 +1398,18 @@ function removeCpaOverlay(ctx) {
  * @param radiusNm    CPA threshold (nautical miles)
  * @param lookaheadMin  TCPA threshold (minutes)
  */
-/** Pans the map to an AIS vessel and opens its popup. */
+/** Pans the map to an AIS vessel and opens its popup. Returns true
+ *  when a marker existed; false when the context didn't match anything
+ *  (vessel aged out, AIS filter hiding it, deleted since the list
+ *  rendered). The C# caller uses the return value to toast + restore
+ *  follow so the user isn't left wondering why the tap did nothing. */
 export function focusVessel(context) {
     const marker = aisMarkers[context];
-    if (!marker || !map) return;
+    if (!marker || !map) return false;
     const ll = marker.getLatLng();
     map.panTo(ll, { animate: true });
     marker.openPopup();
+    return true;
 }
 
 /**

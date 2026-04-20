@@ -98,7 +98,7 @@ public partial class Map
         if (module is not null)
             await module.InvokeVoidAsync("removeNoteMarker", id);
         loadedNotes = loadedNotes.Where(n => n.Id != id).ToList();
-        Toasts.Show("Note deleted", ToastService.ToastLevel.Info);
+        Toasts.Info("Note deleted");
     }
 
     private async Task FocusNote(SignalkNote note)
@@ -269,7 +269,7 @@ public partial class Map
         if (module is not null)
             await module.InvokeVoidAsync("removeRegion", id);
         loadedRegions = loadedRegions.Where(r => r.Id != id).ToList();
-        Toasts.Show("Region deleted", ToastService.ToastLevel.Info);
+        Toasts.Info("Region deleted");
     }
 
     // --- Route popup actions -------------------------------------------
@@ -288,6 +288,25 @@ public partial class Map
     {
         var route = availableRoutes.FirstOrDefault(r => r.Id == id);
         if (route is null) { Toasts.Error("Route not found"); return; }
+
+        // If a DIFFERENT route is already the active course, don't
+        // silently switch -- one stray tap on the route-popup Activate
+        // button would drop whatever navigation is running. Prompt so
+        // the intent is explicit. No prompt when:
+        //   - nothing is active (first activation)
+        //   - this exact route is already active (re-activating is a no-op)
+        if (Data.HasActiveCourse && !string.IsNullOrEmpty(Data.ActiveRouteHref)
+            && !Data.ActiveRouteHref.Contains(id, StringComparison.Ordinal))
+        {
+            var prompt = !string.IsNullOrEmpty(Data.ActiveRouteName)
+                ? $"Replace active course '{Data.ActiveRouteName}' with '{route.Name ?? route.Id}'?"
+                : $"Replace the active course with '{route.Name ?? route.Id}'?";
+            bool ok;
+            try { ok = await JS.InvokeAsync<bool>("confirm", prompt); }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+            if (!ok) return;
+        }
+
         await NavigateRouteInternal(route);
     }
 
@@ -310,7 +329,7 @@ public partial class Map
             catch (JSDisconnectedException) { }
 
         availableRoutes = availableRoutes.Where(r => r.Id != id).ToList();
-        Toasts.Show("Route deleted", ToastService.ToastLevel.Info);
+        Toasts.Info("Route deleted");
         RebuildFilteredLayers();
     }
 
@@ -323,6 +342,18 @@ public partial class Map
     // depth / anchor-drag alarms don't fire against a moving boat.
     private async Task NavigateRouteInternal(SignalkRoute route)
     {
+        // Server-side anchor is owned by a SignalK plugin and we don't
+        // have a plugin-agnostic API to raise it. Block the activation
+        // and tell the helm to raise the anchor first -- silently
+        // switching to a moving course while the drag alarm keeps
+        // ticking against a non-static vessel is worse than a loud
+        // "do this first" message.
+        if (Data.AnchorActive)
+        {
+            Toasts.Show("Raise anchor (via the anchor plugin) before starting a route",
+                ToastService.ToastLevel.Warning);
+            return;
+        }
         if (anchorManualActive && module is not null)
         {
             try { await module.InvokeVoidAsync("clearAnchor"); anchorManualActive = false; }

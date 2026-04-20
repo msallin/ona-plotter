@@ -48,6 +48,12 @@ public sealed class ToastService : IToastService
     public void Success(string message) => Show(message, ToastLevel.Success);
     public void Warning(string message) => Show(message, ToastLevel.Warning);
     public void Error(string message) => Show(message, ToastLevel.Error, durationSec: 6);
+    /// <summary>Info-level toast convenience helper. Previously
+    /// several call sites wrote <c>Toasts.Show(msg, ToastLevel.Info)</c>
+    /// inline; this method collapses them to <c>Toasts.Info(msg)</c>
+    /// for symmetry with Success / Warning / Error. Default duration
+    /// matches Show's default.</summary>
+    public void Info(string message) => Show(message, ToastLevel.Info);
 
     /// <summary>Adds a toast with an action button (e.g. "Undo" after a
     /// destructive operation). The action runs asynchronously; any

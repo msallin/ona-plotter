@@ -9,7 +9,7 @@
 
 <SectionHeader Title="Vessels" Count="@Vessels.Count"
                Expanded="@expanded"
-               OnToggle="() => expanded = !expanded" />
+               OnToggle="ToggleExpanded" />
 @if (expanded)
 {
     @foreach (var vessel in Vessels)
@@ -53,7 +53,26 @@
     [Parameter, EditorRequired] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
     [Parameter] public EventCallback<string> OnFocus { get; set; }
 
+    // Collapsed by default so the panel opens compact. But if at least
+    // one vessel is in the danger/warn CPA band, auto-expand -- that's
+    // the case where the helm actually wants to see the list, and
+    // keeping it collapsed hides the target they just opened the panel
+    // to inspect. User-toggled state still persists in `_userToggled`
+    // so we don't fight their choice after they collapse manually.
+    private bool _userToggled;
     private bool expanded = false;
+
+    protected override void OnParametersSet()
+    {
+        if (_userToggled) return;
+        expanded = Vessels.Any(v => VesselRowClass(v) is "vessel-danger" or "vessel-warn");
+    }
+
+    private void ToggleExpanded()
+    {
+        expanded = !expanded;
+        _userToggled = true;
+    }
 
     private static string VesselRowClass(VesselListEntry v)
     {
