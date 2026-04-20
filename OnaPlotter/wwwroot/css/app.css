@@ -4226,19 +4226,41 @@ main:has(.map-container.big-type) .map-fab-item {
    palette; distinct from the cyan we used before which fought with the
    water-blue chart background. */
 .active-wp-icon { background: none !important; border: none !important; }
+
+/* Next-waypoint pulse. Previous version animated transform AND
+   box-shadow -- box-shadow isn't GPU-compositable, so on a Raspi
+   Chrome kiosk every frame triggered a full paint pass and the
+   whole map felt sluggish. The new version keeps the inner dot
+   static and paints a single expanding ring via ::before, using
+   only transform + opacity (both GPU-composited). will-change
+   hints to the compositor so a texture layer is set up once, not
+   per-frame. Same visual result, an order of magnitude cheaper
+   to run on weak GPUs. */
 .active-wp-pulse {
+    position: relative;
     width: 24px;
     height: 24px;
     border-radius: 50%;
     background: #e09f3e;
     border: 2px solid #fff;
+    /* Static glow -- the animation is handled by ::before now. */
     box-shadow: 0 0 8px rgba(224, 159, 62, 0.65);
-    animation: wp-ping 1.5s ease-in-out infinite;
+}
+.active-wp-pulse::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 2px solid rgba(224, 159, 62, 0.9);
+    animation: wp-ping 1.5s ease-out infinite;
+    pointer-events: none;
+    will-change: transform, opacity;
 }
 
 @keyframes wp-ping {
-    0%, 100% { transform: scale(1); box-shadow: 0 0 8px rgba(224, 159, 62, 0.65); }
-    50%      { transform: scale(1.3); box-shadow: 0 0 16px rgba(224, 159, 62, 0.95); }
+    0%   { transform: scale(1);   opacity: 0.85; }
+    80%  { transform: scale(2);   opacity: 0;    }
+    100% { transform: scale(2);   opacity: 0;    }
 }
 
 /* Numbered waypoint tooltips on the active route */

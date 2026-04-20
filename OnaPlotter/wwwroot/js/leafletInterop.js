@@ -8,6 +8,11 @@ import { isOverlayChart, computeOverzoom, applyOverzoom } from './chartOverzoom.
 import { MarkerLayer } from './markerLayer.js';
 
 let map = null;
+// Weak-client detection (Raspberry Pi, older tablets). Gates
+// perf-heavy options -- tile streaming during pan, AIS updates
+// during active drag, etc. Computed once in initMap() so the
+// same flag drives every layer created later.
+let isSlowClient = false;
 let boatMarker = null;
 let boatVector = null;
 let vectorLabel = null;  // Time/distance label at end of COG vector.
@@ -559,19 +564,28 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     map.on('zoomend', () => zoomBadge.update());
     zoomBadge.update();
 
+    // Detect a weak client so we can bias tile loading / redraw rate
+    // toward performance. Heuristic: 4 or fewer logical cores (typical
+    // Raspberry Pi: 4), or the UA ad-hoc 'linux arm' marker (RPi OS).
+    // isSlowClient toggles updateWhenIdle (tiles load at pan-end, not
+    // during drag) which was the single biggest win in field testing
+    // on a Raspi kiosk. Desktop and iPad keep the fast live-stream
+    // behaviour because their GPUs can keep up with the fetch cadence.
+    isSlowClient =
+        (typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+            && navigator.hardwareConcurrency <= 4)
+        || /\barm\b|\barmv|raspberry/i.test(
+            typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '');
+
     // keepBuffer bumped above the default 2 so tiles stay in memory a
     // few rings further out; panning back doesn't re-request. Cheap
     // memory, noticeable smoothness on the Pi-local-wifi setup where
     // re-fetch RTT is low but visible.
-    // updateWhenIdle=false: stream tiles during pan (not only at pan-
-    // end). Leaflet's default flips to true on mobile user-agents; we
-    // override because our "mobile" is an iPad in the cockpit where
-    // the user wants the map to feel alive, not freeze mid-drag.
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 22,
         keepBuffer: 4,
-        updateWhenIdle: false,
+        updateWhenIdle: isSlowClient,
         crossOrigin: 'anonymous',
         attribution: '&copy; OpenStreetMap contributors',
         referrerPolicy: 'strict-origin-when-cross-origin'
@@ -581,7 +595,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         maxNativeZoom: 19,
         maxZoom: 22,
         keepBuffer: 4,
-        updateWhenIdle: false,
+        updateWhenIdle: isSlowClient,
         crossOrigin: 'anonymous',
         attribution: '&copy; OpenSeaMap',
         opacity: 0.8,
@@ -862,6 +876,13 @@ export function flushTrackPoints() {
 
 export function updateAisTargets(vessels) {
     if (!map) return;
+    // During an active drag a full AIS rebuild is the largest per-frame
+    // cost in the module (200+ markers, CPA overlays, trails, popups).
+    // Defer until the user lets go; the next 3 s tick picks up any
+    // changes that happened during the drag. Safety is preserved
+    // because alarms run on the C# side off the delta stream, not
+    // off the JS marker state.
+    if (isSlowClient && map.dragging && map.dragging._moving) return;
     const seen = new Set();
 
     for (const v of vessels) {
@@ -1536,9 +1557,11 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
         opacity: opacity || 0.8,
         // keepBuffer + updateWhenIdle match base layers; don't re-fetch
         // chart tiles when the user zig-zags back into territory they
-        // just panned away from.
+        // just panned away from. updateWhenIdle follows the client-
+        // strength detection -- slow devices defer tile fetches to pan-
+        // end so the drag stays smooth.
         keepBuffer: 4,
-        updateWhenIdle: false,
+        updateWhenIdle: isSlowClient,
         crossOrigin: 'anonymous',
         attribution: '',
         errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.
