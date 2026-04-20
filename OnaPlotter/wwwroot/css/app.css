@@ -1434,7 +1434,9 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
    sensors are actually plumbed into their boat. */
 .paths-table {
     display: grid;
-    grid-template-columns: 40px minmax(240px, 1.2fr) minmax(200px, 1.3fr) minmax(200px, 1.5fr);
+    /* live · path · value · used-for · publisher. Value column gets its
+       own share so numeric readouts align vertically across rows. */
+    grid-template-columns: 40px minmax(220px, 1.2fr) minmax(130px, 0.9fr) minmax(180px, 1.2fr) minmax(180px, 1.3fr);
     gap: 0;
     border: 1px solid var(--sk-border);
     border-radius: 6px;
@@ -1476,6 +1478,16 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     background: transparent;
     padding: 0;
 }
+.paths-value {
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 0.78rem;
+    color: var(--sev-ok);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.paths-row-missing .paths-value { color: var(--sk-text-muted); }
 
 /* On phones, collapse to two lines per row: path + live above, use +
    plugin below. Grid still works but reads vertically. */
@@ -1485,9 +1497,10 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     .paths-row {
         display: grid;
         grid-template-columns: 40px 1fr;
-        grid-template-rows: auto auto auto;
+        grid-template-rows: auto auto auto auto;
         grid-template-areas:
             "live path"
+            ".    value"
             ".    use"
             ".    plugin";
         border-bottom: 1px solid var(--sk-border);
@@ -1495,6 +1508,7 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     .paths-row > * { border-bottom: none; }
     .paths-row .paths-live { grid-area: live; }
     .paths-row .paths-path { grid-area: path; }
+    .paths-row .paths-value { grid-area: value; }
     .paths-row .paths-use { grid-area: use; color: var(--sk-text-muted); }
     .paths-row .paths-plugin { grid-area: plugin; font-size: 0.75rem; }
 }
@@ -2124,15 +2138,18 @@ main:has(.alarm-banner-stack) .hud-top-left {
     margin: 0 !important;
     flex: 0 0 auto;
 }
-/* Lift the depth HUD above the scale/zoom row so they don't collide
-   in the bottom-left corner. Scale bars are ~30 px; 38 px offset clears
-   them with a small gap. */
+/* Lift the depth HUD above the scale/zoom row. After the zoom badge
+   was compacted to `z12` (was `z N (native K)`) the row is only one
+   line tall, so 32 px clears it. The bottom-right compass HUD sits
+   at 12 px; the residual gap is unavoidable as long as the scale
+   bars live in the bottom-left corner. Alternatives (moving them
+   elsewhere) are a UX call, not a bug fix. */
 .hud-bottom-left {
-    bottom: 48px !important;
+    bottom: 34px !important;
 }
 @media (max-width: 600px) {
     .hud-bottom-left {
-        bottom: 52px !important;
+        bottom: 38px !important;
     }
 }
 

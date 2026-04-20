@@ -62,19 +62,14 @@ public sealed class NavigationData
     public DateTime? TideTimeLow { get; private set; }
     public string? TideStationName { get; private set; }
 
-    /// <summary>Sun altitude in radians above the horizon. Positive =
-    /// sun above horizon (day); negative = below (night). Typical
-    /// thresholds: 0 rad = sunset/sunrise; -0.1 rad ≈ civil twilight;
-    /// -0.21 rad ≈ nautical twilight. Null on servers without a solar-
-    /// position plugin.</summary>
-    public double? SunAltitude { get; private set; }
-
     /// <summary>Solar state from SignalK's <c>environment.sun</c> string
     /// path. Typical values from signalk-solar / sun plugins: "day",
-    /// "dawn", "dusk", "night". When present, the auto-night mode logic
-    /// prefers this over the <see cref="SunAltitude"/> threshold -- the
-    /// plugin knows about civil / nautical / astronomical twilight
-    /// without us having to reimplement those cutoffs here.</summary>
+    /// "dawn", "dusk", "night". Drives auto-night mode directly -- the
+    /// plugin knows about civil / nautical / astronomical twilight so
+    /// we don't reimplement those cutoffs here. The older radians
+    /// <c>environment.sun.altitude</c> fallback was removed: any plugin
+    /// worth installing publishes the string, and the redundant path
+    /// just muddied the /raw viewer.</summary>
     public string? SunState { get; private set; }
 
     /// <summary>Boat draft in metres, sourced from SignalK's
@@ -185,9 +180,6 @@ public sealed class NavigationData
                     break;
                 case "environment.tide.heightLow":
                     TideHeightLow = value;
-                    break;
-                case "environment.sun.altitude":
-                    SunAltitude = value;
                     break;
                 default:
                     return false;

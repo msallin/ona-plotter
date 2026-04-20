@@ -170,13 +170,19 @@ const NauticalScale = L.Control.Scale.extend({
         const dist = halfWorldMeters * (bounds.getNorthEast().lng - bounds.getSouthWest().lng) / 180;
         const maxMeters = dist * (this.options.maxWidth / size.x);
         if (!isFinite(maxMeters) || maxMeters <= 0) return;
-        const nm = maxMeters / 1852;
-        const d = this._getRoundNum(nm);
+        const maxNm = maxMeters / 1852;
+        const d = this._getRoundNum(maxNm);
         if (!isFinite(d) || d <= 0) return;
+        // Width is the chosen round value's share of the max width. Matches
+        // the metric bar's behaviour exactly so both stack at the same px
+        // width within a factor of 1.85 (nm/km ratio).
         this._nauticalLine.style.width = ((d * 1852) / maxMeters * this.options.maxWidth) + 'px';
-        // cbl (cables) = 0.1 nm. Below 1 nm the bar is small enough that a
-        // more granular unit reads better than "0.5 nm".
-        this._nauticalLine.innerHTML = d < 1 ? `${(d * 10).toFixed(0)} cbl` : `${d} nm`;
+        // Label rule matches metric ("500 m" -> "1 km"): at < 1 nm we drop
+        // to cables (0.1 nm). _getRoundNum's 1-2-3-5-10 steps in nm produce
+        // 1 cbl / 2 cbl / 3 cbl / 5 cbl / 1 nm / 2 nm / 3 nm / 5 nm / 10 nm.
+        this._nauticalLine.innerHTML = d < 1
+            ? `${Math.round(d * 10)} cbl`
+            : `${d} nm`;
     },
     onRemove(map) {
         // Avoid leaking the move listener when the control (or map) is torn
@@ -185,9 +191,11 @@ const NauticalScale = L.Control.Scale.extend({
     }
 });
 
-// Zoom-level badge. Shows "z N" at glance, flips to amber with
-// "z N (native K)" when the map is zoomed past the top chart's native
-// max so sailors know tiles are being scaled up rather than fresh.
+// Zoom-level badge. Compact "z N" at glance; an amber "↑" appears
+// when the map is zoomed past the top chart's native max so tiles
+// are being scaled up. Full "native K" text moves to the title
+// tooltip rather than widening the badge -- the bottom-left row
+// was pushing the depth HUD upward when the badge grew mid-pan.
 const ZoomBadge = L.Control.extend({
     onAdd() {
         this._el = L.DomUtil.create('div', 'ona-zoom-badge');
@@ -198,16 +206,18 @@ const ZoomBadge = L.Control.extend({
         if (!this._el || !this._map) return;
         const z = this._map.getZoom();
         let topNative = 0;
-        for (const native of chartNativeMax.values()) {
+        for (const [id, native] of chartNativeMax.entries()) {
+            if (chartOverlay.has(id)) continue;  // overlays don't count
             if (native > topNative) topNative = native;
         }
-        if (topNative > 0 && z > topNative) {
-            this._el.textContent = `z ${z} (native ${topNative})`;
-            this._el.classList.add('ona-zoom-badge-over');
-        } else {
-            this._el.textContent = `z ${z}`;
-            this._el.classList.remove('ona-zoom-badge-over');
-        }
+        const over = topNative > 0 && z > topNative;
+        this._el.textContent = over ? `z${z} \u2191` : `z${z}`;
+        this._el.title = over
+            ? `Zoom ${z}; top chart native max ${topNative} (tiles are being scaled up)`
+            : topNative > 0
+                ? `Zoom ${z}; top chart native max ${topNative}`
+                : `Zoom ${z}`;
+        this._el.classList.toggle('ona-zoom-badge-over', over);
     }
 });
 

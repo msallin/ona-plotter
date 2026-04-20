@@ -2124,15 +2124,11 @@
     private void TouchDeadman() => DeadmanTracker.Touch();
 
     // Auto-night plumbing. Dormant unless the user opts in via Settings
-    // AND the server publishes a sun signal. Two publishers supported:
-    //   1. environment.sun (string: "day" / "dawn" / "dusk" / "night")
-    //      -- preferred when present; the plugin knows about civil /
-    //      nautical twilight cutoffs so we don't have to reimplement.
-    //   2. environment.sun.altitude (radians, from the solar-altitude
-    //      plugin) -- fallback. Night when alt < -0.1 rad ~= civil dusk.
-    // A manual Night tap within the last hour suppresses the auto-flip
-    // so a helmsman who wants day-mode at dusk isn't fought.
-    private const double NightSunAltitudeThresholdRad = -0.1;  // ~civil twilight
+    // AND the server publishes environment.sun as one of
+    // "day" / "dawn" / "dusk" / "night". The plugin knows about
+    // civil-twilight cutoffs so we don't reimplement them. A manual
+    // Night tap within the last hour suppresses the auto-flip so a
+    // helmsman who wants day-mode at dusk isn't fought.
     private const int ManualNightOverrideMinutes = 60;
     private DateTime? _lastManualNightToggleUtc;
     private DateTime _lastAutoNightCheckUtc = DateTime.MinValue;
@@ -2141,13 +2137,14 @@
     {
         if (!Settings.NightModeAuto) return;
 
-        // Determine night/day. String state wins if published; else fall
-        // back to altitude threshold; if neither, nothing to do.
+        // Dusk / night => night on. Day / dawn => night off. Any
+        // other value (empty, unknown, plugin not installed) skips
+        // the flip entirely.
         bool? wantNightNullable = Data.SunState switch
         {
             "night" or "dusk" => true,
-            "day"   or "dawn" => false,
-            _ => Data.SunAltitude is double alt ? alt < NightSunAltitudeThresholdRad : null,
+            "day" or "dawn" => false,
+            _ => null,
         };
         if (wantNightNullable is not bool wantNight) return;
 

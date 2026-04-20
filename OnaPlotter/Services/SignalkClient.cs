@@ -58,7 +58,11 @@ public sealed class SignalkClient : IAsyncDisposable
     // Extra paths subscribed to by the RawStream page (re-applied on reconnect).
     private readonly HashSet<string> _extraPaths = [];
 
-    private static readonly string[] SelfPaths =
+    // Internal rather than private so the test project (via
+    // InternalsVisibleTo) can assert the self-only / AIS path-set
+    // contract: overlapping paths must land in AisPaths, because
+    // vessels.* matches self too and would duplicate delivery.
+    internal static readonly string[] SelfPaths =
     [
         "navigation.position",
         "navigation.speedOverGround",
@@ -112,20 +116,15 @@ public sealed class SignalkClient : IAsyncDisposable
         "environment.tide.timeHigh",
         "environment.tide.timeLow",
         "environment.tide.stationName",
-        // Solar state for auto night-mode. Two paths, either of which
-        // drives the flip -- whichever the server's plugin emits:
-        //   environment.sun         -> string: "day" / "dawn" / "dusk" / "night"
-        //                              (preferred; the plugin knows the
-        //                              twilight cutoffs).
-        //   environment.sun.altitude -> double: radians above horizon
-        //                              (fallback; we threshold at -0.1
-        //                              rad ~ civil twilight).
-        // Servers without either plugin get a dormant auto toggle.
-        "environment.sun",
-        "environment.sun.altitude"
+        // Solar state string for auto night-mode. Published by
+        // signalk-solar / signalk-sun-position and similar plugins as
+        // one of "day" / "dawn" / "dusk" / "night". The plugin knows
+        // about civil-twilight cutoffs so we don't reimplement them.
+        // Servers without such a plugin get a dormant auto toggle.
+        "environment.sun"
     ];
 
-    private static readonly string[] AisPaths =
+    internal static readonly string[] AisPaths =
     [
         "navigation.position",
         "navigation.speedOverGround",
@@ -218,7 +217,15 @@ public sealed class SignalkClient : IAsyncDisposable
                 // over NMEA2000's native 10 Hz. Extra paths added by
                 // the RawStream page use the instant-with-minPeriod
                 // profile so the viewer sees live deltas.
-                await SendSubscriptionAsync("vessels.self", SelfPaths);
+                //
+                // IMPORTANT: vessels.* matches self too, so any path in
+                // both SelfPaths and AisPaths would be delivered twice for
+                // own-boat (we'd see navigation.position 2x in the raw
+                // stream, HUD would count each tick twice, etc.). Strip
+                // the overlap from the self subscription -- the shared
+                // paths still reach us via the vessels.* wildcard.
+                var selfOnlyPaths = SelfPaths.Except(AisPaths).ToArray();
+                await SendSubscriptionAsync("vessels.self", selfOnlyPaths);
                 await SendSubscriptionAsync("vessels.*", AisPaths);
                 if (_extraPaths.Count > 0)
                     await SendSubscriptionAsync("vessels.self", _extraPaths,
