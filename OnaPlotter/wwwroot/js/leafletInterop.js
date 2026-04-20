@@ -340,16 +340,25 @@ function makeRadarSvg(fill, size) {
 const aisIconCache = {};
 const radarIconCache = {};
 const sartIconCache = {};
+// AIS icon size. 28 leaves own boat (30) visibly bigger while making
+// other traffic actually legible at chart zoom. 24 previously read as
+// "too small" on a helm screen, especially with a ship-type glyph
+// overlaid -- the glyph shrank to noise.
+const AIS_ICON_SIZE = 28;
+const RADAR_ICON_SIZE = 26;
+
 function getAisIcon(color, category) {
     const key = `${color}|${category || ''}`;
     if (!aisIconCache[key]) {
-        aisIconCache[key] = makeIcon(makeBoatSvg(color, 24, false, category), 24);
+        aisIconCache[key] = makeIcon(
+            makeBoatSvg(color, AIS_ICON_SIZE, false, category), AIS_ICON_SIZE);
     }
     return aisIconCache[key];
 }
 function getRadarIcon(color) {
     if (!radarIconCache[color]) {
-        radarIconCache[color] = makeIcon(makeRadarSvg(color, 22), 22);
+        radarIconCache[color] = makeIcon(
+            makeRadarSvg(color, RADAR_ICON_SIZE), RADAR_ICON_SIZE);
     }
     return radarIconCache[color];
 }
