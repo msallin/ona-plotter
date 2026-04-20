@@ -112,13 +112,16 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     await depthInput.fill('4.5');
     await depthInput.blur();
 
-    // @onchange fires asynchronously -- SetDepthAlarmThresholdAsync ->
-    // IKeyValueStore.SetAsync crosses into IndexedDB via JS interop.
-    // Without a wait the reload below can race the save and start a
-    // fresh load before the value lands on disk; the test then reads
-    // back the default. 400 ms is comfortably above observed CI
-    // latency for the full save round-trip.
-    await page.waitForTimeout(400);
+    // Settings.OnDepthChanged is an async event handler that awaits
+    // AppSettings.SetDepthAlarmThresholdAsync, which writes through to
+    // localStorage. Blazor's @onchange doesn't block the browser, so
+    // a raw page.reload() can race the write and the reload reads
+    // back the default. Poll localStorage directly (synchronous) until
+    // the value lands -- more robust than a fixed sleep.
+    await expect.poll(async () =>
+        await page.evaluate(() => localStorage.getItem('ona.depthAlarmThreshold')),
+        { timeout: 5_000 }
+    ).toBe('4.5');
 
     // Reload and re-read.
     await page.reload();
@@ -126,11 +129,16 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     const reloaded = await page.locator('input[type="number"]').first().inputValue();
     expect(reloaded).toBe('4.5');
 
-    // Restore default so subsequent test runs start clean.
+    // Restore default so subsequent test runs start clean. Same poll
+    // pattern ensures the restore actually landed before the test
+    // exits, so a retry starts from a clean state.
     const restore = page.locator('input[type="number"]').first();
     await restore.fill('3');
     await restore.blur();
-    await page.waitForTimeout(400);   // same race, same cure
+    await expect.poll(async () =>
+        await page.evaluate(() => localStorage.getItem('ona.depthAlarmThreshold')),
+        { timeout: 5_000 }
+    ).toBe('3');
 
     await assertBlazorErrorNotVisible();
 });
