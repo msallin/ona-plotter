@@ -1,0 +1,34 @@
+@* Thin table wrapper shared by the Resources page tabs. Responsible for
+   the header row + empty-state message + outer .table scaffolding so the
+   four tab bodies only have to emit <tr> rows for their own data shape. *@
+
+@if (IsEmpty)
+{
+    <p class="text-muted">@EmptyMessage</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    @foreach (var col in Columns)
+                    {
+                        <th scope="col">@col</th>
+                    }
+                    <th scope="col" class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @ChildContent
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter] public string[] Columns { get; set; } = [];
+    [Parameter] public bool IsEmpty { get; set; }
+    [Parameter] public string EmptyMessage { get; set; } = "Nothing here yet.";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
