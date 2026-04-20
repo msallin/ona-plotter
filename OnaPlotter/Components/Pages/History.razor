@@ -47,7 +47,7 @@
             @* Step buttons disable at their respective boundary so the
                user isn't left wondering whether &lt;&lt; was registered
                but silently no-op'd at the start of the track. *@
-            <div class="d-flex gap-2 mt-1">
+            <div class="d-flex gap-2 mt-1 flex-wrap align-items-center">
                 <button class="map-btn" @onclick="PlayPause">@(playing ? "Pause" : "Play")</button>
                 <button class="map-btn" @onclick="() => StepBy(-10)"
                         disabled="@(playbackIndex == 0)">&lt;&lt;</button>
@@ -57,6 +57,23 @@
                         disabled="@(playbackIndex >= trackPoints.Length - 1)">&gt;</button>
                 <button class="map-btn" @onclick="() => StepBy(10)"
                         disabled="@(playbackIndex >= trackPoints.Length - 1)">&gt;&gt;</button>
+                @* Playback speed. User-selectable so a slow tablet can
+                   pick 1x without being forced to watch 5x-fast jitter;
+                   a desktop user reviewing a multi-day passage can pick
+                   10x to scrub quickly. Timer reinitialises on change. *@
+                <label class="d-inline-flex align-items-center gap-1 ms-2"
+                       style="font-size:0.75rem; color:var(--sk-text-muted);">
+                    Speed
+                    <select class="form-select form-select-sm" style="width:auto;"
+                            aria-label="Playback speed"
+                            @onchange="OnSpeedChanged">
+                        <option value="400">0.5x</option>
+                        <option value="200" selected>1x</option>
+                        <option value="100">2x</option>
+                        <option value="40">5x</option>
+                        <option value="20">10x</option>
+                    </select>
+                </label>
             </div>
         }
         else if (loadAttempted)
@@ -223,20 +240,39 @@
         }
     }
 
+    private int playbackPeriodMs = 200;   // default 1x
+
+    private void OnSpeedChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int ms))
+        {
+            playbackPeriodMs = Math.Clamp(ms, 20, 1000);
+            if (playing)
+            {
+                // Re-arm timer at the new cadence.
+                playTimer?.Dispose();
+                playTimer = NewPlayTimer();
+            }
+        }
+    }
+
+    private System.Threading.Timer NewPlayTimer() =>
+        new(async _ =>
+        {
+            if (!playing || trackPoints is null) return;
+            playbackIndex = Math.Min(playbackIndex + 1, trackPoints.Length - 1);
+            if (playbackIndex >= trackPoints.Length - 1) playing = false;
+            await MoveMarker();
+            try { await InvokeAsync(StateHasChanged); }
+            catch (ObjectDisposedException) { }
+        }, null, 0, playbackPeriodMs);
+
     private void PlayPause()
     {
         playing = !playing;
         if (playing)
         {
-            playTimer = new System.Threading.Timer(async _ =>
-            {
-                if (!playing || trackPoints is null) return;
-                playbackIndex = Math.Min(playbackIndex + 1, trackPoints.Length - 1);
-                if (playbackIndex >= trackPoints.Length - 1) playing = false;
-                await MoveMarker();
-                try { await InvokeAsync(StateHasChanged); }
-                catch (ObjectDisposedException) { }
-            }, null, 0, 200);
+            playTimer = NewPlayTimer();
         }
         else
         {

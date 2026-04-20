@@ -2584,17 +2584,26 @@ main:has(.alarm-banner-stack) .hud-top-left {
     .rawstream-search  { width: 100%; }
 }
 
-/* ===== Connection Status: Stale Data Warning ===== */
+/* ===== Connection Status: Stale Data Warning =====
+   Visible on every page via MainLayout's top-row. Muted in the live
+   state (green dot + small text) so it doesn't compete with the
+   page content; loud when stale / offline so a helmsman on any
+   non-Map page sees that SignalK has dropped. */
 
 .connection-status {
     display: inline-flex;
     align-items: center;
+    gap: 6px;
     font-size: 0.82rem;
-    transition: color 0.3s ease;
+    padding: 3px 10px;
+    border-radius: 12px;
+    transition: color 0.3s ease, background-color 0.3s ease;
 }
 
 .connection-status.stale {
-    color: var(--sk-orange);
+    color: #fff;
+    background: var(--sev-warn-bg);
+    border: 1px solid var(--sev-warn);
 }
 
 .connection-status.stale .connection-dot {
@@ -2602,7 +2611,10 @@ main:has(.alarm-banner-stack) .hud-top-left {
 }
 
 .connection-status.disconnected {
-    color: var(--sk-red);
+    color: #fff;
+    background: var(--sev-danger-bg);
+    border: 1px solid var(--sev-danger);
+    font-weight: 600;
 }
 
 .connection-dot.stale {

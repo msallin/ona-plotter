@@ -14,6 +14,13 @@
            reference -- SVG presentation attributes don't resolve var()
            but `style` does. Lets Gauges.razor pass var(--sev-ok) etc.
            and have the night-mode palette apply. *@
+        @{
+            // Zones dim further when Value is null so the whole gauge
+            // reads as "waiting for data" at a glance, not just the
+            // greyed needle. 0.4 -> 0.12 is roughly "visible but not
+            // competing with active gauges on the page".
+            double zoneOpacity = Value is null ? 0.12 : 0.4;
+        }
         @if (Zones is not null)
         {
             @foreach (var zone in Zones)
@@ -22,7 +29,8 @@
                 double endFrac = Math.Clamp((zone.Max - Min) / Range, 0, 1);
                 <path d="@ArcPath(startFrac, endFrac)" fill="none"
                       style="stroke: @zone.Color;"
-                      stroke-width="@TrackWidth" stroke-linecap="butt" opacity="0.4" />
+                      stroke-width="@TrackWidth" stroke-linecap="butt"
+                      opacity="@zoneOpacity.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)" />
             }
         }
 

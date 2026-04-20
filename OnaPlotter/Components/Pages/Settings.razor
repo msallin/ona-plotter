@@ -17,6 +17,10 @@
    ~600 lines and growing -- Ctrl-F works but scrolls past group
    headings, and the helm screen doesn't always have a physical
    keyboard. Clearing the input removes the highlight. *@
+@* max-width 1200 (was 600) so iPad landscape + desktop actually use
+   the available width; .col-sm-6 / .col-md-6 on individual cards then
+   puts two settings cards side-by-side at >= 720 px instead of forcing
+   a single column on a 1400 px iMac. The search input stays narrow. *@
 <div class="mb-3" style="max-width: 600px;">
     <input type="search" class="form-control" placeholder="Find a setting (e.g. depth, snooze, polar)..."
            aria-label="Find a setting"
@@ -24,7 +28,7 @@
            @oninput="(e) => OnSettingsFilterInput(e)" />
 </div>
 
-<div class="row g-4" style="max-width: 600px;">
+<div class="row g-4" style="max-width: 1200px;">
 
     <div class="col-12">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Mode</h5>
