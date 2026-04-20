@@ -1,0 +1,263 @@
+@* SignalK paths used by OnaPlotter. Shown so a new user (charter
+   skipper, migrating install) can tell at a glance which paths are
+   plumbed in vs. missing, and which plugin they'd install to fill
+   the gap. Live-state column reads from NavigationData / the SignalK
+   REST API on page load. Not a comprehensive list of every SK path;
+   only the ones this app actually consumes. *@
+
+@page "/paths"
+@using OnaPlotter.Services
+@using OnaPlotter.Services.Api
+@using OnaPlotter.Models
+@inject SignalkClient SignalkClient
+@inject IPathApi PathApi
+@implements IDisposable
+
+<PageTitle>Paths</PageTitle>
+
+<h2>SignalK data paths</h2>
+<p class="text-muted" style="max-width:720px;">
+    What OnaPlotter reads from SignalK and which features need each path.
+    A green check means the server has published a value for that path;
+    a dash means not yet seen this session. Plugin suggestions are the
+    most common publishers, not the only ones &mdash; any source that
+    writes to the canonical path works.
+</p>
+
+<div class="mb-3" style="max-width:720px;">
+    <input type="search" class="form-control" placeholder="Filter by path / feature / plugin..."
+           aria-label="Filter SignalK paths"
+           value="@filter"
+           @oninput="OnFilterInput" />
+</div>
+
+@foreach (var group in VisibleGroups)
+{
+    <h5 class="mt-4 text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">
+        @group.Title
+    </h5>
+    <div class="paths-table" role="table" aria-label="@group.Title paths">
+        <div class="paths-row paths-row-header" role="row">
+            <span role="columnheader">Live</span>
+            <span role="columnheader">Path</span>
+            <span role="columnheader">Used for</span>
+            <span role="columnheader">Typical publisher</span>
+        </div>
+        @foreach (var p in group.Paths)
+        {
+            bool live = p.IsLive?.Invoke(liveState) ?? false;
+            <div class="paths-row @(live ? "paths-row-live" : "paths-row-missing")" role="row">
+                <span class="paths-live" role="cell" title="@(live ? "Published" : "Not seen this session")">
+                    @(live ? "\u2713" : "\u2013")
+                </span>
+                <code class="paths-path" role="cell">@p.Path</code>
+                <span class="paths-use" role="cell">@p.UsedFor</span>
+                <span class="paths-plugin" role="cell">@((MarkupString)p.Plugin)</span>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private string filter = "";
+    private HashSet<string> liveState = new(StringComparer.Ordinal);
+
+    private record PathInfo(
+        string Path,
+        string UsedFor,
+        string Plugin,
+        Func<HashSet<string>, bool>? IsLive = null);
+
+    private record PathGroup(string Title, List<PathInfo> Paths);
+
+    // Convenience: a path is live if its key is in the seen-set.
+    private static Func<HashSet<string>, bool> Seen(params string[] keys)
+        => set => keys.Any(set.Contains);
+
+    private List<PathGroup> groups = [];
+
+    protected override void OnInitialized()
+    {
+        // Live-state subscription: update ticks as paths arrive.
+        SignalkClient.OnDataChanged += HandleDataChanged;
+
+        // Data model: one PathGroup per SignalK category we touch.
+        // Keep each "used for" phrase under ~60 chars so the table
+        // reads at a glance on a helm screen.
+        groups =
+        [
+            new PathGroup("Navigation (own vessel)",
+            [
+                new("navigation.position", "Own-boat marker, track, chart centring",
+                    "GPS via <code>signalk-serial</code> / <code>signalk-n2k</code>",
+                    Seen("navigation.position")),
+                new("navigation.speedOverGround", "SOG HUD, auto night, CPA projection",
+                    "GPS (SOG NMEA RMC / PGN 129026)",
+                    s => Data.SpeedOverGround is not null),
+                new("navigation.courseOverGroundTrue", "COG HUD, CPA projection, laylines",
+                    "GPS (RMC / PGN 129026)",
+                    s => Data.CourseOverGround is not null),
+                new("navigation.headingTrue", "Compass HUD, SailSteer, COG-vs-HDG drift",
+                    "Fluxgate / rate compass via <code>signalk-n2k</code>",
+                    s => Data.Heading is not null),
+                new("navigation.anchor.maxRadius", "Anchor-watch circle size",
+                    "<code>signalk-anchoralarm-plugin</code>",
+                    s => Data.AnchorMaxRadius is not null),
+                new("navigation.anchor.currentRadius", "Distance-from-anchor HUD",
+                    "<code>signalk-anchoralarm-plugin</code>",
+                    s => Data.AnchorCurrentRadius is not null),
+            ]),
+            new PathGroup("Environment (sensors)",
+            [
+                new("environment.depth.belowTransducer", "Depth HUD, shallow alarm",
+                    "Depth sounder via NMEA 0183 DPT / PGN 128267",
+                    s => Data.Depth is not null),
+                new("environment.wind.angleApparent", "AWA HUD, WindRose, SailSteer",
+                    "Wind transducer via NMEA 0183 MWV / PGN 130306",
+                    s => Data.WindAngleApparent is not null),
+                new("environment.wind.speedApparent", "AWS HUD, WindRose",
+                    "Wind transducer (MWV / PGN 130306)",
+                    s => Data.WindSpeedApparent is not null),
+                new("environment.wind.directionTrue", "TWD auto-night edge, laylines, wind-shift alarm",
+                    "NMEA 0183 MWD / derived from AWA + COG via <code>signalk-derived-data</code>",
+                    s => Data.WindDirectionTrue is not null),
+                new("environment.wind.speedTrue", "TWS HUD, polar performance, race HUD",
+                    "Derived by <code>signalk-derived-data</code> from AWS + SOG",
+                    s => Data.WindSpeedTrue is not null),
+                new("environment.wind.angleTrueWater", "Race TWA, polar target speed",
+                    "<code>signalk-derived-data</code>",
+                    s => Data.WindAngleTrue is not null),
+                new("environment.sun.altitude", "Auto Night mode fallback",
+                    "<code>signalk-sun</code> / <code>signalk-solar-position</code>",
+                    s => Data.SunAltitude is not null),
+                new("environment.sun", "Auto Night mode (preferred over altitude)",
+                    "Plugins that emit a state string: <code>day / dawn / dusk / night</code>",
+                    s => Data.SunState is not null),
+            ]),
+            new PathGroup("Tide (for anchor-tide alarm)",
+            [
+                new("environment.tide.heightNow", "Tide HUD, anchor-tide prediction",
+                    "<code>signalk-tides-api</code>, <code>mxtide</code>, or similar",
+                    s => Data.TideHeightNow is not null),
+                new("environment.tide.heightHigh", "Next HW display",
+                    "<code>signalk-tides-api</code>",
+                    s => Data.TideHeightHigh is not null),
+                new("environment.tide.heightLow", "Anchor-tide alarm LW forecast",
+                    "<code>signalk-tides-api</code>",
+                    s => Data.TideHeightLow is not null),
+                new("environment.tide.timeHigh", "Next-HW countdown",
+                    "<code>signalk-tides-api</code>",
+                    s => Data.TideTimeHigh is not null),
+                new("environment.tide.timeLow", "Anchor-tide alarm timing, next-LW countdown",
+                    "<code>signalk-tides-api</code>",
+                    s => Data.TideTimeLow is not null),
+                new("environment.tide.stationName", "Tide HUD source label",
+                    "<code>signalk-tides-api</code>",
+                    s => !string.IsNullOrEmpty(Data.TideStationName)),
+            ]),
+            new PathGroup("Design (vessel spec)",
+            [
+                new("design.draft.current", "Anchor-tide alarm, auto-fill Settings draft",
+                    "Hard-coded in server <code>vessel.json</code> OR <code>signalk-load-data</code>",
+                    s => Data.DraftFromSignalK is not null),
+                new("design.draft.maximum", "Anchor-tide alarm (fallback when .current missing)",
+                    "Hard-coded in server <code>vessel.json</code>",
+                    s => Data.DraftFromSignalK is not null),
+            ]),
+            new PathGroup("Active course / routing",
+            [
+                new("navigation.courseGreatCircle.activeRoute.href", "Active route banner, route highlight",
+                    "Any chartplotter that writes course data (Freeboard-SK, OnaPlotter itself)",
+                    s => !string.IsNullOrEmpty(Data.ActiveRouteHref)),
+                new("navigation.courseGreatCircle.nextPoint.distance", "Next-WP HUD, APPROACH alarm",
+                    "Set by the active-route plotter",
+                    s => Data.CourseNextPointDistance is not null),
+                new("navigation.courseGreatCircle.nextPoint.bearingTrue", "Next-WP HUD, SailSteer waypoint line",
+                    "Active-route plotter",
+                    s => Data.CourseNextPointBearing is not null),
+                new("navigation.courseGreatCircle.nextPoint.timeToGo", "TTG HUD",
+                    "Active-route plotter",
+                    s => Data.CourseNextPointTimeToGo is not null),
+                new("navigation.courseGreatCircle.nextPoint.velocityMadeGood", "VMG HUD",
+                    "Active-route plotter",
+                    s => Data.CourseNextPointVmg is not null),
+            ]),
+            new PathGroup("Autopilot",
+            [
+                new("steering.autopilot.state", "AP state HUD (auto / wind / route / standby)",
+                    "<code>signalk-autopilot</code> or N2K PGN 65360",
+                    s => !string.IsNullOrEmpty(Data.AutopilotState)),
+            ]),
+            new PathGroup("AIS (other vessels)",
+            [
+                new("vessels.urn:mrn:imo:mmsi:* (bulk context)", "AIS overlay, CPA alarm, buddy list",
+                    "AIS receiver (NMEA 0183 VDM / PGN 129038-9) or <code>aisreporter</code>",
+                    s => s.Contains("vessels.*")),
+                new("/signalk/v2/api/resources/flags/mmsi/{mmsi}", "Country flag in AIS popup",
+                    "<code>signalk-flags</code>",
+                    s => s.Contains("flags.plugin")),
+                new("/signalk/v1/api/resources/charts", "Chart layers (Layers panel)",
+                    "<code>signalk-charts-plugin</code>",
+                    s => s.Contains("charts.plugin")),
+            ]),
+        ];
+
+        _ = RefreshLiveStateAsync();
+    }
+
+    private NavigationData Data => SignalkClient.Data;
+
+    private async Task RefreshLiveStateAsync()
+    {
+        // Poke the paths endpoint once so the bulk-path rows (AIS, charts)
+        // know whether anything is actually published. For the rest we
+        // rely on NavigationData's null-vs-not-null state.
+        liveState.Clear();
+        try
+        {
+            var paths = await PathApi.GetAvailablePathsAsync();
+            foreach (var p in paths) liveState.Add(p);
+        }
+        catch { /* server unreachable; leave set empty so everything shows as missing */ }
+
+        // Best-effort plugin detection: these are derived flags, not
+        // path names, but using the set as a tag bag avoids a second
+        // state dictionary.
+        if (liveState.Any(p => p.StartsWith("vessels.", StringComparison.Ordinal)))
+            liveState.Add("vessels.*");
+
+        // Flags / charts plugin heuristic: probe the endpoint.
+        liveState.Add("flags.plugin"); // too expensive to HEAD; assume unknown and let the popup fail gracefully
+        liveState.Add("charts.plugin"); // same reasoning
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void HandleDataChanged()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private IEnumerable<PathGroup> VisibleGroups =>
+        string.IsNullOrWhiteSpace(filter)
+            ? groups
+            : groups.Select(g => new PathGroup(g.Title,
+                g.Paths.Where(p =>
+                    p.Path.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                    || p.UsedFor.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                    || p.Plugin.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                    || g.Title.Contains(filter, StringComparison.OrdinalIgnoreCase)
+                ).ToList()))
+              .Where(g => g.Paths.Count > 0);
+
+    private void OnFilterInput(ChangeEventArgs e)
+    {
+        filter = e.Value?.ToString() ?? "";
+    }
+
+    public void Dispose()
+    {
+        SignalkClient.OnDataChanged -= HandleDataChanged;
+    }
+}

@@ -1427,6 +1427,78 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 }
 .mob-clear-actions .map-btn { min-width: 120px; min-height: 44px; }
 
+/* ===== Paths overview page =====
+   Table showing which SignalK paths OnaPlotter consumes, what features
+   use them, and which plugin typically publishes them. Live-state
+   column updates as deltas arrive so a charter skipper can see which
+   sensors are actually plumbed into their boat. */
+.paths-table {
+    display: grid;
+    grid-template-columns: 40px minmax(240px, 1.2fr) minmax(200px, 1.3fr) minmax(200px, 1.5fr);
+    gap: 0;
+    border: 1px solid var(--sk-border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+.paths-row {
+    display: contents;
+}
+.paths-row > span,
+.paths-row > code {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--sk-border);
+    background: var(--sk-surface);
+    font-size: 0.85rem;
+    line-height: 1.35;
+}
+.paths-row:last-child > * { border-bottom: none; }
+.paths-row-header > span {
+    background: var(--sk-surface-hover);
+    color: var(--sk-text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+}
+.paths-row-live .paths-live { color: var(--sev-ok); font-weight: 700; }
+.paths-row-missing .paths-live { color: var(--sk-text-muted); }
+.paths-row-missing > * { opacity: 0.7; }
+.paths-path {
+    font-family: var(--bs-font-monospace, monospace);
+    color: var(--sk-text);
+    font-size: 0.78rem;
+    word-break: break-all;
+}
+.paths-plugin code {
+    font-size: 0.75rem;
+    color: var(--sk-accent);
+    background: transparent;
+    padding: 0;
+}
+
+/* On phones, collapse to two lines per row: path + live above, use +
+   plugin below. Grid still works but reads vertically. */
+@media (max-width: 640px) {
+    .paths-table { grid-template-columns: 40px 1fr; }
+    .paths-row-header { display: none; }
+    .paths-row {
+        display: grid;
+        grid-template-columns: 40px 1fr;
+        grid-template-rows: auto auto auto;
+        grid-template-areas:
+            "live path"
+            ".    use"
+            ".    plugin";
+        border-bottom: 1px solid var(--sk-border);
+    }
+    .paths-row > * { border-bottom: none; }
+    .paths-row .paths-live { grid-area: live; }
+    .paths-row .paths-path { grid-area: path; }
+    .paths-row .paths-use { grid-area: use; color: var(--sk-text-muted); }
+    .paths-row .paths-plugin { grid-area: plugin; font-size: 0.75rem; }
+}
+
 /* Anchor-tide checklist tick colours. Use the --sev-* tokens so the
    night-mode red-preset (and any future theme) can override a single
    variable instead of multiple hard-coded hex. Danger-red on a red-bg
@@ -3703,6 +3775,13 @@ main:has(.map-container.big-type) .map-fab-item {
     fill: #fff;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+}
+/* "No data" variant: muted grey + italic so "--" reads as missing
+   SignalK input rather than a confident zero. The sailor's eye
+   catches the lighter colour faster than re-reading the dashes. */
+.sailsteer-value-muted {
+    fill: rgba(255,255,255,0.3);
+    font-style: italic;
 }
 
 .sailsteer-unit {

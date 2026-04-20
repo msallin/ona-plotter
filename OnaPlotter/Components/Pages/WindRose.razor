@@ -83,7 +83,8 @@
             }
         }
 
-        @* Current wind arrow *@
+        @* Current wind arrow. currentColor inherits from the parent
+           text colour (--sk-text, red-shifted in night mode). *@
         @if (currentWind is not null)
         {
             double rad = currentWind.Value.Angle;
@@ -92,23 +93,26 @@
             double tipX = Cx + Math.Sin(rad) * len;
             double tipY = Cy - Math.Cos(rad) * len;
             <line x1="@Cx" y1="@Cy" x2="@tipX" y2="@tipY"
-                  stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
-            <circle cx="@tipX" cy="@tipY" r="4" fill="#fff" />
+                  style="stroke: currentColor;" stroke-width="2.5" stroke-linecap="round" />
+            <circle cx="@tipX" cy="@tipY" r="4" style="fill: currentColor;" />
         }
     </svg>
 
-    @* Legend *@
+    @* Legend. Gradient id is per-component so if two WindRose
+       instances co-exist on a page, their SVG defs don't collide --
+       a stale cached gradient would otherwise paint the second
+       instance's rect grey. *@
     <div>
         <h6 class="text-muted">Speed (kn)</h6>
         <svg width="30" height="180">
             <defs>
-                <linearGradient id="speedGrad" x1="0" y1="1" x2="0" y2="0">
+                <linearGradient id="@GradientId" x1="0" y1="1" x2="0" y2="0">
                     <stop offset="0%" stop-color="#2196F3" />
                     <stop offset="50%" stop-color="#FFEB3B" />
                     <stop offset="100%" stop-color="#F44336" />
                 </linearGradient>
             </defs>
-            <rect x="0" y="0" width="16" height="180" fill="url(#speedGrad)" rx="2" />
+            <rect x="0" y="0" width="16" height="180" fill="url(#@GradientId)" rx="2" />
             @SvgText(20, 12, $"{MaxSpeedKn:F0}", "currentColor", 10, anchor: "start")
             @SvgText(20, 95, $"{MaxSpeedKn / 2:F0}", "currentColor", 10, anchor: "start")
             @SvgText(20, 178, "0", "currentColor", 10, anchor: "start")
@@ -188,10 +192,10 @@
             double meanY = WpPad + WpPlotH * (1 - (meanTwd - twdMin) / (twdMax - twdMin));
         }
         <line x1="@WpPad" y1="@F(meanY)" x2="@(WpWidth - 10)" y2="@F(meanY)"
-              stroke="#22c55e" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7" />
+              style="stroke: var(--sev-ok);" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7" />
 
-        @* TWD data line *@
-        <polyline fill="none" stroke="#3b82f6" stroke-width="1.5" opacity="0.9"
+        @* TWD data line -- accent blue token so night mode red-shifts it. *@
+        <polyline fill="none" style="stroke: var(--sk-accent);" stroke-width="1.5" opacity="0.9"
                   points="@TwdPolylinePoints(visible, twdMin, twdMax, oldest, timeSpan)" />
 
         @* Time axis labels *@
@@ -206,6 +210,11 @@
 }
 
 @code {
+    // Per-instance gradient id so the <linearGradient> in the legend
+    // defs doesn't collide if two WindRose components render in the
+    // same DOM (unlikely today but cheap defence).
+    private readonly string GradientId = "speedGrad-" + Guid.NewGuid().ToString("N")[..8];
+
     private const int Size = 420;
     private const double Cx = Size / 2.0;
     private const double Cy = Size / 2.0;
@@ -324,13 +333,16 @@
 
     /// <summary>
     /// Renders an SVG text element as raw markup, avoiding Razor's &lt;text&gt; directive conflict.
+    /// Uses style="fill: ..." rather than the fill attribute so callers
+    /// can pass CSS var() references (tokens) that SVG presentation-
+    /// attribute parsing wouldn't resolve.
     /// </summary>
     private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize,
         string? fontWeight = null, string anchor = "middle")
     {
         string weight = fontWeight is not null ? $" font-weight=\"{fontWeight}\"" : "";
         return new MarkupString(
-            $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\"{weight} " +
+            $"<text x=\"{x}\" y=\"{y}\" style=\"fill: {fill};\" font-size=\"{fontSize}\"{weight} " +
             $"text-anchor=\"{anchor}\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
     }
 

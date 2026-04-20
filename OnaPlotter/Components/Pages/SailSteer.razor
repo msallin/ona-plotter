@@ -13,41 +13,50 @@
     <svg viewBox="0 0 500 500" style="max-width:500px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg">
 
         @* === Data readouts (fixed, do not rotate) === *@
+        @* Readouts. Vcls() picks `sailsteer-value-muted` when the
+           underlying SignalK path is null, so a "--" reading clearly
+           reads as "no data" instead of looking like a confident zero. *@
         @Txt(70, 32, "TWA", "sailsteer-label")
-        @Txt(70, 54, Format.Degrees(Data.WindAngleTrue), "sailsteer-value")
+        @Txt(70, 54, Format.Degrees(Data.WindAngleTrue), Vcls(Data.WindAngleTrue))
         @Txt(70, 68, "true", "sailsteer-unit")
 
         @Txt(430, 32, "AWA", "sailsteer-label")
-        @Txt(430, 54, Format.Degrees(Data.WindAngleApparent), "sailsteer-value")
+        @Txt(430, 54, Format.Degrees(Data.WindAngleApparent), Vcls(Data.WindAngleApparent))
         @Txt(430, 68, "app", "sailsteer-unit")
 
         @Txt(32, 178, "TWS", "sailsteer-label")
-        @Txt(32, 200, Format.Speed(Data.WindSpeedTrue), "sailsteer-value")
+        @Txt(32, 200, Format.Speed(Data.WindSpeedTrue), Vcls(Data.WindSpeedTrue))
 
         @Txt(32, 308, "AWS", "sailsteer-label")
-        @Txt(32, 330, Format.Speed(Data.WindSpeedApparent), "sailsteer-value")
+        @Txt(32, 330, Format.Speed(Data.WindSpeedApparent), Vcls(Data.WindSpeedApparent))
 
         @Txt(468, 178, "SOG", "sailsteer-label")
-        @Txt(468, 200, Format.Speed(Data.SpeedOverGround), "sailsteer-value")
+        @Txt(468, 200, Format.Speed(Data.SpeedOverGround), Vcls(Data.SpeedOverGround))
 
         @Txt(468, 308, "VMG", "sailsteer-label")
-        @Txt(468, 330, Format.Speed(Data.CourseNextPointVmg), "sailsteer-value")
+        @Txt(468, 330, Format.Speed(Data.CourseNextPointVmg), Vcls(Data.CourseNextPointVmg))
 
         @Txt(70, 440, "HDG", "sailsteer-label")
-        @Txt(70, 462, $"{Format.Degrees(Data.Heading)}\u00b0", "sailsteer-value")
+        @Txt(70, 462, $"{Format.Degrees(Data.Heading)}\u00b0", Vcls(Data.Heading))
 
         @Txt(430, 440, "COG", "sailsteer-label")
-        @Txt(430, 462, $"{Format.Degrees(Data.CourseOverGround)}\u00b0", "sailsteer-value")
+        @Txt(430, 462, $"{Format.Degrees(Data.CourseOverGround)}\u00b0", Vcls(Data.CourseOverGround))
 
-        @* === Lubber line (fixed, always points up = ship's heading reference) === *@
-        <line x1="250" y1="250" x2="250" y2="52" stroke="#ef4444" stroke-width="2.5" opacity="0.8" />
+        @* === Lubber line (fixed, always points up = ship's heading reference).
+           Colour via `style` so the --sev-danger CSS var resolves; a raw
+           `stroke=` attribute wouldn't pick up night-mode theme changes. === *@
+        <line x1="250" y1="250" x2="250" y2="52"
+              style="stroke: var(--sev-danger);" stroke-width="2.5" opacity="0.8" />
 
         @* === Rotating compass group === *@
         <g class="sailsteer-compass" transform="rotate(@CompassRotation, 250, 250)">
 
-            @* Outer compass ring *@
-            <circle cx="250" cy="250" r="@R" fill="none" stroke="#444" stroke-width="2" />
-            <circle cx="250" cy="250" r="@((int)(R - 20))" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
+            @* Outer compass ring -- muted theme border so night preset
+               red-shifts consistently with the rest of the chrome. *@
+            <circle cx="250" cy="250" r="@R" fill="none"
+                    style="stroke: var(--sk-border);" stroke-width="2" />
+            <circle cx="250" cy="250" r="@((int)(R - 20))" fill="none"
+                    style="stroke: rgba(255,255,255,0.05);" stroke-width="1" />
 
             @* Tick marks every 10 degrees, labels every 30 *@
             @for (int deg = 0; deg < 360; deg += 10)
@@ -67,7 +76,13 @@
                     double tx = Cx + Math.Sin(rad) * (R + 16);
                     double ty = Cy - Math.Cos(rad) * (R + 16);
                     string label = deg switch { 0 => "N", 90 => "E", 180 => "S", 270 => "W", _ => deg.ToString() };
-                    string fill = deg switch { 0 => "#ef4444", 90 or 180 or 270 => "rgba(255,255,255,0.7)", _ => "rgba(255,255,255,0.4)" };
+                    // North-zero gets danger-red for the "heading reference" cue;
+                    // E/S/W stay token-driven so night mode shifts consistently.
+                    string fill = deg switch {
+                        0 => "var(--sev-danger)",
+                        90 or 180 or 270 => "rgba(255,255,255,0.7)",
+                        _ => "rgba(255,255,255,0.4)"
+                    };
                     int fs = deg % 90 == 0 ? 13 : 10;
                     string fw = deg % 90 == 0 ? "700" : "400";
                     @SvgTxt(tx, ty, label, fill, fs, fw)
@@ -80,8 +95,8 @@
                 double twdDeg = Data.WindDirectionTrue.Value * Format.RadToDeg;
                 <g transform="rotate(@F(twdDeg), 250, 250)">
                     <polygon points="250,@F(Cy - R + 5) 244,@F(Cy - R - 12) 256,@F(Cy - R - 12)"
-                             fill="#60a5fa" opacity="0.9" />
-                    @SvgTxt(250, Cy - R - 18, "TWD", "#3b82f6", 10, "600")
+                             style="fill: var(--sk-accent);" opacity="0.9" />
+                    @SvgTxt(250, Cy - R - 18, "TWD", "var(--sk-accent)", 10, "600")
                 </g>
             }
 
@@ -93,40 +108,47 @@
                 double stbdDeg = twdD + 180 - twaD;
                 double portDeg = twdD + 180 + twaD;
                 double lr = R - 6;
+                @* Starboard layline: green (ok); port: red (danger). Tokens
+                   rather than hex so night mode shifts the palette consistently. *@
                 <g transform="rotate(@F(stbdDeg), 250, 250)">
                     <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
-                          stroke="#4ade80" stroke-width="3" stroke-linecap="round" />
-                    @SvgTxt(250, Cy - lr - 16, "S", "#4ade80", 9, "600")
+                          style="stroke: var(--sev-ok);" stroke-width="3" stroke-linecap="round" />
+                    @SvgTxt(250, Cy - lr - 16, "S", "var(--sev-ok)", 9, "600")
                 </g>
                 <g transform="rotate(@F(portDeg), 250, 250)">
                     <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
-                          stroke="#f87171" stroke-width="3" stroke-linecap="round" />
-                    @SvgTxt(250, Cy - lr - 16, "P", "#f87171", 9, "600")
+                          style="stroke: var(--sev-danger);" stroke-width="3" stroke-linecap="round" />
+                    @SvgTxt(250, Cy - lr - 16, "P", "var(--sev-danger)", 9, "600")
                 </g>
             }
 
-            @* === COG line (orange dashed) === *@
+            @* === COG line. Dashed amber warn token so it reads as
+               "direction of travel", not an alarm. If SOG is null the
+               line length falls back to a muted grey so a no-fix state
+               isn't mistaken for "drifting at 10 kn". === *@
             @if (Data.CourseOverGround is not null)
             {
                 double cogLen = 150;
-                if (Data.SpeedOverGround is not null)
-                    cogLen = Math.Min(Math.Max(Data.SpeedOverGround.Value * Format.MsToKnots * 15, 40), 160);
+                bool cogHasSpeed = Data.SpeedOverGround is not null;
+                if (cogHasSpeed)
+                    cogLen = Math.Min(Math.Max(Data.SpeedOverGround!.Value * Format.MsToKnots * 15, 40), 160);
                 double cogX = Cx + Math.Sin(Data.CourseOverGround.Value) * cogLen;
                 double cogY = Cy - Math.Cos(Data.CourseOverGround.Value) * cogLen;
+                string cogStroke = cogHasSpeed ? "var(--sev-warn)" : "var(--sk-text-muted)";
                 <line x1="250" y1="250" x2="@F(cogX)" y2="@F(cogY)"
-                      stroke="#f59e0b" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />
+                      style="stroke: @cogStroke;" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />
             }
 
-            @* === Waypoint bearing line (cyan) === *@
+            @* === Waypoint bearing line (accent cyan token). === *@
             @if (Data.HasActiveCourse && Data.CourseNextPointBearing is not null)
             {
                 double wpX = Cx + Math.Sin(Data.CourseNextPointBearing.Value) * (R - 20);
                 double wpY = Cy - Math.Cos(Data.CourseNextPointBearing.Value) * (R - 20);
                 <line x1="250" y1="250" x2="@F(wpX)" y2="@F(wpY)"
-                      stroke="#06b6d4" stroke-width="2.5" opacity="0.9" />
+                      style="stroke: var(--sk-cyan);" stroke-width="2.5" opacity="0.9" />
                 <g transform="rotate(@F(Data.CourseNextPointBearing.Value * Format.RadToDeg), 250, 250)">
                     <polygon points="250,@F(Cy - R + 24) 245,@F(Cy - R + 36) 255,@F(Cy - R + 36)"
-                             fill="#06b6d4" opacity="0.9" />
+                             style="fill: var(--sk-cyan);" opacity="0.9" />
                 </g>
             }
 
@@ -160,12 +182,22 @@
 
     private static string F(double v) => v.ToString("F1");
 
+    // Class switcher for SVG readouts: muted when the underlying SignalK
+    // value is null so "--" reads as "no data" rather than a confident
+    // zero. CSS styles .sailsteer-value-muted as a dim grey.
+    private static string Vcls(double? v) =>
+        v is null ? "sailsteer-value sailsteer-value-muted" : "sailsteer-value";
+
     // Razor treats <text> as a directive; use MarkupString for SVG text elements.
     private static MarkupString Txt(double x, double y, string content, string cls) =>
         new($"<text x=\"{x:F1}\" y=\"{y:F1}\" class=\"{cls}\" text-anchor=\"middle\">{Esc(content)}</text>");
 
+    // Emits the fill via `style` so callers can pass CSS var() references
+    // (e.g. "var(--sev-danger)") which SVG's presentation-attribute parser
+    // doesn't resolve but the `style` attribute does. Raw hex still works
+    // since CSS accepts it.
     private static MarkupString SvgTxt(double x, double y, string content, string fill, int fontSize, string fontWeight) =>
-        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" fill=\"{fill}\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
+        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" style=\"fill: {fill};\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
             $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
 
     private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);

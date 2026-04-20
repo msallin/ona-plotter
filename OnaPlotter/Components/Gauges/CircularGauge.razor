@@ -3,17 +3,25 @@
 <div class="text-center">
     <svg viewBox="0 0 @Size @Size"
          style="max-width:@(SizePx)px; width:100%; height:auto;">
-        @* Background arc *@
-        <path d="@ArcPath(0, 1)" fill="none" stroke="#333" stroke-width="@TrackWidth" stroke-linecap="round" />
+        @* Background arc. style="stroke: var(--sk-border)" so night /
+           light themes override via CSS rather than the hard-coded #333
+           that would stay the same colour regardless of theme. *@
+        <path d="@ArcPath(0, 1)" fill="none" style="stroke: var(--sk-border);"
+              stroke-width="@TrackWidth" stroke-linecap="round" />
 
-        @* Color zones *@
+        @* Color zones. Emitting the zone colour via `style` instead of
+           the raw `stroke` attribute so the value can be a CSS var()
+           reference -- SVG presentation attributes don't resolve var()
+           but `style` does. Lets Gauges.razor pass var(--sev-ok) etc.
+           and have the night-mode palette apply. *@
         @if (Zones is not null)
         {
             @foreach (var zone in Zones)
             {
                 double startFrac = Math.Clamp((zone.Min - Min) / Range, 0, 1);
                 double endFrac = Math.Clamp((zone.Max - Min) / Range, 0, 1);
-                <path d="@ArcPath(startFrac, endFrac)" fill="none" stroke="@zone.Color"
+                <path d="@ArcPath(startFrac, endFrac)" fill="none"
+                      style="stroke: @zone.Color;"
                       stroke-width="@TrackWidth" stroke-linecap="butt" opacity="0.4" />
             }
         }
@@ -32,8 +40,8 @@
 
             <line x1="@(Cx + Math.Cos(rad) * innerR)" y1="@(Cy + Math.Sin(rad) * innerR)"
                   x2="@(Cx + Math.Cos(rad) * outerR)" y2="@(Cy + Math.Sin(rad) * outerR)"
-                  stroke="#999" stroke-width="1.5" />
-            @SvgText(lx, ly, tick.ToString(TickFormat), "#ccc", 11)
+                  style="stroke: var(--sk-text-muted);" stroke-width="1.5" />
+            @SvgText(lx, ly, tick.ToString(TickFormat), "currentColor", 11)
         }
 
         @* Needle *@
@@ -45,14 +53,19 @@
             double nx = Cx + Math.Cos(needleRad) * needleLen;
             double ny = Cy + Math.Sin(needleRad) * needleLen;
         }
+        @* Needle + hub. Muted-red in day theme, warm-red in night --
+           both handled by --sev-danger. If Value is null the needle is
+           greyed so a "no data" reading isn't mistakable for "at zero". *@
         <line x1="@Cx" y1="@Cy" x2="@nx" y2="@ny"
-              stroke="#e53935" stroke-width="2.5" stroke-linecap="round"
-              style="transition: all 0.3s ease-out;" />
-        <circle cx="@Cx" cy="@Cy" r="5" fill="#e53935" />
+              style="stroke: @(Value is null ? "var(--sk-text-muted)" : "var(--sev-danger)"); transition: all 0.3s ease-out;"
+              stroke-width="2.5" stroke-linecap="round" />
+        <circle cx="@Cx" cy="@Cy" r="5"
+                style="fill: @(Value is null ? "var(--sk-text-muted)" : "var(--sev-danger)");" />
 
-        @* Digital readout *@
-        @SvgText(Cx, Cy + 35, DisplayValue, "#fff", 22, "bold")
-        @SvgText(Cx, Cy + 55, Unit, "#999", 12)
+        @* Digital readout. Current colour follows the surrounding text
+           colour so night-mode red-shift reads naturally. *@
+        @SvgText(Cx, Cy + 35, DisplayValue, "currentColor", 22, "bold")
+        @SvgText(Cx, Cy + 55, Unit, "currentColor", 12)
     </svg>
     <div class="text-muted small mt-1">@Label</div>
 </div>

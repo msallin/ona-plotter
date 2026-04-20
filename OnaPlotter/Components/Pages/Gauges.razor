@@ -64,35 +64,42 @@
     private double? TrueWindSpeedKn => Data.WindSpeedTrue * Format.MsToKnots;
     private double? TrueWindAngleDeg => Data.WindAngleTrue * Format.RadToDeg;
 
-    // Color zones: unified with CSS vars (green=safe, orange=caution, red=danger).
+    // Colour zones reference the theme tokens (--sev-ok / --sev-warn /
+    // --sev-danger) via CSS var() so night mode -- which red-shifts
+    // the --sev-* palette -- affects the gauges too. Hard-coded hex
+    // (#4ade80 etc.) would have kept bright green/yellow/red rings
+    // regardless of the theme, defeating the dark-adaptation the
+    // night preset exists to preserve.
     private static readonly List<GaugeZone> sogZones =
     [
-        new(0, 8, "#4ade80"),
-        new(8, 12, "#fbbf24"),
-        new(12, 15, "#f87171")
+        new(0, 8, "var(--sev-ok)"),
+        new(8, 12, "var(--sev-warn)"),
+        new(12, 15, "var(--sev-danger)")
     ];
 
     private static readonly List<GaugeZone> depthZones =
     [
-        new(0, 3, "#f87171"),
-        new(3, 8, "#fbbf24"),
-        new(8, 50, "#4ade80")
+        new(0, 3, "var(--sev-danger)"),
+        new(3, 8, "var(--sev-warn)"),
+        new(8, 50, "var(--sev-ok)")
     ];
 
     private static readonly List<GaugeZone> windSpeedZones =
     [
-        new(0, 15, "#4ade80"),
-        new(15, 25, "#fbbf24"),
-        new(25, 40, "#f87171")
+        new(0, 15, "var(--sev-ok)"),
+        new(15, 25, "var(--sev-warn)"),
+        new(25, 40, "var(--sev-danger)")
     ];
 
     // Heading: compass quadrant shading (muted, informational only).
+    // Accent tokens rather than the severity triad -- these are just
+    // cardinal-direction bands, not safety states.
     private static readonly List<GaugeZone> headingZones =
     [
-        new(0, 90, "#4ade80"),
-        new(90, 180, "#60a5fa"),
-        new(180, 270, "#fbbf24"),
-        new(270, 360, "#c084fc")
+        new(0, 90, "var(--sev-ok)"),
+        new(90, 180, "var(--sk-accent)"),
+        new(180, 270, "var(--sev-warn)"),
+        new(270, 360, "var(--sk-purple)")
     ];
 
     protected override void OnInitialized()

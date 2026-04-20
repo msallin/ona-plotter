@@ -660,6 +660,18 @@
 
     private async Task ClearPolar()
     {
+        // Confirmation gate: polar uploads can take a while to prepare
+        // (ORC certificate, Expedition export, hand-tuned numbers) and
+        // a stray tap on a touchscreen shouldn't discard it.
+        bool ok;
+        try
+        {
+            ok = await JS.InvokeAsync<bool>("confirm",
+                "Remove the loaded polar? You'll need to re-upload the CSV to get performance % back on the Dashboard and Route-with-wind working.");
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        if (!ok) return;
+
         await Polar.ClearAsync();
         Toasts.Success("Polar cleared");
         StateHasChanged();

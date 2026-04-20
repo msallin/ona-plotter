@@ -44,17 +44,37 @@
                     <span>@FormatTime(trackPoints.Length - 1)</span>
                 </div>
             </div>
+            @* Step buttons disable at their respective boundary so the
+               user isn't left wondering whether &lt;&lt; was registered
+               but silently no-op'd at the start of the track. *@
             <div class="d-flex gap-2 mt-1">
                 <button class="map-btn" @onclick="PlayPause">@(playing ? "Pause" : "Play")</button>
-                <button class="map-btn" @onclick="() => StepBy(-10)">&lt;&lt;</button>
-                <button class="map-btn" @onclick="() => StepBy(-1)">&lt;</button>
-                <button class="map-btn" @onclick="() => StepBy(1)">&gt;</button>
-                <button class="map-btn" @onclick="() => StepBy(10)">&gt;&gt;</button>
+                <button class="map-btn" @onclick="() => StepBy(-10)"
+                        disabled="@(playbackIndex == 0)">&lt;&lt;</button>
+                <button class="map-btn" @onclick="() => StepBy(-1)"
+                        disabled="@(playbackIndex == 0)">&lt;</button>
+                <button class="map-btn" @onclick="() => StepBy(1)"
+                        disabled="@(playbackIndex >= trackPoints.Length - 1)">&gt;</button>
+                <button class="map-btn" @onclick="() => StepBy(10)"
+                        disabled="@(playbackIndex >= trackPoints.Length - 1)">&gt;&gt;</button>
             </div>
         }
         else if (loadAttempted)
         {
-            <div class="text-muted mt-2" style="font-size:0.8rem;">No track data for this timespan.</div>
+            <div class="text-muted mt-2" style="font-size:0.8rem;">
+                No track data for this timespan.
+                <br />
+                <span style="color:var(--sk-text-muted); font-size:0.75rem;">
+                    Tracks come from a SignalK track-recording plugin (e.g. signalk-parquet,
+                    signalk-tracker). If you expected data, check the plugin is active on the server.
+                </span>
+            </div>
+        }
+        else
+        {
+            <div class="text-muted mt-2" style="font-size:0.8rem;">
+                Pick a timespan and tap <strong>Load</strong> to fetch the track.
+            </div>
         }
     </div>
 </div>
@@ -83,38 +103,49 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
-
-        // Initialize map. Default center on the boat's current position if available,
-        // otherwise a generic fallback.
-        double lat = SignalkClient.Data.Latitude ?? 47.4;
-        double lon = SignalkClient.Data.Longitude ?? 8.5;
-        int zoom = SignalkClient.Data.Latitude is not null ? 13 : 8;
-
-        await JS.InvokeVoidAsync("eval", $@"
-            (function() {{
-                if (window._historyMap) window._historyMap.remove();
-                var m = L.map('historyMapDiv', {{ zoomControl: true }}).setView([{lat}, {lon}], {zoom});
-                // OpenSeaMap as the primary visual reference (matches user preference).
-                L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-                    {{ maxZoom: 19, attribution: '&copy; OSM', referrerPolicy: 'strict-origin-when-cross-origin' }}).addTo(m);
-                L.tileLayer('https://tiles.openseamap.org/seamark/{{z}}/{{x}}/{{y}}.png',
-                    {{ maxZoom: 19, opacity: 0.8, referrerPolicy: 'strict-origin-when-cross-origin' }}).addTo(m);
-                window._historyMap = m;
-                window._historyMarker = null;
-                window._historyTrack = null;
-                window._historyBoatMarker = null;
-            }})()
-        ");
-
-        // Draw boat position if available.
-        if (SignalkClient.Data.Latitude is not null && SignalkClient.Data.Longitude is not null)
+        try
         {
-            await DrawBoatMarker();
-        }
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
 
-        // Auto-load the default timespan.
-        await LoadTrack();
+            // Initialize map. Default center on the boat's current position if available,
+            // otherwise a generic fallback.
+            double lat = SignalkClient.Data.Latitude ?? 47.4;
+            double lon = SignalkClient.Data.Longitude ?? 8.5;
+            int zoom = SignalkClient.Data.Latitude is not null ? 13 : 8;
+
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    if (window._historyMap) window._historyMap.remove();
+                    var m = L.map('historyMapDiv', {{ zoomControl: true }}).setView([{lat}, {lon}], {zoom});
+                    // OpenSeaMap as the primary visual reference (matches user preference).
+                    L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+                        {{ maxZoom: 19, attribution: '&copy; OSM', referrerPolicy: 'strict-origin-when-cross-origin' }}).addTo(m);
+                    L.tileLayer('https://tiles.openseamap.org/seamark/{{z}}/{{x}}/{{y}}.png',
+                        {{ maxZoom: 19, opacity: 0.8, referrerPolicy: 'strict-origin-when-cross-origin' }}).addTo(m);
+                    window._historyMap = m;
+                    window._historyMarker = null;
+                    window._historyTrack = null;
+                    window._historyBoatMarker = null;
+                }})()
+            ");
+
+            // Draw boat position if available.
+            if (SignalkClient.Data.Latitude is not null && SignalkClient.Data.Longitude is not null)
+            {
+                await DrawBoatMarker();
+            }
+
+            // Auto-load the default timespan.
+            await LoadTrack();
+        }
+        catch (JSDisconnectedException) { /* page teardown race */ }
+        catch (JSException ex)
+        {
+            // Silent swallow would hide a Leaflet / CDN failure; log so
+            // the browser console tells a developer what broke. The
+            // user sees an empty map rather than the Blazor error UI.
+            Console.Error.WriteLine($"[history] init: {ex.Message}");
+        }
     }
 
     private async Task DrawBoatMarker()
