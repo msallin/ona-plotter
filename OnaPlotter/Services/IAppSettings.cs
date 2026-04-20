@@ -123,6 +123,15 @@ public interface IAppSettings
     /// desktop-heavy workflows.</summary>
     bool ShowKeyboardHints { get; }
 
+    /// <summary>When true, the dedicated Autopilot control card is
+    /// rendered on the map. Default OFF -- the HDG extended HUD
+    /// already surfaces AP state / target / rudder when the server
+    /// publishes them, and the engage-mode buttons are easy to tap
+    /// by accident. Users with a real AP integration (signalk-autopilot
+    /// or equivalent) can enable this to get the -10 / -1 / +1 / +10
+    /// heading nudges and the Stby / Auto / Wind / Route mode row.</summary>
+    bool ShowAutopilotHud { get; }
+
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -159,6 +168,7 @@ public interface IAppSettings
     Task SetKeepScreenAwakeAsync(bool value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);
     Task SetShowKeyboardHintsAsync(bool value);
+    Task SetShowAutopilotHudAsync(bool value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
     Task SetChartOrderAsync(IEnumerable<string> ids);

@@ -336,11 +336,42 @@
                         <span class="hud-extra-k">AP</span>
                         <span class="hud-extra-v">@ap.ToUpperInvariant()</span>
                     </div>
-                    @if (Data.AutopilotTargetHeading is not null)
+                    @* Target is mode-specific: wind mode tracks an AWA
+                       target (-port / +stbd), other modes use a true
+                       heading. Prefer the wind target whenever present
+                       so a helm running in wind mode doesn't see a
+                       stale heading target from a previous leg. *@
+                    @if (string.Equals(ap, "wind", StringComparison.OrdinalIgnoreCase)
+                         && Data.AutopilotTargetWindAngle is double twa)
+                    {
+                        <div class="hud-extra-row" title="Target apparent wind angle">
+                            <span class="hud-extra-k">AP TWA</span>
+                            <span class="hud-extra-v">@FormatTwa(twa)<span class="hud-unit">&deg;</span></span>
+                        </div>
+                    }
+                    else if (Data.AutopilotTargetHeading is not null)
                     {
                         <div class="hud-extra-row">
                             <span class="hud-extra-k">AP tgt</span>
                             <span class="hud-extra-v">@Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span></span>
+                        </div>
+                    }
+                    @* Heading error: signed delta between target heading
+                       and current heading, shortest way round. Only shown
+                       when both are available AND we're not in wind mode
+                       (where the target is an AWA, not a compass course). *@
+                    @if (HeadingErrorDeg is int err)
+                    {
+                        <div class="hud-extra-row" title="Target heading minus current heading (shortest way round)">
+                            <span class="hud-extra-k">HDG err</span>
+                            <span class="hud-extra-v">@(err > 0 ? "+" : "")@err<span class="hud-unit">&deg;</span></span>
+                        </div>
+                    }
+                    @if (Data.RudderAngle is double rud)
+                    {
+                        <div class="hud-extra-row" title="Rudder angle, negative = port">
+                            <span class="hud-extra-k">Rudder</span>
+                            <span class="hud-extra-v">@FormatRudder(rud)<span class="hud-unit">&deg;</span></span>
                         </div>
                     }
                 }
@@ -363,7 +394,11 @@
     OnSetRadius="OnSetAnchorRadius" />
 
 @* === Autopilot control === *@
-@if (Data.AutopilotState is not null)
+@* Off by default (Settings.ShowAutopilotHud). The extended HDG HUD
+   above already shows AP state / target / rudder; this panel adds
+   tappable engage + heading-nudge controls that deserve an explicit
+   opt-in per user feedback (accidental taps on a touch device). *@
+@if (ShowAutopilotHud && Data.AutopilotState is not null)
 {
     <div class="hud hud-autopilot">
         <div class="hud-panel autopilot-panel @(Data.AutopilotState != "standby" ? "ap-engaged" : "")">
@@ -457,6 +492,14 @@
 
     /// <summary>"cruise" or "race". Gates the race HUD card.</summary>
     [Parameter] public string SailingMode { get; set; } = "cruise";
+
+    /// <summary>When true, render the dedicated Autopilot control card
+    /// (engage modes + +/- heading nudges). When false, the extended
+    /// HDG HUD still surfaces AP state / target / rudder so the helm
+    /// can monitor the pilot; only the tappable controls are hidden.
+    /// Defaults to false because the engage buttons are easy to fat-
+    /// finger on a touch device.</summary>
+    [Parameter] public bool ShowAutopilotHud { get; set; } = false;
 
     /// <summary>Polar service for target-speed + optimal-TWA lookup.
     /// Optional -- the race card hides when null or no polar is loaded.</summary>
@@ -573,6 +616,45 @@
             int rounded = (int)Math.Round(delta);
             return Math.Abs(rounded) >= 1 ? rounded : null;
         }
+    }
+
+    // Autopilot heading error: signed shortest-way-round delta between
+    // target heading and current heading, degrees. Null when either
+    // input is missing, when the AP is in wind mode (target is an AWA,
+    // not a compass course), or when the magnitude is below 1 deg
+    // (sensor / digitisation noise). Consumed by the extended HDG HUD.
+    private int? HeadingErrorDeg
+    {
+        get
+        {
+            if (Data.AutopilotState is null) return null;
+            if (string.Equals(Data.AutopilotState, "wind", StringComparison.OrdinalIgnoreCase)) return null;
+            if (Data.AutopilotTargetHeading is not double tgt || Data.Heading is not double hdg) return null;
+            double delta = (tgt - hdg) * RadToDeg;
+            while (delta > 180) delta -= 360;
+            while (delta < -180) delta += 360;
+            int rounded = (int)Math.Round(delta);
+            return Math.Abs(rounded) >= 1 ? rounded : null;
+        }
+    }
+
+    // Rudder angle formatter: signed degrees with a single decimal so
+    // half-degree AP commands are readable. SignalK publishes rudder
+    // as radians; negative = port per the spec, which matches the
+    // convention most helms use ("-5 is 5 to port"). We keep the sign.
+    private static string FormatRudder(double rad)
+    {
+        double deg = rad * RadToDeg;
+        return deg.ToString("+0.0;-0.0;0", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    // Target-AWA formatter: signed degrees, no leading zero. Positive =
+    // starboard tack target, negative = port, matching the wind-data
+    // convention used throughout the app.
+    private static string FormatTwa(double rad)
+    {
+        double deg = rad * RadToDeg;
+        return deg.ToString("+0;-0;0", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // Beaufort scale lookup for wind speed in m/s. Returns "F<n> <label>"

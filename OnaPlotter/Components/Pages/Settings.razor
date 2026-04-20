@@ -97,6 +97,28 @@
     </div>
 
     <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.ShowAutopilotHud"
+                           @onchange="OnShowAutopilotHudChanged" />
+                    <span class="form-check-label">Show autopilot control HUD</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Shows the dedicated Autopilot card on the map with
+                    Stby / Auto / Wind / Route engage modes and
+                    -10 / -1 / +1 / +10 heading nudges. Off by default
+                    because the engage buttons are easy to tap by accident
+                    on a touch device. The extended HDG HUD still shows
+                    the pilot's state, target, rudder angle, and heading
+                    error when this is off.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Alarms</h5>
     </div>
 
@@ -624,6 +646,12 @@
     {
         bool on = e.Value is bool b && b;
         await AppSettings.SetShowKeyboardHintsAsync(on);
+    }
+
+    private async Task OnShowAutopilotHudChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetShowAutopilotHudAsync(on);
     }
 
     private static readonly (string val, string label, string tip)[] SailingModes =

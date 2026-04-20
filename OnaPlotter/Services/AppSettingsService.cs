@@ -41,6 +41,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
     public bool ShowKeyboardHints { get; private set; } = false;
+    public bool ShowAutopilotHud { get; private set; } = false;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -84,6 +85,7 @@ public sealed class AppSettingsService : IAppSettings
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
+            ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
@@ -235,6 +237,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         ShowKeyboardHints = value;
         await Save("showKeyboardHints.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetShowAutopilotHudAsync(bool value)
+    {
+        ShowAutopilotHud = value;
+        await Save("showAutopilotHud.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

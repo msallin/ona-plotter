@@ -155,9 +155,15 @@ public sealed class SignalkClient : IAsyncDisposable
         new("navigation.courseRhumbline.crossTrackError",                    PathTier.SelfFast),
         new("navigation.courseGreatCircle.previousPoint.position",           PathTier.SelfFast),
         new("navigation.courseRhumbline.previousPoint.position",             PathTier.SelfFast),
-        // Autopilot state + target heading.
+        // Autopilot state + target heading + target AWA (wind mode).
         new("steering.autopilot.state",                                      PathTier.SelfFast),
         new("steering.autopilot.target.headingTrue",                         PathTier.SelfFast),
+        new("steering.autopilot.target.windAngleApparent",                   PathTier.SelfFast),
+        // Rudder angle. Spec path is steering.rudderAngle; some AP plugins
+        // publish steering.autopilot.rudderAngle instead, so we subscribe
+        // both and let NavigationData prefer the canonical one.
+        new("steering.rudderAngle",                                          PathTier.SelfFast),
+        new("steering.autopilot.rudderAngle",                                PathTier.SelfFast),
         // Tidal current: drift + set, used for the map arrow overlay.
         new("environment.current.setTrue",                                   PathTier.SelfFast),
         new("environment.current.drift",                                     PathTier.SelfFast),

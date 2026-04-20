@@ -65,6 +65,21 @@ public sealed class NavigationData
     public string? AutopilotState { get; private set; }        // "standby", "auto", "route", "wind"
     public double? AutopilotTargetHeading { get; private set; } // radians
 
+    /// <summary>Autopilot target apparent wind angle in wind mode
+    /// (<c>steering.autopilot.target.windAngleApparent</c>), radians,
+    /// -PI..+PI relative to bow. Typical use: AP holds the boat at
+    /// this AWA by steering; the extended HDG HUD shows it alongside
+    /// the AP state so the crew can see "tracking wind at ~45 deg" at
+    /// a glance. Null on servers without a wind-capable AP.</summary>
+    public double? AutopilotTargetWindAngle { get; private set; }
+
+    /// <summary>Current rudder angle in radians, negative = port.
+    /// Sourced from <c>steering.rudderAngle</c> (most common) with
+    /// a fallback to <c>steering.autopilot.rudderAngle</c> which some
+    /// AP plugins publish instead. Used by the extended HDG HUD so
+    /// the helm can watch how hard the AP is working to hold course.</summary>
+    public double? RudderAngle { get; private set; }
+
     // Tidal current
     public double? CurrentSet { get; private set; }   // Direction current flows TO (radians)
     public double? CurrentDrift { get; private set; }  // Speed of current (m/s)
@@ -182,6 +197,20 @@ public sealed class NavigationData
                     break;
                 case "steering.autopilot.target.headingTrue":
                     AutopilotTargetHeading = value;
+                    break;
+                case "steering.autopilot.target.windAngleApparent":
+                    AutopilotTargetWindAngle = value;
+                    break;
+                case "steering.rudderAngle":
+                    // Preferred source; overwrites any fallback we'd
+                    // previously stored from steering.autopilot.rudderAngle.
+                    RudderAngle = value;
+                    break;
+                case "steering.autopilot.rudderAngle":
+                    // Only use as a fallback so a server publishing both
+                    // doesn't flap between them. steering.rudderAngle is
+                    // the SignalK spec path for the actual rudder position.
+                    RudderAngle ??= value;
                     break;
                 case "environment.current.setTrue":
                     CurrentSet = value;
