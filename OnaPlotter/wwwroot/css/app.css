@@ -2413,6 +2413,177 @@ main:has(.alarm-banner-stack) .hud-top-left {
     color: var(--sk-text);
 }
 
+/* ===== Raw Stream (data) page =====
+   Dev-oriented delta viewer. Full-height layout so only the log pane
+   scrolls (fixes the "two scrollbars" the old layout had). Each row
+   collapses to path + value summary; click to expand full JSON. */
+.rawstream-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--nav-height, 64px) - 40px);
+    max-height: calc(100vh - 64px);
+    gap: 10px;
+}
+.rawstream-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.rawstream-title { margin: 0; font-size: 1.5rem; }
+.rawstream-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-wrap: wrap;
+}
+.rawstream-search {
+    width: 200px;
+    min-width: 140px;
+}
+.rawstream-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--sk-text-muted);
+    padding: 4px 10px;
+    border: 1px solid var(--sk-border);
+    border-radius: 4px;
+    cursor: pointer;
+}
+.rawstream-toggle input { margin: 0; }
+.rawstream-filter {
+    background: var(--sk-surface);
+    border: 1px solid var(--sk-border);
+    border-radius: 6px;
+}
+.rawstream-filter > summary {
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--sk-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.rawstream-filter-count {
+    color: var(--sk-text);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.75rem;
+}
+.rawstream-filter-body {
+    padding: 8px 12px 12px;
+    border-top: 1px solid var(--sk-border);
+}
+.rawstream-filter-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+.rawstream-pathfilter {
+    width: 200px;
+    margin-left: auto;
+}
+.rawstream-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+/* The single scroll surface. flex: 1 so it takes remaining height.
+   The page's outer container is flex-column + fixed height so this
+   box gets its own scrollbar and nothing else on the page does. */
+.rawstream-log {
+    flex: 1 1 auto;
+    min-height: 200px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--sk-surface);
+    border: 1px solid var(--sk-border);
+    border-radius: 6px;
+    padding: 4px 0;
+    font-family: var(--bs-font-monospace, monospace);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+.rawstream-entry {
+    border-bottom: 1px solid var(--sk-border);
+}
+.rawstream-entry:hover { background: rgba(255,255,255,0.03); }
+.rawstream-entry.expanded { background: rgba(96,165,250,0.05); }
+.rawstream-row {
+    display: grid;
+    grid-template-columns: 70px 14px 68px 1fr 2fr;
+    gap: 8px;
+    align-items: baseline;
+    padding: 4px 10px;
+    cursor: pointer;
+    user-select: none;
+}
+.rawstream-time   { color: var(--sk-text-muted); font-size: 0.72rem; }
+.rawstream-chev   { color: var(--sk-text-muted); font-size: 0.8rem; }
+.rawstream-context{
+    color: var(--sk-accent);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rawstream-path   {
+    color: var(--sk-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rawstream-value  {
+    color: var(--sev-ok);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.rawstream-json {
+    margin: 0;
+    padding: 6px 14px 10px 96px;
+    font-size: 0.72rem;
+    color: var(--sk-text-muted);
+    background: transparent;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.rawstream-footer {
+    font-size: 0.75rem;
+    color: var(--sk-text-muted);
+    padding: 0 2px;
+}
+.rawstream-paused { color: var(--sev-warn); font-weight: 600; }
+
+@media (max-width: 640px) {
+    .rawstream-row {
+        grid-template-columns: 52px 14px 1fr;
+        grid-template-rows: auto auto;
+        grid-template-areas:
+            "time chev context"
+            ".    .    path"
+            ".    .    value";
+    }
+    .rawstream-time    { grid-area: time; }
+    .rawstream-chev    { grid-area: chev; }
+    .rawstream-context { grid-area: context; }
+    .rawstream-path    { grid-area: path; }
+    .rawstream-value   { grid-area: value; }
+    .rawstream-search  { width: 100%; }
+}
+
 /* ===== Connection Status: Stale Data Warning ===== */
 
 .connection-status {

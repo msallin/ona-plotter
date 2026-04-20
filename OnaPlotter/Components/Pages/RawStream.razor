@@ -1,99 +1,181 @@
-@* Live raw delta stream from SignalK. Shows the most recent messages as they arrive. *@
+@* Live raw delta stream from SignalK, dev-oriented.
+   Each delta is split into one row per (context, path, value) so a
+   single tick doesn't wall-of-text the viewer. Rows collapse to
+   timestamp + context + path + value preview; click to expand for
+   full JSON. Search + path filter + pause + follow-tail cover the
+   debugger workflow. *@
 
 @page "/raw"
 @using OnaPlotter.Services
+@using OnaPlotter.Services.Api
 @using Microsoft.JSInterop
+@using System.Text.Json
 @implements IAsyncDisposable
 @inject SignalkClient SignalkClient
-@using OnaPlotter.Services.Api
 @inject IPathApi PathApi
 @inject IJSRuntime JS
 
 <PageTitle>Raw Stream</PageTitle>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h2>Raw Stream</h2>
-    <div>
-        <button class="btn btn-sm btn-outline-secondary me-2" @onclick="TogglePause">
-            @(paused ? "Resume" : "Pause")
-        </button>
-        <button class="btn btn-sm btn-outline-danger" @onclick="Clear">Clear</button>
-    </div>
-</div>
+<div class="rawstream-page">
 
-@* Path filter *@
-<div class="mb-3 p-3 rounded" style="background: var(--sk-surface); border: 1px solid var(--sk-border);">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-        <span style="font-size: 0.8rem; color: var(--sk-text-muted); text-transform: uppercase; letter-spacing: 0.05em;">
-            Path Filter
-        </span>
-        <div>
-            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="SelectDefaults">Defaults</button>
-            <button class="btn btn-sm btn-outline-secondary me-1" @onclick="SelectAll">All</button>
-            <button class="btn btn-sm btn-outline-secondary" @onclick="SelectNone">None</button>
+    <div class="rawstream-toolbar">
+        <h2 class="rawstream-title">Data stream</h2>
+        <div class="rawstream-actions">
+            <input type="search" class="form-control form-control-sm rawstream-search"
+                   placeholder="Search content…"
+                   aria-label="Search raw stream messages"
+                   value="@searchText"
+                   @oninput="OnSearchInput" />
+            <label class="rawstream-toggle" title="Scroll to the newest message automatically">
+                <input type="checkbox" @bind="followTail" />
+                <span>Follow</span>
+            </label>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="TogglePause"
+                    title="Pause / resume the delta stream">
+                @(paused ? "Resume" : "Pause")
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="ToggleExpandAll"
+                    title="Expand / collapse every row">
+                @(allExpanded ? "Collapse all" : "Expand all")
+            </button>
+            <button class="btn btn-sm btn-outline-danger" @onclick="Clear"
+                    title="Clear the visible buffer">Clear</button>
         </div>
     </div>
 
-    @if (availablePaths.Count == 0)
-    {
-        <span class="text-muted" style="font-size:0.8rem;">Loading paths...</span>
-    }
-    else
-    {
-        <div style="max-height: 200px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 4px;">
-            @foreach (var path in availablePaths)
+    @* Path filter panel (collapsed by default). The chips list is long;
+       keeping it hidden until needed removes one of the two scrollbars
+       the user complained about. *@
+    <details class="rawstream-filter" @ontoggle="OnFilterToggle">
+        <summary>
+            <span>Path filter</span>
+            <span class="rawstream-filter-count">
+                @(selectedPaths.Count == 0 ? "(none)" : $"({selectedPaths.Count} selected)")
+            </span>
+        </summary>
+        <div class="rawstream-filter-body">
+            <div class="rawstream-filter-actions">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="SelectDefaults">Defaults</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="SelectAll">All</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="SelectNone">None</button>
+                <input type="search" class="form-control form-control-sm rawstream-pathfilter"
+                       placeholder="Filter path list…"
+                       aria-label="Filter path list"
+                       @bind="pathFilterText" @bind:event="oninput" />
+            </div>
+            @if (availablePaths.Count == 0)
             {
-                var isSelected = selectedPaths.Contains(path);
-                <span class="path-chip @(isSelected ? "active" : "")"
-                      @onclick="() => TogglePath(path)">
-                    @path
-                </span>
+                <span class="text-muted" style="font-size:0.8rem;">Loading paths…</span>
+            }
+            else
+            {
+                <div class="rawstream-chips">
+                    @foreach (var path in VisiblePaths)
+                    {
+                        var isSelected = selectedPaths.Contains(path);
+                        <span class="path-chip @(isSelected ? "active" : "")"
+                              @onclick="() => TogglePath(path)">
+                            @path
+                        </span>
+                    }
+                </div>
             }
         </div>
-    }
-</div>
+    </details>
 
-<div id="rawStreamBox" class="font-monospace small p-3 rounded"
-     style="height: 70vh; overflow-y: auto; background: var(--sk-surface); color: var(--sk-text);">
-    @if (snapshot.Length == 0)
-    {
-        <span class="text-muted">Waiting for data...</span>
-    }
-    else
-    {
-        @foreach (var msg in snapshot)
+    <div id="rawStreamBox" class="rawstream-log">
+        @if (entries.Count == 0)
         {
-            <div class="mb-1 pb-1" style="border-bottom: 1px solid var(--sk-border);">@msg</div>
+            <span class="text-muted">Waiting for data…</span>
         }
-    }
+        else
+        {
+            @foreach (var entry in VisibleEntries)
+            {
+                bool expanded = allExpanded || expandedIds.Contains(entry.Id);
+                <div class="rawstream-entry @(expanded ? "expanded" : "")">
+                    <div class="rawstream-row" @onclick="() => ToggleExpanded(entry.Id)">
+                        <span class="rawstream-time">@entry.TimeLabel</span>
+                        <span class="rawstream-chev">@(expanded ? "\u25BE" : "\u25B8")</span>
+                        <span class="rawstream-context" title="@entry.Context">@entry.ContextShort</span>
+                        <span class="rawstream-path">@entry.Path</span>
+                        <span class="rawstream-value">@entry.ValueSummary</span>
+                    </div>
+                    @if (expanded)
+                    {
+                        <pre class="rawstream-json">@entry.PrettyJson</pre>
+                    }
+                </div>
+            }
+        }
+    </div>
+
+    <div class="rawstream-footer">
+        @entries.Count / @MaxEntries shown
+        @if (!string.IsNullOrEmpty(searchText))
+        { <span> &middot; @VisibleEntries.Count match "@searchText"</span> }
+        @if (paused)
+        { <span class="rawstream-paused"> &middot; PAUSED</span> }
+    </div>
 </div>
 
 @code {
-    private const int MaxMessages = 200;
+    // --- Buffer ---------------------------------------------------------
+    private const int MaxEntries = 500;
+    private readonly LinkedList<LogEntry> entries = new();
+    private readonly HashSet<int> expandedIds = [];
+    private bool allExpanded;
+    private int nextId;
 
-    // Pre-allocated circular buffer. No per-message allocation.
-    private readonly string[] buffer = new string[MaxMessages];
-    private int head;  // Next write position.
-    private int count;
-    private string[] snapshot = [];
+    // --- UI state -------------------------------------------------------
     private bool paused;
-    private int renderSkip;
+    private bool followTail = true;
+    private string searchText = "";
+    private string pathFilterText = "";
+    private bool filterPanelOpen;
+    private bool needsScroll;
 
+    // --- Path subscription ---------------------------------------------
     private List<string> availablePaths = [];
     private readonly HashSet<string> selectedPaths = [];
 
-    private bool needsScroll;
+    private record LogEntry(
+        int Id,
+        DateTime Timestamp,
+        string Context,
+        string Path,
+        string ValueSummary,
+        string PrettyJson,
+        string RawJson)
+    {
+        public string TimeLabel => Timestamp.ToLocalTime().ToString("HH:mm:ss.fff");
+        public string ContextShort
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Context)) return "-";
+                if (Context == "vessels.self") return "self";
+                // urn:mrn:imo:mmsi:123456789 -> 123456789
+                int i = Context.LastIndexOf(':');
+                return i >= 0 && i + 1 < Context.Length ? Context[(i + 1)..] : Context;
+            }
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         SignalkClient.OnRawMessage += HandleRawMessage;
-
         availablePaths = await PathApi.GetAvailablePathsAsync();
-
-        // Default selection: the core paths the app subscribes to.
-        foreach (var p in SignalkClient.CoreSelfPaths)
-            selectedPaths.Add(p);
+        foreach (var p in SignalkClient.CoreSelfPaths) selectedPaths.Add(p);
     }
+
+    // --- Incoming message ----------------------------------------------
+    // Render throttle: under a firehose of deltas (AIS harbour, full-
+    // subscription) we'd re-render on every message otherwise. Still
+    // buffer every delta so the visible log is complete; just batch
+    // the StateHasChanged call.
+    private int _renderSkip;
 
     private async void HandleRawMessage(string json)
     {
@@ -101,70 +183,171 @@
         {
             if (paused) return;
 
-            // Filter: only show messages containing at least one selected path.
-            if (selectedPaths.Count > 0 && !MessageMatchesFilter(json))
+            // Path filter: quick reject on the raw string before we parse.
+            if (selectedPaths.Count > 0 && !MessageMatchesPathFilter(json))
                 return;
 
-            // Write into circular buffer.
-            buffer[head] = json;
-            head = (head + 1) % MaxMessages;
-            if (count < MaxMessages) count++;
-
-            // Throttle: only rebuild snapshot every 5th message to reduce GC pressure.
-            if (++renderSkip < 5) return;
-            renderSkip = 0;
-
-            // Build snapshot in chronological order (oldest first, newest at bottom).
-            // This is the terminal/log-viewer convention for live streams.
-            var snap = new string[count];
-            int startIdx = (head - count + MaxMessages) % MaxMessages;
-            for (int i = 0; i < count; i++)
+            foreach (var parsed in ParseDelta(json))
             {
-                snap[i] = buffer[(startIdx + i) % MaxMessages];
+                entries.AddLast(parsed);
+                while (entries.Count > MaxEntries)
+                {
+                    if (entries.First is { } first)
+                    {
+                        expandedIds.Remove(first.Value.Id);
+                        entries.RemoveFirst();
+                    }
+                }
             }
+            needsScroll = followTail;
 
-            await InvokeAsync(() =>
-            {
-                snapshot = snap;
-                needsScroll = true;
-                StateHasChanged();
-            });
+            // Re-render every 5th delta. 200 ms at a typical 10 Hz bus
+            // is cheap enough to feel live without burning the WASM
+            // main thread on AIS-heavy harbours.
+            if (++_renderSkip < 5) return;
+            _renderSkip = 0;
+            await InvokeAsync(StateHasChanged);
         }
+        catch (ObjectDisposedException) { }
+        catch (Exception) { /* malformed payload -> skip */ }
+    }
+
+    // Splits a SignalK delta into one LogEntry per (update, value) so a
+    // single tick that carries nav + wind + depth shows three rows, each
+    // independently expandable. Unrecognised payloads pass through as a
+    // single entry with path="(raw)". Returns List rather than an
+    // iterator so the parse-failure fallback can yield in a catch block
+    // (C# forbids yield inside catch).
+    private List<LogEntry> ParseDelta(string json)
+    {
+        var result = new List<LogEntry>();
+        JsonDocument? doc;
+        try { doc = JsonDocument.Parse(json); }
+        catch { result.Add(SingleRaw(json)); return result; }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+            string context = root.TryGetProperty("context", out var ctxEl) && ctxEl.ValueKind == JsonValueKind.String
+                ? ctxEl.GetString() ?? "" : "";
+            if (!root.TryGetProperty("updates", out var ups) || ups.ValueKind != JsonValueKind.Array)
+            {
+                result.Add(SingleRaw(json, context));
+                return result;
+            }
+            foreach (var up in ups.EnumerateArray())
+            {
+                DateTime ts = DateTime.UtcNow;
+                if (up.TryGetProperty("timestamp", out var tsEl) && tsEl.ValueKind == JsonValueKind.String
+                    && DateTime.TryParse(tsEl.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                       System.Globalization.DateTimeStyles.RoundtripKind, out var parsed))
+                    ts = parsed;
+
+                if (up.TryGetProperty("values", out var vals) && vals.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var v in vals.EnumerateArray())
+                    {
+                        string path = v.TryGetProperty("path", out var pEl) && pEl.ValueKind == JsonValueKind.String
+                            ? pEl.GetString() ?? "" : "";
+                        string valueSummary = "";
+                        string pretty = PrettyPrint(v);
+                        if (v.TryGetProperty("value", out var valEl))
+                            valueSummary = SummariseValue(valEl);
+                        result.Add(new LogEntry(
+                            Id: nextId++,
+                            Timestamp: ts,
+                            Context: context,
+                            Path: string.IsNullOrEmpty(path) ? "(no path)" : path,
+                            ValueSummary: valueSummary,
+                            PrettyJson: pretty,
+                            RawJson: json));
+                    }
+                }
+                else
+                {
+                    result.Add(SingleRaw(json, context, ts));
+                }
+            }
+        }
+        return result;
+    }
+
+    private LogEntry SingleRaw(string json, string ctx = "", DateTime? ts = null) =>
+        new(nextId++, ts ?? DateTime.UtcNow, ctx, "(raw)", Truncate(json, 60), json, json);
+
+    private static string PrettyPrint(JsonElement el)
+    {
+        try
+        {
+            using var ms = new System.IO.MemoryStream();
+            using (var writer = new Utf8JsonWriter(ms, new JsonWriterOptions { Indented = true }))
+                el.WriteTo(writer);
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch { return el.GetRawText(); }
+    }
+
+    // One-liner value summary. Numbers / strings / bools inline; objects
+    // collapse to key list; arrays show length. Keeps each row under
+    // ~80 chars so the table reads at a glance.
+    private static string SummariseValue(JsonElement v)
+    {
+        switch (v.ValueKind)
+        {
+            case JsonValueKind.Number:
+                return v.TryGetDouble(out var d) ? d.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) : v.GetRawText();
+            case JsonValueKind.String:
+                return $"\"{Truncate(v.GetString() ?? "", 60)}\"";
+            case JsonValueKind.True: return "true";
+            case JsonValueKind.False: return "false";
+            case JsonValueKind.Null: return "null";
+            case JsonValueKind.Array: return $"[{v.GetArrayLength()} items]";
+            case JsonValueKind.Object:
+                var keys = new List<string>();
+                foreach (var p in v.EnumerateObject())
+                {
+                    keys.Add(p.Name);
+                    if (keys.Count >= 4) break;
+                }
+                var suffix = v.EnumerateObject().Count() > 4 ? ", …" : "";
+                return $"{{{string.Join(", ", keys)}{suffix}}}";
+            default: return v.GetRawText();
+        }
+    }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..(max - 1)] + "…";
+
+    // --- Scroll control -------------------------------------------------
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!needsScroll) return;
+        needsScroll = false;
+        try
+        {
+            await JS.InvokeVoidAsync("eval", @"
+                (function(){
+                    var el = document.getElementById('rawStreamBox');
+                    if (el) el.scrollTop = el.scrollHeight;
+                })()");
+        }
+        catch (JSDisconnectedException) { }
         catch (ObjectDisposedException) { }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (needsScroll)
-        {
-            needsScroll = false;
-            // Stick to bottom if already near the bottom (<50px). If user scrolled up
-            // to read older messages, don't disturb them.
-            try
-            {
-                await JS.InvokeVoidAsync("eval", @"
-                    (function(){
-                        var el = document.getElementById('rawStreamBox');
-                        if(!el) return;
-                        if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
-                            el.scrollTop = el.scrollHeight;
-                        }
-                    })()");
-            }
-            catch (JSDisconnectedException) { }
-            catch (ObjectDisposedException) { }
-        }
-    }
-
-    private bool MessageMatchesFilter(string json)
+    // --- Path filter ---------------------------------------------------
+    private bool MessageMatchesPathFilter(string json)
     {
         foreach (var path in selectedPaths)
-        {
             if (json.Contains(path, StringComparison.Ordinal))
                 return true;
-        }
         return false;
     }
+
+    private IEnumerable<string> VisiblePaths =>
+        string.IsNullOrWhiteSpace(pathFilterText)
+            ? availablePaths
+            : availablePaths.Where(p => p.Contains(pathFilterText, StringComparison.OrdinalIgnoreCase));
 
     private async Task TogglePath(string path)
     {
@@ -180,18 +363,14 @@
             if (!SignalkClient.CoreSelfPaths.Contains(path))
                 await SignalkClient.SubscribeExtraPathAsync(path);
         }
-        Clear();
     }
 
     private async Task SelectDefaults()
     {
         foreach (var path in selectedPaths.Except(SignalkClient.CoreSelfPaths).ToList())
             await SignalkClient.UnsubscribeExtraPathAsync(path);
-
         selectedPaths.Clear();
-        foreach (var p in SignalkClient.CoreSelfPaths)
-            selectedPaths.Add(p);
-        Clear();
+        foreach (var p in SignalkClient.CoreSelfPaths) selectedPaths.Add(p);
     }
 
     private async Task SelectAll()
@@ -201,25 +380,55 @@
             if (selectedPaths.Add(path) && !SignalkClient.CoreSelfPaths.Contains(path))
                 await SignalkClient.SubscribeExtraPathAsync(path);
         }
-        Clear();
     }
 
     private async Task SelectNone()
     {
         foreach (var path in selectedPaths.Except(SignalkClient.CoreSelfPaths).ToList())
             await SignalkClient.UnsubscribeExtraPathAsync(path);
-
         selectedPaths.Clear();
-        Clear();
+    }
+
+    // --- Search + expand -----------------------------------------------
+    private void OnSearchInput(ChangeEventArgs e) =>
+        searchText = e.Value?.ToString() ?? "";
+
+    private IReadOnlyList<LogEntry> VisibleEntries
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(searchText)) return entries.ToList();
+            var q = searchText;
+            return entries.Where(entry =>
+                entry.Path.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || entry.ValueSummary.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || entry.Context.Contains(q, StringComparison.OrdinalIgnoreCase)
+                || entry.RawJson.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+    }
+
+    private void ToggleExpanded(int id)
+    {
+        if (!expandedIds.Remove(id)) expandedIds.Add(id);
+    }
+
+    private void ToggleExpandAll()
+    {
+        allExpanded = !allExpanded;
+        if (!allExpanded) expandedIds.Clear();
     }
 
     private void TogglePause() => paused = !paused;
 
     private void Clear()
     {
-        head = 0;
-        count = 0;
-        snapshot = [];
+        entries.Clear();
+        expandedIds.Clear();
+    }
+
+    private void OnFilterToggle(EventArgs _)
+    {
+        filterPanelOpen = !filterPanelOpen;
     }
 
     public ValueTask DisposeAsync()
