@@ -28,6 +28,44 @@ public class NavigationDataTests
     }
 
     [Test]
+    public async Task Apply_DesignDraftCurrent_SetsDraftFromSignalK()
+    {
+        // SignalK's design.draft.current is the "as loaded" draft,
+        // preferred over .maximum. Anchor-tide alarm uses this auto.
+        var nav = new NavigationData();
+        nav.Apply("design.draft.current", JsonSerializer.SerializeToElement(1.85));
+        await Assert.That(nav.DraftFromSignalK).IsEqualTo(1.85);
+    }
+
+    [Test]
+    public async Task Apply_DesignDraftMaximum_UsedAsFallback()
+    {
+        // Some servers publish only .maximum. We take it.
+        var nav = new NavigationData();
+        nav.Apply("design.draft.maximum", JsonSerializer.SerializeToElement(2.10));
+        await Assert.That(nav.DraftFromSignalK).IsEqualTo(2.10);
+    }
+
+    [Test]
+    public async Task Apply_DesignDraftCurrent_BeatsMaximum()
+    {
+        // When both are published, .current wins regardless of order.
+        // Guards against a race where an early .maximum delta would
+        // otherwise stick even after .current arrived.
+        var nav = new NavigationData();
+        nav.Apply("design.draft.maximum", JsonSerializer.SerializeToElement(2.10));
+        nav.Apply("design.draft.current", JsonSerializer.SerializeToElement(1.85));
+        await Assert.That(nav.DraftFromSignalK).IsEqualTo(1.85);
+
+        // And if .current shows up first, a later .maximum shouldn't
+        // clobber it.
+        var nav2 = new NavigationData();
+        nav2.Apply("design.draft.current", JsonSerializer.SerializeToElement(1.85));
+        nav2.Apply("design.draft.maximum", JsonSerializer.SerializeToElement(2.10));
+        await Assert.That(nav2.DraftFromSignalK).IsEqualTo(1.85);
+    }
+
+    [Test]
     public async Task Apply_SpeedOverGround_SetsProperty()
     {
         var nav = new NavigationData();

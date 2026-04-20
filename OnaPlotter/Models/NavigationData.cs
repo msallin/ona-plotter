@@ -69,6 +69,15 @@ public sealed class NavigationData
     /// position plugin.</summary>
     public double? SunAltitude { get; private set; }
 
+    /// <summary>Boat draft in metres, sourced from SignalK's
+    /// <c>design.draft.current</c> (preferred) or <c>design.draft.maximum</c>
+    /// (fallback when the current figure isn't published). Null on
+    /// servers that don't advertise design data; in that case the
+    /// Settings page's manual override applies instead. Consumers
+    /// should pick <c>DraftFromSignalK ?? Settings.BoatDraftMeters</c>
+    /// so a well-configured SK seat wins, but manual still works.</summary>
+    public double? DraftFromSignalK { get; private set; }
+
     /// <summary>
     /// Applies a single SignalK path/value pair to the navigation state.
     /// Returns true if the value was recognized and applied.
@@ -98,6 +107,17 @@ public sealed class NavigationData
                     break;
                 case "environment.depth.belowTransducer":
                     Depth = value;
+                    break;
+                case "design.draft.current":
+                    // Current is the "as-loaded" draft figure; we prefer
+                    // it over maximum when both are published.
+                    DraftFromSignalK = value;
+                    break;
+                case "design.draft.maximum":
+                    // Only overwrite if we haven't seen .current yet.
+                    // Most servers publish one or the other; a few
+                    // publish both and .current is the live reading.
+                    DraftFromSignalK ??= value;
                     break;
                 case "environment.wind.angleApparent":
                     WindAngleApparent = value;

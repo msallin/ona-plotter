@@ -234,6 +234,21 @@
                     <span class="input-group-text">m</span>
                 </div>
                 <small class="text-muted">Used by the tide-aware anchor alarm to predict grounding at low water.</small>
+                @if (SignalkClient.Data.DraftFromSignalK is double skDraft)
+                {
+                    <small class="text-muted d-block mt-1" style="color:var(--sev-ok) !important;">
+                        SignalK reports @skDraft.ToString("F2") m (<code>design.draft</code>) &mdash;
+                        used automatically by the anchor alarm.
+                        @if (System.Math.Abs(skDraft - AppSettings.BoatDraftMeters) > 0.05)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1"
+                                    style="padding:0 6px; font-size:0.72rem;"
+                                    @onclick="() => AppSettings.SetBoatDraftMetersAsync(skDraft)">
+                                Copy to field
+                            </button>
+                        }
+                    </small>
+                }
             </div>
         </div>
     </div>
@@ -264,10 +279,15 @@
                 <label class="form-label">Anchor Tide Alarm setup</label>
                 <ul class="list-unstyled mb-0 anchor-tide-check" style="font-size:0.85rem;">
                     <li>
-                        <span class="@(AppSettings.BoatDraftMeters > 0 ? "check-ok" : "check-bad")">
-                            @(AppSettings.BoatDraftMeters > 0 ? "\u2713" : "\u2717")
+                        @{
+                            var effectiveDraft = SignalkClient.Data.DraftFromSignalK ?? AppSettings.BoatDraftMeters;
+                            var draftOk = effectiveDraft > 0;
+                            var draftSrc = SignalkClient.Data.DraftFromSignalK is not null ? " from SignalK" : " from Settings";
+                        }
+                        <span class="@(draftOk ? "check-ok" : "check-bad")">
+                            @(draftOk ? "\u2713" : "\u2717")
                         </span>
-                        Boat draft &gt; 0 (currently @AppSettings.BoatDraftMeters.ToString("F1") m)
+                        Boat draft &gt; 0 (@effectiveDraft.ToString("F1") m@draftSrc)
                     </li>
                     <li>
                         <span class="@(AppSettings.AnchorTideSafetyMargin > 0 ? "check-ok" : "check-bad")">

@@ -15,7 +15,8 @@ public class AnchorTideAlarmRuleTests
         double? depth = null,
         double? heightNow = null,
         double? heightLow = null,
-        DateTime? timeLow = null)
+        DateTime? timeLow = null,
+        double? signalkDraft = null)
     {
         var nav = new NavigationData();
         if (anchored) nav.ApplyAnchorPosition(47.4, 8.5);
@@ -25,6 +26,7 @@ public class AnchorTideAlarmRuleTests
         if (timeLow is not null)
             nav.ApplyString("environment.tide.timeLow",
                 timeLow.Value.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        if (signalkDraft is not null) nav.Apply("design.draft.current", signalkDraft);
         return nav;
     }
 
@@ -97,6 +99,45 @@ public class AnchorTideAlarmRuleTests
         await Assert.That(alarm).IsNotNull();
         await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
         await Assert.That(alarm.Message).Contains("touches");
+    }
+
+    [Test]
+    public async Task SignalKDraft_Preferred_Over_SettingsDraft()
+    {
+        // FakeSettings.BoatDraftMeters defaults to 1.5; the SK vessel
+        // has design.draft.current = 2.0. Depth 2.3, tide drops 0.5
+        // -> LW depth 1.8. Using Settings draft 1.5 -> clearance 0.3
+        // (Warn if margin is >0.3). Using SK draft 2.0 -> clearance
+        // -0.2 (Danger: keel touches). So if SK is preferred, alarm
+        // is Danger; if Settings wins, it's at most Warn. This pins
+        // the preference explicitly.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 2.3,
+            heightNow: 2.0, heightLow: 1.5, timeLow: now.AddHours(3),
+            signalkDraft: 2.0);
+
+        var alarm = rule.Check(Ctx(nav, new FakeSettings { BoatDraftMeters = 1.5 }, now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
+    }
+
+    [Test]
+    public async Task SettingsDraft_UsedWhen_SignalKDraft_Missing()
+    {
+        // No SK-published draft -> fall back to manual Settings value.
+        // Same numeric scenario as above but SK doesn't publish; manual
+        // is 1.5, so clearance 0.3 hits Warn (default margin 1.0 > 0.3).
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 2.3,
+            heightNow: 2.0, heightLow: 1.5, timeLow: now.AddHours(3));
+
+        var alarm = rule.Check(Ctx(nav, new FakeSettings { BoatDraftMeters = 1.5 }, now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
     }
 
     [Test]

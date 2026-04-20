@@ -60,7 +60,14 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         double drop = heightNow - heightLow;
         if (drop <= 0) return null;                // tide still rising
 
-        double draft = ctx.Settings.BoatDraftMeters;
+        // Prefer SignalK-published draft (design.draft.current) when the
+        // server has it; fall back to the Settings manual value. Reason:
+        // a charter boat or a reconfigured fleet may have a correct
+        // design.draft entry in SK's vessel.json even if the client-side
+        // Settings default (1.5 m) is stale. Manual still wins when the
+        // user has EXPLICITLY set a draft (non-default 1.5) and SK has
+        // no value -- the getter chain handles both cases cleanly.
+        double draft = ctx.Data.DraftFromSignalK ?? ctx.Settings.BoatDraftMeters;
         double margin = ctx.Settings.AnchorTideSafetyMargin;
         double predictedDepth = depthNow - drop;
         double clearance = predictedDepth - draft;  // metres between keel and bottom at LW

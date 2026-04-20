@@ -55,23 +55,26 @@ function ownVesselDelta() {
     const awa = 0.6 + (rng() - 0.5) * 0.1;
     const aws = 9.0 + (rng() - 0.5) * 0.3;
 
-    return {
-        context: 'vessels.self',
-        updates: [{
-            timestamp: new Date().toISOString(),
-            values: [
-                { path: 'navigation.position', value: { latitude: lat, longitude: lon } },
-                { path: 'navigation.speedOverGround', value: BOAT_SPEED_MS },
-                { path: 'navigation.courseOverGroundTrue', value: cog },
-                { path: 'navigation.headingTrue', value: cog },
-                { path: 'environment.depth.belowTransducer', value: depth },
-                { path: 'environment.wind.directionTrue', value: twd },
-                { path: 'environment.wind.speedTrue', value: tws },
-                { path: 'environment.wind.angleApparent', value: awa },
-                { path: 'environment.wind.speedApparent', value: aws },
-            ]
-        }]
-    };
+    const values = [
+        { path: 'navigation.position', value: { latitude: lat, longitude: lon } },
+        { path: 'navigation.speedOverGround', value: BOAT_SPEED_MS },
+        { path: 'navigation.courseOverGroundTrue', value: cog },
+        { path: 'navigation.headingTrue', value: cog },
+        { path: 'environment.depth.belowTransducer', value: depth },
+        { path: 'environment.wind.directionTrue', value: twd },
+        { path: 'environment.wind.speedTrue', value: tws },
+        { path: 'environment.wind.angleApparent', value: awa },
+        { path: 'environment.wind.speedApparent', value: aws },
+    ];
+    // Publish design data once per minute so OnaPlotter's
+    // DraftFromSignalK auto-fills without hammering the bus. Static
+    // config lives in docker/signalk-config/settings.json -> vessel.draft
+    // but those don't emit deltas, so repeat here.
+    if (tick % 60 === 0) {
+        values.push({ path: 'design.draft.current', value: 1.8 });
+        values.push({ path: 'design.draft.maximum', value: 2.0 });
+    }
+    return { context: 'vessels.self', updates: [{ timestamp: new Date().toISOString(), values }] };
 }
 
 // --- AIS targets ---
