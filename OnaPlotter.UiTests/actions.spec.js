@@ -128,6 +128,23 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
 
 test('keyboard shortcut ? opens and Esc closes the shortcut overlay', async ({ page }) => {
     const { assertBlazorErrorNotVisible } = collectErrors(page);
+
+    // ShowKeyboardHints defaults OFF so '?' is a no-op for new devices.
+    // Flip it on via Settings first so the overlay is reachable in CI.
+    // Matches what a desktop-keyboard user would do once in a session.
+    await page.goto('settings');
+    await waitForMapReady(page);
+    const hintsSwitch = page.locator('input[type="checkbox"][role="switch"]').filter({
+        has: page.locator('..'),
+    }).nth(0);
+    // More robust: find the switch by its associated label text.
+    const byLabel = page.locator('label.form-check')
+        .filter({ hasText: 'keyboard shortcut hints' })
+        .locator('input[type="checkbox"]');
+    if (await byLabel.count() > 0 && !(await byLabel.isChecked())) {
+        await byLabel.check({ force: true });
+    }
+
     await page.goto('map');
     await waitForMapReady(page);
 
