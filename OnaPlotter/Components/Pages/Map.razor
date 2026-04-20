@@ -1090,7 +1090,13 @@
         $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}|{Data.WindAngleTrue:F3}|{Data.WindSpeedTrue:F2}|{Data.WindDirectionTrue:F3}" +
         $"|{Data.CourseNextPointDistance:F0}|{Data.CourseNextPointBearing:F2}|{Data.CourseNextPointVmg:F2}|{Data.CourseNextPointTimeToGo:F0}" +
         $"|{Data.AnchorCurrentRadius:F1}|{Data.AnchorMaxRadius:F1}|{Data.AnchorLatitude:F6}" +
-        $"|{Data.CrossTrackError:F1}|{Data.ActiveRouteHref}";
+        $"|{Data.CrossTrackError:F1}|{Data.ActiveRouteHref}" +
+        // Route-level fields: progress chip + route-total row on the
+        // active-route card. Without them in the key, a waypoint
+        // advance would show new leg numbers but the "WP 3 of 7" chip
+        // would lag until another field changed.
+        $"|{Data.ActiveRoutePointIndex}|{Data.ActiveRoutePointTotal}" +
+        $"|{Data.ActiveRouteDistanceRemaining:F0}|{Data.ActiveRouteTimeToGo:F0}";
 
     private async void HandleDataChanged()
     {
