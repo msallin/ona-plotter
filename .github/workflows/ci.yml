@@ -35,6 +35,131 @@ jobs:
       - name: Test (C# unit + bUnit component)
         run: dotnet run --project OnaPlotter.Tests --configuration Release --no-build
 
-      # JS navigation-math tests. Pure Node, no server dependency.
-      - name: Test (JS math)
-        run: node --test OnaPlotter/wwwroot/js/geoMath.test.js
+      # All JS unit tests: geoMath, chartOverzoom, markerLayer. Pure Node,
+      # no server dependency. Using a glob so future *.test.js files pick
+      # up automatically without editing this workflow.
+      - name: Test (JS unit)
+        run: node --test 'OnaPlotter/wwwroot/js/*.test.js'
+
+  # End-to-end job: runs OnaPlotter + the dev SignalK stack from
+  # docker/docker-compose.dev.yml and drives the Map page via Playwright.
+  # Separate job so a pure-unit failure still reports quickly, and so
+  # docker setup doesn't slow down the C# build's feedback loop.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Install workloads
+        run: dotnet workload install wasm-tools
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Start the dev SignalK server + fake-data pump. --wait makes
+      # compose block until the sk healthcheck passes (curl /signalk).
+      # fake-data is a TCP server; signalk-server connects to it via
+      # a pipedProvider configured in docker/signalk-config/settings.json.
+      - name: Start dev SignalK stack
+        run: docker compose -f docker/docker-compose.dev.yml up -d --build --wait
+
+      # Give the pipedProvider a few ticks to fan deltas onto the bus
+      # before Playwright starts querying for vessels. 6 = own + 5 AIS.
+      - name: Wait for SignalK deltas
+        run: |
+          for i in $(seq 1 30); do
+            COUNT=$(curl -sS http://localhost:3000/signalk/v1/api/vessels 2>/dev/null \
+                    | python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); print(len(d))' 2>/dev/null || echo 0)
+            if [ "$COUNT" -ge "6" ]; then
+              echo "SignalK has $COUNT vessels; ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timeout waiting for SignalK vessels"
+          docker compose -f docker/docker-compose.dev.yml logs
+          exit 1
+
+      - name: Build OnaPlotter (Release)
+        run: dotnet build OnaPlotter/OnaPlotter.csproj --configuration Release
+
+      # Override the SignalK target to the compose'd server on localhost.
+      - name: Point OnaPlotter at dev SK
+        run: |
+          cat > OnaPlotter/bin/Release/net10.0/wwwroot/appsettings.json <<EOF
+          { "SignalK": { "ServerUrl": "http://localhost:3000" } }
+          EOF
+
+      - name: Start OnaPlotter
+        run: |
+          nohup dotnet run --project OnaPlotter --configuration Release --no-build \
+            > onaplotter.log 2>&1 &
+          echo $! > onaplotter.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5282/ > /dev/null 2>&1; then
+              echo "OnaPlotter ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timeout waiting for OnaPlotter"
+          cat onaplotter.log
+          exit 1
+
+      - name: Install Playwright deps
+        working-directory: OnaPlotter.UiTests
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Smoke is required. Fuzz runs with a small budget (80 clicks,
+      # ~2 min) so CI still catches "banner path crashes after 50
+      # random clicks"-class regressions the full 10-min fuzz
+      # exercises locally. Seed is fixed so a failure reproduces on
+      # a dev machine with the same input.
+      - name: Playwright smoke + actions + short fuzz
+        working-directory: OnaPlotter.UiTests
+        env:
+          BASE_URL: http://localhost:5282/
+          FUZZ_CLICKS: "80"
+          FUZZ_SEED: "20260419"
+        # Explicit spec list keeps the diagnose-*.spec.js files (manual
+        # debug helpers that only log) out of the CI run. Ordering:
+        # smoke first for the quickest failure signal, fuzz last since
+        # it's the slowest of the three.
+        run: npx playwright test smoke.spec.js actions.spec.js fuzz.spec.js --reporter=list
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: OnaPlotter.UiTests/playwright-report/
+          retention-days: 7
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          echo "=== OnaPlotter log ==="
+          tail -200 onaplotter.log || true
+          echo "=== docker compose logs ==="
+          docker compose -f docker/docker-compose.dev.yml logs --tail=200 || true
+
+      - name: Stop OnaPlotter
+        if: always()
+        run: |
+          if [ -f onaplotter.pid ]; then
+            kill $(cat onaplotter.pid) 2>/dev/null || true
+          fi
+
+      - name: Stop dev SignalK stack
+        if: always()
+        run: docker compose -f docker/docker-compose.dev.yml down

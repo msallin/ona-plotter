@@ -6,7 +6,7 @@ Pickup notes for contributors. Keep it short; add only what bit you.
 
 ```bash
 dotnet build                                          # root builds everything
-dotnet run --project OnaPlotter.Tests --no-build      # C# + bUnit (~390 tests)
+dotnet run --project OnaPlotter.Tests --no-build      # C# + bUnit (~484 tests)
 node --test 'OnaPlotter/wwwroot/js/*.test.js'         # JS unit tests
 cd OnaPlotter.UiTests && BASE_URL=http://localhost:5282/ npm test   # Playwright
 ```
