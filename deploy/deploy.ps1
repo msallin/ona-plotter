@@ -87,29 +87,62 @@ Write-Host "Staged at $WebappStaging" -ForegroundColor Green
 $RemotePath = "~/.signalk/node_modules/$WebappName"
 Write-Host "Deploying to $SshTarget : $RemotePath ..." -ForegroundColor Cyan
 
-# Verify we can reach the host and that ~/.signalk exists. A password
-# prompt here is fine - we just want the whole script to stop on the
-# probe rather than halfway through with a cryptic "mkdir failed".
-# (No BatchMode=yes: that would refuse to prompt for a password, which
-# makes the probe fail on a Pi that still uses password auth.)
-Write-Host "Testing SSH connection (may prompt for password)..." -ForegroundColor DarkGray
-$sshTest = ssh -o ConnectTimeout=10 $SshTarget 'test -d ~/.signalk && echo OK' 2>&1
-if ($LASTEXITCODE -ne 0 -or $sshTest -notmatch "OK") {
-    Write-Host $sshTest -ForegroundColor Yellow
-    throw "SSH to $SshTarget failed. Check: (1) you can 'ssh $SshTarget' manually, (2) ~/.signalk exists on the target, (3) ssh-copy-id if you'd like password-less deploys."
+# Password-prompt reduction strategy:
+#   - PRIMARY: SSH ControlMaster. Opens one master connection up front,
+#     subsequent ssh / scp calls reuse it without re-authenticating.
+#     Microsoft's OpenSSH for Windows supports ControlMaster since
+#     OpenSSH 8.6; on Linux / macOS it's been standard for years.
+#     The socket lives in $env:TEMP and persists for 60 s after the
+#     last reference, which covers the whole deploy.
+#   - FALLBACK: if ControlMaster is unavailable (old OpenSSH, locked-
+#     down config), the three setup commands are collapsed into a
+#     single remote shell so auth runs at most twice (once for setup,
+#     once for scp) instead of four times.
+#   - BEST: the user set up key auth (ssh-copy-id). Zero prompts.
+#     Detected probabilistically by an auth-free probe.
+
+$CtlDir = Join-Path $env:TEMP "ona-ssh-ctl"
+if (-not (Test-Path $CtlDir)) { New-Item -ItemType Directory -Path $CtlDir | Out-Null }
+$CtlSocket = Join-Path $CtlDir "ctl-%r@%h-%p"
+$SshOpts = @(
+    "-o", "ControlMaster=auto",
+    "-o", "ControlPath=$CtlSocket",
+    "-o", "ControlPersist=60"
+)
+
+try {
+    # Open the master connection + run all setup in one shell so auth
+    # happens at most once here. ControlPersist keeps the socket open
+    # for the scp call below so that one reuses the same auth too.
+    Write-Host "Testing SSH + preparing remote folder (may prompt for password)..." -ForegroundColor DarkGray
+    $setupCmd = @(
+        "test -d ~/.signalk || { echo 'MISSING_SIGNALK_DIR' >&2; exit 2; }",
+        "rm -rf '$RemotePath'",
+        "mkdir -p '$RemotePath'",
+        "echo OK"
+    ) -join " && "
+    $setupOut = ssh @SshOpts -o ConnectTimeout=10 $SshTarget $setupCmd 2>&1
+    if ($LASTEXITCODE -ne 0 -or $setupOut -notmatch "OK") {
+        Write-Host $setupOut -ForegroundColor Yellow
+        if ($setupOut -match "MISSING_SIGNALK_DIR") {
+            throw "Remote ~/.signalk does not exist on $SshTarget."
+        }
+        throw "SSH setup to $SshTarget failed. Check: (1) you can 'ssh $SshTarget' manually, (2) the SSH user has rw access to ~/.signalk/node_modules, (3) ssh-copy-id for password-less deploys."
+    }
+
+    # Copy staging contents. Reuses the ControlMaster socket opened
+    # above so there is NO additional password prompt on a version of
+    # OpenSSH that supports multiplexing. On older clients this falls
+    # back to a fresh auth -- at worst one extra prompt, not three.
+    scp @SshOpts -r "$WebappStaging/*" "${SshTarget}:$RemotePath/"
+    if ($LASTEXITCODE -ne 0) { throw "scp failed (check disk space on target with 'df -h ~')" }
 }
-
-# Create remote directory (wipe old install). Keep the two ops separate so
-# the exit code pinpoints which one failed.
-$rmOut = ssh $SshTarget "rm -rf '$RemotePath'" 2>&1
-if ($LASTEXITCODE -ne 0) { Write-Host $rmOut -ForegroundColor Yellow; throw "Remote rm failed (is the current install owned by another user?)" }
-$mkOut = ssh $SshTarget "mkdir -p '$RemotePath'" 2>&1
-if ($LASTEXITCODE -ne 0) { Write-Host $mkOut -ForegroundColor Yellow; throw "Remote mkdir failed" }
-
-# Copy staging contents.
-# Use scp -r for the whole folder; rsync would be nicer but might not be installed.
-scp -r "$WebappStaging/*" "${SshTarget}:$RemotePath/"
-if ($LASTEXITCODE -ne 0) { throw "scp failed (check disk space on target with 'df -h ~')" }
+finally {
+    # Politely close the master socket so subsequent deploy runs start
+    # clean. Errors ignored -- if ControlMaster never activated the
+    # -O exit has nothing to do.
+    & ssh @SshOpts -O exit $SshTarget 2>$null
+}
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green

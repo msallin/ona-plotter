@@ -36,10 +36,14 @@ jobs:
         run: dotnet run --project OnaPlotter.Tests --configuration Release --no-build
 
       # All JS unit tests: geoMath, chartOverzoom, markerLayer. Pure Node,
-      # no server dependency. Using a glob so future *.test.js files pick
-      # up automatically without editing this workflow.
+      # no server dependency. Drops the single-quoted glob that bash
+      # couldn't expand (previous CI was red with "Could not find
+      # '.../OnaPlotter/wwwroot/js/*.test.js'"); bash's default globbing
+      # hands Node a concrete file list so new *.test.js files still
+      # pick up automatically.
       - name: Test (JS unit)
-        run: node --test 'OnaPlotter/wwwroot/js/*.test.js'
+        shell: bash
+        run: node --test OnaPlotter/wwwroot/js/*.test.js
 
   # End-to-end job: runs OnaPlotter + the dev SignalK stack from
   # docker/docker-compose.dev.yml and drives the Map page via Playwright.
