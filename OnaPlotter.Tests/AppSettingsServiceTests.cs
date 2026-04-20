@@ -323,6 +323,49 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task ChartOrder_Append_Does_Not_Wipe_Existing()
+    {
+        // Regression guard for the reorder-silently-fails bug:
+        //   Settings.ChartOrder.Append(x) returns an IEnumerable<string>
+        //   that references _chartOrder. SetChartOrderAsync used to
+        //   .Clear() _chartOrder before iterating, so the enumerator
+        //   saw an empty source and yielded only the newly-appended id.
+        //   Net effect: every ToggleChart(true) reset ChartOrder to
+        //   just the last-toggled chart, then subsequent reorders
+        //   couldn't find neighbouring ids and the swap silently failed.
+        // This test passes Settings.ChartOrder.Append(x) straight to
+        // SetChartOrderAsync -- exactly the pattern Map.ToggleChart
+        // uses -- and asserts the accumulated list is preserved.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+
+        await svc.SetChartOrderAsync(["a"]);
+        await svc.SetChartOrderAsync(svc.ChartOrder.Append("b"));
+        await svc.SetChartOrderAsync(svc.ChartOrder.Append("c"));
+
+        await Assert.That(svc.ChartOrder.Count).IsEqualTo(3);
+        await Assert.That(svc.ChartOrder[0]).IsEqualTo("a");
+        await Assert.That(svc.ChartOrder[1]).IsEqualTo("b");
+        await Assert.That(svc.ChartOrder[2]).IsEqualTo("c");
+    }
+
+    [Test]
+    public async Task SetEnabledCharts_Append_Does_Not_Wipe_Existing()
+    {
+        // Same aliasing footgun applies to HashSet-backed setters.
+        // Defensive materialise is in place; this test pins it.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+
+        await svc.SetEnabledChartsAsync(["a"]);
+        await svc.SetEnabledChartsAsync(svc.EnabledChartIds.Append("b"));
+
+        await Assert.That(svc.EnabledChartIds.Count).IsEqualTo(2);
+        await Assert.That(svc.EnabledChartIds.Contains("a")).IsTrue();
+        await Assert.That(svc.EnabledChartIds.Contains("b")).IsTrue();
+    }
+
+    [Test]
     public async Task KeepScreenAwake_DefaultsTrue()
     {
         // Default ON: a plotter going to sleep mid-watch is a safety

@@ -1990,7 +1990,17 @@
     {
         if (module is null) return;
         var order = Settings.ChartOrder.ToList();
-        // Ensure the chart is in the order list; if not, append then reorder.
+
+        // Defensive: ensure EVERY currently-enabled chart is represented
+        // in the order list before we reorder. Without this, a stale
+        // storage state (e.g. from the pre-fix SetChartOrderAsync bug
+        // that wiped ChartOrder to just the last-toggled chart) can
+        // leave a neighbour missing, so the bounds check `swapWith >=
+        // order.Count` returns and the user sees nothing happen.
+        foreach (var enabledId in enabledCharts)
+        {
+            if (!order.Contains(enabledId)) order.Add(enabledId);
+        }
         if (!order.Contains(chart.Identifier)) order.Add(chart.Identifier);
 
         int idx = order.IndexOf(chart.Identifier);

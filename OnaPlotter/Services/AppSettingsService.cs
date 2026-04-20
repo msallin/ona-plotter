@@ -275,22 +275,35 @@ public sealed class AppSettingsService : IAppSettings
 
     public async Task SetEnabledChartsAsync(IEnumerable<string> ids)
     {
+        // Materialise first -- see SetChartOrderAsync for the aliasing
+        // footgun this defends against.
+        var copy = ids.ToList();
         _enabledChartIds.Clear();
-        foreach (var id in ids) _enabledChartIds.Add(id);
+        foreach (var id in copy) _enabledChartIds.Add(id);
         await Save("enabledChartIds", string.Join('\n', _enabledChartIds));
     }
 
     public async Task SetEnabledRoutesAsync(IEnumerable<string> ids)
     {
+        var copy = ids.ToList();
         _enabledRouteIds.Clear();
-        foreach (var id in ids) _enabledRouteIds.Add(id);
+        foreach (var id in copy) _enabledRouteIds.Add(id);
         await Save("enabledRouteIds", string.Join('\n', _enabledRouteIds));
     }
 
     public async Task SetChartOrderAsync(IEnumerable<string> ids)
     {
+        // Materialise BEFORE clearing _chartOrder -- otherwise a caller
+        // passing `Settings.ChartOrder.Append(x)` (a LINQ enumerable
+        // referencing _chartOrder) iterates an empty list and loses
+        // every previously-ordered chart. This was the root cause of
+        // the "chart reorder buttons do nothing" bug: each Toggle wiped
+        // the order to just the newly-toggled chart, leaving subsequent
+        // reorders with missing neighbours that failed the bounds check
+        // in ReorderChart.
+        var copy = ids.ToList();
         _chartOrder.Clear();
-        foreach (var id in ids)
+        foreach (var id in copy)
         {
             if (!string.IsNullOrEmpty(id) && !_chartOrder.Contains(id)) _chartOrder.Add(id);
         }
