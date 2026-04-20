@@ -47,9 +47,47 @@ export function seededRandom(seed) {
     };
 }
 
-/** Wait for the Blazor app's #app shell to populate and Leaflet to attach. */
+/** Wait for the Blazor app's #app shell to populate and Leaflet to attach.
+ * Also dismisses the welcome card + touch-coachmark + any transient load
+ * toasts so follow-up clicks aren't intercepted by overlays. The real
+ * app persists the "welcome dismissed" flag in localStorage per device
+ * so the card only shows once; Playwright gets a fresh browser per test
+ * so without a dismiss step every test would hit the overlay. */
 export async function waitForMapReady(page) {
     await page.waitForSelector('#app > *:not(:empty)', { timeout: 30_000 });
     // The Map page has a div#mapDiv once initMap() runs; other pages may not.
     await page.waitForTimeout(1500);
+    await dismissInitialOverlays(page);
+}
+
+/** Dismiss any of the three click-blocking overlays that can appear on
+ * a fresh session: welcome card, touch coachmark, load-failure toasts.
+ * Silent if none of them are present -- the map page on day-2 of a
+ * device has none of these, and the test must work there too. */
+export async function dismissInitialOverlays(page) {
+    // Welcome card: first-visit "Got it" button. A backdrop click would
+    // ALSO dismiss but we pick the button to avoid accidentally clicking
+    // through to a map marker behind it.
+    const gotIt = page.locator('button.welcome-dismiss');
+    if (await gotIt.count() > 0 && await gotIt.first().isVisible()) {
+        await gotIt.first().click({ force: true });
+        await page.waitForTimeout(100);
+    }
+    // Touch coachmark: tap anywhere (its @onclick is on the whole div).
+    const coachmark = page.locator('.touch-coachmark');
+    if (await coachmark.count() > 0 && await coachmark.first().isVisible()) {
+        await coachmark.first().click({ force: true });
+        await page.waitForTimeout(100);
+    }
+    // Dismiss transient toasts by tapping them. Load-failure toasts like
+    // "Couldn't load regions" auto-clear eventually but block clicks in
+    // the meantime. Clicking them closes. Skip silently if the stack is
+    // empty.
+    const toasts = page.locator('.toast-message');
+    const toastCount = await toasts.count();
+    for (let i = 0; i < toastCount; i++) {
+        try { await toasts.nth(i).click({ force: true, timeout: 500 }); }
+        catch { /* toast may have auto-dismissed between count and click */ }
+    }
+    await page.waitForTimeout(100);
 }
