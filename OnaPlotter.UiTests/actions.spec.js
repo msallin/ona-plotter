@@ -114,14 +114,13 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
 
     // Settings.OnDepthChanged is an async event handler that awaits
     // AppSettings.SetDepthAlarmThresholdAsync, which writes through to
-    // localStorage. Blazor's @onchange doesn't block the browser, so
-    // a raw page.reload() can race the write and the reload reads
-    // back the default. Poll localStorage directly (synchronous) until
-    // the value lands -- more robust than a fixed sleep.
-    await expect.poll(async () =>
-        await page.evaluate(() => localStorage.getItem('ona.depthAlarmThreshold')),
-        { timeout: 5_000 }
-    ).toBe('4.5');
+    // localStorage using invariant-culture F1 format -- 4.5 stays "4.5"
+    // but 3 is stored as "3.0". The poll parses the string to a number
+    // so the test doesn't care about the exact string form.
+    const readDepthKv = () => page.evaluate(() =>
+        localStorage.getItem('ona.depthAlarmThreshold'));
+    await expect.poll(async () => Number.parseFloat(await readDepthKv()),
+        { timeout: 5_000 }).toBe(4.5);
 
     // Reload and re-read.
     await page.reload();
@@ -135,10 +134,8 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     const restore = page.locator('input[type="number"]').first();
     await restore.fill('3');
     await restore.blur();
-    await expect.poll(async () =>
-        await page.evaluate(() => localStorage.getItem('ona.depthAlarmThreshold')),
-        { timeout: 5_000 }
-    ).toBe('3');
+    await expect.poll(async () => Number.parseFloat(await readDepthKv()),
+        { timeout: 5_000 }).toBe(3);
 
     await assertBlazorErrorNotVisible();
 });
