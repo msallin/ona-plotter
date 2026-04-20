@@ -39,6 +39,23 @@ public sealed class NavigationData
     public double? CourseNextPointTimeToGo { get; private set; }
     public double? CourseNextPointVmg { get; private set; }
     public double? CrossTrackError { get; private set; }
+
+    /// <summary>Distance remaining on the ENTIRE active route (metres).
+    /// SignalK path <c>navigation.courseGreatCircle.activeRoute.distanceRemaining</c>.
+    /// Null when no active route or when the SK server doesn't publish it
+    /// (older servers only emit nextPoint.distance).</summary>
+    public double? ActiveRouteDistanceRemaining { get; private set; }
+
+    /// <summary>Time-to-go on the ENTIRE active route (seconds). Analogue of
+    /// CourseNextPointTimeToGo but for the route as a whole.</summary>
+    public double? ActiveRouteTimeToGo { get; private set; }
+
+    /// <summary>Current leg index (0-based) within the active route. Used
+    /// by the HUD to render "WP 3 of 7" progress text.</summary>
+    public int? ActiveRoutePointIndex { get; private set; }
+
+    /// <summary>Total waypoints in the active route.</summary>
+    public int? ActiveRoutePointTotal { get; private set; }
     public double? CoursePreviousPointLatitude { get; private set; }
     public double? CoursePreviousPointLongitude { get; private set; }
     public bool HasActiveCourse => CourseNextPointLatitude is not null && CourseNextPointLongitude is not null;
@@ -181,6 +198,26 @@ public sealed class NavigationData
                 case "environment.tide.heightLow":
                     TideHeightLow = value;
                     break;
+                case "navigation.courseGreatCircle.activeRoute.distanceRemaining":
+                case "navigation.courseRhumbline.activeRoute.distanceRemaining":
+                    ActiveRouteDistanceRemaining = value;
+                    break;
+                case "navigation.courseGreatCircle.activeRoute.timeToGo":
+                case "navigation.courseRhumbline.activeRoute.timeToGo":
+                    ActiveRouteTimeToGo = value;
+                    break;
+                // pointIndex / pointTotal come as numbers too; route them
+                // through the number-apply path and cast back to int at
+                // the UI boundary so NaN / fractional server quirks don't
+                // trip the hot path.
+                case "navigation.courseGreatCircle.activeRoute.pointIndex":
+                case "navigation.courseRhumbline.activeRoute.pointIndex":
+                    ActiveRoutePointIndex = (int)value;
+                    break;
+                case "navigation.courseGreatCircle.activeRoute.pointTotal":
+                case "navigation.courseRhumbline.activeRoute.pointTotal":
+                    ActiveRoutePointTotal = (int)value;
+                    break;
                 default:
                     return false;
             }
@@ -265,6 +302,10 @@ public sealed class NavigationData
             CrossTrackError = null;
             CoursePreviousPointLatitude = null;
             CoursePreviousPointLongitude = null;
+            ActiveRouteDistanceRemaining = null;
+            ActiveRouteTimeToGo = null;
+            ActiveRoutePointIndex = null;
+            ActiveRoutePointTotal = null;
         }
     }
 

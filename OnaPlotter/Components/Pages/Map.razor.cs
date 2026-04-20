@@ -315,8 +315,19 @@ public partial class Map
 
     // Thin wrapper around the private NavigateRoute logic so JSInvokable
     // activation can reuse it without duplicating the try/catch.
+    //
+    // Also enforces route/anchor mutual exclusion: the two HUDs share
+    // the bottom-center slot and represent incompatible intents. If the
+    // user engages a route while anchored, drop the anchor first so
+    // depth / anchor-drag alarms don't fire against a moving boat.
     private async Task NavigateRouteInternal(SignalkRoute route)
     {
+        if (anchorManualActive && module is not null)
+        {
+            try { await module.InvokeVoidAsync("clearAnchor"); anchorManualActive = false; }
+            catch (JSDisconnectedException) { }
+        }
+
         try
         {
             bool ok = await CourseApi.SetActiveRouteAsync(route.Id);

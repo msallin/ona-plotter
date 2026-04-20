@@ -354,7 +354,17 @@
 {
     <div class="hud hud-route">
         <div class="hud-panel route-panel">
-            <div class="hud-label">@(Data.ActiveRouteName ?? "Active Route")</div>
+            <div class="route-panel-title">
+                <span class="route-panel-name">@(Data.ActiveRouteName ?? "Active Route")</span>
+                @if (Data.ActiveRoutePointIndex is int idx && Data.ActiveRoutePointTotal is int total)
+                {
+                    @* "WP 3 of 7" -- Freeboard-style progress. pointIndex is
+                       0-based from SK so display idx+1. Only shown when BOTH
+                       paths publish; on servers without them the inner card
+                       reads the same as before. *@
+                    <span class="route-panel-progress">WP @(idx + 1) of @total</span>
+                }
+            </div>
             @if (WaypointArrivalRadiusMeters <= 0)
             {
                 @* APPROACH alarm is disabled (arrival radius 0). The
@@ -400,6 +410,26 @@
                     </div>
                 }
             </div>
+            @* Route-total row: what's left across the whole route vs the
+               next-WP numbers above. Freeboard-style "you're X nm from
+               the end, with Y to go". Rendered only when the SK server
+               publishes at least one of the two paths; that way
+               OnaPlotter degrades cleanly on older servers. *@
+            @if (Data.ActiveRouteDistanceRemaining is not null || Data.ActiveRouteTimeToGo is not null)
+            {
+                <div class="route-total-row">
+                    <span class="route-total-label">Route total</span>
+                    @if (Data.ActiveRouteDistanceRemaining is not null)
+                    {
+                        <span class="route-total-value">@Format.Nm(Data.ActiveRouteDistanceRemaining)<span class="hud-unit">nm</span></span>
+                    }
+                    @if (Data.ActiveRouteTimeToGo is not null)
+                    {
+                        <span class="route-total-value">@Format.TimeToGo(Data.ActiveRouteTimeToGo)</span>
+                        <span class="route-total-value">ETA @Format.Eta(Data.ActiveRouteTimeToGo)</span>
+                    }
+                </div>
+            }
             @* Prominent Stop button so the captain (or a renter) can abandon
                the active route without digging through the right-click menu. *@
             <button class="route-stop-btn" @onclick="OnStopNavigation"

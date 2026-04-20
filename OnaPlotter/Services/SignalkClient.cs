@@ -101,6 +101,17 @@ public sealed class SignalkClient : IAsyncDisposable
         "navigation.courseRhumbline.crossTrackError",
         "navigation.courseGreatCircle.previousPoint.position",
         "navigation.courseRhumbline.previousPoint.position",
+        // Route-level progress (distance / TTG across the whole route,
+        // current WP index, total WPs). Freeboard-sk publishes these;
+        // OnaPlotter's HUD uses them for "WP 3 of 7" + route-total ETA.
+        "navigation.courseGreatCircle.activeRoute.distanceRemaining",
+        "navigation.courseRhumbline.activeRoute.distanceRemaining",
+        "navigation.courseGreatCircle.activeRoute.timeToGo",
+        "navigation.courseRhumbline.activeRoute.timeToGo",
+        "navigation.courseGreatCircle.activeRoute.pointIndex",
+        "navigation.courseRhumbline.activeRoute.pointIndex",
+        "navigation.courseGreatCircle.activeRoute.pointTotal",
+        "navigation.courseRhumbline.activeRoute.pointTotal",
         // Autopilot
         "steering.autopilot.state",
         "steering.autopilot.target.headingTrue",

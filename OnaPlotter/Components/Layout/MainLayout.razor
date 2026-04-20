@@ -61,8 +61,15 @@
             <div class="alarm-banner-stack">
                 @foreach (var a in activeAlarms)
                 {
+                    @* oncontextmenu:preventDefault silences the iOS /
+                       right-click browser menu on the banner. Without it
+                       long-press on an acknowledge triggers "Copy / Share"
+                       instead of the hold-to-dismiss gesture, per field
+                       report. *@
                     <div class="alarm-banner @(a.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")"
-                         @key="(a.Title, a.TargetKey)">
+                         @key="(a.Title, a.TargetKey)"
+                         @oncontextmenu:preventDefault @oncontextmenu:stopPropagation
+                         @oncontextmenu="NoOpContextMenu">
                         @if (a.Severity == AlarmSeverity.Danger)
                         {
                             @* Hold-to-dismiss on Danger alarms. A drag-
@@ -430,6 +437,13 @@
     private CancellationTokenSource? _alarmHoldCts;
 
     private static string AlarmKeyOf(AlarmInfo a) => $"{a.Title}|{a.TargetKey}";
+
+    // Empty handler just so the @oncontextmenu:preventDefault directive
+    // has something to attach to. Blazor registers the preventDefault
+    // only if the event has a listener, so without this the long-press
+    // menu still pops. No business logic -- the alarm banner should
+    // react to tap / hold, not right-click.
+    private void NoOpContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs _) { }
 
     private void StartAlarmHold(AlarmInfo a)
     {

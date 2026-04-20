@@ -1289,6 +1289,16 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 .alarm-body {
     flex: 1;
     cursor: pointer;
+    /* iOS Safari: long-press on any clickable text element pops the
+       native callout (Copy / Share / Look Up). On a critical-alarm
+       banner that's the worst UX -- the user is trying to acknowledge,
+       not copy the message text. Suppress the callout + selection so
+       long-press reliably fires the hold-to-dismiss handler on danger
+       alarms and stays quiet on warn banners. */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 /* Danger-alarm body: hold-to-dismiss. Same sweep pattern as the
@@ -1301,6 +1311,7 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 .alarm-body-hold .alarm-hold-hint {
     display: block;
@@ -2046,31 +2057,19 @@ main:has(.alarm-banner-stack) .hud-top-left {
     :root { --ctrl-bar-height: 56px; }
 }
 
-/* Portrait tablet (iPad held upright). Width is ~768-1024 in portrait;
-   the top-center hud-route panel collides with the top-right wind panel
-   because they share horizontal real estate. Shift route to below-wind
-   and shrink the anchor panel so it doesn't overlap the control bar. */
+/* Portrait tablet (iPad held upright). hud-route and hud-anchor share
+   the bottom-center slot (they're mutually exclusive in the code) so
+   only the wrap width / max-width varies per viewport -- the stacking
+   rules here are legacy from when they lived on opposite ends of the
+   screen and can be simpler now. */
 @media (orientation: portrait) and (min-width: 601px) and (max-width: 1024px) {
-    .hud-route {
-        top: auto;
-        bottom: calc(var(--panel-bottom) + 140px);
-        max-width: 280px;
-    }
-    .hud-anchor {
-        bottom: calc(var(--panel-bottom) + 80px);
-    }
-    /* Autopilot moves further up so it clears the relocated route panel. */
-    .hud-autopilot {
-        bottom: calc(var(--panel-bottom) + 300px);
-    }
+    .hud-route { max-width: 280px; }
 }
 
-/* Narrow portrait phones: same problem, even more compact. Route panel
-   tucks above the control bar and the anchor panel sits above it. */
+/* Narrow portrait phones: tighten the route card so the waypoint
+   grid stays readable above the control bar. */
 @media (orientation: portrait) and (max-width: 600px) {
     .hud-route {
-        top: auto;
-        bottom: calc(var(--panel-bottom) + 110px);
         left: 8px;
         right: 8px;
         transform: none;
@@ -2658,8 +2657,14 @@ main:has(.alarm-banner-stack) .hud-top-left {
 
 /* ===== Route Info HUD Panel ===== */
 
+/* Active route panel: previously top:12 / left:50%, but that collided
+   with the chart-quick-bar (same slot) and blanketed it while under way.
+   Relocated to bottom:var(--panel-bottom) / left:50%, the same slot
+   the anchor panel lives in. Route and anchor are mutually exclusive
+   (activating one clears the other in the code), so the slot is never
+   double-booked. */
 .hud-route {
-    top: 12px;
+    bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
 }
@@ -2668,11 +2673,62 @@ main:has(.alarm-banner-stack) .hud-top-left {
     min-width: 140px;
 }
 
+/* Title row: route name on the left, "WP 3 of 7" progress on the right.
+   Flex so the progress chip stays pinned even when the name is long
+   (truncate handled by parent overflow). */
+.route-panel-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+}
+.route-panel-name {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sk-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.route-panel-progress {
+    font-size: 0.7rem;
+    color: var(--sk-accent);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .route-info-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4px 14px;
     margin-top: 4px;
+}
+
+/* Route-total row: single-line summary of distance / TTG / ETA for
+   the whole route (vs per-WP numbers above). Small + dim so the
+   next-WP values stay the primary reading. */
+.route-total-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
+    font-size: 0.75rem;
+    color: var(--sk-text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-wrap: wrap;
+}
+.route-total-label {
+    color: var(--sk-text-muted);
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.65rem;
+    align-self: center;
+}
+.route-total-value {
+    color: var(--sk-text);
 }
 
 .route-value {

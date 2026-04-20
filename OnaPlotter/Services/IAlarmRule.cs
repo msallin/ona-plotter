@@ -35,6 +35,15 @@ public interface IAlarmRule
     /// because it runs on every Evaluate tick.
     /// </summary>
     AlarmInfo? Check(AlarmEvaluationContext ctx);
+
+    /// <summary>
+    /// Called by <see cref="AlarmManager"/> immediately after the user
+    /// dismisses an alarm whose <c>Title</c> matches this rule's. Default
+    /// is a no-op; override when the rule needs to remember the dismissal
+    /// to implement a per-rule rearm policy (e.g. SHALLOW requires the
+    /// depth to be above threshold for 5 minutes before it re-fires).
+    /// </summary>
+    void OnDismissed(AlarmInfo dismissed, DateTime at) { }
 }
 
 /// <summary>

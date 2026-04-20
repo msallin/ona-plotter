@@ -236,6 +236,9 @@ public sealed class AlarmManager : IAlarmManager
         {
             LogHistory(e.Info, now, DismissReason.UserDismissed);
             RecordDismissCooldown(key, e.Info.Severity, now);
+            // Notify the owning rule so rule-specific rearm policies (e.g.
+            // SHALLOW's 5 min non-shallow gate) can capture the dismissal.
+            e.Rule.OnDismissed(e.Info, now);
         }
         _active.Clear();
         FireAlarmsChanged();
@@ -249,6 +252,7 @@ public sealed class AlarmManager : IAlarmManager
         var now = _now();
         LogHistory(removed.Info, now, DismissReason.UserDismissed);
         RecordDismissCooldown(key, removed.Info.Severity, now);
+        removed.Rule.OnDismissed(removed.Info, now);
         FireAlarmsChanged();
         return Task.CompletedTask;
     }
