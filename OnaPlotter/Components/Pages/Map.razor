@@ -195,6 +195,7 @@
                         NameChanged="v => routeEditName = v"
                         Stats="@routeEditStats"
                         Coords="routeEditCoords"
+                        Saving="@_saveInFlight"
                         OnUndo="UndoLastWaypoint"
                         OnSave="SaveRoute"
                         OnSaveAndGo="SaveRouteAndGo"
@@ -1472,6 +1473,13 @@
 
     private async Task CancelRouteEdit()
     {
+        // If the user has invested points, tell them so their cancel
+        // feels acknowledged rather than silently vanishing the work.
+        // Esc-triggered cancel with zero points stays quiet.
+        int wpCount = routeEditCoords?.Length ?? 0;
+        if (wpCount > 0)
+            Toasts.Show($"Route edit cancelled ({wpCount} WP discarded)", ToastService.ToastLevel.Info);
+
         routeEditMode = false;
         routeEditCoords = null;
         routeStatsTimer?.Dispose();
@@ -1572,10 +1580,36 @@
     // just stops there, SaveRouteAndGo threads `activate:true` through
     // so the Layers-panel detour isn't needed for the single most
     // common follow-up step.
+    //
+    // _saveInFlight prevents a double-tap on Save / Save & Go while the
+    // REST round-trip is still pending -- without it the sailor who
+    // taps twice in quick succession posts two identical routes and
+    // activates them both, leaving the UI state inconsistent.
+    // Re-entry is a silent no-op; the disabled button styling on the
+    // panel is the visible affordance while we're busy.
+    private bool _saveInFlight;
+
     private Task SaveRoute() => SaveRouteCore(activate: false);
     private Task SaveRouteAndGo() => SaveRouteCore(activate: true);
 
     private async Task SaveRouteCore(bool activate)
+    {
+        if (module is null) return;
+        if (_saveInFlight) return;
+        _saveInFlight = true;
+        try
+        {
+            await SaveRouteCoreInner(activate);
+        }
+        finally
+        {
+            _saveInFlight = false;
+            try { await InvokeAsync(StateHasChanged); }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    private async Task SaveRouteCoreInner(bool activate)
     {
         if (module is null) return;
         var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
@@ -1643,7 +1677,29 @@
         // Deliberately after the stopRouteEdit call so the edit overlay
         // is gone by the time the active-route overlay appears.
         if (activate && ok && newRoute is not null)
-            await NavigateRouteInternal(newRoute);
+        {
+            try
+            {
+                bool startedOk = await CourseApi.SetActiveRouteAsync(newRoute.Id);
+                if (startedOk)
+                {
+                    Toasts.Success($"Navigating route '{newRoute.Name ?? newRoute.Id}'");
+                }
+                else
+                {
+                    // Save succeeded but activation didn't. Route is in
+                    // the Layers list, just not the active course. Tell
+                    // the sailor what happened AND give them the one-tap
+                    // retry via the Layers panel so they don't have to
+                    // dig for it.
+                    Toasts.Error("Route saved but couldn't start navigation -- tap the route in Layers to activate");
+                }
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error($"Route saved but start navigation failed: {ex.Message}");
+            }
+        }
     }
 
     // --- Polygon-region editing ------------------------------------

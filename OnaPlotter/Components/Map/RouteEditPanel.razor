@@ -43,20 +43,29 @@
     <input type="text" class="route-name-input" aria-label="Route name"
            value="@Name" @oninput="OnNameInput" />
     <span class="route-edit-stats">@Stats</span>
+    @{
+        bool enoughPoints = (Coords?.Length ?? 0) >= 2;
+        bool canSave = enoughPoints && !Saving;
+    }
     <button class="map-btn" @onclick="OnUndo"
-            disabled="@((Coords?.Length ?? 0) == 0)"
+            disabled="@((Coords?.Length ?? 0) == 0 || Saving)"
             title="@((Coords?.Length ?? 0) == 0 ? "Nothing to undo" : "Remove last waypoint")">Undo</button>
     <button class="map-btn" @onclick="OnSave"
-            disabled="@((Coords?.Length ?? 0) < 2)"
-            title="@((Coords?.Length ?? 0) < 2 ? "Need at least 2 waypoints" : "Save route")">Save</button>
+            disabled="@(!canSave)"
+            title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save route")">
+        @(Saving ? "Saving..." : "Save")
+    </button>
     @* Save+Go lands the helm on the map with the route already active.
        The two-step "save, then dig into Layers to activate it" workflow
-       was the most frequent complaint. Reuses Save's disabled gate --
-       you can't Go without at least 2 waypoints. *@
+       was the most frequent complaint. The Saving gate stops a double-
+       tap from posting two identical routes -- the first tap disables
+       the button until the Save round-trip completes. *@
     <button class="map-btn active" @onclick="OnSaveAndGo"
-            disabled="@((Coords?.Length ?? 0) < 2)"
-            title="@((Coords?.Length ?? 0) < 2 ? "Need at least 2 waypoints" : "Save and start navigating")">Save &amp; Go</button>
-    <button class="map-btn" @onclick="OnCancel">Cancel</button>
+            disabled="@(!canSave)"
+            title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save and start navigating")">
+        @(Saving ? "Starting..." : "Save & Go")
+    </button>
+    <button class="map-btn" @onclick="OnCancel" disabled="@Saving">Cancel</button>
 </div>
 
 @code {
@@ -64,6 +73,11 @@
     [Parameter] public EventCallback<string> NameChanged { get; set; }
     [Parameter] public string Stats { get; set; } = "";
     [Parameter] public double[][]? Coords { get; set; }
+    /// <summary>True while a Save / Save & Go is in flight. Disables all
+    /// action buttons so a double-tap can't post two identical routes.
+    /// Flips back to false once the REST round-trip + side-effects
+    /// complete (success or failure).</summary>
+    [Parameter] public bool Saving { get; set; }
     [Parameter] public EventCallback OnUndo { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnSaveAndGo { get; set; }

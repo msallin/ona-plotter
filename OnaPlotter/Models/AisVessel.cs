@@ -69,23 +69,7 @@ public sealed class AisVessel
         if (path.Length == 0 && rawValue is JsonElement identityEl
             && identityEl.ValueKind == JsonValueKind.Object)
         {
-            bool anyChange = false;
-            foreach (var prop in identityEl.EnumerateObject())
-            {
-                // Nested objects (communication.*, design.*) flatten one level.
-                if (prop.Value.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var sub in prop.Value.EnumerateObject())
-                    {
-                        anyChange |= Apply($"{prop.Name}.{sub.Name}", sub.Value);
-                    }
-                }
-                else
-                {
-                    anyChange |= Apply(prop.Name, prop.Value);
-                }
-            }
-            return anyChange;
+            return FlattenAndApply("", identityEl, depth: 0);
         }
 
         switch (path)
@@ -123,19 +107,28 @@ public sealed class AisVessel
                 return SpeedOverGround is not null;
 
             case "name":
-                Name = rawValue is JsonElement nameEl && nameEl.ValueKind == JsonValueKind.String
-                    ? nameEl.GetString() : rawValue?.ToString();
-                return true;
+                {
+                    var parsed = TryGetString(rawValue);
+                    if (parsed is null) return false;      // null delta must NOT overwrite
+                    Name = parsed;
+                    return true;
+                }
 
             case "mmsi":
-                Mmsi = rawValue is JsonElement mmsiEl && mmsiEl.ValueKind == JsonValueKind.String
-                    ? mmsiEl.GetString() : rawValue?.ToString();
-                return true;
+                {
+                    var parsed = TryGetString(rawValue);
+                    if (parsed is null) return false;
+                    Mmsi = parsed;
+                    return true;
+                }
 
             case "communication.callsignVhf":
-                Callsign = rawValue is JsonElement csEl && csEl.ValueKind == JsonValueKind.String
-                    ? csEl.GetString() : rawValue?.ToString();
-                return true;
+                {
+                    var parsed = TryGetString(rawValue);
+                    if (parsed is null) return false;
+                    Callsign = parsed;
+                    return true;
+                }
 
             case "design.aisShipType":
                 if (rawValue is JsonElement typeEl)
@@ -178,5 +171,57 @@ public sealed class AisVessel
         if (raw is double d) return d;
         if (raw is JsonElement je && je.ValueKind == JsonValueKind.Number) return je.GetDouble();
         return null;
+    }
+
+    // Returns the string value if rawValue is genuinely a string; null
+    // for null / undefined / non-string shapes. Used by identity fields
+    // (name / mmsi / callsign) so a null-valued delta from the flatten
+    // path doesn't clobber existing good data. SK servers emit
+    // { name: null, mmsi: "..." } occasionally on partial identity
+    // updates, which the previous .ToString() fallback turned into
+    // the literal string "null".
+    private static string? TryGetString(object? raw)
+    {
+        if (raw is null) return null;
+        if (raw is string s) return s;
+        if (raw is JsonElement je)
+        {
+            if (je.ValueKind == JsonValueKind.String) return je.GetString();
+            if (je.ValueKind == JsonValueKind.Number) return je.GetRawText();
+            // Null / Undefined / objects / arrays all fall through as null.
+        }
+        return null;
+    }
+
+    // Max depth the identity-flattener will recurse into. SK identity
+    // payloads in the wild have been observed at depth 1 (communication.
+    // callsignVhf, design.aisShipType) and occasionally depth 2 (future
+    // message types, rare). Beyond that is either a malformed payload
+    // or a server doing something unusual; clamping avoids a crafted
+    // or buggy delta driving unbounded recursion.
+    private const int MaxIdentityFlattenDepth = 4;
+
+    private bool FlattenAndApply(string prefix, JsonElement obj, int depth)
+    {
+        if (depth > MaxIdentityFlattenDepth) return false;
+        bool anyChange = false;
+        foreach (var prop in obj.EnumerateObject())
+        {
+            string fullPath = prefix.Length == 0 ? prop.Name : $"{prefix}.{prop.Name}";
+            if (prop.Value.ValueKind == JsonValueKind.Object)
+            {
+                // Try the full dotted path first -- some leaves in the
+                // switch take an object (design.aisShipType = { id, name }).
+                // Then recurse so deeper-nested scalars (rare but possible)
+                // also get dispatched.
+                anyChange |= Apply(fullPath, prop.Value);
+                anyChange |= FlattenAndApply(fullPath, prop.Value, depth + 1);
+            }
+            else
+            {
+                anyChange |= Apply(fullPath, prop.Value);
+            }
+        }
+        return anyChange;
     }
 }
