@@ -1269,8 +1269,16 @@ function drawGuardZone() {
             opacity: 0.5,
             fillColor: '#f59e0b',
             fillOpacity: 0.04,
-            interactive: false
+            // interactive: true so hover shows the tooltip; the ring was
+            // previously unlabeled and users didn't know what it was.
+            // bubblingMouseEvents keeps pan / click-on-map working --
+            // the amber ring isn't supposed to swallow gestures.
+            interactive: true,
+            bubblingMouseEvents: true
         }).addTo(map);
+        guardZoneRing.bindTooltip(
+            'Guard zone (CPA alarm radius) — Settings → Guard Zone (CPA)',
+            { sticky: true, direction: 'top', opacity: 0.9 });
     } else {
         guardZoneRing.setLatLng([selfLat, selfLon]);
         guardZoneRing.setRadius(radiusM);
