@@ -4362,12 +4362,12 @@ main:has(.map-container.big-type) .map-fab-item {
     bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
-    /* Mutual-exclusion belt-and-braces: anchor/route HUDs share the
-       same slot, and the C# side enforces they're never both visible.
-       If that guard ever breaks (plugin race, stale state on reconnect)
-       we still want the anchor card on top -- it's the safety-critical
-       one ("you're dragging"), route is informational ("DTW 2.3 nm"). */
-    z-index: calc(var(--z-controls) + 1);
+    /* Same stacking level as every other chrome overlay -- the
+       earlier `+1` bump was meant as a "safety-critical on top" belt-
+       and-braces but in practice the anchor HUD ended up covering the
+       Layers panel and the route-edit list. Mutual exclusion with
+       the route HUD is enforced in C# (NavigateRouteInternal /
+       ToggleAnchor), so they can't both render at the same time. */
 }
 
 .anchor-panel {

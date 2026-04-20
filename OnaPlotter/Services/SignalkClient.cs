@@ -474,6 +474,21 @@ public sealed class SignalkClient : IAsyncDisposable
         _ais.Evict(_selfContext);
     }
 
+    /// <summary>
+    /// MMSI extracted from the self-context URN, or null when the
+    /// server's hello hasn't resolved yet or the context doesn't carry
+    /// a mmsi segment. Used by the map to fetch the country flag for
+    /// the own-boat popup (same signalk-flags endpoint as AIS markers).
+    /// </summary>
+    public string? OwnMmsi
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_selfContext)) return null;
+            return AisVessel.ExtractMmsi(_selfContext);
+        }
+    }
+
     internal bool IsSelfContext(string? context)
     {
         if (string.IsNullOrEmpty(context)) return true;

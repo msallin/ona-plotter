@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
@@ -51,7 +52,33 @@ public sealed class NoteApi : INoteApi
         if (!response.IsSuccessStatusCode) return null;
 
         var result = await response.Content.ReadAsStringAsync(ct);
-        return result.Trim('"');
+        return ParseCreatedId(result);
+    }
+
+    /// <summary>
+    /// SignalK servers return one of two shapes from POST /resources/notes:
+    /// a bare JSON string <c>"abc123"</c> (older shape) or a status envelope
+    /// <c>{"state":"COMPLETED","statusCode":201,"id":"abc123"}</c>. Handle both.
+    /// </summary>
+    internal static string? ParseCreatedId(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.String)
+                return root.GetString();
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("id", out var idEl) &&
+                idEl.ValueKind == JsonValueKind.String)
+                return idEl.GetString();
+        }
+        catch (JsonException)
+        {
+            // Fall through to bare-string trim.
+        }
+        return body.Trim().Trim('"');
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>

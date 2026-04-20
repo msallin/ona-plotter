@@ -13,6 +13,12 @@ let map = null;
 // during active drag, etc. Computed once in initMap() so the
 // same flag drives every layer created later.
 let isSlowClient = false;
+// Own-boat MMSI, pushed from C# once SignalkClient.SetSelfContext
+// resolves (the hello message). Used by buildSelfPopupHtml to pull
+// the country flag from the same signalk-flags endpoint the AIS
+// popups use. Null until resolved; empty string means "no mmsi on
+// the self URN" (rare but valid for inland boats without AIS).
+let ownMmsi = null;
 let boatMarker = null;
 let boatVector = null;
 let vectorLabel = null;  // Time/distance label at end of COG vector.
@@ -643,7 +649,11 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // frozen one from the last click. updatePosition passes lat/lon and
     // the other fields; we stash them on the marker for popupopen to
     // read without closing over state that might drift.
-    boatMarker.bindPopup('', { className: 'ais-popup', maxWidth: 260 });
+    // closeButton:false matches the AIS-marker popup style (the "x"
+    // at the top-right was the only decoration on the own-boat popup
+    // and looked like a weird glyph on the chart). User closes by
+    // tapping outside or tapping the marker again.
+    boatMarker.bindPopup('', { className: 'ais-popup', maxWidth: 260, closeButton: false });
     boatMarker.on('popupopen', () => {
         const data = boatMarker._onaSelfData || {};
         boatMarker.setPopupContent(buildSelfPopupHtml(data));
@@ -1444,16 +1454,14 @@ function drawGuardZone() {
             opacity: 0.5,
             fillColor: '#f59e0b',
             fillOpacity: 0.04,
-            // interactive: true so hover shows the tooltip; the ring was
-            // previously unlabeled and users didn't know what it was.
-            // bubblingMouseEvents keeps pan / click-on-map working --
-            // the amber ring isn't supposed to swallow gestures.
-            interactive: true,
-            bubblingMouseEvents: true
+            // Non-interactive: the ring no longer gets its own tooltip
+            // (user-reported: the "Guard zone (CPA alarm radius)"
+            // hover chip was distracting). The legend + Settings
+            // already explain what the amber ring is; we don't need
+            // to repeat it on hover. Non-interactive also avoids the
+            // ring stealing pointer events from anything under it.
+            interactive: false,
         }).addTo(map);
-        guardZoneRing.bindTooltip(
-            'Guard zone (CPA alarm radius) — Settings → Guard Zone (CPA)',
-            { sticky: true, direction: 'top', opacity: 0.9 });
     } else {
         guardZoneRing.setLatLng([selfLat, selfLon]);
         guardZoneRing.setRadius(radiusM);
@@ -2659,8 +2667,13 @@ function buildSelfPopupHtml(data) {
     const pos = (lat != null && lon != null)
         ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
         : '--';
+    // Country flag from signalk-flags plugin when we know the own MMSI.
+    // Same onerror hide as AIS markers (plugin not installed = silent).
+    const flagHtml = ownMmsi
+        ? `<img class="ais-popup-flag" src="/signalk/v2/api/resources/flags/mmsi/${esc(ownMmsi)}" alt="" onerror="this.style.display='none'">`
+        : '';
     return `<div class="ais-popup-content">` +
-        `<div class="ais-popup-title">&#9733; Own boat</div>` +
+        `<div class="ais-popup-title">${flagHtml}&#9733; Own boat</div>` +
         `<table class="ais-popup-table">` +
             `<tr><td>Pos</td><td>${pos}</td></tr>` +
             `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
@@ -2668,6 +2681,13 @@ function buildSelfPopupHtml(data) {
             `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
         `</table>` +
         `</div>`;
+}
+
+/** Set the own-boat MMSI. C# calls this once SignalkClient has
+ *  resolved self-context from the hello message. Idempotent; calling
+ *  with the same value is a no-op. */
+export function setOwnMmsi(mmsi) {
+    ownMmsi = mmsi || null;
 }
 
 function buildRegionPopupHtml(id, title, description) {

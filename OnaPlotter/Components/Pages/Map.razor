@@ -1083,12 +1083,28 @@
         $"|{Data.ActiveRoutePointIndex}|{Data.ActiveRoutePointTotal}" +
         $"|{Data.ActiveRouteDistanceRemaining:F0}|{Data.ActiveRouteTimeToGo:F0}";
 
+    // One-time flag so we only push the own MMSI to JS once per
+    // session. Self context resolves asynchronously via the hello
+    // message; HandleDataChanged is the reliable cadence where
+    // OwnMmsi becomes non-null.
+    private bool _ownMmsiPushed;
+
     private async void HandleDataChanged()
     {
         if (!mapInitialized || module is null) return;
 
         // Keep the sticky last-heading field current for the HUD compass needle.
         if (Data.Heading is not null) lastHeading = Data.Heading;
+
+        // Push own MMSI to JS once the SignalK hello resolves it so
+        // buildSelfPopupHtml can fetch the country flag from the
+        // signalk-flags plugin (same endpoint as AIS markers).
+        if (!_ownMmsiPushed && SignalkClient.OwnMmsi is string mmsi)
+        {
+            _ownMmsiPushed = true;
+            try { await module.InvokeVoidAsync("setOwnMmsi", mmsi); }
+            catch (JSDisconnectedException) { _ownMmsiPushed = false; }
+        }
 
         // Auto-flip Night mode near / past civil twilight if enabled.
         // Throttled to once per 30 s because sun altitude changes slowly.
