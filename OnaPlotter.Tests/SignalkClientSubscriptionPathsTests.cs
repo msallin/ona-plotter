@@ -64,4 +64,47 @@ public class SignalkClientSubscriptionPathsTests
         var overlap = SignalkClient.SelfPaths.Intersect(SignalkClient.AisPaths).ToArray();
         await Assert.That(overlap.Length).IsGreaterThan(0);
     }
+
+    [Test]
+    public async Task SlowSelfPaths_Are_All_In_SelfPaths()
+    {
+        // SlowSelfPaths is a SUBSET of SelfPaths; any path listed in
+        // the slow tier must also appear in the master list or the
+        // subscription split below silently drops it.
+        foreach (var slow in SignalkClient.SlowSelfPaths)
+        {
+            await Assert.That(SignalkClient.SelfPaths).Contains(slow);
+        }
+    }
+
+    [Test]
+    public async Task Fast_And_Slow_Subscription_Sets_Are_Disjoint()
+    {
+        // ReceiveLoopAsync computes FastSelf = SelfPaths \ AisPaths \ SlowSelfPaths.
+        // Pin that those three sets partition SelfPaths cleanly so a
+        // path can't accidentally show up in both the 1 Hz and 10 s
+        // subscriptions (doubling delivery for no reason).
+        var fast = SignalkClient.SelfPaths.Except(SignalkClient.AisPaths)
+                                          .Except(SignalkClient.SlowSelfPaths).ToArray();
+        foreach (var f in fast)
+        {
+            await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain(f);
+        }
+    }
+
+    [Test]
+    public async Task SlowSelfPaths_Contains_The_Expected_Slow_Fields()
+    {
+        // Fields that change on minute-scale at best should be in the
+        // slow tier. This nails the intent so a future edit that adds
+        // another fast-moving field doesn't leak into SlowSelfPaths.
+        await Assert.That(SignalkClient.SlowSelfPaths).Contains("navigation.anchor.position");
+        await Assert.That(SignalkClient.SlowSelfPaths).Contains("navigation.anchor.maxRadius");
+        await Assert.That(SignalkClient.SlowSelfPaths).Contains("environment.sun");
+        await Assert.That(SignalkClient.SlowSelfPaths).Contains("environment.tide.heightNow");
+        // Position / SOG / COG / heading must NEVER end up in the slow
+        // tier -- they're the primary driver of the HUD and alarm eval.
+        await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain("navigation.position");
+        await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain("navigation.speedOverGround");
+    }
 }

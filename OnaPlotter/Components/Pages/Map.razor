@@ -482,7 +482,40 @@
         RebuildFilteredLayers();
     }
 
-    private void ToggleLayersPanel() => chartPanelOpen = !chartPanelOpen;
+    // Opening the Layers panel is a natural re-sync trigger: the user is
+    // about to read the list, so pull fresh waypoints / routes / notes /
+    // regions from the server. Otherwise a waypoint added from another
+    // plotter (freeboard, KIP, a phone app) stays invisible until the
+    // user reloads the page. Kicks off async; the panel renders the old
+    // list first and swaps in the new list on the next render tick.
+    private async Task ToggleLayersPanel()
+    {
+        chartPanelOpen = !chartPanelOpen;
+        if (chartPanelOpen)
+        {
+            _ = RefreshServerResourcesAsync();
+        }
+    }
+
+    private async Task RefreshServerResourcesAsync()
+    {
+        try
+        {
+            var (waypoints, routes, notes, regions) = (
+                await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints"),
+                await SafeLoad(() => RouteApi.GetAllAsync(), "routes"),
+                await SafeLoad(() => NoteApi.GetAllAsync(), "notes"),
+                await SafeLoad(() => RegionApi.GetAllAsync(), "regions")
+            );
+            if (waypoints is not null) loadedWaypoints = waypoints;
+            if (routes is not null) { availableRoutes = routes; PrecomputeRouteBounds(); }
+            if (notes is not null) loadedNotes = notes;
+            if (regions is not null) loadedRegions = regions;
+            RebuildFilteredLayers();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (ObjectDisposedException) { }
+    }
 
     private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
         ToggleChart(t.chart, t.enabled);

@@ -30,6 +30,18 @@ public sealed class SignalkClient : IAsyncDisposable
     public const int StandardSubscriptionPeriodMs = 1_000;
 
     /// <summary>
+    /// Cap for slow-changing self paths (anchor radii, tide heights,
+    /// solar state, active-route static fields). These don't change on
+    /// a per-second cadence; subscribing at 1 Hz wastes bandwidth and
+    /// (on Raspi Chrome) costs frame time the WASM client could be
+    /// using to stay smooth. 10 s lines up with typical plugin
+    /// publication cadences. User-facing effect: the anchor card still
+    /// updates within a tick of a change; everyday traffic is an order
+    /// of magnitude lower.
+    /// </summary>
+    public const int SlowSubscriptionPeriodMs = 10_000;
+
+    /// <summary>
     /// Tighter period for Raw-Stream user-added subscriptions. The
     /// RawStream page is for inspecting live data; a 200 ms cap
     /// (5 Hz ceiling under <c>policy: "instant"</c>) keeps the display
@@ -135,6 +147,39 @@ public sealed class SignalkClient : IAsyncDisposable
         "environment.sun"
     ];
 
+    /// <summary>
+    /// Subset of <see cref="SelfPaths"/> that publishes slowly (tides,
+    /// anchor radii, solar state, active-route progress). Subscribed at
+    /// <see cref="SlowSubscriptionPeriodMs"/> so we don't wake the WASM
+    /// main thread ten times a second for fields that change once every
+    /// few minutes. A single source of truth: any path listed here is
+    /// automatically excluded from the fast subscription by set math
+    /// in ReceiveLoopAsync.
+    /// </summary>
+    internal static readonly string[] SlowSelfPaths =
+    [
+        "navigation.anchor.position",
+        "navigation.anchor.maxRadius",
+        "navigation.anchor.currentRadius",
+        "environment.tide.heightNow",
+        "environment.tide.heightHigh",
+        "environment.tide.heightLow",
+        "environment.tide.timeHigh",
+        "environment.tide.timeLow",
+        "environment.tide.stationName",
+        "environment.sun",
+        // Active-route progress fields: they only change when we tick a
+        // waypoint boundary or re-activate a route. 10 s is plenty.
+        "navigation.courseGreatCircle.activeRoute.distanceRemaining",
+        "navigation.courseRhumbline.activeRoute.distanceRemaining",
+        "navigation.courseGreatCircle.activeRoute.timeToGo",
+        "navigation.courseRhumbline.activeRoute.timeToGo",
+        "navigation.courseGreatCircle.activeRoute.pointIndex",
+        "navigation.courseRhumbline.activeRoute.pointIndex",
+        "navigation.courseGreatCircle.activeRoute.pointTotal",
+        "navigation.courseRhumbline.activeRoute.pointTotal",
+    ];
+
     internal static readonly string[] AisPaths =
     [
         "navigation.position",
@@ -222,21 +267,28 @@ public sealed class SignalkClient : IAsyncDisposable
                 OnConnectionChanged?.Invoke();
                 backoffMs = InitialBackoffMs;
 
-                // Subscribe to the paths the app needs. Standard paths
-                // (nav / wind / depth / alarms) get a 1 Hz period cap
-                // per path -- plenty for the HUD, a big data-volume win
-                // over NMEA2000's native 10 Hz. Extra paths added by
-                // the RawStream page use the instant-with-minPeriod
-                // profile so the viewer sees live deltas.
+                // Subscribe to the paths the app needs. Two self-tiers:
+                //   - FAST (1 Hz): nav / wind / depth / course next-point.
+                //     Safety-critical / high-dynamic; keeps the HUD and
+                //     alarm pipeline responsive.
+                //   - SLOW (10 s): anchor radii, tide heights, solar
+                //     state, active-route progress. Plugin-driven fields
+                //     that change on the scale of minutes; a 1 Hz cap
+                //     here was pure overhead (and measurable frame-time
+                //     cost on a Raspi Chrome kiosk).
                 //
-                // IMPORTANT: vessels.* matches self too, so any path in
-                // both SelfPaths and AisPaths would be delivered twice for
-                // own-boat (we'd see navigation.position 2x in the raw
-                // stream, HUD would count each tick twice, etc.). Strip
-                // the overlap from the self subscription -- the shared
-                // paths still reach us via the vessels.* wildcard.
-                var selfOnlyPaths = SelfPaths.Except(AisPaths).ToArray();
-                await SendSubscriptionAsync("vessels.self", selfOnlyPaths);
+                // vessels.* matches self too, so the shared navigation
+                // fields (position / SOG / COG / heading) come via the
+                // AIS subscription -- stripping them from the self
+                // subscriptions prevents duplicate delivery.
+                //
+                // Extra paths added by the RawStream page use the
+                // instant-with-minPeriod profile so raw deltas keep
+                // flowing for the debugger workflow.
+                var fastSelf = SelfPaths.Except(AisPaths).Except(SlowSelfPaths).ToArray();
+                await SendSubscriptionAsync("vessels.self", fastSelf);
+                await SendSubscriptionAsync("vessels.self", SlowSelfPaths,
+                    periodMs: SlowSubscriptionPeriodMs);
                 await SendSubscriptionAsync("vessels.*", AisPaths);
                 if (_extraPaths.Count > 0)
                     await SendSubscriptionAsync("vessels.self", _extraPaths,
@@ -451,23 +503,53 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // Anchor position from signalk-anchoralarm-plugin.
-                if (val.Path == "navigation.anchor.position" && val.Value is JsonElement anchorEl)
+                // Anchor position from signalk-anchoralarm-plugin. Three
+                // delta shapes we observed from the plugin in the field:
+                //   1. { lat, lon } object   -> drop/update anchor
+                //   2. explicit JSON null    -> anchor weighed on another
+                //      plotter ("Weigh Anchor" button in the plugin UI)
+                //   3. value = null (not a JsonElement at all) -- same
+                //      as case 2 but surfaced by some SK server versions
+                //      as a property-missing rather than JSON null.
+                // User-reported bug: anchor stayed on ONA after being
+                // cleared in freeboard-sk because only case 1 was
+                // handled. All three now clear our side.
+                if (val.Path == "navigation.anchor.position")
                 {
-                    if (anchorEl.ValueKind == JsonValueKind.Object
-                        && anchorEl.TryGetProperty("latitude", out var aLat)
-                        && anchorEl.TryGetProperty("longitude", out var aLon)
-                        && aLat.ValueKind == JsonValueKind.Number
-                        && aLon.ValueKind == JsonValueKind.Number)
+                    if (val.Value is JsonElement anchorEl)
                     {
-                        _data.ApplyAnchorPosition(aLat.GetDouble(), aLon.GetDouble());
-                        changed = true;
+                        if (anchorEl.ValueKind == JsonValueKind.Object
+                            && anchorEl.TryGetProperty("latitude", out var aLat)
+                            && anchorEl.TryGetProperty("longitude", out var aLon)
+                            && aLat.ValueKind == JsonValueKind.Number
+                            && aLon.ValueKind == JsonValueKind.Number)
+                        {
+                            _data.ApplyAnchorPosition(aLat.GetDouble(), aLon.GetDouble());
+                            changed = true;
+                        }
+                        else if (anchorEl.ValueKind == JsonValueKind.Null)
+                        {
+                            _data.ClearAnchor();
+                            changed = true;
+                        }
                     }
-                    else if (anchorEl.ValueKind == JsonValueKind.Null)
+                    else if (val.Value is null)
                     {
                         _data.ClearAnchor();
                         changed = true;
                     }
+                    continue;
+                }
+
+                // Plugins also deactivate by nulling maxRadius (the alarm
+                // is only armed when both position + radius are set).
+                // Treat a null maxRadius as "anchor no longer armed" too,
+                // covering servers that don't re-emit a null position on
+                // deactivation.
+                if (val.Path == "navigation.anchor.maxRadius" && IsNullDelta(val.Value))
+                {
+                    _data.ClearAnchor();
+                    changed = true;
                     continue;
                 }
 
@@ -814,6 +896,17 @@ public sealed class SignalkClient : IAsyncDisposable
             && el.TryGetProperty("value", out var inner))
             return inner;
         return el;
+    }
+
+    // True if the value in a SignalK delta represents "no data here" --
+    // either a literal JSON null, or a C# null deserialized as such.
+    // Used by anchor / course deactivation handlers to treat both wire
+    // shapes uniformly.
+    private static bool IsNullDelta(object? value)
+    {
+        if (value is null) return true;
+        if (value is JsonElement el && el.ValueKind == JsonValueKind.Null) return true;
+        return false;
     }
 
     public async ValueTask DisposeAsync()
