@@ -349,152 +349,18 @@
     </div>
 </div>
 
-@* === Route info (only visible when an active course exists) === *@
-@if (Data.HasActiveCourse)
-{
-    <div class="hud hud-route">
-        <div class="hud-panel route-panel">
-            <div class="route-panel-title">
-                <span class="route-panel-name">@(Data.ActiveRouteName ?? "Active Route")</span>
-                @if (Data.ActiveRoutePointIndex is int idx && Data.ActiveRoutePointTotal is int total)
-                {
-                    @* "WP 3 of 7" -- Freeboard-style progress. pointIndex is
-                       0-based from SK so display idx+1. Only shown when BOTH
-                       paths publish; on servers without them the inner card
-                       reads the same as before. *@
-                    <span class="route-panel-progress">WP @(idx + 1) of @total</span>
-                }
-            </div>
-            @if (WaypointArrivalRadiusMeters <= 0)
-            {
-                @* APPROACH alarm is disabled (arrival radius 0). The
-                   captain will reach the waypoint with no prompt to
-                   turn; flag that clearly next to the route numbers. *@
-                <div class="rule-dormant-hint" role="status" aria-live="polite"
-                     title="Set a waypoint-arrival radius in Settings to enable the APPROACH alarm">
-                    &#9888; APPROACH alarm off (radius 0 m)
-                </div>
-            }
-            <div class="route-info-grid">
-                <div>
-                    <div class="hud-label">DTW</div>
-                    <div class="hud-value route-value">@Format.Nm(Data.CourseNextPointDistance)<span class="hud-unit">nm</span></div>
-                </div>
-                <div>
-                    <div class="hud-label">BRG</div>
-                    <div class="hud-value route-value">@Format.Degrees(Data.CourseNextPointBearing)<span class="hud-unit">&deg;</span></div>
-                </div>
-                @if (Data.CourseNextPointVmg is not null)
-                {
-                    <div>
-                        <div class="hud-label">VMG</div>
-                        <div class="hud-value route-value">@Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span></div>
-                    </div>
-                }
-                @if (Data.CourseNextPointTimeToGo is not null)
-                {
-                    <div>
-                        <div class="hud-label">TTG</div>
-                        <div class="hud-value route-value">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</div>
-                    </div>
-                    <div>
-                        <div class="hud-label">ETA</div>
-                        <div class="hud-value route-value">@Format.Eta(Data.CourseNextPointTimeToGo)</div>
-                    </div>
-                }
-                @if (Data.CrossTrackError is not null)
-                {
-                    <div>
-                        <div class="hud-label">XTE</div>
-                        <div class="hud-value route-value @Format.XteClass(Data.CrossTrackError)">@Format.Xte(Data.CrossTrackError)</div>
-                    </div>
-                }
-            </div>
-            @* Route-total row: what's left across the whole route vs the
-               next-WP numbers above. Freeboard-style "you're X nm from
-               the end, with Y to go". Rendered only when the SK server
-               publishes at least one of the two paths; that way
-               OnaPlotter degrades cleanly on older servers. *@
-            @if (Data.ActiveRouteDistanceRemaining is not null || Data.ActiveRouteTimeToGo is not null)
-            {
-                <div class="route-total-row">
-                    <span class="route-total-label">Route total</span>
-                    @if (Data.ActiveRouteDistanceRemaining is not null)
-                    {
-                        <span class="route-total-value">@Format.Nm(Data.ActiveRouteDistanceRemaining)<span class="hud-unit">nm</span></span>
-                    }
-                    @if (Data.ActiveRouteTimeToGo is not null)
-                    {
-                        <span class="route-total-value">@Format.TimeToGo(Data.ActiveRouteTimeToGo)</span>
-                        <span class="route-total-value">ETA @Format.Eta(Data.ActiveRouteTimeToGo)</span>
-                    }
-                </div>
-            }
-            @* Prominent Stop button so the captain (or a renter) can abandon
-               the active route without digging through the right-click menu. *@
-            <button class="route-stop-btn" @onclick="OnStopNavigation"
-                    title="Clear the active destination">Stop Navigation</button>
-        </div>
-    </div>
-}
+@* Route and anchor cards are extracted as child components so only
+   the section whose data actually changed re-renders. Both take a
+   record-struct snapshot; Blazor skips the render when the snapshot
+   is equal to the previous render. See HudRouteCard / HudAnchorCard
+   for the rationale + field lists. *@
+<OnaPlotter.Components.Map.Hud.HudRouteCard
+    Snapshot="@BuildRouteSnapshot()"
+    OnStop="OnStopNavigation" />
 
-@* === Anchor watch (server-driven OR manual drop) === *@
-@if (Data.AnchorActive || ManualAnchorActive)
-{
-    <div class="hud hud-anchor">
-        <div class="hud-panel anchor-panel @AnchorAlarmClass">
-            <div class="hud-label">Anchor Watch</div>
-            @if (AnchorTideDormantReason() is string reason)
-            {
-                @* Silent rules are worse than absent ones. If the
-                   tide-aware alarm can't arm because of missing config,
-                   say so right next to the anchor card where the captain
-                   will look for it. *@
-                <div class="rule-dormant-hint" role="status" aria-live="polite"
-                     title="Configure in Settings to enable the tide-aware grounding alarm">
-                    &#9888; @reason
-                </div>
-            }
-            <div class="anchor-info-row">
-                @if (Data.AnchorCurrentRadius is not null)
-                {
-                    <div>
-                        <div class="hud-label">Dist</div>
-                        <div class="hud-value route-value @AnchorDistClass">@Format.MetersDual(Data.AnchorCurrentRadius)</div>
-                    </div>
-                }
-                @if (Data.AnchorMaxRadius is not null)
-                {
-                    <div>
-                        <div class="hud-label">Radius</div>
-                        <div class="hud-value route-value">@Format.MetersDual(Data.AnchorMaxRadius)</div>
-                    </div>
-                }
-                @if (ManualAnchorActive)
-                {
-                    <div>
-                        <div class="hud-label">Radius</div>
-                        <div class="hud-value route-value">@ManualAnchorRadiusMeters.ToString("F0")<span class="hud-unit">m</span></div>
-                    </div>
-                }
-            </div>
-            @if (ManualAnchorActive && OnSetAnchorRadius.HasDelegate)
-            {
-                @* Inline radius chips for the manual-drop path. The plugin-
-                   driven alarm owns its own radius on the server, so we
-                   suppress the chips when Data.AnchorActive is true. *@
-                <div class="anchor-radius-chips">
-                    @foreach (var r in AnchorRadiusPresets)
-                    {
-                        <button class="map-btn @(Math.Abs(ManualAnchorRadiusMeters - r) < 0.5 ? "active" : "")"
-                                @onclick="() => OnSetAnchorRadius.InvokeAsync(r)"
-                                type="button">@r.ToString("F0")m</button>
-                    }
-                </div>
-            }
-        </div>
-    </div>
-}
+<OnaPlotter.Components.Map.Hud.HudAnchorCard
+    Snapshot="@BuildAnchorSnapshot()"
+    OnSetRadius="OnSetAnchorRadius" />
 
 @* === Autopilot control === *@
 @if (Data.AutopilotState is not null)
@@ -583,10 +449,6 @@
     /// chips. The caller persists it to IAppSettings and re-draws the
     /// anchor circle via JS.</summary>
     [Parameter] public EventCallback<double> OnSetAnchorRadius { get; set; }
-
-    /// <summary>Presets in metres. 20 / 30 / 50 / 75 / 100 / 150 m covers
-    /// 3:1 scope in 5 m + to light-tackle moorings without hand-typing.</summary>
-    private static readonly double[] AnchorRadiusPresets = [20, 30, 50, 75, 100, 150];
 
     /// <summary>Signed depth trend in metres per minute over the last
     /// minute. Positive = getting deeper; negative = shallower. Null
@@ -826,11 +688,6 @@
     private double HeadingRad => LastHeadingRad ?? 0;
     private string HeadingDegStr => $"{(HeadingRad * RadToDeg):F0}deg";
 
-    private string AnchorAlarmClass => AnchorDragging ? "anchor-alarm" : "";
-    private string AnchorDistClass =>
-        AnchorDragging ? "depth-danger"
-        : Data.AnchorCurrentRadius is not null ? "depth-ok" : "";
-
     /// <summary>
     /// Explains why the ANCHOR TIDE alarm can't fire right now, or returns
     /// null when it's fully armed. The rule needs two things the user must
@@ -844,6 +701,36 @@
         if (!HasTideData) return "No tide data (install a SignalK tide plugin)";
         return null;
     }
+
+    // Build child-card snapshots. Composing records here keeps the child
+    // components pure -- they only read from Snapshot and can decide
+    // "no change" with a single record-equality check, which is what
+    // lets Blazor skip re-renders on ticks that don't touch route or
+    // anchor fields.
+    private OnaPlotter.Components.Map.Hud.HudRouteCard.RouteHudSnapshot BuildRouteSnapshot() =>
+        new(
+            Visible: Data.HasActiveCourse,
+            Name: Data.ActiveRouteName,
+            PointIndex: Data.ActiveRoutePointIndex,
+            PointTotal: Data.ActiveRoutePointTotal,
+            ArrivalRadiusMeters: WaypointArrivalRadiusMeters,
+            Distance: Data.CourseNextPointDistance,
+            Bearing: Data.CourseNextPointBearing,
+            Vmg: Data.CourseNextPointVmg,
+            TimeToGo: Data.CourseNextPointTimeToGo,
+            Xte: Data.CrossTrackError,
+            RouteDistanceRemaining: Data.ActiveRouteDistanceRemaining,
+            RouteTimeToGo: Data.ActiveRouteTimeToGo);
+
+    private OnaPlotter.Components.Map.Hud.HudAnchorCard.AnchorHudSnapshot BuildAnchorSnapshot() =>
+        new(
+            Visible: Data.AnchorActive || ManualAnchorActive,
+            Dragging: AnchorDragging,
+            Manual: ManualAnchorActive,
+            ManualRadiusMeters: ManualAnchorRadiusMeters,
+            CurrentRadius: Data.AnchorCurrentRadius,
+            MaxRadius: Data.AnchorMaxRadius,
+            DormantReason: AnchorTideDormantReason());
 
     private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize)
     {

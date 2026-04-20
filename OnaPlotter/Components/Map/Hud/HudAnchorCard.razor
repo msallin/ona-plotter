@@ -1,0 +1,79 @@
+@using OnaPlotter.Utilities
+
+@* Anchor-watch HUD card. Same extraction pattern as HudRouteCard:
+   takes a record-struct snapshot so Blazor skips re-renders when the
+   snapshot is equal to the previous render. The anchor data ticks at
+   ~10 s cadence (SlowSelfPaths tier) so this card re-renders far less
+   often than the primary HUD corners, which is exactly the point of
+   splitting it out. *@
+
+@if (Snapshot.Visible)
+{
+    <div class="hud hud-anchor">
+        <div class="hud-panel anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "")">
+            <div class="hud-label">Anchor Watch</div>
+            @if (Snapshot.DormantReason is not null)
+            {
+                <div class="rule-dormant-hint" role="status" aria-live="polite"
+                     title="Configure in Settings to enable the tide-aware grounding alarm">
+                    &#9888; @Snapshot.DormantReason
+                </div>
+            }
+            <div class="anchor-info-row">
+                @if (Snapshot.CurrentRadius is not null)
+                {
+                    var distClass = Snapshot.Dragging ? "depth-danger" : "depth-ok";
+                    <div>
+                        <div class="hud-label">Dist</div>
+                        <div class="hud-value route-value @distClass">@Format.MetersDual(Snapshot.CurrentRadius)</div>
+                    </div>
+                }
+                @if (Snapshot.MaxRadius is not null)
+                {
+                    <div>
+                        <div class="hud-label">Radius</div>
+                        <div class="hud-value route-value">@Format.MetersDual(Snapshot.MaxRadius)</div>
+                    </div>
+                }
+                @if (Snapshot.Manual)
+                {
+                    <div>
+                        <div class="hud-label">Radius</div>
+                        <div class="hud-value route-value">@Snapshot.ManualRadiusMeters.ToString("F0")<span class="hud-unit">m</span></div>
+                    </div>
+                }
+            </div>
+            @if (Snapshot.Manual && OnSetRadius.HasDelegate)
+            {
+                <div class="anchor-radius-chips">
+                    @foreach (var r in AnchorRadiusPresets)
+                    {
+                        <button class="map-btn @(Math.Abs(Snapshot.ManualRadiusMeters - r) < 0.5 ? "active" : "")"
+                                @onclick="() => OnSetRadius.InvokeAsync(r)"
+                                type="button">@r.ToString("F0")m</button>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public AnchorHudSnapshot Snapshot { get; set; }
+    [Parameter] public EventCallback<double> OnSetRadius { get; set; }
+
+    private static readonly double[] AnchorRadiusPresets = [20, 30, 50, 75, 100, 150];
+
+    /// <summary>
+    /// Immutable snapshot of every field the anchor card reads. See
+    /// HudRouteCard for the rendering-skip rationale.
+    /// </summary>
+    public readonly record struct AnchorHudSnapshot(
+        bool Visible,
+        bool Dragging,
+        bool Manual,
+        double ManualRadiusMeters,
+        double? CurrentRadius,
+        double? MaxRadius,
+        string? DormantReason);
+}

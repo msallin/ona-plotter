@@ -1,0 +1,112 @@
+@using OnaPlotter.Utilities
+@using OnaPlotter.Models
+
+@* Active-route HUD card. Extracted from MapHud so the heaviest subtree
+   (~90 lines of conditional rows, 8+ formatted values) only re-renders
+   when a route-related value actually changes -- not when the parent
+   HUD re-renders because an unrelated field (wind, depth) ticked.
+
+   Component takes a RouteHudSnapshot record struct. Blazor's parameter-
+   change detection does member-wise equality on the record; if every
+   field matches the previous render, the parameter setter treats it as
+   "no change" and skips re-render. Same optimisation pattern applies
+   to HudAnchorCard. *@
+
+@if (Snapshot.Visible)
+{
+    <div class="hud hud-route">
+        <div class="hud-panel route-panel">
+            <div class="route-panel-title">
+                <span class="route-panel-name">@(Snapshot.Name ?? "Active Route")</span>
+                @if (Snapshot.PointIndex is int idx && Snapshot.PointTotal is int total)
+                {
+                    <span class="route-panel-progress">WP @(idx + 1) of @total</span>
+                }
+            </div>
+            @if (Snapshot.ArrivalRadiusMeters <= 0)
+            {
+                <div class="rule-dormant-hint" role="status" aria-live="polite"
+                     title="Set a waypoint-arrival radius in Settings to enable the APPROACH alarm">
+                    &#9888; APPROACH alarm off (radius 0 m)
+                </div>
+            }
+            <div class="route-info-grid">
+                <div>
+                    <div class="hud-label">DTW</div>
+                    <div class="hud-value route-value">@Format.Nm(Snapshot.Distance)<span class="hud-unit">nm</span></div>
+                </div>
+                <div>
+                    <div class="hud-label">BRG</div>
+                    <div class="hud-value route-value">@Format.Degrees(Snapshot.Bearing)<span class="hud-unit">&deg;</span></div>
+                </div>
+                @if (Snapshot.Vmg is not null)
+                {
+                    <div>
+                        <div class="hud-label">VMG</div>
+                        <div class="hud-value route-value">@Format.Speed(Snapshot.Vmg)<span class="hud-unit">kn</span></div>
+                    </div>
+                }
+                @if (Snapshot.TimeToGo is not null)
+                {
+                    <div>
+                        <div class="hud-label">TTG</div>
+                        <div class="hud-value route-value">@Format.TimeToGo(Snapshot.TimeToGo)</div>
+                    </div>
+                    <div>
+                        <div class="hud-label">ETA</div>
+                        <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo)</div>
+                    </div>
+                }
+                @if (Snapshot.Xte is not null)
+                {
+                    <div>
+                        <div class="hud-label">XTE</div>
+                        <div class="hud-value route-value @Format.XteClass(Snapshot.Xte)">@Format.Xte(Snapshot.Xte)</div>
+                    </div>
+                }
+            </div>
+            @if (Snapshot.RouteDistanceRemaining is not null || Snapshot.RouteTimeToGo is not null)
+            {
+                <div class="route-total-row">
+                    <span class="route-total-label">Route total</span>
+                    @if (Snapshot.RouteDistanceRemaining is not null)
+                    {
+                        <span class="route-total-value">@Format.Nm(Snapshot.RouteDistanceRemaining)<span class="hud-unit">nm</span></span>
+                    }
+                    @if (Snapshot.RouteTimeToGo is not null)
+                    {
+                        <span class="route-total-value">@Format.TimeToGo(Snapshot.RouteTimeToGo)</span>
+                        <span class="route-total-value">ETA @Format.Eta(Snapshot.RouteTimeToGo)</span>
+                    }
+                </div>
+            }
+            <button class="route-stop-btn" @onclick="OnStop"
+                    title="Clear the active destination">Stop Navigation</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public RouteHudSnapshot Snapshot { get; set; }
+    [Parameter] public EventCallback OnStop { get; set; }
+
+    /// <summary>
+    /// Immutable snapshot of every field the route card reads. Record-
+    /// struct semantics give member-wise equality for free, so Blazor's
+    /// parameter-change detection treats two equal snapshots as "no
+    /// change" and skips re-render -- the point of the split.
+    /// </summary>
+    public readonly record struct RouteHudSnapshot(
+        bool Visible,
+        string? Name,
+        int? PointIndex,
+        int? PointTotal,
+        double ArrivalRadiusMeters,
+        double? Distance,
+        double? Bearing,
+        double? Vmg,
+        double? TimeToGo,
+        double? Xte,
+        double? RouteDistanceRemaining,
+        double? RouteTimeToGo);
+}

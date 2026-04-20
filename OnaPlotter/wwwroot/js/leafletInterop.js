@@ -779,6 +779,60 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     });
 }
 
+/**
+ * Batched per-tick frame update. Combines up to six individual
+ * interop calls (updatePosition, addColoredTrackPoint, setCourseLine /
+ * clearCourseLine, setCurrentArrow, setLaylines) into a single call so
+ * the Blazor->JS bridge is only crossed once per SignalK tick instead
+ * of 4 to 6 times. On a Raspi kiosk each bridge crossing has measurable
+ * overhead (JSON marshal + WASM trampoline + JS invocation), so
+ * collapsing them cuts tick-to-paint latency noticeably.
+ *
+ * `frame` shape (all fields optional where noted):
+ *   {
+ *     pos: { lat, lon, headingRad, cogRad, sogMs } | null,
+ *     track: [lat, lon, sogMs, prevLat, prevLon] | null,
+ *     course: { wpLat, wpLon, prevLat, prevLon, xte } | null,
+ *     clearCourse: bool,
+ *     current: { lat, lon, setRad, driftMs } | null,
+ *     laylines: { lat, lon, twdRad, twaRad, wpLat, wpLon } | null
+ *   }
+ * Any null / missing field is a no-op on that subsystem. Individual
+ * export functions (updatePosition etc.) stay exported so anything
+ * outside the per-tick hot path can still call them directly.
+ */
+export function applyFrame(frame) {
+    if (!map || !frame) return;
+    if (frame.pos) {
+        const p = frame.pos;
+        updatePosition(p.lat, p.lon, p.headingRad, p.cogRad, p.sogMs);
+    }
+    if (frame.track) {
+        const t = frame.track;
+        addColoredTrackPoint(t[0], t[1], t[2], t[3], t[4]);
+    }
+    if (frame.course) {
+        const c = frame.course;
+        // Reuse the boat position from the frame -- course line needs
+        // it and the C# side already sent it, no reason to duplicate.
+        const boatLat = frame.pos ? frame.pos.lat : null;
+        const boatLon = frame.pos ? frame.pos.lon : null;
+        if (boatLat != null && boatLon != null) {
+            setCourseLine(boatLat, boatLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte);
+        }
+    } else if (frame.clearCourse) {
+        clearCourseLine();
+    }
+    if (frame.current) {
+        const cu = frame.current;
+        setCurrentArrow(cu.lat, cu.lon, cu.setRad, cu.driftMs);
+    }
+    if (frame.laylines) {
+        const l = frame.laylines;
+        setLaylines(l.lat, l.lon, l.twdRad, l.twaRad, l.wpLat, l.wpLon);
+    }
+}
+
 export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     if (!map || !boatMarker) return;
 
@@ -905,6 +959,109 @@ export function flushTrackPoints() {
             trackLayer.removeLayer(layers[i]);
         }
     }
+}
+
+/**
+ * Builds the full AIS popup HTML string from a vessel snapshot. Called
+ * lazily -- only when the popup is actually about to open or is already
+ * open and the data changed. Building 200+ of these every 3 s when the
+ * user isn't looking at any of them was visible perf overhead on a
+ * weak client.
+ *
+ * Snapshot shape (stashed on the marker as _onaVesselSnapshot):
+ *   { v, selfLat, selfLon, cpaInfo, isDangerEff, isWarning }
+ */
+function buildAisPopupHtml(snap) {
+    const { v, selfLat, selfLon, cpaInfo, isDangerEff, isWarning } = snap;
+    const name = esc(v.name || '');
+    const mmsi = v.mmsi || '';
+    const callsign = v.callsign ? esc(v.callsign) : '';
+    const sog = v.sogMs != null ? (v.sogMs * 1.94384).toFixed(1) : '--';
+    const cogDeg = v.cogRad != null ? (v.cogRad * DEG).toFixed(0) : '--';
+    const hdgDeg = v.headingRad != null ? (v.headingRad * DEG).toFixed(0) : '--';
+    const type = v.shipType ? esc(v.shipType) : '';
+    const dist = haversineMeters(selfLat, selfLon, v.lat, v.lon) * NM_PER_METER;
+    const brg = bearingDeg(selfLat, selfLon, v.lat, v.lon);
+
+    // Display name preference: SignalK name -> external-lookup cache
+    // -> callsign -> MMSI.
+    let displayTitle;
+    const cachedName = mmsi ? vesselNameCacheGet(mmsi) : undefined;
+    if (name)            displayTitle = name;
+    else if (cachedName) displayTitle = esc(cachedName);
+    else if (callsign)   displayTitle = callsign;
+    else if (mmsi)       displayTitle = `MMSI ${esc(mmsi)}`;
+    else                 displayTitle = 'Unknown';
+    if (v.buddy) displayTitle = '\u2605 ' + displayTitle;
+
+    let cpaHtml = '';
+    if (cpaInfo && cpaInfo.tcpa > 0) {
+        const cls = isDangerEff ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
+        cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
+    }
+
+    let colregsHtml = '';
+    if (v.colregsLabel) {
+        const roleHtml = v.colregsRole
+            ? ` <span style="color:${v.colregsRole === 'Give way' ? '#fca5a5' : '#86efac'};font-weight:600">${esc(v.colregsRole)}</span>`
+            : '';
+        colregsHtml = `<tr><td style="opacity:0.5">COLREGS</td><td>${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
+    }
+
+    // External lookup links (free, no API key needed). VesselFinder's
+    // search page uses ?name= even for MMSI queries.
+    const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
+    const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?name=${esc(mmsi)}` : '';
+
+    // Buddy toggle + per-vessel snooze. Inline data attributes so the
+    // delegated handler on mapEl can route both to Blazor without
+    // leaking a callback through string concatenation.
+    const buddyLabel = v.buddy ? '\u2605 Remove buddy' : '\u2606 Add buddy';
+    const buddyAttrs = `data-ona-buddy="1" data-ctx="${esc(v.context)}" data-mmsi="${esc(mmsi || '')}"`
+        + ` data-nm="${esc(v.name || '')}" data-is="${v.buddy ? '1' : '0'}"`;
+    const showSnooze = !v.buddy && (isDangerEff || isWarning);
+    const snoozeAttrs = `data-ona-snooze="1" data-ctx="${esc(v.context)}" data-nm="${esc(v.name || mmsi || '')}"`;
+    const snoozeHtml = showSnooze
+        ? `<a href="#" ${snoozeAttrs} style="color:#fbbf24;font-size:11px;text-decoration:none">\u266B Snooze alarm</a>`
+        : '';
+
+    let linksHtml = '';
+    if (mmsi || showSnooze) {
+        const pieces = [];
+        if (mmsi) {
+            pieces.push(`<a href="${mtUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">MarineTraffic</a>`);
+            pieces.push(`<a href="${vfUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">VesselFinder</a>`);
+            pieces.push(`<a href="#" ${buddyAttrs} style="color:#facc15;font-size:11px;text-decoration:none">${buddyLabel}</a>`);
+        }
+        if (snoozeHtml) pieces.push(snoozeHtml);
+        linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:10px;flex-wrap:wrap">` +
+            pieces.join('') + `</div>`;
+    }
+
+    // Country flag from signalk-flags plugin. 404s on servers without
+    // the plugin trigger onerror + hide; no broken-image glyph.
+    const flagHtml = mmsi
+        ? `<img class="ais-popup-flag" src="/signalk/v2/api/resources/flags/mmsi/${esc(mmsi)}" alt="" onerror="this.style.display='none'">`
+        : '';
+
+    return (
+        `<div class="ais-popup-content">` +
+        `<div class="ais-popup-title">${flagHtml}${displayTitle}</div>` +
+        (type ? `<div class="ais-popup-type">${type}</div>` : '') +
+        `<table class="ais-popup-table">` +
+          (mmsi ? `<tr><td>MMSI</td><td>${esc(mmsi)}</td></tr>` : '') +
+          (callsign ? `<tr><td>Call</td><td>${callsign}</td></tr>` : '') +
+          `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
+          `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
+          `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
+          `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
+          `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
+          cpaHtml +
+          colregsHtml +
+        `</table>` +
+        linksHtml +
+        `</div>`
+    );
 }
 
 export function updateAisTargets(vessels) {
@@ -1057,121 +1214,43 @@ export function updateAisTargets(vessels) {
         }
 
         // Rich popup with vessel details and external lookup links.
-        const name = esc(v.name || '');
-        const mmsi = v.mmsi || '';
-        const callsign = v.callsign ? esc(v.callsign) : '';
-        const sog = v.sogMs != null ? (v.sogMs * 1.94384).toFixed(1) : '--';
-        const cogDeg = v.cogRad != null ? (v.cogRad * DEG).toFixed(0) : '--';
-        const hdgDeg = v.headingRad != null ? (v.headingRad * DEG).toFixed(0) : '--';
-        const type = v.shipType ? esc(v.shipType) : '';
-        const dist = haversineMeters(selfLat, selfLon, v.lat, v.lon) * NM_PER_METER;
-        const brg = bearingDeg(selfLat, selfLon, v.lat, v.lon);
+        // Building the HTML for every vessel every tick (200+ in a busy
+        // harbour, 3 s cadence) shows up in profiles as measurable
+        // overhead even though most popups are never opened. We now
+        // STASH the snapshot on the marker and only rebuild when the
+        // popup is actually visible -- once on popupopen and again on
+        // each tick the popup stays open. buildAisPopupHtml reads the
+        // stashed data directly so the per-vessel HTML work is deferred
+        // to the lazy path.
+        marker._onaVesselSnapshot = {
+            v, selfLat, selfLon, cpaInfo,
+            isDangerEff, isWarning,
+        };
 
-        // Display name preference: SignalK name > external-lookup cache >
-        // callsign > MMSI. For unnamed vessels, kick off an external lookup
-        // in the background; next update tick will pick up the resolved name.
-        let displayTitle;
-        const cachedName = mmsi ? vesselNameCacheGet(mmsi) : undefined;
-        if (name) {
-            displayTitle = name;
-        } else if (cachedName) {
-            displayTitle = esc(cachedName);
-        } else if (callsign) {
-            displayTitle = callsign;
-        } else if (mmsi) {
-            displayTitle = `MMSI ${esc(mmsi)}`;
-        } else {
-            displayTitle = 'Unknown';
-        }
-        if (!name && mmsi && !vesselNameCacheHas(mmsi)) {
-            resolveVesselName(v.context, mmsi);
-        }
-        if (v.buddy) displayTitle = '\u2605 ' + displayTitle;
-
-        let cpaHtml = '';
-        if (cpaInfo && cpaInfo.tcpa > 0) {
-            const cls = isDangerEff ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
-            cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
-        }
-
-        let colregsHtml = '';
-        if (v.colregsLabel) {
-            const roleHtml = v.colregsRole
-                ? ` <span style="color:${v.colregsRole === 'Give way' ? '#fca5a5' : '#86efac'};font-weight:600">${esc(v.colregsRole)}</span>`
-                : '';
-            colregsHtml = `<tr><td style="opacity:0.5">COLREGS</td><td>${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
-        }
-
-        // External lookup links (free, no API key needed). VesselFinder's
-        // search page uses ?name= even for MMSI queries.
-        const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
-        const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?name=${esc(mmsi)}` : '';
-
-        // Buddy toggle + per-vessel snooze. Inline data attributes so the
-        // delegated handler above can route both to Blazor without
-        // leaking a callback through string concatenation. Snooze only
-        // appears when the vessel is in the warning / danger CPA band
-        // -- no point offering to silence a vessel that isn't alarming.
-        const buddyLabel = v.buddy ? '\u2605 Remove buddy' : '\u2606 Add buddy';
-        const buddyAttrs = `data-ona-buddy="1" data-ctx="${esc(v.context)}" data-mmsi="${esc(mmsi || '')}"`
-            + ` data-nm="${esc(v.name || '')}" data-is="${v.buddy ? '1' : '0'}"`;
-        const showSnooze = !v.buddy && (isDangerEff || isWarning);
-        const snoozeAttrs = `data-ona-snooze="1" data-ctx="${esc(v.context)}" data-nm="${esc(v.name || mmsi || '')}"`;
-        const snoozeHtml = showSnooze
-            ? `<a href="#" ${snoozeAttrs} style="color:#fbbf24;font-size:11px;text-decoration:none">\u266B Snooze alarm</a>`
-            : '';
-
-        let linksHtml = '';
-        if (mmsi || showSnooze) {
-            const pieces = [];
-            if (mmsi) {
-                pieces.push(`<a href="${mtUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">MarineTraffic</a>`);
-                pieces.push(`<a href="${vfUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">VesselFinder</a>`);
-                pieces.push(`<a href="#" ${buddyAttrs} style="color:#facc15;font-size:11px;text-decoration:none">${buddyLabel}</a>`);
-            }
-            if (snoozeHtml) pieces.push(snoozeHtml);
-            linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:10px;flex-wrap:wrap">` +
-                pieces.join('') + `</div>`;
-        }
-
-        // Country flag from the signalk-flags plugin if installed.
-        // Endpoint: /signalk/v2/api/resources/flags/mmsi/{mmsi} returns SVG.
-        // Relative URL resolves against the page origin, which IS the
-        // SignalK server when OnaPlotter is deployed as a webapp. If the
-        // plugin isn't installed the 404 triggers onerror and we hide
-        // the img so there's no broken-image glyph. No fallback fetch
-        // needed -- country is a nice-to-have, not safety-critical.
-        const flagHtml = mmsi
-            ? `<img class="ais-popup-flag" src="/signalk/v2/api/resources/flags/mmsi/${esc(mmsi)}" alt="" onerror="this.style.display='none'">`
-            : '';
-
-        const popupHtml =
-            `<div class="ais-popup-content">` +
-            `<div class="ais-popup-title">${flagHtml}${displayTitle}</div>` +
-            (type ? `<div class="ais-popup-type">${type}</div>` : '') +
-            `<table class="ais-popup-table">` +
-              (mmsi ? `<tr><td>MMSI</td><td>${esc(mmsi)}</td></tr>` : '') +
-              (callsign ? `<tr><td>Call</td><td>${callsign}</td></tr>` : '') +
-              `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
-              `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
-              `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
-              `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
-              `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
-              cpaHtml +
-              colregsHtml +
-            `</table>` +
-            linksHtml +
-            `</div>`;
-
-        // If the popup is already bound (common - repeated update ticks),
-        // use setPopupContent so an open popup updates live (the buddy
-        // toggle relies on this to show the new Remove/Add label without
-        // a close-reopen round-trip). Otherwise bindPopup for the first time.
-        if (marker.getPopup()) {
-            marker.setPopupContent(popupHtml);
-        } else {
-            marker.bindPopup(popupHtml,
+        if (!marker.getPopup()) {
+            // First bind: placeholder content + popupopen listener that
+            // rebuilds the real HTML from the stashed snapshot before
+            // showing.
+            marker.bindPopup('',
                 { closeButton: false, maxWidth: 280, className: 'ais-popup' });
+            marker.on('popupopen', () => {
+                if (marker._onaVesselSnapshot) {
+                    marker.setPopupContent(buildAisPopupHtml(marker._onaVesselSnapshot));
+                }
+            });
+        } else if (marker.isPopupOpen()) {
+            // Popup is on screen right now -- user is watching. Refresh
+            // live so the SOG / CPA / buddy toggle label update without
+            // a close-reopen round-trip.
+            marker.setPopupContent(buildAisPopupHtml(marker._onaVesselSnapshot));
+        }
+
+        // External name lookup kick-off stays on the fast path: the
+        // result affects the on-chart label tooltip (always visible at
+        // zoom >= 12), not just the popup, so we don't want to gate it
+        // on popup-open.
+        if (!v.name && v.mmsi && !vesselNameCacheHas(v.mmsi)) {
+            resolveVesselName(v.context, v.mmsi);
         }
 
         // Trail: last AIS_TRAIL_SECONDS of positions, drawn as a fading line.

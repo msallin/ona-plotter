@@ -7,7 +7,24 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- AOT compiles .NET IL to WebAssembly at publish time. Turn this
+         off only if build time is a hard constraint. Roughly triples
+         publish duration but gives a 2-5x speedup on the hot data-apply
+         and alarm-eval path at runtime, measurable on a Raspberry Pi
+         kiosk where the old interpreted path bottlenecked the main
+         thread. -->
     <RunAOTCompilation>true</RunAOTCompilation>
+    <!-- Strip the source IL from the published bundle after AOT. The
+         WASM runtime can execute the native code alone; the IL would
+         just sit in the download. Cuts roughly 15 to 20 percent off
+         the payload size (fewer bytes to transfer to the kiosk on
+         first load). -->
+    <WasmStripILAfterAOT>true</WasmStripILAfterAOT>
+    <!-- Tell the AOT compiler to optimise for speed over size. Kiosk
+         workflow is "start once, run for a week"; a few hundred KB
+         extra in the published bundle is a good trade for tighter
+         hot-loop code. -->
+    <OptimizationPreference>Speed</OptimizationPreference>
   </PropertyGroup>
 
   <ItemGroup>
