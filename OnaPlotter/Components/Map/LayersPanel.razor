@@ -25,7 +25,8 @@
 
     <ChartsSection Charts="FilteredCharts"
                    Enabled="EnabledCharts"
-                   OnToggle="OnToggleChart"
+                   QuickBarCharts="QuickBarCharts"
+                   OnToggleQuickBar="OnToggleChartQuickBar"
                    OnReorder="OnReorderChart" />
 
     <RoutesSection Routes="FilteredRoutes"
@@ -86,6 +87,7 @@
     [Parameter] public IReadOnlyList<SignalkBuddy> Buddies { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledCharts { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
+    [Parameter, EditorRequired] public HashSet<string> QuickBarCharts { get; set; } = [];
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public bool NotesVisible { get; set; } = true;
@@ -95,6 +97,7 @@
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
 
     [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggleChart { get; set; }
+    [Parameter] public EventCallback<(SignalkChart chart, bool inQuickBar)> OnToggleChartQuickBar { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }

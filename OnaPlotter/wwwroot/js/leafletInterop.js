@@ -1041,17 +1041,35 @@ function buildAisPopupHtml(snap) {
         ? `<a href="#" ${snoozeAttrs} style="color:#fbbf24;font-size:11px;text-decoration:none">\u266B Snooze alarm</a>`
         : '';
 
+    // Two action rows. Row 1: external-lookup links (MarineTraffic +
+    // VesselFinder) side-by-side on a single flex line -- they're the
+    // primary "tell me more about this vessel" action. Row 2: local
+    // actions (Buddy toggle + Snooze alarm) since they mutate app
+    // state and belong together. Splitting the rows stops the local
+    // actions from wrapping between the two external links on narrow
+    // popups and groups them by intent.
     let linksHtml = '';
     if (mmsi || showSnooze) {
-        const pieces = [];
+        const linkStyle = 'color:#7dd3fc;font-size:11px;text-decoration:none;flex:1;text-align:center;padding:2px 4px;white-space:nowrap';
+        const rows = [];
         if (mmsi) {
-            pieces.push(`<a href="${mtUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">MarineTraffic</a>`);
-            pieces.push(`<a href="${vfUrl}" target="_blank" rel="noopener" style="color:#7dd3fc;font-size:11px;text-decoration:none">VesselFinder</a>`);
-            pieces.push(`<a href="#" ${buddyAttrs} style="color:#facc15;font-size:11px;text-decoration:none">${buddyLabel}</a>`);
+            rows.push(
+                `<div style="display:flex;gap:10px;align-items:center">` +
+                `<a href="${mtUrl}" target="_blank" rel="noopener" style="${linkStyle}">MarineTraffic</a>` +
+                `<a href="${vfUrl}" target="_blank" rel="noopener" style="${linkStyle}">VesselFinder</a>` +
+                `</div>`
+            );
         }
-        if (snoozeHtml) pieces.push(snoozeHtml);
-        linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:10px;flex-wrap:wrap">` +
-            pieces.join('') + `</div>`;
+        const row2 = [];
+        if (mmsi) {
+            row2.push(`<a href="#" ${buddyAttrs} style="color:#facc15;font-size:11px;text-decoration:none">${buddyLabel}</a>`);
+        }
+        if (snoozeHtml) row2.push(snoozeHtml);
+        if (row2.length > 0) {
+            rows.push(`<div style="display:flex;gap:12px;flex-wrap:wrap">${row2.join('')}</div>`);
+        }
+        linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:6px">` +
+            rows.join('') + `</div>`;
     }
 
     // Country flag from signalk-flags plugin. 404s on servers without
@@ -1247,8 +1265,13 @@ export function updateAisTargets(vessels) {
             // First bind: placeholder content + popupopen listener that
             // rebuilds the real HTML from the stashed snapshot before
             // showing.
+            // maxWidth 420 (was 280): the popup contains ~8 label/value
+            // rows plus an action row with MarineTraffic / VesselFinder /
+            // Buddy / Snooze links. At 280 px the action row wrapped onto
+            // three lines on iPad landscape and the MT / VF links split
+            // across rows; 420 keeps them on one line and reads cleaner.
             marker.bindPopup('',
-                { closeButton: false, maxWidth: 280, className: 'ais-popup' });
+                { closeButton: false, maxWidth: 420, className: 'ais-popup' });
             marker.on('popupopen', () => {
                 if (marker._onaVesselSnapshot) {
                     marker.setPopupContent(buildAisPopupHtml(marker._onaVesselSnapshot));

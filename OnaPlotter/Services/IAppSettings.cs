@@ -135,6 +135,19 @@ public interface IAppSettings
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
+    /// <summary>
+    /// Charts the user has added to the on-map quick-switch bar. A
+    /// curated subset of available charts; the Layers panel ticks
+    /// membership here, and the quick bar then shows one chip per
+    /// member and drives render state via <see cref="EnabledChartIds"/>.
+    /// Previously the quick bar showed the first 6 alphabetical
+    /// charts regardless of user preference; this makes it the
+    /// cockpit-side shortcut list the user actually wants.
+    /// Migration: first load after upgrade seeds this from
+    /// <see cref="EnabledChartIds"/> so nothing disappears.
+    /// </summary>
+    IReadOnlySet<string> QuickBarChartIds { get; }
+
     /// <summary>User-preferred chart draw order (list of identifiers, first
     /// = bottom of stack, last = top). Charts that aren't in this list
     /// render in server-provided order after any ordered charts. Empty on
@@ -171,5 +184,6 @@ public interface IAppSettings
     Task SetShowAutopilotHudAsync(bool value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
+    Task SetQuickBarChartsAsync(IEnumerable<string> ids);
     Task SetChartOrderAsync(IEnumerable<string> ids);
 }

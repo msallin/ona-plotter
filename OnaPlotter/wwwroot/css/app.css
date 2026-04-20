@@ -497,6 +497,35 @@ article.content:has(.map-container) {
 .map-container.map-fullscreen .hud-top-left,
 .map-container:fullscreen .hud-top-left { top: 44px; }
 
+/* Fullscreen breathing room: in normal (non-fullscreen) layout the map
+   sits inside app chrome so 12 px of edge-inset reads fine. In
+   fullscreen the HUD cards hug the hard screen edge which looks
+   cramped, and on iOS notched devices a couple of pixels are eaten by
+   the safe area. Push the corners inward to 24 px and stack the
+   safe-area inset on top so the cards never end up under a notch.
+   The top-left still lives below the conn-chip (~44 px); others just
+   get the bigger inset. */
+.map-container.map-fullscreen .hud-top-left,
+.map-container:fullscreen .hud-top-left {
+    top: max(56px, calc(44px + env(safe-area-inset-top)));
+    left: max(24px, env(safe-area-inset-left));
+}
+.map-container.map-fullscreen .hud-top-right,
+.map-container:fullscreen .hud-top-right {
+    top: max(24px, env(safe-area-inset-top));
+    right: max(68px, calc(56px + env(safe-area-inset-right))); /* +12 vs. default so zoom ctrl stays clear */
+}
+.map-container.map-fullscreen .hud-bottom-left,
+.map-container:fullscreen .hud-bottom-left {
+    bottom: max(24px, env(safe-area-inset-bottom));
+    left: max(24px, env(safe-area-inset-left));
+}
+.map-container.map-fullscreen .hud-bottom-right,
+.map-container:fullscreen .hud-bottom-right {
+    bottom: max(24px, env(safe-area-inset-bottom));
+    right: max(24px, env(safe-area-inset-right));
+}
+
 .hud-value {
     font-size: 1.6rem;
     font-weight: 500; /* higher weight reads better in sunlight on the helm */
@@ -2431,6 +2460,27 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .chart-desc {
     font-size: 0.7rem;
     color: var(--sk-text-muted);
+}
+
+/* One-line explainer for the Charts section so users understand the
+   two-step model (tick to add to quick-switch bar, tap chip to render).
+   Subtle text under the section header. */
+.chart-section-hint {
+    font-size: 0.7rem;
+    color: var(--sk-text-muted);
+    padding: 4px 2px 6px;
+    line-height: 1.3;
+}
+
+/* Small dot next to a chart name in the Layers list to show it is
+   currently rendering. The active-stack chips above already list the
+   rendering charts, but users scanning the full list asked for a
+   per-row indicator so they don't have to cross-reference. */
+.chart-rendering-dot {
+    color: #4ade80;              /* same green-500 we use elsewhere for "live" */
+    font-size: 0.55em;
+    margin-left: 6px;
+    vertical-align: middle;
 }
 
 .night-mode .chart-panel {

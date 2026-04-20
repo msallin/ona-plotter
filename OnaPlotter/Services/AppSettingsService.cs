@@ -45,9 +45,11 @@ public sealed class AppSettingsService : IAppSettings
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _quickBarChartIds = new(StringComparer.Ordinal);
     private readonly List<string> _chartOrder = [];
     public IReadOnlySet<string> EnabledChartIds => _enabledChartIds;
     public IReadOnlySet<string> EnabledRouteIds => _enabledRouteIds;
+    public IReadOnlySet<string> QuickBarChartIds => _quickBarChartIds;
     public IReadOnlyList<string> ChartOrder => _chartOrder;
 
     public event Action? OnSettingsChanged;
@@ -89,6 +91,22 @@ public sealed class AppSettingsService : IAppSettings
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
+
+            // Quick-bar chart membership. If this key doesn't exist yet
+            // (first load after upgrade), seed from EnabledChartIds so
+            // existing users keep their chart shortcuts. Subsequent
+            // runs read the persisted set as-is, even if it's empty.
+            var quickBarRaw = await LoadString("quickBarChartIds.v1");
+            if (quickBarRaw is null)
+            {
+                foreach (var id in _enabledChartIds) _quickBarChartIds.Add(id);
+                if (_quickBarChartIds.Count > 0)
+                    await Save("quickBarChartIds.v1", string.Join('\n', _quickBarChartIds));
+            }
+            else
+            {
+                LoadIdsInto(quickBarRaw, _quickBarChartIds);
+            }
             _initialized = true;
         }
         finally
@@ -307,6 +325,18 @@ public sealed class AppSettingsService : IAppSettings
         _enabledRouteIds.Clear();
         foreach (var id in copy) _enabledRouteIds.Add(id);
         await Save("enabledRouteIds", string.Join('\n', _enabledRouteIds));
+    }
+
+    public async Task SetQuickBarChartsAsync(IEnumerable<string> ids)
+    {
+        // Same materialise-first guard as SetChartOrderAsync -- a caller
+        // can hand us a LINQ view over _quickBarChartIds and the Clear()
+        // would pull the rug out mid-iteration.
+        var copy = ids.ToList();
+        _quickBarChartIds.Clear();
+        foreach (var id in copy) _quickBarChartIds.Add(id);
+        await Save("quickBarChartIds.v1", string.Join('\n', _quickBarChartIds));
+        OnSettingsChanged?.Invoke();
     }
 
     public async Task SetChartOrderAsync(IEnumerable<string> ids)

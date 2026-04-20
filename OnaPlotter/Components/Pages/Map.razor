@@ -336,16 +336,17 @@
     }
 
     @* === Quick Chart Switcher (visible when layers panel is closed) ===
-       Sort by Name so the chip positions are stable: the user reported
-       the chips visibly reordering when they clicked one (because the
-       panel was iterating availableCharts which gets sorted by the
-       user's draw-stack ChartOrder after first-enable). The quick bar
-       is about "toggle this chart on/off", not "change the z-stack",
-       so a stable alphabetical order beats mirroring the draw stack. *@
-    @if (!chartPanelOpen && availableCharts.Count > 0)
+       Two-layer model: the user picks their set in Layers -> Charts
+       (quickBarCharts), and that set shows here as tap-to-render chips.
+       Sort alphabetically so the chip positions are stable when the
+       user toggles one (the draw-stack order would shuffle visually
+       on each tap because ApplyChartOrder reshuffles availableCharts). *@
+    @if (!chartPanelOpen && quickBarCharts.Count > 0)
     {
         <div class="chart-quick-bar">
-            @foreach (var chart in availableCharts.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).Take(6))
+            @foreach (var chart in availableCharts
+                         .Where(c => quickBarCharts.Contains(c.Identifier))
+                         .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
                 bool active = enabledCharts.Contains(chart.Identifier);
                 <button class="chart-quick-chip @(active ? "active" : "")"
@@ -380,11 +381,13 @@
                      Buddies="loadedBuddies"
                      EnabledCharts="enabledCharts"
                      EnabledRoutes="enabledRoutes"
+                     QuickBarCharts="quickBarCharts"
                      ServerTrackVisible="serverTrackVisible"
                      WeatherOverlayVisible="weatherOverlayVisible"
                      LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
                      OnToggleChart="OnToggleChartCallback"
+                     OnToggleChartQuickBar="OnToggleChartQuickBarCallback"
                      OnReorderChart="OnReorderChartCallback"
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
@@ -477,6 +480,10 @@
     private List<SignalkRoute> availableRoutes = [];
     private readonly HashSet<string> enabledCharts = [];
     private readonly HashSet<string> enabledRoutes = [];
+    // Subset of availableCharts the user has pinned to the on-map
+    // quick-switch bar via Layers -> Charts. See
+    // IAppSettings.QuickBarChartIds for the two-layer rationale.
+    private readonly HashSet<string> quickBarCharts = [];
     private bool serverTrackVisible;
     private string layerFilter = "";
     private double? viewWest, viewSouth, viewEast, viewNorth;
@@ -548,6 +555,26 @@
 
     private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
         ToggleChart(t.chart, t.enabled);
+
+    // Layers -> Charts checkbox toggles membership of the quick-bar
+    // set (curation). Rendering is controlled by the quick bar itself.
+    // On untick we also tear down rendering so a removed chart doesn't
+    // linger as a ghost layer without a chip to toggle it off.
+    private async Task OnToggleChartQuickBarCallback((SignalkChart chart, bool inQuickBar) t)
+    {
+        if (t.inQuickBar)
+        {
+            quickBarCharts.Add(t.chart.Identifier);
+        }
+        else
+        {
+            quickBarCharts.Remove(t.chart.Identifier);
+            if (enabledCharts.Contains(t.chart.Identifier))
+                await ToggleChart(t.chart, false);
+        }
+        await Settings.SetQuickBarChartsAsync(quickBarCharts);
+        await InvokeAsync(StateHasChanged);
+    }
 
     private Task OnReorderChartCallback((SignalkChart chart, int direction) t) =>
         ReorderChart(t.chart, t.direction);
@@ -889,6 +916,12 @@
             if (Settings.EnabledRouteIds.Contains(route.Id))
                 await ToggleRoute(route, true);
 
+        // Quick-bar membership. Seed the local mirror from persisted
+        // settings; AppSettingsService has already migrated first-run
+        // users by copying EnabledChartIds into QuickBarChartIds.
+        quickBarCharts.Clear();
+        foreach (var id in Settings.QuickBarChartIds) quickBarCharts.Add(id);
+
         follow = Settings.FollowBoat;
         nightMode = Settings.NightMode;
         laylinesVisible = Settings.LaylinesVisible;
@@ -953,6 +986,18 @@
         {
             var wanted = Settings.KeepScreenAwake;
             _ = InvokeVoidSafeAsync("setWakeLock", (object)wanted);
+        }
+
+        // Night-mode: if the user toggled it from Settings (not from
+        // the Map page's own button) we hold a stale local `nightMode`
+        // field and, crucially, the Leaflet tile filter never gets
+        // applied. Resync both when Settings differs from our copy.
+        if (Settings.NightMode != nightMode)
+        {
+            nightMode = Settings.NightMode;
+            if (module is not null)
+                _ = InvokeVoidSafeAsync("setNightMode", (object)nightMode);
+            _ = InvokeAsync(StateHasChanged);
         }
     }
 
@@ -1693,6 +1738,12 @@
                 await Settings.SetChartOrderAsync(Settings.ChartOrder.Append(chart.Identifier));
                 ApplyChartOrder();
             }
+            // Keep the quick-bar set in sync with any auto-enabled chart
+            // (first-run OpenSeaMap seeding, future auto-rules). Without
+            // this the chart would render but be missing from the quick
+            // bar, so the user couldn't tap to hide it again.
+            if (quickBarCharts.Add(chart.Identifier))
+                await Settings.SetQuickBarChartsAsync(quickBarCharts);
         }
         else
         {

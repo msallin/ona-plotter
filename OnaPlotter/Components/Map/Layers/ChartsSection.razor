@@ -1,11 +1,14 @@
 @using OnaPlotter.Models
 
-@* Chart overlays (tile layers). Two parts:
-     1. Active stack row above the collapsible list, always visible. Shows
-        which charts are currently drawn and in what order. Each chip has
-        up / down buttons so the user can re-rank the draw stack (top of
-        the list = top of the map, i.e. the chart drawn last).
-     2. Full checkbox list, gated on expand, to turn charts on/off. *@
+@* Chart overlays (tile layers). Three pieces:
+     1. Active stack row above the list: only charts that are currently
+        RENDERING (in EnabledCharts). User reorders the draw stack here.
+        Rendering is toggled from the quick-bar chip on the map, not
+        from this panel -- the panel is the "curate my set" UI.
+     2. Checkbox list: ticking a chart adds it to the quick-bar set
+        (QuickBarCharts). Chart then appears as a chip on the map
+        where the user taps to actually render it. Unticking removes
+        it from both sets (and unrenders if it was visible). *@
 
 @if (Charts.Count == 0) return;
 
@@ -40,13 +43,25 @@
                OnToggle="() => expanded = !expanded" />
 @if (expanded)
 {
+    <div class="chart-section-hint">
+        Tick to add to the on-map quick-switch bar. Tap the chip there to
+        show / hide the chart.
+    </div>
     @foreach (var chart in Charts)
     {
+        bool inQuickBar = QuickBarCharts.Contains(chart.Identifier);
+        bool rendering = Enabled.Contains(chart.Identifier);
         <label class="chart-item">
-            <input type="checkbox" checked="@Enabled.Contains(chart.Identifier)"
-                   @onchange="(e) => OnToggle.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
+            <input type="checkbox" checked="@inQuickBar"
+                   @onchange="(e) => OnToggleQuickBar.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
             <div class="chart-item-body">
-                <div class="chart-name">@chart.Name</div>
+                <div class="chart-name">
+                    @chart.Name
+                    @if (rendering)
+                    {
+                        <span class="chart-rendering-dot" title="Currently visible on the map">&#x25CF;</span>
+                    }
+                </div>
                 @if (chart.Description is not null)
                 {
                     <div class="chart-desc">@chart.Description</div>
@@ -62,8 +77,22 @@
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> Charts { get; set; } = [];
+
+    /// <summary>Charts currently rendered on the map. Drives the
+    /// active-stack chips at the top and the "rendering" dot next to
+    /// the chart name. Toggling render state is the quick-bar's job,
+    /// not this panel's.</summary>
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
-    [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggle { get; set; }
+
+    /// <summary>Charts the user has picked for the on-map quick-switch
+    /// bar. The checkbox in this panel edits membership of this set;
+    /// the list itself is persisted via IAppSettings.QuickBarChartIds.</summary>
+    [Parameter, EditorRequired] public HashSet<string> QuickBarCharts { get; set; } = [];
+
+    /// <summary>Fired when the user ticks or unticks a chart. Adds /
+    /// removes from QuickBarChartIds; parent also pulls the chart out
+    /// of EnabledChartIds on untick so a removed chart stops rendering.</summary>
+    [Parameter] public EventCallback<(SignalkChart chart, bool inQuickBar)> OnToggleQuickBar { get; set; }
 
     /// <summary>Reorder callback. Second tuple value is direction:
     /// -1 = move up (toward top of stack), +1 = move down.</summary>

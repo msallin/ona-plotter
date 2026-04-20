@@ -39,6 +39,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool ShowAutopilotHud { get; set; } = false;
     public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
+    public IReadOnlySet<string> QuickBarChartIds => new HashSet<string>();
     public IReadOnlyList<string> ChartOrder => [];
 
     public event Action? OnSettingsChanged { add { } remove { } }
@@ -71,5 +72,6 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetShowAutopilotHudAsync(bool v) { ShowAutopilotHud = v; return Task.CompletedTask; }
     public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
+    public Task SetQuickBarChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetChartOrderAsync(IEnumerable<string> ids) => Task.CompletedTask;
 }
