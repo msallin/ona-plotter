@@ -40,7 +40,8 @@ public sealed class WaypointApi : IWaypointApi
         return waypoints;
     }
 
-    public async Task<string?> CreateAsync(string name, double lat, double lon, CancellationToken ct = default)
+    public async Task<string?> CreateAsync(string name, double lat, double lon,
+        string? description = null, CancellationToken ct = default)
     {
         // GeoJSON requires `properties` on every Feature (empty is fine)
         // and freeboard-sk explicitly assumes it's always present.
@@ -60,7 +61,7 @@ public sealed class WaypointApi : IWaypointApi
                 properties = new
                 {
                     name,
-                    description = "",
+                    description = description ?? "",
                 }
             }
         };

@@ -69,6 +69,14 @@ public sealed class NavigationData
     /// position plugin.</summary>
     public double? SunAltitude { get; private set; }
 
+    /// <summary>Solar state from SignalK's <c>environment.sun</c> string
+    /// path. Typical values from signalk-solar / sun plugins: "day",
+    /// "dawn", "dusk", "night". When present, the auto-night mode logic
+    /// prefers this over the <see cref="SunAltitude"/> threshold -- the
+    /// plugin knows about civil / nautical / astronomical twilight
+    /// without us having to reimplement those cutoffs here.</summary>
+    public string? SunState { get; private set; }
+
     /// <summary>Boat draft in metres, sourced from SignalK's
     /// <c>design.draft.current</c> (preferred) or <c>design.draft.maximum</c>
     /// (fallback when the current figure isn't published). Null on
@@ -297,6 +305,13 @@ public sealed class NavigationData
                     break;
                 case "environment.tide.stationName":
                     TideStationName = value;
+                    break;
+                case "environment.sun":
+                    // Published by some solar plugins as a plain string
+                    // ("day" / "dawn" / "dusk" / "night"). Normalised to
+                    // lower-case so downstream comparisons don't trip on
+                    // case drift between plugins.
+                    SunState = string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
                     break;
                 default:
                     return false;

@@ -6,6 +6,6 @@ namespace OnaPlotter.Services.Api;
 public interface IWaypointApi
 {
     Task<List<SignalkWaypoint>> GetAllAsync(CancellationToken ct = default);
-    Task<string?> CreateAsync(string name, double lat, double lon, CancellationToken ct = default);
+    Task<string?> CreateAsync(string name, double lat, double lon, string? description = null, CancellationToken ct = default);
     Task<bool> DeleteAsync(string id, CancellationToken ct = default);
 }

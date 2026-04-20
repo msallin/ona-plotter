@@ -228,6 +228,11 @@ h2 {
 /* Data cards */
 .card {
     background-color: var(--sk-surface);
+    /* Explicit color so unclassified text inside card-body (ul/li,
+       bare prose, <pre>/<code>) inherits light-on-dark. Without this
+       Bootstrap's built-in .card color rule would cascade and produce
+       black-on-black on pages where data-bs-theme isn't picked up. */
+    color: var(--sk-text);
     border: 1px solid var(--sk-border);
     transition: background-color 0.15s ease;
 }
@@ -2715,8 +2720,13 @@ main:has(.alarm-banner-stack) .hud-top-left {
 .legend-note       { background: #c8892e; }                   /* --ann-note */
 .legend-region     { background: rgba(212, 168, 80, 0.3);
                      border: 1px solid #d4a850; }             /* --ann-region */
-.legend-guard      { background: transparent;
-                     border: 2px dashed #c4453e;
+/* Guard-zone swatch mirrors the actual ring drawn on the map:
+   amber (--sev-warn / #f59e0b), solid 1px stroke, faint amber fill.
+   Earlier this was a red dashed outline -- red signalled "danger"
+   which confused users because the map ring is advisory (alarm
+   trigger radius), not an alarm state. */
+.legend-guard      { background: rgba(245, 158, 11, 0.04);
+                     border: 1.5px solid rgba(245, 158, 11, 0.5);
                      border-radius: 50%; }
 
 /* Depth-alarm non-colour affordance. The hud-value already goes red

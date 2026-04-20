@@ -22,6 +22,7 @@ public partial class Map
     // ---- Waypoint (create + save) ------------------------------------
     private bool waypointDialogVisible;
     private string newWaypointName = "";
+    private string newWaypointDescription = "";
     private List<SignalkWaypoint> loadedWaypoints = [];
 
     private void CreateWaypointHere()
@@ -29,14 +30,16 @@ public partial class Map
         contextMenuVisible = false;
         waypointDialogVisible = true;
         newWaypointName = "";
+        newWaypointDescription = "";
     }
 
     private async Task SaveWaypoint()
     {
         waypointDialogVisible = false;
         string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
+        string? description = string.IsNullOrWhiteSpace(newWaypointDescription) ? null : newWaypointDescription.Trim();
         string? id;
-        try { id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon); }
+        try { id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon, description); }
         catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
 
         if (id is null) { Toasts.Error("Save waypoint failed: server rejected"); return; }

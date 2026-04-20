@@ -244,13 +244,19 @@
         </div>
     }
 
-    @* === Waypoint Name Dialog === *@
+    @* === Waypoint Name + Description Dialog ===
+       Mirror of the Add Note layout so the two feel like one flow
+       (name required, description optional). Description persists to
+       SignalK's properties.description per the Freeboard-SK schema. *@
     @if (waypointDialogVisible)
     {
-        <div class="waypoint-dialog">
+        <div class="waypoint-dialog note-dialog">
             <div class="hud-label" style="margin-bottom:8px;">Create Waypoint</div>
             <input type="text" class="route-name-input" aria-label="Waypoint name"
-                   @bind="newWaypointName" @bind:event="oninput" />
+                   placeholder="Name" @bind="newWaypointName" @bind:event="oninput" />
+            <textarea class="route-name-input note-dialog-body" aria-label="Waypoint description"
+                      placeholder="Description (optional)" rows="3"
+                      @bind="newWaypointDescription" @bind:event="oninput"></textarea>
             <div style="display:flex; gap:6px; margin-top:8px;">
                 <button class="map-btn active" @onclick="SaveWaypoint">Save</button>
                 <button class="map-btn" @onclick="() => waypointDialogVisible = false">Cancel</button>
@@ -2118,9 +2124,14 @@
     private void TouchDeadman() => DeadmanTracker.Touch();
 
     // Auto-night plumbing. Dormant unless the user opts in via Settings
-    // AND the server publishes environment.sun.altitude. A manual Night
-    // tap within the last hour suppresses the auto-flip so a helmsman
-    // who wants day-mode at dusk isn't fought.
+    // AND the server publishes a sun signal. Two publishers supported:
+    //   1. environment.sun (string: "day" / "dawn" / "dusk" / "night")
+    //      -- preferred when present; the plugin knows about civil /
+    //      nautical twilight cutoffs so we don't have to reimplement.
+    //   2. environment.sun.altitude (radians, from the solar-altitude
+    //      plugin) -- fallback. Night when alt < -0.1 rad ~= civil dusk.
+    // A manual Night tap within the last hour suppresses the auto-flip
+    // so a helmsman who wants day-mode at dusk isn't fought.
     private const double NightSunAltitudeThresholdRad = -0.1;  // ~civil twilight
     private const int ManualNightOverrideMinutes = 60;
     private DateTime? _lastManualNightToggleUtc;
@@ -2129,7 +2140,16 @@
     private async Task CheckAutoNightAsync()
     {
         if (!Settings.NightModeAuto) return;
-        if (Data.SunAltitude is not double alt) return;
+
+        // Determine night/day. String state wins if published; else fall
+        // back to altitude threshold; if neither, nothing to do.
+        bool? wantNightNullable = Data.SunState switch
+        {
+            "night" or "dusk" => true,
+            "day"   or "dawn" => false,
+            _ => Data.SunAltitude is double alt ? alt < NightSunAltitudeThresholdRad : null,
+        };
+        if (wantNightNullable is not bool wantNight) return;
 
         var now = DateTime.UtcNow;
         // 30 s throttle -- sun altitude changes at ~0.004 rad/min so we
@@ -2141,7 +2161,6 @@
         if (_lastManualNightToggleUtc is DateTime t
             && (now - t).TotalMinutes < ManualNightOverrideMinutes) return;
 
-        bool wantNight = alt < NightSunAltitudeThresholdRad;
         if (wantNight == nightMode) return;
 
         nightMode = wantNight;

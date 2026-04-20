@@ -1,5 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- data-bs-theme="dark" so Bootstrap's .card / .form-* / .btn /
+     .text-muted etc. pick their dark-theme tokens automatically. Without
+     this, .card's default color cascades to #212529 (near-black) against
+     our own dark .card background override -- the helm sees unclassified
+     text as black-on-black. -->
+<html lang="en" data-bs-theme="dark">
 
 <head>
     <meta charset="utf-8" />
