@@ -125,7 +125,7 @@ public sealed class AppSettingsService : IAppSettings
 
     private static string NormalizeTheme(string? raw) => raw switch
     {
-        "light" or "dark" or "system" => raw,
+        "light" or "dark" or "system" or "high-contrast" => raw,
         _ => "system",
     };
 

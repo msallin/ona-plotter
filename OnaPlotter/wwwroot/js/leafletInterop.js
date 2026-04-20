@@ -618,13 +618,20 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // child) would more than undo the updateWhenIdle win.
     const retina = !isSlowClient;
 
+    // crossOrigin intentionally unset on the base tiles. tile.openstreetmap.org
+    // serves `Access-Control-Allow-Origin: *` most of the time, but a cached
+    // response from an earlier non-anonymous fetch (browser, corporate proxy,
+    // Service-Worker shim) can arrive WITHOUT the header, and Chromium then
+    // fails the anonymous request rather than reusing the cached body. We
+    // never sample the tiles into a canvas, so the anonymous handshake gives
+    // us nothing; dropping it is the fix Freeboard-SK took for the same class
+    // of reports.
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 22,
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
-        crossOrigin: 'anonymous',
         attribution: '&copy; OpenStreetMap contributors',
         referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
@@ -635,7 +642,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
-        crossOrigin: 'anonymous',
         attribution: '&copy; OpenSeaMap',
         opacity: 0.8,
         referrerPolicy: 'strict-origin-when-cross-origin'

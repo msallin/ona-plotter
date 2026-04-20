@@ -169,6 +169,43 @@
     }
 }
 
+/* === High-contrast theme ===
+   Bright-sunlight fallback when the regular Light theme washes out on a
+   laptop screen topside. Same chrome as Light but with:
+     * pure-white surfaces and jet-black text (~21:1 WCAG AAA)
+     * saturated navy accent instead of sky-blue (~12:1 instead of ~4:1)
+     * thicker borders and deeper shadows so the card edges survive
+       under polarised sunglasses
+   Leaves the map HUD untouched (it already has its own dark palette
+   tuned for tile contrast). */
+.page.theme-high-contrast {
+    --sk-bg: #ffffff;
+    --sk-surface: #ffffff;
+    --sk-surface-hover: #e5e7eb;           /* zinc-200 */
+    --sk-border: #111827;                  /* zinc-900 - strong, visible */
+    --sk-text: #000000;
+    --sk-text-muted: #1f2937;              /* zinc-800 - still high-contrast */
+    --sk-accent: #0b3d91;                  /* deep navy */
+    --sk-accent-dim: #082f70;
+
+    --sk-sidebar-bg: linear-gradient(180deg, #1f2937 0%, #0b1120 100%);
+    --sk-sidebar-border: #000000;
+    --sk-sidebar-text: #f9fafb;
+    --sk-sidebar-text-active: #ffffff;
+    --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.14);
+    --sk-sidebar-active-bg: rgba(255, 255, 255, 0.22);
+    --sk-top-row-bg: #ffffff;
+    --sk-top-row-text: #000000;
+    --sk-top-row-border: #000000;
+
+    --panel-bg:         #ffffff;
+    --panel-bg-strong:  #ffffff;
+    --panel-text:       #000000;
+    --panel-text-muted: #1f2937;
+    --panel-border:     #000000;
+    --panel-shadow:     0 12px 24px rgba(0, 0, 0, 0.35);
+}
+
 html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     background-color: var(--sk-bg);
