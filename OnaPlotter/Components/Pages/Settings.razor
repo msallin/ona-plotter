@@ -851,6 +851,20 @@
             + $"text-anchor=\"{anchor}\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
     }
 
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure the settings read from localStorage are loaded BEFORE
+        // the first render, so every @AppSettings.X binding shows the
+        // persisted value instead of the ctor default. InitializeAsync
+        // is idempotent (guarded by an internal lock + _initialized
+        // flag), so it's safe to call here even though MainLayout also
+        // calls it -- whichever runs first wins, the other no-ops.
+        // Without this, a direct reload of /settings rendered with
+        // defaults and the input values only became correct after a
+        // user interaction that caused another render pass.
+        await AppSettings.InitializeAsync();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender) await Polar.InitializeAsync();
