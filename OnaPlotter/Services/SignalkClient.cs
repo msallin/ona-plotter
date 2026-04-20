@@ -180,6 +180,13 @@ public sealed class SignalkClient : IAsyncDisposable
         // "dusk" / "night". Servers without such a plugin get a
         // dormant auto toggle.
         new("environment.sun",                                               PathTier.SelfSlow),
+        // Vessel design draft. Usually static (in vessel.json) but
+        // signalk-load-data updates it per voyage; either way, 10 s
+        // is more than fast enough and the slow tier keeps it off the
+        // per-fix stream. Feeds the anchor-tide alarm and the
+        // Settings draft auto-fill.
+        new("design.draft.current",                                          PathTier.SelfSlow),
+        new("design.draft.maximum",                                          PathTier.SelfSlow),
         // Route-total progress (WP index/total, distance/TTG to end).
         // Per-leg fields are in SelfFast; these aggregate across the
         // route and only advance on a waypoint boundary.

@@ -40,12 +40,27 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
     /// Six hours covers one full tidal half-cycle with some slack.</summary>
     private const double LookaheadHours = 6.0;
 
+    // Once the helm dismisses ANCHOR TIDE, don't keep re-nagging every
+    // 30s (the manager's default cooldown) -- the warning is about a
+    // predicted event hours away, so the helm's "yes, I know" should
+    // stick for the duration of the current anchored session. We
+    // re-arm when the anchor is lifted (AnchorActive transitions to
+    // false), at which point the next anchoring gets a fresh warning.
+    private bool _dismissedForThisAnchoring;
+
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
         var d = ctx.Data;
 
         // Prerequisites: anchor down AND tide plugin feeding the bus.
-        if (!d.AnchorActive) return null;
+        if (!d.AnchorActive)
+        {
+            // Anchor is up -- reset the dismiss latch so the next
+            // anchoring session starts with a clean rule.
+            _dismissedForThisAnchoring = false;
+            return null;
+        }
+        if (_dismissedForThisAnchoring) return null;
         if (d.Depth is not double depthNow) return null;
         if (d.TideHeightNow is not double heightNow) return null;
         if (d.TideHeightLow is not double heightLow) return null;
@@ -97,5 +112,12 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
             Message: $"Low clearance at LW in {when}: {clearance:F1}m under keel",
             Severity: AlarmSeverity.Warn,
             TimeToEventMinutes: minutesToLw);
+    }
+
+    public void OnDismissed(AlarmInfo dismissed, DateTime at)
+    {
+        // Latch the dismiss for this anchored session. Cleared in Check()
+        // on the first tick after the anchor comes up.
+        _dismissedForThisAnchoring = true;
     }
 }

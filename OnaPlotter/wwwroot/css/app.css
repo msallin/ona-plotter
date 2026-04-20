@@ -1833,8 +1833,14 @@ main:has(.alarm-banner-stack) .hud-top-left {
     position: fixed;
     top: 3rem;
     right: 56px;
-    width: min(360px, calc(100vw - 72px));
-    max-height: 60vh;
+    /* Grow with the viewport: on a 1920-wide desktop the old 360 px
+       column clipped SHALLOW / CPA messages mid-sentence. The clamp
+       floors at 360 (still readable on an 11" tablet in landscape),
+       caps at 560 (wider than that and the line length hurts more
+       than the clip did), and scales ~28% of the viewport between. */
+    width: clamp(360px, 28vw, 560px);
+    max-width: calc(100vw - 72px);
+    max-height: 70vh;
     z-index: var(--z-modal);
     background: var(--panel-bg-strong);
     border: 1px solid var(--panel-border);

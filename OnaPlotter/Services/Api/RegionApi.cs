@@ -109,7 +109,7 @@ public sealed class RegionApi : IRegionApi
         using var response = await _http.PostAsJsonAsync(url, body, ct);
         if (!response.IsSuccessStatusCode) return null;
         var result = await response.Content.ReadAsStringAsync(ct);
-        return result.Trim('"');
+        return ResourceHttp.ParseCreatedId(result);
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>

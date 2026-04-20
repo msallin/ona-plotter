@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace OnaPlotter.Services.Api;
 
@@ -38,5 +39,46 @@ internal static class ResourceHttp
     {
         using var response = await http.DeleteAsync(url, ct);
         return response.IsSuccessStatusCode;
+    }
+
+    /// <summary>
+    /// Parses the id of a just-created resource from the POST response
+    /// body. SignalK servers use two historical shapes, picked per
+    /// version/plugin combination, and our clients have to tolerate
+    /// both:
+    ///
+    /// <list type="bullet">
+    ///   <item><description>Bare JSON string: <c>"abc-123"</c> --
+    ///     older SK core.</description></item>
+    ///   <item><description>Status envelope: <c>{"state":"COMPLETED",
+    ///     "statusCode":201,"id":"abc-123"}</c> -- newer SK / v2 REST.
+    ///     </description></item>
+    /// </list>
+    ///
+    /// The old approach of <c>body.Trim('"')</c> worked for the first
+    /// shape but produced the ENTIRE envelope as an "id" for the second,
+    /// which then blew up Delete (URL-encoded JSON in the path) and
+    /// hid newly-saved resources from the Layers UI (the diff against
+    /// prevIds matched nothing).
+    /// </summary>
+    public static string? ParseCreatedId(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.String)
+                return root.GetString();
+            if (root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("id", out var idEl) &&
+                idEl.ValueKind == JsonValueKind.String)
+                return idEl.GetString();
+        }
+        catch (JsonException)
+        {
+            // Fall through to bare-string trim below.
+        }
+        return body.Trim().Trim('"');
     }
 }

@@ -52,7 +52,12 @@ public partial class Map
     private async Task StartRouteEdit()
     {
         routeEditMode = true;
-        routeEditName = "";
+        // Prefill with the same date-stamped default that Save falls back
+        // to when the field is blank. Prefilled (instead of placeholder)
+        // so iPad helms can see the name before tapping Save and edit it
+        // in place, while the keyboard-shortcut "just save" path still
+        // gets a sensible name without extra typing.
+        routeEditName = $"Route {DateTime.Now:yyyyMMdd}";
         routeEditStats = "0 WP / 0 nm";
         InstallEditNavGuard();
         if (module is not null)
@@ -270,6 +275,17 @@ public partial class Map
                 {
                     enabledRoutes.Add(newRoute.Id);
                     await Settings.SetEnabledRoutesAsync(enabledRoutes);
+
+                    // Push the freshly-saved route into the JS layer map
+                    // so it appears immediately, without waiting for a
+                    // layer-toggle roundtrip. Previously we only updated
+                    // the enabled set + the filtered-layers cache, but the
+                    // Leaflet side never got an addRoute call, so the helm
+                    // saw an empty map + a ticked Layers checkbox until
+                    // they manually re-toggled.
+                    try { await AddRouteToMap(newRoute); }
+                    catch (JSDisconnectedException) { }
+                    catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
                 }
                 RebuildFilteredLayers();
             }

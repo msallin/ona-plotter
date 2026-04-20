@@ -50,6 +50,26 @@ public partial class Map
         Toasts.Success($"Saved waypoint '{name}'");
     }
 
+    /// <summary>Invoked from the waypoint popup's Delete button.
+    /// Round-trips DELETE to the server, removes the marker, and drops
+    /// the waypoint from the loaded list. Parallels <see cref="DeleteNote"/>
+    /// / <see cref="DeleteRegion"/> for consistency.</summary>
+    [JSInvokable]
+    public async Task DeleteWaypoint(string id)
+    {
+        try
+        {
+            var ok = await WaypointApi.DeleteAsync(id);
+            if (!ok) { Toasts.Error("Delete waypoint failed: server rejected"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
+
+        if (module is not null)
+            await module.InvokeVoidAsync("removeWaypointMarker", id);
+        loadedWaypoints = loadedWaypoints.Where(w => w.Id != id).ToList();
+        Toasts.Info("Waypoint deleted");
+    }
+
     // ---- Note (create, save, delete, focus, show/hide) ---------------
     private bool noteDialogVisible;
     private string newNoteTitle = "";

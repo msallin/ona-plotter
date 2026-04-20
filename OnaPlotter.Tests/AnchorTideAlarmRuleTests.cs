@@ -175,4 +175,51 @@ public class AnchorTideAlarmRuleTests
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(-1));
         await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
     }
+
+    [Test]
+    public async Task Dismiss_SilencesUntilAnchorUp()
+    {
+        // After dismissal the rule must not re-fire for the same anchored
+        // session, even if the predicted grounding is still imminent. The
+        // manager's 30s cooldown is too short for a multi-hour prediction.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+
+        var first = rule.Check(Ctx(nav, new FakeSettings(), now));
+        await Assert.That(first).IsNotNull();
+
+        rule.OnDismissed(first!, now);
+
+        // Same conditions, minutes later -- still silent.
+        var later = rule.Check(Ctx(nav, new FakeSettings(), now.AddMinutes(5)));
+        await Assert.That(later).IsNull();
+    }
+
+    [Test]
+    public async Task Dismiss_ResetsOnAnchorUp()
+    {
+        // Lift anchor and re-drop: the next anchoring starts fresh and
+        // the rule is free to warn again.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var settings = new FakeSettings();
+        var nav = BuildNav(anchored: true, depth: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+
+        var first = rule.Check(Ctx(nav, settings, now));
+        await Assert.That(first).IsNotNull();
+        rule.OnDismissed(first!, now);
+
+        // Anchor goes up -- the tick with AnchorActive=false resets the latch.
+        var up = BuildNav(anchored: false);
+        await Assert.That(rule.Check(Ctx(up, settings, now.AddMinutes(1)))).IsNull();
+
+        // Re-anchor with the same grounding prediction. Alarm is back.
+        var again = BuildNav(anchored: true, depth: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+        var second = rule.Check(Ctx(again, settings, now.AddMinutes(2)));
+        await Assert.That(second).IsNotNull();
+    }
 }

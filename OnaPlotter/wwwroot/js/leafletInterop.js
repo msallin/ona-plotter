@@ -2449,11 +2449,39 @@ export function addWaypointMarker(id, lat, lon, name) {
     const marker = L.circleMarker([lat, lon], {
         radius: 6, color: WAYPOINT_COLOR, fillColor: WAYPOINT_COLOR, fillOpacity: 1, weight: 2
     }).addTo(map);
+    // Tooltip on hover (quick identification); popup on click (full
+    // name + Delete). Same pattern as notes/regions so the tap-to-act
+    // affordance is consistent across user-placed objects.
     marker.bindTooltip(name || id.substring(0, 8), {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
+    marker.bindPopup(buildWaypointPopupHtml(id, name), {
+        className: 'note-popup',
+        maxWidth: 280,
+        autoClose: true,
+        closeButton: false,
+    });
+    marker.on('click', (ev) => {
+        // During edit modes, swallow the click and forward the waypoint's
+        // location to whatever the user is plotting -- matches the note
+        // marker's edit-mode behaviour.
+        if (routeEditMode || polygonEditMode || measureActive) {
+            L.DomEvent.stopPropagation(ev);
+            const ll = ev.latlng || marker.getLatLng();
+            if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+            else                       addMeasurePoint(ll.lat, ll.lng);
+            marker.closePopup();
+        }
+    });
+    marker.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id));
     waypointMarkers.set(id, marker);
+}
+
+export function removeWaypointMarker(id) {
+    if (!map) return;
+    waypointMarkers.remove(id);
 }
 
 // --- Note Markers ---
@@ -2563,6 +2591,15 @@ function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
     });
     // Closing the popup resets confirm state so re-opening starts fresh.
     popup.once('popupclose', reset);
+}
+
+function buildWaypointPopupHtml(id, name) {
+    const safeName = esc(name || id.substring(0, 8));
+    return `
+        <div class="note-popup-inner">
+            <div class="note-popup-title">${safeName}</div>
+            <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
+        </div>`;
 }
 
 function buildNotePopupHtml(id, title, description) {

@@ -70,7 +70,7 @@ public sealed class WaypointApi : IWaypointApi
         if (!response.IsSuccessStatusCode) return null;
 
         var result = await response.Content.ReadAsStringAsync(ct);
-        return result.Trim('"');
+        return ResourceHttp.ParseCreatedId(result);
     }
 
     public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>

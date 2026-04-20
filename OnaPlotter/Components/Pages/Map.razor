@@ -230,6 +230,13 @@
             <button class="ctx-menu-item" @onclick="CreateWaypointHere">Create Waypoint</button>
             <button class="ctx-menu-item" @onclick="CreateNoteHere">Add Note</button>
             <button class="ctx-menu-item" @onclick="CreateRegionHere">Add Region</button>
+            @* "Add Route" enters route-edit mode so the helm can plot from
+               anywhere on the chart without first hunting for the button
+               on the HUD. Seeding the first waypoint at the right-click
+               point would be friendly, but the JS side assumes fresh
+               state on startRouteEdit; leaving it to the next tap
+               keeps the flow debuggable. *@
+            <button class="ctx-menu-item" @onclick="StartRouteFromContextMenu">Add Route</button>
             <button class="ctx-menu-item" @onclick="NavigateHere">Navigate Here</button>
             @if (Data.HasActiveCourse)
             {
@@ -1477,15 +1484,27 @@
     private async Task NavigateHere()
     {
         contextMenuVisible = false;
-        string name = $"GoTo {DateTime.Now:HH:mm}";
+        // Use the direct-position endpoint (matches Freeboard-SK's
+        // "Navigate here" flow): SignalK v2 course accepts
+        //   PUT /navigation/course/destination { position: {lat, lon} }
+        // and skips the persistent waypoint resource that the old
+        // flow created as a side effect. The previous implementation
+        // also stopped at the first failure with no diagnostics, which
+        // looked like "Navigate Here does nothing" to the helm.
+        double lat = contextMenuLat, lon = contextMenuLon;
         try
         {
-            string? id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon);
-            if (id is null) { Toasts.Error("Navigate failed: server rejected waypoint"); return; }
-            await CourseApi.SetDestinationAsync(id);
-            Toasts.Success($"Navigating to {name}");
+            var ok = await CourseApi.SetDestinationPositionAsync(lat, lon);
+            if (!ok) { Toasts.Error("Navigate failed: server rejected destination"); return; }
+            Toasts.Success($"Navigating to {lat:F4}, {lon:F4}");
         }
         catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+    }
+
+    private async Task StartRouteFromContextMenu()
+    {
+        contextMenuVisible = false;
+        await StartRouteEdit();
     }
 
     private async Task StopNavigation()
@@ -1767,20 +1786,7 @@
 
         if (enabled)
         {
-            // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
-            var coords = new List<double[]>();
-            foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
-            {
-                var arr = new double[2];
-                int i = 0;
-                foreach (var val in point.EnumerateArray())
-                {
-                    if (i < 2) arr[i++] = val.GetDouble();
-                }
-                coords.Add([arr[1], arr[0]]); // [lat, lon]
-            }
-
-            await module.InvokeVoidAsync("addRoute", route.Id, route.Name, coords.ToArray());
+            await AddRouteToMap(route);
             enabledRoutes.Add(route.Id);
         }
         else
@@ -1789,6 +1795,29 @@
             enabledRoutes.Remove(route.Id);
         }
         await Settings.SetEnabledRoutesAsync(enabledRoutes);
+    }
+
+    /// <summary>Push a SignalK route to Leaflet as a visible layer. Shared
+    /// between the Layers-panel toggle and the post-save auto-enable path
+    /// (which otherwise only updated state but forgot to draw).</summary>
+    private async Task AddRouteToMap(SignalkRoute route)
+    {
+        if (module is null || route.Feature?.Geometry is null) return;
+
+        // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
+        var coords = new List<double[]>();
+        foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+        {
+            var arr = new double[2];
+            int i = 0;
+            foreach (var val in point.EnumerateArray())
+            {
+                if (i < 2) arr[i++] = val.GetDouble();
+            }
+            coords.Add([arr[1], arr[0]]); // [lat, lon]
+        }
+
+        await module.InvokeVoidAsync("addRoute", route.Id, route.Name, coords.ToArray());
     }
 
     private async Task ToggleServerTrack(bool enabled)
