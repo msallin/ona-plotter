@@ -44,7 +44,40 @@ public interface IAlarmRule
     /// depth to be above threshold for 5 minutes before it re-fires).
     /// </summary>
     void OnDismissed(AlarmInfo dismissed, DateTime at) { }
+
+    /// <summary>
+    /// Exposes the rule's post-dismiss rearm state to the UI so a chip
+    /// can tell the helm "SHALLOW armed again in 3m, waiting for clear
+    /// depth". Returns null when the rule is either fully armed or has
+    /// never been dismissed. Default implementation returns null; rules
+    /// with a meaningful rearm window (currently only SHALLOW) override.
+    /// <para>
+    /// Note: manager-level <see cref="AlarmManager.DismissCooldownSeconds"/>
+    /// is a baseline 30 s per-key cooldown that runs IN ADDITION to
+    /// whatever a rule reports here. The manager-level cooldown is a
+    /// lower bound -- the rule's rearm policy can extend it further
+    /// (e.g. SHALLOW's 5 min of sustained-clear depth) but can't shorten it.
+    /// </para>
+    /// </summary>
+    AlarmRearmInfo? GetRearmStatus(DateTime now) => null;
 }
+
+/// <summary>
+/// Rule-level "alarm is temporarily suppressed, here's why" info,
+/// surfaced next to the snooze-chips so the helm can see that an
+/// alarm is intentionally silent rather than assuming it's broken.
+/// </summary>
+/// <param name="Title">Rule title, e.g. "SHALLOW".</param>
+/// <param name="SecondsRemaining">Approximate seconds until the rule
+/// can re-arm. May be 0 or negative if the rule is waiting on an
+/// external condition (e.g. depth is still below threshold); UI should
+/// treat non-positive values as "indefinite".</param>
+/// <param name="Hint">Short human-readable reason, e.g.
+/// "waiting 5 min of clear depth".</param>
+public readonly record struct AlarmRearmInfo(
+    string Title,
+    double SecondsRemaining,
+    string Hint);
 
 /// <summary>
 /// Read-only bag of everything a rule might need. Passed by value to keep

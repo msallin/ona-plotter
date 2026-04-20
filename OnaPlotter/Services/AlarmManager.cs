@@ -86,6 +86,21 @@ public sealed class AlarmManager : IAlarmManager
         .OrderBy(s => s.ExpiresAt)
         .ToList();
 
+    /// <summary>
+    /// Rules that are currently in a post-dismiss rearm window.
+    /// Surfaces as small chips in the UI so the helm can see why a
+    /// just-dismissed alarm isn't firing again right now. Currently
+    /// only SHALLOW reports here; extensibility via IAlarmRule.
+    /// GetRearmStatus so future rules (e.g. wind-shift cooldown) can
+    /// contribute without changing this signature.
+    /// </summary>
+    public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now) =>
+        _rules
+            .Select(r => r.GetRearmStatus(now))
+            .Where(x => x is not null)
+            .Select(x => x!.Value)
+            .ToList();
+
     public IReadOnlyList<DismissedAlarm> DismissedHistory => _history.AsReadOnly();
 
     public int SnoozeDurationMinutes =>

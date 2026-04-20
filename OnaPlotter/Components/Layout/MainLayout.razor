@@ -136,7 +136,15 @@
             </div>
         }
 
-        @if (snoozed.Count > 0)
+        @{
+            // Rule-level rearm chips render in the same row as the
+            // snooze chips so the helm has one place to look for
+            // "why is that alarm silent?". Evaluated each render so
+            // the countdown updates smoothly between AlarmManager
+            // eval ticks (which run at 1 Hz).
+            var rearms = Alarms.RearmStatuses(DateTime.UtcNow);
+        }
+        @if (snoozed.Count > 0 || rearms.Count > 0)
         {
             <div class="snooze-chips">
                 @foreach (var s in snoozed)
@@ -147,6 +155,14 @@
                         <span class="snooze-chip-time">@FormatRemaining(s.ExpiresAt)</span>
                         <span class="snooze-chip-close">x</span>
                     </button>
+                }
+                @foreach (var r in rearms)
+                {
+                    <span class="snooze-chip rearm-chip" @key="r.Title"
+                          title="@r.Hint -- alarm is in post-dismiss cooldown">
+                        <span class="snooze-chip-label">@r.Title armed in</span>
+                        <span class="snooze-chip-time">@FormatRearmRemaining(r)</span>
+                    </span>
                 }
             </div>
         }
@@ -539,6 +555,25 @@
         if (remaining.TotalSeconds <= 0) return "0m";
         int minutes = (int)Math.Ceiling(remaining.TotalMinutes);
         return $"{minutes}m";
+    }
+
+    /// <summary>
+    /// Renders the rearm chip's countdown. SecondsRemaining == 0 means
+    /// the rule is waiting on an external condition (depth still below
+    /// threshold for SHALLOW) -- show a hyphen instead of zeroes so the
+    /// user understands it's not a countdown that will tick down on its
+    /// own. Positive values round up to the nearest minute while above
+    /// 60 s, seconds below that for the last-minute precision.
+    /// </summary>
+    private static string FormatRearmRemaining(AlarmRearmInfo r)
+    {
+        if (r.SecondsRemaining <= 0) return "--";
+        if (r.SecondsRemaining >= 60)
+        {
+            int minutes = (int)Math.Ceiling(r.SecondsRemaining / 60.0);
+            return $"{minutes}m";
+        }
+        return $"{(int)Math.Ceiling(r.SecondsRemaining)}s";
     }
 
     private static string FormatReason(DismissReason reason) => reason switch

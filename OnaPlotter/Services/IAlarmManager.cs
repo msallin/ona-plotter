@@ -33,6 +33,13 @@ public interface IAlarmManager
     /// includes a label and expiry so the UI can render a countdown chip.</summary>
     IReadOnlyList<SnoozedTarget> SnoozedTargets { get; }
 
+    /// <summary>Rules currently in a post-dismiss rearm window. UI
+    /// renders one chip per entry next to the snooze chips so the
+    /// helm can see why a just-dismissed alarm is silent. Evaluated
+    /// per call so the remaining-seconds field is fresh on each
+    /// render.</summary>
+    IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now);
+
     /// <summary>Ring buffer of the last N alarms that left the active
     /// stack (user dismiss / user snooze / auto-clear), newest first.
     /// For the "why did it beep?" post-mortem drawer.</summary>

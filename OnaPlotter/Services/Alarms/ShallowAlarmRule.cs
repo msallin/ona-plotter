@@ -83,4 +83,39 @@ public sealed class ShallowAlarmRule : IAlarmRule
         _dismissedAt = at;
         _sustainedClearFrom = null;
     }
+
+    /// <summary>
+    /// While in the post-dismiss cooldown, surface a chip in the UI
+    /// explaining the state and (when we're already timing a clear
+    /// window) counting down the seconds to re-arm. SecondsRemaining
+    /// is computed here, not stashed, so a per-frame render updates
+    /// the countdown smoothly without waiting for the next Check tick.
+    /// </summary>
+    public AlarmRearmInfo? GetRearmStatus(DateTime now)
+    {
+        if (_dismissedAt is null) return null;
+        if (_sustainedClearFrom is null)
+        {
+            // Depth is (still, or again) below threshold; we're not
+            // counting down, we're waiting for the condition to clear.
+            // SecondsRemaining = 0 signals "indefinite" to the UI.
+            return new AlarmRearmInfo(
+                Title: Title,
+                SecondsRemaining: 0,
+                Hint: "waiting for clear depth");
+        }
+        var elapsed = now - _sustainedClearFrom.Value;
+        var remaining = RearmClearDuration - elapsed;
+        if (remaining <= TimeSpan.Zero)
+        {
+            // Rearm has technically completed but Check hasn't run yet
+            // to flip state. Report 0 + "about to arm" so the chip can
+            // gracefully disappear on the next tick.
+            return new AlarmRearmInfo(Title, 0, "about to arm");
+        }
+        return new AlarmRearmInfo(
+            Title: Title,
+            SecondsRemaining: remaining.TotalSeconds,
+            Hint: "clear-depth countdown");
+    }
 }
