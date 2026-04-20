@@ -422,18 +422,21 @@
     private bool mapInitialized;
     private bool chartPanelOpen;
     private bool fullscreen;
-    private double? prevLat, prevLon;
     private System.Threading.Timer? aisTimer;
     private System.Threading.Timer? resourcePollTimer;
     // Active route navigation state.
     private string? lastActiveRouteHref;
     private double[][]? activeRouteCoords;
-    private bool courseLineDrawn;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
     private bool legendOpen;
-    private int laylinesSkip;  // Throttle: update laylines every 5th position fix.
+    // Per-tick frame-building state (previous position, laylines
+    // throttle counter, course-line-drawn flag) lives in this builder
+    // so the decision tree in HandleDataChanged stays small and the
+    // logic is unit-testable without a JS runtime. See MapFrameBuilder.
+    private readonly OnaPlotter.Utilities.MapFrameBuilder _frameBuilder =
+        new() { LaylinePushEveryNFixes = LaylinePushEveryNFixes, MinCurrentDriftMs = MinCurrentDriftMs };
     private string mapOrientation = "north"; // "north", "course", "head"
     private string mapOrientationLabel = "N\u2191";
     // Route editing state.
@@ -800,8 +803,8 @@
         {
             var jsPoints = points.Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 }).ToArray();
             await module.InvokeVoidAsync("setColoredTrack", (object)jsPoints);
-            prevLat = points[^1].Latitude;
-            prevLon = points[^1].Longitude;
+            _frameBuilder.PrevLat = points[^1].Latitude;
+            _frameBuilder.PrevLon = points[^1].Longitude;
         }
 
         // Load available charts and routes from SignalK server. Any of these
@@ -1161,114 +1164,16 @@
 
         try
         {
-            // Build a single frame object for the batched applyFrame
-            // interop call. One bridge crossing per tick instead of up
-            // to six. The JS side unpacks the object and dispatches to
-            // the same underlying functions that used to be called
-            // individually; behaviour is unchanged.
-            double? bLat = Data.Latitude;
-            double? bLon = Data.Longitude;
-
-            object? posField = (bLat is not null && bLon is not null)
-                ? new
-                {
-                    lat = bLat,
-                    lon = bLon,
-                    headingRad = Data.Heading,
-                    cogRad = Data.CourseOverGround,
-                    sogMs = Data.SpeedOverGround
-                }
-                : null;
-
-            // Track point shape: [lat, lon, sog, prevLat, prevLon].
-            double[]? trackField = null;
-            if (bLat is not null && bLon is not null
-                && prevLat is not null && prevLon is not null)
-            {
-                trackField = new[]
-                {
-                    bLat.Value, bLon.Value,
-                    Data.SpeedOverGround ?? 0,
-                    prevLat.Value, prevLon.Value
-                };
-            }
-            if (bLat is not null && bLon is not null)
-            {
-                prevLat = bLat;
-                prevLon = bLon;
-            }
-
-            // Course line + clear flag. JS side handles either present
-            // or the explicit clearCourse boolean.
-            object? courseField = null;
-            bool clearCourse = false;
-            var wpLat = Data.CourseNextPointLatitude;
-            var wpLon = Data.CourseNextPointLongitude;
-            if (wpLat is not null && wpLon is not null && bLat is not null && bLon is not null)
-            {
-                courseField = new
-                {
-                    wpLat,
-                    wpLon,
-                    prevLat = Data.CoursePreviousPointLatitude,
-                    prevLon = Data.CoursePreviousPointLongitude,
-                    xte = Data.CrossTrackError
-                };
-                courseLineDrawn = true;
-            }
-            else if (courseLineDrawn)
-            {
-                clearCourse = true;
-                courseLineDrawn = false;
-            }
-
-            // Tidal current arrow. Only included when drift is meaningful.
-            object? currentField = null;
-            if (Data.CurrentSet is not null && Data.CurrentDrift is not null
-                && Data.CurrentDrift > MinCurrentDriftMs
-                && bLat is not null && bLon is not null)
-            {
-                currentField = new
-                {
-                    lat = bLat,
-                    lon = bLon,
-                    setRad = Data.CurrentSet,
-                    driftMs = Data.CurrentDrift
-                };
-            }
-
-            // Laylines throttled to every Nth fix (expensive vector math
-            // in JS + SVG draw on fast clients). Skip counter lives outside
-            // the frame so its state survives between calls.
-            object? laylinesField = null;
-            if (laylinesVisible && Data.WindDirectionTrue is not null
-                && bLat is not null && bLon is not null
-                && ++laylinesSkip >= LaylinePushEveryNFixes)
-            {
-                laylinesSkip = 0;
-                double twa = Data.WindAngleTrue is not null
-                    ? Math.Abs(Data.WindAngleTrue.Value)
-                    : 45.0 * Math.PI / 180.0;
-                laylinesField = new
-                {
-                    lat = bLat,
-                    lon = bLon,
-                    twdRad = Data.WindDirectionTrue,
-                    twaRad = twa,
-                    wpLat = Data.HasActiveCourse ? Data.CourseNextPointLatitude : null,
-                    wpLon = Data.HasActiveCourse ? Data.CourseNextPointLongitude : null
-                };
-            }
-
-            await module.InvokeVoidAsync("applyFrame", new
-            {
-                pos = posField,
-                track = trackField,
-                course = courseField,
-                clearCourse,
-                current = currentField,
-                laylines = laylinesField
-            });
+            // Build the per-tick frame via the extracted builder. One
+            // Blazor->JS bridge crossing per tick for up to six
+            // overlays (position / track segment / course line / clear-
+            // course / current arrow / laylines). Blazor's default
+            // JSRuntime JsonOptions is CamelCase so the record-struct
+            // fields arrive in JS as `pos.lat`, `pos.headingRad`, etc,
+            // which is exactly what applyFrame expects.
+            _frameBuilder.LaylinesVisible = laylinesVisible;
+            var frame = _frameBuilder.Build(Data);
+            await module.InvokeVoidAsync("applyFrame", frame);
 
             // Sync server-side anchor alarm to map visualization. Kept
             // out of applyFrame because it has its own diff-before-push
@@ -2614,7 +2519,7 @@
             await module.InvokeVoidAsync("clearActiveRoute");
             await module.InvokeVoidAsync("clearCourseLine");
             activeRouteCoords = null;
-            courseLineDrawn = false;
+            _frameBuilder.CourseLineDrawn = false;
         }
 
         lastActiveRouteHref = currentHref;
