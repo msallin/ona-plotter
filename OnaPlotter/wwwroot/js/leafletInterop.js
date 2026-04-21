@@ -208,12 +208,24 @@ const NauticalScale = L.Control.Scale.extend({
         // the metric bar's behaviour exactly so both stack at the same px
         // width within a factor of 1.85 (nm/km ratio).
         this._nauticalLine.style.width = ((d * 1852) / maxMeters * this.options.maxWidth) + 'px';
-        // Label rule matches metric ("500 m" -> "1 km"): at < 1 nm we drop
-        // to cables (0.1 nm). _getRoundNum's 1-2-3-5-10 steps in nm produce
-        // 1 cbl / 2 cbl / 3 cbl / 5 cbl / 1 nm / 2 nm / 3 nm / 5 nm / 10 nm.
-        this._nauticalLine.innerHTML = d < 1
-            ? `${Math.round(d * 10)} cbl`
-            : `${d} nm`;
+        // Label rules, small-to-large:
+        //   * d <  0.1 nm  (~185 m)  : metres, rounded to 10 m
+        //   * d <  1   nm             : cables (0.1 nm), one decimal
+        //   * otherwise               : nautical miles, integer
+        // Without the metres case a berth-level zoom would show
+        // "0 cbl" because Math.round(0.02 * 10) = 0.
+        const metres = d * 1852;
+        if (d < 0.1) {
+            const rounded = Math.max(10, Math.round(metres / 10) * 10);
+            this._nauticalLine.innerHTML = `${rounded} m`;
+        } else if (d < 1) {
+            // Trim "1.0 cbl" to "1 cbl" but keep "1.5 cbl".
+            const cbl = Math.round(d * 100) / 10;
+            const label = Number.isInteger(cbl) ? `${cbl.toFixed(0)}` : `${cbl.toFixed(1)}`;
+            this._nauticalLine.innerHTML = `${label} cbl`;
+        } else {
+            this._nauticalLine.innerHTML = `${d} nm`;
+        }
     },
     onRemove(map) {
         // Avoid leaking the move listener when the control (or map) is torn
@@ -610,7 +622,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Metric ON (km/m) + Nautical ON (custom subclass below, since
     // Leaflet's built-in is only metric / imperial). Imperial OFF --
     // nobody plots in miles at sea.
-    L.control.scale({ metric: true, imperial: false, maxWidth: 140, position: 'bottomleft' }).addTo(map);
+    // Single nautical scale bar. Used to stack a metric + a nautical
+    // line, but a chartplotter is nautical-centric everywhere else
+    // (depth m, speed kn, distance nm); two parallel bars was just
+    // noise and wasted 10 vertical px at the bottom-left corner.
+    // NauticalScale drops to cables under 1 nm so it doesn't snap
+    // blank at the zoomed-in scale either.
     new NauticalScale({ position: 'bottomleft', maxWidth: 140 }).addTo(map);
 
     // Zoom-level badge: "z 14" chip, amber when the top chart is

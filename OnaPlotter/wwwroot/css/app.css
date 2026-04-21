@@ -492,27 +492,26 @@ article.content:has(.map-container) {
 .hud-bottom-left { bottom: 12px; left: 12px; }
 .hud-bottom-right{ bottom: 12px; right: 12px; }
 
-/* When the conn-chip is actually rendered (fullscreen), push the left HUD
-   below it so they don't overlap. */
-.map-container.map-fullscreen .hud-top-left,
-.map-container:fullscreen .hud-top-left { top: 44px; }
-
 /* Fullscreen breathing room: in normal (non-fullscreen) layout the map
    sits inside app chrome so 12 px of edge-inset reads fine. In
    fullscreen the HUD cards hug the hard screen edge which looks
    cramped, and on iOS notched devices a couple of pixels are eaten by
-   the safe area. Push the corners inward to 24 px and stack the
-   safe-area inset on top so the cards never end up under a notch.
-   The top-left still lives below the conn-chip (~44 px); others just
-   get the bigger inset. */
+   the safe area. Both top HUDs share a single top anchor (56 px
+   baseline) so SOG and AWS visually align and neither sits on top of
+   the live / stale / offline chip at the top-left corner (which is
+   only rendered in fullscreen). */
+.map-container.map-fullscreen .hud-top-left,
+.map-container:fullscreen .hud-top-left,
+.map-container.map-fullscreen .hud-top-right,
+.map-container:fullscreen .hud-top-right {
+    top: max(56px, calc(44px + env(safe-area-inset-top)));
+}
 .map-container.map-fullscreen .hud-top-left,
 .map-container:fullscreen .hud-top-left {
-    top: max(56px, calc(44px + env(safe-area-inset-top)));
     left: max(24px, env(safe-area-inset-left));
 }
 .map-container.map-fullscreen .hud-top-right,
 .map-container:fullscreen .hud-top-right {
-    top: max(24px, env(safe-area-inset-top));
     right: max(68px, calc(56px + env(safe-area-inset-right))); /* +12 vs. default so zoom ctrl stays clear */
 }
 .map-container.map-fullscreen .hud-bottom-left,

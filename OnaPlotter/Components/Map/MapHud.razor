@@ -156,8 +156,13 @@
                    glyph that colour-blind sailors can read. Paired with the
                    traffic-light colouring so both channels carry the signal. *@
                 <span class="depth-warn-glyph" aria-label="depth below alarm threshold">&#9888;</span>
-            }@if (FormatDepthTrend() is string trendLabel)
+            }@if (expandedHud == "bl" && FormatDepthTrend() is string trendLabel)
             {
+                @* Trend arrow is only meaningful when the user has room
+                   to parse it -- compact card stays to just "depth &
+                   threshold" so the number stays big. Press / click the
+                   card to expand and the trend arrow + m/min rate join
+                   the depth reading in-line. *@
                 <span class="depth-trend @DepthTrendClass()"
                       title="1-minute average change">@((MarkupString)trendLabel)</span>
             }</div>
