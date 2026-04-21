@@ -3871,6 +3871,16 @@ main:has(.map-container.big-type) .map-fab-item {
     max-width: 95%;
 }
 
+/* Crosshair cursor on the route-edit hit-line so helms discover
+   that clicking between two numbered waypoints inserts a new one.
+   Without the affordance users assume every map click appends at
+   the end; with it, the mental model is "click = drop here".
+   Applied to the SVG <path> that Leaflet renders for the
+   interactive polyline. */
+.route-edit-hit-line {
+    cursor: crosshair;
+}
+
 .route-edit-hint {
     position: absolute;
     top: 10px;

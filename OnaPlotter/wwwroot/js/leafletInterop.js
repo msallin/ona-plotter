@@ -690,6 +690,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // mode, drop a measurement point. Otherwise just dismiss menus.
     map.on('click', (e) => {
         if (routeEditMode) {
+            // L.DomEvent.stopPropagation on the polyline click
+            // doesn't actually stop Leaflet's map-level click dispatch
+            // (different event channels), so a leg-click fires
+            // insertEditVertexOnSegment AND then the map-click would
+            // also append the same point at the end. The segment
+            // handler sets a short-lived suppression flag; we honour
+            // it here.
+            if (routeEditSuppressNextMapClick) {
+                routeEditSuppressNextMapClick = false;
+                return;
+            }
             addEditWaypoint(e.latlng.lat, e.latlng.lng);
             return;
         }
@@ -2143,6 +2154,13 @@ function makeEditWpIcon(num) {
 }
 
 let routeEditHitLine = null;   // wide, transparent; used for touch-friendly tapping
+// Set briefly inside insertEditVertexOnSegment; consumed by the
+// map-click handler on the very next click event. Stops an
+// insert-on-leg from also appending the point at the end of the
+// route via the map-click fallback. A flag rather than Leaflet's
+// stopPropagation because Leaflet's map click is a separate dispatch
+// channel that DOM-level stopPropagation doesn't intercept.
+let routeEditSuppressNextMapClick = false;
 
 function redrawEditLine() {
     if (!routeEditLine && routeEditCoords.length >= 2) {
@@ -2158,6 +2176,10 @@ function redrawEditLine() {
         // insert-between-segment handler.
         routeEditHitLine = L.polyline(routeEditCoords, {
             color: '#a78bfa', weight: 20, opacity: 0, interactive: true,
+            // Crosshair cursor on hover so it's discoverable that
+            // clicking a leg inserts a waypoint between existing ones,
+            // rather than appending at the end.
+            className: 'route-edit-hit-line',
         }).addTo(routeEditLayer);
         const onSegmentClick = (e) => {
             L.DomEvent.stopPropagation(e);
@@ -2187,6 +2209,11 @@ function insertEditVertexOnSegment(ll) {
     }
     // Insert at bestIdx + 1 so the order becomes ... prev, new, next ...
     routeEditCoords.splice(bestIdx + 1, 0, [ll.lat, ll.lng]);
+    // Signal the map-level click handler (fires immediately after
+    // this one in Leaflet's dispatch order) to skip the append-on-
+    // map-click fallback. Without this the user gets a phantom Nth+1
+    // waypoint at the end on every leg click.
+    routeEditSuppressNextMapClick = true;
     rebuildRouteEditMarkers();
 }
 
