@@ -29,11 +29,15 @@
  * skipped silently (forward-compat with server versions that add
  * fields we don't know about).
  *
+ * A module-level Reader is reused across calls so the DataView +
+ * Reader instance allocation cost doesn't scale with the spoke-
+ * frame rate (up to ~50 frames / sec on HALO).
+ *
  * @param {Uint8Array} bytes
  * @returns {{ spokes: Array<Spoke> }}
  */
 export function decodeRadarMessage(bytes) {
-    const r = new Reader(bytes);
+    const r = (_scratchReader ??= new Reader(new Uint8Array(1))).reset(bytes);
     const spokes = [];
     while (!r.atEnd()) {
         const tag = r.varint();
@@ -50,6 +54,11 @@ export function decodeRadarMessage(bytes) {
     }
     return { spokes };
 }
+
+// Lazy-init scratch Reader. Declared as let so the first call to
+// decodeRadarMessage can `??=` it into existence AFTER the Reader
+// class declaration has been evaluated (TDZ bites eager init).
+let _scratchReader = null;
 
 /**
  * @typedef {Object} Spoke
@@ -97,11 +106,18 @@ const EMPTY_BYTES = new Uint8Array(0);
 // time. Single-file, no class hierarchy: this is the only consumer.
 class Reader {
     constructor(bytes) {
+        this.reset(bytes);
+    }
+
+    /** Re-target the reader at a new buffer without allocating.
+     *  The underlying DataView is rebuilt because it's anchored to
+     *  a specific (buffer, byteOffset, byteLength) triplet; that's
+     *  one allocation per decode rather than two. */
+    reset(bytes) {
         this.buf = bytes;
         this.offset = 0;
-        // Shared DataView for double reads. Created once -- constructing
-        // one per spoke cost ~15% of total decode time in profiling.
         this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        return this;
     }
 
     atEnd() { return this.offset >= this.buf.length; }
@@ -143,20 +159,37 @@ class Reader {
         return new Uint8Array(this.buf.buffer, this.buf.byteOffset + start, len);
     }
 
-    /** Reads an IEEE-754 little-endian double (wire type 1). */
+    /** Reads an IEEE-754 little-endian double (wire type 1). Bounds-
+     *  checks so a truncated frame throws our uniform "ran off end"
+     *  error instead of DataView's own RangeError. */
     double() {
+        if (this.offset + 8 > this.buf.length) throw new Error('radar: double ran off end');
         const d = this.view.getFloat64(this.offset, true);
         this.offset += 8;
         return d;
     }
 
-    /** Skips a field of the given wire type. Unknown-field tolerance. */
+    /** Skips a field of the given wire type. Bounds-checks so a
+     *  truncated frame throws rather than silently running past the
+     *  buffer. Wire types 3 / 4 (deprecated start/end group) are
+     *  rejected -- real proto3 servers never emit them. */
     skip(wire) {
         switch (wire) {
             case 0: this.varint(); break;            // varint
-            case 1: this.offset += 8; break;         // 64-bit fixed
-            case 2: { const len = this.varint(); this.offset += len; break; }
-            case 5: this.offset += 4; break;         // 32-bit fixed
+            case 1:
+                if (this.offset + 8 > this.buf.length) throw new Error('radar: 64-fixed ran off end');
+                this.offset += 8;
+                break;
+            case 2: {
+                const len = this.varint();
+                if (this.offset + len > this.buf.length) throw new Error('radar: skip bytes ran off end');
+                this.offset += len;
+                break;
+            }
+            case 5:
+                if (this.offset + 4 > this.buf.length) throw new Error('radar: 32-fixed ran off end');
+                this.offset += 4;
+                break;
             default: throw new Error('radar: unknown wire type ' + wire);
         }
     }

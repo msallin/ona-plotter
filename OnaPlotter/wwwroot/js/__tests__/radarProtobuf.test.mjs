@@ -211,3 +211,31 @@ test('truncated bytes field throws, not silent corruption', () => {
     ]);
     assert.throws(() => decodeRadarMessage(bytes), /ran off end/);
 });
+
+test('truncated double field throws our error, not RangeError', () => {
+    // Spoke body declares lat (wire 1) at the end, then only 3 bytes.
+    // Previously DataView.getFloat64 would surface a RangeError; we
+    // want the uniform "ran off end" failure mode.
+    const spokeBody = [
+        (1 << 3) | 0, ...encodeVarint(5),
+        (6 << 3) | 1, 1, 2, 3,     // lat starts but only 3 of 8 bytes
+    ];
+    const bytes = new Uint8Array([
+        (2 << 3) | 2, ...encodeVarint(spokeBody.length), ...spokeBody,
+    ]);
+    assert.throws(() => decodeRadarMessage(bytes), /double ran off end/);
+});
+
+test('repeat decode calls reuse the Reader without leaking state', () => {
+    // Perf: the module-level scratch Reader is reused across calls.
+    // Verify the second call doesn't carry state from the first.
+    const a = encodeMessage([{ angle: 1, range: 10, data: [1] }]);
+    const b = encodeMessage([{ angle: 99, range: 1000, data: [9] }]);
+    const ma = decodeRadarMessage(a);
+    const mb = decodeRadarMessage(b);
+    assert.equal(ma.spokes[0].angle, 1);
+    assert.equal(mb.spokes[0].angle, 99);
+    // Ensure the Uint8Array views remained valid across the swap.
+    assert.deepEqual([...ma.spokes[0].data], [1]);
+    assert.deepEqual([...mb.spokes[0].data], [9]);
+});

@@ -89,6 +89,89 @@ public class RadarApiParseTests
     }
 
     [Test]
+    public async Task ParseRadarList_WrappedShape_UnwrapsVersionEnvelope()
+    {
+        // Spec TypeScript section: { version, radars: {...} }. The
+        // v3.1 reference impl doesn't ship this yet but the spec
+        // reserves the right to, so we parse it defensively.
+        const string json = """
+            {
+              "version": "3.1.0",
+              "radars": {
+                "nav1": { "name": "HALO A", "brand": "Navico" },
+                "nav2": { "name": "HALO B", "brand": "Navico" }
+              }
+            }
+            """;
+        var list = RadarApi.ParseRadarList(JsonDocument.Parse(json).RootElement);
+        await Assert.That(list.Count).IsEqualTo(2);
+        await Assert.That(list[0].Id).IsEqualTo("nav1");
+        await Assert.That(list[1].Id).IsEqualTo("nav2");
+    }
+
+    [Test]
+    public async Task ParseRadarList_WrappedShape_UnwrapsArrayPayload()
+    {
+        // Wrapper + inner array is also plausible (old behaviour
+        // migrating to wrapped). Must still yield the entries.
+        const string json = """
+            {
+              "version": "3.1.0",
+              "radars": [
+                { "id": "nav0231A", "name": "HALO A", "brand": "Navico" }
+              ]
+            }
+            """;
+        var list = RadarApi.ParseRadarList(JsonDocument.Parse(json).RootElement);
+        await Assert.That(list.Count).IsEqualTo(1);
+        await Assert.That(list[0].Id).IsEqualTo("nav0231A");
+    }
+
+    [Test]
+    public async Task ParseRadarList_DictShape_SkipsNonObjectValues()
+    {
+        // A server that shoves a version string into the same object
+        // as radar entries (poor taste, but observed in the wild)
+        // would otherwise cause Deserialize to fail on the string;
+        // we skip non-object entries silently.
+        const string json = """
+            {
+              "version": "3.1.0",
+              "nav1": { "name": "HALO A", "brand": "Navico" }
+            }
+            """;
+        var list = RadarApi.ParseRadarList(JsonDocument.Parse(json).RootElement);
+        // Note: "version" is not a "radars" property so the unwrap
+        // branch doesn't fire; the outer object has one radar-shape
+        // entry plus one string-valued entry which we skip.
+        await Assert.That(list.Count).IsEqualTo(1);
+        await Assert.That(list[0].Id).IsEqualTo("nav1");
+    }
+
+    [Test]
+    public async Task LegendPixel_NestedObjectValue_DoesNotDesyncReader()
+    {
+        // Pedantic guard: if a non-conforming server ships a nested
+        // object or array as a channel value, we clamp to zero AND
+        // advance the reader past the whole value. Previously the
+        // reader was left mid-object and the outer loop's EndObject
+        // check tripped on the nested brace, dropping subsequent
+        // channels. This test pins the fix.
+        const string json = """
+            { "type": "normal", "color": { "r": { "nested": 5 }, "g": 128, "b": 64 } }
+            """;
+
+        var p = JsonSerializer.Deserialize<LegendPixel>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        await Assert.That(p).IsNotNull();
+        // r clamped to 0 (unparseable); g + b must still land.
+        await Assert.That(p!.Color.R).IsEqualTo((byte)0);
+        await Assert.That(p.Color.G).IsEqualTo((byte)128);
+        await Assert.That(p.Color.B).IsEqualTo((byte)64);
+    }
+
+    [Test]
     public async Task ParseRadarList_EmptyInputs_ReturnEmptyList()
     {
         await Assert.That(RadarApi.ParseRadarList(JsonDocument.Parse("[]").RootElement).Count).IsEqualTo(0);

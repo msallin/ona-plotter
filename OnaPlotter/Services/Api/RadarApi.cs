@@ -41,37 +41,59 @@ public sealed class RadarApi : IRadarApi
         {
             if (!response.IsSuccessStatusCode) return [];
 
-            // Two shapes; one HTTP hit, parse the JSON once and branch.
-            using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            return ParseRadarList(doc.RootElement);
+            // Three shapes in the wild; parse the JSON once and branch.
+            // A malformed body just means "no radars visible right now"
+            // rather than an error toast -- the UI polls again later.
+            try
+            {
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                return ParseRadarList(doc.RootElement);
+            }
+            catch (JsonException) { return []; }
         }
     }
 
-    // Extracted so a unit test can feed it sample JSON from the spec
-    // without needing an HttpClient harness.
+    // Internal for unit testing; production callers use GetAllAsync.
+    // Three input shapes in the wild; we normalise to the same flat
+    // list regardless of how the server chose to frame things:
+    //   (A) Array:   [{id, name, brand, ...}, ...]           (mayara / openplotter today)
+    //   (B) Dict:    { "nav1034A": {...}, "nav1034B": {...}} (radar_api.md REST example)
+    //   (C) Wrapped: { "version": "3.1", "radars": { ... } } (radar_api.md TypeScript spec)
+    // The wrapped form nests either form (A) or (B) under "radars".
     internal static List<RadarInfo> ParseRadarList(JsonElement root)
     {
+        // Unwrap the versioned envelope if present, then dispatch on
+        // the shape of the payload. Missing "radars" property falls
+        // through to the object branch below and yields no entries,
+        // which is harmless.
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("radars", out var inner) &&
+            (inner.ValueKind == JsonValueKind.Object || inner.ValueKind == JsonValueKind.Array))
+        {
+            root = inner;
+        }
+
         var list = new List<RadarInfo>();
         switch (root.ValueKind)
         {
             case JsonValueKind.Array:
-                // Current openplotter shape: [{id, name, brand, ...}, ...]
                 foreach (var el in root.EnumerateArray())
                 {
                     var info = el.Deserialize<RadarInfo>(s_json);
                     if (info is null) continue;
-                    // Server included id inline; keep it.
                     list.Add(info);
                 }
                 break;
             case JsonValueKind.Object:
-                // Spec shape: { "nav1034A": {...}, "nav1034B": {...} }.
                 // Per-entry id is the dict key; copy it onto the DTO
                 // so downstream code doesn't have to thread the key.
                 foreach (var prop in root.EnumerateObject())
                 {
-                    var info = prop.Value.Deserialize<RadarInfo>(s_json);
+                    if (prop.Value.ValueKind != JsonValueKind.Object) continue;
+                    RadarInfo? info;
+                    try { info = prop.Value.Deserialize<RadarInfo>(s_json); }
+                    catch (JsonException) { continue; }
                     if (info is null) continue;
                     if (string.IsNullOrEmpty(info.Id)) info.Id = prop.Name;
                     list.Add(info);

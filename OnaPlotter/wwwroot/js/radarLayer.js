@@ -2,6 +2,11 @@
 // canvas anchored at own-boat position, scaled to the radar's
 // current range.
 //
+// Dependency note: this module uses the global `L` (Leaflet)
+// symbol (L.imageOverlay, L.latLngBounds). Leaflet is loaded as a
+// script tag in the host HTML, not as an ES module import, which
+// is why there's no `import L from 'leaflet'` here.
+//
 // Design:
 //   * One canvas per radar, sized (2 * maxSpokeLen) square, anchored
 //     as a Leaflet ImageOverlay in a circular geographic bounds
@@ -75,6 +80,14 @@ let boatState = { lat: null, lon: null, headingRad: 0 };
  * @param {number} cfg.range            Current radar range in metres.
  * @param {object} [cfg.legend]         RadarLegend from /capabilities.
  * @param {number} [cfg.opacity]        0..1 overlay opacity; default 0.75.
+ *                                      0.75 was chosen as a balance:
+ *                                      strong returns are clearly
+ *                                      visible against the chart, but
+ *                                      underlying coastlines and depth
+ *                                      contours remain legible through
+ *                                      the sweep. Users who want
+ *                                      pure-radar visibility can push
+ *                                      to 1.0 via the layers UI.
  */
 export function enableRadarOverlay(deps, cfg) {
     if (activeRadars.has(cfg.radarId)) return;
@@ -207,6 +220,15 @@ class RadarOverlay {
         };
         fillFromPalette(DEFAULT_LEGEND_PIXELS);
         if (legend && Array.isArray(legend.pixels)) {
+            if (legend.pixels.length > 256) {
+                // Our byte->RGBA table is sized for the 256 possible
+                // byte values. A legend with more entries is a spec
+                // violation (a pixel byte can only ever be 0-255);
+                // warn so the user notices, then carry on with
+                // truncation.
+                console.warn('[radar] legend has', legend.pixels.length,
+                             'pixels; truncating to 256');
+            }
             // Spec's pixels[] is aligned to byte value -- index N
             // corresponds to byte value N.
             for (let i = 0; i < legend.pixels.length && i < 256; i++) {
@@ -345,12 +367,19 @@ class RadarOverlay {
 
     /** Map a spoke's wire angle/bearing onto our canvas's north-up
      *  spoke index. Bearing (if present) wins since it's already
-     *  true-north-referenced. */
+     *  true-north-referenced. Defensive modulo: spec says bearing
+     *  is a uint32 so it can't be negative on the wire, but JS
+     *  `%` preserves sign for any signed-number corruption coming
+     *  from a non-conforming provider. Cheap to guard, expensive
+     *  to diagnose (negative index -> out-of-bounds LUT read ->
+     *  silently wrong pixels). */
     _spokeIndex(spoke) {
-        if (spoke.bearing != null) return spoke.bearing % this.spokes;
-        const hdgSpokes = Math.round(boatState.headingRad * this.spokes / (2 * Math.PI));
-        const idx = (spoke.angle + hdgSpokes) % this.spokes;
-        return idx < 0 ? idx + this.spokes : idx;
+        const n = this.spokes;
+        if (spoke.bearing != null) {
+            return ((spoke.bearing % n) + n) % n;
+        }
+        const hdgSpokes = Math.round(boatState.headingRad * n / (2 * Math.PI));
+        return (((spoke.angle + hdgSpokes) % n) + n) % n;
     }
 
     setRange(range) {

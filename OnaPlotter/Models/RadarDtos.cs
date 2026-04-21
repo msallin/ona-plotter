@@ -238,9 +238,22 @@ internal sealed class LegendColorConverter : JsonConverter<RadarColor>
                 if (reader.TokenType != JsonTokenType.PropertyName) continue;
                 var name = reader.GetString();
                 reader.Read();
-                byte v = reader.TokenType == JsonTokenType.Number
-                    ? (byte)Math.Clamp(reader.GetInt32(), 0, 255)
-                    : (byte)0;
+                // If the value isn't a primitive number, advance the
+                // reader PAST the whole value (object / array / etc.)
+                // rather than swallowing only the first token. The
+                // earlier code left the reader mid-value and the outer
+                // loop's EndObject check tripped on the nested object's
+                // closing brace, dropping every subsequent property.
+                byte v;
+                if (reader.TokenType == JsonTokenType.Number)
+                {
+                    v = (byte)Math.Clamp(reader.GetInt32(), 0, 255);
+                }
+                else
+                {
+                    v = 0;
+                    reader.Skip();
+                }
                 switch (name)
                 {
                     case "r": r = v; break;
@@ -358,8 +371,13 @@ public sealed class ControlDefinition
 public sealed class ControlValue
 {
     /// <summary>Primary value. Numeric for most controls, string for
-    /// text controls. Left as JsonElement so we don't pick a C#
-    /// primitive before the caller knows the DataType.</summary>
+    /// text controls. Left as <see cref="JsonElement"/> so we don't
+    /// pick a C# primitive before the caller knows the DataType.
+    /// <para>Consumers: <b>do not</b> bind <c>@Value</c> directly from
+    /// a Razor component; read through the typed helpers
+    /// <see cref="NumericValue"/> / <see cref="StringValue"/> instead.
+    /// A JsonElement bound via <c>@bind</c> will stringify the entire
+    /// node (e.g. <c>{"value":42}</c>) into the input.</para></summary>
     [JsonPropertyName("value")]
     public JsonElement? Value { get; set; }
 
