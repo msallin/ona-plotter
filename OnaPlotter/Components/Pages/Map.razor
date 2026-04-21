@@ -18,6 +18,8 @@
 @inject ICourseApi CourseApi
 @inject IAutopilotApi AutopilotApi
 @inject ITrackApi TrackApi
+@inject IRadarApi RadarApi
+@inject ISignalKBaseUrl SkBaseUrl
 @inject IBuddyListApi BuddyListApi
 @inject IPolarService Polar
 @inject IAppSettings Settings
@@ -382,6 +384,8 @@
                      EnabledCharts="enabledCharts"
                      EnabledRoutes="enabledRoutes"
                      QuickBarCharts="quickBarCharts"
+                     AvailableRadars="availableRadars"
+                     EnabledRadars="enabledRadars"
                      ServerTrackVisible="serverTrackVisible"
                      WeatherOverlayVisible="weatherOverlayVisible"
                      LayerFilter="@layerFilter"
@@ -389,6 +393,7 @@
                      OnToggleChart="OnToggleChartCallback"
                      OnToggleChartQuickBar="OnToggleChartQuickBarCallback"
                      OnReorderChart="OnReorderChartCallback"
+                     OnToggleRadar="OnToggleRadarCallback"
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
                      OnNavigateRoute="NavigateRoute"
@@ -478,6 +483,12 @@
     private bool weatherOverlayVisible;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
+    // Radar devices discovered via the Signal K Radar API v3.1.
+    // Populated on map init; re-fetched on the same resource-poll
+    // cadence as routes / waypoints. Empty when no provider plugin
+    // is installed (most servers).
+    private List<RadarInfo> availableRadars = [];
+    private readonly HashSet<string> enabledRadars = [];
     private readonly HashSet<string> enabledCharts = [];
     private readonly HashSet<string> enabledRoutes = [];
     // Subset of availableCharts the user has pinned to the on-map
@@ -555,6 +566,70 @@
 
     private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
         ToggleChart(t.chart, t.enabled);
+
+    // Radar overlay toggle. On enable, hand the JS layer the spoke
+    // WebSocket URL + capabilities so it can open the stream. On
+    // disable, tear down the canvas + socket by id.
+    private async Task OnToggleRadarCallback((RadarInfo radar, bool enabled) t)
+    {
+        if (module is null) return;
+        if (string.IsNullOrEmpty(t.radar.Id)) return;
+
+        if (t.enabled)
+        {
+            // Capabilities + live controls are fetched alongside the
+            // toggle so the JS layer gets the legend + exact spokes/
+            // range values. If /capabilities 404s we still try with
+            // whatever the device-list response gave us -- some
+            // servers embed the runtime snapshot inline, and that's
+            // enough to render.
+            var caps = await RadarApi.GetCapabilitiesAsync(t.radar.Id);
+            int spokes = caps?.SpokesPerRevolution ?? t.radar.SpokesPerRevolution ?? 2048;
+            int maxLen = caps?.MaxSpokeLength  ?? t.radar.MaxSpokeLen ?? 1024;
+            int range  = t.radar.Range ?? 1000;
+
+            // Build spokeDataUrl. Spec says each RadarInfo includes
+            // one; if the server didn't populate it (older mayara),
+            // construct it from the current page origin -- same
+            // conversion freeboard-sk does.
+            string url = !string.IsNullOrEmpty(t.radar.SpokeDataUrl)
+                ? t.radar.SpokeDataUrl!
+                : BuildSpokeDataUrl(t.radar.Id);
+
+            var cfg = new
+            {
+                radarId = t.radar.Id,
+                spokeDataUrl = url,
+                spokesPerRevolution = spokes,
+                maxSpokeLength = maxLen,
+                range,
+                legend = caps?.Legend,
+                opacity = 0.75,
+            };
+            try { await module.InvokeVoidAsync("startRadarOverlay", cfg); }
+            catch (JSDisconnectedException) { return; }
+            catch (JSException ex) { Toasts.Error($"Radar {t.radar.Name}: overlay failed ({ex.Message})"); return; }
+            enabledRadars.Add(t.radar.Id);
+        }
+        else
+        {
+            try { await module.InvokeVoidAsync("stopRadarOverlay", t.radar.Id); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { /* teardown should not block */ }
+            enabledRadars.Remove(t.radar.Id);
+        }
+    }
+
+    // Falls back to the SK server origin when the server didn't
+    // advertise a spoke URL on the radar list response. ISignalKBaseUrl
+    // hides the auto-vs-configured choice; we just swap http(s) for
+    // ws(s) per spec convention.
+    private string BuildSpokeDataUrl(string radarId)
+    {
+        var baseUri = new Uri(SkBaseUrl.BaseUrl);
+        string scheme = baseUri.Scheme == "https" ? "wss" : "ws";
+        return $"{scheme}://{baseUri.Host}:{baseUri.Port}/signalk/v2/api/vessels/self/radars/{Uri.EscapeDataString(radarId)}/spokes";
+    }
 
     // Layers -> Charts checkbox toggles membership of the quick-bar
     // set (curation). Rendering is controlled by the quick bar itself.
@@ -838,6 +913,11 @@
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? [];
         loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? [];
         loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? [];
+        // Radar device discovery. Empty list when no radar-provider
+        // plugin is installed, which is the common case; the Layers
+        // panel hides the section entirely in that state.
+        availableRadars = (await SafeLoad(() => RadarApi.GetAllAsync(), "radars") ?? [])
+            .ToList();
 
         // Optional: buddy-list plugin. Silently no-ops if not installed.
         // The returned list seeds AisStore so vessels tracked later get

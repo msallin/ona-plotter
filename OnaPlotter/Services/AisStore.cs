@@ -155,6 +155,23 @@ public sealed class AisStore
     }
 
     /// <summary>
+    /// Non-blocklisting remove. Used for radar target deletions
+    /// (Signal K Radar API emits <c>value: null</c> on a target
+    /// path once tracking is cancelled) where the same id may come
+    /// back later and we MUST re-accept the next delta. Evict's
+    /// blocklist would latch the target out permanently.
+    /// </summary>
+    public void RemoveContext(string context)
+    {
+        if (string.IsNullOrEmpty(context)) return;
+        if (_vessels.TryRemove(context, out _))
+        {
+            Interlocked.Increment(ref _version);
+            OnAisUpdated?.Invoke();
+        }
+    }
+
+    /// <summary>
     /// Overwrites the vessel name, typically from an external enrichment source
     /// (MarineTraffic / VesselFinder lookup) when SignalK hasn't yet delivered
     /// an AIS static-data message. No-op if the name is unchanged or the vessel

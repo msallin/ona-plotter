@@ -59,10 +59,40 @@ public class SignalkClientRadarParseTests
     }
 
     [Test]
-    public async Task Parse_RejectsMissingField()
+    public async Task Parse_SpecShape_BareTargetId()
     {
-        // Must have a field after the target id, not just a bare target.
-        await Assert.That(SignalkClient.TryParseRadarTargetPath("radars.r1.targets.t1").HasValue).IsFalse();
+        // Radar API v3.1 delta path stops at the target id; the value
+        // carries the whole target object. Must now parse (with a
+        // null field to signal "whole-object shape") instead of
+        // being rejected as before.
+        var r = SignalkClient.TryParseRadarTargetPath("radars.r1.targets.t1");
+        await Assert.That(r.HasValue).IsTrue();
+        await Assert.That(r!.Value.radarId).IsEqualTo("r1");
+        await Assert.That(r.Value.targetId).IsEqualTo("t1");
+        await Assert.That(r.Value.field).IsNull();
+    }
+
+    [Test]
+    public async Task Parse_SpecShape_DottedRadarId()
+    {
+        var r = SignalkClient.TryParseRadarTargetPath("radars.192.168.1.42.targets.T001");
+        await Assert.That(r.HasValue).IsTrue();
+        await Assert.That(r!.Value.radarId).IsEqualTo("192.168.1.42");
+        await Assert.That(r.Value.targetId).IsEqualTo("T001");
+        await Assert.That(r.Value.field).IsNull();
+    }
+
+    [Test]
+    public async Task Parse_RejectsTrailingDot()
+    {
+        // "radars.r1.targets.t1." was a spec-shape candidate with an
+        // empty field, which is nonsense. Rejected outright.
         await Assert.That(SignalkClient.TryParseRadarTargetPath("radars.r1.targets.t1.").HasValue).IsFalse();
+    }
+
+    [Test]
+    public async Task Parse_RejectsEmptyTargetId()
+    {
+        await Assert.That(SignalkClient.TryParseRadarTargetPath("radars.r1.targets.").HasValue).IsFalse();
     }
 }

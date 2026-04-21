@@ -29,6 +29,10 @@
                    OnToggleQuickBar="OnToggleChartQuickBar"
                    OnReorder="OnReorderChart" />
 
+    <RadarsSection Radars="AvailableRadars"
+                   Enabled="EnabledRadars"
+                   OnToggle="OnToggleRadar" />
+
     <RoutesSection Routes="FilteredRoutes"
                    Enabled="EnabledRoutes"
                    OnToggle="OnToggleRoute"
@@ -88,6 +92,8 @@
     [Parameter, EditorRequired] public HashSet<string> EnabledCharts { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> QuickBarCharts { get; set; } = [];
+    [Parameter] public IReadOnlyList<RadarInfo> AvailableRadars { get; set; } = [];
+    [Parameter] public HashSet<string> EnabledRadars { get; set; } = [];
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public bool NotesVisible { get; set; } = true;
@@ -99,6 +105,7 @@
     [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggleChart { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, bool inQuickBar)> OnToggleChartQuickBar { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggleRadar { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnNavigateRoute { get; set; }

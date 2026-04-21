@@ -701,27 +701,76 @@ public sealed class SignalkClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Converts a raw Mayara radar-target delta path like
-    /// <c>radars.&lt;radarId&gt;.targets.&lt;targetId&gt;.&lt;field&gt;</c>
-    /// into a synthesised AIS context plus a short path name, then
-    /// dispatches to <see cref="AisStore"/>. Unknown shapes are dropped
-    /// silently; malformed ones should not crash the receive loop.
+    /// Routes a radar-target delta into <see cref="AisStore"/>. Two
+    /// wire shapes seen in the wild, both handled:
+    ///
+    /// <list type="number">
+    ///   <item>Spec (v3.1): <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;</c>
+    ///     with the whole <see cref="Models.RadarArpaTarget"/> as
+    ///     value. <c>value: null</c> signals target deletion.</item>
+    ///   <item>Legacy (early Mayara):
+    ///     <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;.&lt;field&gt;</c>
+    ///     with per-field values (position / course / speed).
+    ///     Handled by dispatching each recognised field.</item>
+    /// </list>
+    ///
+    /// Malformed / unknown shapes drop silently -- the receive loop
+    /// must stay alive no matter what the server emits.
     /// </summary>
     private void RouteRadarDelta(string path, object? value)
     {
         if (TryParseRadarTargetPath(path) is not var (radarId, targetId, field)) return;
         string ctx = $"{AisStore.RadarContextPrefix}{radarId}.{targetId}";
+
+        // Spec shape: value is the whole target object (or null for
+        // deletion). Field is null because the path stops at target id.
+        if (field is null)
+        {
+            if (value is null
+                || (value is JsonElement nullEl && nullEl.ValueKind == JsonValueKind.Null))
+            {
+                _ais.RemoveContext(ctx);
+                return;
+            }
+            if (value is JsonElement targetEl && targetEl.ValueKind == JsonValueKind.Object)
+            {
+                // Translate into the field-keyed shape AisVessel.Apply
+                // understands. We emit position first so the vessel has
+                // coordinates on the first delta; motion fields follow
+                // and update what's already in the store.
+                if (targetEl.TryGetProperty("position", out var pos)
+                    && pos.ValueKind == JsonValueKind.Object)
+                {
+                    _ais.Apply(ctx, "position", pos);
+                }
+                if (targetEl.TryGetProperty("motion", out var motion)
+                    && motion.ValueKind == JsonValueKind.Object)
+                {
+                    if (motion.TryGetProperty("course", out var cog)
+                        && cog.ValueKind == JsonValueKind.Number)
+                        _ais.Apply(ctx, "course", cog);
+                    if (motion.TryGetProperty("speed", out var sog)
+                        && sog.ValueKind == JsonValueKind.Number)
+                        _ais.Apply(ctx, "speed", sog);
+                }
+            }
+            return;
+        }
+
+        // Legacy shape: value is the per-field primitive; pass through.
         _ais.Apply(ctx, field, value);
     }
 
     /// <summary>
-    /// Parses <c>radars.&lt;radarId&gt;.targets.&lt;targetId&gt;.&lt;field&gt;</c>
-    /// by splitting on the literal <c>.targets.</c> separator instead of on
-    /// <c>.</c>, so radar IDs containing dots (e.g. an IPv4-style hardware
-    /// identifier) parse correctly. Returns <c>null</c> for anything that
-    /// doesn't match the expected shape.
+    /// Parses a radar-target delta path. Accepts both
+    /// <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;</c> (spec; field = null)
+    /// and <c>radars.&lt;rid&gt;.targets.&lt;tid&gt;.&lt;field&gt;</c>
+    /// (legacy). Splits on the literal <c>.targets.</c> separator so
+    /// radar ids containing dots (IPv4-style hardware identifiers)
+    /// still parse. Returns <c>null</c> for anything that doesn't
+    /// match either shape.
     /// </summary>
-    internal static (string radarId, string targetId, string field)? TryParseRadarTargetPath(string path)
+    internal static (string radarId, string targetId, string? field)? TryParseRadarTargetPath(string path)
     {
         if (!path.StartsWith("radars.", StringComparison.Ordinal)) return null;
 
@@ -733,8 +782,16 @@ public sealed class SignalkClient : IAsyncDisposable
         if (radarId.Length == 0) return null;
 
         string after = path[(sepIdx + sep.Length)..];
+        if (after.Length == 0) return null;
+
         int dot = after.IndexOf('.');
-        if (dot <= 0 || dot == after.Length - 1) return null;
+        if (dot < 0)
+        {
+            // Spec shape: path stops at the target id; value carries
+            // the whole target object (or null for delete).
+            return (radarId, after, null);
+        }
+        if (dot == 0 || dot == after.Length - 1) return null;
 
         string targetId = after[..dot];
         string field = after[(dot + 1)..];

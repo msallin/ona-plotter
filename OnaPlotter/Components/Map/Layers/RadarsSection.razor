@@ -1,0 +1,69 @@
+@using OnaPlotter.Models
+
+@* Radar device list. One row per detected radar, with a toggle that
+   enables / disables the spoke overlay for that unit. Status chip
+   shows the radar's current operational state (standby / transmit)
+   and range so the user can tell why the overlay is empty when it
+   is. Collapsed by default. Row hidden entirely if the server has
+   no radar provider plugin (Radars.Count == 0). *@
+
+@if (Radars.Count == 0) return;
+
+<SectionHeader Title="Radars" Count="@Radars.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+
+@if (expanded)
+{
+    <div class="chart-section-hint">
+        Tick to overlay the spoke sweep on the chart. The radar must
+        be transmitting to produce data; a standby radar shows an empty
+        overlay.
+    </div>
+    @foreach (var r in Radars)
+    {
+        bool enabled = Enabled.Contains(r.Id);
+        <label class="chart-item">
+            <input type="checkbox" checked="@enabled"
+                   @onchange="(e) => OnToggle.InvokeAsync((r, (bool)(e.Value ?? false)))" />
+            <div class="chart-item-body">
+                <div class="chart-name">
+                    @DisplayName(r)
+                    @if (r.Status is string s)
+                    {
+                        <span class="radar-status-chip radar-status-@s.ToLowerInvariant()" title="@s">
+                            @s.ToUpperInvariant()
+                        </span>
+                    }
+                </div>
+                @if (r.Range is int rangeM)
+                {
+                    <div class="chart-desc">@FormatRange(rangeM) @(r.Brand ?? "") @(r.Model ?? "")</div>
+                }
+                else if (!string.IsNullOrEmpty(r.Brand) || !string.IsNullOrEmpty(r.Model))
+                {
+                    <div class="chart-desc">@(r.Brand ?? "") @(r.Model ?? "")</div>
+                }
+            </div>
+        </label>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RadarInfo> Radars { get; set; } = [];
+    [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
+    [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggle { get; set; }
+
+    private bool expanded = false;
+
+    private static string DisplayName(RadarInfo r) =>
+        !string.IsNullOrWhiteSpace(r.Name) ? r.Name!
+        : !string.IsNullOrWhiteSpace(r.Model) ? r.Model!
+        : r.Id;
+
+    // Range comes in metres per spec. Small ranges read better in
+    // metres (200m vs 0.1nm); switch over 1000 m to nm for typical
+    // open-water scales.
+    private static string FormatRange(int m) =>
+        m < 1000 ? $"{m} m" : $"{(m / 1852.0):F1} nm";
+}
