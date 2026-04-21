@@ -75,4 +75,30 @@ public sealed class WaypointApi : IWaypointApi
 
     public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Waypoint(id)), ct);
+
+    public async Task<bool> UpdateAsync(SignalkWaypoint wp, string name, string? description = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(wp.Id)) return false;
+        if (wp.Latitude is not double lat || wp.Longitude is not double lon) return false;
+        // Same GeoJSON envelope as CreateAsync so SignalK's validator
+        // accepts it; PUT at the waypoint's id URL is the in-place
+        // update verb per the v2 resources-api spec.
+        var body = new
+        {
+            name,
+            feature = new
+            {
+                type = "Feature",
+                geometry = new { type = "Point", coordinates = new[] { lon, lat } },
+                properties = new
+                {
+                    name,
+                    description = description ?? "",
+                }
+            }
+        };
+        var url = _baseUrl.Combine(SignalKUrls.Waypoint(wp.Id));
+        using var response = await _http.PutAsJsonAsync(url, body, ct);
+        return response.IsSuccessStatusCode;
+    }
 }

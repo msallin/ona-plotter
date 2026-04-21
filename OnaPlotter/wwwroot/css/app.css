@@ -2440,6 +2440,17 @@ main:has(.alarm-banner-stack) .snooze-chips {
 @media (pointer: coarse) {
     .route-action-btn { font-size: 0.78rem; padding: 6px 12px; min-height: 32px; }
 }
+/* Danger tint for destructive action buttons in the Layers list
+   (Delete on route / waypoint rows). Same red family as the alarm
+   banner so the row reads as "this button deletes" at a glance. */
+.route-action-danger {
+    color: #fecaca;
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.12);
+}
+.route-action-danger:hover {
+    background: rgba(239, 68, 68, 0.22);
+}
 
 .chart-item:last-child { border-bottom: none; }
 

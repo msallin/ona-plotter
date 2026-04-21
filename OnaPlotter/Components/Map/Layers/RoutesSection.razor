@@ -1,4 +1,5 @@
 @using OnaPlotter.Models
+@inject IJSRuntime JS
 
 @* Routes the user (or GPX import) has stored on the SignalK server, with
    visibility toggles and an Edit button per route. *@
@@ -30,6 +31,9 @@
             <button class="map-btn route-action-btn"
                     @onclick="() => OnEdit.InvokeAsync(route)"
                     title="Edit route">Edit</button>
+            <button class="map-btn route-action-btn route-action-danger"
+                    @onclick="() => ConfirmDelete(route)"
+                    title="Delete route">Delete</button>
         </div>
     }
 }
@@ -44,7 +48,23 @@
     /// SignalK server and starts the leg-by-leg course-delta flow.</summary>
     [Parameter] public EventCallback<SignalkRoute> OnNavigate { get; set; }
 
+    /// <summary>Fired after the user confirms deletion. Parent handles
+    /// the REST DELETE and removes the route from the map.</summary>
+    [Parameter] public EventCallback<SignalkRoute> OnDelete { get; set; }
+
     private bool expanded = false;
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
+
+    private async Task ConfirmDelete(SignalkRoute route)
+    {
+        // JS confirm() is the same prompt the Resources page uses for
+        // the bulk-delete flow. Cheap, accessible, and a destructive
+        // action this central to the UI deserves a guard-rail.
+        bool ok;
+        try { ok = await JS.InvokeAsync<bool>("confirm",
+            $"Delete route '{route.Name ?? ShortId(route.Id)}'?"); }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        if (ok) await OnDelete.InvokeAsync(route);
+    }
 }

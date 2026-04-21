@@ -401,7 +401,10 @@
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
                      OnNavigateRoute="NavigateRoute"
+                     OnDeleteRoute="DeleteRouteFromLayers"
                      OnNavigateToWaypoint="NavigateToWaypoint"
+                     OnRenameWaypoint="(t) => RenameWaypointAsync(t.wp, t.newName)"
+                     OnDeleteWaypoint="DeleteWaypointFromLayers"
                      OnFocusVessel="FocusVessel"
                      OnToggleServerTrack="ToggleServerTrack"
                      OnToggleWeatherOverlay="ToggleWeatherOverlay"
@@ -589,6 +592,60 @@
 
     private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
         ToggleChart(t.chart, t.enabled);
+
+    // Delete-route + delete/rename-waypoint entry points from the
+    // Layers panel. DeleteRouteById already handles the full flow
+    // (REST + enabled-set scrub + JS remove + toast); wrap it so the
+    // callback signature matches what RoutesSection fires.
+    private Task DeleteRouteFromLayers(SignalkRoute r) => DeleteRouteById(r.Id);
+
+    private async Task DeleteWaypointFromLayers(SignalkWaypoint wp)
+    {
+        if (string.IsNullOrEmpty(wp.Id)) return;
+        try
+        {
+            var ok = await WaypointApi.DeleteAsync(wp.Id);
+            if (!ok) { Toasts.Error("Delete waypoint failed: server rejected"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
+
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("removeWaypointMarker", wp.Id); }
+            catch (JSDisconnectedException) { }
+        }
+        loadedWaypoints = loadedWaypoints.Where(w => w.Id != wp.Id).ToList();
+        Toasts.Info("Waypoint deleted");
+    }
+
+    private async Task RenameWaypointAsync(SignalkWaypoint wp, string newName)
+    {
+        if (string.IsNullOrEmpty(wp.Id) || string.IsNullOrWhiteSpace(newName)) return;
+        try
+        {
+            var ok = await WaypointApi.UpdateAsync(wp, newName.Trim());
+            if (!ok) { Toasts.Error("Rename waypoint failed: server rejected"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Rename waypoint failed: {ex.Message}"); return; }
+
+        // Optimistic local rename so the panel reflects the new name
+        // without waiting for the 60 s resource poll. Next refresh
+        // overwrites this with the authoritative value.
+        var updated = loadedWaypoints.Select(w =>
+        {
+            if (w.Id != wp.Id) return w;
+            return new SignalkWaypoint
+            {
+                Id = w.Id,
+                Name = newName.Trim(),
+                Feature = w.Feature,
+                Latitude = w.Latitude,
+                Longitude = w.Longitude,
+            };
+        }).ToList();
+        loadedWaypoints = updated;
+        Toasts.Success("Waypoint renamed");
+    }
 
     // Radar overlay toggle. On enable, hand the JS layer the spoke
     // WebSocket URL + capabilities so it can open the stream. On

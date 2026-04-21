@@ -40,11 +40,14 @@
                    Enabled="EnabledRoutes"
                    OnToggle="OnToggleRoute"
                    OnEdit="OnEditRoute"
-                   OnNavigate="OnNavigateRoute" />
+                   OnNavigate="OnNavigateRoute"
+                   OnDelete="OnDeleteRoute" />
 
     <WaypointsSection Waypoints="LoadedWaypoints"
                       LayerFilter="@LayerFilter"
-                      OnNavigate="OnNavigateToWaypoint" />
+                      OnNavigate="OnNavigateToWaypoint"
+                      OnRename="OnRenameWaypoint"
+                      OnDelete="OnDeleteWaypoint" />
 
     <NotesSection Notes="LoadedNotes"
                   Visible="NotesVisible"
@@ -116,7 +119,10 @@
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnNavigateRoute { get; set; }
+    [Parameter] public EventCallback<SignalkRoute> OnDeleteRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
+    [Parameter] public EventCallback<(SignalkWaypoint wp, string newName)> OnRenameWaypoint { get; set; }
+    [Parameter] public EventCallback<SignalkWaypoint> OnDeleteWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnFocusNote { get; set; }
     [Parameter] public EventCallback<bool> OnToggleNotesVisible { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnFocusRegion { get; set; }

@@ -21,10 +21,12 @@ public class VesselsSectionTests
             SogKn: null, ShipType: null, IsBuddy: buddy,
             ColregsLabel: colregsLabel, ColregsRole: colregsRole);
 
-    // Sections start collapsed unless a vessel is already in the
-    // danger/warn band -- OnParametersSet auto-expands in that case so
-    // the helm doesn't have to dig for the threat row. Toggle only
-    // when still collapsed so the tests don't fight the auto-expand.
+    // Sections start collapsed and stay that way until the helm taps
+    // the header. Earlier we auto-expanded on any danger / warn CPA,
+    // but that meant the panel opened itself mid-edit every time a
+    // distant ferry's TCPA dipped below the threshold; alarms +
+    // banner stack already surface the threat. Tests unconditionally
+    // click-to-expand now.
     private static void Expand(IRenderedComponent<VesselsSection> cut)
     {
         if (cut.FindAll(".vessel-row").Count == 0)
@@ -94,16 +96,19 @@ public class VesselsSectionTests
     }
 
     [Test]
-    public async Task AutoExpands_When_Vessel_InDangerBand()
+    public async Task StaysCollapsed_UntilHelmToggles_EvenWithDangerVessel()
     {
-        // OnParametersSet auto-expands so the helm sees the threat
-        // the moment they open the Layers panel. Pin the behaviour
-        // so a future edit doesn't silently regress it back to
-        // "always collapsed".
+        // We removed the auto-expand-on-threat behaviour: the Vessels
+        // section now stays collapsed regardless of CPA/TCPA until
+        // the helm taps the header. Threats surface via alarms + the
+        // banner stack, not by opening random panel sections during
+        // unrelated edit flows.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("c1", "Near", cpa: 0.2, tcpa: 4) }));
-        // No Expand() call -- the render should already have the row.
+        await Assert.That(cut.FindAll(".vessel-row").Count).IsEqualTo(0);
+
+        cut.Find(".section-toggle").Click();
         await Assert.That(cut.FindAll(".vessel-row").Count).IsEqualTo(1);
         await Assert.That(cut.Markup).Contains("vessel-danger");
     }
@@ -111,30 +116,11 @@ public class VesselsSectionTests
     [Test]
     public async Task StaysCollapsed_When_NoDangerOrWarn()
     {
-        // Auto-expand only triggers on danger/warn -- a routine fleet
-        // view stays compact.
+        // Default-collapsed applies regardless of CPA; routine fleet
+        // view stays compact just like threat view does.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] { V("c1", "Safe", cpa: 3.0, tcpa: 30) }));
-        await Assert.That(cut.FindAll(".vessel-row").Count).IsEqualTo(0);
-    }
-
-    [Test]
-    public async Task UserCollapse_IsSticky_EvenAfterAutoExpandCase()
-    {
-        // If the helm manually collapses, a new render with a danger
-        // vessel must NOT re-expand -- fighting the user's intent.
-        // _userToggled is the flag; pin it.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<VesselsSection>(p => p
-            .Add(x => x.Vessels, new[] { V("c1", "Near", cpa: 0.2, tcpa: 4) }));
-        await Assert.That(cut.FindAll(".vessel-row").Count).IsEqualTo(1); // auto-expanded
-        cut.Find(".section-toggle").Click();                              // user collapses
-        await Assert.That(cut.FindAll(".vessel-row").Count).IsEqualTo(0);
-        // Re-render with a fresh parameter set (still danger). Must
-        // respect the collapse -- _userToggled gate.
-        cut.SetParametersAndRender(p => p
-            .Add(x => x.Vessels, new[] { V("c2", "Near2", cpa: 0.2, tcpa: 4) }));
         await Assert.That(cut.FindAll(".vessel-row").Count).IsEqualTo(0);
     }
 

@@ -28,6 +28,11 @@ public partial class Map
     private string routeEditStats = "0 WP / 0 nm";
     private double[][]? routeEditCoords;
     private System.Threading.Timer? routeStatsTimer;
+    // Id of the route currently being edited, if any. Null means this
+    // is a fresh route ("Add Route" button); non-null means the user
+    // entered the editor via the Layers panel's "Edit" button and
+    // Save should PUT in place rather than POST a new resource.
+    private string? routeEditId;
 
     // ---- Polygon editing state -----------------------------------------
     private bool polygonEditMode;
@@ -52,6 +57,7 @@ public partial class Map
     private async Task StartRouteEdit()
     {
         routeEditMode = true;
+        routeEditId = null;                     // fresh route, not an in-place edit
         // Prefill with the same date-stamped default that Save falls back
         // to when the field is blank. Prefilled (instead of placeholder)
         // so iPad helms can see the name before tapping Save and edit it
@@ -92,6 +98,7 @@ public partial class Map
             Toasts.Info($"Route edit cancelled ({wpCount} WP discarded)");
 
         routeEditMode = false;
+        routeEditId = null;
         routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
@@ -125,6 +132,7 @@ public partial class Map
         }
 
         routeEditMode = true;
+        routeEditId = route.Id;                 // save will PUT in place
         routeEditName = route.Name ?? "";
         chartPanelOpen = false; // Close layers panel so user can see the map.
         InstallEditNavGuard();
@@ -242,50 +250,71 @@ public partial class Map
             string name = string.IsNullOrWhiteSpace(routeEditName)
                 ? $"Route {DateTime.Now:yyyyMMdd}"
                 : routeEditName;
-            try { ok = await RouteApi.SaveAsync(name, coords); }
+            string? existingId = routeEditId;
+            try
+            {
+                // Edit flow: rewrite the same id so the server keeps
+                // one route. Fresh flow: POST new and guess the id
+                // back from a post-save list diff.
+                ok = existingId is not null
+                    ? await RouteApi.UpdateAsync(existingId, name, coords)
+                    : await RouteApi.SaveAsync(name, coords);
+            }
             catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
 
             if (ok)
             {
                 Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
-                // Snapshot pre-save IDs so we can auto-enable the newly-created
-                // route. SignalK's POST response body varies between server
-                // versions (some return { "id": ... }, some just 201 Created),
-                // so a diff against the previous list is more robust than
-                // parsing the response. Limitation: in a multi-client
-                // scenario (another plotter saves a route during our same
-                // window) this can grab that route instead; in practice
-                // Save & Go then activates the wrong one. Acceptable for
-                // a solo-plotter workflow; the fix is server-side (return
-                // the id in the POST body, which SK Node Server does in
-                // v2 -- pending upgrade).
+                // Reload the list either way; the diff approach below
+                // only applies to fresh saves where the server assigns
+                // a new id. Edit-in-place uses the known id directly,
+                // which is both faster and multi-client-safe.
                 var prevIds = availableRoutes.Select(r => r.Id).ToHashSet();
                 availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? availableRoutes;
                 PrecomputeRouteBounds();
-                // When multiple "new" ids appear, prefer the one whose name
-                // matches ours -- still heuristic, but tighter than "first
-                // in list".
-                var candidates = availableRoutes
-                    .Where(r => !string.IsNullOrEmpty(r.Id) && !prevIds.Contains(r.Id))
-                    .ToList();
-                newRoute = candidates.FirstOrDefault(r =>
-                    string.Equals(r.Name, name, StringComparison.Ordinal))
-                    ?? candidates.FirstOrDefault();
-                if (newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
-                {
-                    enabledRoutes.Add(newRoute.Id);
-                    await Settings.SetEnabledRoutesAsync(enabledRoutes);
 
-                    // Push the freshly-saved route into the JS layer map
-                    // so it appears immediately, without waiting for a
-                    // layer-toggle roundtrip. Previously we only updated
-                    // the enabled set + the filtered-layers cache, but the
-                    // Leaflet side never got an addRoute call, so the helm
-                    // saw an empty map + a ticked Layers checkbox until
-                    // they manually re-toggled.
-                    try { await AddRouteToMap(newRoute); }
-                    catch (JSDisconnectedException) { }
-                    catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
+                if (existingId is not null)
+                {
+                    // Edit-in-place: find the updated route by its
+                    // known id and re-draw so the on-map polyline
+                    // reflects the geometry changes.
+                    newRoute = availableRoutes.FirstOrDefault(r => r.Id == existingId);
+                    if (newRoute is not null && module is not null)
+                    {
+                        try { await module.InvokeVoidAsync("removeRoute", existingId); }
+                        catch (JSDisconnectedException) { }
+                        catch (JSException) { /* next addRoute replaces it */ }
+                        if (enabledRoutes.Contains(existingId))
+                        {
+                            try { await AddRouteToMap(newRoute); }
+                            catch (JSDisconnectedException) { }
+                            catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
+                        }
+                    }
+                }
+                else
+                {
+                    // Fresh save: guess the new id from the list diff.
+                    // Limitation: in a multi-client scenario (another
+                    // plotter saves a route during our same window)
+                    // this can grab that route instead. Acceptable for
+                    // a solo-plotter workflow; SK Node Server v2
+                    // returns the id in the POST body, which we'll
+                    // switch to once the upgrade is pending.
+                    var candidates = availableRoutes
+                        .Where(r => !string.IsNullOrEmpty(r.Id) && !prevIds.Contains(r.Id))
+                        .ToList();
+                    newRoute = candidates.FirstOrDefault(r =>
+                        string.Equals(r.Name, name, StringComparison.Ordinal))
+                        ?? candidates.FirstOrDefault();
+                    if (newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
+                    {
+                        enabledRoutes.Add(newRoute.Id);
+                        await Settings.SetEnabledRoutesAsync(enabledRoutes);
+                        try { await AddRouteToMap(newRoute); }
+                        catch (JSDisconnectedException) { }
+                        catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
+                    }
                 }
                 RebuildFilteredLayers();
             }
@@ -301,6 +330,7 @@ public partial class Map
             // edit overlay + poll timer + nav-guard installed, and the
             // user's next interaction landed on a ghost edit session.
             routeEditMode = false;
+            routeEditId = null;
             routeEditCoords = null;
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;

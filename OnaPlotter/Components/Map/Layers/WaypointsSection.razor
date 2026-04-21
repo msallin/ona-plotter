@@ -1,8 +1,10 @@
 @using OnaPlotter.Models
+@inject IJSRuntime JS
 
-@* Server-stored waypoints with a "Go" button that sets them as the active
-   destination. Filters by the shared LayerFilter so the panel's search
-   input finds waypoints as well as charts and routes. *@
+@* Server-stored waypoints. Each row has Go (set as active destination),
+   Edit (rename via a browser prompt), and Delete (with confirm). Filters
+   by the shared LayerFilter so the panel's search input finds waypoints
+   alongside charts and routes. *@
 
 @if (Waypoints.Count == 0) return;
 
@@ -23,8 +25,15 @@
             <div class="chart-item-body">
                 <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
             </div>
-            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                    @onclick="() => OnNavigate.InvokeAsync(wp)">Go</button>
+            <button class="map-btn route-action-btn"
+                    @onclick="() => OnNavigate.InvokeAsync(wp)"
+                    title="Navigate to this waypoint">Go</button>
+            <button class="map-btn route-action-btn"
+                    @onclick="() => PromptEdit(wp)"
+                    title="Rename this waypoint">Edit</button>
+            <button class="map-btn route-action-btn route-action-danger"
+                    @onclick="() => ConfirmDelete(wp)"
+                    title="Delete waypoint">Delete</button>
         </div>
     }
 }
@@ -32,6 +41,16 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> Waypoints { get; set; } = [];
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigate { get; set; }
+
+    /// <summary>Fires with the waypoint + new name after the user
+    /// confirms a rename. Parent PUTs the change and refreshes the
+    /// list.</summary>
+    [Parameter] public EventCallback<(SignalkWaypoint wp, string newName)> OnRename { get; set; }
+
+    /// <summary>Fires after the user confirms deletion. Parent
+    /// handles the REST DELETE + map-marker removal.</summary>
+    [Parameter] public EventCallback<SignalkWaypoint> OnDelete { get; set; }
+
     [Parameter] public string LayerFilter { get; set; } = "";
 
     private bool expanded = false;
@@ -46,5 +65,32 @@
         return all.Where(wp =>
             (wp.Name?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
             || wp.Id.Contains(f, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
+    // JS prompt() is a rudimentary rename UI, but for a single-field
+    // edit (the waypoint's name) it's cheaper than building a modal,
+    // works on touch, and matches the delete-confirm's dialog
+    // affordance for users who already know that one.
+    private async Task PromptEdit(SignalkWaypoint wp)
+    {
+        string? newName;
+        try
+        {
+            newName = await JS.InvokeAsync<string?>("prompt",
+                "Waypoint name:", wp.Name ?? "");
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        if (newName == wp.Name) return;
+        await OnRename.InvokeAsync((wp, newName.Trim()));
+    }
+
+    private async Task ConfirmDelete(SignalkWaypoint wp)
+    {
+        bool ok;
+        try { ok = await JS.InvokeAsync<bool>("confirm",
+            $"Delete waypoint '{wp.Name ?? ShortId(wp.Id)}'?"); }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        if (ok) await OnDelete.InvokeAsync(wp);
     }
 }

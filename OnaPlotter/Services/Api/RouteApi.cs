@@ -46,19 +46,44 @@ public sealed class RouteApi : IRouteApi
         return coords.Value.ToLeafletLineString();
     }
 
-    public async Task<bool> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
+    public Task<bool> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
     {
-        var geoJsonCoords = coordsLatLon.Select(c => new[] { c[1], c[0] }).ToArray();
+        // POST /resources/routes -> new id. Used for "start from
+        // scratch" edit sessions.
+        var body = BuildRouteBody(name, coordsLatLon);
+        var url = _baseUrl.Combine(SignalKUrls.RoutesPath);
+        return PostJsonReturningSuccess(url, body, ct);
+    }
 
-        // GeoJSON requires `properties` on every Feature (empty is fine) and
-        // freeboard-sk assumes it's always present. `coordinatesMeta` is one
-        // entry per waypoint - we emit empty-name placeholders so downstream
-        // editors have slots to fill in.
+    public Task<bool> UpdateAsync(string id, string name, double[][] coordsLatLon, CancellationToken ct = default)
+    {
+        // PUT /resources/routes/{id} -> rewrite in place. Used when
+        // the edit session was started from an existing route so the
+        // helm's tweaks replace the original rather than spawning a
+        // second copy on every save.
+        if (string.IsNullOrEmpty(id)) return Task.FromResult(false);
+        var body = BuildRouteBody(name, coordsLatLon);
+        var url = _baseUrl.Combine(SignalKUrls.Route(id));
+        return PutJsonReturningSuccess(url, body, ct);
+    }
+
+    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+        ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Route(id)), ct);
+
+    // --- shared body shape + transport helpers ----------------------
+
+    private static object BuildRouteBody(string name, double[][] coordsLatLon)
+    {
+        // GeoJSON requires `properties` on every Feature (empty is
+        // fine); freeboard-sk assumes it's always present.
+        // `coordinatesMeta` is one entry per waypoint -- we emit
+        // empty-name placeholders so downstream editors have slots
+        // to fill in. Swap lat/lon pairs to GeoJSON's [lon, lat].
+        var geoJsonCoords = coordsLatLon.Select(c => new[] { c[1], c[0] }).ToArray();
         var coordinatesMeta = Enumerable.Range(0, coordsLatLon.Length)
             .Select(_ => new { name = "" })
             .ToArray();
-
-        var body = new
+        return new
         {
             name,
             feature = new
@@ -73,11 +98,17 @@ public sealed class RouteApi : IRouteApi
                 }
             }
         };
-        var url = _baseUrl.Combine(SignalKUrls.RoutesPath);
+    }
+
+    private async Task<bool> PostJsonReturningSuccess(string url, object body, CancellationToken ct)
+    {
         using var response = await _http.PostAsJsonAsync(url, body, ct);
         return response.IsSuccessStatusCode;
     }
 
-    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
-        ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Route(id)), ct);
+    private async Task<bool> PutJsonReturningSuccess(string url, object body, CancellationToken ct)
+    {
+        using var response = await _http.PutAsJsonAsync(url, body, ct);
+        return response.IsSuccessStatusCode;
+    }
 }
