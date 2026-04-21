@@ -45,6 +45,8 @@ builder.Services.AddSingleton<ICourseApi, CourseApi>();
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
+// Signal K Radar API v3.1. Optional; empty list when no provider plugin.
+builder.Services.AddSingleton<IRadarApi, RadarApi>();
 // Optional: detects sbender9/signalk-buddylist-plugin at runtime.
 builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 

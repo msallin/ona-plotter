@@ -25,6 +25,19 @@ public static class SignalKUrls
     public const string AutopilotStatePath = "/signalk/v2/api/vessels/self/steering/autopilot/state";
     public const string AutopilotAdjustHeadingPath = "/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";
 
+    /// <summary>Root of the v3.1 Radar API. Discovery + per-device
+    /// capabilities / controls / targets live as children. Spoke data
+    /// is on a separate WebSocket per radar, advertised in each
+    /// radar's <c>spokeDataUrl</c> response field.</summary>
+    public const string RadarsPath = "/signalk/v2/api/vessels/self/radars";
+
+    public static string Radar(string id) => $"{RadarsPath}/{Uri.EscapeDataString(id)}";
+    public static string RadarCapabilities(string id) => $"{Radar(id)}/capabilities";
+    public static string RadarControls(string id) => $"{Radar(id)}/controls";
+    public static string RadarControl(string id, string controlId) =>
+        $"{RadarControls(id)}/{Uri.EscapeDataString(controlId)}";
+    public static string RadarTargets(string id) => $"{Radar(id)}/targets";
+
     /// <summary>REST API exposed by sbender9/signalk-buddylist-plugin.
     /// A 200 means the plugin is installed and running; 404 means it isn't.</summary>
     public const string BuddiesPath = "/signalk/v2/api/resources/buddies";
