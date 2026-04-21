@@ -8,9 +8,12 @@
 // is why there's no `import L from 'leaflet'` here.
 //
 // Design:
-//   * One canvas per radar, sized (2 * maxSpokeLen) square, anchored
-//     as a Leaflet ImageOverlay in a circular geographic bounds
-//     around own-boat position.
+//   * One canvas per radar, sized (2 * maxSpokeLen) square, attached
+//     directly to Leaflet's overlay pane via a custom L.Layer (see
+//     CanvasGeoLayer at the bottom of this file). The canvas IS the
+//     displayed pixels -- no toDataURL / blob / imageOverlay dance,
+//     which the first cut of this file did and which cost 10-50 ms
+//     per reposition on the main thread.
 //   * Spoke painting uses a precomputed polar -> pixel LUT (once per
 //     radar) indexed by (spokeIndex, rangeCell). Same trick the
 //     Freeboard-SK worker uses to avoid per-pixel trig.
@@ -167,18 +170,19 @@ class RadarOverlay {
         this.byteToRgba = new Uint8ClampedArray(256 * 4);
         this._setLegend(cfg.legend);
 
-        // Leaflet overlay; bounds are set in _repositionOverlay()
-        // after we know the boat position. Add once the first frame
-        // is ready so Leaflet doesn't place an empty rectangle at
-        // (0,0) while we wait for boat state.
-        this.overlay = null;
+        // Leaflet layer; added in _ensureLayer() once we have a
+        // boat position, so the canvas doesn't briefly appear over
+        // the wrong side of the map before the first GPS fix.
+        this.layer = null;
 
         this.ws = null;
         this.lastRange = 0;
         this.destroyed = false;
 
-        // rAF throttle: overlay image url regeneration is the hot
-        // reposition path. Batch to one per frame.
+        // rAF throttle for the CSS-position update path. We only
+        // actually touch DOM when the boat moves or the range
+        // changes; spoke paints directly mutate the canvas pixels
+        // and don't need a reposition.
         this._refreshPending = false;
     }
 
@@ -316,12 +320,23 @@ class RadarOverlay {
         }
 
         // Flush ImageData once per batch -- not once per spoke.
+        // No _scheduleReposition() here: the canvas element is
+        // directly parented in the overlay pane, so pixel updates
+        // show up without any DOM movement. Reposition is driven
+        // solely by boat-state / range changes.
         this.ctx.putImageData(this.imageData, 0, 0);
-        this._scheduleReposition();
+        // On first-ever frame, make sure the canvas is actually in
+        // the overlay pane. If no boat fix yet, the layer stays
+        // detached and the canvas is invisible -- correct.
+        if (!this.layer) this._scheduleReposition();
     }
 
     _clearCanvas() {
-        this.imageData = this.ctx.createImageData(this.canvasSize, this.canvasSize);
+        // Reuse the existing ImageData buffer rather than reallocating
+        // 16 MB every range change. Uint8ClampedArray.fill is orders
+        // of magnitude faster than createImageData on big canvases
+        // (tight-loop memset vs. allocate + zero + deref).
+        this.imageData.data.fill(0);
         this.ctx.clearRect(0, 0, this.canvasSize, this.canvasSize);
     }
 
@@ -397,50 +412,25 @@ class RadarOverlay {
         this._refreshPending = true;
         requestAnimationFrame(() => {
             this._refreshPending = false;
-            this._repositionOverlay();
+            this._reposition();
         });
     }
 
-    _repositionOverlay() {
+    _reposition() {
         if (this.destroyed) return;
         const { lat, lon } = boatState;
         if (lat == null || lon == null) return;
 
-        // Bounding box of a square centred on the boat that just
-        // contains the range circle. Side = 2 * range metres.
-        // Using a flat-earth deg-per-metre is fine at chartplotter
-        // scales (<100 nm). For extreme latitudes we fall back to
-        // a cosine-corrected lon step.
-        const metresPerDegLat = 111_320;
-        const metresPerDegLon = 111_320 * Math.cos(lat * Math.PI / 180) || 1;
-        const dLat = this.range / metresPerDegLat;
-        const dLon = this.range / metresPerDegLon;
-
-        const bounds = L.latLngBounds(
-            [lat - dLat, lon - dLon],
-            [lat + dLat, lon + dLon],
-        );
-
-        if (!this.overlay) {
-            // Convert canvas to data URL lazily -- Leaflet
-            // ImageOverlay needs a URL string, so we refresh it on
-            // every reposition. For a busy radar this is wasteful
-            // (2048x2048 canvas -> dataURL is ~10ms). Acceptable
-            // for MVP; optimising with L.canvasOverlay or a custom
-            // L.Layer is a follow-up.
-            this.overlay = L.imageOverlay(this._canvasUrl(), bounds, {
-                opacity: this.opacity,
-                interactive: false,
-                className: 'radar-overlay',
-            }).addTo(this.map);
-        } else {
-            this.overlay.setBounds(bounds);
-            this.overlay.setUrl(this._canvasUrl());
-        }
+        this._ensureLayer(lat, lon);
+        this.layer.updateAnchor(lat, lon, this.range);
     }
 
-    _canvasUrl() {
-        return this.canvas.toDataURL('image/png');
+    _ensureLayer(lat, lon) {
+        if (this.layer) return;
+        this.canvas.style.opacity = String(this.opacity);
+        this.canvas.classList.add('radar-overlay');
+        this.layer = new CanvasGeoLayer(this.canvas, lat, lon, this.range);
+        this.layer.addTo(this.map);
     }
 
     destroy() {
@@ -449,9 +439,9 @@ class RadarOverlay {
             try { this.ws.close(); } catch { /* ignore */ }
             this.ws = null;
         }
-        if (this.overlay) {
-            this.overlay.remove();
-            this.overlay = null;
+        if (this.layer) {
+            this.layer.remove();
+            this.layer = null;
         }
         // Release the LUT memory aggressively -- these can be
         // 4-8 MB per radar.
@@ -505,3 +495,104 @@ function parseLegendColor(c) {
 
 // Exposed for tests; not part of the public interop API.
 export const _internal = { DEFAULT_LEGEND_PIXELS, parseHexRgba, parseLegendColor };
+
+// ---------------------------------------------------------------------
+// CanvasGeoLayer: minimal Leaflet L.Layer subclass that parents a
+// provided <canvas> directly into the overlay pane. The canvas is
+// positioned + CSS-scaled to occupy a geographic square of
+// `rangeMeters * 2` centred on an anchor lat/lon. Pixel writes into
+// the canvas show up immediately; we only touch the DOM when the
+// anchor / range / map viewport changes.
+//
+// vs. L.ImageOverlay: ImageOverlay needs a URL and encodes the canvas
+// on every `setUrl`. For a 4096x4096 canvas toDataURL costs 10-50 ms
+// on the main thread -- unacceptable at radar frame rates. This
+// layer avoids that entirely.
+// ---------------------------------------------------------------------
+
+const CanvasGeoLayer = L.Layer.extend({
+    initialize(canvasEl, lat, lon, rangeMeters) {
+        this._canvas = canvasEl;
+        this._anchorLat = lat;
+        this._anchorLon = lon;
+        this._range = rangeMeters;
+        // Set once; per-reset we update transform + size.
+        canvasEl.style.position = 'absolute';
+        canvasEl.style.pointerEvents = 'none';
+        // Disable the browser's anti-alias smoothing when the canvas
+        // is CSS-scaled to a different display size than its native
+        // pixel size -- we'd rather have crisp spoke pixels than a
+        // blurry upsample.
+        canvasEl.style.imageRendering = 'pixelated';
+    },
+
+    onAdd(map) {
+        this._map = map;
+        map.getPanes().overlayPane.appendChild(this._canvas);
+        // viewreset fires on zoom end; zoomanim is the in-progress
+        // zoom signal that lets us keep the overlay in sync with
+        // the tile layer's scale animation. Without zoomanim the
+        // radar overlay would visibly "pop" to the new size only
+        // when the zoom animation ends.
+        map.on('zoomend viewreset', this._reset, this);
+        map.on('zoomanim', this._animateZoom, this);
+        this._reset();
+        return this;
+    },
+
+    onRemove(map) {
+        if (this._canvas.parentNode === map.getPanes().overlayPane) {
+            map.getPanes().overlayPane.removeChild(this._canvas);
+        }
+        map.off('zoomend viewreset', this._reset, this);
+        map.off('zoomanim', this._animateZoom, this);
+        this._map = null;
+        return this;
+    },
+
+    /** Update the geographic anchor point and/or radar range. Cheap
+     *  -- just a DOM transform on the canvas element; no repaint
+     *  cost because the canvas pixels are already written. */
+    updateAnchor(lat, lon, rangeMeters) {
+        this._anchorLat = lat;
+        this._anchorLon = lon;
+        this._range = rangeMeters;
+        this._reset();
+    },
+
+    _reset() {
+        if (!this._map) return;
+        const bounds = this._geoBounds();
+        const topLeft = this._map.latLngToLayerPoint(bounds.getNorthWest());
+        const bottomRight = this._map.latLngToLayerPoint(bounds.getSouthEast());
+        const size = bottomRight.subtract(topLeft);
+        L.DomUtil.setPosition(this._canvas, topLeft);
+        this._canvas.style.width  = `${size.x}px`;
+        this._canvas.style.height = `${size.y}px`;
+    },
+
+    // Leaflet's zoom-in-progress signal. Set a transform that
+    // matches what the tilePane is doing so the overlay scales
+    // + pans in step rather than jumping at zoomend. The math
+    // mirrors L.ImageOverlay._animateZoom.
+    _animateZoom(ev) {
+        const bounds = this._geoBounds();
+        const scale = this._map.getZoomScale(ev.zoom);
+        const offset = this._map._latLngBoundsToNewLayerBounds(bounds, ev.zoom, ev.center).min;
+        L.DomUtil.setTransform(this._canvas, offset, scale);
+    },
+
+    _geoBounds() {
+        // Flat-earth square around the anchor, side = 2 * range.
+        // Cosine-corrected longitude step; lat >= 85 clamps to 1
+        // so we don't divide by ~0 at the poles.
+        const metresPerDegLat = 111_320;
+        const metresPerDegLon = 111_320 * Math.cos(this._anchorLat * Math.PI / 180) || 1;
+        const dLat = this._range / metresPerDegLat;
+        const dLon = this._range / metresPerDegLon;
+        return L.latLngBounds(
+            [this._anchorLat - dLat, this._anchorLon - dLon],
+            [this._anchorLat + dLat, this._anchorLon + dLon],
+        );
+    },
+});
