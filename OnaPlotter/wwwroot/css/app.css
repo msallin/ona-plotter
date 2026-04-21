@@ -2503,6 +2503,37 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .radar-status-preparing { background: rgba(251, 191,  36, 0.18); color: #fbbf24; border-color: rgba(251, 191,  36, 0.45); }
 .radar-status-off      { background: rgba(239,  68,  68, 0.18); color: #f87171; border-color: rgba(239,  68,  68, 0.45); }
 
+/* Inline radar control row sitting under the device name. Power
+   button + range dropdown. Sized like the existing Layers-panel
+   buttons so it doesn't visually grow the row. The label/select
+   pair fits on one line on every viewport we target. */
+.radar-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+.radar-power-btn {
+    font-size: 0.7rem;
+    padding: 3px 10px;
+    min-height: 26px;
+}
+.radar-range-label {
+    font-size: 0.7rem;
+    color: var(--panel-text-muted);
+    margin-left: 4px;
+}
+.radar-range-select {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    min-height: 26px;
+    background: var(--panel-bg);
+    color: var(--panel-text);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+}
+
 .night-mode .chart-panel {
     background: rgba(30, 5, 5, 0.92);
 }

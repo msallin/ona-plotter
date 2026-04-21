@@ -31,7 +31,9 @@
 
     <RadarsSection Radars="AvailableRadars"
                    Enabled="EnabledRadars"
-                   OnToggle="OnToggleRadar" />
+                   OnToggle="OnToggleRadar"
+                   OnSetPower="OnSetRadarPower"
+                   OnSetRange="OnSetRadarRange" />
 
     <RoutesSection Routes="FilteredRoutes"
                    Enabled="EnabledRoutes"
@@ -106,6 +108,8 @@
     [Parameter] public EventCallback<(SignalkChart chart, bool inQuickBar)> OnToggleChartQuickBar { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggleRadar { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, int powerValue)> OnSetRadarPower { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, int rangeMeters)> OnSetRadarRange { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnNavigateRoute { get; set; }

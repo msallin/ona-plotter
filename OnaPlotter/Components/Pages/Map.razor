@@ -6,6 +6,7 @@
 @using OnaPlotter.Models
 @using OnaPlotter.Components.Map
 @using Microsoft.JSInterop
+@using System.Text.Json
 @implements IAsyncDisposable
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
@@ -394,6 +395,8 @@
                      OnToggleChartQuickBar="OnToggleChartQuickBarCallback"
                      OnReorderChart="OnReorderChartCallback"
                      OnToggleRadar="OnToggleRadarCallback"
+                     OnSetRadarPower="(t) => SetRadarPowerAsync(t.radar.Id, t.powerValue)"
+                     OnSetRadarRange="(t) => SetRadarRangeAsync(t.radar.Id, t.rangeMeters)"
                      OnToggleRoute="OnToggleRouteCallback"
                      OnEditRoute="EditRoute"
                      OnNavigateRoute="NavigateRoute"
@@ -548,6 +551,12 @@
             var routes    = await SafeLoad(() => RouteApi.GetAllAsync(), "routes");
             var notes     = await SafeLoad(() => NoteApi.GetAllAsync(), "notes");
             var regions   = await SafeLoad(() => RegionApi.GetAllAsync(), "regions");
+            // Radar list + per-radar runtime fields (status, range).
+            // 60 s is appropriate -- radar discovery is rare; range +
+            // status changes from another plotter's UI are also rare
+            // and not safety-critical (the JS layer adapts on the
+            // next spoke frame's reported range).
+            var radars    = await SafeLoad(() => RadarApi.GetAllAsync(), "radars");
 
             // Drop stale results. If another refresh was kicked off while
             // we were fetching, its results are fresher; let it win.
@@ -558,6 +567,11 @@
             if (routes is not null) { availableRoutes = routes; PrecomputeRouteBounds(); }
             if (notes is not null) loadedNotes = notes;
             if (regions is not null) loadedRegions = regions;
+            if (radars is not null)
+            {
+                availableRadars = radars.ToList();
+                await PushRadarRangeUpdatesAsync();
+            }
             RebuildFilteredLayers();
             await InvokeAsync(StateHasChanged);
         }
@@ -618,6 +632,79 @@
             catch (JSException) { /* teardown should not block */ }
             enabledRadars.Remove(t.radar.Id);
         }
+    }
+
+    // Per-radar last-known range, so the periodic poll only pushes
+    // updates to the JS layer when something actually changed (range
+    // is the only field the layer cares about; opacity and other
+    // bits are derived from the user's UI choices).
+    private readonly Dictionary<string, int> _lastRadarRange = new(StringComparer.Ordinal);
+
+    private async Task PushRadarRangeUpdatesAsync()
+    {
+        if (module is null) return;
+        foreach (var r in availableRadars)
+        {
+            if (string.IsNullOrEmpty(r.Id) || r.Range is not int range) continue;
+            if (!enabledRadars.Contains(r.Id)) continue;        // overlay off; nothing to update
+            if (_lastRadarRange.TryGetValue(r.Id, out var prev) && prev == range) continue;
+            _lastRadarRange[r.Id] = range;
+            try { await module.InvokeVoidAsync("updateRadarRange", r.Id, range); }
+            catch (JSDisconnectedException) { return; }
+            catch (JSException) { /* JS gone; next push retries */ }
+        }
+    }
+
+    /// <summary>Sets a radar control via REST and re-syncs the
+    /// device list afterwards so the UI reflects the new value.
+    /// "transmit" power asks for confirmation -- accidentally
+    /// keying a radar on the hard or near a person on the antenna
+    /// mast is a real safety hazard.</summary>
+    public async Task SetRadarPowerAsync(string radarId, int powerValue)
+    {
+        if (string.IsNullOrEmpty(radarId)) return;
+        // Power values per spec: 0 Off, 1 Standby, 2 Transmit, 3 Preparing.
+        // Only 1 + 2 are user-settable on a healthy radar.
+        if (powerValue == 2)
+        {
+            bool ok;
+            try
+            {
+                ok = await JS.InvokeAsync<bool>("confirm",
+                    "Start radar transmission? Microwaves emitted -- ensure nobody is on or near the antenna mast.");
+            }
+            catch (JSDisconnectedException) { return; }
+            if (!ok) return;
+        }
+        var body = new ControlValue
+        {
+            Value = JsonSerializer.SerializeToElement(powerValue),
+        };
+        try
+        {
+            var ok = await RadarApi.SetControlAsync(radarId, "power", body);
+            if (!ok) { Toasts.Error("Radar: power change rejected by server"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Radar power: {ex.Message}"); return; }
+        await RefreshServerResourcesAsync();
+    }
+
+    public async Task SetRadarRangeAsync(string radarId, int rangeMeters)
+    {
+        if (string.IsNullOrEmpty(radarId) || rangeMeters <= 0) return;
+        var body = new ControlValue
+        {
+            Value = JsonSerializer.SerializeToElement(rangeMeters),
+        };
+        try
+        {
+            var ok = await RadarApi.SetControlAsync(radarId, "range", body);
+            if (!ok) { Toasts.Error("Radar: range change rejected by server"); return; }
+        }
+        catch (Exception ex) { Toasts.Error($"Radar range: {ex.Message}"); return; }
+        // Refresh so the new range shows in the UI; PushRadarRangeUpdatesAsync
+        // inside RefreshServerResourcesAsync forwards it to the JS layer.
+        await RefreshServerResourcesAsync();
     }
 
     // Falls back to the SK server origin when the server didn't

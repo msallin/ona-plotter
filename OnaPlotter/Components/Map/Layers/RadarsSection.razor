@@ -23,6 +23,7 @@
     @foreach (var r in Radars)
     {
         bool enabled = Enabled.Contains(r.Id);
+        bool transmitting = string.Equals(r.Status, "transmit", StringComparison.OrdinalIgnoreCase);
         <label class="chart-item">
             <input type="checkbox" checked="@enabled"
                    @onchange="(e) => OnToggle.InvokeAsync((r, (bool)(e.Value ?? false)))" />
@@ -36,14 +37,38 @@
                         </span>
                     }
                 </div>
-                @if (r.Range is int rangeM)
-                {
-                    <div class="chart-desc">@FormatRange(rangeM) @(r.Brand ?? "") @(r.Model ?? "")</div>
-                }
-                else if (!string.IsNullOrEmpty(r.Brand) || !string.IsNullOrEmpty(r.Model))
+                @if (!string.IsNullOrEmpty(r.Brand) || !string.IsNullOrEmpty(r.Model))
                 {
                     <div class="chart-desc">@(r.Brand ?? "") @(r.Model ?? "")</div>
                 }
+                @* Inline controls. Power toggle + range dropdown are
+                   the spec's "used often" controls; gain / sea / rain
+                   live in a future controls panel since they belong
+                   on a graphical PPI window per the spec. *@
+                <div class="radar-controls" @onclick:stopPropagation @onclick:preventDefault>
+                    <button type="button"
+                            class="map-btn radar-power-btn @(transmitting ? "ap-engaged" : "")"
+                            title="@(transmitting ? "Stop transmitting" : "Start transmitting")"
+                            @onclick="() => OnSetPower.InvokeAsync((r, transmitting ? 1 : 2))">
+                        @(transmitting ? "Standby" : "Transmit")
+                    </button>
+                    @if (r.Range is int rangeM)
+                    {
+                        <span class="radar-range-label">Range</span>
+                        <select class="map-btn radar-range-select"
+                                value="@rangeM"
+                                @onchange="(e) => OnRangeChange(r, e)">
+                            @* Server doesn't ship the supportedRanges
+                               on the list endpoint, so render a sane
+                               default ladder. The radar will reject
+                               unsupported values; we surface the error. *@
+                            @foreach (var v in DefaultRangeLadder)
+                            {
+                                <option value="@v" selected="@(v == rangeM)">@FormatRange(v)</option>
+                            }
+                        </select>
+                    }
+                </div>
             </div>
         </label>
     }
@@ -53,8 +78,32 @@
     [Parameter, EditorRequired] public IReadOnlyList<RadarInfo> Radars { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggle { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, int powerValue)> OnSetPower { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, int rangeMeters)> OnSetRange { get; set; }
 
     private bool expanded = false;
+
+    // A common spread of marine radar ranges in metres. Most modern
+    // sets accept these values; the server will reject anything
+    // outside its capability list. When we fetch /capabilities for
+    // an enabled radar we should swap in its supportedRanges --
+    // wiring that is left for a follow-up that surfaces capabilities
+    // to this component.
+    private static readonly int[] DefaultRangeLadder =
+    [
+        50, 100, 250, 500, 1000, 1500, 2000, 3000, 4000, 6000,
+        8000, 12000, 16000, 24000, 36000, 48000, 74080,
+    ];
+
+    private async Task OnRangeChange(RadarInfo r, ChangeEventArgs e)
+    {
+        if (e.Value is null) return;
+        if (!int.TryParse(e.Value.ToString(),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out int v)) return;
+        await OnSetRange.InvokeAsync((r, v));
+    }
 
     private static string DisplayName(RadarInfo r) =>
         !string.IsNullOrWhiteSpace(r.Name) ? r.Name!
