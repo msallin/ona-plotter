@@ -23,6 +23,11 @@ publish/
 deploy/publish/
 deploy/staging/
 
+# Dev-only Blazor config overlay. Used to point at a real SignalK
+# server (openplotter.local, a boat's box, etc.) without polluting
+# the committed default that everyone else inherits.
+OnaPlotter/wwwroot/appsettings.Development.json
+
 ## Playwright (running from repo root or UiTests)
 test-results/
 playwright-report/
