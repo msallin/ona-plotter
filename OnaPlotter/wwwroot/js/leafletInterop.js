@@ -6,6 +6,8 @@ import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          speedColor, speedBucket } from './geoMath.js';
 import { isOverlayChart, computeOverzoom, applyOverzoom } from './chartOverzoom.js';
 import { MarkerLayer } from './markerLayer.js';
+import { enableRadarOverlay, disableRadarOverlay,
+         setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
 
 let map = null;
 // Weak-client detection (Raspberry Pi, older tablets). Gates
@@ -854,6 +856,12 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
 
     selfLat = lat; selfLon = lon; selfCogRad = cogRad; selfSogMs = sogMs;
 
+    // Push own-boat state into any active radar overlay so its
+    // canvas can be repositioned over the new lat/lon and painted
+    // heading-corrected. Falls back to COG when heading is absent;
+    // the radar layer itself tolerates undefined.
+    setRadarBoatState(lat, lon, headingRad ?? cogRad ?? 0);
+
     // Stash the latest snapshot on the marker so popupopen can render
     // fresh numbers without a closed-over stale copy.
     boatMarker._onaSelfData = { lat, lon, headingRad, cogRad, sogMs };
@@ -1666,6 +1674,28 @@ function updateAnchorTrail(lat, lon) {
     } else {
         anchorTrailLayer.setLatLngs(coords);
     }
+}
+
+// --- Radar spoke overlay ---
+// Thin re-exports so Blazor's JSObjectReference can call the
+// enable/disable functions on this module (its existing handle).
+// setRadarBoatState is called from inside updateBoatPosition below.
+
+/**
+ * @param {object} cfg  { radarId, spokeDataUrl, spokesPerRevolution,
+ *                        maxSpokeLength, range, legend?, opacity? }
+ */
+export function startRadarOverlay(cfg) {
+    if (!map) return;
+    enableRadarOverlay({ map }, cfg);
+}
+
+export function stopRadarOverlay(radarId) {
+    disableRadarOverlay(radarId);
+}
+
+export function updateRadarRange(radarId, range) {
+    setRadarRange(radarId, range);
 }
 
 // --- Night Mode ---
