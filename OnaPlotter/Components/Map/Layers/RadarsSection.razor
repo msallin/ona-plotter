@@ -58,11 +58,12 @@
                         <select class="map-btn radar-range-select"
                                 value="@rangeM"
                                 @onchange="(e) => OnRangeChange(r, e)">
-                            @* Server doesn't ship the supportedRanges
-                               on the list endpoint, so render a sane
-                               default ladder. The radar will reject
-                               unsupported values; we surface the error. *@
-                            @foreach (var v in DefaultRangeLadder)
+                            @* Prefer the radar's own supportedRanges
+                               from /capabilities so the server can't
+                               reject our PUT with "not a legal value".
+                               Falls back to a sane default ladder when
+                               capabilities haven't loaded yet. *@
+                            @foreach (var v in GetRangeOptions(r))
                             {
                                 <option value="@v" selected="@(v == rangeM)">@FormatRange(v)</option>
                             }
@@ -77,9 +78,32 @@
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<RadarInfo> Radars { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> Capabilities { get; set; } =
+        new Dictionary<string, RadarCapabilities?>();
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggle { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, int powerValue)> OnSetPower { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, int rangeMeters)> OnSetRange { get; set; }
+
+    /// <summary>Per-radar range-dropdown options: prefer the radar's
+    /// own supportedRanges from capabilities; fall back to a generic
+    /// ladder only while capabilities are still loading. When the
+    /// radar's current range isn't in the list, splice it in so the
+    /// dropdown can still reflect the server's state without the
+    /// select widget silently resetting.</summary>
+    private IEnumerable<int> GetRangeOptions(RadarInfo r)
+    {
+        IReadOnlyList<int> ranges = DefaultRangeLadder;
+        if (Capabilities.TryGetValue(r.Id, out var caps)
+            && caps?.SupportedRanges is { Length: > 0 } supported)
+        {
+            ranges = supported;
+        }
+        if (r.Range is int current && !ranges.Contains(current))
+        {
+            return ranges.Append(current).OrderBy(v => v);
+        }
+        return ranges.OrderBy(v => v);
+    }
 
     private bool expanded = false;
 

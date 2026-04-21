@@ -33,7 +33,7 @@ public sealed class RadarApi : IRadarApi
 
     public async Task<IReadOnlyList<RadarInfo>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.RadarsPath);
+        var url = _baseUrl.CombineRadar(SignalKUrls.RadarsPath);
         HttpResponseMessage response;
         try { response = await _http.GetAsync(url, ct); }
         catch (HttpRequestException) { return []; }        // server / plugin missing
@@ -106,7 +106,7 @@ public sealed class RadarApi : IRadarApi
     public async Task<RadarCapabilities?> GetCapabilitiesAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.Combine(SignalKUrls.RadarCapabilities(radarId));
+        var url = _baseUrl.CombineRadar(SignalKUrls.RadarCapabilities(radarId));
         try
         {
             using var response = await _http.GetAsync(url, ct);
@@ -120,7 +120,7 @@ public sealed class RadarApi : IRadarApi
     public async Task<Dictionary<string, ControlValue>?> GetControlsAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.Combine(SignalKUrls.RadarControls(radarId));
+        var url = _baseUrl.CombineRadar(SignalKUrls.RadarControls(radarId));
         try
         {
             using var response = await _http.GetAsync(url, ct);
@@ -131,22 +131,48 @@ public sealed class RadarApi : IRadarApi
         catch (JsonException) { return null; }
     }
 
-    public async Task<bool> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default)
+    public async Task<RadarSetControlResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(radarId) || string.IsNullOrEmpty(controlId)) return false;
-        var url = _baseUrl.Combine(SignalKUrls.RadarControl(radarId, controlId));
+        if (string.IsNullOrEmpty(radarId) || string.IsNullOrEmpty(controlId))
+            return RadarSetControlResult.Fail("missing radar or control id");
+        var url = _baseUrl.CombineRadar(SignalKUrls.RadarControl(radarId, controlId));
         try
         {
             using var response = await _http.PutAsJsonAsync(url, value, s_json, ct);
-            return response.IsSuccessStatusCode;
+            if (response.IsSuccessStatusCode) return RadarSetControlResult.Ok;
+            // Server rejects come back as JSON like:
+            //   {"success":false,"error":"HTTP 400: Control range value 12000 is not a legal value","controlId":"range"}
+            // Surface .error verbatim so the toast is actionable. Fall
+            // back to the raw body / status code when parsing fails.
+            string? err = null;
+            try
+            {
+                var body = await response.Content.ReadAsStringAsync(ct);
+                if (!string.IsNullOrWhiteSpace(body))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(body);
+                        if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                            doc.RootElement.TryGetProperty("error", out var e) &&
+                            e.ValueKind == JsonValueKind.String)
+                        {
+                            err = e.GetString();
+                        }
+                    }
+                    catch (JsonException) { err = body.Length > 200 ? body[..200] : body; }
+                }
+            }
+            catch { /* any read failure -> fall through with null err */ }
+            return RadarSetControlResult.Fail(err ?? $"HTTP {(int)response.StatusCode}");
         }
-        catch (HttpRequestException) { return false; }
+        catch (HttpRequestException ex) { return RadarSetControlResult.Fail(ex.Message); }
     }
 
     public async Task<IReadOnlyList<RadarArpaTarget>?> GetTargetsAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.Combine(SignalKUrls.RadarTargets(radarId));
+        var url = _baseUrl.CombineRadar(SignalKUrls.RadarTargets(radarId));
         try
         {
             using var response = await _http.GetAsync(url, ct);

@@ -23,8 +23,10 @@ internal static class ApiTestHelpers
     private sealed class FakeBaseUrl(string baseUrl) : ISignalKBaseUrl
     {
         public string BaseUrl { get; } = baseUrl;
+        public string RadarBaseUrl { get; } = baseUrl;
         public Uri StreamUri(string subscribe = "none") => SignalKUrls.StreamWs(BaseUrl, subscribe);
         public string Combine(string path) => BaseUrl + path;
+        public string CombineRadar(string path) => baseUrl + path;
     }
 
     private sealed class DelegateHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

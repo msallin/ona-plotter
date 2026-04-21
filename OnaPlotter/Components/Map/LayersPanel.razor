@@ -31,6 +31,7 @@
 
     <RadarsSection Radars="AvailableRadars"
                    Enabled="EnabledRadars"
+                   Capabilities="RadarCapabilities"
                    OnToggle="OnToggleRadar"
                    OnSetPower="OnSetRadarPower"
                    OnSetRange="OnSetRadarRange" />
@@ -96,6 +97,8 @@
     [Parameter, EditorRequired] public HashSet<string> QuickBarCharts { get; set; } = [];
     [Parameter] public IReadOnlyList<RadarInfo> AvailableRadars { get; set; } = [];
     [Parameter] public HashSet<string> EnabledRadars { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> RadarCapabilities { get; set; } =
+        new Dictionary<string, RadarCapabilities?>();
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public bool NotesVisible { get; set; } = true;

@@ -387,6 +387,7 @@
                      QuickBarCharts="quickBarCharts"
                      AvailableRadars="availableRadars"
                      EnabledRadars="enabledRadars"
+                     RadarCapabilities="radarCapabilities"
                      ServerTrackVisible="serverTrackVisible"
                      WeatherOverlayVisible="weatherOverlayVisible"
                      LayerFilter="@layerFilter"
@@ -491,6 +492,13 @@
     // cadence as routes / waypoints. Empty when no provider plugin
     // is installed (most servers).
     private List<RadarInfo> availableRadars = [];
+    // Per-radar static capabilities (supportedRanges, spokes geometry,
+    // legend, control definitions). Fetched once per radar when the
+    // list first includes it, cached for the session -- the spec
+    // guarantees capabilities don't change while the radar is alive.
+    // Drives the range dropdown's actual options so the server
+    // doesn't reject our PUT with "X is not a legal value".
+    private readonly Dictionary<string, RadarCapabilities?> radarCapabilities = new(StringComparer.Ordinal);
     private readonly HashSet<string> enabledRadars = [];
     private readonly HashSet<string> enabledCharts = [];
     private readonly HashSet<string> enabledRoutes = [];
@@ -570,6 +578,7 @@
             if (radars is not null)
             {
                 availableRadars = radars.ToList();
+                await EnsureRadarCapabilitiesAsync();
                 await PushRadarRangeUpdatesAsync();
             }
             RebuildFilteredLayers();
@@ -591,13 +600,17 @@
 
         if (t.enabled)
         {
-            // Capabilities + live controls are fetched alongside the
-            // toggle so the JS layer gets the legend + exact spokes/
-            // range values. If /capabilities 404s we still try with
-            // whatever the device-list response gave us -- some
-            // servers embed the runtime snapshot inline, and that's
-            // enough to render.
-            var caps = await RadarApi.GetCapabilitiesAsync(t.radar.Id);
+            // Capabilities are already fetched + cached eagerly after
+            // the device list loads; this just reads what's there. A
+            // null cached value means the fetch failed earlier; in
+            // that case we fall back to whatever the device-list
+            // response gave us for geometry and a null legend (the JS
+            // layer ships a Navico-default fallback palette).
+            if (!radarCapabilities.TryGetValue(t.radar.Id, out var caps))
+            {
+                caps = await RadarApi.GetCapabilitiesAsync(t.radar.Id);
+                radarCapabilities[t.radar.Id] = caps;
+            }
             int spokes = caps?.SpokesPerRevolution ?? t.radar.SpokesPerRevolution ?? 2048;
             int maxLen = caps?.MaxSpokeLength  ?? t.radar.MaxSpokeLen ?? 1024;
             int range  = t.radar.Range ?? 1000;
@@ -640,6 +653,27 @@
     // bits are derived from the user's UI choices).
     private readonly Dictionary<string, int> _lastRadarRange = new(StringComparer.Ordinal);
 
+    /// <summary>Fetch and cache capabilities for every currently-known
+    /// radar we don't have caps for yet. Idempotent: previously-fetched
+    /// ids are skipped (spec guarantees capabilities are static per
+    /// radar), so the polling path doesn't thrash the server. Failures
+    /// are stored as null so we don't re-request on every poll --
+    /// we re-try on the next add of the same id via the enable path.</summary>
+    private async Task EnsureRadarCapabilitiesAsync()
+    {
+        foreach (var r in availableRadars)
+        {
+            if (string.IsNullOrEmpty(r.Id)) continue;
+            if (radarCapabilities.ContainsKey(r.Id)) continue;
+            try
+            {
+                var caps = await RadarApi.GetCapabilitiesAsync(r.Id);
+                radarCapabilities[r.Id] = caps;
+            }
+            catch (Exception) { radarCapabilities[r.Id] = null; }
+        }
+    }
+
     private async Task PushRadarRangeUpdatesAsync()
     {
         if (module is null) return;
@@ -669,8 +703,8 @@
         };
         try
         {
-            var ok = await RadarApi.SetControlAsync(radarId, "power", body);
-            if (!ok) { Toasts.Error("Radar: power change rejected by server"); return; }
+            var r = await RadarApi.SetControlAsync(radarId, "power", body);
+            if (!r.Success) { Toasts.Error($"Radar power: {r.Error ?? "rejected by server"}"); return; }
         }
         catch (Exception ex) { Toasts.Error($"Radar power: {ex.Message}"); return; }
         await RefreshServerResourcesAsync();
@@ -685,8 +719,8 @@
         };
         try
         {
-            var ok = await RadarApi.SetControlAsync(radarId, "range", body);
-            if (!ok) { Toasts.Error("Radar: range change rejected by server"); return; }
+            var r = await RadarApi.SetControlAsync(radarId, "range", body);
+            if (!r.Success) { Toasts.Error($"Radar range: {r.Error ?? "rejected by server"}"); return; }
         }
         catch (Exception ex) { Toasts.Error($"Radar range: {ex.Message}"); return; }
         // Refresh so the new range shows in the UI; PushRadarRangeUpdatesAsync
@@ -694,13 +728,15 @@
         await RefreshServerResourcesAsync();
     }
 
-    // Falls back to the SK server origin when the server didn't
-    // advertise a spoke URL on the radar list response. ISignalKBaseUrl
-    // hides the auto-vs-configured choice; we just swap http(s) for
-    // ws(s) per spec convention.
+    // Falls back to the RADAR server origin (not main SK) when the
+    // list response didn't carry a spokeDataUrl. mayara-server on
+    // OpenPlotter commonly lives on port 6502 behind its own origin
+    // while the main SK API lives on 443 -- the user configures
+    // SignalK:RadarServerUrl to point at the radar host, and
+    // ISignalKBaseUrl.RadarBaseUrl falls back to BaseUrl when unset.
     private string BuildSpokeDataUrl(string radarId)
     {
-        var baseUri = new Uri(SkBaseUrl.BaseUrl);
+        var baseUri = new Uri(SkBaseUrl.RadarBaseUrl);
         string scheme = baseUri.Scheme == "https" ? "wss" : "ws";
         return $"{scheme}://{baseUri.Host}:{baseUri.Port}/signalk/v2/api/vessels/self/radars/{Uri.EscapeDataString(radarId)}/spokes";
     }
@@ -1000,6 +1036,7 @@
         // panel hides the section entirely in that state.
         availableRadars = (await SafeLoad(() => RadarApi.GetAllAsync(), "radars") ?? [])
             .ToList();
+        await EnsureRadarCapabilitiesAsync();
 
         // Optional: buddy-list plugin. Silently no-ops if not installed.
         // The returned list seeds AisStore so vessels tracked later get
