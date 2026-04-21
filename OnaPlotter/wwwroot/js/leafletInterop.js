@@ -66,7 +66,25 @@ function prewarmFlag(mmsi) {
     const img = new Image();
     // Image() doesn't block, no onerror noise (plugin-missing fetches
     // are absorbed silently since no element is attached to the DOM).
-    img.src = `/signalk/v2/api/resources/flags/mmsi/${encodeURIComponent(mmsi)}`;
+    img.src = flagUrl(mmsi);
+}
+
+// SignalK server base URL (scheme+host+port, no trailing slash).
+// Pushed in from Blazor via setSignalKBaseUrl() during init so all
+// origin-bound URLs (flag images, future direct API hits) target
+// the right host. Empty string falls through to page-relative,
+// which only works when the SK server lives on the same origin
+// (the legacy localhost:3000 setup).
+let signalKBaseUrl = '';
+
+export function setSignalKBaseUrl(url) {
+    signalKBaseUrl = (url || '').replace(/\/+$/, '');
+}
+
+/** Build the flag-image URL for an MMSI. Same path on every server
+ *  (signalk-flags plugin); only the origin varies. */
+function flagUrl(mmsi) {
+    return `${signalKBaseUrl}/signalk/v2/api/resources/flags/mmsi/${encodeURIComponent(mmsi)}`;
 }
 const vesselNameInflight = {};
 
@@ -1083,7 +1101,7 @@ function buildAisPopupHtml(snap) {
     // Country flag from signalk-flags plugin. 404s on servers without
     // the plugin trigger onerror + hide; no broken-image glyph.
     const flagHtml = mmsi
-        ? `<img class="ais-popup-flag" src="/signalk/v2/api/resources/flags/mmsi/${esc(mmsi)}" alt="" onerror="this.style.display='none'">`
+        ? `<img class="ais-popup-flag" src="${flagUrl(mmsi)}" alt="" onerror="this.style.display='none'">`
         : '';
 
     return (
@@ -1765,6 +1783,7 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     layer.setZIndex(50);
     chartLayers.set(id, layer);
     recomputeChartOverzoom();
+    restackChartOpacities();
     return true;
 }
 
@@ -1773,6 +1792,39 @@ export function removeChartLayer(id) {
     chartNativeMax.delete(id);
     chartOverlay.delete(id);
     recomputeChartOverzoom();
+    restackChartOpacities();
+}
+
+// Graduated opacity for stacked charts. With one chart enabled the
+// per-tile opacity is whatever the caller passed (typically 0.8);
+// each chart added above gets progressively more transparent so the
+// stack reads as layers rather than the topmost chart hiding what's
+// underneath. Numbers are intentionally gentle -- helms reported the
+// previous flat-0.8 stack hid useful detail from background charts. */
+function restackChartOpacities() {
+    if (!map || chartLayers.size === 0) return;
+    // Order layers by their current z-index (bottom -> top). setZIndex
+    // is the source of truth (setChartLayerOrder + addChartLayer's
+    // initial 50 both set it), so this matches the visible draw order.
+    const ordered = [];
+    for (const [, layer] of chartLayers.entries()) {
+        ordered.push(layer);
+    }
+    ordered.sort((a, b) => (a.options.zIndex ?? 50) - (b.options.zIndex ?? 50));
+    if (ordered.length === 1) {
+        ordered[0].setOpacity(0.85);
+        return;
+    }
+    // Linear ramp from 0.85 (bottom) to 0.45 (top), with the bottom
+    // layer always the most opaque so the helm's "primary" chart
+    // dominates. 0.45 floor keeps the top layer from disappearing
+    // entirely on a 4+ chart stack.
+    const top = ordered.length - 1;
+    for (let i = 0; i < ordered.length; i++) {
+        const t = i / top;                       // 0..1, bottom->top
+        const opacity = 0.85 - 0.40 * t;
+        ordered[i].setOpacity(opacity);
+    }
 }
 
 // Apply a user-chosen chart draw order. `orderedIds` is bottom-to-top,
@@ -1788,6 +1840,7 @@ export function setChartLayerOrder(orderedIds) {
         if (layer) layer.setZIndex(base + i);
     }
     recomputeChartOverzoom();
+    restackChartOpacities();
 }
 
 // Smart overzoom: only the chart with the highest native max gets the
@@ -2766,7 +2819,7 @@ function buildSelfPopupHtml(data) {
     // Country flag from signalk-flags plugin when we know the own MMSI.
     // Same onerror hide as AIS markers (plugin not installed = silent).
     const flagHtml = ownMmsi
-        ? `<img class="ais-popup-flag" src="/signalk/v2/api/resources/flags/mmsi/${esc(ownMmsi)}" alt="" onerror="this.style.display='none'">`
+        ? `<img class="ais-popup-flag" src="${flagUrl(ownMmsi)}" alt="" onerror="this.style.display='none'">`
         : '';
     return `<div class="ais-popup-content">` +
         `<div class="ais-popup-title">${flagHtml}&#9733; Own boat</div>` +

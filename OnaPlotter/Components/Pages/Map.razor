@@ -657,25 +657,12 @@
 
     /// <summary>Sets a radar control via REST and re-syncs the
     /// device list afterwards so the UI reflects the new value.
-    /// "transmit" power asks for confirmation -- accidentally
-    /// keying a radar on the hard or near a person on the antenna
-    /// mast is a real safety hazard.</summary>
+    /// Power values per spec: 0 Off, 1 Standby, 2 Transmit, 3
+    /// Preparing. Only 1 + 2 are user-settable on a healthy radar.
+    /// No confirm prompt; the operator owns the boat.</summary>
     public async Task SetRadarPowerAsync(string radarId, int powerValue)
     {
         if (string.IsNullOrEmpty(radarId)) return;
-        // Power values per spec: 0 Off, 1 Standby, 2 Transmit, 3 Preparing.
-        // Only 1 + 2 are user-settable on a healthy radar.
-        if (powerValue == 2)
-        {
-            bool ok;
-            try
-            {
-                ok = await JS.InvokeAsync<bool>("confirm",
-                    "Start radar transmission? Microwaves emitted -- ensure nobody is on or near the antenna mast.");
-            }
-            catch (JSDisconnectedException) { return; }
-            if (!ok) return;
-        }
         var body = new ControlValue
         {
             Value = JsonSerializer.SerializeToElement(powerValue),
@@ -979,6 +966,14 @@
 
         await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef);
         mapInitialized = true;
+
+        // Tell the JS side where the SignalK server lives so its
+        // origin-bound URLs (flag images today; future direct hits
+        // tomorrow) target the configured server rather than the
+        // page origin. With the default same-origin setup this
+        // pushes "" and existing relative URLs keep working.
+        try { await module.InvokeVoidAsync("setSignalKBaseUrl", SkBaseUrl.BaseUrl); }
+        catch (JSDisconnectedException) { return; }
 
         // Load existing track as speed-colored segments.
         var points = TrackBuffer.GetSnapshot();
