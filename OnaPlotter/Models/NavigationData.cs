@@ -175,22 +175,36 @@ public sealed class NavigationData
                 case "navigation.anchor.currentRadius":
                     AnchorCurrentRadius = value;
                     break;
+                case "navigation.course.calcValues.distance":
                 case "navigation.courseGreatCircle.nextPoint.distance":
                 case "navigation.courseRhumbline.nextPoint.distance":
                     CourseNextPointDistance = value;
                     break;
+                case "navigation.course.calcValues.bearingTrue":
                 case "navigation.courseGreatCircle.nextPoint.bearingTrue":
                 case "navigation.courseRhumbline.nextPoint.bearingTrue":
                     CourseNextPointBearing = value;
                     break;
+                case "navigation.course.calcValues.timeToGo":
                 case "navigation.courseGreatCircle.nextPoint.timeToGo":
                 case "navigation.courseRhumbline.nextPoint.timeToGo":
                     CourseNextPointTimeToGo = value;
                     break;
+                // course-provider-plugin uses velocityMadeGood, but
+                // emits null when VMG doesn't make sense on a non-wind
+                // leg. velocityMadeGoodToCourse is its fallback (the
+                // boat's closing speed projected onto the rhumb to
+                // the next WP) and is the more useful HUD number in
+                // practice. Accept both under a single field; the
+                // null-from-VMG case is overwritten by the next tick's
+                // VMGToCourse.
+                case "navigation.course.calcValues.velocityMadeGood":
+                case "navigation.course.calcValues.velocityMadeGoodToCourse":
                 case "navigation.courseGreatCircle.nextPoint.velocityMadeGood":
                 case "navigation.courseRhumbline.nextPoint.velocityMadeGood":
                     CourseNextPointVmg = value;
                     break;
+                case "navigation.course.calcValues.crossTrackError":
                 case "navigation.courseGreatCircle.crossTrackError":
                 case "navigation.courseRhumbline.crossTrackError":
                     CrossTrackError = value;
@@ -227,10 +241,16 @@ public sealed class NavigationData
                 case "environment.tide.heightLow":
                     TideHeightLow = value;
                     break;
+                // Plugin uses navigation.course.calcValues.route.distance;
+                // server v1 used the explicit distanceRemaining leaf.
+                // Either way the same field represents "metres left to
+                // cover for the rest of the active route".
+                case "navigation.course.calcValues.route.distance":
                 case "navigation.courseGreatCircle.activeRoute.distanceRemaining":
                 case "navigation.courseRhumbline.activeRoute.distanceRemaining":
                     ActiveRouteDistanceRemaining = value;
                     break;
+                case "navigation.course.calcValues.route.timeToGo":
                 case "navigation.courseGreatCircle.activeRoute.timeToGo":
                 case "navigation.courseRhumbline.activeRoute.timeToGo":
                     ActiveRouteTimeToGo = value;
@@ -239,10 +259,12 @@ public sealed class NavigationData
                 // through the number-apply path and cast back to int at
                 // the UI boundary so NaN / fractional server quirks don't
                 // trip the hot path.
+                case "navigation.course.activeRoute.pointIndex":
                 case "navigation.courseGreatCircle.activeRoute.pointIndex":
                 case "navigation.courseRhumbline.activeRoute.pointIndex":
                     ActiveRoutePointIndex = (int)value;
                     break;
+                case "navigation.course.activeRoute.pointTotal":
                 case "navigation.courseGreatCircle.activeRoute.pointTotal":
                 case "navigation.courseRhumbline.activeRoute.pointTotal":
                     ActiveRoutePointTotal = (int)value;
@@ -348,10 +370,12 @@ public sealed class NavigationData
         {
             switch (path)
             {
+                case "navigation.course.activeRoute.href":
                 case "navigation.courseGreatCircle.activeRoute.href":
                 case "navigation.courseRhumbline.activeRoute.href":
                     ActiveRouteHref = value;
                     break;
+                case "navigation.course.activeRoute.name":
                 case "navigation.courseGreatCircle.activeRoute.name":
                 case "navigation.courseRhumbline.activeRoute.name":
                     ActiveRouteName = value;

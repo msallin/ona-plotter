@@ -181,6 +181,7 @@ public class NavigationDataTests
     }
 
     [Test]
+    [Arguments("navigation.course.calcValues.distance")]
     [Arguments("navigation.courseGreatCircle.nextPoint.distance")]
     [Arguments("navigation.courseRhumbline.nextPoint.distance")]
     public async Task Apply_CourseDistance_SetsProperty(string path)
@@ -192,6 +193,7 @@ public class NavigationDataTests
     }
 
     [Test]
+    [Arguments("navigation.course.calcValues.bearingTrue")]
     [Arguments("navigation.courseGreatCircle.nextPoint.bearingTrue")]
     [Arguments("navigation.courseRhumbline.nextPoint.bearingTrue")]
     public async Task Apply_CourseBearing_SetsProperty(string path)
@@ -200,6 +202,47 @@ public class NavigationDataTests
         var je = JsonSerializer.SerializeToElement(1.57);
         await Assert.That(nav.Apply(path, je)).IsTrue();
         await Assert.That(nav.CourseNextPointBearing).IsEqualTo(1.57);
+    }
+
+    [Test]
+    [Arguments("navigation.course.calcValues.velocityMadeGood")]
+    [Arguments("navigation.course.calcValues.velocityMadeGoodToCourse")]
+    [Arguments("navigation.courseGreatCircle.nextPoint.velocityMadeGood")]
+    [Arguments("navigation.courseRhumbline.nextPoint.velocityMadeGood")]
+    public async Task Apply_CourseVmg_SetsProperty_FromAnyV1OrV2Path(string path)
+    {
+        // VMG maps the same field regardless of source path. The
+        // course-provider-plugin publishes velocityMadeGood (null when
+        // VMG isn't meaningful on a motor leg) AND
+        // velocityMadeGoodToCourse (closing speed projected onto the
+        // rhumb); both feed CourseNextPointVmg.
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(3.45);
+        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.CourseNextPointVmg).IsEqualTo(3.45);
+    }
+
+    [Test]
+    [Arguments("navigation.course.calcValues.route.distance")]
+    [Arguments("navigation.courseGreatCircle.activeRoute.distanceRemaining")]
+    [Arguments("navigation.courseRhumbline.activeRoute.distanceRemaining")]
+    public async Task Apply_RouteDistanceRemaining_SetsProperty(string path)
+    {
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(12345.6);
+        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.ActiveRouteDistanceRemaining).IsEqualTo(12345.6);
+    }
+
+    [Test]
+    [Arguments("navigation.course.activeRoute.href")]
+    [Arguments("navigation.courseGreatCircle.activeRoute.href")]
+    [Arguments("navigation.courseRhumbline.activeRoute.href")]
+    public async Task ApplyString_ActiveRouteHref_SetsProperty(string path)
+    {
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyString(path, "/resources/routes/abc")).IsTrue();
+        await Assert.That(nav.ActiveRouteHref).IsEqualTo("/resources/routes/abc");
     }
 
     [Test]

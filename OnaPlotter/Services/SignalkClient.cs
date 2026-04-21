@@ -138,7 +138,30 @@ public sealed class SignalkClient : IAsyncDisposable
         // under context vessels.self; ProcessSelfDelta detects and routes
         // them into AisStore with a synthesised radar.* context.
         new("radars.*.targets.*",                                            PathTier.SelfFast),
-        // Active course / route next-WP fields (HUD updates per fix).
+        // Active course / route next-WP fields. The Signal K v2 course
+        // surface lives at navigation.course.*; the course-provider
+        // plugin derives per-leg numbers under
+        // navigation.course.calcValues.* (bearing, distance, TTG, VMG,
+        // XTE, route totals). We subscribe the v2 paths first. The
+        // old v1-style navigation.courseGreatCircle.* /
+        // navigation.courseRhumbline.* subtrees stay subscribed too
+        // so we still work against servers running the older layout.
+        // NavigationData.Apply accepts both on the same case label.
+        new("navigation.course.activeRoute.href",                            PathTier.SelfFast),
+        new("navigation.course.activeRoute.name",                            PathTier.SelfFast),
+        new("navigation.course.activeRoute.pointIndex",                      PathTier.SelfFast),
+        new("navigation.course.activeRoute.pointTotal",                      PathTier.SelfFast),
+        new("navigation.course.nextPoint.position",                          PathTier.SelfFast),
+        new("navigation.course.previousPoint.position",                      PathTier.SelfFast),
+        new("navigation.course.calcValues.distance",                         PathTier.SelfFast),
+        new("navigation.course.calcValues.bearingTrue",                      PathTier.SelfFast),
+        new("navigation.course.calcValues.timeToGo",                         PathTier.SelfFast),
+        new("navigation.course.calcValues.velocityMadeGood",                 PathTier.SelfFast),
+        new("navigation.course.calcValues.velocityMadeGoodToCourse",         PathTier.SelfFast),
+        new("navigation.course.calcValues.crossTrackError",                  PathTier.SelfFast),
+        new("navigation.course.calcValues.route.distance",                   PathTier.SelfFast),
+        new("navigation.course.calcValues.route.timeToGo",                   PathTier.SelfFast),
+        // Legacy v1-style paths, still populated by older SK servers.
         new("navigation.courseGreatCircle.activeRoute.href",                 PathTier.SelfFast),
         new("navigation.courseGreatCircle.activeRoute.name",                 PathTier.SelfFast),
         new("navigation.courseGreatCircle.nextPoint.position",               PathTier.SelfFast),
@@ -601,8 +624,14 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // Course next-point position (lat/lon object).
-                if ((val.Path == "navigation.courseGreatCircle.nextPoint.position"
+                // Course next-point position (lat/lon object). Three
+                // publishing paths observed across server + plugin
+                // versions:
+                //   * navigation.course.nextPoint.position    (SK v2 built-in)
+                //   * navigation.courseGreatCircle.nextPoint.position  (legacy v1 GC)
+                //   * navigation.courseRhumbline.nextPoint.position    (legacy v1 RL)
+                if ((val.Path == "navigation.course.nextPoint.position"
+                    || val.Path == "navigation.courseGreatCircle.nextPoint.position"
                     || val.Path == "navigation.courseRhumbline.nextPoint.position")
                     && val.Value is JsonElement wpEl
                     && wpEl.ValueKind == JsonValueKind.Object)
@@ -618,8 +647,10 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // Course previous-point position (lat/lon object).
-                if ((val.Path == "navigation.courseGreatCircle.previousPoint.position"
+                // Course previous-point position. Same three-shape
+                // tolerance as nextPoint.
+                if ((val.Path == "navigation.course.previousPoint.position"
+                    || val.Path == "navigation.courseGreatCircle.previousPoint.position"
                     || val.Path == "navigation.courseRhumbline.previousPoint.position")
                     && val.Value is JsonElement prevWpEl
                     && prevWpEl.ValueKind == JsonValueKind.Object)

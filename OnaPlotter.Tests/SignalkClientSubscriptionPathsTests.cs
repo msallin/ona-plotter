@@ -70,6 +70,31 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
+    public async Task V2_Course_Paths_Subscribed()
+    {
+        // The v2 navigation.course API (+ course-provider-plugin's
+        // calcValues subtree) is what real Signal K v2 servers
+        // publish today. If these drop off, the HUD next-WP /
+        // distance / bearing / TTG / VMG starves against any
+        // properly-configured server -- the user-visible symptom
+        // was empty route info despite an active route.
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.activeRoute.href");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.activeRoute.name");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.activeRoute.pointIndex");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.activeRoute.pointTotal");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.nextPoint.position");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.previousPoint.position");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.distance");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.bearingTrue");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.timeToGo");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.velocityMadeGood");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.velocityMadeGoodToCourse");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.crossTrackError");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.route.distance");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.route.timeToGo");
+    }
+
+    [Test]
     public async Task SlowSelfPaths_Are_All_In_SelfPaths()
     {
         // SelfSlow is a subset of SelfPaths (which is SelfFast + SelfSlow).
