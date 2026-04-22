@@ -77,6 +77,16 @@ $pkgJson = Get-Content $PackageJsonTemplate -Raw
 $pkgJson = $pkgJson -replace '__VERSION__', $version
 Set-Content -Path (Join-Path $WebappStaging "package.json") -Value $pkgJson
 
+# Copy index.js (the plugin shim that adds the SPA fallback so
+# Blazor client-routed URLs like /signalk-onaplotter/map return
+# index.html on reload instead of 404). The file is small and
+# dep-free; sits next to package.json at the package root.
+$PluginShim = Join-Path $PSScriptRoot "index.js"
+if (-not (Test-Path $PluginShim)) {
+    throw "Expected plugin shim at $PluginShim -- deploy/index.js is required."
+}
+Copy-Item -Path $PluginShim -Destination (Join-Path $WebappStaging "index.js")
+
 # Copy wwwroot -> public/
 Copy-Item -Recurse -Path $WwwRootSrc -Destination (Join-Path $WebappStaging "public")
 
