@@ -72,33 +72,11 @@ public sealed class RouteApi : IRouteApi
 
     // --- shared body shape + transport helpers ----------------------
 
-    private static object BuildRouteBody(string name, double[][] coordsLatLon)
-    {
-        // GeoJSON requires `properties` on every Feature (empty is
-        // fine); freeboard-sk assumes it's always present.
-        // `coordinatesMeta` is one entry per waypoint -- we emit
-        // empty-name placeholders so downstream editors have slots
-        // to fill in. Swap lat/lon pairs to GeoJSON's [lon, lat].
-        var geoJsonCoords = coordsLatLon.Select(c => new[] { c[1], c[0] }).ToArray();
-        var coordinatesMeta = Enumerable.Range(0, coordsLatLon.Length)
-            .Select(_ => new { name = "" })
-            .ToArray();
-        return new
-        {
+    private static object BuildRouteBody(string name, double[][] coordsLatLon) =>
+        GeoJsonBuilder.RouteFeatureBody(
             name,
-            feature = new
-            {
-                type = "Feature",
-                geometry = new { type = "LineString", coordinates = geoJsonCoords },
-                properties = new
-                {
-                    name,
-                    description = "",
-                    coordinatesMeta
-                }
-            }
-        };
-    }
+            GeoJsonBuilder.LineString(coordsLatLon),
+            waypointCount: coordsLatLon.Length);
 
     private async Task<bool> PostJsonReturningSuccess(string url, object body, CancellationToken ct)
     {

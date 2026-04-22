@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using OnaPlotter.Models;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
@@ -86,25 +87,10 @@ public sealed class RegionApi : IRegionApi
     private async Task<string?> PostPolygonAsync(string name, string description,
         double[][] ring, CancellationToken ct)
     {
-        // GeoJSON Polygon coordinates: array of linear rings; index 0 is
-        // the outer ring, remaining indices are holes (we have none).
-        var coordinates = new[] { ring };
-
-        var body = new
-        {
+        var body = GeoJsonBuilder.RegionFeatureBody(
             name,
-            description,
-            feature = new
-            {
-                type = "Feature",
-                geometry = new { type = "Polygon", coordinates },
-                properties = new
-                {
-                    name,
-                    description,
-                }
-            }
-        };
+            GeoJsonBuilder.Polygon(ring),
+            description);
         var url = _baseUrl.Combine(SignalKUrls.RegionsPath);
         using var response = await _http.PostAsJsonAsync(url, body, ct);
         if (!response.IsSuccessStatusCode) return null;

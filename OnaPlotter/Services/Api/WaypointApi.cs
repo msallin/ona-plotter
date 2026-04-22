@@ -43,28 +43,11 @@ public sealed class WaypointApi : IWaypointApi
     public async Task<string?> CreateAsync(string name, double lat, double lon,
         string? description = null, CancellationToken ct = default)
     {
-        // GeoJSON requires `properties` on every Feature (empty is fine)
-        // and freeboard-sk explicitly assumes it's always present.
-        // Shipping just `{type, geometry}` produced waypoints that
-        // displayed broken or not at all when the same SignalK server
-        // was viewed through freeboard. Mirrors the route fix
-        // (1ca24fc): top-level `name` stays as the SignalK resource
-        // name; properties.name/description are the per-GeoJSON copy so
-        // any consumer picks them up.
-        var body = new
-        {
-            name,
-            feature = new
-            {
-                type = "Feature",
-                geometry = new { type = "Point", coordinates = new[] { lon, lat } },
-                properties = new
-                {
-                    name,
-                    description = description ?? "",
-                }
-            }
-        };
+        // Shared GeoJSON envelope builder: Freeboard-SK + SK core
+        // refuse feature documents without a `properties` block, so
+        // the helper always emits one (empty description is the
+        // spec-friendly "no description" value, not a missing key).
+        var body = GeoJsonBuilder.FeatureBody(name, GeoJsonBuilder.Point(lat, lon), description);
         var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
         using var response = await _http.PostAsJsonAsync(url, body, ct);
         if (!response.IsSuccessStatusCode) return null;
@@ -80,23 +63,9 @@ public sealed class WaypointApi : IWaypointApi
     {
         if (string.IsNullOrEmpty(wp.Id)) return false;
         if (wp.Latitude is not double lat || wp.Longitude is not double lon) return false;
-        // Same GeoJSON envelope as CreateAsync so SignalK's validator
-        // accepts it; PUT at the waypoint's id URL is the in-place
-        // update verb per the v2 resources-api spec.
-        var body = new
-        {
-            name,
-            feature = new
-            {
-                type = "Feature",
-                geometry = new { type = "Point", coordinates = new[] { lon, lat } },
-                properties = new
-                {
-                    name,
-                    description = description ?? "",
-                }
-            }
-        };
+        // Same envelope as Create; PUT at the waypoint's id URL is
+        // the v2 resources-api in-place update verb.
+        var body = GeoJsonBuilder.FeatureBody(name, GeoJsonBuilder.Point(lat, lon), description);
         var url = _baseUrl.Combine(SignalKUrls.Waypoint(wp.Id));
         using var response = await _http.PutAsJsonAsync(url, body, ct);
         return response.IsSuccessStatusCode;
