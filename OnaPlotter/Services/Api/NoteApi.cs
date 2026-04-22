@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
@@ -38,7 +37,7 @@ public sealed class NoteApi : INoteApi
         return notes;
     }
 
-    public async Task<string?> CreateAsync(string title, string description, double lat, double lon, CancellationToken ct = default)
+    public Task<ApiResult<string>> CreateAsync(string title, string description, double lat, double lon, CancellationToken ct = default)
     {
         var body = new
         {
@@ -47,13 +46,9 @@ public sealed class NoteApi : INoteApi
             position = new { latitude = lat, longitude = lon }
         };
         var url = _baseUrl.Combine(SignalKUrls.NotesPath);
-        using var response = await _http.PostAsJsonAsync(url, body, ct);
-        if (!response.IsSuccessStatusCode) return null;
-
-        var result = await response.Content.ReadAsStringAsync(ct);
-        return ResourceHttp.ParseCreatedId(result);
+        return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
 
-    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+    public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Note(id)), ct);
 }

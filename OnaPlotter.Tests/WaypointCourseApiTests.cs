@@ -44,9 +44,10 @@ public class WaypointCourseApiTests
         });
         var api = new WaypointApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var id = await api.CreateAsync("Marker", 47.4, 8.5);
+        var r = await api.CreateAsync("Marker", 47.4, 8.5);
 
-        await Assert.That(id).IsEqualTo("wpt-new-42");
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(r.Value).IsEqualTo("wpt-new-42");
         await Assert.That(capturedBody).IsNotNull();
         // Top-level name preserved for SignalK.
         await Assert.That(capturedBody).Contains("\"name\":\"Marker\"");
@@ -88,9 +89,9 @@ public class WaypointCourseApiTests
         });
         var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.SetDestinationAsync("wpt-42");
+        var r = await api.SetDestinationAsync("wpt-42");
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
         await Assert.That(capturedBody).Contains("/resources/waypoints/wpt-42");
     }
@@ -115,9 +116,9 @@ public class WaypointCourseApiTests
         });
         var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.SetActiveRouteAsync("rte-123", pointIndex: 2, reverse: true);
+        var r = await api.SetActiveRouteAsync("rte-123", pointIndex: 2, reverse: true);
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
         await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute");
         await Assert.That(capturedBody).Contains("\"href\":\"/resources/routes/rte-123\"");
@@ -159,9 +160,9 @@ public class WaypointCourseApiTests
         });
         var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.AdvanceActiveRouteAsync();
+        var r = await api.AdvanceActiveRouteAsync();
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
         await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute/nextPoint");
     }
@@ -174,7 +175,7 @@ public class WaypointCourseApiTests
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.NotFound));
         var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
-        await Assert.That(await api.AdvanceActiveRouteAsync()).IsFalse();
+        await Assert.That((await api.AdvanceActiveRouteAsync()).Success).IsFalse();
     }
 
     [Test]
@@ -190,9 +191,9 @@ public class WaypointCourseApiTests
         });
         var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.ClearAsync();
+        var r = await api.ClearAsync();
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Delete);
         await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course");
     }

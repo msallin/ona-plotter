@@ -131,42 +131,52 @@ public sealed class RadarApi : IRadarApi
         catch (JsonException) { return null; }
     }
 
-    public async Task<RadarSetControlResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default)
+    public async Task<ApiResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId) || string.IsNullOrEmpty(controlId))
-            return RadarSetControlResult.Fail("missing radar or control id");
+            return ApiResult.Fail("missing radar or control id");
         var url = _baseUrl.CombineRadar(SignalKUrls.RadarControl(radarId, controlId));
         try
         {
             using var response = await _http.PutAsJsonAsync(url, value, s_json, ct);
-            if (response.IsSuccessStatusCode) return RadarSetControlResult.Ok;
-            // Server rejects come back as JSON like:
-            //   {"success":false,"error":"HTTP 400: Control range value 12000 is not a legal value","controlId":"range"}
-            // Surface .error verbatim so the toast is actionable. Fall
-            // back to the raw body / status code when parsing fails.
-            string? err = null;
+            if (response.IsSuccessStatusCode) return ApiResult.Ok;
+            return ApiResult.Fail(await ReadErrorBodyAsync(response, ct)
+                ?? $"HTTP {(int)response.StatusCode}");
+        }
+        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+    }
+
+    /// <summary>
+    /// Parses the server's failure envelope (<c>{"success":false,
+    /// "error":"...","controlId":"range"}</c>) and returns the
+    /// <c>error</c> field when present. Falls back to the raw body
+    /// (truncated) on malformed JSON, or null if reading the body
+    /// itself throws. Centralised so other endpoints can adopt the
+    /// same error-surfacing path.
+    /// </summary>
+    private static async Task<string?> ReadErrorBodyAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (string.IsNullOrWhiteSpace(body)) return null;
             try
             {
-                var body = await response.Content.ReadAsStringAsync(ct);
-                if (!string.IsNullOrWhiteSpace(body))
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty("error", out var e) &&
+                    e.ValueKind == JsonValueKind.String)
                 {
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(body);
-                        if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                            doc.RootElement.TryGetProperty("error", out var e) &&
-                            e.ValueKind == JsonValueKind.String)
-                        {
-                            err = e.GetString();
-                        }
-                    }
-                    catch (JsonException) { err = body.Length > 200 ? body[..200] : body; }
+                    return e.GetString();
                 }
             }
-            catch { /* any read failure -> fall through with null err */ }
-            return RadarSetControlResult.Fail(err ?? $"HTTP {(int)response.StatusCode}");
+            catch (JsonException)
+            {
+                return body.Length > 200 ? body[..200] : body;
+            }
         }
-        catch (HttpRequestException ex) { return RadarSetControlResult.Fail(ex.Message); }
+        catch { /* body read failed -- caller falls back to status code */ }
+        return null;
     }
 
     public async Task<IReadOnlyList<RadarArpaTarget>?> GetTargetsAsync(string radarId, CancellationToken ct = default)

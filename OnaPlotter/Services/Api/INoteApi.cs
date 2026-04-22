@@ -7,6 +7,6 @@ namespace OnaPlotter.Services.Api;
 public interface INoteApi
 {
     Task<List<SignalkNote>> GetAllAsync(CancellationToken ct = default);
-    Task<string?> CreateAsync(string title, string description, double lat, double lon, CancellationToken ct = default);
-    Task<bool> DeleteAsync(string id, CancellationToken ct = default);
+    Task<ApiResult<string>> CreateAsync(string title, string description, double lat, double lon, CancellationToken ct = default);
+    Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default);
 }

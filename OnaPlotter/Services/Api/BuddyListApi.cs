@@ -79,39 +79,47 @@ public sealed class BuddyListApi : IBuddyListApi
 
     public void InvalidateAsync() => _available = null;
 
-    public async Task<bool> AddAsync(string urn, string name, CancellationToken ct = default)
+    public async Task<ApiResult> AddAsync(string urn, string name, CancellationToken ct = default)
     {
         var url = _baseUrl.Combine(SignalKUrls.BuddiesPath);
         try
         {
             using var res = await _http.PostAsJsonAsync(url, new { urn, name }, ct);
-            if (res.IsSuccessStatusCode) { _available = true; return true; }
-            if (res.StatusCode == HttpStatusCode.NotFound) { _available = false; return false; }
+            if (res.IsSuccessStatusCode) { _available = true; return ApiResult.Ok; }
+            if (res.StatusCode == HttpStatusCode.NotFound)
+            {
+                _available = false;
+                return ApiResult.Fail("buddy-list plugin not installed");
+            }
             _logger.LogWarning("Buddy add rejected with {Status}", res.StatusCode);
-            return false;
+            return ApiResult.Fail($"HTTP {(int)res.StatusCode}");
         }
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Buddy add failed");
-            return false;
+            return ApiResult.Fail(ex.Message);
         }
     }
 
-    public async Task<bool> RemoveAsync(string urn, CancellationToken ct = default)
+    public async Task<ApiResult> RemoveAsync(string urn, CancellationToken ct = default)
     {
         var url = _baseUrl.Combine(SignalKUrls.Buddy(urn));
         try
         {
             using var res = await _http.DeleteAsync(url, ct);
-            if (res.IsSuccessStatusCode) { _available = true; return true; }
-            if (res.StatusCode == HttpStatusCode.NotFound) { _available = false; return false; }
+            if (res.IsSuccessStatusCode) { _available = true; return ApiResult.Ok; }
+            if (res.StatusCode == HttpStatusCode.NotFound)
+            {
+                _available = false;
+                return ApiResult.Fail("buddy-list plugin not installed");
+            }
             _logger.LogWarning("Buddy delete rejected with {Status}", res.StatusCode);
-            return false;
+            return ApiResult.Fail($"HTTP {(int)res.StatusCode}");
         }
         catch (HttpRequestException ex)
         {
             _logger.LogWarning(ex, "Buddy delete failed");
-            return false;
+            return ApiResult.Fail(ex.Message);
         }
     }
 }

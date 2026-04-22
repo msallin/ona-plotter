@@ -602,12 +602,10 @@
     private async Task DeleteWaypointFromLayers(SignalkWaypoint wp)
     {
         if (string.IsNullOrEmpty(wp.Id)) return;
-        try
-        {
-            var ok = await WaypointApi.DeleteAsync(wp.Id);
-            if (!ok) { Toasts.Error("Delete waypoint failed: server rejected"); return; }
-        }
+        ApiResult r;
+        try { r = await WaypointApi.DeleteAsync(wp.Id); }
         catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
         {
@@ -621,12 +619,10 @@
     private async Task RenameWaypointAsync(SignalkWaypoint wp, string newName)
     {
         if (string.IsNullOrEmpty(wp.Id) || string.IsNullOrWhiteSpace(newName)) return;
-        try
-        {
-            var ok = await WaypointApi.UpdateAsync(wp, newName.Trim());
-            if (!ok) { Toasts.Error("Rename waypoint failed: server rejected"); return; }
-        }
+        ApiResult r;
+        try { r = await WaypointApi.UpdateAsync(wp, newName.Trim()); }
         catch (Exception ex) { Toasts.Error($"Rename waypoint failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Rename waypoint failed: {r.Error ?? "server rejected"}"); return; }
 
         // Optimistic local rename so the panel reflects the new name
         // without waiting for the 60 s resource poll. Next refresh
@@ -1713,11 +1709,11 @@
         string friendly = string.IsNullOrWhiteSpace(name)
             ? (mmsi is { } m ? $"MMSI {m}" : urn) : name!;
 
-        bool ok = currentlyBuddy
+        var r = currentlyBuddy
             ? await BuddyListApi.RemoveAsync(urn)
             : await BuddyListApi.AddAsync(urn, friendly);
 
-        if (ok)
+        if (r.Success)
         {
             Toasts.Success(currentlyBuddy ? $"Removed {friendly} from buddies" : $"Added {friendly} to buddies");
             await RefreshBuddiesAsync();
@@ -1728,7 +1724,7 @@
         }
         else
         {
-            Toasts.Error("Buddy update failed (plugin installed & auth?)");
+            Toasts.Error($"Buddy update failed: {r.Error ?? "plugin installed & auth?"}");
         }
     }
 
@@ -1796,8 +1792,8 @@
         double lat = contextMenuLat, lon = contextMenuLon;
         try
         {
-            var ok = await CourseApi.SetDestinationPositionAsync(lat, lon);
-            if (!ok) { Toasts.Error("Navigate failed: server rejected destination"); return; }
+            var r = await CourseApi.SetDestinationPositionAsync(lat, lon);
+            if (!r.Success) { Toasts.Error($"Navigate failed: {r.Error ?? "server rejected"}"); return; }
             Toasts.Success($"Navigating to {lat:F4}, {lon:F4}");
         }
         catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }

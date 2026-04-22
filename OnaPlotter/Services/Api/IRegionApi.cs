@@ -10,17 +10,18 @@ public interface IRegionApi
 {
     Task<List<SignalkRegion>> GetAllAsync(CancellationToken ct = default);
 
-    Task<string?> CreateCircleAsync(string name, string description,
+    Task<ApiResult<string>> CreateCircleAsync(string name, string description,
         double lat, double lon, double radiusMeters, CancellationToken ct = default);
 
     /// <summary>
     /// Creates a freeform polygon region from a list of <c>[lat, lon]</c>
     /// vertices (Leaflet order). The first vertex is automatically
     /// repeated at the end to close the ring, per GeoJSON. Requires at
-    /// least 3 distinct vertices; returns <c>null</c> otherwise.
+    /// least 3 distinct vertices; fails otherwise with an "invalid
+    /// input" error so the caller can toast the reason.
     /// </summary>
-    Task<string?> CreatePolygonAsync(string name, string description,
+    Task<ApiResult<string>> CreatePolygonAsync(string name, string description,
         double[][] vertices, CancellationToken ct = default);
 
-    Task<bool> DeleteAsync(string id, CancellationToken ct = default);
+    Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default);
 }

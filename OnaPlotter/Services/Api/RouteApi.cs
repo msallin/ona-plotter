@@ -46,28 +46,28 @@ public sealed class RouteApi : IRouteApi
         return coords.Value.ToLeafletLineString();
     }
 
-    public Task<bool> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
+    public Task<ApiResult> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
     {
         // POST /resources/routes -> new id. Used for "start from
         // scratch" edit sessions.
         var body = BuildRouteBody(name, coordsLatLon);
         var url = _baseUrl.Combine(SignalKUrls.RoutesPath);
-        return PostJsonReturningSuccess(url, body, ct);
+        return ResourceHttp.PostAsync(_http, url, body, ct);
     }
 
-    public Task<bool> UpdateAsync(string id, string name, double[][] coordsLatLon, CancellationToken ct = default)
+    public Task<ApiResult> UpdateAsync(string id, string name, double[][] coordsLatLon, CancellationToken ct = default)
     {
         // PUT /resources/routes/{id} -> rewrite in place. Used when
         // the edit session was started from an existing route so the
         // helm's tweaks replace the original rather than spawning a
         // second copy on every save.
-        if (string.IsNullOrEmpty(id)) return Task.FromResult(false);
+        if (string.IsNullOrEmpty(id)) return Task.FromResult(ApiResult.Fail("route id required"));
         var body = BuildRouteBody(name, coordsLatLon);
         var url = _baseUrl.Combine(SignalKUrls.Route(id));
-        return PutJsonReturningSuccess(url, body, ct);
+        return ResourceHttp.PutAsync(_http, url, body, ct);
     }
 
-    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+    public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Route(id)), ct);
 
     // --- shared body shape + transport helpers ----------------------
@@ -77,16 +77,4 @@ public sealed class RouteApi : IRouteApi
             name,
             GeoJsonBuilder.LineString(coordsLatLon),
             waypointCount: coordsLatLon.Length);
-
-    private async Task<bool> PostJsonReturningSuccess(string url, object body, CancellationToken ct)
-    {
-        using var response = await _http.PostAsJsonAsync(url, body, ct);
-        return response.IsSuccessStatusCode;
-    }
-
-    private async Task<bool> PutJsonReturningSuccess(string url, object body, CancellationToken ct)
-    {
-        using var response = await _http.PutAsJsonAsync(url, body, ct);
-        return response.IsSuccessStatusCode;
-    }
 }

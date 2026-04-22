@@ -1,6 +1,7 @@
 using Microsoft.JSInterop;
 using OnaPlotter.Models;
 using OnaPlotter.Services;
+using OnaPlotter.Services.Api;
 using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Components.Pages;
@@ -38,11 +39,16 @@ public partial class Map
         waypointDialogVisible = false;
         string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
         string? description = string.IsNullOrWhiteSpace(newWaypointDescription) ? null : newWaypointDescription.Trim();
-        string? id;
-        try { id = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon, description); }
+        ApiResult<string> r;
+        try { r = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon, description); }
         catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
 
-        if (id is null) { Toasts.Error("Save waypoint failed: server rejected"); return; }
+        if (!r.Success || string.IsNullOrEmpty(r.Value))
+        {
+            Toasts.Error($"Save waypoint failed: {r.Error ?? "server rejected"}");
+            return;
+        }
+        string id = r.Value;
 
         if (module is not null)
             await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
@@ -57,12 +63,10 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteWaypoint(string id)
     {
-        try
-        {
-            var ok = await WaypointApi.DeleteAsync(id);
-            if (!ok) { Toasts.Error("Delete waypoint failed: server rejected"); return; }
-        }
+        ApiResult r;
+        try { r = await WaypointApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
             await module.InvokeVoidAsync("removeWaypointMarker", id);
@@ -90,11 +94,16 @@ public partial class Map
         noteDialogVisible = false;
         string title = string.IsNullOrWhiteSpace(newNoteTitle) ? $"Note {DateTime.Now:HH:mm}" : newNoteTitle;
         string description = newNoteDescription ?? "";
-        string? id;
-        try { id = await NoteApi.CreateAsync(title, description, contextMenuLat, contextMenuLon); }
+        ApiResult<string> r;
+        try { r = await NoteApi.CreateAsync(title, description, contextMenuLat, contextMenuLon); }
         catch (Exception ex) { Toasts.Error($"Save note failed: {ex.Message}"); return; }
 
-        if (id is null) { Toasts.Error("Save note failed: server rejected"); return; }
+        if (!r.Success || string.IsNullOrEmpty(r.Value))
+        {
+            Toasts.Error($"Save note failed: {r.Error ?? "server rejected"}");
+            return;
+        }
+        string id = r.Value;
 
         if (module is not null)
             await module.InvokeVoidAsync("addNoteMarker", id, contextMenuLat, contextMenuLon, title, description);
@@ -108,12 +117,10 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteNote(string id)
     {
-        try
-        {
-            var ok = await NoteApi.DeleteAsync(id);
-            if (!ok) { Toasts.Error("Delete note failed: server rejected"); return; }
-        }
+        ApiResult r;
+        try { r = await NoteApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete note failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete note failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
             await module.InvokeVoidAsync("removeNoteMarker", id);
@@ -255,21 +262,26 @@ public partial class Map
             ? $"Region {DateTime.Now:HH:mm}"
             : newRegionTitle;
         string description = newRegionDescription ?? "";
-        string? id;
+        ApiResult<string> r;
         try
         {
-            id = await RegionApi.CreateCircleAsync(title, description,
+            r = await RegionApi.CreateCircleAsync(title, description,
                 contextMenuLat, contextMenuLon, newRegionRadiusMeters);
         }
         catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); return; }
-        if (id is null) { Toasts.Error("Save region failed: server rejected"); return; }
+        if (!r.Success || string.IsNullOrEmpty(r.Value))
+        {
+            Toasts.Error($"Save region failed: {r.Error ?? "server rejected"}");
+            return;
+        }
+        string id = r.Value;
 
         // Re-fetch so the new region has the same shape the server sent
         // back (id-from-key, Leaflet-ordered rings). Simpler than
         // locally-replicating the circle-polygon math for the optimistic
         // insert.
         loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? loadedRegions;
-        var created = loadedRegions.FirstOrDefault(r => r.Id == id);
+        var created = loadedRegions.FirstOrDefault(rg => rg.Id == id);
         if (created is not null && module is not null)
             await module.InvokeVoidAsync("addRegion",
                 created.Id, created.OuterRings, created.Name, created.Description);
@@ -279,16 +291,14 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteRegion(string id)
     {
-        try
-        {
-            var ok = await RegionApi.DeleteAsync(id);
-            if (!ok) { Toasts.Error("Delete region failed: server rejected"); return; }
-        }
+        ApiResult r;
+        try { r = await RegionApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete region failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete region failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
             await module.InvokeVoidAsync("removeRegion", id);
-        loadedRegions = loadedRegions.Where(r => r.Id != id).ToList();
+        loadedRegions = loadedRegions.Where(rg => rg.Id != id).ToList();
         Toasts.Info("Region deleted");
     }
 
@@ -333,12 +343,10 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteRouteById(string id)
     {
-        try
-        {
-            var ok = await RouteApi.DeleteAsync(id);
-            if (!ok) { Toasts.Error("Delete route failed: server rejected"); return; }
-        }
+        ApiResult r;
+        try { r = await RouteApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete route failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete route failed: {r.Error ?? "server rejected"}"); return; }
 
         // Strip from enabled + draw order so the UI forgets it too.
         if (enabledRoutes.Remove(id))
@@ -348,7 +356,7 @@ public partial class Map
             try { await module.InvokeVoidAsync("removeRoute", id); }
             catch (JSDisconnectedException) { }
 
-        availableRoutes = availableRoutes.Where(r => r.Id != id).ToList();
+        availableRoutes = availableRoutes.Where(rt => rt.Id != id).ToList();
         Toasts.Info("Route deleted");
         RebuildFilteredLayers();
     }
@@ -382,9 +390,9 @@ public partial class Map
 
         try
         {
-            bool ok = await CourseApi.SetActiveRouteAsync(route.Id);
-            if (ok) Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
-            else Toasts.Error("Start route failed: server rejected");
+            var r = await CourseApi.SetActiveRouteAsync(route.Id);
+            if (r.Success) Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
+            else Toasts.Error($"Start route failed: {r.Error ?? "server rejected"}");
         }
         catch (Exception ex) { Toasts.Error($"Start route failed: {ex.Message}"); }
     }

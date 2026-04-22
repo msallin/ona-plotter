@@ -134,11 +134,11 @@ public partial class Map
         string name = string.IsNullOrWhiteSpace(polygonEditName)
             ? $"Region {DateTime.Now:yyyyMMdd-HHmm}"
             : polygonEditName;
-        string? id;
-        try { id = await RegionApi.CreatePolygonAsync(name, "", coords); }
-        catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); id = null; }
+        Services.Api.ApiResult<string>? r = null;
+        try { r = await RegionApi.CreatePolygonAsync(name, "", coords); }
+        catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); }
 
-        if (!string.IsNullOrEmpty(id))
+        if (r is { Success: true, Value: { Length: > 0 } })
         {
             Toasts.Success($"Saved region '{name}' ({coords.Length} vertices)");
             loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? loadedRegions;
@@ -146,7 +146,7 @@ public partial class Map
         }
         else if (Toasts.Active.Count == 0)
         {
-            Toasts.Error("Failed to save region");
+            Toasts.Error($"Save region failed: {r?.Error ?? "server rejected"}");
         }
         polygonEditMode = false;
         polygonEditCoords = null;

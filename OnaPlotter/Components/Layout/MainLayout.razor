@@ -429,8 +429,8 @@
         bool hadCourseBefore = SignalkClient.Data.HasActiveCourse;
         try
         {
-            bool ok = await CourseApi.AdvanceActiveRouteAsync();
-            if (!ok) { Toasts.Error("Next WP failed: server rejected"); return; }
+            var r = await CourseApi.AdvanceActiveRouteAsync();
+            if (!r.Success) { Toasts.Error($"Next WP failed: {r.Error ?? "server rejected"}"); return; }
             await Alarms.DismissAsync(alarm);
 
             // Brief settle window so the delta for the new leg (or the

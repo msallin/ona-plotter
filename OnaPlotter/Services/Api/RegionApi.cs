@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Utilities;
@@ -57,24 +56,28 @@ public sealed class RegionApi : IRegionApi
         return regions;
     }
 
-    public Task<string?> CreateCircleAsync(string name, string description,
+    public Task<ApiResult<string>> CreateCircleAsync(string name, string description,
         double lat, double lon, double radiusMeters, CancellationToken ct = default)
     {
         var ring = BuildCircleRing(lat, lon, radiusMeters, CircleVertexCount);
         return PostPolygonAsync(name, description, ring, ct);
     }
 
-    public Task<string?> CreatePolygonAsync(string name, string description,
+    public Task<ApiResult<string>> CreatePolygonAsync(string name, string description,
         double[][] vertices, CancellationToken ct = default)
     {
         // Freeform polygon: map the [lat, lon] Leaflet vertices back to
         // GeoJSON [lon, lat] order and close the ring by repeating the
-        // first vertex at the end.
-        if (vertices is null || vertices.Length < 3) return Task.FromResult<string?>(null);
+        // first vertex at the end. Minimum 3 vertices -- the toast on
+        // fewer is more useful than a null return that looked identical
+        // to a server-side rejection.
+        if (vertices is null || vertices.Length < 3)
+            return Task.FromResult(ApiResult<string>.Fail("polygon needs at least 3 vertices"));
         var ring = new double[vertices.Length + 1][];
         for (int i = 0; i < vertices.Length; i++)
         {
-            if (vertices[i] is null || vertices[i].Length < 2) return Task.FromResult<string?>(null);
+            if (vertices[i] is null || vertices[i].Length < 2)
+                return Task.FromResult(ApiResult<string>.Fail("polygon vertex missing lat / lon"));
             ring[i] = [vertices[i][1], vertices[i][0]];
         }
         ring[vertices.Length] = ring[0];
@@ -84,7 +87,7 @@ public sealed class RegionApi : IRegionApi
     /// <summary>Posts the common body shape for both circle-derived and
     /// freeform polygons. Factored out so the two CreateXxxAsync methods
     /// differ only in how they build their ring.</summary>
-    private async Task<string?> PostPolygonAsync(string name, string description,
+    private Task<ApiResult<string>> PostPolygonAsync(string name, string description,
         double[][] ring, CancellationToken ct)
     {
         var body = GeoJsonBuilder.RegionFeatureBody(
@@ -92,13 +95,10 @@ public sealed class RegionApi : IRegionApi
             GeoJsonBuilder.Polygon(ring),
             description);
         var url = _baseUrl.Combine(SignalKUrls.RegionsPath);
-        using var response = await _http.PostAsJsonAsync(url, body, ct);
-        if (!response.IsSuccessStatusCode) return null;
-        var result = await response.Content.ReadAsStringAsync(ct);
-        return ResourceHttp.ParseCreatedId(result);
+        return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
 
-    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+    public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Region(id)), ct);
 
     /// <summary>

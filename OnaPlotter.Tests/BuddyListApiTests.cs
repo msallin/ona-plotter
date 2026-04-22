@@ -114,9 +114,9 @@ public class BuddyListApiTests
         });
         var api = NewApi(client);
 
-        var ok = await api.AddAsync("urn:mrn:imo:mmsi:1234", "Test Boat");
+        var r = await api.AddAsync("urn:mrn:imo:mmsi:1234", "Test Boat");
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(await api.IsAvailableAsync()).IsTrue();
         await Assert.That(captured!.Method).IsEqualTo(HttpMethod.Post);
         await Assert.That(captured.RequestUri!.PathAndQuery).IsEqualTo("/signalk/v2/api/resources/buddies");
@@ -128,9 +128,9 @@ public class BuddyListApiTests
         var client = ApiTestHelpers.MockClient(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
         var api = NewApi(client);
 
-        var ok = await api.AddAsync("urn:...", "Name");
+        var r = await api.AddAsync("urn:...", "Name");
 
-        await Assert.That(ok).IsFalse();
+        await Assert.That(r.Success).IsFalse();
         await Assert.That(await api.IsAvailableAsync()).IsFalse();
     }
 
@@ -147,9 +147,9 @@ public class BuddyListApiTests
         });
         var api = NewApi(client);
 
-        var ok = await api.RemoveAsync("urn:mrn:imo:mmsi:338 246 284");
+        var r = await api.RemoveAsync("urn:mrn:imo:mmsi:338 246 284");
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(method).IsEqualTo(HttpMethod.Delete);
         // The URN embeds spaces (or any char) - must be percent-encoded.
         await Assert.That(hitPath).Contains("338%20246%20284");

@@ -15,8 +15,8 @@ public class MapHudTests
 {
     private sealed class FakeAutopilot : IAutopilotApi
     {
-        public Task<bool> SetStateAsync(string state, CancellationToken ct = default) => Task.FromResult(true);
-        public Task<bool> AdjustHeadingAsync(double deltaDeg, CancellationToken ct = default) => Task.FromResult(true);
+        public Task<ApiResult> SetStateAsync(string state, CancellationToken ct = default) => Task.FromResult(ApiResult.Ok);
+        public Task<ApiResult> AdjustHeadingAsync(double deltaDeg, CancellationToken ct = default) => Task.FromResult(ApiResult.Ok);
     }
 
     private static IRenderedComponent<MapHud> Render(Bunit.TestContext ctx, NavigationData data)

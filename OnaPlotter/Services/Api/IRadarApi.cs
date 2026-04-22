@@ -30,24 +30,14 @@ public interface IRadarApi
     /// <summary>Writes a single control. Body shape varies by
     /// <c>dataType</c>; callers construct the right <see cref="ControlValue"/>
     /// fields (value only for numbers, value+endValue for sectors, etc.).
-    /// Returns a <see cref="RadarSetControlResult"/> with success +
-    /// an optional error message extracted from the server's JSON
-    /// body (e.g. "Control range value 12000 is not a legal value"
-    /// -- worth surfacing verbatim so the helm knows which value
-    /// the server rejected).</summary>
-    Task<RadarSetControlResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default);
+    /// Returns an <see cref="ApiResult"/> whose <c>Error</c> is the
+    /// server's <c>error</c> field when present (e.g. "Control range
+    /// value 12000 is not a legal value" -- worth surfacing verbatim
+    /// so the helm knows which value the server rejected).</summary>
+    Task<ApiResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default);
 
     /// <summary>All currently tracked ARPA targets for this radar.
     /// Empty list when the radar isn't tracking anything; null when
     /// the provider returned 501 (ARPA unsupported).</summary>
     Task<IReadOnlyList<RadarArpaTarget>?> GetTargetsAsync(string radarId, CancellationToken ct = default);
-}
-
-/// <summary>Outcome of a PUT /controls/{id}. On failure, <see cref="Error"/>
-/// is the server's <c>error</c> field when present, else the raw response
-/// body or a transport-level message.</summary>
-public sealed record RadarSetControlResult(bool Success, string? Error = null)
-{
-    public static RadarSetControlResult Ok { get; } = new(true);
-    public static RadarSetControlResult Fail(string? err) => new(false, err);
 }

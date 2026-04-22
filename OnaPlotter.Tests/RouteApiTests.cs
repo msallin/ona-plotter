@@ -101,9 +101,9 @@ public class RouteApiTests
         });
         var api = new RouteApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.SaveAsync("My Route", [[47.0, 8.0], [48.0, 9.0]]);
+        var r = await api.SaveAsync("My Route", [[47.0, 8.0], [48.0, 9.0]]);
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Post);
         await Assert.That(capturedUrl).IsEqualTo($"{ApiTestHelpers.TestBase}/signalk/v2/api/resources/routes");
     }

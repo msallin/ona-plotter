@@ -25,9 +25,10 @@ public class RegionApiTests
         });
         var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var id = await api.CreateCircleAsync("Anchorage", "Holds well", 47.4, 8.5, 300);
+        var r = await api.CreateCircleAsync("Anchorage", "Holds well", 47.4, 8.5, 300);
 
-        await Assert.That(id).IsEqualTo("rgn-new-1");
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(r.Value).IsEqualTo("rgn-new-1");
         await Assert.That(capturedBody).IsNotNull();
         await Assert.That(capturedBody).Contains("\"name\":\"Anchorage\"");
         await Assert.That(capturedBody).Contains("\"description\":\"Holds well\"");
@@ -178,9 +179,10 @@ public class RegionApiTests
             new[] { 47.41, 8.51 },
             new[] { 47.42, 8.50 },
         };
-        var id = await api.CreatePolygonAsync("Triangle", "T-test", vertices);
+        var r = await api.CreatePolygonAsync("Triangle", "T-test", vertices);
 
-        await Assert.That(id).IsEqualTo("rgn-poly-1");
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(r.Value).IsEqualTo("rgn-poly-1");
         await Assert.That(capturedBody).IsNotNull();
         // GeoJSON [lon, lat] ordering (first vertex).
         await Assert.That(capturedBody).Contains("[8.5,47.4]");
@@ -204,11 +206,11 @@ public class RegionApiTests
         var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
 
         var two = new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.5 } };
-        await Assert.That(await api.CreatePolygonAsync("Too short", "", two)).IsNull();
+        await Assert.That((await api.CreatePolygonAsync("Too short", "", two)).Success).IsFalse();
 
-        await Assert.That(await api.CreatePolygonAsync("Empty", "", System.Array.Empty<double[]>())).IsNull();
+        await Assert.That((await api.CreatePolygonAsync("Empty", "", System.Array.Empty<double[]>())).Success).IsFalse();
 
-        await Assert.That(await api.CreatePolygonAsync("Null", "", null!)).IsNull();
+        await Assert.That((await api.CreatePolygonAsync("Null", "", null!)).Success).IsFalse();
     }
 
     [Test]
@@ -228,8 +230,8 @@ public class RegionApiTests
             new[] { 47.5, 8.5 },
             new[] { 47.5, 8.6 },
         };
-        var id = await api.CreatePolygonAsync("Retry me", "", vertices);
-        await Assert.That(id).IsNull();
+        var r = await api.CreatePolygonAsync("Retry me", "", vertices);
+        await Assert.That(r.Success).IsFalse();
     }
 
     [Test]
@@ -247,7 +249,7 @@ public class RegionApiTests
             new[] { 47.5 },          // only lat; no lon
             new[] { 47.6, 8.6 },
         };
-        await Assert.That(await api.CreatePolygonAsync("Bad", "", bad)).IsNull();
+        await Assert.That((await api.CreatePolygonAsync("Bad", "", bad)).Success).IsFalse();
     }
 
     [Test]
@@ -263,9 +265,9 @@ public class RegionApiTests
         });
         var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.DeleteAsync("id with space");
+        var r = await api.DeleteAsync("id with space");
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Delete);
         await Assert.That(capturedUrl).EndsWith("/regions/id%20with%20space");
     }

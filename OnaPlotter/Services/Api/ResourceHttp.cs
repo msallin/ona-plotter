@@ -32,13 +32,120 @@ internal static class ResourceHttp
     }
 
     /// <summary>
-    /// DELETEs a specific resource by URL. Returns true on 2xx.
+    /// DELETEs a specific resource by URL. Returns an
+    /// <see cref="ApiResult"/> so callers can surface the server's
+    /// error body on failure; happy path is the singleton
+    /// <see cref="ApiResult.Ok"/>.
     /// </summary>
-    public static async Task<bool> DeleteAsync(
+    public static async Task<ApiResult> DeleteAsync(
         HttpClient http, string url, CancellationToken ct = default)
     {
-        using var response = await http.DeleteAsync(url, ct);
-        return response.IsSuccessStatusCode;
+        try
+        {
+            using var response = await http.DeleteAsync(url, ct);
+            if (response.IsSuccessStatusCode) return ApiResult.Ok;
+            return ApiResult.Fail(await ReadErrorAsync(response, ct)
+                ?? $"HTTP {(int)response.StatusCode}");
+        }
+        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+    }
+
+    /// <summary>
+    /// POSTs a JSON body. Used for every resource-create flow that
+    /// doesn't need the generated id; <see cref="PostCreateAsync"/>
+    /// is the id-returning variant used by
+    /// Waypoint/Note/Region creates.
+    /// </summary>
+    public static async Task<ApiResult> PostAsync(
+        HttpClient http, string url, object body, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync(url, body, ct);
+            if (response.IsSuccessStatusCode) return ApiResult.Ok;
+            return ApiResult.Fail(await ReadErrorAsync(response, ct)
+                ?? $"HTTP {(int)response.StatusCode}");
+        }
+        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+    }
+
+    /// <summary>
+    /// PUTs a JSON body. Used for in-place update flows
+    /// (RouteApi.UpdateAsync, WaypointApi.UpdateAsync, radar control
+    /// writes go through their own helper for the structured error
+    /// envelope they emit).
+    /// </summary>
+    public static async Task<ApiResult> PutAsync(
+        HttpClient http, string url, object body, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PutAsJsonAsync(url, body, ct);
+            if (response.IsSuccessStatusCode) return ApiResult.Ok;
+            return ApiResult.Fail(await ReadErrorAsync(response, ct)
+                ?? $"HTTP {(int)response.StatusCode}");
+        }
+        catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+    }
+
+    /// <summary>
+    /// POSTs a resource-create body and returns the new resource id
+    /// in <c>Value</c>. Handles both SK response shapes via
+    /// <see cref="ParseCreatedId"/>; a 2xx response with an
+    /// unparseable body is a failure because the caller has no id to
+    /// do anything with.
+    /// </summary>
+    public static async Task<ApiResult<string>> PostCreateAsync(
+        HttpClient http, string url, object body, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync(url, body, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return ApiResult<string>.Fail(await ReadErrorAsync(response, ct)
+                    ?? $"HTTP {(int)response.StatusCode}");
+            }
+            var rawBody = await response.Content.ReadAsStringAsync(ct);
+            var id = ParseCreatedId(rawBody);
+            if (string.IsNullOrEmpty(id))
+                return ApiResult<string>.Fail("server accepted the create but returned no id");
+            return ApiResult<string>.Ok(id);
+        }
+        catch (HttpRequestException ex) { return ApiResult<string>.Fail(ex.Message); }
+    }
+
+    /// <summary>
+    /// Extracts the server's error string from a non-2xx body. SK
+    /// v2 uses the <c>{"error": "..."}</c> envelope (also present
+    /// on radar-control rejections); older endpoints send a bare
+    /// text body. Both are tolerated; null when nothing readable.
+    /// </summary>
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (string.IsNullOrWhiteSpace(body)) return null;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty("error", out var e) &&
+                    e.ValueKind == JsonValueKind.String)
+                {
+                    return e.GetString();
+                }
+            }
+            catch (JsonException)
+            {
+                // Non-JSON body -- trim and cap to keep a wild 4k
+                // HTML error page from blowing a toast popover.
+                return body.Length > 200 ? body[..200] : body;
+            }
+        }
+        catch { /* body read failed; caller falls back to status code */ }
+        return null;
     }
 
     /// <summary>

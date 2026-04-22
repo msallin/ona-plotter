@@ -212,16 +212,18 @@ public partial class Map
                 ? $"Route {DateTime.Now:yyyyMMdd}"
                 : routeEditName;
             string? existingId = routeEditId;
+            Services.Api.ApiResult r;
             try
             {
                 // Edit flow: rewrite the same id so the server keeps
                 // one route. Fresh flow: POST new and guess the id
                 // back from a post-save list diff.
-                ok = existingId is not null
+                r = existingId is not null
                     ? await RouteApi.UpdateAsync(existingId, name, coords)
                     : await RouteApi.SaveAsync(name, coords);
+                ok = r.Success;
             }
-            catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; }
+            catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; r = Services.Api.ApiResult.Fail(ex.Message); }
 
             if (ok)
             {
@@ -309,8 +311,8 @@ public partial class Map
         {
             try
             {
-                bool startedOk = await CourseApi.SetActiveRouteAsync(newRoute.Id);
-                if (startedOk)
+                var started = await CourseApi.SetActiveRouteAsync(newRoute.Id);
+                if (started.Success)
                 {
                     Toasts.Success($"Navigating route '{newRoute.Name ?? newRoute.Id}'");
                 }
@@ -321,7 +323,7 @@ public partial class Map
                     // the sailor what happened AND give them the one-tap
                     // retry via the Layers panel so they don't have to
                     // dig for it.
-                    Toasts.Error("Route saved but couldn't start navigation -- tap the route in Layers to activate");
+                    Toasts.Error($"Route saved but couldn't start navigation: {started.Error ?? "tap the route in Layers to activate"}");
                 }
             }
             catch (Exception ex)

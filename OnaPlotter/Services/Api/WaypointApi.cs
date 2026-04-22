@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Utilities;
 
@@ -40,7 +39,7 @@ public sealed class WaypointApi : IWaypointApi
         return waypoints;
     }
 
-    public async Task<string?> CreateAsync(string name, double lat, double lon,
+    public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon,
         string? description = null, CancellationToken ct = default)
     {
         // Shared GeoJSON envelope builder: Freeboard-SK + SK core
@@ -49,25 +48,21 @@ public sealed class WaypointApi : IWaypointApi
         // spec-friendly "no description" value, not a missing key).
         var body = GeoJsonBuilder.FeatureBody(name, GeoJsonBuilder.Point(lat, lon), description);
         var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
-        using var response = await _http.PostAsJsonAsync(url, body, ct);
-        if (!response.IsSuccessStatusCode) return null;
-
-        var result = await response.Content.ReadAsStringAsync(ct);
-        return ResourceHttp.ParseCreatedId(result);
+        return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
 
-    public Task<bool> DeleteAsync(string id, CancellationToken ct = default) =>
+    public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Waypoint(id)), ct);
 
-    public async Task<bool> UpdateAsync(SignalkWaypoint wp, string name, string? description = null, CancellationToken ct = default)
+    public Task<ApiResult> UpdateAsync(SignalkWaypoint wp, string name, string? description = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(wp.Id)) return false;
-        if (wp.Latitude is not double lat || wp.Longitude is not double lon) return false;
+        if (string.IsNullOrEmpty(wp.Id)) return Task.FromResult(ApiResult.Fail("waypoint id required"));
+        if (wp.Latitude is not double lat || wp.Longitude is not double lon)
+            return Task.FromResult(ApiResult.Fail("waypoint position required"));
         // Same envelope as Create; PUT at the waypoint's id URL is
         // the v2 resources-api in-place update verb.
         var body = GeoJsonBuilder.FeatureBody(name, GeoJsonBuilder.Point(lat, lon), description);
         var url = _baseUrl.Combine(SignalKUrls.Waypoint(wp.Id));
-        using var response = await _http.PutAsJsonAsync(url, body, ct);
-        return response.IsSuccessStatusCode;
+        return ResourceHttp.PutAsync(_http, url, body, ct);
     }
 }

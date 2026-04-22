@@ -26,9 +26,10 @@ public class NoteApiTests
         });
         var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var id = await api.CreateAsync("Kelp patch", "Watch the prop here", 47.4, 8.5);
+        var r = await api.CreateAsync("Kelp patch", "Watch the prop here", 47.4, 8.5);
 
-        await Assert.That(id).IsEqualTo("note-new-42");
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(r.Value).IsEqualTo("note-new-42");
         await Assert.That(capturedUrl).EndsWith("/resources/notes");
         await Assert.That(capturedBody).IsNotNull();
         await Assert.That(capturedBody).Contains("\"title\":\"Kelp patch\"");
@@ -81,9 +82,9 @@ public class NoteApiTests
         });
         var api = new NoteApi(http, ApiTestHelpers.FixedBaseUrl());
 
-        var ok = await api.DeleteAsync("id with space");
+        var r = await api.DeleteAsync("id with space");
 
-        await Assert.That(ok).IsTrue();
+        await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Delete);
         await Assert.That(capturedUrl).EndsWith("/notes/id%20with%20space");
     }

@@ -28,12 +28,12 @@ public interface IBuddyListApi
     void InvalidateAsync();
 
     /// <summary>Adds a buddy by its SignalK URN (e.g.
-    /// <c>urn:mrn:imo:mmsi:338246284</c>) and friendly name. Returns true on
-    /// success, false if the plugin isn't installed or the server rejected
-    /// the write (e.g. auth required).</summary>
-    Task<bool> AddAsync(string urn, string name, CancellationToken ct = default);
+    /// <c>urn:mrn:imo:mmsi:338246284</c>) and friendly name. <see cref="ApiResult.Error"/>
+    /// carries the server's rejection reason (auth, unknown urn, etc.)
+    /// when the write fails.</summary>
+    Task<ApiResult> AddAsync(string urn, string name, CancellationToken ct = default);
 
     /// <summary>Removes a buddy by URN. Same return contract as
     /// <see cref="AddAsync"/>.</summary>
-    Task<bool> RemoveAsync(string urn, CancellationToken ct = default);
+    Task<ApiResult> RemoveAsync(string urn, CancellationToken ct = default);
 }
