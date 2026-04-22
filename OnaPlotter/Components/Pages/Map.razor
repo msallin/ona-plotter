@@ -669,7 +669,7 @@
                 radarCapabilities[t.radar.Id] = caps;
             }
             int spokes = caps?.SpokesPerRevolution ?? t.radar.SpokesPerRevolution ?? 2048;
-            int maxLen = caps?.MaxSpokeLength  ?? t.radar.MaxSpokeLen ?? 1024;
+            int maxLen = caps?.MaxSpokeLength ?? t.radar.MaxSpokeLength ?? 1024;
             int range  = t.radar.Range ?? 1000;
 
             // Build spokeDataUrl. Spec says each RadarInfo includes

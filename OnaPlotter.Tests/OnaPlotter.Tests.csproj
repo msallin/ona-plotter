@@ -15,12 +15,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="TUnit" Version="*" />
+    <!-- Pin to the 1.37.x minor TUnit line. Earlier "Version=*" was
+         a cheap way to always get the newest but means a bad-release
+         breaks reproducible builds for everyone the moment it ships.
+         Bump intentionally when we want a new feature. -->
+    <PackageReference Include="TUnit" Version="1.37.*" />
     <!-- bUnit for Blazor component-level tests. Gives us DOM snapshot
          assertions, event dispatch, service mocks - catches regressions
          in Razor markup that neither the C# unit tests nor Playwright
-         would surface cheaply. -->
-    <PackageReference Include="bunit" Version="1.*" />
+         would surface cheaply. Same reasoning as TUnit: floor to the
+         current minor rather than the whole 1.x major. -->
+    <PackageReference Include="bunit" Version="1.40.*" />
   </ItemGroup>
 
   <ItemGroup>

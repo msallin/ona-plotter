@@ -2,7 +2,7 @@
 
 Playwright smoke + fuzz tests. Runs against a live deployment by default
 (the SignalK webapp at `https://openplotter.local`), override with
-`BASE_URL=http://localhost:5296`.
+`BASE_URL=http://localhost:5282`.
 
 ## One-time setup
 
@@ -23,7 +23,7 @@ npm run test:smoke
 FUZZ_SEED=12345 npm run test:fuzz
 
 # Point at a locally-running dev build instead of the deployed instance:
-BASE_URL=http://localhost:5296 npm test
+BASE_URL=http://localhost:5282 npm test
 ```
 
 ## What's tested

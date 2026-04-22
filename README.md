@@ -199,6 +199,25 @@ Open `http://localhost:5282/`. Point at a SignalK server via
 `OnaPlotter/wwwroot/appsettings.json` — set `ServerUrl` to `"auto"` to
 use the page origin when the app is hosted as a webapp.
 
+To point your dev session at a real SignalK box (colleague's boat,
+OpenPlotter on the bench) without editing the committed default,
+create a gitignored overlay at
+`OnaPlotter/wwwroot/appsettings.Development.json`:
+
+```json
+{
+  "SignalK": {
+    "ServerUrl": "https://openplotter.local",
+    "RadarServerUrl": "https://openplotter.local:6502"
+  }
+}
+```
+
+`ASPNETCORE_ENVIRONMENT=Development` (set by the launch profile)
+picks it up automatically. `RadarServerUrl` is only needed when
+the radar provider plugin (mayara-server) listens on a different
+port than the main SK REST API.
+
 ### Tests
 
 ```bash

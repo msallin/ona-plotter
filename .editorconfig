@@ -1,0 +1,29 @@
+# Top-of-repo rules. Keeps formatting consistent across the editors
+# contributors actually use (VS, VS Code, Rider, Vim). Not a linter --
+# this file just pins the obvious stuff so a PR diff isn't dominated
+# by whitespace.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Markdown: trailing-space-before-newline is a legit hard-break; keep it.
+[*.md]
+trim_trailing_whitespace = false
+
+# JS / CSS / JSON / YAML conventions differ from C#.
+[*.{js,mjs,json,yaml,yml,css,html}]
+indent_size = 4
+
+# Two-space indent on HTML-ish + JSON would be nicer but the repo is
+# already on 4 everywhere; staying consistent is worth more than
+# fighting existing files. Revisit if we start a new build config.
+
+[*.{csproj,props,targets,xml}]
+indent_size = 2

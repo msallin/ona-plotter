@@ -83,7 +83,7 @@ public class RadarApiParseTests
         await Assert.That(list.Count).IsEqualTo(2);
         await Assert.That(list[0].Id).IsEqualTo("nav0231A");
         await Assert.That(list[0].SpokesPerRevolution).IsEqualTo(2048);
-        await Assert.That(list[0].MaxSpokeLen).IsEqualTo(1024);
+        await Assert.That(list[0].MaxSpokeLength).IsEqualTo(1024);
         await Assert.That(list[0].Status).IsEqualTo("standby");
         await Assert.That(list[1].Id).IsEqualTo("nav0231B");
     }

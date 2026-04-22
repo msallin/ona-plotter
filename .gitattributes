@@ -1,0 +1,30 @@
+# Normalise text line-endings to LF in the repo, regardless of the
+# committer's OS. Without this a Windows contributor's autocrlf=true
+# checkout can leak CRLF into files that already live as LF, and a
+# single diff blows up with a "whole file changed" bar. This keeps
+# git blame stable and CI runs (Linux) reproducible.
+
+* text=auto eol=lf
+
+# Binary formats -- never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.wasm binary
+*.dll binary
+*.pdb binary
+
+# Preserve CRLF on files Windows tooling insists on -- PowerShell is
+# the live wire and its parser chokes less on CRLF. This matches the
+# committed state of the deploy scripts.
+*.ps1 text eol=crlf
+
+# Line endings on Bash / Python / Node scripts stay LF so they run
+# on the SignalK box without a dos2unix dance. (These are the
+# default for `* text=auto eol=lf` above but called out for clarity.)
+*.sh   text eol=lf
+*.mjs  text eol=lf

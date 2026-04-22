@@ -65,8 +65,14 @@ public sealed class RadarInfo
     [JsonPropertyName("spokesPerRevolution")]
     public int? SpokesPerRevolution { get; set; }
 
+    // Spec wire field is "maxSpokeLen" on the /radars list endpoint
+    // and "maxSpokeLength" on /capabilities -- same concept, two
+    // different keys depending on endpoint. We normalise to the
+    // longer C# name so callers can write a uniform
+    //   caps?.MaxSpokeLength ?? info?.MaxSpokeLength
+    // fallback; [JsonPropertyName] keeps the wire mapping honest.
     [JsonPropertyName("maxSpokeLen")]
-    public int? MaxSpokeLen { get; set; }
+    public int? MaxSpokeLength { get; set; }
 
     /// <summary>Current configured range in metres. Note the spec's
     /// <c>maxRange</c> lives in Capabilities; this is the live value.</summary>
