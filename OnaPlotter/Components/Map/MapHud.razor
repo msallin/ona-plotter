@@ -391,8 +391,7 @@
    is equal to the previous render. See HudRouteCard / HudAnchorCard
    for the rationale + field lists. *@
 <OnaPlotter.Components.Map.Hud.HudRouteCard
-    Snapshot="@BuildRouteSnapshot()"
-    OnStop="OnStopNavigation" />
+    Snapshot="@BuildRouteSnapshot()" />
 
 <OnaPlotter.Components.Map.Hud.HudAnchorCard
     Snapshot="@BuildAnchorSnapshot()"
@@ -457,9 +456,6 @@
 
     /// <summary>Set when the anchor alarm is dragging outside its max radius.</summary>
     [Parameter] public bool AnchorDragging { get; set; }
-
-    /// <summary>Fired by the Stop Navigation button on the route panel.</summary>
-    [Parameter] public EventCallback OnStopNavigation { get; set; }
 
     /// <summary>Depth alarm threshold in metres. Rendered as a small
     /// "alarm <3.0m" label under the depth value so the captain knows

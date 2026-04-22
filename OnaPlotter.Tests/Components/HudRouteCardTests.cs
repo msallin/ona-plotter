@@ -115,15 +115,30 @@ public class HudRouteCardTests
     }
 
     [Test]
-    public async Task OnStop_Fires_WhenStopButtonClicked()
+    public async Task Metrics_Render_On_Horizontal_Row()
     {
+        // The card was redesigned from a 2-col grid into a single
+        // horizontal flex row (DTW / BRG / VMG / TTG / ETA / XTE)
+        // so it eats landscape width instead of helm-screen height.
+        // Pin the markup class so a drift back to the old grid
+        // layout breaks this test.
         using var ctx = new Bunit.TestContext();
-        int fires = 0;
         var cut = ctx.RenderComponent<HudRouteCard>(p => p
-            .Add(x => x.Snapshot, Snap())
-            .Add(x => x.OnStop, Microsoft.AspNetCore.Components.EventCallback.Factory.Create(this, () => fires++)));
+            .Add(x => x.Snapshot, Snap()));
+        await Assert.That(cut.FindAll(".route-info-row").Count).IsEqualTo(1);
+        await Assert.That(cut.FindAll(".route-info-grid").Count).IsEqualTo(0);
+    }
 
-        cut.Find(".route-stop-btn").Click();
-        await Assert.That(fires).IsEqualTo(1);
+    [Test]
+    public async Task Stop_Button_Is_Not_Rendered_On_Card()
+    {
+        // Stop Navigation lives on the control bar (MapControls) now,
+        // not on the HUD card. Guard against a re-introduction that
+        // would eat vertical space on the helm screen.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+            .Add(x => x.Snapshot, Snap()));
+        await Assert.That(cut.FindAll(".route-stop-btn").Count).IsEqualTo(0);
+        await Assert.That(cut.Markup).DoesNotContain("Stop Navigation");
     }
 }

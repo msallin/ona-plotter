@@ -79,6 +79,20 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
         <span class="ctrl-lbl">@(AnchorActive ? "Set" : "Anchor")</span>
     </button>
+    @* Stop Navigation lives next to Anchor because the two are the
+       "end the current safety state" grouping: a route and a manual
+       anchor are already mutually exclusive in the code, so rendering
+       their kill-switches together mirrors that pairing. The button
+       only appears while a route is active -- no visual dead weight
+       when there's nothing to stop. *@
+    @if (RouteNavigating)
+    {
+        <button class="ctrl-btn ctrl-btn-danger" @onclick="OnStopNavigation"
+                title="Stop navigation -- clear the active route / destination">
+            <span class="ctrl-ico">@((MarkupString)Icons.X)</span>
+            <span class="ctrl-lbl">Stop</span>
+        </button>
+    }
     <button class="ctrl-btn ctrl-btn-danger @(MobActive ? "active" : "")" @onclick="OnToggleMob" title="Man overboard (M)">
         <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
         <span class="ctrl-lbl">MOB</span>
@@ -166,6 +180,13 @@
     [Parameter] public bool NightMode { get; set; }
     [Parameter] public bool AnchorActive { get; set; }
     [Parameter] public bool MobActive { get; set; }
+
+    /// <summary>True when a route / destination is currently active.
+    /// Controls visibility of the Stop Navigation button; without it,
+    /// the button appears permanently even when there's nothing to
+    /// stop, which looks broken. Wired from
+    /// <c>SignalkClient.Data.HasActiveCourse</c>.</summary>
+    [Parameter] public bool RouteNavigating { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public bool MeasureActive { get; set; }
     [Parameter] public bool RouteEditMode { get; set; }
@@ -181,6 +202,7 @@
     [Parameter] public EventCallback OnToggleNight { get; set; }
     [Parameter] public EventCallback OnToggleAnchor { get; set; }
     [Parameter] public EventCallback OnToggleMob { get; set; }
+    [Parameter] public EventCallback OnStopNavigation { get; set; }
     [Parameter] public EventCallback OnZoomToTrack { get; set; }
     [Parameter] public EventCallback OnCentreOnBoat { get; set; }
     [Parameter] public EventCallback OnToggleLaylines { get; set; }

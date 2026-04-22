@@ -12,6 +12,17 @@
    "no change" and skips re-render. Same optimisation pattern applies
    to HudAnchorCard. *@
 
+@* Previous layout was a 2-col grid (3-4 rows tall) plus a big Stop
+   Navigation button at the bottom, which ate a surprising amount of
+   vertical real estate on the landscape screens that are actually
+   used at sea. Now:
+     - Title row keeps route name + WP-progress chip.
+     - Six metrics (DTW / BRG / VMG / TTG / ETA / XTE) live in a
+       single horizontal flex row; flex-wrap handles narrow portrait
+       iPads by breaking onto two rows before overflowing.
+     - Stop Navigation moved to MapControls, next to Anchor (same
+       safety-toggle grouping; route + anchor are already mutually
+       exclusive). Removing the button from here saves a full row. *@
 @if (Snapshot.Visible)
 {
     <div class="hud hud-route">
@@ -30,36 +41,36 @@
                     &#9888; APPROACH alarm off (radius 0 m)
                 </div>
             }
-            <div class="route-info-grid">
-                <div>
+            <div class="route-info-row">
+                <div class="route-info-item">
                     <div class="hud-label">DTW</div>
                     <div class="hud-value route-value">@Format.Nm(Snapshot.Distance)<span class="hud-unit">nm</span></div>
                 </div>
-                <div>
+                <div class="route-info-item">
                     <div class="hud-label">BRG</div>
                     <div class="hud-value route-value">@Format.Degrees(Snapshot.Bearing)<span class="hud-unit">&deg;</span></div>
                 </div>
                 @if (Snapshot.Vmg is not null)
                 {
-                    <div>
+                    <div class="route-info-item">
                         <div class="hud-label">VMG</div>
                         <div class="hud-value route-value">@Format.Speed(Snapshot.Vmg)<span class="hud-unit">kn</span></div>
                     </div>
                 }
                 @if (Snapshot.TimeToGo is not null)
                 {
-                    <div>
+                    <div class="route-info-item">
                         <div class="hud-label">TTG</div>
                         <div class="hud-value route-value">@Format.TimeToGo(Snapshot.TimeToGo)</div>
                     </div>
-                    <div>
+                    <div class="route-info-item">
                         <div class="hud-label">ETA</div>
                         <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo)</div>
                     </div>
                 }
                 @if (Snapshot.Xte is not null)
                 {
-                    <div>
+                    <div class="route-info-item">
                         <div class="hud-label">XTE</div>
                         <div class="hud-value route-value @Format.XteClass(Snapshot.Xte)">@Format.Xte(Snapshot.Xte)</div>
                     </div>
@@ -80,15 +91,12 @@
                     }
                 </div>
             }
-            <button class="route-stop-btn" @onclick="OnStop"
-                    title="Clear the active destination">Stop Navigation</button>
         </div>
     </div>
 }
 
 @code {
     [Parameter, EditorRequired] public RouteHudSnapshot Snapshot { get; set; }
-    [Parameter] public EventCallback OnStop { get; set; }
 
     /// <summary>
     /// Immutable snapshot of every field the route card reads. Record-

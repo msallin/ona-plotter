@@ -2889,6 +2889,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
     bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
+    /* Wide enough for the horizontal DTW / BRG / VMG / TTG / ETA /
+       XTE row to fit on one line on landscape displays. Narrower
+       viewports override below via @media breakpoints; flex-wrap
+       inside .route-info-row then breaks the metrics to a second
+       row rather than truncating them. */
+    max-width: min(560px, calc(100vw - 24px));
 }
 
 .route-panel {
@@ -2920,11 +2926,23 @@ main:has(.alarm-banner-stack) .snooze-chips {
     white-space: nowrap;
 }
 
-.route-info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 14px;
+/* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
+   the card eats width (plentiful on landscape) instead of height
+   (scarce on the helm screen). flex-wrap lets narrow portrait iPads
+   break to a second row before we overflow the map. Each metric sits
+   in its own .route-info-item so the label+value pair wraps together
+   rather than splitting across the wrap point. */
+.route-info-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
     margin-top: 4px;
+    align-items: baseline;
+}
+.route-info-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
 /* Route-total row: single-line summary of distance / TTG / ETA for
@@ -2957,30 +2975,10 @@ main:has(.alarm-banner-stack) .snooze-chips {
     font-size: 1.1rem !important;
 }
 
-.route-stop-btn {
-    display: block;
-    width: 100%;
-    margin-top: 8px;
-    padding: 6px 10px;
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.6);
-    color: #fecaca;
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    border-radius: 4px;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-.route-stop-btn:hover {
-    background: rgba(239, 68, 68, 0.3);
-    border-color: #ef4444;
-    color: #fff;
-}
-@media (pointer: coarse) {
-    .route-stop-btn { min-height: 40px; padding: 10px; font-size: 0.85rem; }
-}
+/* Stop Navigation: the inline button under the route metrics is gone;
+   the action lives on the control bar (MapControls.razor) next to
+   Anchor, in the "end-the-safety-state" grouping. Leaving .route-stop-btn
+   CSS rules behind would just be dead weight, so they're dropped. */
 
 .night-mode .route-panel {
     background: rgba(30, 5, 5, 0.92);

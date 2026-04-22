@@ -59,8 +59,7 @@
             ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
             WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
             BoatDraftMeters="Settings.BoatDraftMeters"
-            OnSetAnchorRadius="SetManualAnchorRadius"
-            OnStopNavigation="StopNavigation" />
+            OnSetAnchorRadius="SetManualAnchorRadius" />
 
     @* Dark Ops exit chip. Only rendered when Dark Ops is active; a tiny
        top-right button so the helm has a visible way out besides Esc. *@
@@ -75,6 +74,8 @@
                  OrientationLabel="@mapOrientationLabel"
                  NightMode="nightMode"
                  AnchorActive="AnchorButtonActive"
+                 RouteNavigating="SignalkClient.Data.HasActiveCourse"
+                 OnStopNavigation="StopNavigation"
                  MobActive="mobActive"
                  LaylinesVisible="laylinesVisible"
                  MeasureActive="measureActive"
