@@ -36,3 +36,11 @@ playwright-report/
 coverage-report/
 coverage.cobertura.xml
 StrykerOutput/
+
+# Local test harness for the signalk-testing skill: disposable
+# Signal K server config + OnaPlotter webapp bundle + WS probe
+# scripts. Nothing in these directories needs to be versioned.
+.test-signalk/
+.test-plugin/
+.test-plugin-staging/
+.test-scratch/
