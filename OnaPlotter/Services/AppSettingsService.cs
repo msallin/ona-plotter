@@ -37,6 +37,7 @@ public sealed class AppSettingsService : IAppSettings
     public double DeadmanNightMinutes { get; private set; } = 15.0;
     public int SnoozeDurationMinutes { get; private set; } = 10;
     public bool BigType { get; private set; } = false;
+    public bool ExpandAllHud { get; private set; } = false;
     public string SailingMode { get; private set; } = "cruise";
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
@@ -86,6 +87,7 @@ public sealed class AppSettingsService : IAppSettings
             DeadmanNightMinutes = await LoadDouble("deadmanNightMinutes.v1", 15.0);
             SnoozeDurationMinutes = (int)await LoadDouble("snoozeDurationMinutes.v1", 10.0);
             BigType = await LoadBool("bigType.v1", false);
+            ExpandAllHud = await LoadBool("expandAllHud.v1", false);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
@@ -327,6 +329,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         BigType = value;
         await Save("bigType.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetExpandAllHudAsync(bool value)
+    {
+        ExpandAllHud = value;
+        await Save("expandAllHud.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

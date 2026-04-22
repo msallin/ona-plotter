@@ -1,42 +1,17 @@
 @using OnaPlotter.Models
 
-@* Chart overlays (tile layers). Three pieces:
-     1. Active stack row above the list: only charts that are currently
-        RENDERING (in EnabledCharts). User reorders the draw stack here.
-        Rendering is toggled from the quick-bar chip on the map, not
-        from this panel -- the panel is the "curate my set" UI.
-     2. Checkbox list: ticking a chart adds it to the quick-bar set
-        (QuickBarCharts). Chart then appears as a chip on the map
-        where the user taps to actually render it. Unticking removes
-        it from both sets (and unrenders if it was visible). *@
+@* Chart overlays (tile layers). Single inline list: each chart row
+   carries a quick-bar checkbox; charts that are currently rendering
+   on the map get inline reorder arrows that edit their position in
+   the draw stack. Previously this section had a separate "yellow
+   box" ActiveStack above the list that duplicated the rendering
+   charts -- it was confusing because ticking the checkbox added the
+   chart to the quick bar but didn't make it render, so the yellow
+   box stayed empty until a second tap on the map chip. Merging into
+   one row per chart removes the two-tap surprise and keeps the
+   reorder affordance next to the chart it moves. *@
 
 @if (Charts.Count == 0) return;
-
-@if (ActiveStack.Count > 0)
-{
-    <div class="chart-active-stack" title="Draw order -- top of list draws on top">
-        @for (int i = 0; i < ActiveStack.Count; i++)
-        {
-            var chart = ActiveStack[i];
-            var idx = i;
-            <div class="chart-active-chip" title="@(chart.Description ?? chart.Name)">
-                <span class="chart-active-name">@chart.Name</span>
-                <span class="chart-active-actions">
-                    <button class="chart-reorder-btn"
-                            disabled="@(idx == 0)"
-                            title="Move up"
-                            aria-label="Move @chart.Name up"
-                            @onclick="() => OnReorder.InvokeAsync((chart, -1))">&#9650;</button>
-                    <button class="chart-reorder-btn"
-                            disabled="@(idx == ActiveStack.Count - 1)"
-                            title="Move down"
-                            aria-label="Move @chart.Name down"
-                            @onclick="() => OnReorder.InvokeAsync((chart, 1))">&#9660;</button>
-                </span>
-            </div>
-        }
-    </div>
-}
 
 <SectionHeader Title="Charts" Count="@Charts.Count"
                Expanded="@expanded"
@@ -45,13 +20,15 @@
 {
     <div class="chart-section-hint">
         Tick to add to the on-map quick-switch bar. Tap the chip there to
-        show / hide the chart.
+        show / hide the chart. Rendering charts get up/down arrows to
+        order the draw stack (top of the stack = in front).
     </div>
     @foreach (var chart in Charts)
     {
         bool inQuickBar = QuickBarCharts.Contains(chart.Identifier);
         bool rendering = Enabled.Contains(chart.Identifier);
-        <label class="chart-item">
+        int stackIdx = rendering ? ActiveStack.FindIndex(c => c.Identifier == chart.Identifier) : -1;
+        <label class="chart-item @(rendering ? "chart-item-rendering" : "")">
             <input type="checkbox" checked="@inQuickBar"
                    @onchange="(e) => OnToggleQuickBar.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
             <div class="chart-item-body">
@@ -71,6 +48,28 @@
                     <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
                 }
             </div>
+            @if (rendering)
+            {
+                @* Reorder affordance shows only on rendering charts --
+                   the buttons are meaningless for a chart that isn't
+                   in the draw stack. Position-aware disabling prevents
+                   the "nothing happened" tap at the ends of the list. *@
+                <span class="chart-active-actions" @onclick:stopPropagation
+                      @onclick:preventDefault>
+                    <button class="chart-reorder-btn"
+                            type="button"
+                            disabled="@(stackIdx <= 0)"
+                            title="Move up (towards front of draw stack)"
+                            aria-label="Move @chart.Name up"
+                            @onclick="() => OnReorder.InvokeAsync((chart, -1))">&#9650;</button>
+                    <button class="chart-reorder-btn"
+                            type="button"
+                            disabled="@(stackIdx < 0 || stackIdx >= ActiveStack.Count - 1)"
+                            title="Move down (towards back of draw stack)"
+                            aria-label="Move @chart.Name down"
+                            @onclick="() => OnReorder.InvokeAsync((chart, 1))">&#9660;</button>
+                </span>
+            }
         </label>
     }
 }
@@ -79,9 +78,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> Charts { get; set; } = [];
 
     /// <summary>Charts currently rendered on the map. Drives the
-    /// active-stack chips at the top and the "rendering" dot next to
-    /// the chart name. Toggling render state is the quick-bar's job,
-    /// not this panel's.</summary>
+    /// "rendering" dot and the inline reorder arrows.</summary>
     [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
 
     /// <summary>Charts the user has picked for the on-map quick-switch
@@ -103,8 +100,8 @@
     private bool expanded = false;
 
     // ActiveStack[0] = top of map (last drawn). Charts list is in draw
-    // order (first added, rendered first / bottom); reverse so the chip
-    // list reads top-down "what's on top" which is more intuitive.
+    // order (first added, rendered first / bottom); reverse so the arrow
+    // buttons read "up = on top" which is more intuitive.
     private List<SignalkChart> ActiveStack =>
         Charts.Where(c => Enabled.Contains(c.Identifier)).Reverse().ToList();
 }

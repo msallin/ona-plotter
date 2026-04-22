@@ -32,6 +32,7 @@ internal sealed class FakeSettings : IAppSettings
     public double DeadmanNightMinutes { get; set; } = 15.0;
     public int SnoozeDurationMinutes { get; set; } = 10;
     public bool BigType { get; set; } = false;
+    public bool ExpandAllHud { get; set; } = false;
     public string SailingMode { get; set; } = "cruise";
     public bool KeepScreenAwake { get; set; } = true;
     public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
@@ -68,6 +69,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetDeadmanNightMinutesAsync(double v) { DeadmanNightMinutes = v; return Task.CompletedTask; }
     public Task SetSnoozeDurationMinutesAsync(int v) { SnoozeDurationMinutes = v; return Task.CompletedTask; }
     public Task SetBigTypeAsync(bool v) => Task.CompletedTask;
+    public Task SetExpandAllHudAsync(bool v) { ExpandAllHud = v; return Task.CompletedTask; }
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;
     public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;

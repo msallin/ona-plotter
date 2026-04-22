@@ -14,9 +14,9 @@
    in its corner; only its height grows, which avoids shoving the map
    controls around. *@
 <div class="hud hud-top-left">
-    <div class="hud-panel @(expandedHud == "tl" ? "hud-panel-expanded" : "")"
+    <div class="hud-panel @(IsExpanded("tl") ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
-         aria-expanded="@(expandedHud == "tl" ? "true" : "false")"
+         aria-expanded="@(IsExpanded("tl") ? "true" : "false")"
          aria-label="Speed, course, position -- click for more detail"
          @onclick='() => ToggleExpanded("tl")' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, "tl")'
@@ -26,7 +26,7 @@
         <div class="hud-label" style="margin-top:4px;">COG</div>
         <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
         <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
-        @if (expandedHud == "tl")
+        @if (IsExpanded("tl"))
         {
             <div class="hud-extra">
                 @if (PositionDms is not null)
@@ -66,10 +66,10 @@
    Expanded: port/starboard-labelled angles, TWD absolute from north,
    Beaufort labels for the speeds. *@
 <div class="hud hud-top-right">
-    <div class="hud-panel @(expandedHud == "tr" ? "hud-panel-expanded" : "")"
+    <div class="hud-panel @(IsExpanded("tr") ? "hud-panel-expanded" : "")"
          style="text-align:center;"
          role="button" tabindex="0"
-         aria-expanded="@(expandedHud == "tr" ? "true" : "false")"
+         aria-expanded="@(IsExpanded("tr") ? "true" : "false")"
          aria-label="Wind -- click for more detail"
          @onclick='() => ToggleExpanded("tr")' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, "tr")'
@@ -100,7 +100,7 @@
                 <div class="hud-value" style="font-size:1rem;">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></div>
             </div>
         }
-        @if (expandedHud == "tr")
+        @if (IsExpanded("tr"))
         {
             <div class="hud-extra">
                 @if (SignedAwa is string awa)
@@ -142,9 +142,9 @@
    boat NOW (depth) and where it's heading (tide). Depth alarm threshold
    still lives here; a tide row appears only when the plugin publishes. *@
 <div class="hud hud-bottom-left">
-    <div class="hud-panel @(expandedHud == "bl" ? "hud-panel-expanded" : "")"
+    <div class="hud-panel @(IsExpanded("bl") ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
-         aria-expanded="@(expandedHud == "bl" ? "true" : "false")"
+         aria-expanded="@(IsExpanded("bl") ? "true" : "false")"
          aria-label="Depth and tide -- click for more detail"
          @onclick='() => ToggleExpanded("bl")' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, "bl")'
@@ -156,7 +156,7 @@
                    glyph that colour-blind sailors can read. Paired with the
                    traffic-light colouring so both channels carry the signal. *@
                 <span class="depth-warn-glyph" aria-label="depth below alarm threshold">&#9888;</span>
-            }@if (expandedHud == "bl" && FormatDepthTrend() is string trendLabel)
+            }@if (IsExpanded("bl") && FormatDepthTrend() is string trendLabel)
             {
                 @* Trend arrow is only meaningful when the user has room
                    to parse it -- compact card stays to just "depth &
@@ -186,7 +186,7 @@
                 </span>
             </div>
         }
-        @if (expandedHud == "bl")
+        @if (IsExpanded("bl"))
         {
             <div class="hud-extra">
                 @if (Data.TideHeightNow is double th)
@@ -294,10 +294,10 @@
    leeway/drift angle), plus the autopilot target heading when the
    autopilot is engaged. *@
 <div class="hud hud-bottom-right">
-    <div class="hud-panel @(expandedHud == "br" ? "hud-panel-expanded" : "")"
+    <div class="hud-panel @(IsExpanded("br") ? "hud-panel-expanded" : "")"
          style="text-align:center;"
          role="button" tabindex="0"
-         aria-expanded="@(expandedHud == "br" ? "true" : "false")"
+         aria-expanded="@(IsExpanded("br") ? "true" : "false")"
          aria-label="Heading compass -- click for more detail"
          @onclick='() => ToggleExpanded("br")' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, "br")'
@@ -318,7 +318,7 @@
             <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
         </svg>
         <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;</span></div>
-        @if (expandedHud == "br")
+        @if (IsExpanded("br"))
         {
             <div class="hud-extra">
                 @if (Data.CourseOverGround is not null)
@@ -540,8 +540,26 @@
     // the "only one open" behaviour without extra wiring.
     private string? expandedHud;
 
+    /// <summary>When true, every corner renders in its expanded state
+    /// regardless of click. Driven by <c>IAppSettings.ExpandAllHud</c>
+    /// via Map.razor so a wide helm screen uses its horizontal space
+    /// for extra rows instead of hiding them behind a tap.</summary>
+    [Parameter] public bool ExpandAllHud { get; set; }
+
+    // Single source of truth for "is this corner showing its extras".
+    // Global toggle wins over per-corner click state; that way enabling
+    // ExpandAllHud while a corner is already open doesn't behave
+    // differently from enabling it when everything is collapsed.
+    private bool IsExpanded(string corner) =>
+        ExpandAllHud || expandedHud == corner;
+
     private void ToggleExpanded(string corner)
     {
+        // No-op while ExpandAllHud is on -- per-corner clicks would be
+        // invisible (always expanded), so swallowing the toggle keeps
+        // aria-expanded honest and avoids a state the operator can't
+        // perceive.
+        if (ExpandAllHud) return;
         expandedHud = expandedHud == corner ? null : corner;
     }
 

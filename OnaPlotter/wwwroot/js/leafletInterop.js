@@ -360,25 +360,61 @@ function makeIcon(html, size) {
     return L.divIcon({ className: 'boat-icon', html, iconSize: [size, size], iconAnchor: [size/2, size/2] });
 }
 
-// Magenta stands out against the blue water on OpenSeaMap/OSM tiles and
-// doesn't collide with AIS ship-type palettes (greens/blues) or the reds
-// reserved for MOB and collision alarms.
-const selfIcon = makeIcon(makeBoatSvg('#ec4899', 30, true), 30);
+// --- Map colour palette -----------------------------------------
+// Single source of truth lives in app.css as --map-* custom
+// properties. LegendOverlay swatches and the Leaflet overlays below
+// both pull from there, so a palette edit updates chart + legend in
+// lockstep. readMapColors() is called inside initMap once the
+// stylesheet is guaranteed parsed; the defaults below are kept only
+// as safety net for a broken CSS build so the chart doesn't render
+// black-on-black. Keep them aligned with app.css :root for sanity.
+const MapColors = {
+    own: '#ec4899',
+    cogVector: '#f9a8d4',
+    danger: '#c4453e',
+    buddy: '#e9c46a',
+    radar: '#b08d5a',
+    current: '#a78bfa',
+    bearing: '#06b6d4',
+    courseLeg: '#e2e8f0',
+    mob: '#ef4444',
+    anchorOk: '#22c55e',
+    anchorDrag: '#ef4444',
+    route: '#e09f3e',         // --ann-route
+    guardWarn: '#f59e0b',     // --sev-warn
+};
 
-// Two palette entries that JS still needs: danger overrides the
-// C#-resolved ship-type colour when a CPA alarm is active for a
-// vessel, and buddy likewise when the buddy-list-plugin marks the
-// target as a friend. Both mirror entries in Utilities/AisPalette.cs
-// (palette source of truth) -- keep these in sync when the palette
-// changes, or thread isDanger/isBuddy resolution entirely through C#.
-const AIS_DANGER_COLOR = '#c4453e';
-const AIS_BUDDY_COLOR  = '#e9c46a';
+function readMapColors() {
+    if (typeof document === 'undefined') return;
+    const root = getComputedStyle(document.documentElement);
+    const pick = (name, fallback) => {
+        const v = root.getPropertyValue(name).trim();
+        return v || fallback;
+    };
+    MapColors.own        = pick('--map-own',        MapColors.own);
+    MapColors.cogVector  = pick('--map-cog-vector', MapColors.cogVector);
+    MapColors.danger     = pick('--map-danger',     MapColors.danger);
+    MapColors.buddy      = pick('--map-buddy',      MapColors.buddy);
+    MapColors.radar      = pick('--map-radar',      MapColors.radar);
+    MapColors.current    = pick('--map-current',    MapColors.current);
+    MapColors.bearing    = pick('--map-bearing',    MapColors.bearing);
+    MapColors.courseLeg  = pick('--map-course-leg', MapColors.courseLeg);
+    MapColors.mob        = pick('--map-mob',        MapColors.mob);
+    MapColors.anchorOk   = pick('--map-anchor-ok',  MapColors.anchorOk);
+    MapColors.anchorDrag = pick('--map-anchor-drag', MapColors.anchorDrag);
+    MapColors.route      = pick('--ann-route',      MapColors.route);
+    MapColors.guardWarn  = pick('--sev-warn',       MapColors.guardWarn);
+}
 
-// Radar ARPA icon: outline triangle (no fill) + small center dot.
-// Classic ARPA look, and visually distinct from the filled AIS chevron.
-// Colour stays in the same warm family (tan) so radar targets read as
-// "same chart, different source" rather than "new palette".
-const RADAR_COLOR = '#b08d5a';
+// selfIcon is rebuilt on each initMap() call so a fresh palette read
+// is reflected. Previously it was a module-level const built before
+// CSS had a chance to load, which locked the magenta hex even after
+// the stylesheet defined a new --map-own.
+let selfIcon = null;
+
+// (Legacy module-level colour consts removed -- call sites now read
+// MapColors.* directly so readMapColors() at init time is the one
+// event that decides the runtime palette.)
 function makeRadarSvg(fill, size) {
     const s = size || 22;
     const h = s / 2;
@@ -528,6 +564,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     if (map) map.remove();
     dotNetRef = dotNetObjRef;
 
+    // Pull the --map-* palette out of the stylesheet now that it's
+    // parsed, then build the own-boat icon from the refreshed value.
+    // Doing this inside initMap (instead of at module load) means a
+    // palette tweak applied via :root takes effect without touching
+    // the JS -- the one edit site is app.css.
+    readMapColors();
+    selfIcon = makeIcon(makeBoatSvg(MapColors.own, 30, true), 30);
+
     // Detect weak client BEFORE building the map so the renderer choice
     // below can flip with it. Heuristic: 4-or-fewer logical cores (Pi)
     // or 'arm'/'raspberry' in the UA. isSlowClient is a module-scope
@@ -620,15 +664,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Scale bars + zoom badge all sit bottom-left, stacked, so a helm
     // glance gets "how far is that dot / am I overzoomed" in one place.
     // Metric ON (km/m) + Nautical ON (custom subclass below, since
-    // Leaflet's built-in is only metric / imperial). Imperial OFF --
-    // nobody plots in miles at sea.
-    // Single nautical scale bar. Used to stack a metric + a nautical
-    // line, but a chartplotter is nautical-centric everywhere else
-    // (depth m, speed kn, distance nm); two parallel bars was just
-    // noise and wasted 10 vertical px at the bottom-left corner.
-    // NauticalScale drops to cables under 1 nm so it doesn't snap
-    // blank at the zoomed-in scale either.
-    new NauticalScale({ position: 'bottomleft', maxWidth: 140 }).addTo(map);
+    // Scale bar was removed on user request: the zoom badge already
+    // communicates chart resolution, and at typical helm zoom levels
+    // the operator reads distances from the Measure tool or the route
+    // HUD rather than an edge-of-screen ruler. The NauticalScale class
+    // stays defined above in case we want to reintroduce it behind a
+    // setting; instantiation is just commented out here.
 
     // Zoom-level badge: "z 14" chip, amber when the top chart is
     // overzooming (map zoom > native) so the helmsman knows tiles are
@@ -701,7 +742,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         const data = boatMarker._onaSelfData || {};
         boatMarker.setPopupContent(buildSelfPopupHtml(data));
     });
-    boatVector = L.polyline([], { color: '#f9a8d4', weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
+    boatVector = L.polyline([], { color: MapColors.cogVector, weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
 
     // Map click: in route edit mode, add waypoint. In measurement
     // mode, drop a measurement point. Otherwise just dismiss menus.
@@ -968,7 +1009,8 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         const all = anchorMarker.getLatLng();
         const dist = haversineMeters(lat, lon, all.lat, all.lng);
         const inside = dist <= anchorCircle.getRadius();
-        anchorCircle.setStyle({ color: inside ? '#22c55e' : '#ef4444', fillColor: inside ? '#22c55e' : '#ef4444' });
+        const acColor = inside ? MapColors.anchorOk : MapColors.anchorDrag;
+        anchorCircle.setStyle({ color: acColor, fillColor: acColor });
     }
 }
 
@@ -1205,11 +1247,11 @@ export function updateAisTargets(vessels) {
         const isRadar = v.source === 'radar';
         let color;
         if (isRadar) {
-            color = isDangerEff ? AIS_DANGER_COLOR : RADAR_COLOR;
+            color = isDangerEff ? MapColors.danger : MapColors.radar;
         } else if (v.buddy) {
-            color = AIS_BUDDY_COLOR;              // buddies always win
+            color = MapColors.buddy;              // buddies always win
         } else if (isDangerEff) {
-            color = AIS_DANGER_COLOR;             // CPA alarm active
+            color = MapColors.danger;             // CPA alarm active
         } else {
             color = v.shipColor || '#e0c9a6';     // palette default from C#
         }
@@ -1247,7 +1289,7 @@ export function updateAisTargets(vessels) {
         if (!isSart) rotateMarker(marker, v.cogRad ?? v.headingRad);
 
         // Pulse an expanding red ring around any AIS / radar target
-        // whose CPA is in the "danger" band (matches the AIS_DANGER_COLOR
+        // whose CPA is in the "danger" band (matches the MapColors.danger
         // tint on the chevron). Adds a .cpa-pulse class to the marker
         // element, which the CSS drives via ::after. SART gets its own
         // pulse so we skip it here to avoid double-pulsing.
@@ -1374,7 +1416,7 @@ export function updateAisTargets(vessels) {
             const tcpaSec = cpaInfo.tcpa * 60;
             const ownCpa = destPoint(selfLat, selfLon, selfCogRad, selfSogMs * tcpaSec);
             const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
-            const lineColor = isDangerEff ? '#ef4444' : '#f59e0b';
+            const lineColor = isDangerEff ? MapColors.mob : MapColors.guardWarn;
 
             updateCpaLine(aisCpaOwnLines, v.context, [selfLat, selfLon], ownCpa, lineColor);
             updateCpaLine(aisCpaTgtLines, v.context, [v.lat, v.lon], tgtCpa, lineColor);
@@ -1390,11 +1432,20 @@ export function updateAisTargets(vessels) {
             const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)} nm · T-${cpaInfo.tcpa.toFixed(0)}m`;
             let lbl = aisCpaLabels[v.context];
             if (!lbl) {
+                // `interactive: true` lets the label accept pointer events
+                // (clicks + touch taps). Without it Leaflet routes every
+                // event on the tooltip surface straight to the map below,
+                // which is why tapping the CPA chip on the chart previously
+                // did nothing. Paired with the click handler below, a tap
+                // now opens the target vessel's full popup so the helm
+                // can read name / MMSI / SOG / COG / COLREGS role without
+                // having to hunt the tiny triangle marker.
                 lbl = L.tooltip({
-                    permanent: true, direction: 'center',
+                    permanent: true, direction: 'center', interactive: true,
                     className: `cpa-label ${isDangerEff ? 'cpa-danger' : 'cpa-warn'}`
                 }).setLatLng([midLat, midLon]).setContent(labelText).addTo(map);
                 aisCpaLabels[v.context] = lbl;
+                attachCpaLabelClick(lbl, v.context);
             } else {
                 lbl.setLatLng([midLat, midLon]);
                 lbl.setContent(labelText);
@@ -1402,6 +1453,12 @@ export function updateAisTargets(vessels) {
                 if (el) {
                     el.classList.toggle('cpa-danger', isDangerEff);
                     el.classList.toggle('cpa-warn', !isDangerEff);
+                    // setContent rebuilds the DOM, so the click listener
+                    // we attached via addEventListener survives on the
+                    // container but not if the container itself was
+                    // replaced. Re-wiring every update is cheap and
+                    // covers the replacement case without bookkeeping.
+                    attachCpaLabelClick(lbl, v.context);
                 }
             }
         } else {
@@ -1486,6 +1543,32 @@ function removeCpaOverlay(ctx) {
 }
 
 /**
+ * Wires a click / tap on a CPA label to open the target vessel's
+ * popup. The popup (built by buildAisPopupHtml) already carries full
+ * detail: name, MMSI, callsign, SOG, COG, HDG, bearing / distance
+ * from own boat, COLREGS role, external-lookup links, Buddy / Snooze
+ * controls, AND a CPA row. The compact CPA label on the chart is a
+ * glance-level chip; the full popup is the one-tap drill-in.
+ *
+ * `stopPropagation` keeps the map from panning or the popup under
+ * the label from opening instead. L.DomEvent handles both mouse and
+ * touch paths so iPad taps work the same as desktop clicks.
+ */
+function attachCpaLabelClick(tooltip, vesselContext) {
+    const el = tooltip.getElement();
+    if (!el) return;
+    if (el._onaCpaClickBound) return; // idempotent for setContent rebuilds
+    el._onaCpaClickBound = true;
+    L.DomEvent.on(el, 'click touchend', (e) => {
+        L.DomEvent.stop(e);
+        const marker = aisMarkers[vesselContext];
+        if (marker && typeof marker.openPopup === 'function') {
+            marker.openPopup();
+        }
+    });
+}
+
+/**
  * Updates the collision-avoidance thresholds used to colour AIS targets and
  * draw crossing-situation lines. Also resizes the guard zone ring.
  * @param radiusNm    CPA threshold (nautical miles)
@@ -1532,10 +1615,10 @@ function drawGuardZone() {
     if (!guardZoneRing) {
         guardZoneRing = L.circle([selfLat, selfLon], {
             radius: radiusM,
-            color: '#f59e0b',
+            color: MapColors.guardWarn,
             weight: 1,
             opacity: 0.5,
-            fillColor: '#f59e0b',
+            fillColor: MapColors.guardWarn,
             fillOpacity: 0.04,
             // Non-interactive: the ring no longer gets its own tooltip
             // (user-reported: the "Guard zone (CPA alarm radius)"
@@ -1607,8 +1690,11 @@ function addMeasurePoint(lat, lon) {
     measurePoints.push([lat, lon]);
 
     // A big enough dot to tap-to-delete later; also a waypoint-style visual.
+    // Cyan (bearing hue) so the measurement shares a family with the
+    // bearing-to-WP overlay -- "tools the user drew". The legend maps
+    // .legend-measure to --map-bearing, so this keeps the two in sync.
     const dot = L.circleMarker([lat, lon], {
-        radius: 5, color: '#e9c46a', fillColor: '#e9c46a',
+        radius: 5, color: MapColors.bearing, fillColor: MapColors.bearing,
         fillOpacity: 1, weight: 2
     }).addTo(map);
     measureLayers.push(dot);
@@ -1619,7 +1705,7 @@ function addMeasurePoint(lat, lon) {
         const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
         const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
         const seg = L.polyline([a, b], {
-            color: '#e9c46a', weight: 2, dashArray: '6,4', opacity: 0.85
+            color: MapColors.bearing, weight: 2, dashArray: '6,4', opacity: 0.85
         }).addTo(map);
         measureLayers.push(seg);
 
@@ -1643,10 +1729,10 @@ function addMeasurePoint(lat, lon) {
 export function setMob(lat, lon) {
     clearMob();
     mobMarker = L.marker([lat, lon], { icon: mobIcon, zIndexOffset: 2000 }).addTo(map);
-    mobCircle = L.circle([lat, lon], { radius: 50, color: '#ef4444', fillColor: '#ef4444',
+    mobCircle = L.circle([lat, lon], { radius: 50, color: MapColors.mob, fillColor: MapColors.mob,
         fillOpacity: 0.15, weight: 2 }).addTo(map);
     mobLine = L.polyline([[selfLat, selfLon], [lat, lon]], {
-        color: '#ef4444', weight: 2, dashArray: '4,4'
+        color: MapColors.mob, weight: 2, dashArray: '4,4'
     }).addTo(map);
     mobLabel = L.tooltip({ permanent: true, direction: 'center', className: 'mob-tooltip' })
         .setLatLng([(selfLat + lat)/2, (selfLon + lon)/2])
@@ -1666,10 +1752,10 @@ export function clearMob() {
 export function setAnchor(lat, lon, radiusM) {
     clearAnchor();
     anchorMarker = L.circleMarker([lat, lon], {
-        radius: 5, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 1
+        radius: 5, color: MapColors.anchorOk, fillColor: MapColors.anchorOk, fillOpacity: 1
     }).addTo(map);
     anchorCircle = L.circle([lat, lon], {
-        radius: radiusM, color: '#22c55e', fillColor: '#22c55e',
+        radius: radiusM, color: MapColors.anchorOk, fillColor: MapColors.anchorOk,
         fillOpacity: 0.06, weight: 2, dashArray: '6,4'
     }).addTo(map);
     // Seed the trail with the current boat position so the first segment
@@ -1714,7 +1800,7 @@ function updateAnchorTrail(lat, lon) {
     const coords = anchorTrail.map(p => [p.lat, p.lon]);
     if (!anchorTrailLayer) {
         anchorTrailLayer = L.polyline(coords, {
-            color: '#22c55e', weight: 2, opacity: 0.55,
+            color: MapColors.anchorOk, weight: 2, opacity: 0.55,
             dashArray: '2,4', interactive: false
         }).addTo(map);
     } else {
@@ -1899,9 +1985,9 @@ function recomputeChartOverzoom() {
 
 // --- Routes ---
 
-// Route polyline colour. Warm amber contrasts cleanly with OSM blue
-// water and doesn't clash with AIS ship colours (same family).
-const ROUTE_COLOR = '#e09f3e';
+// Route polyline colour lives in MapColors.route (read from
+// --ann-route at init). Call-sites use MapColors.route directly so
+// a palette edit propagates without a module reload.
 
 // Add a route as a polyline. coords is [[lat, lon], ...].
 //
@@ -1914,7 +2000,7 @@ const ROUTE_COLOR = '#e09f3e';
 export function addRoute(id, name, coords) {
     if (!map || routeLayers.has(id)) return;
     const line = L.polyline(coords, {
-        color: ROUTE_COLOR, weight: 2.5, opacity: 0.8, dashArray: '8,6'
+        color: MapColors.route, weight: 2.5, opacity: 0.8, dashArray: '8,6'
     }).addTo(map);
 
     const nmTotal = routeTotalNauticalMiles(coords);
@@ -1941,7 +2027,7 @@ export function addRoute(id, name, coords) {
     const group = L.layerGroup([line]).addTo(map);
     for (let i = 0; i < coords.length; i++) {
         const dot = L.circleMarker(coords[i], {
-            radius: 4, color: ROUTE_COLOR, fillColor: ROUTE_COLOR, fillOpacity: 1, weight: 1
+            radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
         });
         dot.bindTooltip(name ? `${name} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
         dot.addTo(group);
@@ -2036,7 +2122,7 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon) {
 
     // Full route polyline.
     L.polyline(coords, {
-        color: '#06b6d4', weight: 3, opacity: 0.8
+        color: MapColors.bearing, weight: 3, opacity: 0.8
     }).addTo(activeRouteLayer);
 
     // Waypoint markers.
@@ -2048,8 +2134,8 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon) {
         if (!isNext) {
             const dot = L.circleMarker(coords[i], {
                 radius,
-                color: '#06b6d4',
-                fillColor: isPassed ? '#64748b' : '#06b6d4',
+                color: MapColors.bearing,
+                fillColor: isPassed ? '#64748b' : MapColors.bearing,
                 fillOpacity: isPassed ? 0.35 : 1,
                 weight: isPassed ? 1 : 1.5,
                 opacity: isPassed ? 0.35 : 1
@@ -2117,14 +2203,17 @@ export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, 
         courseLineBearing.setLatLngs(brgCoords);
     } else {
         courseLineBearing = L.polyline(brgCoords, {
-            color: '#06b6d4', weight: 2, opacity: 0.7, dashArray: '6,4'
+            color: MapColors.bearing, weight: 2, opacity: 0.7, dashArray: '6,4'
         }).addTo(map);
     }
 
     // XTE perpendicular tick at boat position.
     if (xteMeters != null && prevLat != null && prevLon != null) {
         const absXte = Math.abs(xteMeters);
-        const xteColor = absXte < 50 ? '#22c55e' : absXte < 200 ? '#f59e0b' : '#ef4444';
+        // Mirrors .legend-xte's gradient via the shared severity
+        // palette -- green / amber / red match the bands the XTE
+        // formula uses, and a single edit in :root restyles both.
+        const xteColor = absXte < 50 ? MapColors.anchorOk : absXte < 200 ? MapColors.guardWarn : MapColors.mob;
         // Perpendicular to the leg bearing.
         const legBrg = bearingDeg(prevLat, prevLon, wpLat, wpLon) * RAD;
         const perpBrg = xteMeters > 0 ? legBrg + Math.PI / 2 : legBrg - Math.PI / 2;
@@ -2182,7 +2271,7 @@ let routeEditSuppressNextMapClick = false;
 function redrawEditLine() {
     if (!routeEditLine && routeEditCoords.length >= 2) {
         routeEditLine = L.polyline(routeEditCoords, {
-            color: '#a78bfa', weight: 2.5, opacity: 0.8, dashArray: '8,6'
+            color: MapColors.current, weight: 2.5, opacity: 0.8, dashArray: '8,6'
         }).addTo(routeEditLayer);
         // Wider, transparent polyline underneath as a chunky hit target.
         // On a touch screen the 2.5 px visible line is almost impossible
@@ -2192,7 +2281,7 @@ function redrawEditLine() {
         // at the end of the route) from firing in addition to the
         // insert-between-segment handler.
         routeEditHitLine = L.polyline(routeEditCoords, {
-            color: '#a78bfa', weight: 20, opacity: 0, interactive: true,
+            color: MapColors.current, weight: 20, opacity: 0, interactive: true,
             // Crosshair cursor on hover so it's discoverable that
             // clicking a leg inserts a waypoint between existing ones,
             // rather than appending at the end.
@@ -2285,7 +2374,7 @@ function bindEditMarker(marker, idx) {
             zIndexOffset: 500
         }).addTo(routeEditLayer);
         ghostLine = L.polyline([origLL, origLL], {
-            color: '#a78bfa', weight: 1.5, opacity: 0.7, dashArray: '3,4',
+            color: MapColors.current, weight: 1.5, opacity: 0.7, dashArray: '3,4',
             interactive: false
         }).addTo(routeEditLayer);
         // Bind once; setTooltipContent on each drag event is cheaper than
@@ -2986,12 +3075,14 @@ export function triggerFileDownload(filename, content) {
 // --- Tidal Current Arrow ---
 
 let currentArrow = null;
-let currentLabel = null;
 
 export function setCurrentArrow(boatLat, boatLon, setRad, driftMs) {
     if (!map) return;
-    const driftKn = driftMs * 1.94384;
     // Arrow length proportional to drift, min 200m, max 2000m visual.
+    // Magnitude is already encoded in the arrow length; the tooltip that
+    // used to print "1.5kn" next to the arrow head was dropped on user
+    // request -- it read like a loose label on the chart and the drift
+    // value is redundant with what the bottom-right HUD already shows.
     const arrowLen = Math.min(Math.max(driftMs * 600, 200), 2000);
     const endPt = destPoint(boatLat, boatLon, setRad, arrowLen);
 
@@ -2999,25 +3090,13 @@ export function setCurrentArrow(boatLat, boatLon, setRad, driftMs) {
         currentArrow.setLatLngs([[boatLat, boatLon], endPt]);
     } else {
         currentArrow = L.polyline([[boatLat, boatLon], endPt], {
-            color: '#a78bfa', weight: 3, opacity: 0.8
+            color: MapColors.current, weight: 3, opacity: 0.8
         }).addTo(map);
-    }
-
-    const labelText = `${driftKn.toFixed(1)}kn`;
-    if (currentLabel) {
-        currentLabel.setLatLng(endPt);
-        currentLabel.setContent(labelText);
-    } else {
-        currentLabel = L.tooltip({
-            permanent: true, direction: 'right', offset: [6, 0],
-            className: 'bearing-tooltip'
-        }).setLatLng(endPt).setContent(labelText).addTo(map);
     }
 }
 
 export function clearCurrentArrow() {
     if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
-    if (currentLabel && map) { map.removeLayer(currentLabel); currentLabel = null; }
 }
 
 // --- Laylines ---
@@ -3037,17 +3116,21 @@ export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
     const stbdEnd = destPoint(boatLat, boatLon, stbdBrg, lineLen);
     const portEnd = destPoint(boatLat, boatLon, portBrg, lineLen);
 
+    // Laylines follow the anchor-ok / mob palette for stbd/port --
+    // green = "safe tack", red = "other tack". Legend doesn't show
+    // laylines as a swatch currently but the palette stays consistent
+    // with the anchor and MOB cues (same severity metaphor).
     if (laylineStarboard) laylineStarboard.setLatLngs([[boatLat, boatLon], stbdEnd]);
     else {
         laylineStarboard = L.polyline([[boatLat, boatLon], stbdEnd], {
-            color: '#22c55e', weight: 2, opacity: 0.7, dashArray: '10,6'
+            color: MapColors.anchorOk, weight: 2, opacity: 0.7, dashArray: '10,6'
         }).addTo(map);
     }
 
     if (laylinePort) laylinePort.setLatLngs([[boatLat, boatLon], portEnd]);
     else {
         laylinePort = L.polyline([[boatLat, boatLon], portEnd], {
-            color: '#ef4444', weight: 2, opacity: 0.7, dashArray: '10,6'
+            color: MapColors.mob, weight: 2, opacity: 0.7, dashArray: '10,6'
         }).addTo(map);
     }
 
@@ -3059,13 +3142,13 @@ export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
         if (laylineWpStarboard) laylineWpStarboard.setLatLngs([[wpLat, wpLon], wpStbdEnd]);
         else {
             laylineWpStarboard = L.polyline([[wpLat, wpLon], wpStbdEnd], {
-                color: '#22c55e', weight: 1.5, opacity: 0.35, dashArray: '6,6'
+                color: MapColors.anchorOk, weight: 1.5, opacity: 0.35, dashArray: '6,6'
             }).addTo(map);
         }
         if (laylineWpPort) laylineWpPort.setLatLngs([[wpLat, wpLon], wpPortEnd]);
         else {
             laylineWpPort = L.polyline([[wpLat, wpLon], wpPortEnd], {
-                color: '#ef4444', weight: 1.5, opacity: 0.35, dashArray: '6,6'
+                color: MapColors.mob, weight: 1.5, opacity: 0.35, dashArray: '6,6'
             }).addTo(map);
         }
     } else {

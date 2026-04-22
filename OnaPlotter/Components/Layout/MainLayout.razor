@@ -433,9 +433,23 @@
 
     private void MaybeAutoAdvanceWaypoint()
     {
-        if (!Settings.AutoAdvanceWaypoints) { _prevPerp = false; _prevArr = false; return; }
+        // Diagnostic toast on every firing decision path. When a user
+        // reports "auto-advance didn't work", we need to know which of
+        // four possible skip reasons hit: setting off, no active
+        // course, flag never went true, or cooldown window. Toasts are
+        // Debug-level so they appear in console logs without spamming
+        // the visible stack on every tick.
+        if (!Settings.AutoAdvanceWaypoints)
+        {
+            _prevPerp = false; _prevArr = false;
+            return;
+        }
         var data = SignalkClient.Data;
-        if (!data.HasActiveCourse) { _prevPerp = false; _prevArr = false; return; }
+        if (!data.HasActiveCourse)
+        {
+            _prevPerp = false; _prevArr = false;
+            return;
+        }
 
         bool perp = data.PerpendicularPassed == true;
         bool arr = data.ArrivalCircleEntered == true;
@@ -446,9 +460,16 @@
         _prevArr = arr;
 
         if (!(perpEdge || arrEdge)) return;
-        if ((DateTime.UtcNow - _lastAutoAdvanceUtc).TotalSeconds < AutoAdvanceCooldownSec) return;
+
+        double sinceLastSec = (DateTime.UtcNow - _lastAutoAdvanceUtc).TotalSeconds;
+        if (sinceLastSec < AutoAdvanceCooldownSec)
+        {
+            Console.WriteLine($"[AutoAdvance] edge detected (perp={perpEdge} arr={arrEdge}) but cooldown {sinceLastSec:F1}s < {AutoAdvanceCooldownSec}s; skipping");
+            return;
+        }
 
         _lastAutoAdvanceUtc = DateTime.UtcNow;
+        Console.WriteLine($"[AutoAdvance] firing ({(perpEdge ? "perpendicularPassed" : "arrivalCircleEntered")})");
         _ = AutoAdvanceAsync(perpEdge ? "perpendicular passed" : "arrival circle");
     }
 

@@ -96,6 +96,15 @@ public interface IAppSettings
     /// screen, sunlight). Pure CSS via a .big-type class on .page.</summary>
     bool BigType { get; }
 
+    /// <summary>When true, every corner HUD panel renders in its
+    /// expanded state regardless of click, so a 21"-class widescreen
+    /// uses its horizontal space for numbers instead of hidden secondary
+    /// rows. Independent of <see cref="BigType"/>: an operator on a
+    /// wide screen may want the extras without cranking the font size,
+    /// or vice-versa. Default OFF so touch users on a small tablet
+    /// still get the click-to-expand affordance.</summary>
+    bool ExpandAllHud { get; }
+
     /// <summary>High-level sailing mode: "cruise" (default -- navigation
     /// emphasis, depth / anchor / route) or "race" (performance emphasis,
     /// laylines / optimal TWA / target speed). Discriminator used by the
@@ -205,6 +214,7 @@ public interface IAppSettings
     Task SetDeadmanNightMinutesAsync(double value);
     Task SetSnoozeDurationMinutesAsync(int value);
     Task SetBigTypeAsync(bool value);
+    Task SetExpandAllHudAsync(bool value);
     Task SetSailingModeAsync(string value);
     Task SetKeepScreenAwakeAsync(bool value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);

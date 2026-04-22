@@ -274,6 +274,29 @@ public sealed class SignalkClient : IAsyncDisposable
     public bool IsDataStale => IsConnected
         && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
 
+    // --- Own-track sampling ------------------------------------------
+    // TrackBuffer capacity is 1000. Adding a point every delta (typical
+    // 1 Hz with the course-provider feeding 1-2 paths per tick, but
+    // bursty up to 3-5 Hz under heavy wind/depth traffic) burned the
+    // buffer in ~15-30 minutes of sailing -- the on-map trail kept
+    // losing the first half-hour of the leg. 0.2 Hz sampling (one
+    // point every 5 s) stretches the same buffer to ~83 min of
+    // history, which is enough to visually follow a typical day-sail.
+    // The live position indicator still updates on every delta;
+    // only the persisted trail is throttled.
+    private const int TrackSampleIntervalMs = 5_000;
+    private long _lastTrackSampleTicks;
+
+    private bool ShouldSampleTrackPoint()
+    {
+        long nowTicks = DateTime.UtcNow.Ticks;
+        long lastTicks = Interlocked.Read(ref _lastTrackSampleTicks);
+        if (nowTicks - lastTicks < TrackSampleIntervalMs * TimeSpan.TicksPerMillisecond)
+            return false;
+        Interlocked.Exchange(ref _lastTrackSampleTicks, nowTicks);
+        return true;
+    }
+
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings)
     {
@@ -702,6 +725,12 @@ public sealed class SignalkClient : IAsyncDisposable
                 // edge trigger fires on the armed->cleared cycle, so
                 // map the "has a notification object" case to true
                 // and everything else (null, cleared) to false.
+                //
+                // Logged at Info so a user who sees auto-advance fail
+                // can grep the browser console for "CourseNotification"
+                // and tell whether the notification is reaching us at
+                // all (plumbing) or whether our edge / cooldown logic
+                // is what skipped it (downstream).
                 if (val.Path == "notifications.navigation.course.perpendicularPassed"
                     || val.Path == "notifications.navigation.course.arrivalCircleEntered")
                 {
@@ -710,6 +739,7 @@ public sealed class SignalkClient : IAsyncDisposable
                         && ne.TryGetProperty("state", out var stateEl)
                         && stateEl.ValueKind == JsonValueKind.String
                         && !string.Equals(stateEl.GetString(), "normal", StringComparison.Ordinal);
+                    _logger.LogInformation("CourseNotification {Path} armed={Armed}", val.Path, armed);
                     _data.ApplyBool(val.Path, armed);
                     changed = true;
                     continue;
@@ -759,7 +789,8 @@ public sealed class SignalkClient : IAsyncDisposable
 
         if (changed)
         {
-            if (_data.Latitude is not null && _data.Longitude is not null)
+            if (_data.Latitude is not null && _data.Longitude is not null
+                && ShouldSampleTrackPoint())
             {
                 _track.Add(new TrackPoint(
                     DateTime.UtcNow,

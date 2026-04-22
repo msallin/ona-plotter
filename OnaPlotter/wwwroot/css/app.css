@@ -49,6 +49,25 @@
     --ann-region:     #d4a850;       /* lighter amber-gold (same family as route) */
     --ann-region-fill:rgba(212, 168, 80, 0.18);
 
+    /* ----- Map symbol palette -----
+       Single source of truth for every on-chart colour the Leaflet
+       overlays render. The legend (LegendOverlay.razor) reads these
+       via var() for its swatches; leafletInterop.js reads the same
+       values through readMapColors() at init so the hex strings it
+       hands to Leaflet always match the legend. Edit here and both
+       sides follow -- no drift. */
+    --map-own:          #ec4899;     /* own-boat marker (magenta) */
+    --map-cog-vector:   #f9a8d4;     /* dashed COG projection */
+    --map-buddy:        #e9c46a;     /* buddy vessel; also snooze / star glyph */
+    --map-danger:       #c4453e;     /* CPA alarm colour on AIS targets */
+    --map-radar:        #b08d5a;     /* Mayara radar ARPA markers */
+    --map-current:      #a78bfa;     /* tidal-current arrow + active-WP pulse */
+    --map-bearing:      #06b6d4;     /* cyan bearing-to-WP line */
+    --map-course-leg:   #e2e8f0;     /* white-ish active-leg line */
+    --map-mob:          #ef4444;     /* MOB pin (= --sev-danger) */
+    --map-anchor-ok:    #22c55e;     /* anchor circle inside radius */
+    --map-anchor-drag:  #ef4444;     /* anchor circle outside radius */
+
     /* Chrome palette (sidebar + top bar). Keep separate from content vars
        so the sidebar can have its own depth treatment on either theme. */
     --sk-sidebar-bg: linear-gradient(180deg, #0c1929 0%, #162544 100%);
@@ -1665,9 +1684,15 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 
 /* Push top HUD panels below the alarm banner when it's visible. The
    nudge is sized for the top (pulsing) banner; additional stacked
-   banners are thinner and acceptable to overlap the HUD by a few px. */
+   banners are thinner and acceptable to overlap the HUD by a few px.
+
+   .hud-route is NOT in this list: it sits at the bottom of the screen
+   (`bottom: var(--panel-bottom)`) so an alarm banner at the top has
+   no reason to touch it. Including it here paired a bottom-anchored
+   element with an explicit top value, which stretched the card
+   floor-to-ceiling and caused the bottom-center navigation HUD to
+   visibly jump every time an alarm entered / left the DOM. */
 main:has(.alarm-banner-stack) .hud-top-right,
-main:has(.alarm-banner-stack) .hud-route,
 main:has(.alarm-banner-stack) .chart-quick-bar {
     top: calc(12px + 44px);
 }
@@ -1682,9 +1707,17 @@ main:has(.alarm-banner-stack) .hud-top-left {
    case -- one chip-row height instead of a full banner. */
 main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-top-left,
 main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-top-right,
-main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-route,
 main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .chart-quick-bar {
     top: calc(12px + 32px);
+}
+
+/* Smooth the top-HUD shift when alarms appear / disappear so the
+   transition reads as a slide rather than a layout jump. The old
+   behaviour snapped 44 px in a single frame, which users reported as
+   the HUD "jumping for reasons". 180 ms is fast enough not to feel
+   laggy on a helm interaction and slow enough to read as intentional. */
+.hud-top-left, .hud-top-right, .chart-quick-bar {
+    transition: top 180ms ease;
 }
 
 .alarm-danger {
@@ -2321,13 +2354,26 @@ main:has(.alarm-banner-stack) .snooze-chips {
     background: var(--panel-bg);
     color: var(--panel-text);
     border: 1px solid var(--panel-border);
-    backdrop-filter: blur(6px);
+    /* backdrop-filter: blur was the dominant cost on scroll -- every
+       scroll frame re-rasterised a blurred snapshot of whatever the
+       chart tiles were painting behind the panel. On a Raspberry-Pi
+       kiosk this pushed scroll frames to 40-80 ms. Dropping it
+       removes the stutter; a solid panel reads as an overlay without
+       melting the GPU. */
     border-radius: 8px;
     padding: 10px 14px;
     min-width: 220px;
-    max-width: 340px;
-    max-height: 300px;
+    max-width: 360px;
+    /* Was 300 px -- too short on a 21" helm screen, forced scroll
+       through a tiny window. min(75vh, 560px) keeps the panel usable
+       on a phone and luxurious on a wide screen (fits ~20 chart rows). */
+    max-height: min(75vh, 560px);
     overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Containment hint so the scroll area's paint doesn't invalidate
+       sibling chrome (map, HUD). Standard pattern for long lists
+       under a fixed wrapper; measurable help on scroll FPS. */
+    contain: layout paint;
     border: 1px solid rgba(255,255,255,0.1);
 }
 
@@ -2354,34 +2400,27 @@ main:has(.alarm-banner-stack) .snooze-chips {
    even when the Charts list is collapsed. Each chip is one currently-
    enabled chart; chips stack top-down, topmost chip = top of draw
    stack on the map (last .addTo wins). */
-.chart-active-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    margin-bottom: 8px;
-}
-.chart-active-chip {
-    background: rgba(224, 159, 62, 0.14);
-    border: 1px solid rgba(224, 159, 62, 0.4);
-    color: #f0d49c;
-    border-radius: 4px;
-    padding: 3px 6px 3px 8px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.chart-active-name {
-    flex: 1 1 auto;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
+/* Reorder arrows now live inline on rendering chart rows (see
+   ChartsSection.razor); the separate .chart-active-stack yellow box
+   that used to float above the list was dropped because the user
+   couldn't tell which box owned "enabling" vs "ordering". Classes
+   kept below (.chart-active-actions, .chart-reorder-btn) are still
+   referenced from the inline row. */
 .chart-active-actions {
     flex: 0 0 auto;
     display: inline-flex;
     gap: 2px;
+    margin-left: auto;
+}
+
+/* Rendering charts get an amber glow on the row so the eye catches
+   "what's actually on the map" without reading the dot. Subtle
+   enough not to fight the body text or the reorder arrows. */
+.chart-item-rendering {
+    background: rgba(224, 159, 62, 0.08);
+    border-left: 3px solid rgba(224, 159, 62, 0.55);
+    padding-left: 8px !important;
+    border-radius: 3px;
 }
 .chart-reorder-btn {
     width: 22px;
@@ -2409,7 +2448,6 @@ main:has(.alarm-banner-stack) .snooze-chips {
        required stylus-level precision on an iPad which was the field
        complaint ("Layers not touch-friendly"). */
     .chart-reorder-btn { width: 44px; height: 44px; font-size: 1rem; }
-    .chart-active-chip { padding: 8px 10px; gap: 8px; }
     .chart-item { padding: 10px 2px; gap: 12px; min-height: 48px; }
     .chart-item input[type="checkbox"] { width: 24px; height: 24px; }
     /* Wider panel on touch so the descriptions don't push the reorder
@@ -3250,37 +3288,41 @@ main:has(.alarm-banner-stack) .snooze-chips {
    (SVG chevron etc.) would double the CSS for almost no gain; a
    solid swatch of the right hue anchors the name in the reader's
    memory well enough. */
-.legend-own        { background: #ec4899; }                   /* magenta */
+/* Every swatch below pulls from :root's --map-* palette so a colour
+   change cascades here AND into leafletInterop.js (see readMapColors).
+   One edit site for every on-chart symbol. */
+.legend-own        { background: var(--map-own); }
 /* COG-vector swatch: dashed pink line like the actual overlay. Built
    as a repeating linear-gradient so the swatch reads as "line" at
-   a glance. */
+   a glance. The gradient uses var() so a palette tweak takes effect
+   without touching this rule. */
 .legend-cog-vector {
     background: linear-gradient(90deg,
         transparent 0, transparent 3px,
-        #f9a8d4 3px, #f9a8d4 9px,
+        var(--map-cog-vector) 3px, var(--map-cog-vector) 9px,
         transparent 9px, transparent 15px,
-        #f9a8d4 15px, #f9a8d4 21px);
+        var(--map-cog-vector) 15px, var(--map-cog-vector) 21px);
     height: 4px;
     align-self: center;
     border-radius: 2px;
 }
-.legend-ais-sail   { background: #e28862; }                   /* warm coral */
+.legend-ais-sail   { background: #e28862; }                   /* warm coral -- AIS palette is C#-side AisColor; sync via palette.cs */
 .legend-ais-fish   { background: #d4a850; }                   /* muted gold */
 .legend-ais-commercial { background: #7d9b76; }               /* sage green */
-.legend-buddy      { background: #e9c46a; }                   /* honey gold */
-.legend-danger     { background: #c4453e; }                   /* warm brick */
-.legend-sart       { background: #ef4444; }                   /* pure red */
+.legend-buddy      { background: var(--map-buddy); }
+.legend-danger     { background: var(--map-danger); }
+.legend-sart       { background: var(--sev-danger); }
 .legend-radar      { background: transparent;
-                     border: 2px solid #b08d5a; }             /* tan outline */
+                     border: 2px solid var(--map-radar); }
 .legend-route      { background: transparent;
-                     border-top: 3px dashed #e09f3e;
+                     border-top: 3px dashed var(--ann-route);
                      margin-top: 8px;
                      height: 4px;
                      border-radius: 0; }
-.legend-waypoint   { background: #c76f51; border-radius: 50%; }
-.legend-note       { background: #c8892e; }                   /* --ann-note */
-.legend-region     { background: rgba(212, 168, 80, 0.3);
-                     border: 1px solid #d4a850; }             /* --ann-region */
+.legend-waypoint   { background: var(--ann-waypoint); border-radius: 50%; }
+.legend-note       { background: var(--ann-note); }
+.legend-region     { background: var(--ann-region-fill);
+                     border: 1px solid var(--ann-region); }
 /* Guard-zone swatch mirrors the actual ring drawn on the map:
    amber (--sev-warn / #f59e0b), solid 1px stroke, faint amber fill.
    Earlier this was a red dashed outline -- red signalled "danger"
@@ -3288,13 +3330,13 @@ main:has(.alarm-banner-stack) .snooze-chips {
    trigger radius), not an alarm state. */
 .legend-guard      { background: rgba(245, 158, 11, 0.04);
                      border: 1.5px solid rgba(245, 158, 11, 0.5);
-                     border-radius: 50%; }
+                     border-radius: 50%; }                  /* --sev-warn */
 
 /* Violet tidal-current arrow drawn on the map from own-boat along the
    current set direction. Solid line + arrow shape; swatch is a
    simplified triangle pointer. */
 .legend-current {
-    background: #a78bfa;
+    background: var(--map-current);
     height: 3px;
     align-self: center;
     border-radius: 2px;
@@ -3303,18 +3345,19 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* Course-leg line: white dashed between previous and next WP. */
 .legend-course-leg {
     background: linear-gradient(90deg,
-        rgba(255,255,255,0.6) 0 60%,
+        var(--map-course-leg) 0 60%,
         transparent 60% 100%);
     background-size: 10px 2px;
     background-repeat: repeat-x;
     background-position: center;
     height: 2px;
     align-self: center;
+    opacity: 0.6;
 }
 /* Bearing-to-WP: cyan dashed from boat to waypoint. */
 .legend-bearing {
     background: linear-gradient(90deg,
-        #06b6d4 0 60%,
+        var(--map-bearing) 0 60%,
         transparent 60% 100%);
     background-size: 8px 2px;
     background-repeat: repeat-x;
@@ -3325,7 +3368,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* XTE gradient: bar that fades green -> amber -> red to match the
    threshold bands the actual tick uses. */
 .legend-xte {
-    background: linear-gradient(90deg, #22c55e 0%, #f59e0b 50%, #ef4444 100%);
+    background: linear-gradient(90deg, var(--sev-ok) 0%, var(--sev-warn) 50%, var(--sev-danger) 100%);
     height: 6px;
     align-self: center;
     border-radius: 2px;
@@ -3333,14 +3376,14 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* Route-edit preview: violet dashed line (the planning polyline). */
 .legend-route-edit {
     background: transparent;
-    border-top: 3px dashed #a78bfa;
+    border-top: 3px dashed var(--map-current);
     margin-top: 8px;
     height: 4px;
     border-radius: 0;
 }
 /* Active-WP pulse: violet filled circle like the pulse marker. */
 .legend-active-wp {
-    background: #a78bfa;
+    background: var(--map-current);
     border: 2px solid #fff;
     border-radius: 50%;
     box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.35);
@@ -3349,12 +3392,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
    same gold stroke as the ring. */
 .legend-anchor {
     background: rgba(224, 159, 62, 0.08);
-    border: 1.5px solid #e09f3e;
+    border: 1.5px solid var(--ann-route);
     border-radius: 50%;
 }
 /* MOB marker: red pin with white center. */
 .legend-mob {
-    background: #ef4444;
+    background: var(--map-mob);
     border: 2px solid #fff;
     border-radius: 50%;
 }
@@ -3362,7 +3405,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
    overlay so the two share a "tools I draw myself" family. */
 .legend-measure {
     background: linear-gradient(90deg,
-        #06b6d4 0 50%,
+        var(--map-bearing) 0 50%,
         transparent 50% 100%);
     background-size: 6px 2px;
     background-repeat: repeat-x;
@@ -4533,6 +4576,12 @@ main:has(.map-container.big-type) .map-fab-item {
     text-align: center !important;
     line-height: 1.25 !important;
     white-space: normal;
+    /* Click / tap opens the full vessel popup -- see attachCpaLabelClick
+       in leafletInterop.js. Pointer cursor signals the affordance; the
+       tap-highlight reset stops iOS showing its default blue flash
+       which is distracting on a dark chart. */
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
 }
 .cpa-label strong { font-weight: 700; font-size: 11.5px; }
 .cpa-label::before { display: none !important; }
