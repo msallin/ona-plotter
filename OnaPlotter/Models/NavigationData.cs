@@ -426,13 +426,18 @@ public sealed class NavigationData
         {
             switch (path)
             {
-                // Course Providers spec places these at the top of the
-                // course subtree; some older plugin builds emit them
-                // under calcValues. Both map to the same field.
+                // Course Providers plugin emits these as notifications
+                // (notifications.navigation.course.<flag>); the old
+                // spec doc also lists the bare navigation.course.<flag>
+                // path and some plugin builds put them under calcValues.
+                // Accept all three so a plugin update doesn't silently
+                // break auto-advance.
+                case "notifications.navigation.course.perpendicularPassed":
                 case "navigation.course.perpendicularPassed":
                 case "navigation.course.calcValues.perpendicularPassed":
                     PerpendicularPassed = value;
                     break;
+                case "notifications.navigation.course.arrivalCircleEntered":
                 case "navigation.course.arrivalCircleEntered":
                 case "navigation.course.calcValues.arrivalCircleEntered":
                     ArrivalCircleEntered = value;

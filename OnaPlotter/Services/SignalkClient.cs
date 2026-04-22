@@ -166,20 +166,17 @@ public sealed class SignalkClient : IAsyncDisposable
         new("navigation.course.calcValues.crossTrackError",                  PathTier.SelfFast),
         new("navigation.course.calcValues.route.distance",                   PathTier.SelfFast),
         new("navigation.course.calcValues.route.timeToGo",                   PathTier.SelfFast),
-        // Leg-advance signals from the course-provider plugin. true
-        // fires once when the boat crosses the perpendicular through
-        // the destination (perpendicularPassed) or enters the arrival
-        // circle (arrivalCircleEntered). The Course Providers spec
-        // places these directly under navigation.course.* (notification
-        // paths); some plugin builds emit them under calcValues.*
-        // instead, so both are subscribed and both map to the same
-        // NavigationData fields. OnaPlotter watches either transition
-        // and auto-advances to the next waypoint when the user enables
-        // AutoAdvanceWaypoints.
-        new("navigation.course.perpendicularPassed",                         PathTier.SelfFast),
-        new("navigation.course.arrivalCircleEntered",                        PathTier.SelfFast),
-        new("navigation.course.calcValues.perpendicularPassed",              PathTier.SelfFast),
-        new("navigation.course.calcValues.arrivalCircleEntered",             PathTier.SelfFast),
+        // Leg-advance signals from the course-provider plugin. The
+        // plugin emits these as NOTIFICATIONS (not plain booleans),
+        // with the "notifications." prefix the Notification class
+        // adds in src/lib/alarms.ts -- see the plugin source for the
+        // exact shape. Value is {state, method, message} when armed
+        // and null when cleared; ProcessSelfDelta maps either form
+        // into NavigationData's PerpendicularPassed / ArrivalCircleEntered
+        // booleans so MaybeAutoAdvanceWaypoint's edge trigger fires
+        // on the enter transition.
+        new("notifications.navigation.course.perpendicularPassed",           PathTier.SelfFast),
+        new("notifications.navigation.course.arrivalCircleEntered",          PathTier.SelfFast),
         // Autopilot state + target heading + target AWA (wind mode).
         new("steering.autopilot.state",                                      PathTier.SelfFast),
         new("steering.autopilot.target.headingTrue",                         PathTier.SelfFast),
@@ -391,6 +388,13 @@ public sealed class SignalkClient : IAsyncDisposable
                 // on its own REST surface which the delta stream doesn't
                 // cover for the initial state; fetch it once on connect.
                 _ = Task.Run(() => SeedSelfCourseFromRestAsync(ct), ct);
+
+                // design.draft is declared statically in vessel.json on
+                // most boats, so it never appears in deltas. There is
+                // no v2 design endpoint -- v1 is the only source --
+                // so this stays on the v1 REST surface. Narrow fetch:
+                // /vessels/self/design/draft only, not the whole tree.
+                _ = Task.Run(() => SeedSelfDesignDraftFromRestAsync(ct), ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
@@ -690,12 +694,31 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // Boolean-valued paths from the course-provider plugin
-                // (perpendicularPassed / arrivalCircleEntered). A true
-                // transition triggers auto-advance downstream via
-                // OnDataChanged; the plugin emits these as plain
-                // JsonValueKind booleans, so NavigationData.ApplyBool
-                // handles them separately from the numeric Apply path.
+                // Notification paths from the course-provider plugin
+                // (notifications.navigation.course.perpendicularPassed /
+                // arrivalCircleEntered). Value is {state, method,
+                // message} when armed, JSON null when the plugin
+                // clears the alarm on exit. MaybeAutoAdvanceWaypoint's
+                // edge trigger fires on the armed->cleared cycle, so
+                // map the "has a notification object" case to true
+                // and everything else (null, cleared) to false.
+                if (val.Path == "notifications.navigation.course.perpendicularPassed"
+                    || val.Path == "notifications.navigation.course.arrivalCircleEntered")
+                {
+                    bool armed = val.Value is JsonElement ne
+                        && ne.ValueKind == JsonValueKind.Object
+                        && ne.TryGetProperty("state", out var stateEl)
+                        && stateEl.ValueKind == JsonValueKind.String
+                        && !string.Equals(stateEl.GetString(), "normal", StringComparison.Ordinal);
+                    _data.ApplyBool(val.Path, armed);
+                    changed = true;
+                    continue;
+                }
+
+                // Plain boolean delta (legacy / non-standard plugin
+                // builds that publish booleans directly). ApplyBool
+                // returns false for unknown paths so random bool
+                // fields don't bind anywhere unexpected.
                 if (val.Value is JsonElement boolEl
                     && (boolEl.ValueKind == JsonValueKind.True || boolEl.ValueKind == JsonValueKind.False))
                 {
@@ -1040,6 +1063,78 @@ public sealed class SignalkClient : IAsyncDisposable
     /// moves, so they trickle in normally.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// One-shot REST fetch of <c>design.draft</c> for the self vessel.
+    /// Draft is declared statically in vessel.json on almost every
+    /// install, so the delta stream never replays it after subscribe.
+    /// No v2 equivalent exists yet -- the v2 API surface covers
+    /// course, anchor (proposed), and resources, but not design.
+    /// Response shape on signalk-server:
+    /// <code>{"current": {"value": 1.5, "timestamp": "..."},
+    ///         "maximum": {"value": 2.0, "timestamp": "..."}}</code>
+    /// Feeds back through NavigationData.Apply so the result lands
+    /// in <see cref="NavigationData.DraftFromSignalK"/>, which drives
+    /// the Settings "SignalK reports X m" hint and the AnchorTide
+    /// alarm's draft input. On 404 (no design data on server) or
+    /// parse failure we stay silent at Debug level so an empty
+    /// vessel.json doesn't spam the log.
+    /// </summary>
+    private async Task SeedSelfDesignDraftFromRestAsync(CancellationToken ct)
+    {
+        JsonDocument? doc = null;
+        try
+        {
+            var url = _baseUrl.Combine("/signalk/v1/api/vessels/self/design/draft");
+            using var res = await _http.GetAsync(url, ct);
+            if (!res.IsSuccessStatusCode)
+            {
+                _logger.LogDebug("design.draft endpoint {Url} returned {Status}", url, (int)res.StatusCode);
+                return;
+            }
+
+            using var stream = await res.Content.ReadAsStreamAsync(ct);
+            doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+
+            // Prefer current over maximum to match
+            // NavigationData.Apply's delta-path precedence. Unwrap
+            // the {value, timestamp} envelope for either leaf; some
+            // older servers emit bare numbers at this path too.
+            bool seeded = false;
+            if (doc.RootElement.TryGetProperty("current", out var cur))
+            {
+                var val = UnwrapValue(cur);
+                if (val.ValueKind == JsonValueKind.Number)
+                {
+                    _data.Apply("design.draft.current", val);
+                    seeded = true;
+                }
+            }
+            if (!seeded && doc.RootElement.TryGetProperty("maximum", out var max))
+            {
+                var val = UnwrapValue(max);
+                if (val.ValueKind == JsonValueKind.Number)
+                {
+                    _data.Apply("design.draft.maximum", val);
+                    seeded = true;
+                }
+            }
+
+            if (seeded)
+            {
+                OnDataChanged?.Invoke();
+                _logger.LogInformation("Seeded design.draft from v1 REST (DraftFromSignalK = {Draft} m)",
+                    _data.DraftFromSignalK);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "design.draft REST seed failed (falls back to Settings manual override)");
+        }
+        finally { doc?.Dispose(); }
+    }
+
     private async Task SeedSelfCourseFromRestAsync(CancellationToken ct)
     {
         JsonDocument? doc = null;
