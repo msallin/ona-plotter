@@ -41,9 +41,9 @@ public sealed class NavigationData
     public double? CrossTrackError { get; private set; }
 
     /// <summary>Distance remaining on the ENTIRE active route (metres).
-    /// SignalK path <c>navigation.courseGreatCircle.activeRoute.distanceRemaining</c>.
-    /// Null when no active route or when the SK server doesn't publish it
-    /// (older servers only emit nextPoint.distance).</summary>
+    /// SignalK v2 path <c>navigation.course.calcValues.route.distance</c>.
+    /// Null when there's no active route or when the SK server's
+    /// course-provider plugin isn't installed.</summary>
     public double? ActiveRouteDistanceRemaining { get; private set; }
 
     /// <summary>Time-to-go on the ENTIRE active route (seconds). Analogue of
@@ -176,18 +176,12 @@ public sealed class NavigationData
                     AnchorCurrentRadius = value;
                     break;
                 case "navigation.course.calcValues.distance":
-                case "navigation.courseGreatCircle.nextPoint.distance":
-                case "navigation.courseRhumbline.nextPoint.distance":
                     CourseNextPointDistance = value;
                     break;
                 case "navigation.course.calcValues.bearingTrue":
-                case "navigation.courseGreatCircle.nextPoint.bearingTrue":
-                case "navigation.courseRhumbline.nextPoint.bearingTrue":
                     CourseNextPointBearing = value;
                     break;
                 case "navigation.course.calcValues.timeToGo":
-                case "navigation.courseGreatCircle.nextPoint.timeToGo":
-                case "navigation.courseRhumbline.nextPoint.timeToGo":
                     CourseNextPointTimeToGo = value;
                     break;
                 // course-provider-plugin uses velocityMadeGood, but
@@ -200,13 +194,9 @@ public sealed class NavigationData
                 // VMGToCourse.
                 case "navigation.course.calcValues.velocityMadeGood":
                 case "navigation.course.calcValues.velocityMadeGoodToCourse":
-                case "navigation.courseGreatCircle.nextPoint.velocityMadeGood":
-                case "navigation.courseRhumbline.nextPoint.velocityMadeGood":
                     CourseNextPointVmg = value;
                     break;
                 case "navigation.course.calcValues.crossTrackError":
-                case "navigation.courseGreatCircle.crossTrackError":
-                case "navigation.courseRhumbline.crossTrackError":
                     CrossTrackError = value;
                     break;
                 case "steering.autopilot.target.headingTrue":
@@ -241,18 +231,13 @@ public sealed class NavigationData
                 case "environment.tide.heightLow":
                     TideHeightLow = value;
                     break;
-                // Plugin uses navigation.course.calcValues.route.distance;
-                // server v1 used the explicit distanceRemaining leaf.
-                // Either way the same field represents "metres left to
-                // cover for the rest of the active route".
+                // "Metres left to cover for the rest of the active
+                // route". course-provider-plugin computes this on the
+                // SK server + publishes it here; we consume it straight.
                 case "navigation.course.calcValues.route.distance":
-                case "navigation.courseGreatCircle.activeRoute.distanceRemaining":
-                case "navigation.courseRhumbline.activeRoute.distanceRemaining":
                     ActiveRouteDistanceRemaining = value;
                     break;
                 case "navigation.course.calcValues.route.timeToGo":
-                case "navigation.courseGreatCircle.activeRoute.timeToGo":
-                case "navigation.courseRhumbline.activeRoute.timeToGo":
                     ActiveRouteTimeToGo = value;
                     break;
                 // pointIndex / pointTotal come as numbers too; route them
@@ -260,13 +245,9 @@ public sealed class NavigationData
                 // the UI boundary so NaN / fractional server quirks don't
                 // trip the hot path.
                 case "navigation.course.activeRoute.pointIndex":
-                case "navigation.courseGreatCircle.activeRoute.pointIndex":
-                case "navigation.courseRhumbline.activeRoute.pointIndex":
                     ActiveRoutePointIndex = (int)value;
                     break;
                 case "navigation.course.activeRoute.pointTotal":
-                case "navigation.courseGreatCircle.activeRoute.pointTotal":
-                case "navigation.courseRhumbline.activeRoute.pointTotal":
                     ActiveRoutePointTotal = (int)value;
                     break;
                 default:
@@ -371,13 +352,9 @@ public sealed class NavigationData
             switch (path)
             {
                 case "navigation.course.activeRoute.href":
-                case "navigation.courseGreatCircle.activeRoute.href":
-                case "navigation.courseRhumbline.activeRoute.href":
                     ActiveRouteHref = value;
                     break;
                 case "navigation.course.activeRoute.name":
-                case "navigation.courseGreatCircle.activeRoute.name":
-                case "navigation.courseRhumbline.activeRoute.name":
                     ActiveRouteName = value;
                     break;
                 case "steering.autopilot.state":

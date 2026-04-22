@@ -95,6 +95,22 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
+    public async Task Legacy_V1_CoursePaths_NotSubscribed()
+    {
+        // The v1 navigation.courseGreatCircle.* and
+        // navigation.courseRhumbline.* subtrees were dropped in the
+        // tech-debt sweep (they duplicated the v2 surface above and
+        // SK Node Server has shipped v2 as the default for years).
+        // Pinning the absence means a future subscribe-to-all-paths
+        // auto-fix doesn't accidentally re-add them without anyone
+        // noticing.
+        await Assert.That(SignalkClient.SelfPaths).DoesNotContain("navigation.courseGreatCircle.activeRoute.href");
+        await Assert.That(SignalkClient.SelfPaths).DoesNotContain("navigation.courseGreatCircle.nextPoint.distance");
+        await Assert.That(SignalkClient.SelfPaths).DoesNotContain("navigation.courseRhumbline.activeRoute.href");
+        await Assert.That(SignalkClient.SelfPaths).DoesNotContain("navigation.courseRhumbline.nextPoint.distance");
+    }
+
+    [Test]
     public async Task SlowSelfPaths_Are_All_In_SelfPaths()
     {
         // SelfSlow is a subset of SelfPaths (which is SelfFast + SelfSlow).

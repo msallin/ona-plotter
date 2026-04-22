@@ -142,11 +142,13 @@ public sealed class SignalkClient : IAsyncDisposable
         // surface lives at navigation.course.*; the course-provider
         // plugin derives per-leg numbers under
         // navigation.course.calcValues.* (bearing, distance, TTG, VMG,
-        // XTE, route totals). We subscribe the v2 paths first. The
-        // old v1-style navigation.courseGreatCircle.* /
-        // navigation.courseRhumbline.* subtrees stay subscribed too
-        // so we still work against servers running the older layout.
-        // NavigationData.Apply accepts both on the same case label.
+        // XTE, route totals). SK Node Server >= 2.x has shipped the
+        // v2 surface as the default for years; the legacy v1 subtrees
+        // (navigation.courseGreatCircle.*, navigation.courseRhumbline.*)
+        // were dropped from the subscription list as part of the
+        // tech-debt pass. NavigationData.Apply's v1 case labels
+        // remain as a safety net for any plugin that still emits
+        // them.
         new("navigation.course.activeRoute.href",                            PathTier.SelfFast),
         new("navigation.course.activeRoute.name",                            PathTier.SelfFast),
         new("navigation.course.activeRoute.pointIndex",                      PathTier.SelfFast),
@@ -161,23 +163,6 @@ public sealed class SignalkClient : IAsyncDisposable
         new("navigation.course.calcValues.crossTrackError",                  PathTier.SelfFast),
         new("navigation.course.calcValues.route.distance",                   PathTier.SelfFast),
         new("navigation.course.calcValues.route.timeToGo",                   PathTier.SelfFast),
-        // Legacy v1-style paths, still populated by older SK servers.
-        new("navigation.courseGreatCircle.activeRoute.href",                 PathTier.SelfFast),
-        new("navigation.courseGreatCircle.activeRoute.name",                 PathTier.SelfFast),
-        new("navigation.courseGreatCircle.nextPoint.position",               PathTier.SelfFast),
-        new("navigation.courseGreatCircle.nextPoint.distance",               PathTier.SelfFast),
-        new("navigation.courseGreatCircle.nextPoint.bearingTrue",            PathTier.SelfFast),
-        new("navigation.courseGreatCircle.nextPoint.timeToGo",               PathTier.SelfFast),
-        new("navigation.courseGreatCircle.nextPoint.velocityMadeGood",       PathTier.SelfFast),
-        new("navigation.courseRhumbline.nextPoint.position",                 PathTier.SelfFast),
-        new("navigation.courseRhumbline.nextPoint.distance",                 PathTier.SelfFast),
-        new("navigation.courseRhumbline.nextPoint.bearingTrue",              PathTier.SelfFast),
-        new("navigation.courseRhumbline.nextPoint.timeToGo",                 PathTier.SelfFast),
-        new("navigation.courseRhumbline.nextPoint.velocityMadeGood",         PathTier.SelfFast),
-        new("navigation.courseGreatCircle.crossTrackError",                  PathTier.SelfFast),
-        new("navigation.courseRhumbline.crossTrackError",                    PathTier.SelfFast),
-        new("navigation.courseGreatCircle.previousPoint.position",           PathTier.SelfFast),
-        new("navigation.courseRhumbline.previousPoint.position",             PathTier.SelfFast),
         // Autopilot state + target heading + target AWA (wind mode).
         new("steering.autopilot.state",                                      PathTier.SelfFast),
         new("steering.autopilot.target.headingTrue",                         PathTier.SelfFast),
@@ -216,17 +201,12 @@ public sealed class SignalkClient : IAsyncDisposable
         // Settings draft auto-fill.
         new("design.draft.current",                                          PathTier.SelfSlow),
         new("design.draft.maximum",                                          PathTier.SelfSlow),
-        // Route-total progress (WP index/total, distance/TTG to end).
-        // Per-leg fields are in SelfFast; these aggregate across the
-        // route and only advance on a waypoint boundary.
-        new("navigation.courseGreatCircle.activeRoute.distanceRemaining",    PathTier.SelfSlow),
-        new("navigation.courseRhumbline.activeRoute.distanceRemaining",      PathTier.SelfSlow),
-        new("navigation.courseGreatCircle.activeRoute.timeToGo",             PathTier.SelfSlow),
-        new("navigation.courseRhumbline.activeRoute.timeToGo",               PathTier.SelfSlow),
-        new("navigation.courseGreatCircle.activeRoute.pointIndex",           PathTier.SelfSlow),
-        new("navigation.courseRhumbline.activeRoute.pointIndex",             PathTier.SelfSlow),
-        new("navigation.courseGreatCircle.activeRoute.pointTotal",           PathTier.SelfSlow),
-        new("navigation.courseRhumbline.activeRoute.pointTotal",             PathTier.SelfSlow),
+        // (Route-total progress: the v2 equivalents live at
+        //  navigation.course.calcValues.route.* on the fast tier; the
+        //  legacy v1 aggregates (courseGreatCircle.activeRoute.*) were
+        //  removed in the same sweep that dropped the v1 per-leg
+        //  subscriptions. NavigationData.Apply still handles v1 values
+        //  if a server emits them on the fast stream.)
     ];
 
     /// <summary>Back-compat view: every path the self-subscriptions
@@ -624,15 +604,12 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // Course next-point position (lat/lon object). Three
-                // publishing paths observed across server + plugin
-                // versions:
-                //   * navigation.course.nextPoint.position    (SK v2 built-in)
-                //   * navigation.courseGreatCircle.nextPoint.position  (legacy v1 GC)
-                //   * navigation.courseRhumbline.nextPoint.position    (legacy v1 RL)
-                if ((val.Path == "navigation.course.nextPoint.position"
-                    || val.Path == "navigation.courseGreatCircle.nextPoint.position"
-                    || val.Path == "navigation.courseRhumbline.nextPoint.position")
+                // Course next-point position (lat/lon object). SK v2
+                // built-in path; the legacy v1 courseGreatCircle /
+                // courseRhumbline variants were dropped in the
+                // tech-debt pass because the v2 surface has been
+                // default on SK Node Server for years.
+                if (val.Path == "navigation.course.nextPoint.position"
                     && val.Value is JsonElement wpEl
                     && wpEl.ValueKind == JsonValueKind.Object)
                 {
@@ -647,11 +624,9 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // Course previous-point position. Same three-shape
-                // tolerance as nextPoint.
-                if ((val.Path == "navigation.course.previousPoint.position"
-                    || val.Path == "navigation.courseGreatCircle.previousPoint.position"
-                    || val.Path == "navigation.courseRhumbline.previousPoint.position")
+                // Course previous-point position. v2 only, for the
+                // same reason as nextPoint.position above.
+                if (val.Path == "navigation.course.previousPoint.position"
                     && val.Value is JsonElement prevWpEl
                     && prevWpEl.ValueKind == JsonValueKind.Object)
                 {
@@ -676,9 +651,11 @@ public sealed class SignalkClient : IAsyncDisposable
                     }
                 }
 
-                // Route deactivation: href arrives as null.
-                if ((val.Path == "navigation.courseGreatCircle.activeRoute.href"
-                    || val.Path == "navigation.courseRhumbline.activeRoute.href")
+                // Route deactivation: href arrives as null on the v2
+                // course surface when "Stop Navigation" fires on any
+                // plotter. Earlier code checked the v1 GC / RL hrefs
+                // too; those subtrees are no longer subscribed.
+                if (val.Path == "navigation.course.activeRoute.href"
                     && (val.Value is null
                         || (val.Value is JsonElement nullEl && nullEl.ValueKind == JsonValueKind.Null)))
                 {

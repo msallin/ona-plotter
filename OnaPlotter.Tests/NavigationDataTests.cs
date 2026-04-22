@@ -181,37 +181,28 @@ public class NavigationDataTests
     }
 
     [Test]
-    [Arguments("navigation.course.calcValues.distance")]
-    [Arguments("navigation.courseGreatCircle.nextPoint.distance")]
-    [Arguments("navigation.courseRhumbline.nextPoint.distance")]
-    public async Task Apply_CourseDistance_SetsProperty(string path)
+    public async Task Apply_CourseDistance_SetsProperty()
     {
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(5000.0);
-        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.Apply("navigation.course.calcValues.distance", je)).IsTrue();
         await Assert.That(nav.CourseNextPointDistance).IsEqualTo(5000.0);
     }
 
     [Test]
-    [Arguments("navigation.course.calcValues.bearingTrue")]
-    [Arguments("navigation.courseGreatCircle.nextPoint.bearingTrue")]
-    [Arguments("navigation.courseRhumbline.nextPoint.bearingTrue")]
-    public async Task Apply_CourseBearing_SetsProperty(string path)
+    public async Task Apply_CourseBearing_SetsProperty()
     {
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(1.57);
-        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.Apply("navigation.course.calcValues.bearingTrue", je)).IsTrue();
         await Assert.That(nav.CourseNextPointBearing).IsEqualTo(1.57);
     }
 
     [Test]
     [Arguments("navigation.course.calcValues.velocityMadeGood")]
     [Arguments("navigation.course.calcValues.velocityMadeGoodToCourse")]
-    [Arguments("navigation.courseGreatCircle.nextPoint.velocityMadeGood")]
-    [Arguments("navigation.courseRhumbline.nextPoint.velocityMadeGood")]
-    public async Task Apply_CourseVmg_SetsProperty_FromAnyV1OrV2Path(string path)
+    public async Task Apply_CourseVmg_SetsProperty_FromEitherCalcValuesLeaf(string path)
     {
-        // VMG maps the same field regardless of source path. The
         // course-provider-plugin publishes velocityMadeGood (null when
         // VMG isn't meaningful on a motor leg) AND
         // velocityMadeGoodToCourse (closing speed projected onto the
@@ -223,70 +214,53 @@ public class NavigationDataTests
     }
 
     [Test]
-    [Arguments("navigation.course.calcValues.route.distance")]
-    [Arguments("navigation.courseGreatCircle.activeRoute.distanceRemaining")]
-    [Arguments("navigation.courseRhumbline.activeRoute.distanceRemaining")]
-    public async Task Apply_RouteDistanceRemaining_SetsProperty(string path)
+    public async Task Apply_RouteDistanceRemaining_SetsProperty()
     {
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(12345.6);
-        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.Apply("navigation.course.calcValues.route.distance", je)).IsTrue();
         await Assert.That(nav.ActiveRouteDistanceRemaining).IsEqualTo(12345.6);
     }
 
     [Test]
-    [Arguments("navigation.course.activeRoute.href")]
-    [Arguments("navigation.courseGreatCircle.activeRoute.href")]
-    [Arguments("navigation.courseRhumbline.activeRoute.href")]
-    public async Task ApplyString_ActiveRouteHref_SetsProperty(string path)
+    public async Task ApplyString_ActiveRouteHref_SetsProperty()
     {
         var nav = new NavigationData();
-        await Assert.That(nav.ApplyString(path, "/resources/routes/abc")).IsTrue();
+        await Assert.That(nav.ApplyString("navigation.course.activeRoute.href", "/resources/routes/abc")).IsTrue();
         await Assert.That(nav.ActiveRouteHref).IsEqualTo("/resources/routes/abc");
     }
 
     [Test]
-    [Arguments("navigation.courseGreatCircle.nextPoint.timeToGo")]
-    [Arguments("navigation.courseRhumbline.nextPoint.timeToGo")]
-    public async Task Apply_CourseTimeToGo_SetsProperty(string path)
+    public async Task Apply_CourseTimeToGo_SetsProperty()
     {
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(3600.0);
-        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.Apply("navigation.course.calcValues.timeToGo", je)).IsTrue();
         await Assert.That(nav.CourseNextPointTimeToGo).IsEqualTo(3600.0);
     }
 
     [Test]
-    [Arguments("navigation.courseGreatCircle.nextPoint.velocityMadeGood")]
-    [Arguments("navigation.courseRhumbline.nextPoint.velocityMadeGood")]
-    public async Task Apply_CourseVmg_SetsProperty(string path)
+    public async Task ApplyString_LegacyV1Paths_AreRejected()
     {
+        // Post-tech-debt sweep: the v1 courseGreatCircle /
+        // courseRhumbline names are no longer handled. ApplyString
+        // must return false so a server still emitting them doesn't
+        // silently set ActiveRouteHref.
         var nav = new NavigationData();
-        var je = JsonSerializer.SerializeToElement(2.8);
-        await Assert.That(nav.Apply(path, je)).IsTrue();
-        await Assert.That(nav.CourseNextPointVmg).IsEqualTo(2.8);
-    }
-
-    // --- ApplyString ---
-
-    [Test]
-    [Arguments("navigation.courseGreatCircle.activeRoute.href", "/resources/routes/abc")]
-    [Arguments("navigation.courseRhumbline.activeRoute.href", "/resources/routes/xyz")]
-    public async Task ApplyString_RouteHref_SetsProperty(string path, string value)
-    {
-        var nav = new NavigationData();
-        await Assert.That(nav.ApplyString(path, value)).IsTrue();
-        await Assert.That(nav.ActiveRouteHref).IsEqualTo(value);
+        await Assert.That(nav.ApplyString("navigation.courseGreatCircle.activeRoute.href", "x")).IsFalse();
+        await Assert.That(nav.ApplyString("navigation.courseRhumbline.activeRoute.href", "x")).IsFalse();
+        await Assert.That(nav.ApplyString("navigation.courseGreatCircle.activeRoute.name", "x")).IsFalse();
     }
 
     [Test]
-    [Arguments("navigation.courseGreatCircle.activeRoute.name", "To harbor")]
-    [Arguments("navigation.courseRhumbline.activeRoute.name", "Sunday sail")]
-    public async Task ApplyString_RouteName_SetsProperty(string path, string value)
+    public async Task Apply_LegacyV1Paths_AreRejected()
     {
+        // Matching pin for Apply(): number-valued v1 course paths
+        // no longer match a case.
         var nav = new NavigationData();
-        await Assert.That(nav.ApplyString(path, value)).IsTrue();
-        await Assert.That(nav.ActiveRouteName).IsEqualTo(value);
+        var je = JsonSerializer.SerializeToElement(1.0);
+        await Assert.That(nav.Apply("navigation.courseGreatCircle.nextPoint.distance", je)).IsFalse();
+        await Assert.That(nav.Apply("navigation.courseRhumbline.activeRoute.distanceRemaining", je)).IsFalse();
     }
 
     [Test]

@@ -21,7 +21,7 @@ public class WaypointApproachAlarmRuleTests
     {
         var nav = new NavigationData();
         nav.ApplyCourseNextPointPosition(wpLat, wpLon);
-        nav.Apply("navigation.courseGreatCircle.nextPoint.distance", distMeters);
+        nav.Apply("navigation.course.calcValues.distance", distMeters);
         return nav;
     }
 

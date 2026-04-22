@@ -87,11 +87,11 @@ public class NavigationDataFuzzTests
         // ticks until the server stopped publishing.
         var nav = new NavigationData();
         nav.ApplyCourseNextPointPosition(47.0, 8.0);
-        nav.ApplyString("navigation.courseGreatCircle.activeRoute.href", "/resources/routes/abc");
-        nav.Apply("navigation.courseGreatCircle.activeRoute.pointIndex", 2.0);
-        nav.Apply("navigation.courseGreatCircle.activeRoute.pointTotal", 7.0);
-        nav.Apply("navigation.courseGreatCircle.activeRoute.distanceRemaining", 5000.0);
-        nav.Apply("navigation.courseGreatCircle.activeRoute.timeToGo", 1800.0);
+        nav.ApplyString("navigation.course.activeRoute.href", "/resources/routes/abc");
+        nav.Apply("navigation.course.activeRoute.pointIndex", 2.0);
+        nav.Apply("navigation.course.activeRoute.pointTotal", 7.0);
+        nav.Apply("navigation.course.calcValues.route.distance", 5000.0);
+        nav.Apply("navigation.course.calcValues.route.timeToGo", 1800.0);
 
         nav.ClearCourse();
 
@@ -111,7 +111,7 @@ public class NavigationDataFuzzTests
         // the test pins that behaviour so a future server version
         // rounding up doesn't silently change the "WP 2 of 7" label.
         var nav = new NavigationData();
-        nav.Apply("navigation.courseGreatCircle.activeRoute.pointIndex", 1.9);
+        nav.Apply("navigation.course.activeRoute.pointIndex", 1.9);
         await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(1);
     }
 
