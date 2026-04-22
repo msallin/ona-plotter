@@ -346,7 +346,15 @@
        Sort alphabetically so the chip positions are stable when the
        user toggles one (the draw-stack order would shuffle visually
        on each tap because ApplyChartOrder reshuffles availableCharts). *@
-    @if (!chartPanelOpen && quickBarCharts.Count > 0)
+    @* Quick chart-switcher bar. Previously hidden whenever the
+       Layers panel was open; that felt like losing context every
+       time you wanted to check which chart was on. Now it stays
+       visible so the user can toggle rendering in the bar while
+       the Layers panel handles membership / reorder. Active chips
+       carry a strong filled-accent style so "which chart is on
+       the map" reads at a glance -- the old semi-transparent
+       accent was ambiguous against a bright ocean tile. *@
+    @if (quickBarCharts.Count > 0)
     {
         <div class="chart-quick-bar">
             @foreach (var chart in availableCharts
@@ -355,7 +363,9 @@
             {
                 bool active = enabledCharts.Contains(chart.Identifier);
                 <button class="chart-quick-chip @(active ? "active" : "")"
-                        @onclick="() => ToggleChart(chart, !active)">
+                        @onclick="() => ToggleChart(chart, !active)"
+                        aria-pressed="@(active ? "true" : "false")"
+                        title="@(active ? "Showing -- tap to hide" : "Hidden -- tap to show")">
                     @chart.Name
                 </button>
             }

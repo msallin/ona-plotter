@@ -23,12 +23,23 @@
         show / hide the chart. Rendering charts get up/down arrows to
         order the draw stack (top of the stack = in front).
     </div>
+    @* Row shape is the same for every chart -- reorder arrows always
+       present so the affordance is stable and the row doesn't
+       jump width when rendering flips. Disabled state on an arrow
+       when the chart isn't in the draw stack (or is already at an
+       end) carries the meaning "nothing to move right now". The
+       amber row highlight on rendering charts was dropped because
+       it competed with the quick-bar's own active chip and made
+       the panel feel busy; the green dot next to the name is the
+       subtler signal. *@
     @foreach (var chart in Charts)
     {
         bool inQuickBar = QuickBarCharts.Contains(chart.Identifier);
         bool rendering = Enabled.Contains(chart.Identifier);
         int stackIdx = rendering ? ActiveStack.FindIndex(c => c.Identifier == chart.Identifier) : -1;
-        <label class="chart-item @(rendering ? "chart-item-rendering" : "")">
+        bool upEnabled = rendering && stackIdx > 0;
+        bool downEnabled = rendering && stackIdx >= 0 && stackIdx < ActiveStack.Count - 1;
+        <label class="chart-item">
             <input type="checkbox" checked="@inQuickBar"
                    @onchange="(e) => OnToggleQuickBar.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
             <div class="chart-item-body">
@@ -48,28 +59,21 @@
                     <div class="chart-desc">z@(chart.MinZoom ?? 1)-@(chart.MaxZoom ?? 18)</div>
                 }
             </div>
-            @if (rendering)
-            {
-                @* Reorder affordance shows only on rendering charts --
-                   the buttons are meaningless for a chart that isn't
-                   in the draw stack. Position-aware disabling prevents
-                   the "nothing happened" tap at the ends of the list. *@
-                <span class="chart-active-actions" @onclick:stopPropagation
-                      @onclick:preventDefault>
-                    <button class="chart-reorder-btn"
-                            type="button"
-                            disabled="@(stackIdx <= 0)"
-                            title="Move up (towards front of draw stack)"
-                            aria-label="Move @chart.Name up"
-                            @onclick="() => OnReorder.InvokeAsync((chart, -1))">&#9650;</button>
-                    <button class="chart-reorder-btn"
-                            type="button"
-                            disabled="@(stackIdx < 0 || stackIdx >= ActiveStack.Count - 1)"
-                            title="Move down (towards back of draw stack)"
-                            aria-label="Move @chart.Name down"
-                            @onclick="() => OnReorder.InvokeAsync((chart, 1))">&#9660;</button>
-                </span>
-            }
+            <span class="chart-active-actions" @onclick:stopPropagation
+                  @onclick:preventDefault>
+                <button class="chart-reorder-btn"
+                        type="button"
+                        disabled="@(!upEnabled)"
+                        title="Move up (towards front of draw stack)"
+                        aria-label="Move @chart.Name up"
+                        @onclick="() => OnReorder.InvokeAsync((chart, -1))">&#9650;</button>
+                <button class="chart-reorder-btn"
+                        type="button"
+                        disabled="@(!downEnabled)"
+                        title="Move down (towards back of draw stack)"
+                        aria-label="Move @chart.Name down"
+                        @onclick="() => OnReorder.InvokeAsync((chart, 1))">&#9660;</button>
+            </span>
         </label>
     }
 }

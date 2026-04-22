@@ -814,7 +814,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         cancelLongPress();
         if (e.touches.length !== 1) return; // two-finger pinch, etc.
         // Ignore presses that land on a control (buttons, map chrome).
-        if (e.target && e.target.closest && e.target.closest('.leaflet-control, button, a, input, label'))
+        // .cpa-label is an interactive tooltip that opens the vessel
+        // popup on tap; without excluding it, a touch on the CPA chip
+        // also armed the long-press context menu, so both the popup
+        // AND the context menu fired on the same finger-down.
+        // Not excluding .leaflet-interactive on purpose -- the context
+        // menu is "create at this point" and the user may very well
+        // want that while their finger is over a route line or AIS
+        // target; only TOOLTIPS that have their own tap semantics opt
+        // out of the long-press.
+        if (e.target && e.target.closest && e.target.closest(
+            '.leaflet-control, .cpa-label, .leaflet-tooltip, button, a, input, label'))
             return;
         const t0 = e.touches[0];
         longPressStartPt = { x: t0.clientX, y: t0.clientY };

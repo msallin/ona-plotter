@@ -120,7 +120,7 @@ public class WaypointCourseApiTests
 
         await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
-        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute");
+        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/vessels/self/navigation/course/activeRoute");
         await Assert.That(capturedBody).Contains("\"href\":\"/resources/routes/rte-123\"");
         await Assert.That(capturedBody).Contains("\"pointIndex\":2");
         await Assert.That(capturedBody).Contains("\"reverse\":true");
@@ -168,7 +168,7 @@ public class WaypointCourseApiTests
 
         await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
-        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute/nextPoint");
+        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint");
         await Assert.That(capturedBody).Contains("\"value\":1");
     }
 
@@ -200,7 +200,7 @@ public class WaypointCourseApiTests
 
         await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Delete);
-        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course");
+        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/vessels/self/navigation/course");
     }
 
     [Test]

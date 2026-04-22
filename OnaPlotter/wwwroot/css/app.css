@@ -515,15 +515,18 @@ article.content:has(.map-container) {
    sits inside app chrome so 12 px of edge-inset reads fine. In
    fullscreen the HUD cards hug the hard screen edge which looks
    cramped, and on iOS notched devices a couple of pixels are eaten by
-   the safe area. Both top HUDs share a single top anchor (56 px
-   baseline) so SOG and AWS visually align and neither sits on top of
-   the live / stale / offline chip at the top-left corner (which is
-   only rendered in fullscreen). */
+   the safe area. Top edge matches the bottom (24 px baseline) so
+   SOG / AWA sit with the same padding as the Depth / COG row below.
+   Earlier the top was 56 px to leave room for the always-on Live
+   chip; the chip now hides when the feed is healthy, so the extra
+   room was wasted space. Stale / Offline chip still renders in that
+   slot when it matters -- the HUD's 24 px top covers the chip's
+   12-16 px footprint cleanly. */
 .map-container.map-fullscreen .hud-top-left,
 .map-container:fullscreen .hud-top-left,
 .map-container.map-fullscreen .hud-top-right,
 .map-container:fullscreen .hud-top-right {
-    top: max(56px, calc(44px + env(safe-area-inset-top)));
+    top: max(24px, env(safe-area-inset-top));
 }
 .map-container.map-fullscreen .hud-top-left,
 .map-container:fullscreen .hud-top-left {
@@ -1168,14 +1171,20 @@ html {
     font-size: 0.7rem;
     font-weight: 500;
     background: rgba(10, 12, 18, 0.85);
-    backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.08);
     color: var(--sk-text);
     user-select: none;
     pointer-events: none;
 }
-.map-container.map-fullscreen .conn-chip,
-.map-container:fullscreen .conn-chip {
+/* In fullscreen, only show the chip when the feed is NOT healthy.
+   The always-on "Live" label competed with hud-top-left for the
+   same 12 px slot and created a second row of chrome the helm
+   already sees via the HUD values ticking. A stale / offline
+   chip is the new-info case -- keep it visible; Live is redundant. */
+.map-container.map-fullscreen .conn-chip.conn-stale,
+.map-container.map-fullscreen .conn-chip.conn-offline,
+.map-container:fullscreen .conn-chip.conn-stale,
+.map-container:fullscreen .conn-chip.conn-offline {
     display: flex;
 }
 
@@ -2413,15 +2422,11 @@ main:has(.alarm-banner-stack) .snooze-chips {
     margin-left: auto;
 }
 
-/* Rendering charts get an amber glow on the row so the eye catches
-   "what's actually on the map" without reading the dot. Subtle
-   enough not to fight the body text or the reorder arrows. */
-.chart-item-rendering {
-    background: rgba(224, 159, 62, 0.08);
-    border-left: 3px solid rgba(224, 159, 62, 0.55);
-    padding-left: 8px !important;
-    border-radius: 3px;
-}
+/* The amber .chart-item-rendering highlight was removed on user
+   feedback -- it fought with the quick-bar's active-chip styling
+   and made the Layers panel look busier than it needed to be.
+   The green .chart-rendering-dot next to the chart name carries
+   the "this chart is on the map" signal now. */
 .chart-reorder-btn {
     width: 22px;
     height: 22px;
@@ -2444,15 +2449,23 @@ main:has(.alarm-banner-stack) .snooze-chips {
     cursor: not-allowed;
 }
 @media (pointer: coarse) {
-    /* WCAG minimum tap target is 44x44 px. The 30 px we had before
-       required stylus-level precision on an iPad which was the field
-       complaint ("Layers not touch-friendly"). */
+    /* WCAG minimum tap target is 44x44 px. Bumped across the Layers
+       panel so every interactive element is reachable with a
+       regular-size finger, not a stylus. */
     .chart-reorder-btn { width: 44px; height: 44px; font-size: 1rem; }
-    .chart-item { padding: 10px 2px; gap: 12px; min-height: 48px; }
-    .chart-item input[type="checkbox"] { width: 24px; height: 24px; }
+    .chart-item { padding: 12px 4px; gap: 14px; min-height: 56px; }
+    .chart-item input[type="checkbox"] { width: 28px; height: 28px; flex-shrink: 0; }
+    /* Section headers (Charts / Routes / Waypoints / Notes / Regions)
+       need a fat tap target or the expand/collapse chevron feels
+       unreliable. */
+    .section-toggle { min-height: 48px; padding: 12px 4px !important; }
     /* Wider panel on touch so the descriptions don't push the reorder
        controls off-screen on portrait-phone widths. */
-    .chart-panel { min-width: 280px; max-width: 92vw; padding: 14px 16px; }
+    .chart-panel { min-width: 300px; max-width: 94vw; padding: 14px 16px; }
+    /* Destructive-action buttons in Layers rows: keep them tappable
+       without growing the row height. 40 px is the commercial-chart-
+       plotter standard. */
+    .route-action-btn, .gpx-btn { min-height: 40px; padding: 8px 14px; font-size: 0.85rem; }
 }
 
 .chart-item {
@@ -3856,29 +3869,56 @@ main:has(.map-container.big-type) .map-fab-item {
     pointer-events: auto;
 }
 
+/* Inactive chip: dimmed text, hollow background, muted border. The
+   big-dim / big-bright difference is what signals "off / on" at a
+   glance -- the old variant was a washed-out 25 %-accent glow that
+   blended with sunlit chart tiles. */
 .chart-quick-chip {
     padding: 4px 10px;
     font-size: 0.7rem;
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(10, 12, 18, 0.85);
-    backdrop-filter: blur(6px);
-    color: var(--sk-text-muted);
+    background: rgba(10, 12, 18, 0.55);
+    color: rgba(255,255,255,0.55);
     cursor: pointer;
     white-space: nowrap;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     -webkit-tap-highlight-color: transparent;
+    /* Leading dot shows the chip's binary state. Grey on off,
+       bright accent on on -- shape + colour redundant cue so a
+       colour-blind user also reads the state. */
+    position: relative;
+    padding-left: 22px;
+}
+.chart-quick-chip::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.22);
+    border: 1px solid rgba(255,255,255,0.35);
 }
 
 .chart-quick-chip:hover {
-    border-color: rgba(255,255,255,0.25);
+    border-color: rgba(255,255,255,0.35);
     color: var(--sk-text);
 }
 
+/* Active chip: solid accent fill, white text, filled dot. No more
+   transparent wash. */
 .chart-quick-chip.active {
-    background: rgba(96, 165, 250, 0.25);
-    border-color: rgba(96, 165, 250, 0.5);
-    color: #fff;
+    background: var(--sk-accent);
+    border-color: var(--sk-accent-dim);
+    color: #0b1220;
+    font-weight: 600;
+}
+.chart-quick-chip.active::before {
+    background: #0b1220;
+    border-color: #0b1220;
 }
 
 @media (pointer: coarse) {
