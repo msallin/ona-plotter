@@ -52,12 +52,12 @@
 </div>
 
 @* === Polar Performance ===
-   Three distinct states so the user isn't surprised by a missing card:
-     1. Polar + wind data  -> Performance % + Target BSP cards
+   Only rendered when a polar is actually loaded. Two states:
+     1. Polar + wind data -> Performance % + Target BSP cards
      2. Polar loaded, no wind data yet -> "Waiting for TWD/TWS" card
-     3. No polar -> single card pointing to Settings. Before this fix
-        the card silently disappeared and users couldn't tell whether
-        performance was broken or just dormant. *@
+   No-polar boats get nothing here -- the Settings page is where you
+   go to upload one, and the Dashboard should stay focused on live
+   numbers rather than an empty nag card. *@
 @if (Polar.HasPolar && PolarPerformancePct is not null)
 {
     <div class="row g-3 mb-4">
@@ -94,22 +94,6 @@ else if (Polar.HasPolar)
                         Waiting for true-wind data
                     </p>
                     <small class="text-muted">Needs TWD + TWS from SignalK</small>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-else
-{
-    <div class="row g-3 mb-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-body text-center">
-                    <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
-                    <p class="card-text" style="font-size:1.1rem; margin:0; color:var(--sk-text-muted);">
-                        No polar loaded
-                    </p>
-                    <small class="text-muted"><a href="/settings" style="color:var(--sk-accent);">Upload a polar CSV in Settings</a> to see live performance %.</small>
                 </div>
             </div>
         </div>

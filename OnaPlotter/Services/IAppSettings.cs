@@ -116,6 +116,16 @@ public interface IAppSettings
     /// jitter and typical inshore turn radii.</summary>
     double WaypointArrivalRadiusMeters { get; }
 
+    /// <summary>When true, the client automatically advances to the
+    /// next waypoint in the active route when the course-provider
+    /// plugin reports <c>perpendicularPassed</c> or
+    /// <c>arrivalCircleEntered</c> as true. Matches the default
+    /// behaviour of commercial chartplotters: arrive at a WP, the
+    /// screen flips to the next leg without a tap. Off means the
+    /// helmsman has to hit "Next WP" explicitly (from the alarm
+    /// banner or the Next button). Default ON.</summary>
+    bool AutoAdvanceWaypoints { get; }
+
     /// <summary>When true, keyboard-shortcut hints are visible: inline
     /// "(L)" / "(D)" labels on map control buttons, and the "?" key
     /// opens the shortcuts dialog. Default OFF -- most users run on a
@@ -131,6 +141,24 @@ public interface IAppSettings
     /// or equivalent) can enable this to get the -10 / -1 / +1 / +10
     /// heading nudges and the Stby / Auto / Wind / Route mode row.</summary>
     bool ShowAutopilotHud { get; }
+
+    /// <summary>When true, Heading on the HUD / SailSteer / alarms
+    /// resolves to <c>navigation.headingMagnetic</c> when published;
+    /// otherwise <c>navigation.headingTrue</c> wins. Fluxgate compasses
+    /// and older NMEA0183 HDG sentences tend to publish magnetic;
+    /// GPS-derived HDG is typically true. Either is usable, but mixing
+    /// them on a HUD confuses pilotage, so the operator picks once.
+    /// Default false (prefer true).</summary>
+    bool PreferMagneticHeading { get; }
+
+    /// <summary>When true, Course Over Ground resolves to
+    /// <c>navigation.courseOverGroundMagnetic</c> when published;
+    /// otherwise <c>navigation.courseOverGroundTrue</c>. Independent of
+    /// <see cref="PreferMagneticHeading"/>: some installs publish true
+    /// COG (GPS) but magnetic HDG (compass) and the HUD can show both
+    /// on the same reference by setting this pair accordingly.
+    /// Default false.</summary>
+    bool PreferMagneticCourse { get; }
 
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
@@ -182,6 +210,9 @@ public interface IAppSettings
     Task SetWaypointArrivalRadiusMetersAsync(double value);
     Task SetShowKeyboardHintsAsync(bool value);
     Task SetShowAutopilotHudAsync(bool value);
+    Task SetPreferMagneticHeadingAsync(bool value);
+    Task SetPreferMagneticCourseAsync(bool value);
+    Task SetAutoAdvanceWaypointsAsync(bool value);
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
     Task SetQuickBarChartsAsync(IEnumerable<string> ids);

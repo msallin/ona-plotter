@@ -118,6 +118,78 @@
         </div>
     </div>
 
+    <div class="col-12 mt-3">
+        <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Navigation</h5>
+    </div>
+
+    @* Heading / COG path preference. Most servers publish one of
+       {true, magnetic} cleanly; some publish both but want the HUD
+       to read consistently against paper charts. This picker selects
+       which path wins; the other stays as a fallback so the HUD
+       never goes blank when the preferred source is missing. *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Heading source</label>
+                <div class="btn-group w-100" role="group" aria-label="Heading reference">
+                    <input type="radio" class="btn-check" id="hdg-true" name="hdg-ref"
+                           checked="@(!AppSettings.PreferMagneticHeading)"
+                           @onchange="() => OnHeadingPrefChanged(false)" />
+                    <label class="btn btn-outline-secondary btn-sm" for="hdg-true">True</label>
+                    <input type="radio" class="btn-check" id="hdg-mag" name="hdg-ref"
+                           checked="@AppSettings.PreferMagneticHeading"
+                           @onchange="() => OnHeadingPrefChanged(true)" />
+                    <label class="btn btn-outline-secondary btn-sm" for="hdg-mag">Magnetic</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    <code>navigation.headingTrue</code> vs
+                    <code>navigation.headingMagnetic</code>. Falls back to the
+                    other path when the preferred one isn't published.
+                    <span class="d-block">
+                        Live: True =
+                        @(SignalkClient.Data.HeadingTrue is double ht
+                            ? (ht * 180.0 / System.Math.PI).ToString("F0") + "\u00B0" : "-"),
+                        Magnetic =
+                        @(SignalkClient.Data.HeadingMagnetic is double hm
+                            ? (hm * 180.0 / System.Math.PI).ToString("F0") + "\u00B0" : "-")
+                    </span>
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Course Over Ground source</label>
+                <div class="btn-group w-100" role="group" aria-label="COG reference">
+                    <input type="radio" class="btn-check" id="cog-true" name="cog-ref"
+                           checked="@(!AppSettings.PreferMagneticCourse)"
+                           @onchange="() => OnCogPrefChanged(false)" />
+                    <label class="btn btn-outline-secondary btn-sm" for="cog-true">True</label>
+                    <input type="radio" class="btn-check" id="cog-mag" name="cog-ref"
+                           checked="@AppSettings.PreferMagneticCourse"
+                           @onchange="() => OnCogPrefChanged(true)" />
+                    <label class="btn btn-outline-secondary btn-sm" for="cog-mag">Magnetic</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    <code>navigation.courseOverGroundTrue</code> vs
+                    <code>navigation.courseOverGroundMagnetic</code>.
+                    Independent of Heading so a true-GPS + magnetic-compass
+                    boat can show the HUD on a single reference.
+                    <span class="d-block">
+                        Live: True =
+                        @(SignalkClient.Data.CourseOverGroundTrue is double ct
+                            ? (ct * 180.0 / System.Math.PI).ToString("F0") + "\u00B0" : "-"),
+                        Magnetic =
+                        @(SignalkClient.Data.CourseOverGroundMagnetic is double cm
+                            ? (cm * 180.0 / System.Math.PI).ToString("F0") + "\u00B0" : "-")
+                    </span>
+                </small>
+            </div>
+        </div>
+    </div>
+
     <div class="col-12">
         <h5 class="text-muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.1em;">Alarms</h5>
     </div>
@@ -168,6 +240,21 @@
                 <small class="text-muted">
                     Distance at which an active-course waypoint triggers the APPROACH
                     alarm. Set to 0 to disable. Typical inshore: 30-50 m.
+                </small>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           id="auto-advance-switch"
+                           checked="@AppSettings.AutoAdvanceWaypoints"
+                           @onchange="(e) => OnAutoAdvanceChanged(e)" />
+                    <label class="form-check-label" for="auto-advance-switch">
+                        Auto-advance to next waypoint
+                    </label>
+                </div>
+                <small class="text-muted d-block">
+                    Jump to the next leg automatically when the course-provider
+                    plugin reports <code>perpendicularPassed</code> or
+                    <code>arrivalCircleEntered</code>. Off means the helm has
+                    to hit "Next WP" on the alarm banner.
                 </small>
             </div>
         </div>
@@ -561,6 +648,18 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetCpaAlarmThresholdAsync(val);
+    }
+
+    private async Task OnHeadingPrefChanged(bool magnetic)
+        => await AppSettings.SetPreferMagneticHeadingAsync(magnetic);
+
+    private async Task OnCogPrefChanged(bool magnetic)
+        => await AppSettings.SetPreferMagneticCourseAsync(magnetic);
+
+    private async Task OnAutoAdvanceChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetAutoAdvanceWaypointsAsync(on);
     }
 
     private async Task OnWaypointArrivalChanged(ChangeEventArgs e)

@@ -160,7 +160,7 @@
                 {
                     <span class="snooze-chip rearm-chip" @key="r.Title"
                           title="@r.Hint -- alarm is in post-dismiss cooldown">
-                        <span class="snooze-chip-label">@r.Title armed in</span>
+                        <span class="snooze-chip-label">@r.Title</span>
                         <span class="snooze-chip-time">@FormatRearmRemaining(r)</span>
                     </span>
                 }
@@ -405,8 +405,70 @@
             }
 
             Alarms.Evaluate(SignalkClient.Data, AisStore.GetVessels(), Settings);
+            MaybeAutoAdvanceWaypoint();
         }
         catch (ObjectDisposedException) { }
+    }
+
+    // --- Auto-advance -------------------------------------------------
+    //
+    // The SignalK course-provider plugin publishes
+    // perpendicularPassed / arrivalCircleEntered as booleans on every
+    // active leg. When either flips to true we POST to
+    // navigation/course/activeRoute/nextPoint so the boat flows through
+    // the route without requiring a tap per waypoint -- matches the
+    // default behaviour of commercial chartplotters.
+    //
+    // Edge-triggered (_prevPerp / _prevArr): we only fire on the
+    // false -> true transition. If the server re-publishes true for
+    // the same leg without going false in between, the cooldown
+    // window (_lastAutoAdvanceUtc) prevents a double-advance that
+    // would skip a waypoint. 8 s is generous for the round-trip of
+    // advance -> new-leg delta -> reset; tighter values get racy
+    // on slow links.
+    private bool _prevPerp;
+    private bool _prevArr;
+    private DateTime _lastAutoAdvanceUtc = DateTime.MinValue;
+    private const int AutoAdvanceCooldownSec = 8;
+
+    private void MaybeAutoAdvanceWaypoint()
+    {
+        if (!Settings.AutoAdvanceWaypoints) { _prevPerp = false; _prevArr = false; return; }
+        var data = SignalkClient.Data;
+        if (!data.HasActiveCourse) { _prevPerp = false; _prevArr = false; return; }
+
+        bool perp = data.PerpendicularPassed == true;
+        bool arr = data.ArrivalCircleEntered == true;
+
+        bool perpEdge = perp && !_prevPerp;
+        bool arrEdge = arr && !_prevArr;
+        _prevPerp = perp;
+        _prevArr = arr;
+
+        if (!(perpEdge || arrEdge)) return;
+        if ((DateTime.UtcNow - _lastAutoAdvanceUtc).TotalSeconds < AutoAdvanceCooldownSec) return;
+
+        _lastAutoAdvanceUtc = DateTime.UtcNow;
+        _ = AutoAdvanceAsync(perpEdge ? "perpendicular passed" : "arrival circle");
+    }
+
+    private async Task AutoAdvanceAsync(string reason)
+    {
+        bool hadCourseBefore = SignalkClient.Data.HasActiveCourse;
+        try
+        {
+            var r = await CourseApi.AdvanceActiveRouteAsync();
+            if (!r.Success)
+            {
+                Toasts.Error($"Auto-advance failed: {r.Error ?? "server rejected"}");
+                return;
+            }
+            Toasts.Info($"Next WP ({reason})");
+            await Task.Delay(400);
+            if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
+                Toasts.Success("Arrived at final waypoint");
+        }
+        catch (Exception ex) { Toasts.Error($"Auto-advance failed: {ex.Message}"); }
     }
 
     private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);

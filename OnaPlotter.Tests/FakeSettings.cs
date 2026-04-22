@@ -37,6 +37,9 @@ internal sealed class FakeSettings : IAppSettings
     public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
     public bool ShowKeyboardHints { get; set; } = false;
     public bool ShowAutopilotHud { get; set; } = false;
+    public bool PreferMagneticHeading { get; set; } = false;
+    public bool PreferMagneticCourse { get; set; } = false;
+    public bool AutoAdvanceWaypoints { get; set; } = true;
     public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
     public IReadOnlySet<string> QuickBarChartIds => new HashSet<string>();
@@ -70,6 +73,9 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetShowKeyboardHintsAsync(bool v) { ShowKeyboardHints = v; return Task.CompletedTask; }
     public Task SetShowAutopilotHudAsync(bool v) { ShowAutopilotHud = v; return Task.CompletedTask; }
+    public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
+    public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
+    public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }
     public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetQuickBarChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;

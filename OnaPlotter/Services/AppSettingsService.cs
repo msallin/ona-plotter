@@ -42,6 +42,9 @@ public sealed class AppSettingsService : IAppSettings
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
     public bool ShowKeyboardHints { get; private set; } = false;
     public bool ShowAutopilotHud { get; private set; } = false;
+    public bool PreferMagneticHeading { get; private set; } = false;
+    public bool PreferMagneticCourse { get; private set; } = false;
+    public bool AutoAdvanceWaypoints { get; private set; } = true;
 
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
@@ -88,6 +91,9 @@ public sealed class AppSettingsService : IAppSettings
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
+            PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
+            PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
+            AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
@@ -262,6 +268,27 @@ public sealed class AppSettingsService : IAppSettings
     {
         ShowAutopilotHud = value;
         await Save("showAutopilotHud.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetPreferMagneticHeadingAsync(bool value)
+    {
+        PreferMagneticHeading = value;
+        await Save("preferMagneticHeading.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetPreferMagneticCourseAsync(bool value)
+    {
+        PreferMagneticCourse = value;
+        await Save("preferMagneticCourse.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAutoAdvanceWaypointsAsync(bool value)
+    {
+        AutoAdvanceWaypoints = value;
+        await Save("autoAdvanceWaypoints.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

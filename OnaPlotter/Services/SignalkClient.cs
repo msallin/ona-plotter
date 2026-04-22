@@ -54,6 +54,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly AisStore _ais;
     private readonly Uri _wsUri;
     private readonly HttpClient _http;
+    private readonly IAppSettings _settings;
     private readonly ISignalKBaseUrl _baseUrl;
     private string _selfContext;
     private readonly ILogger<SignalkClient> _logger;
@@ -117,7 +118,9 @@ public sealed class SignalkClient : IAsyncDisposable
         new("navigation.position",                                           PathTier.Ais),
         new("navigation.speedOverGround",                                    PathTier.Ais),
         new("navigation.courseOverGroundTrue",                               PathTier.Ais),
+        new("navigation.courseOverGroundMagnetic",                           PathTier.Ais),
         new("navigation.headingTrue",                                        PathTier.Ais),
+        new("navigation.headingMagnetic",                                    PathTier.Ais),
         new("name",                                                          PathTier.Ais),
         new("mmsi",                                                          PathTier.Ais),
         new("communication.callsignVhf",                                     PathTier.Ais),
@@ -163,6 +166,20 @@ public sealed class SignalkClient : IAsyncDisposable
         new("navigation.course.calcValues.crossTrackError",                  PathTier.SelfFast),
         new("navigation.course.calcValues.route.distance",                   PathTier.SelfFast),
         new("navigation.course.calcValues.route.timeToGo",                   PathTier.SelfFast),
+        // Leg-advance signals from the course-provider plugin. true
+        // fires once when the boat crosses the perpendicular through
+        // the destination (perpendicularPassed) or enters the arrival
+        // circle (arrivalCircleEntered). The Course Providers spec
+        // places these directly under navigation.course.* (notification
+        // paths); some plugin builds emit them under calcValues.*
+        // instead, so both are subscribed and both map to the same
+        // NavigationData fields. OnaPlotter watches either transition
+        // and auto-advances to the next waypoint when the user enables
+        // AutoAdvanceWaypoints.
+        new("navigation.course.perpendicularPassed",                         PathTier.SelfFast),
+        new("navigation.course.arrivalCircleEntered",                        PathTier.SelfFast),
+        new("navigation.course.calcValues.perpendicularPassed",              PathTier.SelfFast),
+        new("navigation.course.calcValues.arrivalCircleEntered",             PathTier.SelfFast),
         // Autopilot state + target heading + target AWA (wind mode).
         new("steering.autopilot.state",                                      PathTier.SelfFast),
         new("steering.autopilot.target.headingTrue",                         PathTier.SelfFast),
@@ -261,7 +278,7 @@ public sealed class SignalkClient : IAsyncDisposable
         && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
 
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
-        TrackBuffer track, AisStore ais, HttpClient http)
+        TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings)
     {
         _logger = logger;
         _data = new NavigationData();
@@ -271,6 +288,30 @@ public sealed class SignalkClient : IAsyncDisposable
         _baseUrl = baseUrl;
         _wsUri = baseUrl.StreamUri();
         _selfContext = "";
+        _settings = settings;
+
+        // Heading / COG preference: settings drive which SignalK path
+        // wins when both true + magnetic are published. Sync now and on
+        // every change so toggling the preference re-evaluates without
+        // waiting for the next delta (the getter reads the cached
+        // raw values, so the next render picks up immediately).
+        ApplyHeadingPreferenceFromSettings();
+        settings.OnSettingsChanged += OnSettingsChangedSync;
+    }
+
+    private void OnSettingsChangedSync()
+    {
+        ApplyHeadingPreferenceFromSettings();
+        // HUDs re-derive Heading / CourseOverGround on next render; a
+        // nudge wakes any component that isn't also listening to
+        // OnSettingsChanged directly.
+        OnDataChanged?.Invoke();
+    }
+
+    private void ApplyHeadingPreferenceFromSettings()
+    {
+        _data.PreferMagneticHeading = _settings.PreferMagneticHeading;
+        _data.PreferMagneticCourse = _settings.PreferMagneticCourse;
     }
 
     /// <summary>
@@ -342,6 +383,12 @@ public sealed class SignalkClient : IAsyncDisposable
                 // of the AIS list even on servers that never emit a hello
                 // with "self" or push own-boat only as "vessels.<urn>".
                 _ = Task.Run(() => ResolveSelfContextFromRestAsync(ct), ct);
+
+                // design.draft.* is configured statically in vessel.json;
+                // the delta stream only replays it if the value changes,
+                // which never happens in practice. Seed from REST so the
+                // Settings hint and AnchorTide alarm have something to go on.
+                _ = Task.Run(() => SeedSelfDesignFromRestAsync(ct), ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
@@ -639,6 +686,22 @@ public sealed class SignalkClient : IAsyncDisposable
                         changed = true;
                     }
                     continue;
+                }
+
+                // Boolean-valued paths from the course-provider plugin
+                // (perpendicularPassed / arrivalCircleEntered). A true
+                // transition triggers auto-advance downstream via
+                // OnDataChanged; the plugin emits these as plain
+                // JsonValueKind booleans, so NavigationData.ApplyBool
+                // handles them separately from the numeric Apply path.
+                if (val.Value is JsonElement boolEl
+                    && (boolEl.ValueKind == JsonValueKind.True || boolEl.ValueKind == JsonValueKind.False))
+                {
+                    if (_data.ApplyBool(val.Path, boolEl.GetBoolean()))
+                    {
+                        changed = true;
+                        continue;
+                    }
                 }
 
                 // String-valued paths (route href, route name).
@@ -944,6 +1007,67 @@ public sealed class SignalkClient : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "REST vessel-snapshot seed failed (names will trickle in via deltas)");
+        }
+    }
+
+    /// <summary>
+    /// One-shot REST fetch of the self vessel's <c>design.draft</c>. The
+    /// subscription-based path stays empty on most installs because
+    /// <c>design.draft.current</c> / <c>.maximum</c> are static values
+    /// declared in vessel.json -- signalk-server only sends deltas when
+    /// values change, so a subscription for a never-changing path yields
+    /// nothing. Hit the REST surface once on connect instead so the
+    /// Settings "SignalK reports X m" hint and AnchorTide alarm have
+    /// real data instead of falling back to the manual override.
+    /// </summary>
+    private async Task SeedSelfDesignFromRestAsync(CancellationToken ct)
+    {
+        try
+        {
+            var url = _baseUrl.Combine("/signalk/v1/api/vessels/self/design");
+            using var res = await _http.GetAsync(url, ct);
+            if (!res.IsSuccessStatusCode) return;
+
+            using var stream = await res.Content.ReadAsStreamAsync(ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+
+            if (!doc.RootElement.TryGetProperty("draft", out var draft)
+                || draft.ValueKind != JsonValueKind.Object)
+                return;
+
+            // Prefer current over maximum, matching NavigationData.Apply's
+            // precedence. Both are wrapped as SignalK leaves so unwrap
+            // the ".value" before feeding back into Apply().
+            bool seeded = false;
+            if (draft.TryGetProperty("current", out var cur))
+            {
+                var val = UnwrapValue(cur);
+                if (val.ValueKind == JsonValueKind.Number)
+                {
+                    _data.Apply("design.draft.current", val);
+                    seeded = true;
+                }
+            }
+            if (!seeded && draft.TryGetProperty("maximum", out var max))
+            {
+                var val = UnwrapValue(max);
+                if (val.ValueKind == JsonValueKind.Number)
+                {
+                    _data.Apply("design.draft.maximum", val);
+                    seeded = true;
+                }
+            }
+            if (seeded)
+            {
+                OnDataChanged?.Invoke();
+                _logger.LogInformation("Seeded design.draft for self vessel from REST");
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "REST design seed failed (draft will stay on manual override)");
         }
     }
 

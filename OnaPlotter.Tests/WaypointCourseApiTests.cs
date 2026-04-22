@@ -147,15 +147,19 @@ public class WaypointCourseApiTests
     [Test]
     public async Task CourseApi_AdvanceActiveRoute_PutsNextPointEndpoint()
     {
-        // Server owns the pointIndex; the client just pings the Next-WP
-        // endpoint. An empty body is enough -- no payload is defined on
-        // /activeRoute/nextPoint.
+        // SignalK v2 Course API: PUT /activeRoute/nextPoint with body
+        // {"value": 1} advances one waypoint. The older empty-body
+        // form is NOT spec-compliant; this pins the correct shape so
+        // a drift back to {} doesn't regress auto-advance on strict
+        // servers.
         string? capturedUrl = null;
+        string? capturedBody = null;
         HttpMethod? capturedMethod = null;
         var http = ApiTestHelpers.MockClient(req =>
         {
             capturedUrl = req.RequestUri?.AbsoluteUri;
             capturedMethod = req.Method;
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
         var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
@@ -165,6 +169,7 @@ public class WaypointCourseApiTests
         await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
         await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/navigation/course/activeRoute/nextPoint");
+        await Assert.That(capturedBody).Contains("\"value\":1");
     }
 
     [Test]

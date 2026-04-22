@@ -18,7 +18,8 @@ public class SignalkClientSelfContextTests
             logger: NullLogger<SignalkClient>.Instance,
             track: new TrackBuffer(),
             ais: store,
-            http: new HttpClient());
+            http: new HttpClient(),
+            settings: new FakeSettings());
 
     private sealed class FakeBaseUrl : ISignalKBaseUrl
     {

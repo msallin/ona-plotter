@@ -45,12 +45,13 @@ public sealed class CourseApi : ICourseApi
 
     public Task<ApiResult> AdvanceActiveRouteAsync(CancellationToken ct = default)
     {
-        // Empty body PUT: SignalK's activeRoute/nextPoint endpoint
-        // increments the server-side pointIndex by 1. A 404 (no active
-        // route) becomes a standard "HTTP 404" error string which is
-        // clearer than the previous bool=false that said nothing.
+        // SignalK v2 Course API: PUT /activeRoute/nextPoint with body
+        // {"value": n} where n is the number of positions to advance.
+        // +1 = next waypoint, -1 = previous. The older empty-body form
+        // worked on some server builds but is non-spec; the explicit
+        // value is what the docs mandate.
         var url = _baseUrl.Combine(SignalKUrls.CourseActiveRouteNextPointPath);
-        return ResourceHttp.PutAsync(_http, url, body: new { }, ct);
+        return ResourceHttp.PutAsync(_http, url, body: new { value = 1 }, ct);
     }
 
     public Task<ApiResult> ClearAsync(CancellationToken ct = default) =>

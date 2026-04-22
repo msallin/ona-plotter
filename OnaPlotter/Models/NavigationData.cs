@@ -10,11 +10,57 @@ public sealed class NavigationData
     private readonly Lock _lock = new();
 
     public double? SpeedOverGround { get; private set; }
-    public double? CourseOverGround { get; private set; }
     public double? Latitude { get; private set; }
     public double? Longitude { get; private set; }
-    public double? Heading { get; private set; }
     public double? Depth { get; private set; }
+
+    // --- Heading / COG: true + magnetic variants ---
+    // Servers vary in which heading/COG path they publish. Fluxgate
+    // compasses typically emit .magnetic; GPS units with a magnetic-
+    // variation fix emit .true. Storing both raw lets the HUD/SailSteer
+    // pick whichever the crew wants (see PreferMagneticHeading /
+    // PreferMagneticCourse) without losing the other one when it later
+    // shows up. Falling back to the other side when the preferred one
+    // is null keeps the HUD from going blank on a mis-configured server.
+
+    /// <summary>Raw <c>navigation.headingTrue</c> value (radians, 0..2π).</summary>
+    public double? HeadingTrue { get; private set; }
+
+    /// <summary>Raw <c>navigation.headingMagnetic</c> value (radians, 0..2π).</summary>
+    public double? HeadingMagnetic { get; private set; }
+
+    /// <summary>Raw <c>navigation.courseOverGroundTrue</c> value (radians, 0..2π).</summary>
+    public double? CourseOverGroundTrue { get; private set; }
+
+    /// <summary>Raw <c>navigation.courseOverGroundMagnetic</c> value (radians, 0..2π).</summary>
+    public double? CourseOverGroundMagnetic { get; private set; }
+
+    /// <summary>When true, <see cref="Heading"/> resolves to
+    /// <see cref="HeadingMagnetic"/> first with <see cref="HeadingTrue"/>
+    /// as fallback. Toggled from Settings; the SignalkClient syncs it
+    /// on app start and on setting changes.</summary>
+    public bool PreferMagneticHeading { get; set; }
+
+    /// <summary>When true, <see cref="CourseOverGround"/> resolves to
+    /// <see cref="CourseOverGroundMagnetic"/> first with
+    /// <see cref="CourseOverGroundTrue"/> as fallback.</summary>
+    public bool PreferMagneticCourse { get; set; }
+
+    /// <summary>Heading in radians, picking true or magnetic according to
+    /// <see cref="PreferMagneticHeading"/>. Falls back to the other side
+    /// if the preferred one isn't published so HUDs keep a number when
+    /// only one of the two paths is live on the server.</summary>
+    public double? Heading => PreferMagneticHeading
+        ? HeadingMagnetic ?? HeadingTrue
+        : HeadingTrue ?? HeadingMagnetic;
+
+    /// <summary>Course-over-ground in radians, picking true or magnetic
+    /// per <see cref="PreferMagneticCourse"/>. Same fallback rule as
+    /// <see cref="Heading"/>.</summary>
+    public double? CourseOverGround => PreferMagneticCourse
+        ? CourseOverGroundMagnetic ?? CourseOverGroundTrue
+        : CourseOverGroundTrue ?? CourseOverGroundMagnetic;
+
     public double? WindAngleApparent { get; private set; }
     public double? WindSpeedApparent { get; private set; }
     public double? WindAngleTrue { get; private set; }       // TWA (radians, -PI to PI relative to bow)
@@ -39,6 +85,25 @@ public sealed class NavigationData
     public double? CourseNextPointTimeToGo { get; private set; }
     public double? CourseNextPointVmg { get; private set; }
     public double? CrossTrackError { get; private set; }
+
+    /// <summary>True when the boat has crossed the perpendicular line
+    /// through the active-leg's destination waypoint. Published by the
+    /// course-provider plugin at
+    /// <c>navigation.course.calcValues.perpendicularPassed</c>. Drives
+    /// the auto-advance logic: a true edge (false -> true) triggers an
+    /// automatic call to <c>activeRoute/nextPoint</c> when the user has
+    /// auto-advance enabled, matching commercial-chartplotter behaviour.
+    /// Null when the plugin isn't installed or hasn't computed the
+    /// value for the current leg yet.</summary>
+    public bool? PerpendicularPassed { get; private set; }
+
+    /// <summary>True when the boat is inside the arrival circle of the
+    /// active-leg's destination. Published by the course-provider plugin
+    /// at <c>navigation.course.calcValues.arrivalCircleEntered</c>.
+    /// Same auto-advance trigger as <see cref="PerpendicularPassed"/>;
+    /// either event fires the jump to the next waypoint. Arrival-circle
+    /// radius is set per-waypoint by the route author.</summary>
+    public bool? ArrivalCircleEntered { get; private set; }
 
     /// <summary>Distance remaining on the ENTIRE active route (metres).
     /// SignalK v2 path <c>navigation.course.calcValues.route.distance</c>.
@@ -135,10 +200,16 @@ public sealed class NavigationData
                     SpeedOverGround = value;
                     break;
                 case "navigation.courseOverGroundTrue":
-                    CourseOverGround = value;
+                    CourseOverGroundTrue = value;
+                    break;
+                case "navigation.courseOverGroundMagnetic":
+                    CourseOverGroundMagnetic = value;
                     break;
                 case "navigation.headingTrue":
-                    Heading = value;
+                    HeadingTrue = value;
+                    break;
+                case "navigation.headingMagnetic":
+                    HeadingMagnetic = value;
                     break;
                 case "environment.depth.belowTransducer":
                     Depth = value;
@@ -338,7 +409,39 @@ public sealed class NavigationData
             ActiveRouteTimeToGo = null;
             ActiveRoutePointIndex = null;
             ActiveRoutePointTotal = null;
+            PerpendicularPassed = null;
+            ArrivalCircleEntered = null;
         }
+    }
+
+    /// <summary>
+    /// Applies a boolean-valued SignalK path. Returns true if recognised.
+    /// Used for <c>perpendicularPassed</c> / <c>arrivalCircleEntered</c>
+    /// from the course-provider plugin, where the wire type is a plain
+    /// JSON true/false rather than a numeric 0/1.
+    /// </summary>
+    public bool ApplyBool(string path, bool value)
+    {
+        lock (_lock)
+        {
+            switch (path)
+            {
+                // Course Providers spec places these at the top of the
+                // course subtree; some older plugin builds emit them
+                // under calcValues. Both map to the same field.
+                case "navigation.course.perpendicularPassed":
+                case "navigation.course.calcValues.perpendicularPassed":
+                    PerpendicularPassed = value;
+                    break;
+                case "navigation.course.arrivalCircleEntered":
+                case "navigation.course.calcValues.arrivalCircleEntered":
+                    ArrivalCircleEntered = value;
+                    break;
+                default:
+                    return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>

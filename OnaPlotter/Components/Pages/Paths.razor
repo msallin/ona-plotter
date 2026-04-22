@@ -10,6 +10,7 @@
 @using OnaPlotter.Utilities
 @inject SignalkClient SignalkClient
 @inject IPathApi PathApi
+@inject AisStore AisStore
 @implements IDisposable
 
 <PageTitle>Paths</PageTitle>
@@ -111,12 +112,18 @@
                 new("navigation.speedOverGround", "SOG HUD, auto night, CPA projection",
                     "GPS (SOG NMEA RMC / PGN 129026)",
                     GetValue: d => KnFromMs(d.SpeedOverGround)),
-                new("navigation.courseOverGroundTrue", "COG HUD, CPA projection, laylines",
+                new("navigation.courseOverGroundTrue", "COG HUD when Settings prefers True",
                     "GPS (RMC / PGN 129026)",
-                    GetValue: d => DegFromRad(d.CourseOverGround)),
-                new("navigation.headingTrue", "Compass HUD, SailSteer, COG-vs-HDG drift",
+                    GetValue: d => DegFromRad(d.CourseOverGroundTrue)),
+                new("navigation.courseOverGroundMagnetic", "COG HUD when Settings prefers Magnetic",
+                    "GPS with magnetic-variation fix (RMC)",
+                    GetValue: d => DegFromRad(d.CourseOverGroundMagnetic)),
+                new("navigation.headingTrue", "Compass HUD when Settings prefers True",
+                    "GPS / gyro with variation correction",
+                    GetValue: d => DegFromRad(d.HeadingTrue)),
+                new("navigation.headingMagnetic", "Compass HUD when Settings prefers Magnetic",
                     "Fluxgate / rate compass via <code>signalk-n2k</code>",
-                    GetValue: d => DegFromRad(d.Heading)),
+                    GetValue: d => DegFromRad(d.HeadingMagnetic)),
                 new("navigation.anchor.maxRadius", "Anchor-watch circle size",
                     "<code>signalk-anchoralarm-plugin</code>",
                     GetValue: d => Metres(d.AnchorMaxRadius, "F1")),
@@ -176,7 +183,7 @@
                     "Hard-coded in server <code>vessel.json</code> OR <code>signalk-load-data</code>",
                     GetValue: d => Metres(d.DraftFromSignalK, "F2")),
             ]),
-            new PathGroup("Active course / routing (v2 + calcValues)",
+            new PathGroup("Active course / routing",
             [
                 new("navigation.course.activeRoute.href", "Active route banner, route highlight",
                     "SK v2 server core (<code>signalk-server</code> &gt;= 2.x)",
@@ -218,15 +225,27 @@
             ]),
             new PathGroup("AIS + resources (bulk / REST, no per-path value)",
             [
+                // Bulk AIS context: one row for all live vessels rather
+                // than one row per MMSI. The value shows the current
+                // count so operators can see at a glance whether the
+                // AIS receiver is actually producing traffic.
                 new("vessels.urn:mrn:imo:mmsi:* (bulk context)", "AIS overlay, CPA alarm, buddy list",
                     "AIS receiver (NMEA 0183 VDM / PGN 129038-9) or <code>aisreporter</code>",
+                    GetValue: _ =>
+                    {
+                        int n = AisStore.Count;
+                        return n > 0 ? $"{n} vessel{(n == 1 ? "" : "s")} live" : null;
+                    },
                     IsLive: s => s.Contains("vessels.*")),
-                new("/signalk/v2/api/resources/flags/mmsi/{mmsi}", "Country flag in AIS popup",
-                    "<code>signalk-flags</code>",
-                    IsLive: s => s.Contains("flags.plugin")),
-                new("/signalk/v1/api/resources/charts", "Chart layers (Layers panel)",
-                    "<code>signalk-charts-plugin</code>",
-                    IsLive: s => s.Contains("charts.plugin")),
+                // Resources served over REST, not the delta stream.
+                // One row per resource kind -- the old split into charts
+                // / flags / etc. just padded the table with three rows
+                // that all said the same thing ("REST-only, present").
+                new("/signalk/v1|v2/api/resources/* (REST)",
+                    "Routes, waypoints, notes, regions, charts, flags",
+                    "<code>signalk-server</code> core + <code>signalk-charts-plugin</code>, "
+                    + "<code>signalk-flags</code>",
+                    IsLive: _ => true),
             ]),
         ];
 
