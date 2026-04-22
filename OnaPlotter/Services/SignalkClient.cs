@@ -1096,12 +1096,32 @@ public sealed class SignalkClient : IAsyncDisposable
             doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
 
+            // signalk-server returns design.draft as a single leaf
+            // (not as sibling leaves per child) so the canonical shape
+            // is:
+            //   { "meta": {...}, "value": {"maximum": 1.25, "current": 1.0},
+            //     "$source": "...", "timestamp": "..." }
+            // The {current, maximum} numbers live INSIDE the value
+            // envelope. Earlier this method looked at the root, found
+            // no current/maximum keys, and silently seeded nothing.
+            // Two fallbacks stay wired so the method still works on
+            // older or alternate server builds that emit sibling
+            // leaves or bare numbers.
+            JsonElement source = doc.RootElement;
+            if (doc.RootElement.TryGetProperty("value", out var valueEnvelope)
+                && valueEnvelope.ValueKind == JsonValueKind.Object
+                && (valueEnvelope.TryGetProperty("current", out _)
+                    || valueEnvelope.TryGetProperty("maximum", out _)))
+            {
+                source = valueEnvelope;
+            }
+
             // Prefer current over maximum to match
             // NavigationData.Apply's delta-path precedence. Unwrap
-            // the {value, timestamp} envelope for either leaf; some
-            // older servers emit bare numbers at this path too.
+            // inner {value, timestamp} envelopes too so the
+            // per-sibling-leaf shape still parses.
             bool seeded = false;
-            if (doc.RootElement.TryGetProperty("current", out var cur))
+            if (source.TryGetProperty("current", out var cur))
             {
                 var val = UnwrapValue(cur);
                 if (val.ValueKind == JsonValueKind.Number)
@@ -1110,7 +1130,7 @@ public sealed class SignalkClient : IAsyncDisposable
                     seeded = true;
                 }
             }
-            if (!seeded && doc.RootElement.TryGetProperty("maximum", out var max))
+            if (!seeded && source.TryGetProperty("maximum", out var max))
             {
                 var val = UnwrapValue(max);
                 if (val.ValueKind == JsonValueKind.Number)
@@ -1125,6 +1145,10 @@ public sealed class SignalkClient : IAsyncDisposable
                 OnDataChanged?.Invoke();
                 _logger.LogInformation("Seeded design.draft from v1 REST (DraftFromSignalK = {Draft} m)",
                     _data.DraftFromSignalK);
+            }
+            else
+            {
+                _logger.LogDebug("design.draft REST response had no current/maximum leaf to seed");
             }
         }
         catch (OperationCanceledException) { }
