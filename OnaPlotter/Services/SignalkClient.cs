@@ -383,7 +383,25 @@ public sealed class SignalkClient : IAsyncDisposable
                 // they stay outside the registry because they're
                 // runtime-discovered, not a shipped-with-app set.
                 var byTier = Paths.ToLookup(p => p.Tier, p => p.Path);
-                await SendSubscriptionAsync("vessels.self", byTier[PathTier.SelfFast]);
+                // Most SelfFast paths ride on the "ideal" policy which
+                // coalesces identical values. The two course-provider
+                // notification paths are edge-triggered state
+                // transitions (normal -> alert -> null); coalescing
+                // them with a surrounding high-frequency delta burst
+                // can swallow the exact transition that drives auto-
+                // advance. Send those two with policy=instant so the
+                // server never dedupes them, and subscribe the rest
+                // of SelfFast the regular way.
+                var notificationPaths = byTier[PathTier.SelfFast]
+                    .Where(p => p.StartsWith("notifications.", StringComparison.Ordinal))
+                    .ToArray();
+                var regularSelfFast = byTier[PathTier.SelfFast]
+                    .Where(p => !p.StartsWith("notifications.", StringComparison.Ordinal))
+                    .ToArray();
+                await SendSubscriptionAsync("vessels.self", regularSelfFast);
+                if (notificationPaths.Length > 0)
+                    await SendSubscriptionAsync("vessels.self", notificationPaths,
+                        periodMs: 100, policy: "instant");
                 await SendSubscriptionAsync("vessels.self", byTier[PathTier.SelfSlow],
                     periodMs: SlowSubscriptionPeriodMs);
                 await SendSubscriptionAsync("vessels.*", byTier[PathTier.Ais]);
@@ -489,7 +507,7 @@ public sealed class SignalkClient : IAsyncDisposable
         try { _backoffCts?.Cancel(); } catch (ObjectDisposedException) { }
     }
 
-    private void ProcessMessage(string json)
+    internal void ProcessMessage(string json)
     {
         Interlocked.Exchange(ref _lastMessageTicks, DateTime.UtcNow.Ticks);
         OnRawMessage?.Invoke(json);
