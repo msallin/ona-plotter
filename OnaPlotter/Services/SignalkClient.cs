@@ -384,20 +384,12 @@ public sealed class SignalkClient : IAsyncDisposable
                 // with "self" or push own-boat only as "vessels.<urn>".
                 _ = Task.Run(() => ResolveSelfContextFromRestAsync(ct), ct);
 
-                // Subscriptions only fire on change, so anything whose
-                // value was set before our socket opened (static design.
-                // draft, an already-active route, autopilot state, etc.)
-                // never arrives on the delta stream. Two REST fetches
-                // bridge that gap:
-                //   - /v1/vessels/self: walks the classic SK tree for
-                //     design.draft / navigation.position / autopilot /
-                //     tide / anchor leaves.
-                //   - /v2/vessels/self/navigation/course: the v2 Course
-                //     API lives on a separate REST surface the v1 tree
-                //     never exposes, which is why a route activated in
-                //     freeboard-sk before we connected was invisible to
-                //     OnaPlotter.
-                _ = Task.Run(() => SeedSelfSnapshotFromRestAsync(ct), ct);
+                // Subscriptions only fire on change, so a route active
+                // BEFORE our socket opens (another plotter, freeboard-sk
+                // in a second tab, a previous browser session) never
+                // arrives on the delta stream. The v2 Course API lives
+                // on its own REST surface which the delta stream doesn't
+                // cover for the initial state; fetch it once on connect.
                 _ = Task.Run(() => SeedSelfCourseFromRestAsync(ct), ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
@@ -1021,98 +1013,6 @@ public sealed class SignalkClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// One-shot REST fetch of <c>/signalk/v1/api/vessels/self</c> walked
-    /// end-to-end so static data (design.draft.*) and already-live state
-    /// (an active course set before we connected) populate NavigationData
-    /// on startup. SignalK subscriptions only fire on change, so anything
-    /// whose value was set before our websocket opened -- a draft declared
-    /// in vessel.json, a route activated from freeboard-sk a minute ago --
-    /// never arrives on the delta stream; this walk bridges that gap.
-    /// <para>
-    /// Matches the dispatch used by ProcessSelfDelta so the same paths
-    /// reach the same NavigationData fields. Position objects get routed
-    /// to ApplyCourseNextPointPosition / ApplyCoursePreviousPointPosition;
-    /// everything else goes through the numeric / string / bool Apply*
-    /// entry points.
-    /// </para>
-    /// </summary>
-    private async Task SeedSelfSnapshotFromRestAsync(CancellationToken ct)
-    {
-        JsonDocument? doc = null;
-        try
-        {
-            var url = _baseUrl.Combine("/signalk/v1/api/vessels/self");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Self snapshot {Url} returned {Status} -- static values will stay on defaults",
-                    url, (int)res.StatusCode);
-                return;
-            }
-
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
-
-            int seeded = 0;
-            WalkSelfTree(doc.RootElement, prefix: "", ref seeded);
-
-            if (seeded > 0)
-            {
-                OnDataChanged?.Invoke();
-                _logger.LogInformation("Seeded {Count} static paths for self vessel from REST snapshot", seeded);
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "REST self-snapshot seed failed (draft + active route will stay on defaults / deltas)");
-        }
-        finally { doc?.Dispose(); }
-    }
-
-    /// <summary>
-    /// Recursive walker for the REST self-tree. A leaf is any object
-    /// carrying a <c>value</c> property (SignalK convention); branches
-    /// are plain objects that recurse. <see cref="UnwrapValue"/> handles
-    /// either shape so bare leaves (no wrapper) work on servers that
-    /// skip the envelope.
-    /// </summary>
-    private void WalkSelfTree(JsonElement node, string prefix, ref int seeded)
-    {
-        if (node.ValueKind != JsonValueKind.Object) return;
-
-        // Short-circuit: if this node IS a leaf, dispatch and stop. A
-        // leaf has a `value` property AND no sibling-object children we
-        // should recurse into (meta/units/description sit beside value
-        // but aren't themselves nested data).
-        if (node.TryGetProperty("value", out _))
-        {
-            if (TrySeedLeaf(prefix, UnwrapValue(node))) seeded++;
-            return;
-        }
-
-        foreach (var prop in node.EnumerateObject())
-        {
-            string path = prefix.Length == 0 ? prop.Name : $"{prefix}.{prop.Name}";
-            if (prop.Value.ValueKind == JsonValueKind.Object)
-            {
-                WalkSelfTree(prop.Value, path, ref seeded);
-            }
-            else if (prop.Value.ValueKind is JsonValueKind.Number
-                     or JsonValueKind.String
-                     or JsonValueKind.True
-                     or JsonValueKind.False)
-            {
-                // Bare leaf (no {value, timestamp} wrapper). Most SK
-                // servers wrap but some emit raw scalars in REST
-                // responses; seed either shape.
-                if (TrySeedLeaf(path, prop.Value)) seeded++;
-            }
-        }
-    }
-
-    /// <summary>
     /// One-shot REST fetch of the SignalK v2 Course API
     /// (<c>/signalk/v2/api/vessels/self/navigation/course</c>). The v1
     /// self-tree doesn't expose this endpoint at all, which is why a
@@ -1221,59 +1121,6 @@ public sealed class SignalkClient : IAsyncDisposable
             _logger.LogWarning(ex, "v2 course REST seed failed (active route won't appear until the next delta)");
         }
         finally { doc?.Dispose(); }
-    }
-
-    /// <summary>Dispatches a single unwrapped REST leaf into NavigationData
-    /// using the same shape heuristics as ProcessSelfDelta. Returns true
-    /// when a field was populated so the caller can count "real" seeds.
-    /// </summary>
-    private bool TrySeedLeaf(string path, JsonElement val)
-    {
-        // Position objects (own boat, course next/previous). Match the
-        // delta-path routing used by ProcessSelfDelta so the same fields
-        // come alive via either transport.
-        if (val.ValueKind == JsonValueKind.Object
-            && val.TryGetProperty("latitude", out var lat)
-            && val.TryGetProperty("longitude", out var lon)
-            && lat.ValueKind == JsonValueKind.Number
-            && lon.ValueKind == JsonValueKind.Number)
-        {
-            double dLat = lat.GetDouble(), dLon = lon.GetDouble();
-            switch (path)
-            {
-                case "navigation.position":
-                    _data.ApplyPosition(dLat, dLon);
-                    return true;
-                case "navigation.course.nextPoint.position":
-                    _data.ApplyCourseNextPointPosition(dLat, dLon);
-                    return true;
-                case "navigation.course.previousPoint.position":
-                    _data.ApplyCoursePreviousPointPosition(dLat, dLon);
-                    return true;
-                case "navigation.anchor.position":
-                    _data.ApplyAnchorPosition(dLat, dLon);
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        // Strings: route href/name, autopilot state, tide station, sun.
-        if (val.ValueKind == JsonValueKind.String)
-            return _data.ApplyString(path, val.GetString());
-
-        // Booleans: perpendicularPassed / arrivalCircleEntered live on
-        // both the spec path and the calcValues variant; ApplyBool
-        // handles both.
-        if (val.ValueKind is JsonValueKind.True or JsonValueKind.False)
-            return _data.ApplyBool(path, val.GetBoolean());
-
-        // Numbers: draft, calcValues.*, autopilot targets, rudder, tide
-        // heights, anchor radii, wind, depth, etc.
-        if (val.ValueKind == JsonValueKind.Number)
-            return _data.Apply(path, val);
-
-        return false;
     }
 
     /// <summary>
