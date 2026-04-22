@@ -79,6 +79,7 @@ public class FakeSettingsParityTests
             .Where(m => m.Name.StartsWith("Set") && m.Name.EndsWith("Async"))
             .ToArray();
 
+        var errors = new List<string>();
         foreach (var m in setters)
         {
             object? arg = DefaultArg(m.GetParameters()[0].ParameterType);
@@ -89,11 +90,15 @@ public class FakeSettingsParityTests
             }
             catch (TargetInvocationException ex)
             {
-                await Assert.That(false)
-                    .IsTrue()
-                    .Because($"FakeSettings.{m.Name} threw: {ex.InnerException?.Message}");
+                errors.Add($"{m.Name}: {ex.InnerException?.Message}");
             }
         }
+        // One assertion at the end so a single run reports every
+        // broken setter, not just the first. Empty error list is the
+        // pass state.
+        await Assert.That(errors.Count)
+            .IsEqualTo(0)
+            .Because("FakeSettings setters threw: " + string.Join("; ", errors));
     }
 
     /// <summary>Fabricates a default argument for each parameter
