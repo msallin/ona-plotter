@@ -2699,6 +2699,20 @@ const waypointMarkers = new MarkerLayer();
 // route amber so a bare waypoint reads distinct from a route dot.
 const WAYPOINT_COLOR = '#c76f51';
 
+// Formats the hover-tooltip content for a waypoint marker: name (or
+// short id if unnamed) above a compact coordinate pair. Returned as
+// HTML so the tooltip can break onto two lines -- plain-string
+// tooltips can't wrap. Kept as a free function so map-restart
+// rebuilds use the same format as the initial addWaypointMarker.
+function formatWaypointTooltip(name, id, lat, lon) {
+    const title = name || (id ? id.substring(0, 8) : 'Waypoint');
+    const ns = lat >= 0 ? 'N' : 'S';
+    const ew = lon >= 0 ? 'E' : 'W';
+    const coords = `${Math.abs(lat).toFixed(5)}\u00B0 ${ns}, ${Math.abs(lon).toFixed(5)}\u00B0 ${ew}`;
+    return `<div class="wp-tooltip-name">${esc(title)}</div>` +
+           `<div class="wp-tooltip-coords">${esc(coords)}</div>`;
+}
+
 export function addWaypointMarker(id, lat, lon, name) {
     if (!map || waypointMarkers.has(id)) return;
     const marker = L.circleMarker([lat, lon], {
@@ -2707,7 +2721,14 @@ export function addWaypointMarker(id, lat, lon, name) {
     // Tooltip on hover (quick identification); popup on click (full
     // name + Delete). Same pattern as notes/regions so the tap-to-act
     // affordance is consistent across user-placed objects.
-    marker.bindTooltip(name || id.substring(0, 8), {
+    //
+    // Coordinates now accompany the name: F5 precision gives ~1 m
+    // resolution which is what a helm reading coords off a chart
+    // actually needs, without pretending to a decimal of longitude
+    // that GPS jitter already eats. Hemisphere letters (N/S, E/W)
+    // keep the reading unambiguous when the waypoint is near the
+    // equator or the prime meridian.
+    marker.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });

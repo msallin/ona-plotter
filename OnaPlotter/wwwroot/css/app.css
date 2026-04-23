@@ -968,6 +968,25 @@ article.content:has(.map-container) {
 }
 .bearing-tooltip::before { display: none !important; }
 
+/* Two-line waypoint hover content (name + coords). The name line
+   reads as the primary title; the coord line is dimmer and slightly
+   smaller so the helm's eye lands on the identity first and the
+   numbers sit underneath as reference data. Tabular-nums keeps
+   the lat/lon pair from jittering as the user hovers adjacent
+   waypoints with slightly different digits. */
+.wp-tooltip-name {
+    font-weight: 600;
+    color: #f1f5f9;
+    line-height: 1.25;
+}
+.wp-tooltip-coords {
+    margin-top: 2px;
+    font-size: 10.5px;
+    color: rgba(226, 232, 240, 0.72);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
 /* Measurement-tool segment tooltips. Same skeleton as bearing-
    tooltip but amber-framed to match the ruler polyline. */
 .measure-tooltip {
@@ -4547,22 +4566,27 @@ main:has(.map-container.big-type) .map-fab-item {
    hints to the compositor so a texture layer is set up once, not
    per-frame. Same visual result, an order of magnitude cheaper
    to run on weak GPUs. */
+/* Pulse colour tracks the active-route polyline (MapColors.bearing
+   cyan). Earlier it was a hard-coded amber (--ann-route) that
+   fought the cyan route line the ring was drawn on. Now the pulse,
+   the route line, the numbered dots, and the route-WP tooltip
+   all read as the same "active navigation" family. */
 .active-wp-pulse {
     position: relative;
     width: 24px;
     height: 24px;
     border-radius: 50%;
-    background: #e09f3e;
+    background: var(--map-bearing);
     border: 2px solid #fff;
     /* Static glow -- the animation is handled by ::before now. */
-    box-shadow: 0 0 8px rgba(224, 159, 62, 0.65);
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.65);
 }
 .active-wp-pulse::before {
     content: "";
     position: absolute;
     inset: -2px;
     border-radius: 50%;
-    border: 2px solid rgba(224, 159, 62, 0.9);
+    border: 2px solid rgba(6, 182, 212, 0.9);
     animation: wp-ping 1.5s ease-out infinite;
     pointer-events: none;
     will-change: transform, opacity;
@@ -4574,9 +4598,14 @@ main:has(.map-container.big-type) .map-fab-item {
     100% { transform: scale(2);   opacity: 0;    }
 }
 
-/* Numbered waypoint tooltips on the active route */
+/* Numbered waypoint tooltips on the active route. Uses the same
+   cyan palette as the route polyline and the next-WP pulse so
+   every active-navigation mark on the chart reads as one family.
+   Previously this was the --ann-route amber which matched the
+   route RESOURCE colour (routes in the Layers panel) but fought
+   with the cyan route LINE we actually draw for an active course. */
 .route-wp-tooltip {
-    background: rgba(224, 159, 62, 0.9) !important;
+    background: rgba(6, 182, 212, 0.92) !important;
     border: none !important;
     color: #fff !important;
     font-size: 11px !important;
