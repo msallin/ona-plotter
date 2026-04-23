@@ -63,13 +63,8 @@ public partial class Map
         int wpCount = routeEditCoords?.Length ?? 0;
         if (wpCount >= 2)
         {
-            bool ok;
-            try
-            {
-                ok = await JS.InvokeAsync<bool>("confirm",
-                    $"Discard route in progress ({wpCount} waypoints)?");
-            }
-            catch (JSDisconnectedException) { return; }
+            bool ok = await Confirmations.ConfirmAsync(
+                $"Discard route in progress ({wpCount} waypoints)?");
             if (!ok) return;
         }
         if (wpCount > 0)

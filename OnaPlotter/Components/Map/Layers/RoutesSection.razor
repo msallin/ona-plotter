@@ -1,5 +1,6 @@
 @using OnaPlotter.Models
-@inject IJSRuntime JS
+@using OnaPlotter.Services
+@inject IConfirmationService Confirmations
 
 @* Routes the user (or GPX import) has stored on the SignalK server, with
    visibility toggles and an Edit button per route. *@
@@ -58,13 +59,11 @@
 
     private async Task ConfirmDelete(SignalkRoute route)
     {
-        // JS confirm() is the same prompt the Resources page uses for
-        // the bulk-delete flow. Cheap, accessible, and a destructive
-        // action this central to the UI deserves a guard-rail.
-        bool ok;
-        try { ok = await JS.InvokeAsync<bool>("confirm",
-            $"Delete route '{route.Name ?? ShortId(route.Id)}'?"); }
-        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        // Shared confirmation service -- same prompt the Resources
+        // page (and other Layers sections) use. A destructive action
+        // this central to the UI deserves a guard-rail.
+        bool ok = await Confirmations.ConfirmAsync(
+            $"Delete route '{route.Name ?? ShortId(route.Id)}'?");
         if (ok) await OnDelete.InvokeAsync(route);
     }
 }

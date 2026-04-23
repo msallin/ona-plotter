@@ -1,24 +1,36 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using OnaPlotter.Components.Map.Layers;
 using OnaPlotter.Models;
+using OnaPlotter.Services;
 
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
 /// bUnit tests for WaypointsSection. Like RoutesSection, the row
-/// grew Edit + Delete actions recently; tests pin the Go /
-/// Edit / Delete wiring plus the JS prompt()-driven rename flow.
+/// has Go / Edit / Delete actions; tests pin the wiring plus the
+/// JS prompt()-driven rename flow. Delete routes through
+/// IConfirmationService (FakeConfirmationService for the test).
 /// </summary>
 public class WaypointsSectionTests
 {
     private static SignalkWaypoint Wp(string id, string? name = null) =>
         new() { Id = id, Name = name };
 
+    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    {
+        var ctx = new Bunit.TestContext();
+        var confirm = new FakeConfirmationService();
+        ctx.Services.AddSingleton<IConfirmationService>(confirm);
+        return (ctx, confirm);
+    }
+
     [Test]
     public async Task Hidden_When_No_Waypoints()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<WaypointsSection>();
         await Assert.That(cut.Markup.Trim()).IsEqualTo("");
     }
@@ -26,13 +38,13 @@ public class WaypointsSectionTests
     [Test]
     public async Task Filter_Hides_NonMatching_Rows()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Alpha"), Wp("w2", "Bravo"), Wp("w3", "Alpenhorn") })
             .Add(x => x.LayerFilter, "Alp"));
         cut.Find(".section-toggle").Click();
 
-        // "Alp" matches "Alpha" + "Alpenhorn" but not "Bravo".
         await Assert.That(cut.Markup).Contains("Alpha");
         await Assert.That(cut.Markup).Contains("Alpenhorn");
         await Assert.That(cut.Markup).DoesNotContain("Bravo");
@@ -41,9 +53,8 @@ public class WaypointsSectionTests
     [Test]
     public async Task Filter_NoMatch_HidesWholeSection()
     {
-        // Section is a zero-render when the filter elides every item;
-        // otherwise the header would tease with "0" and waste space.
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Alpha") })
             .Add(x => x.LayerFilter, "zzz"));
@@ -53,7 +64,8 @@ public class WaypointsSectionTests
     [Test]
     public async Task GoButton_Fires_OnNavigate_WithSameWaypoint()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         SignalkWaypoint? captured = null;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
@@ -61,7 +73,6 @@ public class WaypointsSectionTests
                 this, w => captured = w)));
         cut.Find(".section-toggle").Click();
 
-        // Button order: Go, Edit, Delete.
         cut.FindAll(".route-action-btn")[0].Click();
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Id).IsEqualTo("w1");
@@ -70,9 +81,11 @@ public class WaypointsSectionTests
     [Test]
     public async Task EditButton_PromptAccepted_Fires_OnRename_WithTrimmedName()
     {
-        using var ctx = new Bunit.TestContext();
-        // prompt() returns the user's new name with leading/trailing
-        // whitespace that the section must trim before propagating.
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
+        // prompt() stays on native JS for now; rename flow hasn't
+        // been promoted to a service yet. Stub it via bUnit's
+        // JSInterop just as before.
         ctx.JSInterop.Setup<string?>("prompt", _ => true).SetResult("  New Harbor  ");
         (SignalkWaypoint wp, string newName)? captured = null;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
@@ -90,8 +103,8 @@ public class WaypointsSectionTests
     [Test]
     public async Task EditButton_PromptCancelled_DoesNotFire()
     {
-        using var ctx = new Bunit.TestContext();
-        // prompt() returning null means the user hit Cancel.
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         ctx.JSInterop.Setup<string?>("prompt", _ => true).SetResult(null);
         bool fired = false;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
@@ -107,10 +120,8 @@ public class WaypointsSectionTests
     [Test]
     public async Task EditButton_EmptyName_DoesNotFire()
     {
-        using var ctx = new Bunit.TestContext();
-        // Empty-string rename is nonsense; must be rejected before
-        // hitting the callback (otherwise a server PUT would overwrite
-        // a real name with a blank).
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         ctx.JSInterop.Setup<string?>("prompt", _ => true).SetResult("   ");
         bool fired = false;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
@@ -126,8 +137,9 @@ public class WaypointsSectionTests
     [Test]
     public async Task DeleteButton_ConfirmAccepted_Fires_OnDelete()
     {
-        using var ctx = new Bunit.TestContext();
-        ctx.JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoConfirm = true;
         SignalkWaypoint? captured = null;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
@@ -143,8 +155,9 @@ public class WaypointsSectionTests
     [Test]
     public async Task DeleteButton_ConfirmDeclined_DoesNotFire()
     {
-        using var ctx = new Bunit.TestContext();
-        ctx.JSInterop.Setup<bool>("confirm", _ => true).SetResult(false);
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoConfirm = false;
         bool fired = false;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })

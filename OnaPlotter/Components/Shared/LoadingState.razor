@@ -1,0 +1,23 @@
+@* Reusable loading-state block: shown while an async fetch is in
+   flight. Centralises the pattern that used to vary between
+   <p class="text-muted">Loading...</p> (Resources) and no loading
+   state at all (History, which jumped straight to the empty block).
+
+   Sets aria-busy so assistive tech announces the page as active.
+   The dots are CSS-animated via .loading-dots; no JS / images, so
+   the block is safe to render pre-JS-init. *@
+
+<div class="loading-state" role="status" aria-busy="true" aria-live="polite">
+    <span class="loading-dots">
+        <span></span><span></span><span></span>
+    </span>
+    <span class="loading-state-label">@Label</span>
+</div>
+
+@code {
+    /// <summary>Human-readable what's-loading string. Default
+    /// "Loading..." keeps the old one-line text; pages override
+    /// with specifics ("Fetching routes...", "Loading track...") so
+    /// the operator knows which slow thing is slow.</summary>
+    [Parameter] public string Label { get; set; } = "Loading...";
+}

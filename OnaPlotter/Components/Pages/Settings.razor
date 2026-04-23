@@ -5,6 +5,7 @@
 @inject IAppSettings AppSettings
 @inject IPolarService Polar
 @inject IToastService Toasts
+@inject IConfirmationService Confirmations
 @inject OnaPlotter.Services.SignalkClient SignalkClient
 @inject IJSRuntime JS
 
@@ -840,13 +841,8 @@
         // Confirmation gate: polar uploads can take a while to prepare
         // (ORC certificate, Expedition export, hand-tuned numbers) and
         // a stray tap on a touchscreen shouldn't discard it.
-        bool ok;
-        try
-        {
-            ok = await JS.InvokeAsync<bool>("confirm",
-                "Remove the loaded polar? You'll need to re-upload the CSV to get performance % back on the Dashboard and the race-mode optimal-TWA overlay.");
-        }
-        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        bool ok = await Confirmations.ConfirmAsync(
+            "Remove the loaded polar? You'll need to re-upload the CSV to get performance % back on the Dashboard and the race-mode optimal-TWA overlay.");
         if (!ok) return;
 
         await Polar.ClearAsync();

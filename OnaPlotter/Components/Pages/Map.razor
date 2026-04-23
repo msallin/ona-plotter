@@ -25,6 +25,7 @@
 @inject IPolarService Polar
 @inject IAppSettings Settings
 @inject IToastService Toasts
+@inject IConfirmationService Confirmations
 @inject IKeyValueStore Kv
 @inject IAlarmManager Alarms
 @inject DeadmanTracker DeadmanTracker
@@ -2329,9 +2330,7 @@
             // moored in heavy weather would silently clear. Require a
             // confirmation -- matches the JS confirm pattern used for
             // Settings polar removal and route-edit cancel.
-            bool ok;
-            try { ok = await JS.InvokeAsync<bool>("confirm", "Raise anchor and stop the watch?"); }
-            catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+            bool ok = await Confirmations.ConfirmAsync("Raise anchor and stop the watch?");
             if (!ok) return;
 
             await module.InvokeVoidAsync("clearAnchor");

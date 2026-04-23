@@ -291,6 +291,68 @@ a, .btn-link {
     box-shadow: none;
 }
 
+/* Shared empty-state block (Shared/EmptyState.razor). Centralised
+   so every page speaks the same "nothing to see here" language;
+   Resources / History / Layers sub-sections used three different
+   conventions before this. */
+.empty-state {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--sk-text-muted);
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+}
+.empty-state-compact {
+    padding: 0.75rem 0.5rem;
+    border: none;
+    background: transparent;
+    text-align: left;
+}
+.empty-state-title {
+    font-size: 0.95rem;
+    color: var(--sk-text);
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+.empty-state-compact .empty-state-title { font-size: 0.85rem; font-weight: 400; }
+.empty-state-message {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    max-width: 36rem;
+    margin: 0 auto;
+}
+.empty-state-extra { margin-top: 0.75rem; }
+
+/* Shared loading-state block (Shared/LoadingState.razor). The
+   dots animation is pure CSS so the block can render before
+   JS has bootstrapped. */
+.loading-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    color: var(--sk-text-muted);
+    font-size: 0.85rem;
+}
+.loading-dots {
+    display: inline-flex;
+    gap: 3px;
+}
+.loading-dots > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--sk-accent);
+    animation: loading-bounce 1.2s ease-in-out infinite;
+}
+.loading-dots > span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots > span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes loading-bounce {
+    0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+    30%           { opacity: 1;   transform: translateY(-3px); }
+}
+
 /* Shared section-header style for non-Bootstrap page sections
    (Settings groups, Paths groups, Dashboard band labels). Before
    this class every page inlined a one-off

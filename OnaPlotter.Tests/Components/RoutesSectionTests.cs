@@ -1,45 +1,58 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using OnaPlotter.Components.Map.Layers;
 using OnaPlotter.Models;
+using OnaPlotter.Services;
 
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
-/// bUnit tests for RoutesSection. The section grew three action
-/// buttons recently (Go, Edit, Delete) so the wiring between the
-/// row-local callbacks and the parent's OnToggle / OnEdit /
-/// OnNavigate / OnDelete is worth pinning -- misrouting any of
-/// them silently activates the wrong flow.
+/// bUnit tests for RoutesSection. The section has three action
+/// buttons (Go, Edit, Delete) so the wiring between the row-local
+/// callbacks and the parent's OnToggle / OnEdit / OnNavigate /
+/// OnDelete is worth pinning -- misrouting any of them silently
+/// activates the wrong flow.
 ///
-/// Delete goes through a JS <c>confirm()</c> guard. bUnit's
-/// JSInterop lets us stub that -- we set it to always-confirm or
-/// always-deny per test and then assert OnDelete fired / didn't.
+/// Delete goes through <see cref="IConfirmationService"/>. We
+/// register <see cref="FakeConfirmationService"/> and flip its
+/// <c>AutoConfirm</c> per test to exercise the accept / decline
+/// paths.
 /// </summary>
 public class RoutesSectionTests
 {
     private static SignalkRoute Route(string id, string? name = null, double? distanceMeters = null) =>
         new() { Id = id, Name = name, Distance = distanceMeters };
 
+    /// <summary>Builds a bUnit TestContext with a FakeConfirmationService
+    /// registered. Returns the context + fake so tests can flip
+    /// AutoConfirm.</summary>
+    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    {
+        var ctx = new Bunit.TestContext();
+        var confirm = new FakeConfirmationService();
+        ctx.Services.AddSingleton<IConfirmationService>(confirm);
+        return (ctx, confirm);
+    }
+
     [Test]
     public async Task Hidden_When_No_Routes()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<RoutesSection>();
-        // Empty-list early-return: the whole section renders nothing.
         await Assert.That(cut.Markup.Trim()).IsEqualTo("");
     }
 
     [Test]
     public async Task ShowsRouteName_OrFallsBackToShortId()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("abcd1234-rest", "My Passage"), Route("aabbccdd-x") }));
         cut.Find(".section-toggle").Click();
 
-        // Named route: full name displayed. Unnamed route: first 8
-        // chars of id as fallback.
         await Assert.That(cut.Markup).Contains("My Passage");
         await Assert.That(cut.Markup).Contains("aabbccdd");
     }
@@ -47,19 +60,20 @@ public class RoutesSectionTests
     [Test]
     public async Task DistanceRendered_WhenProvided_ConvertedToNm()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r", "R", distanceMeters: 1852 * 12.5) }));
         cut.Find(".section-toggle").Click();
 
-        // 12.5 nm, one-decimal format.
         await Assert.That(cut.Markup).Contains("12.5 nm");
     }
 
     [Test]
     public async Task Toggle_Click_Fires_OnToggle_WithEnabledTrue()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         (SignalkRoute route, bool enabled)? captured = null;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
@@ -67,8 +81,6 @@ public class RoutesSectionTests
                 this, t => captured = t)));
         cut.Find(".section-toggle").Click();
 
-        // Checkbox starts unchecked (Enabled set is empty); clicking
-        // fires with enabled=true.
         cut.Find("input[type='checkbox']").Change(true);
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Value.route.Id).IsEqualTo("r1");
@@ -78,7 +90,8 @@ public class RoutesSectionTests
     [Test]
     public async Task GoButton_Fires_OnNavigate_WithTheSameRoute()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         SignalkRoute? captured = null;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
@@ -86,7 +99,6 @@ public class RoutesSectionTests
                 this, r => captured = r)));
         cut.Find(".section-toggle").Click();
 
-        // Buttons render in document order: Go, Edit, Delete.
         cut.FindAll(".route-action-btn")[0].Click();
 
         await Assert.That(captured).IsNotNull();
@@ -96,7 +108,8 @@ public class RoutesSectionTests
     [Test]
     public async Task EditButton_Fires_OnEdit_WithTheSameRoute()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         SignalkRoute? captured = null;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
@@ -112,9 +125,9 @@ public class RoutesSectionTests
     [Test]
     public async Task DeleteButton_ConfirmAccepted_Fires_OnDelete()
     {
-        using var ctx = new Bunit.TestContext();
-        // confirm() -> true: user accepts the delete prompt.
-        ctx.JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoConfirm = true;
         SignalkRoute? captured = null;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })
@@ -122,19 +135,19 @@ public class RoutesSectionTests
                 this, r => captured = r)));
         cut.Find(".section-toggle").Click();
 
-        // Buttons[2] is Delete.
         cut.FindAll(".route-action-btn")[2].Click();
 
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Id).IsEqualTo("r1");
+        await Assert.That(confirm.CallCount).IsEqualTo(1);
     }
 
     [Test]
     public async Task DeleteButton_ConfirmDeclined_DoesNotFire_OnDelete()
     {
-        using var ctx = new Bunit.TestContext();
-        // confirm() -> false: user bails.
-        ctx.JSInterop.Setup<bool>("confirm", _ => true).SetResult(false);
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoConfirm = false;
         bool fired = false;
         var cut = ctx.RenderComponent<RoutesSection>(p => p
             .Add(x => x.Routes, new[] { Route("r1", "R1") })

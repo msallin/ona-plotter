@@ -45,7 +45,7 @@
 <div class="mt-3">
     @if (loading)
     {
-        <p class="text-muted">Loading...</p>
+        <LoadingState Label="Loading resources..." />
     }
     else if (activeTab == "routes")
     {
@@ -251,15 +251,12 @@
         regions = regions.Where(rg => rg.Id != id).ToList();
     }
 
-    // Plain JS confirm() - same pattern the route-edit cancel uses.
-    // Works across desktop + iPad, and a helm dialog is preferable to
-    // a silent action when the consequence is a server-side delete.
-    [Inject] private IJSRuntime JS { get; set; } = default!;
-    private async Task<bool> Confirm(string message)
-    {
-        try { return await JS.InvokeAsync<bool>("confirm", message); }
-        catch (JSDisconnectedException) { return false; }
-    }
+    // Confirm via the shared service so a future styled-modal
+    // swap lands in ConfirmationService.cs once, not at every
+    // delete button across the app.
+    [Inject] private IConfirmationService Confirmations { get; set; } = default!;
+    private Task<bool> Confirm(string message) =>
+        Confirmations.ConfirmAsync(message);
 
     private static string NameOrId(string? name, string id) =>
         string.IsNullOrWhiteSpace(name) ? id : name!;

@@ -1,5 +1,7 @@
 @using OnaPlotter.Models
+@using OnaPlotter.Services
 @inject IJSRuntime JS
+@inject IConfirmationService Confirmations
 
 @* Server-stored waypoints. Each row has Go (set as active destination),
    Edit (rename via a browser prompt), and Delete (with confirm). Filters
@@ -87,10 +89,8 @@
 
     private async Task ConfirmDelete(SignalkWaypoint wp)
     {
-        bool ok;
-        try { ok = await JS.InvokeAsync<bool>("confirm",
-            $"Delete waypoint '{wp.Name ?? ShortId(wp.Id)}'?"); }
-        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+        bool ok = await Confirmations.ConfirmAsync(
+            $"Delete waypoint '{wp.Name ?? ShortId(wp.Id)}'?");
         if (ok) await OnDelete.InvokeAsync(wp);
     }
 }

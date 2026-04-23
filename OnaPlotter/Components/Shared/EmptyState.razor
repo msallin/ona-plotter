@@ -1,0 +1,34 @@
+@* Reusable empty-state block: shown when a list / table / map layer
+   has nothing to display. Title is primary; Message is a secondary
+   line; optional ChildContent renders below for an action link or
+   inline help.
+
+   Centralised so every page speaks the same "nothing to see here"
+   language -- Resources used one style, History used another,
+   Layers had three more. One component means a future illustration
+   / icon upgrade lands in one place. *@
+
+<div class="empty-state @(Compact ? "empty-state-compact" : "")" role="status">
+    <div class="empty-state-title">@Title</div>
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <div class="empty-state-message">@Message</div>
+    }
+    @if (ChildContent is not null)
+    {
+        <div class="empty-state-extra">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Message { get; set; }
+
+    /// <summary>When true, render in a smaller footprint (list row
+    /// height rather than card height). Used inside the Layers
+    /// sub-sections where a full-size empty block would look
+    /// oversized next to the other sections' populated content.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

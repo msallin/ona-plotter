@@ -56,13 +56,8 @@ public partial class Map
         editNavGuard = Nav.RegisterLocationChangingHandler(async ctx =>
         {
             if (!routeEditMode && !polygonEditMode) return;
-            bool ok;
-            try
-            {
-                ok = await JS.InvokeAsync<bool>("confirm",
-                    "You have an unsaved edit. Leave and discard it?");
-            }
-            catch (JSDisconnectedException) { return; }
+            bool ok = await Confirmations.ConfirmAsync(
+                "You have an unsaved edit. Leave and discard it?");
             if (!ok) ctx.PreventNavigation();
         });
     }

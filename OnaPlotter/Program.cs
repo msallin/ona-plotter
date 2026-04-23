@@ -21,6 +21,7 @@ builder.Services.AddSingleton<AisStore>();
 
 // UI services.
 builder.Services.AddSingleton<IToastService, ToastService>();
+builder.Services.AddSingleton<IConfirmationService, ConfirmationService>();
 builder.Services.AddSingleton<IPolarService, PolarService>();
 // Alarm rules are DI-registered; AlarmManager picks them up via
 // IEnumerable<IAlarmRule>. Adding a new rule is a one-line registration.

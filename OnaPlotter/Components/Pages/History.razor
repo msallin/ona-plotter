@@ -78,20 +78,14 @@
         }
         else if (loadAttempted)
         {
-            <div class="text-muted mt-2" style="font-size:0.8rem;">
-                No track data for this timespan.
-                <br />
-                <span style="color:var(--sk-text-muted); font-size:0.75rem;">
-                    Tracks come from a SignalK track-recording plugin (e.g. signalk-parquet,
-                    signalk-tracker). If you expected data, check the plugin is active on the server.
-                </span>
-            </div>
+            <EmptyState Compact="true"
+                        Title="No track data for this timespan"
+                        Message="Tracks come from a SignalK History provider (signalk-parquet, signalk-to-influxdb2). If you expected data, check the plugin is active on the server." />
         }
         else
         {
-            <div class="text-muted mt-2" style="font-size:0.8rem;">
-                Pick a timespan and tap <strong>Load</strong> to fetch the track.
-            </div>
+            <EmptyState Compact="true"
+                        Title="Pick a timespan and tap Load" />
         }
     </div>
 </div>

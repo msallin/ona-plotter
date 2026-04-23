@@ -331,9 +331,7 @@ public partial class Map
             var prompt = !string.IsNullOrEmpty(Data.ActiveRouteName)
                 ? $"Replace active course '{Data.ActiveRouteName}' with '{route.Name ?? route.Id}'?"
                 : $"Replace the active course with '{route.Name ?? route.Id}'?";
-            bool ok;
-            try { ok = await JS.InvokeAsync<bool>("confirm", prompt); }
-            catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
+            bool ok = await Confirmations.ConfirmAsync(prompt);
             if (!ok) return;
         }
 
