@@ -51,6 +51,13 @@ public sealed class AlarmManager : IAlarmManager
     // SHALLOW plus CPA coexisting). Value remembers the originating rule
     // so auto-clear / latch behaviour survives severity/message updates.
     private readonly Dictionary<AlarmKey, ActiveEntry> _active = [];
+
+    // Cached sort of _active. Invalidated on every mutation (Add/Remove/
+    // Clear) and re-materialised lazily on read. The ActiveAlarms
+    // property is hit from every Blazor render + every delta tick;
+    // without this cache the 5-iterator LINQ chain allocates 6-7
+    // objects per read at 10+ Hz.
+    private IReadOnlyList<AlarmInfo>? _activeAlarmsCache;
     private readonly List<DismissedAlarm> _history = [];
     // Per-key cooldown window after a dismiss. Keyed the same as _active
     // so a CPA dismiss on "vessels.a" doesn't silence CPA on "vessels.b".
@@ -72,13 +79,25 @@ public sealed class AlarmManager : IAlarmManager
     // Effect: if SHALLOW (TTI=0) and CPA (TCPA=5min) both fire at
     // Danger severity, SHALLOW surfaces first because it's happening
     // now, independent of rule-priority numbers.
-    public IReadOnlyList<AlarmInfo> ActiveAlarms => _active.Values
-        .OrderByDescending(e => e.Info.Severity)
-        .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
-        .ThenBy(e => e.Rule.Priority)
-        .Select(e => e.Info)
-        .Take(MaxActiveAlarms)
-        .ToList();
+    public IReadOnlyList<AlarmInfo> ActiveAlarms
+    {
+        get
+        {
+            if (_activeAlarmsCache is not null) return _activeAlarmsCache;
+            _activeAlarmsCache = _active.Values
+                .OrderByDescending(e => e.Info.Severity)
+                .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
+                .ThenBy(e => e.Rule.Priority)
+                .Select(e => e.Info)
+                .Take(MaxActiveAlarms)
+                .ToList();
+            return _activeAlarmsCache;
+        }
+    }
+
+    /// <summary>Invalidate the sorted cache on every _active mutation.
+    /// Called from Add/Remove/Clear call-sites below.</summary>
+    private void InvalidateActiveCache() => _activeAlarmsCache = null;
 
     public int HiddenAlarmsCount => Math.Max(0, _active.Count - MaxActiveAlarms);
 
@@ -212,6 +231,7 @@ public sealed class AlarmManager : IAlarmManager
             _active.Remove(key);
             changed = true;
         }
+        if (toDrop.Count > 0) InvalidateActiveCache();
 
         // Add-or-update from this tick's hits.
         foreach (var (key, (info, rule)) in thisTick)
@@ -225,6 +245,7 @@ public sealed class AlarmManager : IAlarmManager
                 if (existing.Info != info)
                 {
                     _active[key] = new ActiveEntry(info, rule);
+                    InvalidateActiveCache();
                     changed = true;
                 }
             }
@@ -236,6 +257,7 @@ public sealed class AlarmManager : IAlarmManager
                 // severity has escalated since then.
                 if (IsInDismissCooldown(key, info.Severity, now)) continue;
                 _active[key] = new ActiveEntry(info, rule);
+                InvalidateActiveCache();
                 changed = true;
             }
         }
@@ -256,6 +278,7 @@ public sealed class AlarmManager : IAlarmManager
             e.Rule.OnDismissed(e.Info, now);
         }
         _active.Clear();
+        InvalidateActiveCache();
         FireAlarmsChanged();
         return Task.CompletedTask;
     }
@@ -264,6 +287,7 @@ public sealed class AlarmManager : IAlarmManager
     {
         var key = new AlarmKey(alarm.Title, alarm.TargetKey);
         if (!_active.Remove(key, out var removed)) return Task.CompletedTask;
+        InvalidateActiveCache();
         var now = _now();
         LogHistory(removed.Info, now, DismissReason.UserDismissed);
         RecordDismissCooldown(key, removed.Info.Severity, now);
@@ -302,6 +326,7 @@ public sealed class AlarmManager : IAlarmManager
             LogHistory(_active[key].Info, now, DismissReason.UserSnoozed);
             _active.Remove(key);
         }
+        if (toDrop.Count > 0) InvalidateActiveCache();
 
         // Snooze is stronger than dismiss-cooldown; drop any cooldowns
         // for this target so the UI state doesn't carry stale "I saw

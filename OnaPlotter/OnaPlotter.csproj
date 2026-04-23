@@ -4,6 +4,14 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Ships only the invariant culture instead of the 2.6 MB of ICU
+         tables that Blazor otherwise bundles (icudt_CJK/no_CJK/EFIGS).
+         We don't localise the chartplotter, and every format call uses
+         CultureInfo.InvariantCulture explicitly, so the rest of ICU is
+         dead weight. Saves ~500 KB brotli / 2 MB raw on first load,
+         a meaningful chunk of cold-start on marine 4G. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <BlazorWebAssemblyLoadAllGlobalizationData>false</BlazorWebAssemblyLoadAllGlobalizationData>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

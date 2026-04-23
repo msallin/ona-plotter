@@ -417,12 +417,18 @@ public sealed class SignalkClient : IAsyncDisposable
                 // from the REST snapshot so vessels show their name instead
                 // of a bare MMSI on first paint. Best-effort -- any failure
                 // just leaves names to trickle in via live deltas.
-                _ = Task.Run(() => SeedVesselNamesFromRestAsync(ct), ct);
+                // Fire-and-forget the seed calls: WASM is single-threaded
+                // so Task.Run is pointless (just hides continuations from
+                // the debugger and swallows exceptions into a faulted
+                // wrapper). Bare `_ = FooAsync(ct)` surfaces unhandled
+                // exceptions on TaskScheduler.UnobservedTaskException
+                // instead.
+                _ = SeedVesselNamesFromRestAsync(ct);
 
                 // Identify ourselves via REST so we can filter own-boat out
                 // of the AIS list even on servers that never emit a hello
                 // with "self" or push own-boat only as "vessels.<urn>".
-                _ = Task.Run(() => ResolveSelfContextFromRestAsync(ct), ct);
+                _ = ResolveSelfContextFromRestAsync(ct);
 
                 // Subscriptions only fire on change, so a route active
                 // BEFORE our socket opens (another plotter, freeboard-sk
@@ -430,14 +436,14 @@ public sealed class SignalkClient : IAsyncDisposable
                 // arrives on the delta stream. The v2 Course API lives
                 // on its own REST surface which the delta stream doesn't
                 // cover for the initial state; fetch it once on connect.
-                _ = Task.Run(() => SeedSelfCourseFromRestAsync(ct), ct);
+                _ = SeedSelfCourseFromRestAsync(ct);
 
                 // design.draft is declared statically in vessel.json on
                 // most boats, so it never appears in deltas. There is
                 // no v2 design endpoint -- v1 is the only source --
                 // so this stays on the v1 REST surface. Narrow fetch:
                 // /vessels/self/design/draft only, not the whole tree.
-                _ = Task.Run(() => SeedSelfDesignDraftFromRestAsync(ct), ct);
+                _ = SeedSelfDesignDraftFromRestAsync(ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();

@@ -1126,24 +1126,38 @@
         // endpoints can 404 or time out (SignalK unreachable, plugin not
         // installed, webapp running standalone for dev). Degrade gracefully
         // - the map itself is still usable without these.
-        availableCharts = await SafeLoad(() => ChartApi.GetAllAsync(), "charts") ?? [];
+        // Parallelise the seven REST seed calls. Sequential they add
+        // ~700 ms on a 100 ms-RTT link (cold connection) before the map
+        // is interactive; Task.WhenAll issues them concurrently so the
+        // longest single call dominates. SafeLoad swallows per-call
+        // failures so one bad endpoint can't take the rest down.
+        var chartsTask   = SafeLoad(() => ChartApi.GetAllAsync(),   "charts");
+        var routesTask   = SafeLoad(() => RouteApi.GetAllAsync(),   "routes");
+        var waypointsTask= SafeLoad(() => WaypointApi.GetAllAsync(),"waypoints");
+        var notesTask    = SafeLoad(() => NoteApi.GetAllAsync(),    "notes");
+        var regionsTask  = SafeLoad(() => RegionApi.GetAllAsync(),  "regions");
+        var radarsTask   = SafeLoad(() => RadarApi.GetAllAsync(),   "radars");
+        var buddiesTask  = BuddyListApi.GetAllAsync();
+        await Task.WhenAll(chartsTask, routesTask, waypointsTask,
+            notesTask, regionsTask, radarsTask, buddiesTask);
+
+        availableCharts   = chartsTask.Result   ?? [];
         ApplyChartOrder();
-        availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? [];
-        loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? [];
-        loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? [];
-        loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? [];
+        availableRoutes   = routesTask.Result   ?? [];
+        loadedWaypoints   = waypointsTask.Result ?? [];
+        loadedNotes       = notesTask.Result     ?? [];
+        loadedRegions     = regionsTask.Result   ?? [];
         // Radar device discovery. Empty list when no radar-provider
         // plugin is installed, which is the common case; the Layers
         // panel hides the section entirely in that state.
-        availableRadars = (await SafeLoad(() => RadarApi.GetAllAsync(), "radars") ?? [])
-            .ToList();
+        availableRadars   = (radarsTask.Result ?? []).ToList();
         await EnsureRadarCapabilitiesAsync();
 
         // Optional: buddy-list plugin. Silently no-ops if not installed.
         // The returned list seeds AisStore so vessels tracked later get
         // IsBuddy set on creation; live updates still come via the `buddy`
         // delta path.
-        var buddies = await BuddyListApi.GetAllAsync();
+        var buddies = buddiesTask.Result;
         if (buddies is not null)
         {
             loadedBuddies = buddies;
