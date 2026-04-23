@@ -44,6 +44,10 @@ builder.Services.AddSingleton<INoteApi, NoteApi>();
 builder.Services.AddSingleton<IRegionApi, RegionApi>();
 builder.Services.AddSingleton<ICourseApi, CourseApi>();
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
+// Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
+// isn't installed; the map surfaces that as a toast rather than failing
+// the app startup.
+builder.Services.AddSingleton<IAnchorAlarmApi, AnchorAlarmApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.

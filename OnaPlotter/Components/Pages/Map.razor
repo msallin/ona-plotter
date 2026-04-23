@@ -18,6 +18,7 @@
 @inject IRegionApi RegionApi
 @inject ICourseApi CourseApi
 @inject IAutopilotApi AutopilotApi
+@inject IAnchorAlarmApi AnchorAlarmApi
 @inject ITrackApi TrackApi
 @inject IRadarApi RadarApi
 @inject ISignalKBaseUrl SkBaseUrl
@@ -2295,12 +2296,30 @@
     {
         if (module is null) return;
 
-        // Server-side anchor is owned by the SignalK plugin -- the button
-        // can't drop or clear it, so the tap would silently no-op.
-        // Surface that explicitly so the helm knows why nothing happened.
+        // Server-side anchor lives in signalk-anchoralarm-plugin.
+        // Drop is still owned by the plugin (rode counter / manual
+        // from its own web UI), but Raise is available via REST so
+        // we can clear it straight from the chart. Two-step confirm
+        // matches the manual-anchor raise below: an accidental brush
+        // on the button shouldn't silently kill the drift alarm.
         if (Data.AnchorActive)
         {
-            Toasts.Info("Anchor is managed by the SignalK plugin -- raise it from there");
+            bool ok = await Confirmations.ConfirmAsync("Raise anchor and stop the watch?");
+            if (!ok) return;
+
+            ApiResult r;
+            try { r = await AnchorAlarmApi.RaiseAsync(); }
+            catch (Exception ex) { Toasts.Error($"Raise anchor failed: {ex.Message}"); return; }
+
+            if (!r.Success)
+            {
+                // 404 usually means the plugin isn't installed on this
+                // server. Surface the reason so the helm knows whether
+                // to fall back to the plugin's own UI.
+                Toasts.Error($"Raise anchor failed: {r.Error ?? "server rejected"}");
+                return;
+            }
+            Toasts.Success("Anchor raised");
             return;
         }
 

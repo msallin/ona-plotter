@@ -368,15 +368,17 @@ public partial class Map
     // depth / anchor-drag alarms don't fire against a moving boat.
     private async Task NavigateRouteInternal(SignalkRoute route)
     {
-        // Server-side anchor is owned by a SignalK plugin and we don't
-        // have a plugin-agnostic API to raise it. Block the activation
-        // and tell the helm to raise the anchor first -- silently
-        // switching to a moving course while the drag alarm keeps
-        // ticking against a non-static vessel is worse than a loud
-        // "do this first" message.
+        // Server-side anchor is owned by signalk-anchoralarm-plugin.
+        // We could auto-raise it here via AnchorAlarmApi.RaiseAsync(),
+        // but "start route" + "raise anchor" are two deliberate
+        // actions on a boat; chaining them silently on a stray tap
+        // would drop the drift alarm without explicit intent. Better
+        // to block + tell the helm to tap the anchor button first
+        // (which now actually raises via the plugin REST endpoint,
+        // not just displays the old "managed elsewhere" toast).
         if (Data.AnchorActive)
         {
-            Toasts.Show("Raise anchor (via the anchor plugin) before starting a route",
+            Toasts.Show("Raise anchor before starting a route",
                 ToastService.ToastLevel.Warning);
             return;
         }
