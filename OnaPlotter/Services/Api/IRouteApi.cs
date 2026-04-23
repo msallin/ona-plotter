@@ -14,7 +14,12 @@ public interface IRouteApi
 {
     Task<List<SignalkRoute>> GetAllAsync(CancellationToken ct = default);
     Task<double[][]?> GetCoordinatesAsync(string href, CancellationToken ct = default);
-    Task<ApiResult> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default);
+    /// <summary>
+    /// POSTs a new route. <c>Value</c> is the server-generated uuid
+    /// on success; callers use it to activate the freshly-saved
+    /// route without reloading and diffing the full route list.
+    /// </summary>
+    Task<ApiResult<string>> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default);
     Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default);
 
     /// <summary>

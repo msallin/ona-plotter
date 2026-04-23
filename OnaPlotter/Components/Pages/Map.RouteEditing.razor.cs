@@ -212,78 +212,79 @@ public partial class Map
                 ? $"Route {DateTime.Now:yyyyMMdd}"
                 : routeEditName;
             string? existingId = routeEditId;
-            Services.Api.ApiResult r;
+            // newRouteId captures the id either way:
+            //   - edit flow: the same id we started with
+            //   - fresh flow: the uuid the server returns in the
+            //     POST response (via PostCreateAsync)
+            // Used below to locate the route in the refreshed list
+            // without a list-diff heuristic that was racy in
+            // multi-client setups.
+            string? newRouteId = null;
+            string? errMsg = null;
             try
             {
-                // Edit flow: rewrite the same id so the server keeps
-                // one route. Fresh flow: POST new and guess the id
-                // back from a post-save list diff.
-                r = existingId is not null
-                    ? await RouteApi.UpdateAsync(existingId, name, coords)
-                    : await RouteApi.SaveAsync(name, coords);
-                ok = r.Success;
+                if (existingId is not null)
+                {
+                    var r = await RouteApi.UpdateAsync(existingId, name, coords);
+                    ok = r.Success;
+                    if (!ok) errMsg = r.Error;
+                    if (ok) newRouteId = existingId;
+                }
+                else
+                {
+                    var r = await RouteApi.SaveAsync(name, coords);
+                    ok = r.Success;
+                    if (!ok) errMsg = r.Error;
+                    if (ok) newRouteId = r.Value;
+                }
             }
-            catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; r = Services.Api.ApiResult.Fail(ex.Message); }
+            catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; errMsg = ex.Message; }
 
             if (ok)
             {
                 Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
-                // Reload the list either way; the diff approach below
-                // only applies to fresh saves where the server assigns
-                // a new id. Edit-in-place uses the known id directly,
-                // which is both faster and multi-client-safe.
-                var prevIds = availableRoutes.Select(r => r.Id).ToHashSet();
+                // Reload the list so the newly-saved route shows up
+                // in Layers / search / route-switcher. The route
+                // id we already have (from the server response or
+                // the edit-in-place known id) is the source of
+                // truth for finding the object; no list diff.
                 availableRoutes = await SafeLoad(() => RouteApi.GetAllAsync(), "routes") ?? availableRoutes;
                 PrecomputeRouteBounds();
 
-                if (existingId is not null)
+                newRoute = !string.IsNullOrEmpty(newRouteId)
+                    ? availableRoutes.FirstOrDefault(r => r.Id == newRouteId)
+                    : null;
+
+                if (existingId is not null && newRoute is not null && module is not null)
                 {
-                    // Edit-in-place: find the updated route by its
-                    // known id and re-draw so the on-map polyline
-                    // reflects the geometry changes.
-                    newRoute = availableRoutes.FirstOrDefault(r => r.Id == existingId);
-                    if (newRoute is not null && module is not null)
+                    // Edit-in-place redraw: wipe the old polyline
+                    // so the geometry change takes effect.
+                    try { await module.InvokeVoidAsync("removeRoute", existingId); }
+                    catch (JSDisconnectedException) { }
+                    catch (JSException) { /* next addRoute replaces it */ }
+                    if (enabledRoutes.Contains(existingId))
                     {
-                        try { await module.InvokeVoidAsync("removeRoute", existingId); }
-                        catch (JSDisconnectedException) { }
-                        catch (JSException) { /* next addRoute replaces it */ }
-                        if (enabledRoutes.Contains(existingId))
-                        {
-                            try { await AddRouteToMap(newRoute); }
-                            catch (JSDisconnectedException) { }
-                            catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
-                        }
-                    }
-                }
-                else
-                {
-                    // Fresh save: guess the new id from the list diff.
-                    // Limitation: in a multi-client scenario (another
-                    // plotter saves a route during our same window)
-                    // this can grab that route instead. Acceptable for
-                    // a solo-plotter workflow; SK Node Server v2
-                    // returns the id in the POST body, which we'll
-                    // switch to once the upgrade is pending.
-                    var candidates = availableRoutes
-                        .Where(r => !string.IsNullOrEmpty(r.Id) && !prevIds.Contains(r.Id))
-                        .ToList();
-                    newRoute = candidates.FirstOrDefault(r =>
-                        string.Equals(r.Name, name, StringComparison.Ordinal))
-                        ?? candidates.FirstOrDefault();
-                    if (newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
-                    {
-                        enabledRoutes.Add(newRoute.Id);
-                        await Settings.SetEnabledRoutesAsync(enabledRoutes);
                         try { await AddRouteToMap(newRoute); }
                         catch (JSDisconnectedException) { }
                         catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
                     }
                 }
+                else if (existingId is null && newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
+                {
+                    // Fresh save: enable and draw on the map.
+                    enabledRoutes.Add(newRoute.Id);
+                    await Settings.SetEnabledRoutesAsync(enabledRoutes);
+                    try { await AddRouteToMap(newRoute); }
+                    catch (JSDisconnectedException) { }
+                    catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
+                }
                 RebuildFilteredLayers();
             }
             else if (Toasts.Active.Count == 0) // only if we haven't already toasted the exception
             {
-                Toasts.Error("Failed to save route");
+                Toasts.Error(string.IsNullOrWhiteSpace(errMsg)
+                    ? "Failed to save route"
+                    : $"Failed to save route: {errMsg}");
             }
         }
         finally

@@ -46,13 +46,20 @@ public sealed class RouteApi : IRouteApi
         return coords.Value.ToLeafletLineString();
     }
 
-    public Task<ApiResult> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
+    public Task<ApiResult<string>> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
     {
-        // POST /resources/routes -> new id. Used for "start from
-        // scratch" edit sessions.
+        // POST /resources/routes -> new id. Returns the server-
+        // generated uuid in Value so the caller can activate /
+        // render the route without reloading the full list. Before
+        // this was switched to PostCreateAsync the caller had to
+        // refetch /resources/routes and DIFF against the prior id
+        // set to find the fresh route, which was (a) racy against
+        // the same server's next broadcast and (b) quietly wrong in
+        // multi-plotter setups where another client might have
+        // added its own route in the same interval.
         var body = BuildRouteBody(name, coordsLatLon);
         var url = _baseUrl.Combine(SignalKUrls.RoutesPath);
-        return ResourceHttp.PostAsync(_http, url, body, ct);
+        return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
 
     public Task<ApiResult> UpdateAsync(string id, string name, double[][] coordsLatLon, CancellationToken ct = default)
