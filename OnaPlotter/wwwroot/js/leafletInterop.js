@@ -775,7 +775,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             addMeasurePoint(e.latlng.lat, e.latlng.lng);
             return;
         }
-        if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu');
+        if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu').catch(() => {});
         clearBearingLine();
     });
     // Double-click: toggle bearing/distance measurement line.
@@ -792,7 +792,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         const sz = map.getSize();
         const x = Math.min(pt.x, sz.x - 175);
         const y = Math.min(pt.y, sz.y - 125);
-        dotNetRef.invokeMethodAsync('OnMapContextMenu', latlng.lat, latlng.lng, Math.max(x, 5), Math.max(y, 5));
+        // .catch: dotNetRef can be disposed between the null-check above
+        // and the dispatch landing on the C# side. Same pattern across
+        // every invokeMethodAsync callsite -- silent-swallow is correct
+        // because the target page is already unmounting.
+        dotNetRef.invokeMethodAsync('OnMapContextMenu',
+            latlng.lat, latlng.lng, Math.max(x, 5), Math.max(y, 5)).catch(() => {});
     }
 
     map.on('contextmenu', (e) => {
@@ -873,7 +878,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
                 buddy.getAttribute('data-ctx') || '',
                 buddy.getAttribute('data-mmsi') || null,
                 buddy.getAttribute('data-nm') || null,
-                buddy.getAttribute('data-is') === '1');
+                buddy.getAttribute('data-is') === '1').catch(() => {});
             return;
         }
         const snooze = e.target.closest('a[data-ona-snooze]');
@@ -882,7 +887,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             e.stopPropagation();
             dotNetRef.invokeMethodAsync('OnSnoozeVessel',
                 snooze.getAttribute('data-ctx') || '',
-                snooze.getAttribute('data-nm') || '');
+                snooze.getAttribute('data-nm') || '').catch(() => {});
             return;
         }
     });
@@ -2932,7 +2937,7 @@ function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
             return;
         }
         reset();
-        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id);
+        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id).catch(() => {});
     });
     // Closing the popup resets confirm state so re-opening starts fresh.
     popup.once('popupclose', reset);
@@ -3286,7 +3291,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         const isSpecial = key === '?' || key === 'escape';
         if (isLetter || isSpecial) {
             e.preventDefault();
-            dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key);
+            dotNetObjRef.invokeMethodAsync('OnKeyShortcut', key).catch(() => {});
         }
     };
     document.addEventListener('keydown', keyHandler);
@@ -3350,6 +3355,12 @@ export function dispose() {
     // Clear any pending move-end debounce before tearing down so a
     // straggling setTimeout can't resume into a disposed map.
     if (boundsTimer) { clearTimeout(boundsTimer); boundsTimer = null; }
+    // Null dotNetRef BEFORE tearing down the map. Leaflet's map.remove()
+    // fires 'unload' synchronously; any handler that tries to call
+    // dotNetRef.invokeMethodAsync during unload would otherwise hit a
+    // still-live reference that C# has already disposed, producing the
+    // "no tracked object with id X" error in the console.
+    dotNetRef = null;
     if (map) { map.remove(); map = null; }
     boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
     osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
@@ -3388,5 +3399,6 @@ export function dispose() {
     for (const ctx of Object.keys(aisTrailLines)) delete aisTrailLines[ctx];
     for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];
     guardZoneRing = null;
-    dotNetRef = null;
+    // dotNetRef is now nulled at the TOP of dispose() so map.remove()'s
+    // synchronous unload handlers can't race into a half-disposed ref.
 }

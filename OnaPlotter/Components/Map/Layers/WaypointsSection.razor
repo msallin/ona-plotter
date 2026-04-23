@@ -23,7 +23,7 @@
 {
     @foreach (var wp in filtered)
     {
-        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+        <div @key="wp.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
             <div class="chart-item-body">
                 <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
             </div>

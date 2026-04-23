@@ -24,7 +24,7 @@
     {
         bool enabled = Enabled.Contains(r.Id);
         bool transmitting = string.Equals(r.Status, "transmit", StringComparison.OrdinalIgnoreCase);
-        <label class="chart-item">
+        <label @key="r.Id" class="chart-item">
             <input type="checkbox" checked="@enabled"
                    @onchange="(e) => OnToggle.InvokeAsync((r, (bool)(e.Value ?? false)))" />
             <div class="chart-item-body">

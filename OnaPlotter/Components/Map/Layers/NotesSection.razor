@@ -29,7 +29,7 @@
 {
     @foreach (var n in filtered)
     {
-        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+        <div @key="n.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
             <div class="chart-item-body">
                 <div class="chart-name">@(string.IsNullOrWhiteSpace(n.Title) ? "(untitled)" : n.Title)</div>
                 @if (!string.IsNullOrWhiteSpace(n.Description))

@@ -19,7 +19,8 @@
         var live = buddy.Mmsi is not null
             ? Vessels.FirstOrDefault(v => v.Mmsi == buddy.Mmsi)
             : null;
-        <div class="chart-item vessel-row vessel-buddy"
+        <div @key="@(buddy.Mmsi ?? buddy.Name)"
+             class="chart-item vessel-row vessel-buddy"
              role="button"
              tabindex="0"
              aria-label="Focus on buddy @buddy.Name"

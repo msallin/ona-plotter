@@ -60,8 +60,10 @@
 
     private async Task OnNameInput(ChangeEventArgs e)
     {
-        Name = e.Value?.ToString() ?? "";
-        await NameChanged.InvokeAsync(Name);
+        // Don't mutate the [Parameter] -- see RouteEditPanel.OnNameInput
+        // for why. Parent owns state; child just notifies.
+        var newName = e.Value?.ToString() ?? "";
+        await NameChanged.InvokeAsync(newName);
     }
 
     // "48.2144° N, 11.5753° E" -- matches RouteEditPanel so the two

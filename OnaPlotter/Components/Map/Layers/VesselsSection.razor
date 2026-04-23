@@ -14,7 +14,8 @@
 {
     @foreach (var vessel in Vessels)
     {
-        <div class="chart-item vessel-row @VesselRowClass(vessel)"
+        <div @key="vessel.Context"
+             class="chart-item vessel-row @VesselRowClass(vessel)"
              role="button"
              tabindex="0"
              aria-label="Focus on vessel @vessel.DisplayName"

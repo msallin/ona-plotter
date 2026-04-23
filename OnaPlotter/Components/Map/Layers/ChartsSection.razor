@@ -46,7 +46,7 @@
         int listIdx = rendering ? enabledInOrder.FindIndex(c => c.Identifier == chart.Identifier) : -1;
         bool upEnabled = listIdx > 0;
         bool downEnabled = listIdx >= 0 && listIdx < enabledInOrder.Count - 1;
-        <label class="chart-item">
+        <label @key="chart.Identifier" class="chart-item">
             <input type="checkbox" checked="@inQuickBar"
                    @onchange="(e) => OnToggleQuickBar.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
             <div class="chart-item-body">

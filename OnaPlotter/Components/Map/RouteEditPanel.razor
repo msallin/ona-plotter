@@ -86,8 +86,12 @@
 
     private async Task OnNameInput(ChangeEventArgs e)
     {
-        Name = e.Value?.ToString() ?? "";
-        await NameChanged.InvokeAsync(Name);
+        // Don't mutate the [Parameter] directly -- Blazor overwrites on
+        // the next parent render, which fights the user's typing if the
+        // parent state round-trip is slow. Just bubble the new value;
+        // the parent owns the state.
+        var newName = e.Value?.ToString() ?? "";
+        await NameChanged.InvokeAsync(newName);
     }
 
     // "48.2144° N, 11.5753° E" style. Keeps the panel scannable at a

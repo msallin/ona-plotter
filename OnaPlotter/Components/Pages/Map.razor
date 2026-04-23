@@ -364,7 +364,8 @@
                          .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
                 bool active = enabledCharts.Contains(chart.Identifier);
-                <button class="chart-quick-chip @(active ? "active" : "")"
+                <button @key="chart.Identifier"
+                        class="chart-quick-chip @(active ? "active" : "")"
                         @onclick="() => ToggleChart(chart, !active)"
                         aria-pressed="@(active ? "true" : "false")"
                         title="@(active ? "Showing -- tap to hide" : "Hidden -- tap to show")">

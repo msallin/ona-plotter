@@ -14,7 +14,7 @@
 {
     @foreach (var route in Routes)
     {
-        <div class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
+        <div @key="route.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
             <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
                 <input type="checkbox" checked="@Enabled.Contains(route.Id)"
                        @onchange="(e) => OnToggle.InvokeAsync((route, (bool)(e.Value ?? false)))" />
