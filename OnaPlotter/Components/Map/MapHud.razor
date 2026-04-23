@@ -330,7 +330,12 @@
             </g>
             <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
         </svg>
-        <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;</span></div>
+        @* Suffix T or M so the helm knows which reference the number
+           is in. With 15° magnetic variation in some cruising grounds
+           that's the difference between the rocks and the channel.
+           Derived from PreferMagneticHeading so the label always
+           matches the value actually being displayed. *@
+        <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;@(Data.Heading is null ? "" : (Data.PreferMagneticHeading ? "M" : "T"))</span></div>
         @if (IsExpanded("br"))
         {
             <div class="hud-extra">
@@ -338,7 +343,7 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k">COG</span>
-                        <span class="hud-extra-v">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></span>
+                        <span class="hud-extra-v">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;@(Data.PreferMagneticCourse ? "M" : "T")</span></span>
                     </div>
                 }
                 @if (LeewayDeg is int lw)

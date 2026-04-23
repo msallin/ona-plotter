@@ -2320,12 +2320,32 @@
     {
         if (module is null) return;
 
-        if (!mobActive && Data.Latitude is not null && Data.Longitude is not null)
+        if (!mobActive)
         {
-            await module.InvokeVoidAsync("setMob", Data.Latitude, Data.Longitude);
+            // If the GPS is dead at the exact moment the user taps MOB,
+            // silently doing nothing is the worst outcome. Better to
+            // tell them immediately so they can try again, raise VHF,
+            // or use a handheld GPS. Don't set mobActive either, so the
+            // button UI reflects the un-set state.
+            if (Data.Latitude is not double lat || Data.Longitude is not double lon)
+            {
+                Toasts.Error("MOB: no GPS position -- use VHF and handheld");
+                return;
+            }
+            await module.InvokeVoidAsync("setMob", lat, lon);
             mobActive = true;
+            // setMob also plays a two-tone chime so the helm has
+            // audio confirmation even if they were looking overboard
+            // when the button was pressed. Persistent toast carries
+            // the exact lat/lon so the helm can read it on the radio.
+            var ns = lat >= 0 ? 'N' : 'S';
+            var ew = lon >= 0 ? 'E' : 'W';
+            Toasts.Show(
+                $"MOB dropped {DateTime.Now:HH:mm:ss} -- {Math.Abs(lat):F5}\u00B0{ns}, {Math.Abs(lon):F5}\u00B0{ew}",
+                ToastService.ToastLevel.Success,
+                durationSec: 30);
         }
-        else if (mobActive)
+        else
         {
             // Guard against false-trigger clears: a kid leaning on the button,
             // a double-tap in heavy seas, or an accidental keyboard 'M' while
@@ -2339,7 +2359,6 @@
             await module.InvokeVoidAsync("clearMob");
             mobActive = false;
         }
-        // No position available: do nothing, don't toggle state.
     }
 
     private async Task ToggleAnchor()

@@ -87,10 +87,16 @@
        when there's nothing to stop. *@
     @if (RouteNavigating)
     {
-        <button class="ctrl-btn ctrl-btn-danger" @onclick="OnStopNavigation"
-                title="Stop navigation -- clear the active route / destination">
+        @* Two-step confirm: an accidental tap on the red button in a
+           rolling cockpit would silently kill the active route. First
+           tap flips the button into confirm state; second tap within
+           3 s actually stops. Matches the waypoint/note/region popup
+           delete pattern already used elsewhere. *@
+        <button class="ctrl-btn ctrl-btn-danger @(stopConfirming ? "ctrl-btn-confirming" : "")"
+                @onclick="OnStopClicked"
+                title="@(stopConfirming ? "Tap again to confirm" : "Stop navigation -- clear the active route / destination")">
             <span class="ctrl-ico">@((MarkupString)Icons.X)</span>
-            <span class="ctrl-lbl">Stop</span>
+            <span class="ctrl-lbl">@(stopConfirming ? "Confirm?" : "Stop")</span>
         </button>
     }
     <button class="ctrl-btn ctrl-btn-danger @(MobActive ? "active" : "")" @onclick="OnToggleMob" title="Man overboard (M)">
@@ -220,6 +226,34 @@
     /// letters on button labels. Driven by IAppSettings.ShowKeyboardHints;
     /// default off since most users are on touch and don't see them.</summary>
     [Parameter] public bool ShowKeyboardHints { get; set; }
+
+    // Two-step Stop-Navigation confirm state. First tap arms; second
+    // tap within StopConfirmWindowMs invokes the parent callback.
+    // A rolling cockpit or pocket brush shouldn't silently kill the
+    // active route. Window reuses the waypoint-delete timeout so the
+    // confirm affordances feel consistent.
+    private bool stopConfirming;
+    private System.Threading.Timer? stopConfirmTimer;
+    private const int StopConfirmWindowMs = 3000;
+
+    private async Task OnStopClicked()
+    {
+        if (stopConfirming)
+        {
+            stopConfirming = false;
+            stopConfirmTimer?.Dispose();
+            stopConfirmTimer = null;
+            await OnStopNavigation.InvokeAsync();
+            return;
+        }
+        stopConfirming = true;
+        stopConfirmTimer?.Dispose();
+        stopConfirmTimer = new System.Threading.Timer(_ =>
+        {
+            stopConfirming = false;
+            _ = InvokeAsync(StateHasChanged);
+        }, null, StopConfirmWindowMs, Timeout.Infinite);
+    }
 
     // Dot indicator on the More button when any of its contents is on,
     // so Night / Laylines / Measure being active is visible without

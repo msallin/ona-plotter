@@ -951,6 +951,20 @@ article.content:has(.map-container) {
     box-shadow: inset 0 0 0 1px rgba(var(--sev-danger-rgb), 0.6);
     animation: mob-glow 1.5s ease-in-out infinite;
 }
+/* Two-step confirm state on the Stop-Navigation button: first tap
+   arms, second tap invokes. Flashing accent (same palette as the
+   waypoint-delete confirm) reads as "acknowledged, tap again to
+   commit". Animation killed under reduced-motion (see end of file). */
+.ctrl-btn-confirming {
+    background: rgba(var(--sev-danger-rgb), 0.6);
+    color: #fff;
+    box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 0.95);
+    animation: ctrl-confirming-pulse 0.9s ease-in-out infinite;
+}
+@keyframes ctrl-confirming-pulse {
+    0%, 100% { box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 0.95); }
+    50%      { box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 1), 0 0 0 3px rgba(var(--sev-danger-rgb), 0.35); }
+}
 
 @keyframes mob-glow {
     0%, 100% { box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.6), 0 0 4px rgba(239, 68, 68, 0.3); }
@@ -4008,6 +4022,17 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .map-container.dark-ops .leaflet-tile-pane {
     filter: grayscale(1) brightness(0.35) contrast(1.1) sepia(0.4) hue-rotate(-30deg);
 }
+/* Night mode also needs to red-shift the chart tile rasters -- the
+   rest of the UI flips to warm red via token overrides, but Leaflet's
+   OSM / OpenSeaMap tiles are bitmap PNGs and stay bright white without
+   a pane-level filter. One bright chart tile ruins dark adaptation
+   the moment the helm glances down. Red-leaning sepia + brightness
+   cut keeps the chart legible without blowing the helmsman's eyes;
+   vector overlays are un-touched so the AIS palette / laylines /
+   course line keep their hues. */
+.map-container.night-mode .leaflet-tile-pane {
+    filter: brightness(0.4) sepia(0.8) hue-rotate(-30deg) saturate(1.4);
+}
 
 /* Big-type mode: scales the four corner HUD values up so they read
    from across a cockpit / helm. CSS-only; triggered by a Settings
@@ -5141,7 +5166,8 @@ html[data-slow-client="1"] * {
     .cpa-pulse,
     .depth-danger,
     .hud-card-progress-alarm,
-    .edit-pulse {
+    .edit-pulse,
+    .ctrl-btn-confirming {
         animation: none !important;
     }
 

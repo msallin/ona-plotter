@@ -1773,6 +1773,37 @@ export function setMob(lat, lon) {
         .setLatLng([(selfLat + lat)/2, (selfLon + lon)/2])
         .setContent('MOB')
         .addTo(map);
+    // Audible confirmation: the helm may have been looking overboard
+    // when they pressed the button and can't see the pulse animation.
+    // Two-tone chime (880/660 Hz, same palette as the connection
+    // alarm, but once-only). Inline AudioContext so setMob doesn't
+    // depend on MainLayout's module reference; AudioContext is cheap
+    // to spin up and is garbage-collected when this scope ends.
+    try { playMobChime(); } catch (_) { /* audio blocked in context */ }
+}
+
+function playMobChime() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const beep = (freq, atSec, durMs) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime + atSec);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + atSec + durMs / 1000);
+        osc.start(ctx.currentTime + atSec);
+        osc.stop(ctx.currentTime + atSec + durMs / 1000);
+    };
+    beep(880, 0,    220);
+    beep(660, 0.26, 220);
+    beep(880, 0.54, 260);
+    // Close the context shortly after the last note so the ~1s lifetime
+    // doesn't linger. Safari occasionally warns about >6 live contexts.
+    setTimeout(() => { try { ctx.close(); } catch (_) {} }, 1200);
 }
 
 export function clearMob() {
