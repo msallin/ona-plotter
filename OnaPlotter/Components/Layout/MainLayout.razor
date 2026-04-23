@@ -11,12 +11,13 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
+<a href="#main-content" class="skip-link">Skip to content</a>
 <div class="page theme-@Settings.Theme @(Settings.NightMode ? $"night-mode-global night-mode-{Settings.NightModePreset}" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
 
-    <main>
+    <main id="main-content">
         <div class="top-row px-4">
             <span class="connection-status @ConnectionClass" title="@ConnectionTooltip">
                 <span class="connection-dot @DotClass"></span>
@@ -58,7 +59,15 @@
         @{ var hiddenAlarms = Alarms.HiddenAlarmsCount; }
         @if (activeAlarms.Count > 0)
         {
-            <div class="alarm-banner-stack">
+            @* role=alert + aria-live=assertive so screen readers
+               announce every CPA / Shallow / Anchor alarm the moment
+               it lands. Without this SR users get zero audio cue from
+               the banner stack; the audible alarm speaker is the only
+               signal and it's trivially silenced. aria-atomic means
+               the whole banner is re-read on change, not just the diff
+               (a changed TCPA on the same target reads as a fresh
+               announcement). *@
+            <div class="alarm-banner-stack" role="alert" aria-live="assertive" aria-atomic="true">
                 @foreach (var a in activeAlarms)
                 {
                     @* oncontextmenu:preventDefault silences the iOS /
@@ -173,14 +182,19 @@
                on desktop (just serves as an outside-click target), dimmed
                on phone under the bottom-sheet so the sheet reads as modal. *@
             <div class="alarm-log-backdrop" @onclick="ToggleAlarmLog"></div>
-            <div class="alarm-log-panel @(alarmLogOpen ? "alarm-log-open" : "")" @onclick:stopPropagation>
+            <div class="alarm-log-panel @(alarmLogOpen ? "alarm-log-open" : "")"
+                 role="dialog" aria-modal="true" aria-labelledby="alarm-log-title"
+                 tabindex="-1"
+                 @onclick:stopPropagation
+                 @onkeydown="OnAlarmLogKeyDown">
                 @* Tappable on mobile: the grab-handle affordance
                    telegraphs "dismiss me", so it had better actually
-                   dismiss. Clicking anywhere above the header works too. *@
-                <div class="alarm-log-handle" role="button" aria-label="Close"
-                     @onclick="ToggleAlarmLog"></div>
+                   dismiss. Real <button> so keyboard Space/Enter work
+                   without a separate key handler. *@
+                <button type="button" class="alarm-log-handle" aria-label="Close alarm log"
+                        @onclick="ToggleAlarmLog"></button>
                 <div class="alarm-log-header">
-                    <strong>Alarm log</strong>
+                    <strong id="alarm-log-title">Alarm log</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>
                 </div>
                 @if (Alarms.DismissedHistory.Count == 0)
@@ -209,14 +223,21 @@
             @Body
         </article>
 
-        @* === Toast notifications === *@
+        @* === Toast notifications ===
+           role=status + aria-live=polite so transient status ("Saved",
+           "Reconnecting...") reaches screen-reader users. Errors get a
+           per-item aria-live=assertive so a failure isn't queued
+           behind a trailing success toast. *@
         @if (Toasts.Active.Count > 0)
         {
-            <div class="toast-stack">
+            <div class="toast-stack" role="status" aria-live="polite">
                 @foreach (var t in Toasts.Active)
                 {
                     <div class="toast-item toast-@(t.Level.ToString().ToLowerInvariant())"
-                         @key="t.Id" @onclick="() => Toasts.Dismiss(t.Id)">
+                         @key="t.Id"
+                         role="status"
+                         aria-live="@(t.Level == ToastService.ToastLevel.Error ? "assertive" : "polite")"
+                         @onclick="() => Toasts.Dismiss(t.Id)">
                         <span class="toast-message">@t.Message</span>
                         @if (t.ActionLabel is not null && t.Action is not null)
                         {
@@ -345,6 +366,19 @@
     private void ToggleAlarmLog()
     {
         alarmLogOpen = !alarmLogOpen;
+    }
+
+    /// <summary>Keyboard handler for the alarm-log modal dialog.
+    /// Escape closes; nothing else is trapped because the content is
+    /// read-only (a list of past alarms) and tabbing naturally cycles
+    /// the two close buttons. A future content-rich panel should add
+    /// a real focus-trap loop.</summary>
+    private void OnAlarmLogKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && alarmLogOpen)
+        {
+            alarmLogOpen = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

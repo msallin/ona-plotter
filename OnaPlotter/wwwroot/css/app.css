@@ -5090,3 +5090,71 @@ html[data-slow-client="1"] * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
 }
+
+/* Skip link for keyboard users: off-screen until focused, pops into
+   view at the top-left when Tab lands on it. Lets a keyboard-only
+   helm bypass the 10-item nav on every page, per WCAG 2.4.1. */
+.skip-link {
+    position: absolute;
+    top: -999px;
+    left: 8px;
+    z-index: var(--z-modal);
+    padding: 8px 14px;
+    background: var(--sk-surface);
+    color: var(--sk-text);
+    border: 2px solid var(--sk-accent);
+    border-radius: 6px;
+    font-weight: 600;
+    text-decoration: none;
+}
+.skip-link:focus {
+    top: 8px;
+}
+
+/* ===== Reduced motion =====
+   Users with vestibular disorders (and iPad users who've toggled
+   "Reduce Motion" in Accessibility Settings) should not see the full
+   suite of pulses, blinks, and breathing animations we use for
+   discovery cues. WCAG 2.3.3 (AAA) + 2.2.2 (A).
+
+   Policy:
+   * Functional feedback that MUST animate (the hold-to-dismiss fill,
+     the route-edit "unsaved" pulse) keeps its animation because it
+     communicates state not decoration.
+   * Alarm banner flash, MOB ping, coachmark breathe, connection
+     pulse, value-change pulse, anchor-alert flash are all purely
+     decorative cues on top of visible state changes -- safe to kill.
+   Uses `animation: none !important` to override keyframe rules that
+   already win on specificity against a plain reset. Keep this block
+   the LAST rule in the file so nothing else overrides it. */
+@media (prefers-reduced-motion: reduce) {
+    .alarm-flash,
+    .alarm-banner.alarm-danger,
+    .conn-pulse,
+    .value-pulse,
+    .mob-pulse,
+    .mob-glow,
+    .mob-icon .mob-pulse,
+    .touch-coachmark,
+    .welcome-card,
+    .anchor-alarm,
+    .cpa-pulse,
+    .depth-danger,
+    .hud-card-progress-alarm,
+    .edit-pulse {
+        animation: none !important;
+    }
+
+    /* Also cut scroll/transform smoothing that some users find
+       nauseating. Leaflet's own map panning uses requestAnimationFrame
+       regardless; this targets CSS transitions on app panels. */
+    .hud-panel,
+    .chart-quick-bar,
+    .map-controls,
+    .touch-coachmark,
+    .welcome-card,
+    .toast-item {
+        transition: none !important;
+    }
+}
+
