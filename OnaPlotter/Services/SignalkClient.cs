@@ -754,11 +754,41 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (val.Path == "notifications.navigation.course.perpendicularPassed"
                     || val.Path == "notifications.navigation.course.arrivalCircleEntered")
                 {
-                    bool armed = val.Value is JsonElement ne
-                        && ne.ValueKind == JsonValueKind.Object
-                        && ne.TryGetProperty("state", out var stateEl)
-                        && stateEl.ValueKind == JsonValueKind.String
-                        && !string.Equals(stateEl.GetString(), "normal", StringComparison.Ordinal);
+                    // Fail-safe: treat any non-"normal" state as armed, AND
+                    // treat a notification object with a MISSING state
+                    // property as armed too. Older course-provider builds
+                    // sometimes emit the object without `state` when the
+                    // notification is active; the stricter "state must be
+                    // present and non-normal" interpretation silently
+                    // dropped those. Better to nuisance-fire once than
+                    // miss a genuine arrival signal.
+                    bool armed = false;
+                    if (val.Value is JsonElement ne && ne.ValueKind == JsonValueKind.Object)
+                    {
+                        if (ne.TryGetProperty("state", out var stateEl)
+                            && stateEl.ValueKind == JsonValueKind.String)
+                        {
+                            var s = stateEl.GetString();
+                            // Any state other than the explicit normal/null
+                            // clearance words counts as armed. Unknown
+                            // severities (alert/warn/alarm/emergency/
+                            // whatever the plugin invents) fail safe as
+                            // armed rather than being silently dropped.
+                            armed = !string.Equals(s, "normal", StringComparison.Ordinal)
+                                 && !string.Equals(s, "cleared", StringComparison.Ordinal);
+                        }
+                        else
+                        {
+                            // Object present but no `state` -- treat as armed.
+                            armed = true;
+                        }
+                    }
+                    else if (val.Value is JsonElement boolEl2
+                        && boolEl2.ValueKind == JsonValueKind.True)
+                    {
+                        // Bare bool `true` form (some v3 plugin builds).
+                        armed = true;
+                    }
                     _logger.LogInformation("CourseNotification {Path} armed={Armed}", val.Path, armed);
                     _data.ApplyBool(val.Path, armed);
                     changed = true;

@@ -761,6 +761,36 @@ article.content:has(.map-container) {
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: rgba(255,255,255,0.5);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+/* Freshness chip inline with a HUD label. Two tiers: stale (amber,
+   "sensor lagging") vs dead (red, "don't trust this"). Chip reads at
+   a glance without competing with the primary reading; the dead tier
+   additionally dims the value below so a frozen depth doesn't look
+   like a live 3.2 m. */
+.hud-stale-badge {
+    font-size: 0.55rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 1px 5px;
+    border-radius: 8px;
+    color: var(--sev-warn);
+    background: rgba(var(--sev-warn-rgb), 0.12);
+    border: 1px solid rgba(var(--sev-warn-rgb), 0.45);
+    text-transform: uppercase;
+    line-height: 1.1;
+}
+.hud-dead-badge {
+    color: var(--sev-danger);
+    background: rgba(var(--sev-danger-rgb), 0.12);
+    border-color: rgba(var(--sev-danger-rgb), 0.45);
+}
+.hud-value-dead {
+    opacity: 0.55;
+    text-decoration: line-through;
+    text-decoration-color: rgba(var(--sev-danger-rgb), 0.5);
 }
 
 .hud-unit {

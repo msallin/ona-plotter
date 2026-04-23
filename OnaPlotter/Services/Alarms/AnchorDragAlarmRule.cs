@@ -61,6 +61,22 @@ public sealed class AnchorDragAlarmRule : IAlarmRule
         }
         if (!double.IsFinite(max) || !double.IsFinite(cur)) return null;
 
+        // Don't trust a frozen currentRadius: if the anchor-alarm plugin
+        // stopped publishing (server crashed, network dropped, GPS died)
+        // the last seen value sits on the model forever. Raising a drag
+        // alarm off stale data would be a false positive; staying silent
+        // off stale data would mask a real drag that coincided with the
+        // dropout. The lesser evil is to not alarm on stale data and
+        // rely on the connection-status indicator to flag the drop.
+        // The HUD separately surfaces the staleness so the helm knows.
+        if (data.FreshnessOf(data.AnchorRadiusUpdatedUtc) == FieldFreshness.Dead)
+        {
+            // Don't clear _alarmed; if we were alarmed before the dropout,
+            // the last banner stays up (AutoClear=true on the manager
+            // will decide to evict once we return null a few times).
+            return null;
+        }
+
         double upper = max + HysteresisMeters;
         double lower = max - HysteresisMeters;
 

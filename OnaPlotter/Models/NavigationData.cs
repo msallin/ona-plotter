@@ -14,6 +14,48 @@ public sealed class NavigationData
     public double? Longitude { get; private set; }
     public double? Depth { get; private set; }
 
+    // --- Per-field freshness timestamps ---
+    // Safety-critical fields carry a UTC update time so HUDs can badge
+    // "stale" / "Xs ago" rather than showing a frozen sensor value
+    // indefinitely. Covers the audit's "depth sensor dies, HUD reads
+    // 3.2m forever" and "GPS loss while anchored" scenarios.
+    //
+    // Only fields the audit flagged are instrumented; adding new ones
+    // is a two-line change (timestamp field + setter assignment). A
+    // blanket per-field dictionary would be more uniform but costs
+    // allocation per tick; this explicit set is zero-alloc in the hot
+    // path.
+    public DateTime? DepthUpdatedUtc { get; private set; }
+    public DateTime? PositionUpdatedUtc { get; private set; }
+    public DateTime? AnchorRadiusUpdatedUtc { get; private set; }
+
+    /// <summary>Clock used for *UpdatedUtc stamps. Defaults to the
+    /// system UTC clock; tests inject a deterministic one.</summary>
+    private readonly Func<DateTime> _now;
+
+    public NavigationData() : this(null) { }
+
+    /// <summary>Primary ctor; the parameterless overload forwards here
+    /// with a null clock (falls back to <see cref="DateTime.UtcNow"/>).</summary>
+    public NavigationData(Func<DateTime>? now)
+    {
+        _now = now ?? (() => DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Returns a freshness category for a timestamped field. Lets the
+    /// HUD render "live" / "stale" / "dead" without each card reinventing
+    /// the thresholds.
+    /// </summary>
+    public FieldFreshness FreshnessOf(DateTime? updatedUtc)
+    {
+        if (updatedUtc is null) return FieldFreshness.Missing;
+        var age = _now() - updatedUtc.Value;
+        if (age < TimeSpan.FromSeconds(10)) return FieldFreshness.Live;
+        if (age < TimeSpan.FromSeconds(30)) return FieldFreshness.Stale;
+        return FieldFreshness.Dead;
+    }
+
     // --- Heading / COG: true + magnetic variants ---
     // Servers vary in which heading/COG path they publish. Fluxgate
     // compasses typically emit .magnetic; GPS units with a magnetic-
@@ -213,6 +255,7 @@ public sealed class NavigationData
                     break;
                 case "environment.depth.belowTransducer":
                     Depth = value;
+                    DepthUpdatedUtc = _now();
                     break;
                 case "design.draft.current":
                     // Current is the "as-loaded" draft figure; we prefer
@@ -242,9 +285,11 @@ public sealed class NavigationData
                     break;
                 case "navigation.anchor.maxRadius":
                     AnchorMaxRadius = value;
+                    AnchorRadiusUpdatedUtc = _now();
                     break;
                 case "navigation.anchor.currentRadius":
                     AnchorCurrentRadius = value;
+                    AnchorRadiusUpdatedUtc = _now();
                     break;
                 case "navigation.course.calcValues.distance":
                     CourseNextPointDistance = value;
@@ -338,6 +383,7 @@ public sealed class NavigationData
         {
             Latitude = latitude;
             Longitude = longitude;
+            PositionUpdatedUtc = _now();
         }
     }
 

@@ -149,8 +149,21 @@
          @onclick='() => ToggleExpanded("bl")' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, "bl")'
          title="Click for more detail">
-        <div class="hud-label">Depth</div>
-        <div class="hud-value @Format.DepthClass(Data.Depth)">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
+        <div class="hud-label">
+            Depth
+            @{
+                var depthFreshness = Data.FreshnessOf(Data.DepthUpdatedUtc);
+            }
+            @if (depthFreshness == FieldFreshness.Stale)
+            {
+                <span class="hud-stale-badge" title="Depth not updated in &gt;10s">stale</span>
+            }
+            else if (depthFreshness == FieldFreshness.Dead)
+            {
+                <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s -- do not rely on this reading">dead</span>
+            }
+        </div>
+        <div class="hud-value @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
             {
                 @* Non-colour signal: below-threshold depth gets a warning
                    glyph that colour-blind sailors can read. Paired with the
