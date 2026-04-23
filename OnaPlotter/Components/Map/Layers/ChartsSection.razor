@@ -32,13 +32,20 @@
        it competed with the quick-bar's own active chip and made
        the panel feel busy; the green dot next to the name is the
        subtler signal. *@
+    @* up / down enablement is based on the visible LIST position
+       (what the user sees), not the z-stack position. Users expect
+       "up arrow = move visually up in the panel" which matches
+       "earlier in the Charts iteration". Charts displays enabled +
+       disabled together; only enabled charts can be reordered, so
+       limit the checks to enabled neighbours. *@
+    var enabledInOrder = Charts.Where(c => Enabled.Contains(c.Identifier)).ToList();
     @foreach (var chart in Charts)
     {
         bool inQuickBar = QuickBarCharts.Contains(chart.Identifier);
         bool rendering = Enabled.Contains(chart.Identifier);
-        int stackIdx = rendering ? ActiveStack.FindIndex(c => c.Identifier == chart.Identifier) : -1;
-        bool upEnabled = rendering && stackIdx > 0;
-        bool downEnabled = rendering && stackIdx >= 0 && stackIdx < ActiveStack.Count - 1;
+        int listIdx = rendering ? enabledInOrder.FindIndex(c => c.Identifier == chart.Identifier) : -1;
+        bool upEnabled = listIdx > 0;
+        bool downEnabled = listIdx >= 0 && listIdx < enabledInOrder.Count - 1;
         <label class="chart-item">
             <input type="checkbox" checked="@inQuickBar"
                    @onchange="(e) => OnToggleQuickBar.InvokeAsync((chart, (bool)(e.Value ?? false)))" />
@@ -64,13 +71,13 @@
                 <button class="chart-reorder-btn"
                         type="button"
                         disabled="@(!upEnabled)"
-                        title="Move up (towards front of draw stack)"
+                        title="Move up in list"
                         aria-label="Move @chart.Name up"
                         @onclick="() => OnReorder.InvokeAsync((chart, -1))">&#9650;</button>
                 <button class="chart-reorder-btn"
                         type="button"
                         disabled="@(!downEnabled)"
-                        title="Move down (towards back of draw stack)"
+                        title="Move down in list"
                         aria-label="Move @chart.Name down"
                         @onclick="() => OnReorder.InvokeAsync((chart, 1))">&#9660;</button>
             </span>
@@ -103,9 +110,10 @@
     // expands only the sections they need. See agents.md "UX principles".
     private bool expanded = false;
 
-    // ActiveStack[0] = top of map (last drawn). Charts list is in draw
-    // order (first added, rendered first / bottom); reverse so the arrow
-    // buttons read "up = on top" which is more intuitive.
-    private List<SignalkChart> ActiveStack =>
-        Charts.Where(c => Enabled.Contains(c.Identifier)).Reverse().ToList();
+    // Previously exposed an ActiveStack (reversed enabled list) used for
+    // arrow-enabled checks; that conflation of "z-stack" and "visible
+    // list" was the root of the "arrows do nothing / go the wrong way"
+    // bug. The enablement now reads directly from the iteration order
+    // above, so this helper is gone -- no place left where the two
+    // orderings can drift.
 }

@@ -2103,11 +2103,18 @@
         if (!order.Contains(chart.Identifier)) order.Add(chart.Identifier);
 
         int idx = order.IndexOf(chart.Identifier);
-        // UI convention: up arrow = move toward the top of the stack. In the
-        // order list, top of stack = end (last .addTo). So "up" = +1 index,
-        // "down" = -1. Direction passed in is -1 for up / +1 for down in
-        // the visual list, so flip it here.
-        int swapWith = idx - direction;
+        // UI convention: up = visually up in the panel list, which is
+        // earlier in the displayed Charts order. Since Charts is iterated
+        // in ChartOrder (the same list we're editing), "earlier" = lower
+        // index. direction is -1 for up / +1 for down, so swapWith is
+        // simply idx + direction -- no flip.
+        //
+        // Earlier revisions flipped the direction on the premise that
+        // "up should mean up in the z-stack" (draw-order end); that put
+        // the arrow direction at odds with visual motion and made the
+        // buttons look broken ("I tapped up and it went down"). Keep
+        // the panel and the arrow in sync; z-ordering follows.
+        int swapWith = idx + direction;
         if (swapWith < 0 || swapWith >= order.Count) return;
         (order[idx], order[swapWith]) = (order[swapWith], order[idx]);
 
@@ -2427,7 +2434,7 @@
     /// </summary>
     private async Task SyncServerAnchorAsync()
     {
-        if (module is null) return;
+        if (!mapInitialized || module is null) return;
 
         if (Data.AnchorActive)
         {
@@ -2437,9 +2444,11 @@
                 // Server anchor just appeared — draw it and disable manual.
                 if (anchorManualActive)
                 {
+                    if (!mapInitialized) return;
                     await module.InvokeVoidAsync("clearAnchor");
                     anchorManualActive = false;
                 }
+                if (!mapInitialized) return;
                 await module.InvokeVoidAsync("setAnchor",
                     Data.AnchorLatitude, Data.AnchorLongitude, radius);
                 serverAnchorDrawn = true;
@@ -2448,6 +2457,7 @@
             else if (Math.Abs(radius - lastPushedAnchorRadius) > 0.1)
             {
                 // Only update JS if radius actually changed.
+                if (!mapInitialized) return;
                 await module.InvokeVoidAsync("updateAnchorRadius", radius);
                 lastPushedAnchorRadius = radius;
             }
@@ -2455,6 +2465,7 @@
         else if (serverAnchorDrawn)
         {
             // Server anchor was raised — clear from map.
+            if (!mapInitialized) return;
             await module.InvokeVoidAsync("clearAnchor");
             serverAnchorDrawn = false;
         }
@@ -2465,7 +2476,7 @@
     /// </summary>
     private async Task SyncActiveRouteAsync()
     {
-        if (module is null) return;
+        if (!mapInitialized || module is null) return;
 
         var currentHref = Data.ActiveRouteHref;
 
@@ -2474,7 +2485,9 @@
         // Route changed or deactivated: clear previous.
         if (lastActiveRouteHref is not null)
         {
+            if (!mapInitialized) return;
             await module.InvokeVoidAsync("clearActiveRoute");
+            if (!mapInitialized) return;
             await module.InvokeVoidAsync("clearCourseLine");
             activeRouteCoords = null;
             _frameBuilder.CourseLineDrawn = false;
@@ -2482,10 +2495,14 @@
 
         lastActiveRouteHref = currentHref;
 
-        // Route activated: fetch and draw.
+        // Route activated: fetch and draw. The HTTP round-trip is where
+        // dispose races most often -- by the time the fetch completes,
+        // the page may have navigated away. Re-check mapInitialized
+        // after each await so a disposed module doesn't get called.
         if (!string.IsNullOrEmpty(currentHref))
         {
             activeRouteCoords = await RouteApi.GetCoordinatesAsync(currentHref);
+            if (!mapInitialized) return;
             if (activeRouteCoords is not null && activeRouteCoords.Length > 0)
             {
                 await module.InvokeVoidAsync("setActiveRoute",
@@ -2575,6 +2592,15 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Flip mapInitialized FIRST so any HandleDataChanged / Sync*Async
+        // that's currently parked between awaits bails at its next check
+        // instead of hitting a half-torn-down JS module. The unsubscribe
+        // below stops NEW invocations, but an in-flight one that's
+        // already past its entry guard (fetching route coords, waiting
+        // on an HTTP round-trip, etc.) would otherwise resume into a
+        // disposed module and throw "addLayer on null" in the browser
+        // console.
+        mapInitialized = false;
         SignalkClient.OnDataChanged -= HandleDataChanged;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;

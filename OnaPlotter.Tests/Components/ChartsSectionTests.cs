@@ -75,11 +75,14 @@ public class ChartsSectionTests
     [Test]
     public async Task Reorder_Buttons_Boundary_Disabled_State()
     {
-        // All three rendering. ActiveStack is reversed: [C, B, A]
-        // with C on top. So on the stack:
-        //   - C is at the top    -> up disabled, down enabled
-        //   - B is in the middle -> both enabled
-        //   - A is at the bottom -> up enabled, down disabled
+        // Enablement is based on visible LIST position, not z-stack.
+        // The panel iterates Charts in order (A, B, C), so:
+        //   - A at row 0 (top of list)    -> up disabled, down enabled
+        //   - B in the middle             -> both enabled
+        //   - C at row 2 (bottom of list) -> up enabled, down disabled
+        // This is the flip from the earlier stack-indexed behaviour
+        // which had the arrows report the opposite of the direction
+        // the user saw the chip move.
         using var ctx = new Bunit.TestContext();
         var charts = new[] { Chart("a", "A"), Chart("b", "B"), Chart("c", "C") };
         var enabled = new HashSet<string> { "a", "b", "c" };
@@ -90,15 +93,15 @@ public class ChartsSectionTests
         var bBtns = rows[1].QuerySelectorAll(".chart-reorder-btn");
         var cBtns = rows[2].QuerySelectorAll(".chart-reorder-btn");
 
-        // A = bottom of stack (stackIdx 2): up OK, down disabled.
-        await Assert.That(aBtns[0].HasAttribute("disabled")).IsFalse();
-        await Assert.That(aBtns[1].HasAttribute("disabled")).IsTrue();
-        // B = middle (stackIdx 1): both enabled.
+        // A = top of list (listIdx 0): up disabled, down OK.
+        await Assert.That(aBtns[0].HasAttribute("disabled")).IsTrue();
+        await Assert.That(aBtns[1].HasAttribute("disabled")).IsFalse();
+        // B = middle (listIdx 1): both enabled.
         await Assert.That(bBtns[0].HasAttribute("disabled")).IsFalse();
         await Assert.That(bBtns[1].HasAttribute("disabled")).IsFalse();
-        // C = top (stackIdx 0): up disabled, down OK.
-        await Assert.That(cBtns[0].HasAttribute("disabled")).IsTrue();
-        await Assert.That(cBtns[1].HasAttribute("disabled")).IsFalse();
+        // C = bottom of list (listIdx 2): up OK, down disabled.
+        await Assert.That(cBtns[0].HasAttribute("disabled")).IsFalse();
+        await Assert.That(cBtns[1].HasAttribute("disabled")).IsTrue();
     }
 
     [Test]
