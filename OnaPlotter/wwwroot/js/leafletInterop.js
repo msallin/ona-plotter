@@ -10,6 +10,11 @@ import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
 
 let map = null;
+// Module-scoped bounds-debounce timer so dispose() can cancel it.
+// If a pending moveend callback fired after dispose() nulled map,
+// it would hit the "addLayer on null" chain through Leaflet's
+// internal layer lookups. See the moveend handler in initMap.
+let boundsTimer = null;
 // Weak-client detection (Raspberry Pi, older tablets). Gates
 // perf-heavy options -- tile streaming during pan, AIS updates
 // during active drag, etc. Computed once in initMap() so the
@@ -830,7 +835,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         longPressStartPt = { x: t0.clientX, y: t0.clientY };
         longPressTimer = setTimeout(() => {
             longPressTimer = null;
-            if (!longPressStartPt) return;
+            // If the page navigated away while we were waiting for the
+            // long-press threshold, map is null and containerPointToLatLng
+            // would throw. Bail silently.
+            if (!map || !longPressStartPt) return;
             const rect = mapEl.getBoundingClientRect();
             const latlng = map.containerPointToLatLng([
                 longPressStartPt.x - rect.left,
@@ -884,16 +892,23 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // rapid user interactions into a single callback. Same callback also carries
     // centre+zoom so the C# side can persist the map view (mapView.v1) without
     // adding a second interop round-trip per move.
-    let boundsTimer = null;
+    //
+    // The 300 ms debounce is also the window where the user can navigate
+    // away before the callback fires. Re-check `map` + `dotNetRef` inside
+    // the timeout -- both are nulled on dispose() and calling
+    // `map.getBounds()` after that throws the infamous
+    // "can't access property addLayer, t is null" via Leaflet's internal
+    // layer lookups. Defensive re-check is cheap and covers the race.
     map.on('moveend', () => {
         if (!dotNetRef || suppressMoveEnd) return;
         clearTimeout(boundsTimer);
         boundsTimer = setTimeout(() => {
+            if (!map || !dotNetRef) return;
             const b = map.getBounds();
             const c = map.getCenter();
             dotNetRef.invokeMethodAsync('OnMapBoundsChanged',
                 b.getWest(), b.getSouth(), b.getEast(), b.getNorth(),
-                c.lat, c.lng, map.getZoom());
+                c.lat, c.lng, map.getZoom()).catch(() => { /* disposed */ });
         }, 300);
     });
 }
@@ -3332,6 +3347,9 @@ export function zoomToTrack() {
 }
 
 export function dispose() {
+    // Clear any pending move-end debounce before tearing down so a
+    // straggling setTimeout can't resume into a disposed map.
+    if (boundsTimer) { clearTimeout(boundsTimer); boundsTimer = null; }
     if (map) { map.remove(); map = null; }
     boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
     osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
