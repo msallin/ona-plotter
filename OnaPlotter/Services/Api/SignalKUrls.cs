@@ -17,6 +17,15 @@ public static class SignalKUrls
     public const string RegionsPath = "/signalk/v2/api/resources/regions";
     public const string TrackPath = "/signalk/v1/api/self/track";
 
+    /// <summary>v2 tracks-resource surface. Returns a dictionary of
+    /// {track-id: Feature} where Feature is a GeoJSON object with a
+    /// MultiLineString geometry and a root-level <c>timestamp</c>.
+    /// Exposed by signalk-server's built-in track recorder (or the
+    /// @signalk/tracks plugin) on modern installs; distinct from
+    /// <see cref="TrackPath"/> which is the older per-query surface
+    /// that some installs don't have at all.</summary>
+    public const string TracksPath = "/signalk/v2/api/resources/tracks";
+
     // Course paths MUST include /vessels/self/ per the SignalK v2
     // Course API spec. Earlier these omitted the prefix and the
     // server returned 404 on every call -- Set Destination, Set
