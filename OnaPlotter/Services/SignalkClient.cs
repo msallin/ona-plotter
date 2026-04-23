@@ -152,10 +152,12 @@ public sealed class SignalkClient : IAsyncDisposable
         // tech-debt pass. NavigationData.Apply's v1 case labels
         // remain as a safety net for any plugin that still emits
         // them.
+        new("navigation.course.activeRoute",                                 PathTier.SelfFast),
         new("navigation.course.activeRoute.href",                            PathTier.SelfFast),
         new("navigation.course.activeRoute.name",                            PathTier.SelfFast),
         new("navigation.course.activeRoute.pointIndex",                      PathTier.SelfFast),
         new("navigation.course.activeRoute.pointTotal",                      PathTier.SelfFast),
+        new("navigation.course.nextPoint",                                   PathTier.SelfFast),
         new("navigation.course.nextPoint.position",                          PathTier.SelfFast),
         new("navigation.course.previousPoint.position",                      PathTier.SelfFast),
         new("navigation.course.calcValues.distance",                         PathTier.SelfFast),
@@ -787,17 +789,35 @@ public sealed class SignalkClient : IAsyncDisposable
                     }
                 }
 
-                // Route deactivation: href arrives as null on the v2
-                // course surface when "Stop Navigation" fires on any
-                // plotter. Earlier code checked the v1 GC / RL hrefs
-                // too; those subtrees are no longer subscribed.
+                // Route deactivation: after DELETE /navigation/course
+                // the server publishes one of two delta shapes depending
+                // on version, and the client has to cope with BOTH:
+                //
+                //   (a) navigation.course.activeRoute.href = null
+                //       -- older course-provider-plugin; the specific
+                //       leaf path flips to null.
+                //   (b) navigation.course.activeRoute = null
+                //       OR navigation.course.nextPoint = null
+                //       -- signalk-server 2.x's built-in course API
+                //       nulls the PARENT object in one delta instead
+                //       of enumerating every leaf. Before this branch
+                //       existed, the delta was silently ignored and
+                //       OnaPlotter kept its old course state until a
+                //       fresh route was set. Freeboard does the same
+                //       (its processCourseData treats a null value as
+                //       "clear everything").
                 if (val.Path == "navigation.course.activeRoute.href"
-                    && (val.Value is null
-                        || (val.Value is JsonElement nullEl && nullEl.ValueKind == JsonValueKind.Null)))
+                    || val.Path == "navigation.course.activeRoute"
+                    || val.Path == "navigation.course.nextPoint")
                 {
-                    _data.ClearCourse();
-                    changed = true;
-                    continue;
+                    bool isNull = val.Value is null
+                        || (val.Value is JsonElement nel && nel.ValueKind == JsonValueKind.Null);
+                    if (isNull)
+                    {
+                        _data.ClearCourse();
+                        changed = true;
+                        continue;
+                    }
                 }
 
                 if (_data.Apply(val.Path, val.Value))

@@ -2955,13 +2955,21 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* Title row: route name on the left, "WP 3 of 7" progress on the right.
    Flex so the progress chip stays pinned even when the name is long
    (truncate handled by parent overflow). */
-.route-panel-title {
+/* Shared title row for both the Route HUD card and the Anchor HUD
+   card. Keeping one rule across both means a font-size tweak or
+   colour change lands on both cards at once -- previously the two
+   had drifted (route=0.7rem uppercase muted with a blue chip vs
+   anchor=0.6rem uppercase dimmer) so the two sibling cards read
+   as different families. Now a .hud-card-title wraps the primary
+   label on each, optional .hud-card-progress adds the route-only
+   "WP 3 of 7" chip in the accent colour. */
+.hud-card-title {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
     gap: 10px;
 }
-.route-panel-name {
+.hud-card-name {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -2970,12 +2978,19 @@ main:has(.alarm-banner-stack) .snooze-chips {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.route-panel-progress {
+.hud-card-progress {
     font-size: 0.7rem;
     color: var(--sk-accent);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+
+/* Back-compat aliases so older markup still renders until it's
+   migrated. Drop these in a follow-up once no component references
+   the route-panel-* names. */
+.route-panel-title    { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.route-panel-name     { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--sk-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-panel-progress { font-size: 0.7rem; color: var(--sk-accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
    the card eats width (plentiful on landscape) instead of height
@@ -4646,10 +4661,27 @@ main:has(.map-container.big-type) .map-fab-item {
     min-width: 120px;
 }
 
+/* Mirror .route-info-row's geometry exactly so the two HUD cards
+   read as the same family. Same gap rhythm (4 / 18), same wrap
+   behaviour, same baseline alignment. Earlier the anchor row had
+   a different gap and no wrap, which made a dragging anchor's
+   Dist / Radius pair sit tighter and taller than the route's
+   DTW / BRG / etc. row. */
 .anchor-info-row {
     display: flex;
-    gap: 14px;
+    flex-wrap: wrap;
+    gap: 4px 18px;
     margin-top: 4px;
+    align-items: baseline;
+}
+/* Anchor info items don't have their own wrapper class in the
+   markup (the cells are plain <div>). Apply the same flex-column
+   shape as .route-info-item so label+value pairs wrap as a unit
+   on narrow viewports. */
+.anchor-info-row > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
 /* Inline radius chips for the manual-drop anchor. Only shown when the

@@ -1830,6 +1830,18 @@
         try { await CourseApi.ClearAsync(); }
         catch (Exception ex) { Toasts.Error($"Stop navigation failed: {ex.Message}"); return; }
 
+        // Proactively flip our local state so the route HUD vanishes
+        // immediately on tap. The server publishes a delta to confirm
+        // the clear, but the delta can arrive seconds later (or with
+        // an unexpected shape on some plugin builds); waiting for it
+        // leaves the "Stop" button click feeling broken. ClearCourse
+        // here + the delta handler + the parent-path-null fallback
+        // in ProcessSelfDelta form a belt-and-braces reset. Fire
+        // OnDataChanged so every subscriber (MapHud, RouteCard, HUD
+        // badges) re-renders.
+        Data.ClearCourse();
+        await InvokeAsync(StateHasChanged);
+
         if (savedLat is not null && savedLon is not null)
         {
             double lat = savedLat.Value, lon = savedLon.Value;

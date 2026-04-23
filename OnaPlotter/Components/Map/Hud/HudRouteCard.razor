@@ -27,11 +27,11 @@
 {
     <div class="hud hud-route">
         <div class="hud-panel route-panel">
-            <div class="route-panel-title">
-                <span class="route-panel-name">@(Snapshot.Name ?? "Active Route")</span>
+            <div class="hud-card-title">
+                <span class="hud-card-name">@(Snapshot.Name ?? "Active Route")</span>
                 @if (Snapshot.PointIndex is int idx && Snapshot.PointTotal is int total)
                 {
-                    <span class="route-panel-progress">WP @(idx + 1) of @total</span>
+                    <span class="hud-card-progress">WP @(idx + 1) of @total</span>
                 }
             </div>
             @if (Snapshot.ArrivalRadiusMeters <= 0)

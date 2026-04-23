@@ -11,7 +11,13 @@
 {
     <div class="hud hud-anchor">
         <div class="hud-panel anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "")">
-            <div class="hud-label">Anchor Watch</div>
+            <div class="hud-card-title">
+                <span class="hud-card-name">Anchor Watch</span>
+                @if (Snapshot.Dragging)
+                {
+                    <span class="hud-card-progress" style="color: var(--sev-danger);">Dragging</span>
+                }
+            </div>
             @if (Snapshot.DormantReason is not null)
             {
                 <div class="rule-dormant-hint" role="status" aria-live="polite"
