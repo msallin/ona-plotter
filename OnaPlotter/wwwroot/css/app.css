@@ -4676,8 +4676,9 @@ main:has(.map-container.big-type) .map-fab-item {
     margin-bottom: 8px;
     font-variant-numeric: tabular-nums;
 }
-.route-popup-actions { display: flex; gap: 6px; }
+.route-popup-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .route-activate-btn,
+.route-edit-btn,
 .route-delete-btn {
     background: transparent;
     color: #94a3b8;
@@ -4697,6 +4698,11 @@ main:has(.map-container.big-type) .map-fab-item {
     color: #fde0a8;
     border-color: #e09f3e;
 }
+.route-edit-btn { border-color: rgba(var(--sk-accent-rgb), 0.45); color: rgba(var(--sk-accent-rgb), 0.95); }
+.route-edit-btn:hover {
+    background: rgba(var(--sk-accent-rgb), 0.15);
+    border-color: rgba(var(--sk-accent-rgb), 0.8);
+}
 .route-delete-btn { border-color: rgba(239, 68, 68, 0.4); }
 .route-delete-btn:hover {
     background: rgba(239, 68, 68, 0.15);
@@ -4711,7 +4717,8 @@ main:has(.map-container.big-type) .map-fab-item {
 }
 @media (pointer: coarse) {
     .route-activate-btn,
-    .route-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
+    .route-edit-btn,
+    .route-delete-btn { min-height: 44px; padding: 11px 16px; font-size: 0.85rem; }
 }
 
 /* ===== SailSteer Display ===== */

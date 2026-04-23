@@ -87,6 +87,19 @@ public partial class Map
         await UpdateRouteStats();
     }
 
+    /// <summary>JS-invokable entry point for the "Edit" button on the
+    /// route popup (click on a route polyline -> Edit). Looks up the
+    /// route by id and routes through the existing <see cref="EditRoute"/>
+    /// flow so the popup path behaves identically to the Layers-panel
+    /// Edit button.</summary>
+    [JSInvokable]
+    public async Task EditRouteById(string id)
+    {
+        var route = availableRoutes.FirstOrDefault(r => r.Id == id);
+        if (route is null) { Toasts.Error("Route not found"); return; }
+        await EditRoute(route);
+    }
+
     private async Task EditRoute(SignalkRoute route)
     {
         if (module is null || route.Feature?.Geometry is null) return;

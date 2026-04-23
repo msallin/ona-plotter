@@ -2041,6 +2041,7 @@ export function addRoute(id, name, coords) {
     });
     line.on('popupopen', (ev) => {
         wireRouteActivate(ev.popup, id, name);
+        wireRouteEdit(ev.popup, id);
         wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', id);
     });
 
@@ -2072,6 +2073,7 @@ function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
             <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm</div>
             <div class="route-popup-actions">
                 <button class="route-activate-btn" type="button">Activate</button>
+                <button class="route-edit-btn" type="button">Edit</button>
                 <button class="route-delete-btn" type="button">Delete</button>
             </div>
         </div>`;
@@ -2092,6 +2094,26 @@ function wireRouteActivate(popup, id, name) {
             catch (_) { /* disposed or navigation in flight */ }
         }
         popup._source?.closePopup();
+    });
+}
+
+// Edit button -- matches the Layers-panel Edit action. Hands off to
+// C# which flips routeEditMode on and loads the polyline into the
+// edit layer. Closes the popup immediately so a second tap doesn't
+// land on a now-invisible button (the edit toolbar takes over the
+// viewport once routeEditMode flips).
+function wireRouteEdit(popup, id) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector('.route-edit-btn');
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', async () => {
+        popup._source?.closePopup();
+        if (dotNetRef) {
+            try { await dotNetRef.invokeMethodAsync('EditRouteById', id); }
+            catch (_) { /* disposed or navigation in flight */ }
+        }
     });
 }
 
