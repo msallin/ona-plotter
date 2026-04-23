@@ -3364,7 +3364,13 @@ export function dispose() {
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
     laylineStarboard = null; laylinePort = null;
     laylineWpStarboard = null; laylineWpPort = null;
-    currentArrow = null; currentLabel = null;
+    // `currentLabel` used to exist as a sibling of `currentArrow` for
+    // a drift-speed tooltip on the tidal-current arrow; that label was
+    // dropped but the assignment lingered here under ES module strict
+    // mode, throwing ReferenceError on every dispose() and surfacing
+    // as "Unhandled exception rendering component" in Blazor's error
+    // boundary when the user navigated off the Chart page. Removed.
+    currentArrow = null;
     weatherLayer = null;
     routeEditMode = false; routeEditLayer = null;
     routeEditCoords = []; routeEditMarkers = []; routeEditLine = null;
