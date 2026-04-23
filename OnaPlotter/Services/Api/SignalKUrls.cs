@@ -26,6 +26,33 @@ public static class SignalKUrls
     /// that some installs don't have at all.</summary>
     public const string TracksPath = "/signalk/v2/api/resources/tracks";
 
+    /// <summary>v2 History API values endpoint (signalk-parquet,
+    /// signalk-to-influxdb2). Answers path-value queries over an
+    /// arbitrary time window with optional aggregation; we use it
+    /// as the primary source for the History page because it's
+    /// resolution-tunable (the /resources/tracks endpoint returns
+    /// whatever cadence the recorder used) and gives us a clean
+    /// [timestamp, value] stream to drive the playback slider.
+    ///
+    /// Canonical shape:
+    ///   GET /signalk/v2/api/history/values
+    ///     ?paths=navigation.position
+    ///     &amp;duration=PT1H              (ISO 8601)
+    ///     &amp;resolution=30s
+    ///
+    /// Response:
+    ///   {
+    ///     "context": "vessels.urn:mrn:...",
+    ///     "range": { "from": "...", "to": "..." },
+    ///     "values": [{ "path": "navigation.position", "method": "first" }],
+    ///     "data": [[ "2026-04-23T14:43:48Z", [-76.82, 24.59] ], ...]
+    ///   }
+    ///
+    /// Position values are [lon, lat] (GeoJSON order); caller flips
+    /// to Leaflet's [lat, lon].
+    /// </summary>
+    public const string HistoryValuesPath = "/signalk/v2/api/history/values";
+
     // Course paths MUST include /vessels/self/ per the SignalK v2
     // Course API spec. Earlier these omitted the prefix and the
     // server returned 404 on every call -- Set Destination, Set
