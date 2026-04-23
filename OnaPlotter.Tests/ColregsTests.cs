@@ -72,6 +72,39 @@ public class ColregsTests
     }
 
     [Test]
+    public async Task OwnDrifting_TargetUnderway_Indeterminate()
+    {
+        // Drifting own-boat (SOG 0.05 kn) being approached head-on by a
+        // vessel at 5 kn. The earlier rule returned HeadOn / GiveWay,
+        // implying the drifter could manoeuvre out of the way. Honest
+        // answer is Indeterminate: COLREGS assumes both vessels have
+        // steerage.
+        var r = Run(tgtLatNm: 0.5, tgtLonNm: 0, tgtCogDeg: 180,
+            ownSogKn: 0.05, tgtSogKn: 5);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.Indeterminate);
+        await Assert.That(r.Role).IsEqualTo(Colregs.Role.None);
+    }
+
+    [Test]
+    public async Task TargetStationary_Indeterminate()
+    {
+        // Mirror: own under way, target drifting. Can't be stand-on
+        // against something that isn't moving in a rule-driven sense.
+        var r = Run(tgtLatNm: 0.5, tgtLonNm: 0, tgtCogDeg: 180,
+            ownSogKn: 5, tgtSogKn: 0.05);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.Indeterminate);
+    }
+
+    [Test]
+    public async Task NaN_Inputs_Indeterminate()
+    {
+        var r = Colregs.Classify(
+            ownLat: double.NaN, ownLon: 0, ownCogRad: 0, ownSogMs: 5,
+            tgtLat: 0.01, tgtLon: 0, tgtCogRad: Math.PI, tgtSogMs: 5);
+        await Assert.That(r.Category).IsEqualTo(Colregs.Category.Indeterminate);
+    }
+
+    [Test]
     public async Task OffBeamOnStarboard_StillCrossingFromStbd()
     {
         // Target NE 1 nm, going SW into our path. Bearing ~045, crossing.

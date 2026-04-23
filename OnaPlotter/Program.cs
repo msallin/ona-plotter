@@ -28,6 +28,7 @@ builder.Services.AddSingleton<IPolarService, PolarService>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AisSartAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ShallowAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorTideAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorDragAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();

@@ -29,12 +29,27 @@ public static class Cpa
         double s1 = sog1Ms.Value, s2 = sog2Ms.Value;
         if (s1 < StationaryThresholdMs && s2 < StationaryThresholdMs) return null;
 
+        // Guard against malformed inputs. NaN/Infinity propagates through the
+        // whole calc and gives a plausible-looking but nonsense CPA.
+        if (!double.IsFinite(lat1) || !double.IsFinite(lon1)
+            || !double.IsFinite(lat2) || !double.IsFinite(lon2)
+            || !double.IsFinite(s1)   || !double.IsFinite(s2)
+            || !double.IsFinite(cog1Rad.Value) || !double.IsFinite(cog2Rad.Value))
+            return null;
+
         // Project to metres using an equirectangular patch at the midpoint.
         const double MetresPerDegLat = 111_320.0;
         double midLatRad = (lat1 + lat2) * 0.5 * Math.PI / 180.0;
         double metresPerDegLon = MetresPerDegLat * Math.Cos(midLatRad);
 
-        double x2 = (lon2 - lon1) * metresPerDegLon;
+        // Unwrap longitude so vessels straddling the antimeridian (one at
+        // 179.9, the other at -179.9) show as ~20 km apart instead of
+        // ~40 000 km apart. Without this the alarm never fires near the
+        // dateline and the CPA geometry is nonsense for any Pacific
+        // crossing. Normalised delta in (-180, 180].
+        double dLonDeg = ((lon2 - lon1 + 540.0) % 360.0) - 180.0;
+
+        double x2 = dLonDeg * metresPerDegLon;
         double y2 = (lat2 - lat1) * MetresPerDegLat;
 
         // Velocity components: COG is bearing from north, so Vx = sin(COG)*SOG.
@@ -48,12 +63,13 @@ public static class Cpa
 
         double a = dvx * dvx + dvy * dvy;
 
-        // Parallel courses at same speed -> CPA is the current separation, now.
-        if (a < 1e-6)
-        {
-            double now = Math.Sqrt(dpx * dpx + dpy * dpy);
-            return new Result(now / 1852.0, 0);
-        }
+        // Parallel courses at same speed, or any other zero-closing pair.
+        // Return null rather than fabricating TCPA=0 with the current
+        // separation: the alarm rule would then fire instantly on two
+        // boats peacefully cruising abreast at the same speed, which is
+        // exactly the "false alarm" pattern we're trying to suppress.
+        // Real closing geometry has non-zero relative velocity.
+        if (a < 1e-6) return null;
 
         // t that minimises |dp + dv*t|.
         double t = -(dpx * dvx + dpy * dvy) / a;
@@ -62,6 +78,8 @@ public static class Cpa
         double cx = dpx + dvx * t;
         double cy = dpy + dvy * t;
         double cpa = Math.Sqrt(cx * cx + cy * cy);
+
+        if (!double.IsFinite(cpa) || !double.IsFinite(t)) return null;
 
         return new Result(cpa / 1852.0, t / 60.0);
     }

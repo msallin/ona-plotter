@@ -63,16 +63,46 @@ public class CpaTests
     }
 
     [Test]
-    public async Task ParallelSameSpeed_TcpaZero_CpaIsCurrentSeparation()
+    public async Task ParallelSameSpeed_ReturnsNull()
     {
-        // Both heading north at 5 kn, offset 1 nm east.
+        // Two boats cruising abreast at the same SOG + COG never close. Returning
+        // a bogus TCPA=0 (the earlier behaviour) would trip CpaAlarmRule the
+        // instant their current separation was inside the alarm radius -- false
+        // alarm on classic convoy formation. Null is the correct "no closing
+        // event".
         double oneNmInLon = 1.0 / 60.0;
         var r = Cpa.Compute(0, 0, 0, 5 * Knots, 0, oneNmInLon, 0, 5 * Knots);
 
+        await Assert.That(r).IsNull();
+    }
+
+    [Test]
+    public async Task Antimeridian_VesselsAcrossDateLine_ComputesShortSeparation()
+    {
+        // Two vessels straddling the 180/-180 boundary. Without longitude
+        // unwrap, this looks like ~40 000 km of separation and CPA never
+        // fires. With unwrap, ~20 km on the short side -- and a head-on
+        // closing pair gives a real TCPA.
+        // Own just west of the date line at lon 179.95, target just east at
+        // lon -179.95; each closing at 5 kn along the parallel.
+        var r = Cpa.Compute(0, 179.95, Math.PI / 2, 5 * Knots,
+                            0, -179.95, 3 * Math.PI / 2, 5 * Knots);
+
         await Assert.That(r).IsNotNull();
-        await Assert.That(r!.Value.TcpaMin).IsEqualTo(0);
-        await Assert.That(r.Value.CpaNm).IsGreaterThan(0.9);
-        await Assert.That(r.Value.CpaNm).IsLessThan(1.1);
+        // Head-on closing pair; CPA is small and TCPA is within an hour.
+        await Assert.That(r!.Value.CpaNm).IsLessThan(0.5);
+        await Assert.That(r.Value.TcpaMin).IsLessThan(60);
+        await Assert.That(r.Value.TcpaMin).IsGreaterThan(5);
+    }
+
+    [Test]
+    public async Task NaN_Inputs_ReturnNull()
+    {
+        // Server-side bug or corrupt delta: lat/lon/cog/sog = NaN or Infinity.
+        // Must not silently propagate into a non-NaN-looking CPA.
+        await Assert.That(Cpa.Compute(double.NaN, 0, 0, 5, 0.01, 0, Math.PI, 5)).IsNull();
+        await Assert.That(Cpa.Compute(0, 0, double.NaN, 5, 0.01, 0, 0, 5)).IsNull();
+        await Assert.That(Cpa.Compute(0, 0, 0, double.PositiveInfinity, 0.01, 0, 0, 5)).IsNull();
     }
 
     [Test]

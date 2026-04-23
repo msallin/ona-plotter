@@ -53,7 +53,22 @@ public static class Colregs
         double ownLat, double ownLon, double ownCogRad, double ownSogMs,
         double tgtLat, double tgtLon, double tgtCogRad, double tgtSogMs)
     {
-        if (ownSogMs < StationaryMs && tgtSogMs < StationaryMs)
+        // Either boat stationary -> don't issue give-way / stand-on labels.
+        // COLREGS assumes both vessels are under way with steerage. A drifting
+        // own-boat labelled "Stand-on" by being-overtaken logic misleads the
+        // helmsman into thinking they're holding course when they're actually
+        // adrift; a stationary target labelled "Give-way" implies motion the
+        // target doesn't have. Indeterminate is the honest answer -- the
+        // crossing / head-on math still runs once both have steerage.
+        if (ownSogMs < StationaryMs || tgtSogMs < StationaryMs)
+            return new Result(Category.Indeterminate, Role.None);
+
+        // Guard NaN/Infinity so a corrupt delta can't produce a crisp-looking
+        // but meaningless classification.
+        if (!double.IsFinite(ownLat) || !double.IsFinite(ownLon)
+            || !double.IsFinite(tgtLat) || !double.IsFinite(tgtLon)
+            || !double.IsFinite(ownCogRad) || !double.IsFinite(tgtCogRad)
+            || !double.IsFinite(ownSogMs) || !double.IsFinite(tgtSogMs))
             return new Result(Category.Indeterminate, Role.None);
 
         // Absolute bearing from own to target (0..360 degrees, 0 = north).
