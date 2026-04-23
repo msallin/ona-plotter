@@ -205,4 +205,47 @@ public class MapControlsTests
         await Assert.That(routeItem).IsNotNull();
         await Assert.That(routeItem!.HasAttribute("disabled")).IsTrue();
     }
+
+    // --- Stop Navigation two-tap confirm ---
+
+    [Test]
+    public async Task Stop_Button_FirstClick_ArmsConfirmState_DoesNotInvoke()
+    {
+        using var ctx = new Bunit.TestContext();
+        int invokes = 0;
+        var cut = ctx.RenderComponent<MapControls>(p => p
+            .Add(x => x.RouteNavigating, true)
+            .Add(x => x.OnStopNavigation,
+                EventCallback.Factory.Create(this, () => invokes++)));
+
+        var stop = cut.FindAll(".ctrl-btn-danger")
+            .First(b => b.TextContent.Contains("Stop"));
+        stop.Click();
+
+        await Assert.That(invokes).IsEqualTo(0);
+        // Label flipped to "Confirm?"; CSS class added.
+        var refreshed = cut.FindAll(".ctrl-btn-danger")
+            .First(b => b.ClassList.Contains("ctrl-btn-confirming"));
+        await Assert.That(refreshed.TextContent).Contains("Confirm");
+    }
+
+    [Test]
+    public async Task Stop_Button_SecondClick_InvokesOnStopNavigation()
+    {
+        using var ctx = new Bunit.TestContext();
+        int invokes = 0;
+        var cut = ctx.RenderComponent<MapControls>(p => p
+            .Add(x => x.RouteNavigating, true)
+            .Add(x => x.OnStopNavigation,
+                EventCallback.Factory.Create(this, () => invokes++)));
+
+        var stop = cut.FindAll(".ctrl-btn-danger")
+            .First(b => b.TextContent.Contains("Stop"));
+        stop.Click();  // arm
+        var armed = cut.FindAll(".ctrl-btn-danger")
+            .First(b => b.ClassList.Contains("ctrl-btn-confirming"));
+        armed.Click();  // confirm
+
+        await Assert.That(invokes).IsEqualTo(1);
+    }
 }

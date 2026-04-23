@@ -193,4 +193,75 @@ public class MapHudTests
         await Assert.That(extras).Contains("100");
         await Assert.That(extras).Contains("+10");
     }
+
+    // --- Heading T / M suffix ---
+
+    [Test]
+    public async Task Heading_ShowsT_WhenTrueHeadingPreferred()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.headingTrue", 45.0 * System.Math.PI / 180);
+        data.PreferMagneticHeading = false;
+        var cut = Render(ctx, data);
+
+        var heading = cut.Find(".hud-bottom-right .hud-value").TextContent;
+        await Assert.That(heading).Contains("T");
+    }
+
+    [Test]
+    public async Task Heading_ShowsM_WhenMagneticPreferred()
+    {
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.Apply("navigation.headingMagnetic", 45.0 * System.Math.PI / 180);
+        data.PreferMagneticHeading = true;
+        var cut = Render(ctx, data);
+
+        var heading = cut.Find(".hud-bottom-right .hud-value").TextContent;
+        await Assert.That(heading).Contains("M");
+    }
+
+    // --- Depth staleness ---
+
+    [Test]
+    public async Task Depth_Stale_Badge_AppearsWhenNoRecentUpdate()
+    {
+        // Apply a depth reading with an old timestamp by constructing a
+        // NavigationData with a fake clock that advances between apply
+        // and render. Depth aged ~20 s -> Stale tier -> badge text
+        // "stale" visible in the depth hud label.
+        using var ctx = new Bunit.TestContext();
+        var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var clock = new ClockHolder(now);
+        var data = new NavigationData(clock.Get);
+        data.Apply("environment.depth.belowTransducer", 3.2);
+        clock.Now = now.AddSeconds(20);
+        var cut = Render(ctx, data);
+
+        var depthLabel = cut.Find(".hud-bottom-left .hud-label").TextContent;
+        await Assert.That(depthLabel).Contains("stale");
+    }
+
+    [Test]
+    public async Task Depth_Dead_Badge_AppearsWhenSensorSilent()
+    {
+        using var ctx = new Bunit.TestContext();
+        var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var clock = new ClockHolder(now);
+        var data = new NavigationData(clock.Get);
+        data.Apply("environment.depth.belowTransducer", 3.2);
+        clock.Now = now.AddSeconds(60);
+        var cut = Render(ctx, data);
+
+        var depthLabel = cut.Find(".hud-bottom-left .hud-label").TextContent;
+        await Assert.That(depthLabel).Contains("dead");
+    }
+
+    private sealed class ClockHolder
+    {
+        public DateTime Now { get; set; }
+        public ClockHolder(DateTime now) { Now = now; }
+        public DateTime Get() => Now;
+    }
 }

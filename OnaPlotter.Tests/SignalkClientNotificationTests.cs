@@ -147,4 +147,67 @@ public class SignalkClientNotificationTests
         c.ProcessMessage(Delta(path, null));
         await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
     }
+
+    // --- fail-safe: unknown / missing severity states ---
+
+    [Test]
+    public async Task Perpendicular_UnknownState_FailsSafeArmed()
+    {
+        // A plugin inventing a new severity (emergency / critical / etc.)
+        // must not be silently dropped. The handler treats anything that
+        // isn't an explicit "normal" / "cleared" as armed so the helm
+        // isn't misled into thinking a situation is quiet when it isn't.
+        var c = NewClient();
+        c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "emergency"));
+        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+    }
+
+    [Test]
+    public async Task Perpendicular_ClearedState_Disarms()
+    {
+        // "cleared" is another commonly-used clearance word alongside
+        // "normal". Both must disarm the flag.
+        var c = NewClient();
+        c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "alert"));
+        c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "cleared"));
+        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
+    }
+
+    [Test]
+    public async Task Perpendicular_ObjectWithoutState_FailsSafeArmed()
+    {
+        // Some older plugin builds emit the notification envelope without
+        // an explicit state property when a rule fires. Missing state was
+        // previously silently dropped (armed=false); now it fails safe
+        // as armed so the alarm actually gets through.
+        var c = NewClient();
+        string payload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""notifications.navigation.course.perpendicularPassed"",
+              ""value"":{{ ""method"":[""visual""], ""message"":""no state field"" }} }}]
+          }}]
+        }}";
+        c.ProcessMessage(payload);
+        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+    }
+
+    [Test]
+    public async Task Perpendicular_BareBoolTrue_FailsSafeArmed()
+    {
+        // v3 plugin builds occasionally push a bare boolean for
+        // notification paths. True -> armed.
+        var c = NewClient();
+        string payload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""notifications.navigation.course.perpendicularPassed"",
+              ""value"":true }}]
+          }}]
+        }}";
+        c.ProcessMessage(payload);
+        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+    }
 }
