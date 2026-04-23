@@ -189,10 +189,10 @@
                     "SK v2 server core (<code>signalk-server</code> &gt;= 2.x)",
                     GetValue: d => string.IsNullOrEmpty(d.ActiveRouteHref) ? null
                         : ShortRouteHref(d.ActiveRouteHref)),
-                new("navigation.course.calcValues.distance", "Next-WP HUD, APPROACH alarm",
+                new("navigation.course.calcValues.distance", "Next-waypoint HUD, APPROACH alarm",
                     "<code>course-provider-plugin</code>",
                     GetValue: d => Metres(d.CourseNextPointDistance, "F0")),
-                new("navigation.course.calcValues.bearingTrue", "Next-WP HUD, SailSteer waypoint line",
+                new("navigation.course.calcValues.bearingTrue", "Next-waypoint HUD, SailSteer waypoint line",
                     "<code>course-provider-plugin</code>",
                     GetValue: d => DegFromRad(d.CourseNextPointBearing)),
                 new("navigation.course.calcValues.timeToGo", "TTG HUD",

@@ -484,7 +484,7 @@
                 Toasts.Error($"Auto-advance failed: {r.Error ?? "server rejected"}");
                 return;
             }
-            Toasts.Info($"Next WP ({reason})");
+            Toasts.Info($"Next waypoint ({reason})");
             await Task.Delay(400);
             if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
                 Toasts.Success("Arrived at final waypoint");
@@ -513,7 +513,7 @@
         try
         {
             var r = await CourseApi.AdvanceActiveRouteAsync();
-            if (!r.Success) { Toasts.Error($"Next WP failed: {r.Error ?? "server rejected"}"); return; }
+            if (!r.Success) { Toasts.Error($"Next waypoint failed: {r.Error ?? "server rejected"}"); return; }
             await Alarms.DismissAsync(alarm);
 
             // Brief settle window so the delta for the new leg (or the
@@ -523,7 +523,7 @@
             if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
                 Toasts.Success("Arrived at final waypoint");
         }
-        catch (Exception ex) { Toasts.Error($"Next WP failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.Error($"Next waypoint failed: {ex.Message}"); }
     }
 
     // --- Hold-to-dismiss for Danger alarms ---

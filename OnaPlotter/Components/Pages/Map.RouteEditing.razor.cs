@@ -68,7 +68,7 @@ public partial class Map
             if (!ok) return;
         }
         if (wpCount > 0)
-            Toasts.Info($"Route edit cancelled ({wpCount} WP discarded)");
+            Toasts.Info($"Route edit cancelled ({wpCount} waypoints discarded)");
 
         routeEditMode = false;
         routeEditId = null;
@@ -237,7 +237,7 @@ public partial class Map
 
             if (ok)
             {
-                Toasts.Success($"Saved route '{name}' ({coords.Length} WP)");
+                Toasts.Success($"Saved route '{name}' ({coords.Length} waypoints)");
                 // Reload the list so the newly-saved route shows up
                 // in Layers / search / route-switcher. The route
                 // id we already have (from the server response or
