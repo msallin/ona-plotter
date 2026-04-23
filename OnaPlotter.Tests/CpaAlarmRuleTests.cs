@@ -117,6 +117,32 @@ public class CpaAlarmRuleTests
     }
 
     [Test]
+    public async Task ExemptsNearStationaryTargets()
+    {
+        // A vessel parked at 0.5 kn right in front of us should NOT
+        // fire the CPA alarm even with a head-on closing geometry.
+        // This is the "ignore parked / anchored boats" filter; the
+        // threshold is 1 kn (0.514 m/s) so 0.5 kn is well inside.
+        var rule = new CpaAlarmRule();
+        // Closer than the default-fire fixture (120 m instead of 200)
+        // and slower (0.25 m/s) so we're pinning the filter, not the
+        // CPA math (which would also fire at this geometry).
+        var parked = ThreatNorthOf(120, speedMs: 0.25, name: "Anchored Cat");
+        await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [parked], new FakeSettings()))).IsNull();
+    }
+
+    [Test]
+    public async Task FiresOnSlowButMoving()
+    {
+        // Just above the 1 kn cutoff -- still a threat. Pins the
+        // boundary so a future refactor doesn't accidentally widen
+        // the filter into "ignore anyone under 2 kn".
+        var rule = new CpaAlarmRule();
+        var crawling = ThreatNorthOf(200, speedMs: 0.6, name: "Slow Mover");
+        await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [crawling], new FakeSettings()))).IsNotNull();
+    }
+
+    [Test]
     public async Task ExemptsBuddies()
     {
         // Same closing scenario as "fires" but marked as buddy -- must
