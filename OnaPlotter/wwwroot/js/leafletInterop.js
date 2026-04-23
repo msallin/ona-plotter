@@ -1737,6 +1737,7 @@ function addMeasurePoint(lat, lon) {
 // --- MOB ---
 
 export function setMob(lat, lon) {
+    if (!map) return;  // page unmounted mid-dispatch; same guard as setAnchor.
     clearMob();
     mobMarker = L.marker([lat, lon], { icon: mobIcon, zIndexOffset: 2000 }).addTo(map);
     mobCircle = L.circle([lat, lon], { radius: 50, color: MapColors.mob, fillColor: MapColors.mob,
@@ -1751,6 +1752,7 @@ export function setMob(lat, lon) {
 }
 
 export function clearMob() {
+    if (!map) { mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null; return; }
     if (mobMarker) { map.removeLayer(mobMarker); mobMarker = null; }
     if (mobCircle) { map.removeLayer(mobCircle); mobCircle = null; }
     if (mobLine) { map.removeLayer(mobLine); mobLine = null; }
@@ -1760,6 +1762,13 @@ export function clearMob() {
 // --- Anchor Watch ---
 
 export function setAnchor(lat, lon, radiusM) {
+    // Swallow calls that hit after the Map page unmounted. Blazor's
+    // OnDataChanged handler dispatches asynchronously, so an in-flight
+    // HandleDataChanged can land here after DisposeAsync -> dispose()
+    // already nulled `map`. Without this guard the next `addTo(map)`
+    // throws "can't access property addLayer, t is null" through the
+    // console every time the user switches from Map to Dashboard.
+    if (!map) return;
     clearAnchor();
     anchorMarker = L.circleMarker([lat, lon], {
         radius: 5, color: MapColors.anchorOk, fillColor: MapColors.anchorOk, fillOpacity: 1
@@ -1774,6 +1783,7 @@ export function setAnchor(lat, lon, radiusM) {
 }
 
 export function clearAnchor() {
+    if (!map) { anchorMarker = null; anchorCircle = null; anchorTrailLayer = null; anchorTrail.length = 0; return; }
     if (anchorMarker) { map.removeLayer(anchorMarker); anchorMarker = null; }
     if (anchorCircle) { map.removeLayer(anchorCircle); anchorCircle = null; }
     if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
@@ -1785,6 +1795,7 @@ export function updateAnchorRadius(radiusM) {
 }
 
 function updateAnchorTrail(lat, lon) {
+    if (!map) return;  // page unmounted; skip rather than dereference a null map.
     if (!anchorMarker) {
         // Anchor not set: tear down any residual trail.
         if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
