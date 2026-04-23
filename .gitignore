@@ -11,6 +11,7 @@ obj/
 ## IDE
 .vs/
 .vscode/
+.claude/
 *.swp
 *~
 
