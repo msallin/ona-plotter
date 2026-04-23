@@ -37,6 +37,17 @@
     --sev-warn-bg:   rgba(245, 158, 11, 0.15);
     --sev-danger-bg: rgba(239, 68, 68, 0.18);
 
+    /* RGB triplets -- a companion to the severity / accent hex
+       tokens above so downstream rules can alpha-blend via
+       rgba(var(--tok-rgb), X). CSS doesn't let us do alpha math
+       on a hex var directly; these triplets are the workaround.
+       Keep them in lockstep with the hex tokens above whenever
+       the palette changes. */
+    --sk-accent-rgb:  96, 165, 250;
+    --sev-danger-rgb: 239, 68, 68;
+    --sev-warn-rgb:   245, 158, 11;
+    --sev-ok-rgb:     34, 197, 94;
+
     /* ----- User-annotation hue family -----
        Notes and regions are USER-placed, same family as routes. Amber
        anchor hue, with lightness variation by object type. Picking
@@ -846,9 +857,9 @@ article.content:has(.map-container) {
 }
 
 .ctrl-btn.active {
-    background: rgba(96, 165, 250, 0.2);
+    background: rgba(var(--sk-accent-rgb), 0.2);
     color: #fff;
-    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(var(--sk-accent-rgb), 0.35);
 }
 .ctrl-btn.active .ctrl-ico { color: var(--sk-accent); opacity: 1; }
 
@@ -865,13 +876,13 @@ article.content:has(.map-container) {
     color: #fca5a5;
 }
 .ctrl-btn-danger:hover {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(var(--sev-danger-rgb), 0.15);
     color: #fff;
 }
 .ctrl-btn-danger.active {
-    background: rgba(239, 68, 68, 0.35);
+    background: rgba(var(--sev-danger-rgb), 0.35);
     color: #fff;
-    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(var(--sev-danger-rgb), 0.6);
     animation: mob-glow 1.5s ease-in-out infinite;
 }
 
@@ -915,8 +926,8 @@ article.content:has(.map-container) {
     border-color: rgba(255,255,255,0.2);
 }
 .map-btn.active {
-    background: rgba(96, 165, 250, 0.25);
-    border-color: rgba(96, 165, 250, 0.5);
+    background: rgba(var(--sk-accent-rgb), 0.25);
+    border-color: rgba(var(--sk-accent-rgb), 0.5);
     color: #fff;
 }
 /* Disabled state for any map-btn. Default browser styling on a dark
