@@ -6,8 +6,9 @@ namespace OnaPlotter.Services.Alarms;
 /// <summary>CPA: projects every AIS vessel's closest point of approach
 /// and raises an alarm when one would enter the configured CPA radius
 /// within the configured TCPA lookahead. Buddies, moored vessels (SOG
-/// under <see cref="MooredVesselTracker.MooredSpeedThresholdMs"/>, ~1 kn),
-/// and per-vessel snoozed targets are exempt. Auto-clears once no vessel
+/// held under <see cref="MooredVesselTracker.MooredSpeedThresholdMs"/>
+/// ~1 kn for <see cref="MooredVesselTracker.MooredHoldSeconds"/>), and
+/// per-vessel snoozed targets are exempt. Auto-clears once no vessel
 /// matches.</summary>
 public sealed class CpaAlarmRule : IAlarmRule
 {
@@ -27,14 +28,18 @@ public sealed class CpaAlarmRule : IAlarmRule
         double cpaLimit = ctx.Settings.CpaAlarmThreshold;
         double tcpaLimit = ctx.Settings.GuardZoneLookaheadMinutes;
 
+        // Drop tracker state for vessels that have left AIS range so the
+        // dict doesn't grow without bound over long sessions.
+        _moored.Cleanup(ctx.Vessels.Select(v => v.Context).ToHashSet());
+
         foreach (var v in ctx.Vessels)
         {
             if (v.Latitude is null || v.Longitude is null
                 || v.CourseOverGround is null || v.SpeedOverGround is null)
                 continue;
 
-            if (v.IsBuddy) continue;                  // friends, not threats
-            if (_moored.IsMoored(v)) continue;        // parked / anchored / holding
+            if (v.IsBuddy) continue;                          // friends, not threats
+            if (_moored.IsMoored(v, ctx.Now)) continue;       // parked / anchored / holding
             if (ctx.IsSnoozed(v.Context)) continue;
 
             var cpa = Cpa.Compute(

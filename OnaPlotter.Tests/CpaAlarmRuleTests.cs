@@ -19,8 +19,9 @@ namespace OnaPlotter.Tests;
 /// </list>
 /// The fixtures use a head-on approach at close range so CPA is
 /// essentially zero and TCPA is distance / closing speed. The moored
-/// filter is stateless (single-threshold on SOG) so tests pin the
-/// cutoff with one slow fixture and one just-above-cutoff fixture.
+/// filter has a dwell, so exempting a near-stationary target requires
+/// two Check() calls (first tick tracks; 60s later skips). Tests
+/// thread an explicit <c>now</c> through Ctx() to exercise this.
 /// </summary>
 public class CpaAlarmRuleTests
 {
@@ -64,10 +65,11 @@ public class CpaAlarmRuleTests
 
     private static AlarmEvaluationContext Ctx(
         NavigationData nav, IReadOnlyCollection<AisVessel> vessels,
-        IAppSettings settings, Func<string, bool>? isSnoozed = null)
+        IAppSettings settings, Func<string, bool>? isSnoozed = null,
+        DateTime? now = null)
     {
         return new AlarmEvaluationContext(
-            nav, vessels, settings, DateTime.UtcNow,
+            nav, vessels, settings, now ?? DateTime.UtcNow,
             isSnoozed ?? (_ => false));
     }
 
@@ -117,18 +119,29 @@ public class CpaAlarmRuleTests
     }
 
     [Test]
-    public async Task ExemptsNearStationaryTargets()
+    public async Task ExemptsNearStationaryTargets_AfterDwell()
     {
-        // A vessel parked at 0.5 kn right in front of us should NOT
-        // fire the CPA alarm even with a head-on closing geometry.
-        // This is the "ignore parked / anchored boats" filter; the
-        // threshold is 1 kn (0.514 m/s) so 0.5 kn is well inside.
+        // A vessel parked at 0.25 kn right in front of us should be
+        // treated as moored once the dwell (60s, see
+        // MooredVesselTracker.MooredHoldSeconds) has elapsed. First
+        // tick still fires -- the tracker isn't convinced yet; the
+        // second tick past 60s later skips. Exercises the dwell flow
+        // end-to-end through the rule's private tracker.
         var rule = new CpaAlarmRule();
-        // Closer than the default-fire fixture (120 m instead of 200)
-        // and slower (0.25 m/s) so we're pinning the filter, not the
-        // CPA math (which would also fire at this geometry).
+        var nav = OwnShipUnderway();
         var parked = ThreatNorthOf(120, speedMs: 0.25, name: "Anchored Cat");
-        await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [parked], new FakeSettings()))).IsNull();
+        var t0 = DateTime.UtcNow;
+
+        // First observation: not yet moored. The CPA geometry fires
+        // (head-on inside 200 m).
+        var first = rule.Check(Ctx(nav, [parked], new FakeSettings(), now: t0));
+        await Assert.That(first).IsNotNull();
+
+        // 61 s later: tracker has dwelled through the threshold and
+        // the vessel is skipped.
+        var later = rule.Check(Ctx(nav, [parked], new FakeSettings(),
+            now: t0.AddSeconds(61)));
+        await Assert.That(later).IsNull();
     }
 
     [Test]
