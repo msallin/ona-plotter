@@ -20,7 +20,7 @@
         <div class="card dash-card-primary">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Speed</h6>
-                <p class="card-text" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
+                <p class="card-text metric-xl">
                     @Format.Speed(Data.SpeedOverGround)
                 </p>
                 <small class="text-muted">kn SOG</small>
@@ -31,7 +31,7 @@
         <div class="card dash-card-primary">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Depth</h6>
-                <p class="card-text @Format.DepthClass(Data.Depth)" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
+                <p class="card-text metric-xl @Format.DepthClass(Data.Depth)">
                     @Format.Depth(Data.Depth)
                 </p>
                 <small class="text-muted">m</small>
@@ -42,7 +42,7 @@
         <div class="card dash-card-primary">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Heading</h6>
-                <p class="card-text" style="font-size:3rem; font-weight:700; margin:0; font-variant-numeric:tabular-nums;">
+                <p class="card-text metric-xl">
                     @Format.Degrees(Data.Heading)
                 </p>
                 <small class="text-muted">deg</small>
@@ -65,7 +65,7 @@
             <div class="card dash-card-primary">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
-                    <p class="card-text @PerfClass" style="font-size:3rem; font-weight:700; margin:0;">
+                    <p class="card-text metric-xl @PerfClass">
                         @((PolarPerformancePct.Value * 100).ToString("F0"))%
                     </p>
                     <small class="text-muted">of polar target</small>
@@ -90,7 +90,7 @@ else if (Polar.HasPolar)
             <div class="card">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
-                    <p class="card-text" style="font-size:1.1rem; margin:0; color:var(--sk-text-muted);">
+                    <p class="card-text metric-md" style="color:var(--sk-text-muted);">
                         Waiting for true-wind data
                     </p>
                     <small class="text-muted">Needs TWD + TWS from SignalK</small>
@@ -166,7 +166,7 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Position</h6>
-                <p class="card-text" style="font-size:1.1rem;">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</p>
+                <p class="card-text metric-md">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</p>
             </div>
         </div>
     </div>
@@ -203,7 +203,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">Next HW</h6>
-                        <p class="card-text display-6" style="font-size:1.6rem;">
+                        <p class="card-text metric-lg">
                             @th.ToLocalTime().ToString("HH:mm")
                         </p>
                         <small class="text-muted">
@@ -223,7 +223,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">Next LW</h6>
-                        <p class="card-text display-6" style="font-size:1.6rem;">
+                        <p class="card-text metric-lg">
                             @tl.ToLocalTime().ToString("HH:mm")
                         </p>
                         <small class="text-muted">
@@ -294,7 +294,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">TTG</h6>
-                        <p class="card-text display-6" style="font-size:1.4rem;">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text metric-lg">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</p>
                     </div>
                 </div>
             </div>
@@ -302,7 +302,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">ETA</h6>
-                        <p class="card-text display-6" style="font-size:1.4rem;">@Format.Eta(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text metric-lg">@Format.Eta(Data.CourseNextPointTimeToGo)</p>
                     </div>
                 </div>
             </div>

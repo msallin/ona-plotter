@@ -427,6 +427,31 @@ a, .btn-link {
     margin: 0;
 }
 
+/* Shared metric-value sizes. Dashboard used to inline the font-size
+   at each card (3rem, 1.6rem, 1.1rem depending on the card's
+   importance) and that drifted per-page. These three classes
+   standardise the bands so every large number on the app sits at
+   one of these three weights. tabular-nums keeps digits aligned
+   across the row even when a 1 follows a 0 etc. */
+.metric-xl {
+    font-size: 3rem;
+    font-weight: 700;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.05;
+}
+.metric-lg {
+    font-size: 1.6rem;
+    font-weight: 600;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+.metric-md {
+    font-size: 1.1rem;
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
 .content {
     padding-top: 1.1rem;
 }
