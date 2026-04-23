@@ -2028,11 +2028,24 @@ export function addRoute(id, name, coords) {
         color: MapColors.route, weight: 2.5, opacity: 0.8, dashArray: '8,6'
     }).addTo(map);
 
+    // Invisible wider polyline acts as the tap hitbox. The visible
+    // route is 2.5 px and dashed, which is a miserable target on
+    // a touch screen (users end up dropping waypoints on the map
+    // while trying to activate a route). Same pattern used by the
+    // route-edit flow below for live-edit vertices; do it on all
+    // saved routes too so the Activate / Edit / Delete popup is
+    // actually reachable from the polyline.
+    const hitLine = L.polyline(coords, {
+        color: MapColors.route, weight: 20, opacity: 0, interactive: true
+    }).addTo(map);
+
     const nmTotal = routeTotalNauticalMiles(coords);
-    line.bindPopup(buildRoutePopupHtml(id, name, coords.length, nmTotal), {
-        className: 'route-popup', maxWidth: 260, autoClose: true,
-    });
-    line.on('click', (ev) => {
+    const popupOptions = { className: 'route-popup', maxWidth: 260, autoClose: true };
+    const popupHtml = () => buildRoutePopupHtml(id, name, coords.length, nmTotal);
+    line.bindPopup(popupHtml(), popupOptions);
+    hitLine.bindPopup(popupHtml(), popupOptions);
+
+    const onLineClick = (ev, sourceLine) => {
         if (routeEditMode || polygonEditMode || measureActive) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng;
@@ -2040,17 +2053,21 @@ export function addRoute(id, name, coords) {
             if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
             else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
             else                       addMeasurePoint(ll.lat, ll.lng);
-            line.closePopup();
+            sourceLine.closePopup();
         }
-    });
-    line.on('popupopen', (ev) => {
+    };
+    line.on('click', (ev) => onLineClick(ev, line));
+    hitLine.on('click', (ev) => onLineClick(ev, hitLine));
+    const wirePopup = (ev) => {
         wireRouteActivate(ev.popup, id, name);
         wireRouteEdit(ev.popup, id);
         wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', id);
-    });
+    };
+    line.on('popupopen', wirePopup);
+    hitLine.on('popupopen', wirePopup);
 
     // Waypoint dots at each coordinate.
-    const group = L.layerGroup([line]).addTo(map);
+    const group = L.layerGroup([line, hitLine]).addTo(map);
     for (let i = 0; i < coords.length; i++) {
         const dot = L.circleMarker(coords[i], {
             radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
@@ -2769,7 +2786,7 @@ export function addWaypointMarker(id, lat, lon, name) {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
-    marker.bindPopup(buildWaypointPopupHtml(id, name), {
+    marker.bindPopup(buildWaypointPopupHtml(id, name, lat, lon), {
         className: 'note-popup',
         maxWidth: 280,
         autoClose: true,
@@ -2906,11 +2923,19 @@ function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
     popup.once('popupclose', reset);
 }
 
-function buildWaypointPopupHtml(id, name) {
+function buildWaypointPopupHtml(id, name, lat, lon) {
     const safeName = esc(name || id.substring(0, 8));
+    // Coords mirror the hover-tooltip format (5dp ~ 1 m, hemisphere
+    // letters) so hover-then-tap doesn't show two conflicting
+    // renderings of the same position. Tap-only users (phones, iPad)
+    // need the coords here because they never trigger hover.
+    const ns = lat >= 0 ? 'N' : 'S';
+    const ew = lon >= 0 ? 'E' : 'W';
+    const coords = `${Math.abs(lat).toFixed(5)}\u00B0 ${ns}, ${Math.abs(lon).toFixed(5)}\u00B0 ${ew}`;
     return `
         <div class="note-popup-inner">
             <div class="note-popup-title">${safeName}</div>
+            <div class="note-popup-coords">${esc(coords)}</div>
             <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
         </div>`;
 }

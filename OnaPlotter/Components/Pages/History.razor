@@ -27,9 +27,9 @@
             </select>
             <button class="map-btn" @onclick="LoadTrack">Load</button>
             <button class="map-btn" @onclick="GoToBoat" title="Center on current boat position">
-                <span style="display:inline-flex;align-items:center;gap:4px;">
-                    @((MarkupString)Icons.Follow) Boat
-                </span>
+                @* .map-btn is inline-flex so the icon + label line up
+                   without an inner wrapper; same visual as "Load". *@
+                @((MarkupString)Icons.Follow) Boat
             </button>
         </div>
 

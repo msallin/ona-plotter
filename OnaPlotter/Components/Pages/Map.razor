@@ -555,6 +555,11 @@
         chartPanelOpen = !chartPanelOpen;
         if (chartPanelOpen)
         {
+            // If the map context menu is up (user long-pressed then
+            // reached for Layers), dismiss it so two floating panels
+            // don't fight for the tap. Same reason the menu auto-
+            // dismisses on a map pan.
+            contextMenuVisible = false;
             _ = RefreshServerResourcesAsync();
         }
     }
@@ -812,11 +817,19 @@
     // set (curation). Rendering is controlled by the quick bar itself.
     // On untick we also tear down rendering so a removed chart doesn't
     // linger as a ghost layer without a chip to toggle it off.
+    // On tick we also ACTIVATE the chart: ticking in the Layers panel
+    // is the user's way of saying "I want this chart"; leaving it
+    // inactive and requiring a second tap on the quick-bar chip was
+    // a dead step that confused people ("I added it but nothing
+    // happened"). The chip on the bar can still toggle rendering off
+    // without removing from the quick bar.
     private async Task OnToggleChartQuickBarCallback((SignalkChart chart, bool inQuickBar) t)
     {
         if (t.inQuickBar)
         {
             quickBarCharts.Add(t.chart.Identifier);
+            if (!enabledCharts.Contains(t.chart.Identifier))
+                await ToggleChart(t.chart, true);
         }
         else
         {

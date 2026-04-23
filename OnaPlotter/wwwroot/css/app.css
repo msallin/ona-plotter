@@ -73,11 +73,22 @@
     --map-danger:       #c4453e;     /* CPA alarm colour on AIS targets */
     --map-radar:        #b08d5a;     /* Mayara radar ARPA markers */
     --map-current:      #a78bfa;     /* tidal-current arrow + active-WP pulse */
+    --map-current-rgb:  167, 139, 250;
     --map-bearing:      #06b6d4;     /* cyan bearing-to-WP line */
     --map-course-leg:   #e2e8f0;     /* white-ish active-leg line */
     --map-mob:          #ef4444;     /* MOB pin (= --sev-danger) */
     --map-anchor-ok:    #22c55e;     /* anchor circle inside radius */
     --map-anchor-drag:  #ef4444;     /* anchor circle outside radius */
+
+    /* AIS palette mirrors OnaPlotter.Utilities.AisPalette on the C#
+       side. The C# constants are the source of truth for the glyph
+       colour on the map; these tokens let the legend read the same
+       values without duplicating the hex strings in a second file.
+       AisPaletteCssParityTests guards against drift. */
+    --map-ais-sail:       #e28862;  /* AisPalette.Sailing */
+    --map-ais-fish:       #d4a850;  /* AisPalette.Fishing */
+    --map-ais-commercial: #7d9b76;  /* AisPalette.Cargo */
+    --ann-route-rgb:  224, 159, 62; /* --ann-route, for alpha blends */
 
     /* Chrome palette (sidebar + top bar). Keep separate from content vars
        so the sidebar can have its own depth treatment on either theme. */
@@ -933,6 +944,16 @@ article.content:has(.map-container) {
 /* Legacy .map-btn is still used by route edit bar, dialogs, and context menu items.
    Keep it but modernize. */
 .map-btn {
+    /* inline-flex + alignment so buttons with inline SVG icons (like
+       the History "Boat" button) line up flush with plain-text
+       buttons in the same row. Without this, the icon-bearing button
+       is a few px taller and the two look mis-sized next to each
+       other. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    line-height: 1.2;
     background: rgba(30, 34, 44, 0.9);
     backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.1);
@@ -2035,16 +2056,23 @@ main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .chart-quick-bar {
     transform: translateX(-50%);
     z-index: var(--z-modal);
     padding: 10px 18px;
-    background: rgba(16, 20, 28, 0.94);
-    color: #e2e8f0;
+    /* Shared surface + border tokens so the hint reads as "part of
+       the same UI" rather than a stray alert widget. Previous look
+       was a nearly-opaque slate box with a cyan pulsing halo -- jarring
+       on top of the map, which is why this got called out as ugly. */
+    background: var(--sk-surface);
+    color: var(--sk-text);
     font-size: 0.85rem;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--sk-border);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
     backdrop-filter: blur(6px);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
-    animation: coachmark-pop 0.3s ease-out, coachmark-pulse 2s ease-in-out 0.3s infinite;
+    /* Slide-in once, then a gentle opacity breathe. No colour halo,
+       no pulsing box-shadow -- the shape of the pill is enough to
+       say "this is a tip, tap to dismiss". */
+    animation: coachmark-pop 0.3s ease-out, coachmark-breathe 3s ease-in-out 0.3s infinite;
     pointer-events: auto;
     max-width: calc(100vw - 40px);
     text-align: center;
@@ -2056,9 +2084,9 @@ main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .chart-quick-bar {
     from { transform: translate(-50%, 12px); opacity: 0; }
     to { transform: translate(-50%, 0); opacity: 1; }
 }
-@keyframes coachmark-pulse {
-    0%, 100% { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5); }
-    50% { box-shadow: 0 6px 20px rgba(96, 165, 250, 0.3), 0 0 0 4px rgba(96, 165, 250, 0.1); }
+@keyframes coachmark-breathe {
+    0%, 100% { opacity: 0.92; }
+    50%      { opacity: 1; }
 }
 
 /* ===== Snoozed-target chips ===== */
@@ -3553,9 +3581,13 @@ main:has(.alarm-banner-stack) .snooze-chips {
     align-self: center;
     border-radius: 2px;
 }
-.legend-ais-sail   { background: #e28862; }                   /* warm coral -- AIS palette is C#-side AisColor; sync via palette.cs */
-.legend-ais-fish   { background: #d4a850; }                   /* muted gold */
-.legend-ais-commercial { background: #7d9b76; }               /* sage green */
+/* AIS swatches pull from the --map-ais-* tokens, which mirror
+   OnaPlotter.Utilities.AisPalette on the C# side. Edit the C#
+   constants; a parity test (AisPaletteCssParityTests) catches
+   drift in CI. */
+.legend-ais-sail       { background: var(--map-ais-sail); }
+.legend-ais-fish       { background: var(--map-ais-fish); }
+.legend-ais-commercial { background: var(--map-ais-commercial); }
 .legend-buddy      { background: var(--map-buddy); }
 .legend-danger     { background: var(--map-danger); }
 .legend-sart       { background: var(--sev-danger); }
@@ -3575,9 +3607,9 @@ main:has(.alarm-banner-stack) .snooze-chips {
    Earlier this was a red dashed outline -- red signalled "danger"
    which confused users because the map ring is advisory (alarm
    trigger radius), not an alarm state. */
-.legend-guard      { background: rgba(245, 158, 11, 0.04);
-                     border: 1.5px solid rgba(245, 158, 11, 0.5);
-                     border-radius: 50%; }                  /* --sev-warn */
+.legend-guard      { background: rgba(var(--sev-warn-rgb), 0.04);
+                     border: 1.5px solid rgba(var(--sev-warn-rgb), 0.5);
+                     border-radius: 50%; }
 
 /* Violet tidal-current arrow drawn on the map from own-boat along the
    current set direction. Solid line + arrow shape; swatch is a
@@ -3628,17 +3660,20 @@ main:has(.alarm-banner-stack) .snooze-chips {
     height: 4px;
     border-radius: 0;
 }
-/* Active-WP pulse: violet filled circle like the pulse marker. */
+/* Active-WP pulse: violet filled circle like the pulse marker.
+   Halo uses the --map-current-rgb triplet so a palette tweak
+   cascades through the ring. */
 .legend-active-wp {
     background: var(--map-current);
     border: 2px solid #fff;
     border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.35);
+    box-shadow: 0 0 0 2px rgba(var(--map-current-rgb), 0.35);
 }
 /* Anchor: pinned marker + alarm-radius circle ghost. Swatch uses the
-   same gold stroke as the ring. */
+   same gold stroke as the ring; fill reads from --ann-route-rgb so
+   alpha blend tracks the token palette. */
 .legend-anchor {
-    background: rgba(224, 159, 62, 0.08);
+    background: rgba(var(--ann-route-rgb), 0.08);
     border: 1.5px solid var(--ann-route);
     border-radius: 50%;
 }
@@ -4540,6 +4575,17 @@ main:has(.map-container.big-type) .map-fab-item {
 .note-popup .leaflet-popup-tip { background: rgba(30, 22, 14, 0.96); }
 .note-popup-inner { padding: 2px 4px; min-width: 180px; }
 .note-popup-title { font-weight: 600; color: #f0d49c; margin-bottom: 4px; }
+/* Coordinates line on waypoint popups. Dimmer + smaller than the
+   title so the name leads and the numbers sit underneath as
+   reference data. Tabular-nums keeps adjacent-waypoint coords
+   vertically aligned when the popup is compared by eye. */
+.note-popup-coords {
+    font-size: 0.72rem;
+    color: rgba(203, 213, 225, 0.75);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 8px;
+    line-height: 1.2;
+}
 .note-popup-body {
     color: #cbd5e1;
     font-size: 0.85rem;
