@@ -116,6 +116,53 @@
     --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
+/* === Night mode token overrides ===
+   Night mode is a red-shifted helm palette: the display drops to
+   warm reds so the helmsman's dark-adapted vision isn't wiped by
+   the next glance at the HUD. Earlier every night-mode rule
+   hand-painted a specific rgba at the component level (see the
+   dozen ".night-mode .hud-* { color: rgba(255,130,130,...) }"
+   blocks below). That's fine for the components written in 2025
+   but any NEW component that just reads the shared tokens
+   (--sk-text / --sk-text-muted / --sk-accent / --sev-*) would
+   render in day-mode colours regardless.
+
+   Redefining the tokens inside .night-mode means every component
+   using var(--sk-text) etc. automatically follows the palette
+   swap. The individual overrides below still apply on top where
+   they paint something token-reading would miss (backgrounds,
+   border tints). Goal is: the overrides eventually shrink as
+   components migrate to variables, without an atomic rewrite. */
+.night-mode {
+    --sk-text:          #ffdddd;
+    --sk-text-muted:    rgba(255, 130, 130, 0.6);
+    --sk-accent:        #ff8080;
+    --sk-accent-dim:    rgba(255, 120, 120, 0.6);
+    --sk-green:         #ff9a9a;  /* collapse to red family */
+    --sk-red:           #ff6060;
+    --sk-orange:        #ff8c6a;
+    --sk-cyan:          #ff9a6b;
+    --sk-purple:        #ff9090;
+
+    --sev-ok:           #ff9a9a;
+    --sev-warn:         #ffb08c;
+    --sev-danger:       #ff6060;
+
+    /* Map overlays (active-route polyline, current arrow, etc.)
+       stay on the map layer which is kept dark-ish by dedicated
+       background rules, but the palette-derived colours still
+       want red-shifting so a toolbar glance doesn't jar. */
+    --map-bearing:      #ff9a6b;
+    --map-current:      #ffa07d;
+    --map-buddy:        #ffb06a;
+    --map-course-leg:   #ffe0e0;
+    --map-mob:          #ff6060;
+    --map-anchor-ok:    #ff9a9a;
+    --map-anchor-drag:  #ff6060;
+    --map-own:          #ff6f6f;
+    --map-cog-vector:   #ffa0a0;
+}
+
 /* === Light theme ===
    Applied when the user picks "Light" in Settings, or when "System" is
    chosen and the OS prefers a light color scheme. Scoped to the outer
