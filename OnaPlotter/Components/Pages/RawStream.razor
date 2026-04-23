@@ -7,12 +7,10 @@
 
 @page "/raw"
 @using OnaPlotter.Services
-@using OnaPlotter.Services.Api
 @using Microsoft.JSInterop
 @using System.Text.Json
 @implements IAsyncDisposable
 @inject SignalkClient SignalkClient
-@inject IPathApi PathApi
 @inject IJSRuntime JS
 
 <PageTitle>Raw Stream</PageTitle>
@@ -178,11 +176,18 @@
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         SignalkClient.OnRawMessage += HandleRawMessage;
-        availablePaths = await PathApi.GetAvailablePathsAsync();
+        // Only list paths the plotter actually subscribes to -- the
+        // server exposes a much larger catalogue via PathApi, but
+        // rows for unsubscribed paths would never fire in this view
+        // (no delta -> no log entry) so showing them was just noise.
+        availablePaths = SignalkClient.SubscribedPaths
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
         foreach (var p in SignalkClient.CoreSelfPaths) selectedPaths.Add(p);
+        return Task.CompletedTask;
     }
 
     // --- Incoming message ----------------------------------------------

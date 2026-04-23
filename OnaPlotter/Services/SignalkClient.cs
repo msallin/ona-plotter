@@ -986,6 +986,29 @@ public sealed class SignalkClient : IAsyncDisposable
     public IReadOnlyCollection<string> CoreSelfPaths => SelfPaths;
 
     /// <summary>
+    /// Every path the client is currently subscribed to: the core self
+    /// tier, the AIS tier, plus any <see cref="SubscribeExtraPathAsync"/>
+    /// additions. Used by RawStream to populate its chip list -- the
+    /// page previously showed the server's full discoverable paths,
+    /// which was noise when the plotter only ingests a narrow slice.
+    ///
+    /// Returns a fresh snapshot each call; Blazor WASM is single-
+    /// threaded so a mid-enumeration mutation isn't possible, but
+    /// handing out a copy keeps callers from accidentally relying on
+    /// live-update semantics.
+    /// </summary>
+    public IReadOnlyCollection<string> SubscribedPaths
+    {
+        get
+        {
+            var set = new HashSet<string>(SelfPaths, StringComparer.Ordinal);
+            foreach (var p in AisPaths) set.Add(p);
+            foreach (var p in _extraPaths) set.Add(p);
+            return set;
+        }
+    }
+
+    /// <summary>
     /// Sends a SignalK subscribe request with a per-path period + policy.
     /// Defaults are the <see cref="StandardSubscriptionPeriodMs"/> + "ideal"
     /// profile, which caps updates at 1 Hz and lets the server coalesce
