@@ -15,17 +15,6 @@ public static class SignalKUrls
     public const string WaypointsPath = "/signalk/v2/api/resources/waypoints";
     public const string NotesPath = "/signalk/v2/api/resources/notes";
     public const string RegionsPath = "/signalk/v2/api/resources/regions";
-    public const string TrackPath = "/signalk/v1/api/self/track";
-
-    /// <summary>v2 tracks-resource surface. Returns a dictionary of
-    /// {track-id: Feature} where Feature is a GeoJSON object with a
-    /// MultiLineString geometry and a root-level <c>timestamp</c>.
-    /// Exposed by signalk-server's built-in track recorder (or the
-    /// @signalk/tracks plugin) on modern installs; distinct from
-    /// <see cref="TrackPath"/> which is the older per-query surface
-    /// that some installs don't have at all.</summary>
-    public const string TracksPath = "/signalk/v2/api/resources/tracks";
-
     /// <summary>v2 History API values endpoint (signalk-parquet,
     /// signalk-to-influxdb2). Answers path-value queries over an
     /// arbitrary time window with optional aggregation; we use it
@@ -97,9 +86,6 @@ public static class SignalKUrls
     public static string Waypoint(string id) => $"{WaypointsPath}/{Uri.EscapeDataString(id)}";
     public static string Note(string id) => $"{NotesPath}/{Uri.EscapeDataString(id)}";
     public static string Region(string id) => $"{RegionsPath}/{Uri.EscapeDataString(id)}";
-
-    public static string Track(string timespan, string resolution) =>
-        $"{TrackPath}?timespan={Uri.EscapeDataString(timespan)}&resolution={Uri.EscapeDataString(resolution)}";
 
     /// <summary>
     /// Builds the WebSocket stream URL from a base http(s) URL.

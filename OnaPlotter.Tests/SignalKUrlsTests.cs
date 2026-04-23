@@ -20,13 +20,6 @@ public class SignalKUrlsTests
     }
 
     [Test]
-    public async Task Track_UrlEncodesArgs()
-    {
-        var url = SignalKUrls.Track("1d", "30s");
-        await Assert.That(url).IsEqualTo("/signalk/v1/api/self/track?timespan=1d&resolution=30s");
-    }
-
-    [Test]
     public async Task StreamWs_Http_ToWs()
     {
         var uri = SignalKUrls.StreamWs("http://example.local:3000");
