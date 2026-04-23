@@ -1259,21 +1259,24 @@ article.content:has(.map-container) {
         font-size: 0.85rem;
         align-items: center;
     }
-    /* Autopilot buttons */
+    /* Autopilot buttons -- 44px to hit WCAG 2.5.5 AAA. Engage / mode
+       select are safety-critical on a boat; missing the tap is worse
+       than a slightly larger panel. */
     .ap-btn {
-        min-height: 40px;
-        padding: 6px 12px;
+        min-height: 44px;
+        padding: 8px 14px;
         font-size: 0.8rem;
     }
     .ap-mode-btn {
-        min-height: 36px;
-        padding: 4px 10px;
+        min-height: 44px;
+        padding: 8px 12px;
         font-size: 0.75rem;
     }
-    /* Path filter chips */
+    /* Path filter chips. Chips sit in a scrollable row so width is
+       free; the 44px height keeps them tappable without fuss. */
     .path-chip {
-        min-height: 36px;
-        padding: 6px 12px;
+        min-height: 44px;
+        padding: 8px 14px;
         font-size: 0.8rem;
     }
     /* Context menu items */
@@ -2683,16 +2686,22 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 
-/* Route-row action buttons (Go / Edit). Compact so two fit on a
-   phone row; 32 px height on coarse pointers meets the touch target
-   minimum without blowing the layout. */
+/* Route-row action buttons (Go / Edit / Delete). Compact so three
+   fit on a phone row. On coarse pointers we honour WCAG 2.5.5 AAA
+   (44x44) because these are the delete path for user content --
+   missing a tap and hitting Delete instead of Edit is expensive. */
 .route-action-btn {
     font-size: 0.68rem;
     padding: 3px 8px;
     min-width: 0;
 }
 @media (pointer: coarse) {
-    .route-action-btn { font-size: 0.78rem; padding: 6px 12px; min-height: 32px; }
+    .route-action-btn {
+        font-size: 0.78rem;
+        padding: 10px 12px;
+        min-height: 44px;
+        min-width: 44px;
+    }
 }
 /* Danger tint for destructive action buttons in the Layers list
    (Delete on route / waypoint rows). Same red family as the alarm
@@ -4585,6 +4594,14 @@ main:has(.map-container.big-type) .map-fab-item {
     padding: 4px 10px;
     min-width: 0;
 }
+@media (pointer: coarse) {
+    .region-radius-chips .map-btn {
+        font-size: 0.78rem;
+        padding: 10px 14px;
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
 
 /* Circle / Polygon tab strip at the top of the Add Region dialog.
    Two map-btn tabs side-by-side; the active one picks up the existing
@@ -4937,8 +4954,9 @@ main:has(.map-container.big-type) .map-fab-item {
 @media (pointer: coarse) {
     .anchor-radius-chips .map-btn {
         font-size: 0.78rem;
-        padding: 6px 10px;
-        min-height: 32px;
+        padding: 10px 14px;
+        min-height: 44px;
+        min-width: 44px;
     }
 }
 
