@@ -267,6 +267,46 @@ a, .btn-link {
     box-shadow: 0 0 0 0.1rem var(--sk-bg), 0 0 0 0.25rem var(--sk-accent);
 }
 
+/* :focus-visible narrows the highlight to KEYBOARD focus (or
+   assistive-tech focus), suppressing the ring that otherwise
+   stuck around after every touch / mouse click. Without this,
+   tapping a button on an iPad left a persistent accent halo
+   until the next tap elsewhere. The :focus ring above stays as
+   a fallback for browsers that don't support :focus-visible,
+   but modern Chrome / Safari pick the narrower rule when both
+   match. Outline is used instead of box-shadow so it survives
+   an `overflow:hidden` parent (chart-panel, route-edit-bar). */
+.btn:focus-visible, .map-btn:focus-visible, .ctrl-btn:focus-visible,
+.chart-quick-chip:focus-visible, .route-action-btn:focus-visible,
+[role="button"]:focus-visible {
+    outline: 2px solid var(--sk-accent);
+    outline-offset: 2px;
+}
+/* Suppress the pre-focus-visible ring on mouse/touch for the
+   same set so we don't double-paint. Browsers that don't support
+   :focus-visible still get the box-shadow above. */
+.btn:focus:not(:focus-visible), .map-btn:focus:not(:focus-visible),
+.ctrl-btn:focus:not(:focus-visible), .chart-quick-chip:focus:not(:focus-visible) {
+    outline: none;
+    box-shadow: none;
+}
+
+/* Shared section-header style for non-Bootstrap page sections
+   (Settings groups, Paths groups, Dashboard band labels). Before
+   this class every page inlined a one-off
+   `<h5 style="font-size:..;">`; the 0.7 vs 0.8 rem drift between
+   Dashboard and Settings was the visible symptom. Standardised
+   on 0.8rem + 0.1em letter-spacing because that was the majority
+   choice across the codebase. */
+.page-section-header {
+    color: var(--sk-text-muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 500;
+    margin: 0;
+}
+
 .content {
     padding-top: 1.1rem;
 }
@@ -586,7 +626,7 @@ article.content:has(.map-container) {
     letter-spacing: 0.02em;
 }
 .hud-threshold.threshold-active {
-    color: #ef4444;
+    color: var(--sev-danger);
     font-weight: 600;
     animation: alarm-flash 1s ease-in-out infinite;
 }
@@ -3003,6 +3043,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+/* Alarm variant of the progress chip: paints in the severity-danger
+   token instead of the accent. Used by HudAnchorCard when the anchor
+   is dragging outside its max radius. Defined as a class so markup
+   stays inline-style-free (any CSS-var swap for a night-mode redesign
+   then lands here once, not N times at the callsites). */
+.hud-card-progress-alarm { color: var(--sev-danger); }
 
 /* Back-compat aliases so older markup still renders until it's
    migrated. Drop these in a follow-up once no component references

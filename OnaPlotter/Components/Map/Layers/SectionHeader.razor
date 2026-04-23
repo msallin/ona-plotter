@@ -4,7 +4,17 @@
    for things like a "Show/Hide on map" chip that shouldn't trigger the
    collapse. *@
 
-<div class="chart-panel-header section-toggle" @onclick="OnToggle">
+@* Accessibility: role="button" + tabindex + aria-expanded make
+   this div-based toggle reachable by keyboard and announced as
+   expandable by screen readers. Enter / Space fire the same
+   handler as a click so the behaviour matches an implicit
+   button. Without this the sections were mouse-only. *@
+<div class="chart-panel-header section-toggle"
+     role="button"
+     tabindex="0"
+     aria-expanded="@(Expanded ? "true" : "false")"
+     @onclick="OnToggle"
+     @onkeydown="HandleKey">
     <span class="toggle-arrow">@(Expanded ? "v" : ">")</span>
     @Title
     @if (Count is not null)
@@ -23,4 +33,19 @@
     [Parameter] public bool Expanded { get; set; }
     [Parameter] public EventCallback OnToggle { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private async Task HandleKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        // Enter / Space activate like a native button. Prevent-
+        // default on Space would stop the page scrolling that a
+        // bare Space keydown triggers; Blazor's @onkeydown doesn't
+        // expose preventDefault for Space without @onkeydown:preventDefault,
+        // which we'd need to set on the element. Given the layers
+        // panel is an overlay over the map (not a scrollable body),
+        // the risk is low; skip the preventDefault plumbing for now.
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            await OnToggle.InvokeAsync();
+        }
+    }
 }

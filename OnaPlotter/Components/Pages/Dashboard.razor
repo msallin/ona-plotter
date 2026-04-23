@@ -101,7 +101,7 @@ else if (Polar.HasPolar)
 }
 
 @* === Wind: apparent + true side by side === *@
-<h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">Wind</h6>
+<h6 class="page-section-header mb-2">Wind</h6>
 <div class="row g-3 mb-4">
     <div class="col-md-3 col-sm-6">
         <div class="card">
@@ -142,7 +142,7 @@ else if (Polar.HasPolar)
 </div>
 
 @* === Navigation: COG, TWD, Position === *@
-<h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">Navigation</h6>
+<h6 class="page-section-header mb-2">Navigation</h6>
 <div class="row g-3 mb-4">
     <div class="col-md-4 col-sm-6">
         <div class="card">
@@ -175,7 +175,7 @@ else if (Polar.HasPolar)
 @* === Tide (conditional: only when a SignalK tide plugin publishes data) === *@
 @if (HasTideData)
 {
-    <h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">
+    <h6 class="page-section-header mb-2">
         Tide
         @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
         {
@@ -243,7 +243,7 @@ else if (Polar.HasPolar)
 @* === Active Route (conditional) === *@
 @if (Data.HasActiveCourse)
 {
-    <h6 class="text-muted mb-2" style="text-transform:uppercase; letter-spacing:0.1em; font-size:0.7rem;">
+    <h6 class="page-section-header mb-2">
         @(Data.ActiveRouteName ?? "Active Route")
     </h6>
     <div class="row g-3 mb-4">

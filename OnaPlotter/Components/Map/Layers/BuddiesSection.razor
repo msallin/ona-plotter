@@ -20,7 +20,11 @@
             ? Vessels.FirstOrDefault(v => v.Mmsi == buddy.Mmsi)
             : null;
         <div class="chart-item vessel-row vessel-buddy"
-             @onclick="() => { if (live is not null) OnFocus.InvokeAsync(live.Context); }">
+             role="button"
+             tabindex="0"
+             aria-label="Focus on buddy @buddy.Name"
+             @onclick="() => Focus(live?.Context)"
+             @onkeydown="(e) => OnRowKey(e, live?.Context)">
             <div class="chart-item-body">
                 <div class="chart-name">&#x2605; @buddy.Name</div>
                 <div class="chart-desc">
@@ -48,4 +52,16 @@
     [Parameter] public EventCallback<string> OnFocus { get; set; }
 
     private bool expanded = false;
+
+    // Null-safe focus: offline buddies have no live context.
+    private Task Focus(string? context) =>
+        context is null ? Task.CompletedTask : OnFocus.InvokeAsync(context);
+
+    private async Task OnRowKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string? context)
+    {
+        if ((e.Key == "Enter" || e.Key == " ") && context is not null)
+        {
+            await OnFocus.InvokeAsync(context);
+        }
+    }
 }

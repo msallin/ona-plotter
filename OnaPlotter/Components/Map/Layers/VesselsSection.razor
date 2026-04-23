@@ -15,7 +15,11 @@
     @foreach (var vessel in Vessels)
     {
         <div class="chart-item vessel-row @VesselRowClass(vessel)"
-             @onclick="() => OnFocus.InvokeAsync(vessel.Context)">
+             role="button"
+             tabindex="0"
+             aria-label="Focus on vessel @vessel.DisplayName"
+             @onclick="() => OnFocus.InvokeAsync(vessel.Context)"
+             @onkeydown="(e) => OnRowKey(e, vessel.Context)">
             <div class="chart-item-body">
                 <div class="chart-name">@(vessel.IsBuddy ? "\u2605 " : "")@vessel.DisplayName</div>
                 <div class="chart-desc">
@@ -63,6 +67,17 @@
     private bool expanded = false;
 
     private void ToggleExpanded() => expanded = !expanded;
+
+    // Enter / Space on a row does what a click does. Matches the
+    // implicit-button behaviour keyboard users expect from a
+    // role="button" element.
+    private async Task OnRowKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string context)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            await OnFocus.InvokeAsync(context);
+        }
+    }
 
     private static string VesselRowClass(VesselListEntry v)
     {
