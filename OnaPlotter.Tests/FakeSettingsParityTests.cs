@@ -82,10 +82,17 @@ public class FakeSettingsParityTests
         var errors = new List<string>();
         foreach (var m in setters)
         {
-            object? arg = DefaultArg(m.GetParameters()[0].ParameterType);
+            // Fabricate a default for every parameter; most setters are
+            // single-arg but SetMapViewAsync takes three (lat, lon, zoom)
+            // and any future tuple-style setter should still be testable
+            // here without per-method plumbing.
+            var parameters = m.GetParameters();
+            object?[] args = new object?[parameters.Length];
+            for (int i = 0; i < parameters.Length; i++)
+                args[i] = DefaultArg(parameters[i].ParameterType);
             try
             {
-                var task = (Task)m.Invoke(fake, [arg])!;
+                var task = (Task)m.Invoke(fake, args)!;
                 await task;
             }
             catch (TargetInvocationException ex)

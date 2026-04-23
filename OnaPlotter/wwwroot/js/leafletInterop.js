@@ -881,15 +881,19 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.
     // Debounced: skip events caused by programmatic panTo (follow mode) and coalesce
-    // rapid user interactions into a single callback.
+    // rapid user interactions into a single callback. Same callback also carries
+    // centre+zoom so the C# side can persist the map view (mapView.v1) without
+    // adding a second interop round-trip per move.
     let boundsTimer = null;
     map.on('moveend', () => {
         if (!dotNetRef || suppressMoveEnd) return;
         clearTimeout(boundsTimer);
         boundsTimer = setTimeout(() => {
             const b = map.getBounds();
+            const c = map.getCenter();
             dotNetRef.invokeMethodAsync('OnMapBoundsChanged',
-                b.getWest(), b.getSouth(), b.getEast(), b.getNorth());
+                b.getWest(), b.getSouth(), b.getEast(), b.getNorth(),
+                c.lat, c.lng, map.getZoom());
         }, 300);
     });
 }

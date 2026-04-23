@@ -387,4 +387,71 @@ public class AppSettingsServiceTests
         await svc2.InitializeAsync();
         await Assert.That(svc2.KeepScreenAwake).IsFalse();
     }
+
+    // --- MapView persistence ------------------------------------------
+
+    [Test]
+    public async Task MapView_DefaultsToNull_WhenStorageEmpty()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.MapViewLat).IsNull();
+        await Assert.That(svc.MapViewLon).IsNull();
+        await Assert.That(svc.MapViewZoom).IsNull();
+    }
+
+    [Test]
+    public async Task MapView_RoundTrip()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetMapViewAsync(47.5231, -122.6402, 14);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.MapViewLat).IsEqualTo(47.5231);
+        await Assert.That(svc2.MapViewLon).IsEqualTo(-122.6402);
+        await Assert.That(svc2.MapViewZoom).IsEqualTo(14);
+    }
+
+    [Test]
+    public async Task MapView_GarbageLogsAndDefaultsNull()
+    {
+        // Pragmatic policy: a corrupt payload shouldn't crash or block
+        // the app; logger prints a warning and the map falls back to
+        // its own defaults.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("mapView.v1", "not-a-tuple");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.MapViewLat).IsNull();
+        await Assert.That(svc.MapViewLon).IsNull();
+        await Assert.That(svc.MapViewZoom).IsNull();
+    }
+
+    [Test]
+    public async Task MapView_OutOfRange_DefaultsNull()
+    {
+        // Latitude clearly outside [-90, 90] -> treat as corrupt.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("mapView.v1", "999.0|0.0|5");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.MapViewLat).IsNull();
+    }
+
+    [Test]
+    public async Task MapView_InvariantCulture()
+    {
+        // Persisted doubles must use '.' separators so a round-trip
+        // works on any OS locale.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetMapViewAsync(47.5, -122.25, 12);
+
+        var stored = await kv.GetAsync("mapView.v1");
+        await Assert.That(stored).IsEqualTo("47.5|-122.25|12");
+    }
 }

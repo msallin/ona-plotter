@@ -169,6 +169,20 @@ public interface IAppSettings
     /// Default false.</summary>
     bool PreferMagneticCourse { get; }
 
+    /// <summary>Last known map view centre latitude. Null on first
+    /// run or when the persisted entry failed to parse (a warning is
+    /// logged in that case per pragmatic-deserialise policy, and the
+    /// map falls back to the live position or a world view).</summary>
+    double? MapViewLat { get; }
+
+    /// <summary>Last known map view centre longitude. See
+    /// <see cref="MapViewLat"/> for null semantics.</summary>
+    double? MapViewLon { get; }
+
+    /// <summary>Last known map zoom level (Leaflet integer). See
+    /// <see cref="MapViewLat"/> for null semantics.</summary>
+    int? MapViewZoom { get; }
+
     IReadOnlySet<string> EnabledChartIds { get; }
     IReadOnlySet<string> EnabledRouteIds { get; }
 
@@ -223,6 +237,13 @@ public interface IAppSettings
     Task SetPreferMagneticHeadingAsync(bool value);
     Task SetPreferMagneticCourseAsync(bool value);
     Task SetAutoAdvanceWaypointsAsync(bool value);
+    /// <summary>Persist the map centre + zoom so the next session
+    /// opens where the user left off. Pragmatic: if the stored tuple
+    /// can't round-trip (future format change, truncated localStorage),
+    /// the loader logs a warning and falls back to defaults -- never
+    /// throws.</summary>
+    Task SetMapViewAsync(double lat, double lon, int zoom);
+
     Task SetEnabledChartsAsync(IEnumerable<string> ids);
     Task SetEnabledRoutesAsync(IEnumerable<string> ids);
     Task SetQuickBarChartsAsync(IEnumerable<string> ids);

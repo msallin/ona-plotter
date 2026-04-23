@@ -56,6 +56,10 @@ public sealed class AppSettingsService : IAppSettings
     public IReadOnlySet<string> QuickBarChartIds => _quickBarChartIds;
     public IReadOnlyList<string> ChartOrder => _chartOrder;
 
+    public double? MapViewLat { get; private set; }
+    public double? MapViewLon { get; private set; }
+    public int? MapViewZoom { get; private set; }
+
     public event Action? OnSettingsChanged;
 
     public AppSettingsService(IKeyValueStore store) => _store = store;
@@ -99,6 +103,7 @@ public sealed class AppSettingsService : IAppSettings
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
+            LoadMapView(await LoadString("mapView.v1"));
 
             // Quick-bar chart membership. If this key doesn't exist yet
             // (first load after upgrade), seed from EnabledChartIds so
@@ -438,5 +443,57 @@ public sealed class AppSettingsService : IAppSettings
         if (string.IsNullOrEmpty(raw)) return;
         foreach (var id in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             target.Add(id);
+    }
+
+    // Map view state is stored as "lat|lon|zoom" in one key. A single
+    // tuple is cheaper to write (one JS interop per move) than three
+    // separate keys, and the "|" delimiter is future-proof: a later
+    // revision can append fields (bearing, pitch) without breaking
+    // the parse of existing entries.
+    //
+    // Pragmatic policy: a malformed entry logs a single warning to
+    // the browser console and leaves the three MapView* properties
+    // null, which the Map page falls back on. We never surface the
+    // parse error to the user.
+    private void LoadMapView(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        var parts = raw.Split('|');
+        if (parts.Length < 3)
+        {
+            Console.WriteLine($"[Settings] mapView.v1 ignored: expected 'lat|lon|zoom', got '{raw}'. Starting fresh.");
+            return;
+        }
+        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat)
+            || !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)
+            || !int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var zoom))
+        {
+            Console.WriteLine($"[Settings] mapView.v1 parse failed ('{raw}'). Starting fresh.");
+            return;
+        }
+        // Basic sanity bounds; out-of-range likely means a corrupt
+        // entry rather than a legitimate pick. World-wrapping at 180
+        // is handled by Leaflet itself.
+        if (lat < -90 || lat > 90 || lon < -540 || lon > 540 || zoom < 0 || zoom > 25)
+        {
+            Console.WriteLine($"[Settings] mapView.v1 out of range ('{raw}'). Starting fresh.");
+            return;
+        }
+        MapViewLat = lat;
+        MapViewLon = lon;
+        MapViewZoom = zoom;
+    }
+
+    public async Task SetMapViewAsync(double lat, double lon, int zoom)
+    {
+        MapViewLat = lat;
+        MapViewLon = lon;
+        MapViewZoom = zoom;
+        var serialized = string.Format(CultureInfo.InvariantCulture,
+            "{0:G9}|{1:G9}|{2}", lat, lon, zoom);
+        await Save("mapView.v1", serialized);
+        // No OnSettingsChanged fire here: the map view is purely
+        // client-local and firing on every pan would cascade through
+        // every settings subscriber for no gain.
     }
 }

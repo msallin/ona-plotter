@@ -1063,9 +1063,29 @@
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
         dotNetRef = DotNetObjectReference.Create(this);
 
-        double lat = Data.Latitude ?? 0;
-        double lon = Data.Longitude ?? 0;
-        int zoom = Data.Latitude is not null ? 14 : 3;
+        // Prefer the persisted view so re-opening the app lands where
+        // the user left off. FollowBoat, when on, will pan to the boat
+        // position on the first delta anyway, so preferring the saved
+        // view doesn't fight the follow mode. Fallback order:
+        //  1. Persisted view from IAppSettings (mapView.v1)
+        //  2. Current boat position at zoom 14
+        //  3. World view centred at (0,0) at zoom 3
+        double lat;
+        double lon;
+        int zoom;
+        if (Settings.MapViewLat is double vlat && Settings.MapViewLon is double vlon
+            && Settings.MapViewZoom is int vzoom)
+        {
+            lat = vlat; lon = vlon; zoom = vzoom;
+        }
+        else if (Data.Latitude is double dlat && Data.Longitude is double dlon)
+        {
+            lat = dlat; lon = dlon; zoom = 14;
+        }
+        else
+        {
+            lat = 0; lon = 0; zoom = 3;
+        }
 
         await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef);
         mapInitialized = true;
@@ -1320,7 +1340,8 @@
     }
 
     [JSInvokable]
-    public void OnMapBoundsChanged(double west, double south, double east, double north)
+    public void OnMapBoundsChanged(double west, double south, double east, double north,
+        double centerLat, double centerLon, double zoom)
     {
         viewWest = west;
         viewSouth = south;
@@ -1330,6 +1351,14 @@
         // Only re-render if the layer panel is actually open.
         if (chartPanelOpen)
             _ = InvokeAsync(StateHasChanged);
+
+        // Persist the new view. Fire-and-forget: a failed localStorage
+        // write is the same as "storage disabled", which the settings
+        // layer already tolerates silently. Guard on the zoom integer
+        // round since Leaflet uses a non-integer zoom while pinching
+        // and we only care about the settled zoom.
+        int zoomInt = (int)Math.Round(zoom);
+        _ = Settings.SetMapViewAsync(centerLat, centerLon, zoomInt);
     }
 
     // Charts without bounds are always shown. Otherwise AABB intersection test.

@@ -45,6 +45,9 @@ internal sealed class FakeSettings : IAppSettings
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
     public IReadOnlySet<string> QuickBarChartIds => new HashSet<string>();
     public IReadOnlyList<string> ChartOrder => [];
+    public double? MapViewLat { get; set; }
+    public double? MapViewLon { get; set; }
+    public int? MapViewZoom { get; set; }
 
     public event Action? OnSettingsChanged { add { } remove { } }
 
@@ -78,6 +81,11 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
     public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
     public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }
+    public Task SetMapViewAsync(double lat, double lon, int zoom)
+    {
+        MapViewLat = lat; MapViewLon = lon; MapViewZoom = zoom;
+        return Task.CompletedTask;
+    }
     public Task SetEnabledChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetQuickBarChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
