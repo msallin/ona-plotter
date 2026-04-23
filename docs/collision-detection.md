@@ -113,18 +113,19 @@ The SOG stationary threshold is 0.1 m/s (~0.2 kn).
 
 ## Auto-muting moored vessels
 
-A harbour tug drifting 20 m on its lines should not keep waking the captain.
-`MooredVesselTracker` watches every AIS vessel:
+A harbour tug drifting on its lines, a fishing boat jogging on station, or
+a ferry waiting for a berth should not keep waking the captain.
+`MooredVesselTracker` classifies any AIS vessel whose current SOG is below
+0.514 m/s (~1 kn) as *moored* and the CPA loop skips it.
 
-- SOG stays below 0.26 m/s (~0.5 kn) for 120 s straight → vessel is *moored*
-  and skipped by the CPA loop.
-- SOG climbs back above the threshold → clock resets, vessel becomes a
-  candidate again immediately.
-- Vessel drops off AIS range → `Cleanup(activeContexts)` evicts its entry so
-  the dictionary doesn't grow without bound.
+The tracker is stateless: one call per vessel, threshold check only.
+Earlier revisions kept a 2-minute dwell timer to avoid mis-classifying a
+briefly-slowing vessel; in practice the dwell cost was maintaining a
+per-vessel dictionary and the benefit was catching one stray AIS sample.
+Skipping one sample of late alarm is an acceptable trade for the simpler
+code path.
 
-The tracker is a plain C# service with a unit test suite; see
-`OnaPlotter.Tests/MooredVesselTrackerTests.cs`.
+See `OnaPlotter.Tests/MooredVesselTrackerTests.cs` for the pinned cutoff.
 
 ## Performance
 

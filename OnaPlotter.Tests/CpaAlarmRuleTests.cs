@@ -18,9 +18,9 @@ namespace OnaPlotter.Tests;
 ///   <item>Severity and target metadata land correctly</item>
 /// </list>
 /// The fixtures use a head-on approach at close range so CPA is
-/// essentially zero and TCPA is distance / closing speed. Fakes a
-/// moored vessel by parking it at the same place for multiple ticks
-/// -- the rule's MooredVesselTracker needs a history.
+/// essentially zero and TCPA is distance / closing speed. The moored
+/// filter is stateless (single-threshold on SOG) so tests pin the
+/// cutoff with one slow fixture and one just-above-cutoff fixture.
 /// </summary>
 public class CpaAlarmRuleTests
 {
