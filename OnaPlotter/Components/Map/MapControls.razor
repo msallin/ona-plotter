@@ -75,9 +75,14 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn @(AnchorActive ? "active" : "")" @onclick="OnToggleAnchor" title="Anchor watch (A)">
+    @* Anchor: one-tap drop; two-tap raise (same confirm pattern as
+       MOB clear and Stop Navigation so the three safety-critical
+       red-path controls in the bar feel identical under stress). *@
+    <button class="ctrl-btn @(AnchorActive ? "active" : "") @(anchorClearConfirming ? "ctrl-btn-confirming" : "")"
+            @onclick="OnAnchorClicked"
+            title="@(anchorClearConfirming ? "Tap again to raise anchor" : AnchorActive ? "Raise anchor (A)" : "Drop anchor (A)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
-        <span class="ctrl-lbl">@(AnchorActive ? "Set" : "Anchor")</span>
+        <span class="ctrl-lbl">@(anchorClearConfirming ? "Confirm?" : AnchorActive ? "Set" : "Anchor")</span>
     </button>
     @* Stop Navigation lives next to Anchor because the two are the
        "end the current safety state" grouping: a route and a manual
@@ -234,13 +239,16 @@
     [Parameter] public bool ShowKeyboardHints { get; set; }
 
     // Two-step confirm for destructive actions in the control bar
-    // (Stop-Navigation + MOB-clear). First tap arms; second tap within
-    // ConfirmWindowMs invokes. A rolling cockpit or pocket brush
-    // shouldn't silently kill navigation OR clear a live MOB mark.
+    // (Stop-Navigation + MOB-clear + Anchor-raise). First tap arms;
+    // second tap within ConfirmWindowMs invokes. A rolling cockpit or
+    // pocket brush shouldn't silently kill navigation, clear a live
+    // MOB mark, or raise the anchor watch.
     private bool stopConfirming;
     private bool mobClearConfirming;
+    private bool anchorClearConfirming;
     private System.Threading.Timer? stopConfirmTimer;
     private System.Threading.Timer? mobConfirmTimer;
+    private System.Threading.Timer? anchorConfirmTimer;
     private const int ConfirmWindowMs = 3000;
 
     private async Task OnStopClicked()
@@ -258,6 +266,33 @@
         stopConfirmTimer = new System.Threading.Timer(_ =>
         {
             stopConfirming = false;
+            _ = InvokeAsync(StateHasChanged);
+        }, null, ConfirmWindowMs, Timeout.Infinite);
+    }
+
+    private async Task OnAnchorClicked()
+    {
+        // Drop is unconfirmed (one tap); raise requires arm + confirm
+        // because a glove-brush on the button while moored in heavy
+        // weather would otherwise silently clear the drift alarm.
+        if (!AnchorActive)
+        {
+            await OnToggleAnchor.InvokeAsync();
+            return;
+        }
+        if (anchorClearConfirming)
+        {
+            anchorClearConfirming = false;
+            anchorConfirmTimer?.Dispose();
+            anchorConfirmTimer = null;
+            await OnToggleAnchor.InvokeAsync();
+            return;
+        }
+        anchorClearConfirming = true;
+        anchorConfirmTimer?.Dispose();
+        anchorConfirmTimer = new System.Threading.Timer(_ =>
+        {
+            anchorClearConfirming = false;
             _ = InvokeAsync(StateHasChanged);
         }, null, ConfirmWindowMs, Timeout.Infinite);
     }

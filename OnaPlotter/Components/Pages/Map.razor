@@ -2362,17 +2362,16 @@
     {
         if (module is null) return;
 
-        // Server-side anchor lives in signalk-anchoralarm-plugin.
-        // Drop is still owned by the plugin (rode counter / manual
-        // from its own web UI), but Raise is available via REST so
-        // we can clear it straight from the chart. Two-step confirm
-        // matches the manual-anchor raise below: an accidental brush
-        // on the button shouldn't silently kill the drift alarm.
+        // Confirmation for raising the watch now lives on the Anchor
+        // button itself as a two-tap arm-then-confirm pattern (parallel
+        // to MOB-clear + Stop-Navigation). By the time ToggleAnchor
+        // runs for a raise, the user has already armed + confirmed on
+        // the button; no second modal.
         if (Data.AnchorActive)
         {
-            bool ok = await Confirmations.ConfirmAsync("Raise anchor and stop the watch?");
-            if (!ok) return;
-
+            // Server-side anchor (signalk-anchoralarm-plugin). Raise
+            // via REST so the alarm actually stops on the server side
+            // rather than just on the client.
             ApiResult r;
             try { r = await AnchorAlarmApi.RaiseAsync(); }
             catch (Exception ex) { Toasts.Error($"Raise anchor failed: {ex.Message}"); return; }
@@ -2410,14 +2409,8 @@
         }
         else if (anchorManualActive)
         {
-            // CLEARING a live anchor is destructive: the watch ring and
-            // drag alarm both go away. A glove-brush on the button while
-            // moored in heavy weather would silently clear. Require a
-            // confirmation -- matches the JS confirm pattern used for
-            // Settings polar removal and route-edit cancel.
-            bool ok = await Confirmations.ConfirmAsync("Raise anchor and stop the watch?");
-            if (!ok) return;
-
+            // Manual-anchor clear. Arm + confirm already handled on the
+            // button (same as the server-anchor raise above).
             await module.InvokeVoidAsync("clearAnchor");
             anchorManualActive = false;
         }
