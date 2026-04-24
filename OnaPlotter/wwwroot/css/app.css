@@ -1786,28 +1786,10 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
     cursor: crosshair;
 }
 .map-container.editing #mapDiv .leaflet-interactive { cursor: crosshair; }
-.map-container.editing::before {
-    content: "EDITING";
-    position: absolute;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: var(--z-controls);
-    background: var(--sk-orange);
-    color: #000;
-    padding: 3px 12px;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    pointer-events: none;
-    animation: edit-pulse 2s ease-in-out infinite;
-}
-@keyframes edit-pulse {
-    0%, 100% { opacity: 1; }
-    50%      { opacity: 0.6; }
-}
+/* The earlier "EDITING" pulsing chip above the map was a belt-and-
+   braces indicator on top of the orange outline + crosshair cursor
+   + dedicated edit-panel hint. Field testing said it was noise; the
+   outline alone already communicates "editing" strongly enough. */
 
 /* MOB-clear confirmation modal. Re-uses the welcome-card dimensions +
    backdrop so it matches the app's modal vocabulary. Danger-bordered
@@ -5257,7 +5239,6 @@ html[data-slow-client="1"] * {
     .cpa-pulse,
     .depth-danger,
     .hud-card-progress-alarm,
-    .edit-pulse,
     .ctrl-btn-confirming {
         animation: none !important;
     }

@@ -398,6 +398,22 @@ public partial class Map
                     return;
                 }
                 Toasts.Info("Anchor raised for route");
+
+                // Proactively drop any active anchor alarm rather than
+                // waiting for the plugin's cleared-anchor delta to
+                // round-trip (can be a second or two on marine 4G).
+                // Without this, the user activates the route, sees the
+                // route draw, BUT the ANCHOR DRAG banner lingers on
+                // screen until the delta lands -- reads as "route
+                // didn't deactivate the alarm". Dismiss on the local
+                // manager side so the banner disappears immediately;
+                // the rule stays quiet afterwards because the plugin
+                // also stops publishing currentRadius once raised.
+                foreach (var a in Alarms.ActiveAlarms.ToList())
+                {
+                    if (a.Title == "ANCHOR DRAG" || a.Title == "ANCHOR TIDE")
+                        await Alarms.DismissAsync(a);
+                }
             }
             catch (Exception ex)
             {

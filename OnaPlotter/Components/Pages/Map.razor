@@ -1186,10 +1186,15 @@
         }
 
         // Re-enable charts the user had turned on before navigating
-        // away / reloading. EnabledChartIds is the persisted source;
-        // this loop is a no-op when the set is empty.
+        // away / reloading. Snapshot the persisted set FIRST -- if we
+        // iterate against Settings.EnabledChartIds directly, ToggleChart
+        // calls SetEnabledChartsAsync(enabledCharts) on every iteration,
+        // which rewrites the persisted set to "only the charts we've
+        // restored so far". That wiped every chart after the first on
+        // page navigation, showing as "settings reset" in the field.
+        var chartsToRestore = Settings.EnabledChartIds.ToList();
         foreach (var chart in availableCharts)
-            if (Settings.EnabledChartIds.Contains(chart.Identifier))
+            if (chartsToRestore.Contains(chart.Identifier))
                 await ToggleChart(chart, true);
 
         // First-run seeding: auto-enable OpenSeaMap-named charts so
@@ -1211,8 +1216,12 @@
             await Settings.MarkChartsSeededAsync();
         }
 
+        // Same snapshot-first pattern as charts above: ToggleRoute
+        // writes SetEnabledRoutesAsync(enabledRoutes) on every
+        // iteration, which would mid-loop wipe the persisted set.
+        var routesToRestore = Settings.EnabledRouteIds.ToList();
         foreach (var route in availableRoutes)
-            if (Settings.EnabledRouteIds.Contains(route.Id))
+            if (routesToRestore.Contains(route.Id))
                 await ToggleRoute(route, true);
 
         // Quick-bar membership. Seed the local mirror from persisted
