@@ -451,64 +451,6 @@ function rotateMarker(marker, rad) {
     if (svg) svg.style.transform = `rotate(${rad * DEG}deg)`;
 }
 
-// Fullscreen control helpers.
-function fullscreenIconSvg(isFs) {
-    if (isFs) {
-        // "exit fullscreen" icon: four inward-pointing corners
-        return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v4a1 1 0 0 1-1 1H3"/><path d="M21 8h-4a1 1 0 0 1-1-1V3"/><path d="M3 16h4a1 1 0 0 1 1 1v4"/><path d="M16 21v-4a1 1 0 0 1 1-1h4"/></svg>';
-    }
-    // "enter fullscreen" icon: four outward-pointing corners
-    return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/></svg>';
-}
-
-function isInFullscreen() {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement
-        || document.querySelector('.map-container.map-fullscreen'));
-}
-
-function syncFsIcon() {
-    if (window._onaFsBtn) window._onaFsBtn.innerHTML = fullscreenIconSvg(isInFullscreen());
-}
-
-function toggleFullscreenFromControl() {
-    const container = document.querySelector('.map-container');
-    if (!container) return;
-    // iOS browsers (Safari, Firefox, Chrome) all route through WebKit and
-    // have spotty native Fullscreen support on non-video elements. Treat
-    // the CSS class as the source of truth; native API is a nice-to-have
-    // upgrade that we kick off best-effort.
-    const currently = container.classList.contains('map-fullscreen') || isInFullscreen();
-
-    if (!currently) {
-        cssFsToggle(true);
-        try {
-            const p = container.requestFullscreen
-                ? container.requestFullscreen()
-                : container.webkitRequestFullscreen && container.webkitRequestFullscreen();
-            if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
-        } catch { /* ignore - CSS still covers us */ }
-    } else {
-        cssFsToggle(false);
-        try {
-            const p = document.exitFullscreen
-                ? document.exitFullscreen()
-                : document.webkitExitFullscreen && document.webkitExitFullscreen();
-            if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
-        } catch { /* ignore */ }
-    }
-    setTimeout(() => {
-        if (map) map.invalidateSize();
-        syncFsIcon();
-    }, 200);
-}
-
-function cssFsToggle(on) {
-    const container = document.querySelector('.map-container');
-    if (!container) return;
-    if (on) container.classList.add('map-fullscreen');
-    else container.classList.remove('map-fullscreen');
-}
-
 // ========== EXPORTED FUNCTIONS ==========
 
 export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
@@ -575,42 +517,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     // Zoom control in top-right to avoid HUD overlap.
     L.control.zoom({ position: 'topright' }).addTo(map);
-
-    // Custom fullscreen control next to zoom. Uses native API with webkit
-    // fallback, and a CSS-only fallback via a class toggle for iOS browsers
-    // (Safari / Firefox / Chrome, all WebKit under the hood).
-    const FullscreenControl = L.Control.extend({
-        options: { position: 'topright' },
-        onAdd: function () {
-            const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control ona-fs-control');
-            // Real <button>, not an anchor. Firefox iOS has quirks with
-            // <a href="#"> inside Leaflet controls where preventDefault
-            // races the page-scroll-to-top behaviour.
-            const btn = L.DomUtil.create('button', 'ona-fs-btn', container);
-            btn.type = 'button';
-            btn.title = 'Fullscreen';
-            btn.setAttribute('aria-label', 'Toggle fullscreen');
-            btn.innerHTML = fullscreenIconSvg(false);
-            // Bind both click and touchend so iPadOS fires on first tap
-            // without waiting for the synthetic-click fallback.
-            const fire = (e) => {
-                L.DomEvent.preventDefault(e);
-                L.DomEvent.stopPropagation(e);
-                toggleFullscreenFromControl();
-            };
-            L.DomEvent.on(btn, 'click', fire);
-            L.DomEvent.on(btn, 'touchend', fire);
-            L.DomEvent.disableClickPropagation(container);
-            L.DomEvent.disableScrollPropagation(container);
-            window._onaFsBtn = btn;
-            return container;
-        }
-    });
-    new FullscreenControl().addTo(map);
-
-    // Listen for native fullscreen changes to keep the icon in sync.
-    document.addEventListener('fullscreenchange', syncFsIcon);
-    document.addEventListener('webkitfullscreenchange', syncFsIcon);
 
     // Scale bars + zoom badge all sit bottom-left, stacked, so a helm
     // glance gets "how far is that dot / am I overzoomed" in one place.

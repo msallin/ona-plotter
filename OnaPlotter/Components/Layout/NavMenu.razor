@@ -1,53 +1,45 @@
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">OnaPlotter</a>
-    </div>
-</div>
-
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+<div class="nav-scrollable">
     <nav class="nav flex-column">
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="nav-icon">&#x2609;</span> Dashboard
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All" title="Dashboard">
+                <span class="nav-icon">&#x2609;</span><span class="nav-label">Dashboard</span>
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="map">
-                <span class="nav-icon">&#x2637;</span> Chart
+            <NavLink class="nav-link" href="map" title="Chart">
+                <span class="nav-icon">&#x2637;</span><span class="nav-label">Chart</span>
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="sailsteer">
-                <span class="nav-icon">&#x2388;</span> SailSteer
+            <NavLink class="nav-link" href="sailsteer" title="SailSteer">
+                <span class="nav-icon">&#x2388;</span><span class="nav-label">SailSteer</span>
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="wind">
-                <span class="nav-icon">&#x2941;</span> Wind
+            <NavLink class="nav-link" href="wind" title="Wind">
+                <span class="nav-icon">&#x2941;</span><span class="nav-label">Wind</span>
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="history">
+            <NavLink class="nav-link" href="history" title="History">
                 @* U+FE0E forces the text (monoline) glyph on iOS/Android
                    which otherwise renders these as colour emoji. *@
-                <span class="nav-icon">&#x23F3;&#xFE0E;</span> History
+                <span class="nav-icon">&#x23F3;&#xFE0E;</span><span class="nav-label">History</span>
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="resources">
+            <NavLink class="nav-link" href="resources" title="Resources">
                 @* Folder glyph: routes / waypoints / notes / regions live
                    under /resources on the server, so the icon matches. *@
-                <span class="nav-icon">&#x1F4C1;&#xFE0E;</span> Resources
+                <span class="nav-icon">&#x1F4C1;&#xFE0E;</span><span class="nav-label">Resources</span>
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="settings">
+            <NavLink class="nav-link" href="settings" title="Settings">
                 @* Settings also surfaces the Data + Paths tools (techie
                    features; they're not first-class nav items on their
                    own). *@
-                <span class="nav-icon">&#x2699;&#xFE0E;</span> Settings
+                <span class="nav-icon">&#x2699;&#xFE0E;</span><span class="nav-label">Settings</span>
             </NavLink>
         </div>
     </nav>

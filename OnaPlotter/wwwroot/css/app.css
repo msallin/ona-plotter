@@ -612,24 +612,6 @@ article.content:has(.map-container) {
     width: 100%;
 }
 
-/* Fullscreen: fill entire viewport via top/right/bottom/left anchors. This
-   is more robust than height:100vh across iOS browsers (Safari, Firefox
-   iOS, Chrome iOS) where the toolbar-inclusive height can differ from
-   the CSS viewport height by several dozen pixels. */
-.map-container.map-fullscreen,
-.map-container:fullscreen {
-    position: fixed;
-    inset: 0;
-    width: auto;
-    height: auto;
-    max-width: none;
-    max-height: none;
-    border-radius: 0;
-    z-index: 9999;
-    margin: 0;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-}
-
 /* HUD panels: translucent overlays on the map */
 .hud {
     position: absolute;
@@ -711,38 +693,24 @@ article.content:has(.map-container) {
 .hud-bottom-left { bottom: 12px; left: 12px; }
 .hud-bottom-right{ bottom: 12px; right: 12px; }
 
-/* Fullscreen breathing room: in normal (non-fullscreen) layout the map
-   sits inside app chrome so 12 px of edge-inset reads fine. In
-   fullscreen the HUD cards hug the hard screen edge which looks
-   cramped, and on iOS notched devices a couple of pixels are eaten by
-   the safe area. Top edge matches the bottom (24 px baseline) so
-   SOG / AWA sit with the same padding as the Depth / COG row below.
-   Earlier the top was 56 px to leave room for the always-on Live
-   chip; the chip now hides when the feed is healthy, so the extra
-   room was wasted space. Stale / Offline chip still renders in that
-   slot when it matters -- the HUD's 24 px top covers the chip's
-   12-16 px footprint cleanly. */
-.map-container.map-fullscreen .hud-top-left,
-.map-container:fullscreen .hud-top-left,
-.map-container.map-fullscreen .hud-top-right,
-.map-container:fullscreen .hud-top-right {
+/* Fullscreen breathing room: when the whole app is in doc-level
+   fullscreen, give HUD cards extra safe-area padding so they clear
+   iOS notches / home indicators without looking cramped. */
+html:fullscreen .hud-top-left,
+html:fullscreen .hud-top-right {
     top: max(24px, env(safe-area-inset-top));
 }
-.map-container.map-fullscreen .hud-top-left,
-.map-container:fullscreen .hud-top-left {
+html:fullscreen .hud-top-left {
     left: max(24px, env(safe-area-inset-left));
 }
-.map-container.map-fullscreen .hud-top-right,
-.map-container:fullscreen .hud-top-right {
-    right: max(68px, calc(56px + env(safe-area-inset-right))); /* +12 vs. default so zoom ctrl stays clear */
+html:fullscreen .hud-top-right {
+    right: max(68px, calc(56px + env(safe-area-inset-right)));
 }
-.map-container.map-fullscreen .hud-bottom-left,
-.map-container:fullscreen .hud-bottom-left {
+html:fullscreen .hud-bottom-left {
     bottom: max(24px, env(safe-area-inset-bottom));
     left: max(24px, env(safe-area-inset-left));
 }
-.map-container.map-fullscreen .hud-bottom-right,
-.map-container:fullscreen .hud-bottom-right {
+html:fullscreen .hud-bottom-right {
     bottom: max(24px, env(safe-area-inset-bottom));
     right: max(24px, env(safe-area-inset-right));
 }
@@ -1450,66 +1418,6 @@ html {
 .dash-card-primary .card-body {
     padding: 1rem 0.5rem;
 }
-
-/* ===== Connection Chip (only visible in fullscreen) =====
-   The MainLayout top-row already shows connection state on every page.
-   In fullscreen the top-row is covered by the map, so we surface the
-   chip. Using CSS (not a Razor @if) lets us catch both native fullscreen
-   and our CSS-only fallback with the same rule. */
-
-.conn-chip {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    z-index: var(--z-controls);
-    display: none;                  /* hidden by default */
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px 4px 8px;
-    border-radius: 12px;
-    font-size: 0.7rem;
-    font-weight: 500;
-    background: rgba(10, 12, 18, 0.85);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: var(--sk-text);
-    user-select: none;
-    pointer-events: none;
-}
-/* In fullscreen, only show the chip when the feed is NOT healthy.
-   The always-on "Live" label competed with hud-top-left for the
-   same 12 px slot and created a second row of chrome the helm
-   already sees via the HUD values ticking. A stale / offline
-   chip is the new-info case -- keep it visible; Live is redundant. */
-.map-container.map-fullscreen .conn-chip.conn-stale,
-.map-container.map-fullscreen .conn-chip.conn-offline,
-.map-container:fullscreen .conn-chip.conn-stale,
-.map-container:fullscreen .conn-chip.conn-offline {
-    display: flex;
-}
-
-.conn-chip .conn-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--sk-text-muted);
-}
-
-.conn-live { border-color: rgba(74, 222, 128, 0.3); color: var(--sk-green); }
-.conn-live .conn-dot { background: var(--sk-green); box-shadow: 0 0 6px rgba(74, 222, 128, 0.6); }
-
-.conn-stale { border-color: rgba(251, 191, 36, 0.4); color: var(--sk-orange); animation: conn-pulse 1.5s ease-in-out infinite; }
-.conn-stale .conn-dot { background: var(--sk-orange); }
-
-.conn-offline { border-color: rgba(248, 113, 113, 0.5); color: var(--sk-red); animation: conn-pulse 1s ease-in-out infinite; }
-.conn-offline .conn-dot { background: var(--sk-red); }
-
-@keyframes conn-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-}
-
-/* Shift the chip down when an alarm banner is shown so it doesn't collide. */
-main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
 
 /* ===== Keyboard Shortcuts Overlay ===== */
 
@@ -2219,9 +2127,8 @@ main:has(.alarm-banner-stack) .snooze-chips {
    full-width with rounded top corners, bigger max-height so the list is
    actually readable. Uses a flex column so the scroll lives on the list
    and the header stays pinned.
-   Right offset (56 px) clears Leaflet's top-right zoom+fullscreen stack
-   (~34 px of buttons plus a 16 px gutter) so the panel never sits under
-   the native controls. */
+   Right offset (56 px) clears Leaflet's top-right zoom control so the
+   panel never sits under the native controls. */
 .alarm-log-panel {
     position: fixed;
     top: 3rem;
@@ -3973,10 +3880,8 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .map-container.dark-ops .route-edit-bar,
 .map-container.dark-ops .route-edit-hint,
 .map-container.dark-ops .route-edit-list,
-.map-container.dark-ops .conn-chip,
 .map-container.dark-ops .leaflet-control-zoom,
 .map-container.dark-ops .leaflet-control-scale,
-.map-container.dark-ops .ona-fs-control,
 .map-container.dark-ops .ona-zoom-badge {
     display: none !important;
 }
@@ -4107,48 +4012,6 @@ main:has(.map-container.big-type) .map-fab-item {
 
 .history-controls .form-range {
     accent-color: var(--sk-accent);
-}
-
-/* ===== Custom Leaflet Fullscreen Control ===== */
-
-.ona-fs-control {
-    margin-top: 6px !important;
-}
-
-.ona-fs-btn {
-    display: flex !important;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    color: #374151;
-    background: #fff;
-    /* <button> reset - match the neighbouring zoom control visually. */
-    border: none;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    text-decoration: none;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-appearance: none;
-    appearance: none;
-}
-
-.ona-fs-btn:hover {
-    background: #f3f4f6;
-    color: #111827;
-}
-
-.ona-fs-btn svg {
-    display: block;
-}
-
-@media (pointer: coarse) {
-    .ona-fs-btn {
-        width: 40px;
-        height: 40px;
-    }
 }
 
 /* ===== Quick Chart Switcher ===== */
@@ -4336,11 +4199,9 @@ main:has(.map-container.big-type) .map-fab-item {
 }
 
 /* In-panel waypoint list. Originally top:10/right:10, but Leaflet's
-   zoom + custom-fullscreen controls live in that same corner with a
-   z-index (~1000) above our --z-controls 800, so in fullscreen they
-   drew ON TOP of the panel (user-visible as "route overview covered
-   in fullscreen"). Offsetting down past the Leaflet control stack
-   (~120 px for zoom + fs-button + spacing) keeps both readable without
+   zoom control lives in that same corner with a z-index (~1000) above
+   our --z-controls 800, so it drew ON TOP of the panel. Offsetting
+   down past the Leaflet control stack keeps both readable without
    fighting z-index. Max-height keeps the list from blanketing the map
    on long routes; internal scroll takes over. */
 .route-edit-list {

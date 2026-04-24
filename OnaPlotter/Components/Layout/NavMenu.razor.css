@@ -1,54 +1,16 @@
-.navbar-toggler {
-    appearance: none;
-    cursor: pointer;
-    width: 3.5rem;
-    height: 2.5rem;
-    color: var(--sk-sidebar-text-active);
-    position: absolute;
-    top: 0.5rem;
-    right: 1rem;
-    border: 1px solid var(--sk-border);
-    background: transparent;
-    font-size: 1.3rem;
-    line-height: 2.3rem;
-    text-align: center;
-}
-
-.navbar-toggler::before {
-    content: "\2630";              /* U+2630 TRIGRAM FOR HEAVEN, a clean hamburger glyph */
-    color: var(--sk-sidebar-text);
-}
-
-.navbar-toggler:checked ~ .nav-scrollable {
-    display: block;
-}
-
-/* NavMenu's own top-row (the brand header in the sidebar), not the main
-   layout's connection-status bar. Transparent so the sidebar gradient
-   shows through; a subtle border gives the brand a little weight. */
-.top-row {
-    height: 3rem;
-    background-color: transparent;
-    border-bottom: 1px solid var(--sk-border);
-}
-
-.navbar-brand {
-    font-size: 1rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--sk-sidebar-text-active) !important;
-}
-
-.navbar-brand:hover {
-    color: var(--sk-sidebar-text-active) !important;
-}
-
 .nav-icon {
     display: inline-block;
     width: 1.5rem;
     text-align: center;
-    font-size: 1rem;
+    font-size: 1.1rem;
     opacity: 0.7;
+}
+
+/* Icon-only sidebar: labels stay in the markup for screen readers
+   but are hidden visually; the NavLink's title="..." attribute gives
+   sighted users a hover tooltip. */
+.nav-label {
+    display: none;
 }
 
 ::deep .nav-item {
@@ -66,6 +28,7 @@
     height: 2.5rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.5rem;
 }
 
@@ -84,23 +47,7 @@
 }
 
 .nav-scrollable {
-    display: none;
-}
-
-@media (max-width: 640.98px) {
-    .nav-scrollable {
-        display: none;
-    }
-}
-
-@media (min-width: 641px) {
-    .navbar-toggler {
-        display: none;
-    }
-
-    .nav-scrollable {
-        display: block;
-        height: calc(100vh - 3rem);
-        overflow-y: auto;
-    }
+    display: block;
+    height: 100vh;
+    overflow-y: auto;
 }

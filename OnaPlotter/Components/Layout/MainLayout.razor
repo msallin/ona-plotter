@@ -50,6 +50,29 @@
                     style="font-size:0.75rem;">
                 @(Settings.NightMode ? "Day" : "Night")
             </button>
+
+            <button class="btn btn-sm btn-outline-secondary topbar-fs-btn" @onclick="ToggleFullscreen"
+                    title="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")"
+                    aria-label="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")">
+                @if (isFullscreen)
+                {
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M8 3v4a1 1 0 0 1-1 1H3" />
+                        <path d="M21 8h-4a1 1 0 0 1-1-1V3" />
+                        <path d="M3 16h4a1 1 0 0 1 1 1v4" />
+                        <path d="M16 21v-4a1 1 0 0 1 1-1h4" />
+                    </svg>
+                }
+                else
+                {
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 8V5a2 2 0 0 1 2-2h3" />
+                        <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+                        <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+                        <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+                    </svg>
+                }
+            </button>
         </div>
 
         @{
@@ -248,6 +271,9 @@
 
 @code {
     private IJSObjectReference? audioModule;
+    private IJSObjectReference? fsModule;
+    private DotNetObjectReference<MainLayout>? fsSelfRef;
+    private bool isFullscreen;
     private System.Threading.Timer? staleCheckTimer;
     private System.Threading.Timer? snoozeCountdownTimer;
     private System.Threading.Timer? firstRunOfflineTimer;
@@ -357,6 +383,20 @@
         StateHasChanged();
     }
 
+    private async Task ToggleFullscreen()
+    {
+        if (fsModule is null) return;
+        try { await fsModule.InvokeVoidAsync("toggle"); }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public Task OnFullscreenChanged(bool fs)
+    {
+        isFullscreen = fs;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private void ReconnectNow()
     {
         // Signals the receive loop to bypass its current backoff delay.
@@ -397,6 +437,11 @@
             await Alarms.InitializeAsync();
             StateHasChanged();
             audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
+            fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fullscreen.js");
+            fsSelfRef = DotNetObjectReference.Create(this);
+            await fsModule.InvokeVoidAsync("subscribe", fsSelfRef);
+            isFullscreen = await fsModule.InvokeAsync<bool>("getState");
+            StateHasChanged();
 
             // Wake lock is now managed from here rather than from the
             // Map page, so switching Chart -> Wind / History / Settings
@@ -759,5 +804,15 @@
             }
             catch (JSDisconnectedException) { }
         }
+        if (fsModule is not null)
+        {
+            try
+            {
+                await fsModule.InvokeVoidAsync("unsubscribe");
+                await fsModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
+        fsSelfRef?.Dispose();
     }
 }

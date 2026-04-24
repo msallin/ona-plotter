@@ -35,20 +35,10 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="map-container @(nightMode ? "night-mode" : "") @(fullscreen ? "map-fullscreen" : "") @(darkOps ? "dark-ops" : "") @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode"
-     @onfullscreenchange="OnFullscreenChange"
+<div class="map-container @(nightMode ? "night-mode" : "") @(darkOps ? "dark-ops" : "") @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode"
      @onpointerdown="TouchDeadman"
      @onkeydown="TouchDeadman">
     <div id="mapDiv"></div>
-
-    @* Connection status chip. Rendered unconditionally; CSS hides it
-       except when the map is in fullscreen (native or our .map-fullscreen
-       CSS-only fallback). Avoids duplicating the MainLayout top-row
-       indicator but still shows on iPad where native fullscreen is spotty. *@
-    <div class="conn-chip conn-@ConnClass" title="@ConnTooltip">
-        <span class="conn-dot"></span>
-        @ConnLabel
-    </div>
 
     <MapHud Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
@@ -436,7 +426,6 @@
     private bool anchorManualActive;
     private bool mapInitialized;
     private bool chartPanelOpen;
-    private bool fullscreen;
     private System.Threading.Timer? aisTimer;
     private System.Threading.Timer? resourcePollTimer;
     // Active route navigation state.
@@ -1011,17 +1000,6 @@
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
     }
-
-    // Connection status chip (visible on the map, including fullscreen).
-    private string ConnClass => SignalkClient.IsConnected
-        ? (SignalkClient.IsDataStale ? "stale" : "live")
-        : "offline";
-    private string ConnLabel => SignalkClient.IsConnected
-        ? (SignalkClient.IsDataStale ? "Stale" : "Live")
-        : "Offline";
-    private string ConnTooltip => SignalkClient.IsConnected
-        ? (SignalkClient.IsDataStale ? "Connected but no data for 5+ seconds" : "Receiving live data")
-        : "WebSocket disconnected";
 
     // Anchor state: server anchor takes priority over manual.
     private bool AnchorButtonActive => Data.AnchorActive || anchorManualActive;
@@ -2558,53 +2536,6 @@
         }
         try { await module.InvokeVoidAsync("panTo", lat, lon); }
         catch (JSDisconnectedException) { }
-    }
-
-    private async Task ToggleFullscreen()
-    {
-        fullscreen = !fullscreen;
-        // Use native Fullscreen API where supported (desktop), fall back to CSS-only (iOS).
-        if (fullscreen)
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("eval",
-                    "var el=document.querySelector('.map-container');" +
-                    "if(el.requestFullscreen)el.requestFullscreen();" +
-                    "else if(el.webkitRequestFullscreen)el.webkitRequestFullscreen();");
-            }
-            catch { /* CSS fallback handles it. */ }
-        }
-        else
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("eval",
-                    "if(document.exitFullscreen)document.exitFullscreen();" +
-                    "else if(document.webkitExitFullscreen)document.webkitExitFullscreen();");
-            }
-            catch { /* CSS fallback handles it. */ }
-        }
-        // Leaflet needs a size recalculation after fullscreen change.
-        if (module is not null)
-        {
-            await Task.Delay(100);
-            await module.InvokeVoidAsync("eval", "if(window._onaMap)window._onaMap.invalidateSize()");
-        }
-    }
-
-    private void OnFullscreenChange()
-    {
-        _ = InvokeAsync(async () =>
-        {
-            var isFs = await JS.InvokeAsync<bool>("eval",
-                "!!(document.fullscreenElement||document.webkitFullscreenElement)");
-            if (fullscreen != isFs)
-            {
-                fullscreen = isFs;
-                StateHasChanged();
-            }
-        });
     }
 
     // unsaved-changes guard (editNavGuard / InstallEditNavGuard /
