@@ -25,9 +25,12 @@ public sealed class ConfirmationService : IConfirmationService
 
     public string Message { get; private set; } = "";
     public bool Destructive { get; private set; } = true;
+    public string? ConfirmLabel { get; private set; }
+    public string? CancelLabel { get; private set; }
     public bool IsPending => _pending is not null;
 
-    public Task<bool> ConfirmAsync(string message, bool destructive = true)
+    public Task<bool> ConfirmAsync(string message, bool destructive = true,
+        string? confirmLabel = null, string? cancelLabel = null)
     {
         // If a prompt is already up, cancel it before showing a new
         // one. Stacking confirmations is ambiguous UX; newest wins.
@@ -35,6 +38,8 @@ public sealed class ConfirmationService : IConfirmationService
         _pending = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         Message = message;
         Destructive = destructive;
+        ConfirmLabel = confirmLabel;
+        CancelLabel = cancelLabel;
         prior?.TrySetResult(false);
         OnChanged?.Invoke();
         return _pending.Task;
@@ -45,6 +50,8 @@ public sealed class ConfirmationService : IConfirmationService
         var p = _pending;
         _pending = null;
         Message = "";
+        ConfirmLabel = null;
+        CancelLabel = null;
         // Reset state BEFORE firing OnChanged so a re-render sees the
         // cleared state immediately. Notify then resolve the task so
         // the awaiting caller continues after the UI has caught up.

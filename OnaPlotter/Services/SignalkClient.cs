@@ -706,6 +706,71 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
+                // Route activation: signalk-server v2's built-in course
+                // API publishes the activation as a SINGLE delta with
+                // path = "navigation.course.activeRoute" and value =
+                // { href, name, reverse, pointIndex, pointTotal }.
+                // It does NOT emit the individual leaf paths (.href,
+                // .name, .pointIndex, .pointTotal) separately. Before
+                // this branch existed, OnaPlotter silently dropped the
+                // activation delta (ApplyString only handles strings,
+                // Apply only handles doubles, neither accepts objects)
+                // so a route activated externally (freeboard, a second
+                // plotter, a REST call) never showed up on OnA -- and
+                // even ONA's own activate-then-draw path broke because
+                // SyncActiveRouteAsync reads Data.ActiveRouteHref,
+                // which stayed null. See the symmetric null-branch
+                // further down for deactivation.
+                if (val.Path == "navigation.course.activeRoute"
+                    && val.Value is JsonElement arEl
+                    && arEl.ValueKind == JsonValueKind.Object)
+                {
+                    if (arEl.TryGetProperty("href", out var arHref)
+                        && arHref.ValueKind == JsonValueKind.String)
+                    {
+                        _data.ApplyString("navigation.course.activeRoute.href", arHref.GetString());
+                    }
+                    if (arEl.TryGetProperty("name", out var arName)
+                        && arName.ValueKind == JsonValueKind.String)
+                    {
+                        _data.ApplyString("navigation.course.activeRoute.name", arName.GetString());
+                    }
+                    if (arEl.TryGetProperty("pointIndex", out var arIdx)
+                        && arIdx.ValueKind == JsonValueKind.Number
+                        && arIdx.TryGetDouble(out var idxD))
+                    {
+                        _data.Apply("navigation.course.activeRoute.pointIndex", idxD);
+                    }
+                    if (arEl.TryGetProperty("pointTotal", out var arTot)
+                        && arTot.ValueKind == JsonValueKind.Number
+                        && arTot.TryGetDouble(out var totD))
+                    {
+                        _data.Apply("navigation.course.activeRoute.pointTotal", totD);
+                    }
+                    changed = true;
+                    continue;
+                }
+
+                // Course next-point: server can publish either the
+                // parent object (with nested position) on a state
+                // change OR the bare position leaf on updates. Handle
+                // the parent-object form first so activation deltas
+                // aren't dropped.
+                if (val.Path == "navigation.course.nextPoint"
+                    && val.Value is JsonElement npParentEl
+                    && npParentEl.ValueKind == JsonValueKind.Object
+                    && npParentEl.TryGetProperty("position", out var npParentPos)
+                    && npParentPos.ValueKind == JsonValueKind.Object
+                    && npParentPos.TryGetProperty("latitude", out var npPLat)
+                    && npParentPos.TryGetProperty("longitude", out var npPLon)
+                    && npPLat.ValueKind == JsonValueKind.Number
+                    && npPLon.ValueKind == JsonValueKind.Number)
+                {
+                    _data.ApplyCourseNextPointPosition(npPLat.GetDouble(), npPLon.GetDouble());
+                    changed = true;
+                    continue;
+                }
+
                 // Course next-point position (lat/lon object). SK v2
                 // built-in path; the legacy v1 courseGreatCircle /
                 // courseRhumbline variants were dropped in the
@@ -723,6 +788,23 @@ public sealed class SignalkClient : IAsyncDisposable
                         _data.ApplyCourseNextPointPosition(wpLat.GetDouble(), wpLon.GetDouble());
                         changed = true;
                     }
+                    continue;
+                }
+
+                // Course previous-point parent-object form (same
+                // activation-delta shape as nextPoint above).
+                if (val.Path == "navigation.course.previousPoint"
+                    && val.Value is JsonElement ppParentEl
+                    && ppParentEl.ValueKind == JsonValueKind.Object
+                    && ppParentEl.TryGetProperty("position", out var ppParentPos)
+                    && ppParentPos.ValueKind == JsonValueKind.Object
+                    && ppParentPos.TryGetProperty("latitude", out var ppPLat)
+                    && ppParentPos.TryGetProperty("longitude", out var ppPLon)
+                    && ppPLat.ValueKind == JsonValueKind.Number
+                    && ppPLon.ValueKind == JsonValueKind.Number)
+                {
+                    _data.ApplyCoursePreviousPointPosition(ppPLat.GetDouble(), ppPLon.GetDouble());
+                    changed = true;
                     continue;
                 }
 

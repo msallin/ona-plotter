@@ -68,8 +68,16 @@ public partial class Map
         int wpCount = routeEditCoords?.Length ?? 0;
         if (wpCount >= 2)
         {
+            // Action-verb labels instead of the default "Cancel" /
+            // "Confirm": the route-edit bar already has a "Cancel"
+            // button, so a modal with "Cancel" and "Confirm" reads
+            // ambiguous ("which Cancel am I clicking?"). Explicit
+            // verbs match the question so no helm can click the
+            // wrong one under stress.
             bool ok = await Confirmations.ConfirmAsync(
-                $"Discard route in progress ({wpCount} waypoints)?");
+                $"Discard route in progress ({wpCount} waypoints)?",
+                confirmLabel: "Discard",
+                cancelLabel: "Keep editing");
             if (!ok) return;
         }
         if (wpCount > 0)

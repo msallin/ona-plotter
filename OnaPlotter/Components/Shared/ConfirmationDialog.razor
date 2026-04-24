@@ -23,12 +23,14 @@
                     class="btn confirm-btn confirm-btn-cancel"
                     @onclick="OnCancel"
                     autofocus>
-                Cancel
+                @(string.IsNullOrEmpty(Confirm.CancelLabel) ? "Cancel" : Confirm.CancelLabel)
             </button>
             <button type="button"
                     class="btn confirm-btn @(Confirm.Destructive ? "confirm-btn-danger" : "confirm-btn-primary")"
                     @onclick="OnOk">
-                @(Confirm.Destructive ? "Confirm" : "OK")
+                @(!string.IsNullOrEmpty(Confirm.ConfirmLabel)
+                    ? Confirm.ConfirmLabel
+                    : Confirm.Destructive ? "Confirm" : "OK")
             </button>
         </div>
     </div>

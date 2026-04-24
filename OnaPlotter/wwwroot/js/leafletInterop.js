@@ -916,6 +916,21 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
                 c.lat, c.lng, map.getZoom()).catch(() => { /* disposed */ });
         }, 300);
     });
+
+    // Fire OnMapBoundsChanged ONCE on init with the initial viewport.
+    // Moveend won't fire until the user actually pans, so without this
+    // the Layers panel lists every chart/route regardless of what's
+    // visible until the first interaction -- user-reported "bounds
+    // aren't respected on first load". Timeout = 0 lets Leaflet settle
+    // its first render (size, CRS) before getBounds() is called.
+    setTimeout(() => {
+        if (!map || !dotNetRef) return;
+        const b = map.getBounds();
+        const c = map.getCenter();
+        dotNetRef.invokeMethodAsync('OnMapBoundsChanged',
+            b.getWest(), b.getSouth(), b.getEast(), b.getNorth(),
+            c.lat, c.lng, map.getZoom()).catch(() => { });
+    }, 0);
 }
 
 /**
@@ -2395,8 +2410,14 @@ function redrawEditLine() {
         // click handlers prevents the map-level handler (which APPENDS
         // at the end of the route) from firing in addition to the
         // insert-between-segment handler.
+        // 40 px invisible hitbox (was 20). Real sailing routes don't
+        // zig-zag at 5-10 m scale, so a tap a finger-width off the
+        // line almost always means "insert here" rather than "drop
+        // a new point over there". Wider hitbox removes the "I tapped
+        // the line and got a new endpoint instead of an insert"
+        // frustration on iPad.
         routeEditHitLine = L.polyline(routeEditCoords, {
-            color: MapColors.current, weight: 20, opacity: 0, interactive: true,
+            color: MapColors.current, weight: 40, opacity: 0, interactive: true,
             // Crosshair cursor on hover so it's discoverable that
             // clicking a leg inserts a waypoint between existing ones,
             // rather than appending at the end.
@@ -3317,6 +3338,42 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
     keyHandler = (e) => {
         // Skip if user is typing in an input.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        // Arrow keys pan the map. Leaflet's built-in keyboard handler
+        // requires the map container to have focus, which gets lost
+        // whenever the user clicks any other element -- in practice
+        // arrows just scrolled the page. Drive it directly so arrows
+        // always pan the chart, regardless of focus.
+        //
+        // Step size: 1/3 of viewport by default (cockpit helmsman
+        // wants to look ahead in meaningful chunks, not 80px at a
+        // time). Shift = full viewport for coarse scrubbing.
+        if (map && (e.key === 'ArrowUp' || e.key === 'ArrowDown'
+                    || e.key === 'ArrowLeft' || e.key === 'ArrowRight'))
+        {
+            e.preventDefault();
+            const size = map.getSize();
+            const frac = e.shiftKey ? 1.0 : 1 / 3;
+            let dx = 0, dy = 0;
+            switch (e.key) {
+                case 'ArrowUp':    dy = -size.y * frac; break;
+                case 'ArrowDown':  dy =  size.y * frac; break;
+                case 'ArrowLeft':  dx = -size.x * frac; break;
+                case 'ArrowRight': dx =  size.x * frac; break;
+            }
+            // A manual pan should drop follow-mode; otherwise the next
+            // position delta would yank the view back. Mirror the
+            // mouse-drag break-follow contract (suppressMoveEnd isn't
+            // what we want here -- that suppresses the callback, not
+            // the follow flag).
+            if (followBoat) {
+                followBoat = false;
+                if (dotNetRef) dotNetRef.invokeMethodAsync('SetFollowFromJs', false).catch(() => {});
+            }
+            map.panBy([dx, dy], { animate: true, duration: 0.3 });
+            return;
+        }
+
         const key = e.key.toLowerCase();
         const isLetter = 'mfnatlor'.includes(key) && key.length === 1;
         const isSpecial = key === '?' || key === 'escape';

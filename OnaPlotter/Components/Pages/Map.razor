@@ -1633,6 +1633,19 @@
             await module.InvokeVoidAsync("setFollow", follow);
     }
 
+    /// <summary>Called from JS when a user interaction (arrow-key pan,
+    /// future mouse-drag) breaks follow-mode. Syncs the Blazor state +
+    /// persists the new value; no round-trip back to JS because JS is
+    /// already the authoritative side of this flip.</summary>
+    [JSInvokable]
+    public async Task SetFollowFromJs(bool value)
+    {
+        if (follow == value) return;
+        follow = value;
+        await Settings.SetFollowBoatAsync(value);
+        await InvokeAsync(StateHasChanged);
+    }
+
     private async Task CycleMapOrientation()
     {
         mapOrientation = mapOrientation switch

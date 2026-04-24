@@ -12,8 +12,14 @@ public interface IConfirmationService
 {
     /// <summary>Shows a prompt and resolves to <c>true</c> when the user
     /// confirms, <c>false</c> when they cancel or the prompt can't
-    /// render.</summary>
-    Task<bool> ConfirmAsync(string message, bool destructive = true);
+    /// render. Optional <paramref name="confirmLabel"/> and
+    /// <paramref name="cancelLabel"/> let callers phrase the buttons
+    /// as verbs that match the question ("Discard" / "Keep editing"
+    /// instead of the default "Confirm" / "Cancel"). Generic labels
+    /// invite "user cancels the cancellation" traps; action verbs
+    /// remove the ambiguity.</summary>
+    Task<bool> ConfirmAsync(string message, bool destructive = true,
+        string? confirmLabel = null, string? cancelLabel = null);
 
     /// <summary>Fires whenever the pending state changes so the modal
     /// host component can re-render. Irrelevant to non-UI callers.</summary>
@@ -27,6 +33,14 @@ public interface IConfirmationService
     /// action; the host renders the confirm button in the danger
     /// palette when set.</summary>
     bool Destructive { get; }
+
+    /// <summary>Label for the confirm button. Null/empty means use
+    /// the default based on <see cref="Destructive"/>.</summary>
+    string? ConfirmLabel { get; }
+
+    /// <summary>Label for the cancel button. Null/empty means the
+    /// default "Cancel".</summary>
+    string? CancelLabel { get; }
 
     /// <summary>Whether a prompt is currently awaiting the user's
     /// answer. The host component gates its render on this.</summary>

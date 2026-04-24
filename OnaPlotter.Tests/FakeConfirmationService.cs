@@ -22,14 +22,19 @@ internal sealed class FakeConfirmationService : IConfirmationService
     public event Action? OnChanged { add { } remove { } }
     public string Message => LastMessage ?? "";
     public bool Destructive { get; private set; }
+    public string? ConfirmLabel { get; private set; }
+    public string? CancelLabel { get; private set; }
     public bool IsPending => false;
     public void Resolve(bool ok) { /* tests resolve synchronously via AutoConfirm */ }
 
-    public Task<bool> ConfirmAsync(string message, bool destructive = true)
+    public Task<bool> ConfirmAsync(string message, bool destructive = true,
+        string? confirmLabel = null, string? cancelLabel = null)
     {
         CallCount++;
         LastMessage = message;
         Destructive = destructive;
+        ConfirmLabel = confirmLabel;
+        CancelLabel = cancelLabel;
         return Task.FromResult(AutoConfirm);
     }
 }
