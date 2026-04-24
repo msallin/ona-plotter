@@ -19,6 +19,8 @@ public sealed class AppSettingsService : IAppSettings
 
     public bool NightMode { get; private set; }
     public bool NightModeAuto { get; private set; } = false;
+    public DateTime? LastManualNightToggleUtc { get; private set; }
+    public bool ChartsSeeded { get; private set; }
     public string NightModePreset { get; private set; } = "soft";
     public string Theme { get; private set; } = "system";
     public string MapOrientation { get; private set; } = "north";
@@ -73,6 +75,8 @@ public sealed class AppSettingsService : IAppSettings
             if (_initialized) return;
             NightMode = await LoadBool("nightMode", false);
             NightModeAuto = await LoadBool("nightModeAuto.v1", false);
+            LastManualNightToggleUtc = await LoadDateTimeUtc("lastManualNightToggle.v1");
+            ChartsSeeded = await LoadBool("chartsSeeded.v1", false);
             NightModePreset = NormalizeNightPreset(await LoadString("nightModePreset"));
             Theme = NormalizeTheme(await LoadString("theme"));
             MapOrientation = await LoadString("mapOrientation") ?? "north";
@@ -133,6 +137,19 @@ public sealed class AppSettingsService : IAppSettings
         NightMode = value;
         await Save("nightMode", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
+    }
+
+    public async Task MarkManualNightToggleAsync()
+    {
+        var now = DateTime.UtcNow;
+        LastManualNightToggleUtc = now;
+        await Save("lastManualNightToggle.v1", now.ToString("o", CultureInfo.InvariantCulture));
+    }
+
+    public async Task MarkChartsSeededAsync()
+    {
+        ChartsSeeded = true;
+        await Save("chartsSeeded.v1", "true");
     }
 
     public async Task SetNightModeAutoAsync(bool value)
@@ -425,6 +442,22 @@ public sealed class AppSettingsService : IAppSettings
         var v = await LoadString(key);
         return v is not null && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
             ? d : fallback;
+    }
+
+    /// <summary>Load a persisted UTC timestamp. Stored as an ISO-8601
+    /// string with kind=UTC; parse failure yields null so a corrupt
+    /// entry falls back to "never toggled" rather than throwing.</summary>
+    private async Task<DateTime?> LoadDateTimeUtc(string key)
+    {
+        var v = await LoadString(key);
+        if (string.IsNullOrWhiteSpace(v)) return null;
+        if (DateTime.TryParse(v, CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind | DateTimeStyles.AssumeUniversal, out var dt))
+        {
+            return dt.ToUniversalTime();
+        }
+        Console.WriteLine($"[Settings] {key} parse failed ('{v}'). Starting fresh.");
+        return null;
     }
 
     private static void LoadIdsInto(string? raw, HashSet<string> target)

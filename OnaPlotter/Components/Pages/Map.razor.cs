@@ -368,19 +368,42 @@ public partial class Map
     // depth / anchor-drag alarms don't fire against a moving boat.
     private async Task NavigateRouteInternal(SignalkRoute route)
     {
-        // Server-side anchor is owned by signalk-anchoralarm-plugin.
-        // We could auto-raise it here via AnchorAlarmApi.RaiseAsync(),
-        // but "start route" + "raise anchor" are two deliberate
-        // actions on a boat; chaining them silently on a stray tap
-        // would drop the drift alarm without explicit intent. Better
-        // to block + tell the helm to tap the anchor button first
-        // (which now actually raises via the plugin REST endpoint,
-        // not just displays the old "managed elsewhere" toast).
+        // Real-world workflow: the boat is on the hook, the helm plans
+        // the passage, lifts anchor, goes. Treating "activate route" as
+        // an implicit "lift anchor" command matches that flow -- the
+        // user already confirmed they want to leave by activating a
+        // route, so a second modal to confirm lifting the anchor is
+        // cockpit-theatre. The earlier "block and tell them to tap
+        // anchor first" behaviour was defensive but wrong for the
+        // sequence sailors actually follow.
+        //
+        // Order matters: raise BEFORE setting the course. If setting
+        // the course failed for some other reason we'd be left
+        // anchor-up with no active route, which is a minor re-plan
+        // nuisance; the opposite (still anchored while a course was
+        // set and CPA / APPROACH alarms start chattering against a
+        // static boat) is the state we just fought with an explicit
+        // rule in the alarm sweep.
         if (Data.AnchorActive)
         {
-            Toasts.Show("Raise anchor before starting a route",
-                ToastService.ToastLevel.Warning);
-            return;
+            try
+            {
+                var r = await AnchorAlarmApi.RaiseAsync();
+                if (!r.Success)
+                {
+                    // Plugin rejected (wrong state, not installed, etc.).
+                    // Fall back to the old prompt-the-helm behaviour so
+                    // the user still has a way out.
+                    Toasts.Error($"Couldn't auto-raise anchor ({r.Error ?? "server rejected"}). Raise manually, then retry.");
+                    return;
+                }
+                Toasts.Info("Anchor raised for route");
+            }
+            catch (Exception ex)
+            {
+                Toasts.Error($"Couldn't auto-raise anchor ({ex.Message}). Raise manually, then retry.");
+                return;
+            }
         }
         if (anchorManualActive && module is not null)
         {
@@ -391,7 +414,18 @@ public partial class Map
         try
         {
             var r = await CourseApi.SetActiveRouteAsync(route.Id);
-            if (r.Success) Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
+            if (r.Success)
+            {
+                Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
+                // Force an immediate route draw instead of waiting for
+                // the next delta tick to notice the href change. The
+                // href-diff lives in SyncActiveRouteAsync; just wipe
+                // lastActiveRouteHref so the next tick is guaranteed
+                // to refetch, and kick the sync synchronously so the
+                // user sees the polyline appear right away.
+                lastActiveRouteHref = null;
+                await SyncActiveRouteAsync();
+            }
             else Toasts.Error($"Start route failed: {r.Error ?? "server rejected"}");
         }
         catch (Exception ex) { Toasts.Error($"Start route failed: {ex.Message}"); }

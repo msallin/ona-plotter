@@ -665,7 +665,11 @@ article.content:has(.map-container) {
 .hud-panel-expanded {
     padding-bottom: 12px;
     min-width: 180px;
-    border-color: rgba(224, 159, 62, 0.45); /* route amber accent */
+    /* Keep the expanded state visually quiet -- the amber accent the
+       panel used to gain on expand fought the map underneath and the
+       alarm colour palette. Plain black border reads as "expanded
+       chrome" without pulling focus. */
+    border-color: rgba(0, 0, 0, 0.85);
 }
 
 /* Extra-detail rows inside an expanded HUD panel. */
@@ -4301,7 +4305,10 @@ main:has(.map-container.big-type) .map-fab-item {
 
 .route-edit-hint {
     position: absolute;
-    top: 10px;
+    /* Push below the chart quick-bar so the two chips don't collide
+       at the top-centre. Quick-bar chips are ~28 px tall + 10 px top
+       inset, so 50 px gives a clear gap even when the bar wraps. */
+    top: 50px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 800;
@@ -5114,6 +5121,90 @@ main:has(.map-container.big-type) .map-fab-item {
 html[data-slow-client="1"] * {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+}
+
+/* ===== Global confirmation modal =====
+   Hosted once from MainLayout via ConfirmationDialog.razor. Triggered
+   by any IConfirmationService.ConfirmAsync callsite; the service
+   returns a Task that resolves when the user picks a button. */
+.confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: var(--z-modal);
+    backdrop-filter: blur(2px);
+}
+.confirm-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: calc(var(--z-modal) + 1);
+    min-width: 280px;
+    max-width: calc(100vw - 32px);
+    padding: 18px 20px 16px;
+    background: var(--sk-surface);
+    color: var(--sk-text);
+    border: 1px solid var(--sk-border);
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    animation: confirm-pop 0.2s ease-out;
+}
+@keyframes confirm-pop {
+    from { transform: translate(-50%, -50%) scale(0.96); opacity: 0; }
+    to   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+}
+.confirm-msg {
+    font-size: 0.95rem;
+    line-height: 1.4;
+    color: var(--sk-text);
+}
+.confirm-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.confirm-btn {
+    min-height: 40px;
+    min-width: 88px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    -webkit-tap-highlight-color: transparent;
+}
+.confirm-btn-cancel {
+    background: transparent;
+    color: var(--sk-text);
+    border-color: var(--sk-border);
+}
+.confirm-btn-cancel:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+.confirm-btn-primary {
+    background: var(--sk-accent);
+    color: #fff;
+    border-color: var(--sk-accent);
+}
+.confirm-btn-primary:hover {
+    filter: brightness(1.1);
+}
+.confirm-btn-danger {
+    background: var(--sev-danger);
+    color: #fff;
+    border-color: var(--sev-danger);
+}
+.confirm-btn-danger:hover {
+    filter: brightness(1.1);
+}
+@media (pointer: coarse) {
+    .confirm-btn { min-height: 48px; min-width: 110px; padding: 12px 18px; }
+    .confirm-dialog { padding: 22px 24px 20px; }
+    .confirm-msg { font-size: 1rem; }
 }
 
 /* Skip link for keyboard users: off-screen until focused, pops into

@@ -171,31 +171,9 @@
         </div>
     }
 
-    @* MOB clear confirm. Custom modal rather than JS confirm() because
-       native confirm on iPad landscape doesn't reflow long text and
-       the Cancel / OK labels can't be customised. The default focus is
-       on Cancel so a careless Enter on a physical keyboard doesn't
-       clear a real MOB. *@
-    @if (mobClearConfirmVisible)
-    {
-        <div class="welcome-backdrop" @onclick="() => MobClearConfirm(false)"></div>
-        <div class="mob-clear-modal" @onclick:stopPropagation role="dialog"
-             aria-labelledby="mob-clear-title" aria-describedby="mob-clear-body">
-            <h3 id="mob-clear-title">Clear MOB marker?</h3>
-            <p id="mob-clear-body">
-                Confirm <strong>only</strong> if the crew member is safely back aboard.
-                The marker drop time and position will be cleared.
-            </p>
-            <div class="mob-clear-actions">
-                <button class="map-btn" @onclick="() => MobClearConfirm(false)" autofocus>
-                    Cancel
-                </button>
-                <button class="map-btn ctrl-btn-danger" @onclick="() => MobClearConfirm(true)">
-                    Confirm clear
-                </button>
-            </div>
-        </div>
-    }
+    @* MOB clear confirm was a dedicated modal; replaced by the two-tap
+       confirm on the MOB button in MapControls (parallel to Stop-
+       Navigation). See OnMobClicked there. *@
 
     @if (routeEditMode)
     {
@@ -1207,15 +1185,21 @@
             catch (JSDisconnectedException) { }
         }
 
-        if (Settings.EnabledChartIds.Count > 0)
+        // Re-enable charts the user had turned on before navigating
+        // away / reloading. EnabledChartIds is the persisted source;
+        // this loop is a no-op when the set is empty.
+        foreach (var chart in availableCharts)
+            if (Settings.EnabledChartIds.Contains(chart.Identifier))
+                await ToggleChart(chart, true);
+
+        // First-run seeding: auto-enable OpenSeaMap-named charts so
+        // the map isn't blank on first visit. ChartsSeeded is persisted
+        // so this fires EXACTLY ONCE in a device's history -- earlier
+        // revisions re-seeded whenever EnabledChartIds was empty,
+        // which "reset" the user's deliberate choice to disable every
+        // chart (common when plotter is paired with offline tiles).
+        if (!Settings.ChartsSeeded)
         {
-            foreach (var chart in availableCharts)
-                if (Settings.EnabledChartIds.Contains(chart.Identifier))
-                    await ToggleChart(chart, true);
-        }
-        else
-        {
-            // First run: auto-enable OpenSeaMap-named charts.
             foreach (var chart in availableCharts)
             {
                 if (chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
@@ -1224,6 +1208,7 @@
                     await ToggleChart(chart, true);
                 }
             }
+            await Settings.MarkChartsSeededAsync();
         }
 
         foreach (var route in availableRoutes)
@@ -2235,7 +2220,12 @@
 
     private async Task ToggleNightMode()
     {
-        _lastManualNightToggleUtc = DateTime.UtcNow;
+        // Persist the manual-toggle timestamp (12-h auto-suppress window).
+        // Previously tracked in an in-memory field that reset on every
+        // page navigation, so leaving and re-entering the Map page
+        // would immediately let auto-night flip back, fighting the
+        // helm's last choice.
+        await Settings.MarkManualNightToggleAsync();
         nightMode = !nightMode;
         await Settings.SetNightModeAsync(nightMode);
         if (module is not null)
@@ -2252,10 +2242,11 @@
     // AND the server publishes environment.sun as one of
     // "day" / "dawn" / "dusk" / "night". The plugin knows about
     // civil-twilight cutoffs so we don't reimplement them. A manual
-    // Night tap within the last hour suppresses the auto-flip so a
-    // helmsman who wants day-mode at dusk isn't fought.
-    private const int ManualNightOverrideMinutes = 60;
-    private DateTime? _lastManualNightToggleUtc;
+    // Night tap within the last 12 h suppresses the auto-flip so a
+    // helmsman who wants day-mode at dusk isn't fought. Persisted in
+    // Settings.LastManualNightToggleUtc so the window survives page
+    // navigation and browser reload.
+    private const int ManualNightOverrideMinutes = 12 * 60;
     private DateTime _lastAutoNightCheckUtc = DateTime.MinValue;
 
     private async Task CheckAutoNightAsync()
@@ -2279,8 +2270,12 @@
         if ((now - _lastAutoNightCheckUtc).TotalSeconds < 30) return;
         _lastAutoNightCheckUtc = now;
 
-        // Respect recent manual toggles.
-        if (_lastManualNightToggleUtc is DateTime t
+        // Respect recent manual toggles. Source of truth is
+        // Settings.LastManualNightToggleUtc so the window survives
+        // navigation / reload (audit said the 1-hour window reset
+        // on every Map re-entry, which it used to because the field
+        // was an in-memory DateTime? on the component).
+        if (Settings.LastManualNightToggleUtc is DateTime t
             && (now - t).TotalMinutes < ManualNightOverrideMinutes) return;
 
         if (wantNight == nightMode) return;
@@ -2307,28 +2302,10 @@
         StateHasChanged();
     }
 
-    // --- MOB clear confirmation ---------------------------------------
-    // TaskCompletionSource-backed await-modal pattern so ToggleMob can
-    // await the user's Cancel / Confirm decision from the Blazor modal.
-    // Keeps the code linear without a callback mess or re-entry bugs.
-    private bool mobClearConfirmVisible;
-    private TaskCompletionSource<bool>? mobClearTcs;
-
-    private Task<bool> AskMobClearAsync()
-    {
-        mobClearTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        mobClearConfirmVisible = true;
-        StateHasChanged();
-        return mobClearTcs.Task;
-    }
-
-    private void MobClearConfirm(bool ok)
-    {
-        mobClearConfirmVisible = false;
-        mobClearTcs?.TrySetResult(ok);
-        mobClearTcs = null;
-        StateHasChanged();
-    }
+    // MOB clear confirmation now lives on MapControls (OnMobClicked)
+    // as a two-tap pattern matching Stop-Navigation. The old
+    // TaskCompletionSource-backed modal is gone; ToggleMob is called
+    // only after the user has already armed + confirmed.
 
     private async Task ToggleMob()
     {
@@ -2362,14 +2339,11 @@
         else
         {
             // Guard against false-trigger clears: a kid leaning on the button,
-            // a double-tap in heavy seas, or an accidental keyboard 'M' while
-            // typing in a note. If this IS the real event, a one-second delay
-            // + confirm is trivial compared to a lost crewmember. Uses a
-            // Blazor modal instead of JS confirm() so iPad landscape reads
-            // the full message and the "Cancel" button takes default focus.
-            bool ok = await AskMobClearAsync();
-            if (!ok) return;
-
+            // Guard against false-trigger clears handled in MapControls
+            // via the two-tap confirm pattern (parallel to Stop-
+            // Navigation). By the time ToggleMob fires for a clear,
+            // the user has already armed + confirmed. No second prompt
+            // needed here.
             await module.InvokeVoidAsync("clearMob");
             mobActive = false;
         }

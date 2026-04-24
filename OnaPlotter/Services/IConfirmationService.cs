@@ -10,23 +10,29 @@ namespace OnaPlotter.Services;
 /// </summary>
 public interface IConfirmationService
 {
-    /// <summary>
-    /// Shows a prompt and resolves to <c>true</c> when the user
+    /// <summary>Shows a prompt and resolves to <c>true</c> when the user
     /// confirms, <c>false</c> when they cancel or the prompt can't
-    /// render (JSDisconnected on teardown).
-    /// </summary>
-    /// <param name="message">
-    /// Human-readable question. The default implementation passes
-    /// it verbatim to <c>window.confirm</c>; a styled-modal
-    /// implementation would render it as the body text.
-    /// </param>
-    /// <param name="destructive">
-    /// True for actions that delete data or cancel an in-progress
-    /// operation. Default true because almost every callsite is
-    /// a destructive action (delete, stop nav, raise anchor,
-    /// discard unsaved route edits). A styled modal could paint
-    /// the confirm button in the danger palette when set; the
-    /// native <c>confirm</c> fallback ignores this parameter.
-    /// </param>
+    /// render.</summary>
     Task<bool> ConfirmAsync(string message, bool destructive = true);
+
+    /// <summary>Fires whenever the pending state changes so the modal
+    /// host component can re-render. Irrelevant to non-UI callers.</summary>
+    event Action? OnChanged;
+
+    /// <summary>Current prompt text if a prompt is pending; empty
+    /// when none.</summary>
+    string Message { get; }
+
+    /// <summary>Whether the pending prompt is for a destructive
+    /// action; the host renders the confirm button in the danger
+    /// palette when set.</summary>
+    bool Destructive { get; }
+
+    /// <summary>Whether a prompt is currently awaiting the user's
+    /// answer. The host component gates its render on this.</summary>
+    bool IsPending { get; }
+
+    /// <summary>Called by the modal host when the user picks a
+    /// button; resolves the pending ConfirmAsync task.</summary>
+    void Resolve(bool ok);
 }

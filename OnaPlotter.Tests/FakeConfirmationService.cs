@@ -17,10 +17,19 @@ internal sealed class FakeConfirmationService : IConfirmationService
     public string? LastMessage { get; private set; }
     public int CallCount { get; private set; }
 
+    // Interface members added to support the Blazor-modal host. Tests
+    // that don't exercise the modal just ignore these.
+    public event Action? OnChanged { add { } remove { } }
+    public string Message => LastMessage ?? "";
+    public bool Destructive { get; private set; }
+    public bool IsPending => false;
+    public void Resolve(bool ok) { /* tests resolve synchronously via AutoConfirm */ }
+
     public Task<bool> ConfirmAsync(string message, bool destructive = true)
     {
         CallCount++;
         LastMessage = message;
+        Destructive = destructive;
         return Task.FromResult(AutoConfirm);
     }
 }

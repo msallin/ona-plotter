@@ -99,9 +99,15 @@
             <span class="ctrl-lbl">@(stopConfirming ? "Confirm?" : "Stop")</span>
         </button>
     }
-    <button class="ctrl-btn ctrl-btn-danger @(MobActive ? "active" : "")" @onclick="OnToggleMob" title="Man overboard (M)">
+    @* MOB: one-tap DROP (no confirm -- every second matters in a real
+       MOB event), two-tap CLEAR when already active. Matches the Stop
+       button's confirm pattern so the two safety-critical red buttons
+       feel the same under stress. *@
+    <button class="ctrl-btn ctrl-btn-danger @(MobActive ? "active" : "") @(mobClearConfirming ? "ctrl-btn-confirming" : "")"
+            @onclick="OnMobClicked"
+            title="@(mobClearConfirming ? "Tap again to clear MOB" : MobActive ? "Clear MOB (M)" : "Man overboard (M)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
-        <span class="ctrl-lbl">MOB</span>
+        <span class="ctrl-lbl">@(mobClearConfirming ? "Confirm?" : "MOB")</span>
     </button>
 
     <div class="ctrl-sep"></div>
@@ -227,14 +233,15 @@
     /// default off since most users are on touch and don't see them.</summary>
     [Parameter] public bool ShowKeyboardHints { get; set; }
 
-    // Two-step Stop-Navigation confirm state. First tap arms; second
-    // tap within StopConfirmWindowMs invokes the parent callback.
-    // A rolling cockpit or pocket brush shouldn't silently kill the
-    // active route. Window reuses the waypoint-delete timeout so the
-    // confirm affordances feel consistent.
+    // Two-step confirm for destructive actions in the control bar
+    // (Stop-Navigation + MOB-clear). First tap arms; second tap within
+    // ConfirmWindowMs invokes. A rolling cockpit or pocket brush
+    // shouldn't silently kill navigation OR clear a live MOB mark.
     private bool stopConfirming;
+    private bool mobClearConfirming;
     private System.Threading.Timer? stopConfirmTimer;
-    private const int StopConfirmWindowMs = 3000;
+    private System.Threading.Timer? mobConfirmTimer;
+    private const int ConfirmWindowMs = 3000;
 
     private async Task OnStopClicked()
     {
@@ -252,7 +259,35 @@
         {
             stopConfirming = false;
             _ = InvokeAsync(StateHasChanged);
-        }, null, StopConfirmWindowMs, Timeout.Infinite);
+        }, null, ConfirmWindowMs, Timeout.Infinite);
+    }
+
+    private async Task OnMobClicked()
+    {
+        // First-drop is unconfirmed: in a real MOB event every second
+        // matters and forcing a second tap could cost a life. The
+        // confirm kicks in only when we're CLEARING an already-active
+        // MOB (the accidental-tap risk scenario).
+        if (!MobActive)
+        {
+            await OnToggleMob.InvokeAsync();
+            return;
+        }
+        if (mobClearConfirming)
+        {
+            mobClearConfirming = false;
+            mobConfirmTimer?.Dispose();
+            mobConfirmTimer = null;
+            await OnToggleMob.InvokeAsync();
+            return;
+        }
+        mobClearConfirming = true;
+        mobConfirmTimer?.Dispose();
+        mobConfirmTimer = new System.Threading.Timer(_ =>
+        {
+            mobClearConfirming = false;
+            _ = InvokeAsync(StateHasChanged);
+        }, null, ConfirmWindowMs, Timeout.Infinite);
     }
 
     // Dot indicator on the More button when any of its contents is on,

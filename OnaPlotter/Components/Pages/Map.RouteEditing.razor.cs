@@ -34,6 +34,11 @@ public partial class Map
 
     private async Task StartRouteEdit()
     {
+        // Close the Add flyout when the user picks Route -- the menu
+        // stayed open on entry to edit mode and then floated on top of
+        // the edit panel. Matches the FabCreate* callbacks which all
+        // set fabMenuOpen=false first.
+        fabMenuOpen = false;
         routeEditMode = true;
         routeEditId = null;                     // fresh route, not an in-place edit
         // Prefill with the same date-stamped default that Save falls back

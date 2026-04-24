@@ -223,6 +223,10 @@
             @Body
         </article>
 
+        @* Global confirmation modal. Hosted here so every page / panel
+           shares one styled dialog through IConfirmationService. *@
+        <ConfirmationDialog />
+
         @* === Toast notifications ===
            role=status + aria-live=polite so transient status ("Saved",
            "Reconnecting...") reaches screen-reader users. Errors get a

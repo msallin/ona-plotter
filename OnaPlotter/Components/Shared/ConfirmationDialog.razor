@@ -1,0 +1,50 @@
+@using OnaPlotter.Services
+@inject IConfirmationService Confirm
+@implements IDisposable
+
+@* Global confirmation modal. Hosted once from MainLayout so every
+   call site (Map.razor, Settings, Resources, RoutesSection, ...) that
+   does `await Confirmations.ConfirmAsync(...)` is shown through this
+   one dialog. Gated on Confirm.IsPending so the DOM footprint is
+   zero when idle. *@
+
+@if (Confirm.IsPending)
+{
+    <div class="confirm-backdrop" @onclick="OnCancel"></div>
+    <div class="confirm-dialog"
+         role="alertdialog"
+         aria-modal="true"
+         aria-labelledby="confirm-msg"
+         @onkeydown="OnKeyDown"
+         tabindex="-1">
+        <div class="confirm-msg" id="confirm-msg">@Confirm.Message</div>
+        <div class="confirm-actions">
+            <button type="button"
+                    class="btn confirm-btn confirm-btn-cancel"
+                    @onclick="OnCancel"
+                    autofocus>
+                Cancel
+            </button>
+            <button type="button"
+                    class="btn confirm-btn @(Confirm.Destructive ? "confirm-btn-danger" : "confirm-btn-primary")"
+                    @onclick="OnOk">
+                @(Confirm.Destructive ? "Confirm" : "OK")
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Confirm.OnChanged += OnStateChanged;
+    public void Dispose() => Confirm.OnChanged -= OnStateChanged;
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnOk() => Confirm.Resolve(true);
+    private void OnCancel() => Confirm.Resolve(false);
+
+    private void OnKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") OnCancel();
+        else if (e.Key == "Enter") OnOk();
+    }
+}

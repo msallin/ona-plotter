@@ -10,10 +10,24 @@ public interface IAppSettings
 
     /// <summary>When true, Night mode auto-engages based on SignalK's
     /// <c>environment.sun</c> string path (day / dawn / dusk / night).
-    /// A manual toggle in the last hour suppresses the auto-flip so a
-    /// helmsman who wants day mode at dusk isn't fought. Default OFF --
-    /// plenty of sailors prefer to decide themselves.</summary>
+    /// A manual toggle suppresses the auto-flip for 12 h (see
+    /// <see cref="LastManualNightToggleUtc"/>) so a helmsman who
+    /// wants day mode at dusk isn't fought. Default OFF -- plenty of
+    /// sailors prefer to decide themselves.</summary>
     bool NightModeAuto { get; }
+
+    /// <summary>True once the first-run chart seeding has run. Prevents
+    /// the "auto-enable OpenSeaMap" fallback from re-firing every time
+    /// a user disables every chart, which used to "reset" their choice
+    /// on the next Map entry / page reload.</summary>
+    bool ChartsSeeded { get; }
+
+    /// <summary>UTC timestamp of the most recent manual Night toggle
+    /// (tap on the Night button). Persisted so the 12-hour auto-
+    /// suppress window survives page reloads and Map re-entry --
+    /// previously the window was an in-memory field that reset on
+    /// every navigation away from the chart.</summary>
+    DateTime? LastManualNightToggleUtc { get; }
 
     /// <summary>Night-mode flavour. "soft" is the light-red default (warm
     /// amber with a touch of blue); "amber" is warmer and brighter for
@@ -209,6 +223,16 @@ public interface IAppSettings
 
     Task InitializeAsync();
     Task SetNightModeAsync(bool value);
+
+    /// <summary>Stamps <see cref="ChartsSeeded"/> so the first-run
+    /// OpenSeaMap seed only runs once per device.</summary>
+    Task MarkChartsSeededAsync();
+
+    /// <summary>Stamps <see cref="LastManualNightToggleUtc"/> with the
+    /// current time. Called alongside <see cref="SetNightModeAsync"/>
+    /// from a manual Night tap so the auto-toggle window starts
+    /// ticking from the user's action.</summary>
+    Task MarkManualNightToggleAsync();
     Task SetNightModeAutoAsync(bool value);
     Task SetNightModePresetAsync(string value);
     Task SetThemeAsync(string value);
