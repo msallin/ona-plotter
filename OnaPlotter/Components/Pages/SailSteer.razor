@@ -1,21 +1,35 @@
 @* SailSteer: circular compass display combining wind, heading, COG, laylines, and waypoint bearing.
-   Inspired by B&G SailSteer. Compass rotates opposite to heading so the boat always points up. *@
+   Inspired by B&G SailSteer. Compass rotates opposite to heading so the boat always points up.
+   B1/B2 additions: back-to-chart chip, empty state when no wind data, Polar-driven target TWA
+   hints (second arrow at optimal upwind/downwind angle), VMG-vs-target perf bar on the right. *@
 
 @page "/sailsteer"
 @using OnaPlotter.Services
 @using OnaPlotter.Models
+@using OnaPlotter.Components.Shared
 @implements IDisposable
 @inject SignalkClient SignalkClient
+@inject IPolarService Polar
 
 <PageTitle>SailSteer</PageTitle>
 
+<BackToMapChip />
+
 <div class="sailsteer-container">
+    @if (!HasAnyInstrument)
+    {
+        @* Empty state overlays the (otherwise bare) compass so the
+           user sees "the app is alive, sensors aren't reporting"
+           rather than a silent ring of dashes. *@
+        <div class="instrument-empty-state" role="status">
+            <strong>Waiting for wind data</strong>
+            SailSteer needs <em>environment.wind.*</em> + <em>navigation.headingTrue</em>.
+            Connect a wind sensor or check the SignalK server.
+        </div>
+    }
     <svg viewBox="0 0 500 500" style="max-width:500px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg">
 
         @* === Data readouts (fixed, do not rotate) === *@
-        @* Readouts. Vcls() picks `sailsteer-value-muted` when the
-           underlying SignalK path is null, so a "--" reading clearly
-           reads as "no data" instead of looking like a confident zero. *@
         @Txt(70, 32, "TWA", "sailsteer-label")
         @Txt(70, 54, Format.Degrees(Data.WindAngleTrue), Vcls(Data.WindAngleTrue))
         @Txt(70, 68, "true", "sailsteer-unit")
@@ -42,17 +56,35 @@
         @Txt(430, 440, "COG", "sailsteer-label")
         @Txt(430, 462, $"{Format.Degrees(Data.CourseOverGround)}\u00b0", Vcls(Data.CourseOverGround))
 
-        @* === Lubber line (fixed, always points up = ship's heading reference).
-           Colour via `style` so the --sev-danger CSS var resolves; a raw
-           `stroke=` attribute wouldn't pick up night-mode theme changes. === *@
+        @* === VMG-to-target performance bar ===
+           Under the SOG readout (upper right) when the polar is loaded
+           and we have live TWA+TWS. Shows current-BSP vs polar-target
+           as a horizontal fill: green when matched, amber when off.
+           Inline HTML via foreignObject so the shared .perf-meter CSS
+           applies; keeps the SVG pure for the dial itself. *@
+        @if (VmgMeter is (double actual, double target, bool onPolar))
+        {
+            <foreignObject x="423" y="218" width="90" height="28">
+                <div xmlns="http://www.w3.org/1999/xhtml" class="sailsteer-vmg-bar">
+                    <div class="sailsteer-vmg-bar-label">
+                        <span>@actual.ToString("F1")</span>
+                        <span>@target.ToString("F1") tgt</span>
+                    </div>
+                    <div class="perf-meter">
+                        <div class="perf-meter-fill @(onPolar ? "" : "off-polar")"
+                             style="width: @(Math.Clamp(actual / Math.Max(target, 0.1) * 100, 0, 100).ToString("F0"))%;"></div>
+                    </div>
+                </div>
+            </foreignObject>
+        }
+
+        @* === Lubber line (fixed, always points up = ship's heading reference). === *@
         <line x1="250" y1="250" x2="250" y2="52"
               style="stroke: var(--sev-danger);" stroke-width="2.5" opacity="0.8" />
 
         @* === Rotating compass group === *@
         <g class="sailsteer-compass" transform="rotate(@CompassRotation, 250, 250)">
 
-            @* Outer compass ring -- muted theme border so night preset
-               red-shifts consistently with the rest of the chrome. *@
             <circle cx="250" cy="250" r="@R" fill="none"
                     style="stroke: var(--sk-border);" stroke-width="2" />
             <circle cx="250" cy="250" r="@((int)(R - 20))" fill="none"
@@ -76,8 +108,6 @@
                     double tx = Cx + Math.Sin(rad) * (R + 16);
                     double ty = Cy - Math.Cos(rad) * (R + 16);
                     string label = deg switch { 0 => "N", 90 => "E", 180 => "S", 270 => "W", _ => deg.ToString() };
-                    // North-zero gets danger-red for the "heading reference" cue;
-                    // E/S/W stay token-driven so night mode shifts consistently.
                     string fill = deg switch {
                         0 => "var(--sev-danger)",
                         90 or 180 or 270 => "rgba(255,255,255,0.7)",
@@ -100,7 +130,7 @@
                 </g>
             }
 
-            @* === Layline ticks on compass ring === *@
+            @* === Actual laylines (observed TWA, both tacks) === *@
             @if (Data.WindDirectionTrue is not null && Data.WindAngleTrue is not null)
             {
                 double twdD = Data.WindDirectionTrue.Value * Format.RadToDeg;
@@ -108,8 +138,6 @@
                 double stbdDeg = twdD + 180 - twaD;
                 double portDeg = twdD + 180 + twaD;
                 double lr = R - 6;
-                @* Starboard layline: green (ok); port: red (danger). Tokens
-                   rather than hex so night mode shifts the palette consistently. *@
                 <g transform="rotate(@F(stbdDeg), 250, 250)">
                     <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
                           style="stroke: var(--sev-ok);" stroke-width="3" stroke-linecap="round" />
@@ -122,10 +150,31 @@
                 </g>
             }
 
-            @* === COG line. Dashed amber warn token so it reads as
-               "direction of travel", not an alarm. If SOG is null the
-               line length falls back to a muted grey so a no-fix state
-               isn't mistaken for "drifting at 10 kn". === *@
+            @* === TARGET laylines (polar-optimal TWA, both tacks) ===
+               B2: thin dashed inner tick at the optimal upwind or
+               downwind angle for the current TWS. Lets the helm
+               compare the actual layline position (solid, outer) to
+               the polar-optimum position (dashed, inner) at a glance
+               -- if the two coincide you're sailing on polar. Only
+               rendered when the polar is loaded AND we have TWS. *@
+            @if (TargetLayline is (double targetStbd, double targetPort))
+            {
+                double lr = R - 24;
+                <g transform="rotate(@F(targetStbd), 250, 250)">
+                    <line x1="250" y1="@F(Cy - lr + 8)" x2="250" y2="@F(Cy - lr - 8)"
+                          style="stroke: var(--sev-ok);" stroke-width="2"
+                          stroke-dasharray="3,3" opacity="0.75" />
+                    @SvgTxt(250, Cy - lr - 14, "tgt", "var(--sev-ok)", 8, "600")
+                </g>
+                <g transform="rotate(@F(targetPort), 250, 250)">
+                    <line x1="250" y1="@F(Cy - lr + 8)" x2="250" y2="@F(Cy - lr - 8)"
+                          style="stroke: var(--sev-danger);" stroke-width="2"
+                          stroke-dasharray="3,3" opacity="0.75" />
+                    @SvgTxt(250, Cy - lr - 14, "tgt", "var(--sev-danger)", 8, "600")
+                </g>
+            }
+
+            @* === COG line (dashed amber). === *@
             @if (Data.CourseOverGround is not null)
             {
                 double cogLen = 150;
@@ -139,7 +188,7 @@
                       style="stroke: @cogStroke;" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />
             }
 
-            @* === Waypoint bearing line (accent cyan token). === *@
+            @* === Waypoint bearing line === *@
             @if (Data.HasActiveCourse && Data.CourseNextPointBearing is not null)
             {
                 double wpX = Cx + Math.Sin(Data.CourseNextPointBearing.Value) * (R - 20);
@@ -169,8 +218,75 @@
 
     private NavigationData Data => SignalkClient.Data;
 
-    // Rotate compass opposite to heading so the boat always appears to point up.
-    // With heading 90 (east), compass rotates -90 so "E" aligns with the lubber line.
+    // True when at least ONE of the fields we rely on is non-null. Drives
+    // the empty-state banner. If nothing is live, the SVG still renders
+    // (so chrome + compass labels remain), but the overlay tells the user
+    // the server isn't feeding sensor data yet.
+    private bool HasAnyInstrument =>
+        Data.Heading is not null
+        || Data.WindAngleTrue is not null
+        || Data.WindAngleApparent is not null
+        || Data.WindSpeedTrue is not null;
+
+    /// <summary>
+    /// Polar-optimum layline angles (absolute degrees, compass-clockwise
+    /// from north) for the current TWD + TWS. Returns stbd + port pair,
+    /// or null when the polar isn't loaded, TWS isn't published, or the
+    /// sailor is neither clearly upwind nor clearly downwind (the polar
+    /// optimum is meaningful only off-the-wind).
+    /// </summary>
+    private (double Stbd, double Port)? TargetLayline
+    {
+        get
+        {
+            if (!Polar.HasPolar) return null;
+            if (Data.WindDirectionTrue is not double twdRad) return null;
+            if (Data.WindSpeedTrue is not double twsMs) return null;
+            if (Data.WindAngleTrue is not double twaRad) return null;
+            double twsKn = twsMs * Format.MsToKnots;
+            double absTwa = Math.Abs(twaRad * Format.RadToDeg);
+            // Pick the branch of the polar curve that matches where the
+            // helmsman is actually sailing. Upwind targets are only useful
+            // when the boat is roughly upwind; dittos for downwind.
+            OptimalPoint? target = absTwa < 90
+                ? Polar.GetOptimalUpwind(twsKn)
+                : Polar.GetOptimalDownwind(twsKn);
+            if (target is not OptimalPoint t) return null;
+            double twdDeg = twdRad * Format.RadToDeg;
+            // Same mirror as the actual-layline calculation above.
+            double stbd = twdDeg + 180 - t.TwaDeg;
+            double port = twdDeg + 180 + t.TwaDeg;
+            return (stbd, port);
+        }
+    }
+
+    /// <summary>
+    /// VMG-vs-target meter. actual = current boat VMG magnitude (SOG *
+    /// |cos(TWA)|), target = polar VMG at current TWS from the relevant
+    /// optimum. onPolar=true when actual is within 5% of target.
+    /// Returns null when any input is missing.
+    /// </summary>
+    private (double Actual, double Target, bool OnPolar)? VmgMeter
+    {
+        get
+        {
+            if (!Polar.HasPolar) return null;
+            if (Data.SpeedOverGround is not double sogMs) return null;
+            if (Data.WindSpeedTrue is not double twsMs) return null;
+            if (Data.WindAngleTrue is not double twaRad) return null;
+            double sogKn = sogMs * Format.MsToKnots;
+            double twsKn = twsMs * Format.MsToKnots;
+            double absTwa = Math.Abs(twaRad * Format.RadToDeg);
+            OptimalPoint? target = absTwa < 90
+                ? Polar.GetOptimalUpwind(twsKn)
+                : Polar.GetOptimalDownwind(twsKn);
+            if (target is not OptimalPoint t) return null;
+            double actualVmg = sogKn * Math.Abs(Math.Cos(twaRad));
+            bool onPolar = Math.Abs(actualVmg - t.VmgKn) / Math.Max(t.VmgKn, 0.1) < 0.05;
+            return (actualVmg, t.VmgKn, onPolar);
+        }
+    }
+
     private string CompassRotation
     {
         get
@@ -182,29 +298,24 @@
 
     private static string F(double v) => v.ToString("F1");
 
-    // Class switcher for SVG readouts: muted when the underlying SignalK
-    // value is null so "--" reads as "no data" rather than a confident
-    // zero. CSS styles .sailsteer-value-muted as a dim grey.
     private static string Vcls(double? v) =>
         v is null ? "sailsteer-value sailsteer-value-muted" : "sailsteer-value";
 
-    // Razor treats <text> as a directive; use MarkupString for SVG text elements.
     private static MarkupString Txt(double x, double y, string content, string cls) =>
         new($"<text x=\"{x:F1}\" y=\"{y:F1}\" class=\"{cls}\" text-anchor=\"middle\">{Esc(content)}</text>");
 
-    // Emits the fill via `style` so callers can pass CSS var() references
-    // (e.g. "var(--sev-danger)") which SVG's presentation-attribute parser
-    // doesn't resolve but the `style` attribute does. Raw hex still works
-    // since CSS accepts it.
     private static MarkupString SvgTxt(double x, double y, string content, string fill, int fontSize, string fontWeight) =>
         new($"<text x=\"{x:F1}\" y=\"{y:F1}\" style=\"fill: {fill};\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
             $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
 
     private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         SignalkClient.OnDataChanged += HandleDataChanged;
+        // Polar is lazily loaded; InitializeAsync is idempotent.
+        await Polar.InitializeAsync();
+        Polar.OnPolarChanged += HandlePolarChanged;
     }
 
     private async void HandleDataChanged()
@@ -213,8 +324,15 @@
         catch (ObjectDisposedException) { }
     }
 
+    private async void HandlePolarChanged()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { }
+    }
+
     public void Dispose()
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
+        Polar.OnPolarChanged -= HandlePolarChanged;
     }
 }

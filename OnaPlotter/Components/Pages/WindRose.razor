@@ -3,6 +3,7 @@
 @page "/wind"
 @using OnaPlotter.Services
 @using OnaPlotter.Models
+@using OnaPlotter.Components.Shared
 @implements IDisposable
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
@@ -10,10 +11,65 @@
 
 <PageTitle>Wind Rose</PageTitle>
 
+<BackToMapChip />
+
 <h2>Wind Rose</h2>
 <p class="text-muted">Apparent wind angle vs. speed. Color indicates wind speed.</p>
 
+@* === Tactical badges row ===
+   Gust / lull over the last 2 min and shift-rate over the last 5 min.
+   Inline chips at the top so the helm sees the trend without reading
+   the plots carefully. Both render nothing when the underlying sample
+   count is insufficient (keeps "this badge is silent" meaningful). *@
+@if (GustLull is { } gl || ShiftRate is not null)
+{
+    <div class="d-flex gap-2 flex-wrap mb-2">
+        @if (GustLull is (double gust, double lull, double mean))
+        {
+            <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
+                  title="Peak AWS minus mean over the last @GustLullWindowMin min">
+                <span class="instrument-badge-label">Gust</span>
+                +@gust.ToString("F1") kn
+            </span>
+            <span class="instrument-badge"
+                  title="Lowest AWS minus mean over the last @GustLullWindowMin min">
+                <span class="instrument-badge-label">Lull</span>
+                -@lull.ToString("F1") kn
+            </span>
+            <span class="instrument-badge"
+                  title="Mean AWS over the last @GustLullWindowMin min">
+                <span class="instrument-badge-label">Mean</span>
+                @mean.ToString("F1") kn
+            </span>
+        }
+        @if (ShiftRate is double rate)
+        {
+            string cls = Math.Abs(rate) >= 3 ? "instrument-badge-warn"
+                       : Math.Abs(rate) >= 1 ? "instrument-badge"
+                       : "instrument-badge-good";
+            string sign = rate >= 0 ? "+" : "";
+            <span class="instrument-badge @cls"
+                  title="TWD slope over the last @ShiftRateWindowMin min -- positive = veering, negative = backing">
+                <span class="instrument-badge-label">Shift</span>
+                @sign@rate.ToString("F1") &deg;/min
+            </span>
+        }
+    </div>
+}
+
 <div class="d-flex flex-wrap gap-4 align-items-start">
+    <div style="position: relative;">
+    @if (!HasAnyWind)
+    {
+        @* Empty state on top of the compass grid so the chrome is
+           visible but the user sees "no sensor data yet". *@
+        <div class="instrument-empty-state" role="status">
+            <strong>Waiting for wind data</strong>
+            WindRose needs <em>environment.wind.angleApparent</em> +
+            <em>speedApparent</em>. Connect a wind sensor or check the
+            SignalK server.
+        </div>
+    }
     <svg viewBox="0 0 @Size @Size" style="max-width:@(Size)px; width:100%; height:auto; background: var(--sk-surface); border-radius: 6px;">
         @* Background circles *@
         @for (int i = 1; i <= RingCount; i++)
@@ -97,6 +153,7 @@
             <circle cx="@tipX" cy="@tipY" r="4" style="fill: currentColor;" />
         }
     </svg>
+    </div>
 
     @* Legend. Gradient id is per-component so if two WindRose
        instances co-exist on a page, their SVG defs don't collide --
@@ -256,6 +313,103 @@
         (60,  "1h"),
         (180, "3h"),
     ];
+
+    // Badge windows. Gust / lull wants a short window (a minute or two)
+    // so a recent gust still reads as "recent". Shift-rate wants long
+    // enough to smooth jitter, short enough to flag a genuine veer
+    // (~5 min on typical wind systems).
+    private const int GustLullWindowMin = 2;
+    private const int ShiftRateWindowMin = 5;
+
+    // True when at least one live or historical wind reading exists.
+    // Used by the empty-state overlay.
+    private bool HasAnyWind =>
+        currentWind is not null
+        || windPoints.Count > 0
+        || twdHistory.Count > 0;
+
+    /// <summary>
+    /// Gust + lull relative to the short-window mean. A "gust" of +4
+    /// means peak AWS was 4 kn above the window mean; "lull" likewise
+    /// on the low side. Both in knots; never negative.
+    /// </summary>
+    private (double Gust, double Lull, double Mean)? GustLull
+    {
+        get
+        {
+            // Pull AWS samples from the track buffer's window rather
+            // than keeping a separate ring; TrackBuffer.GetSnapshot
+            // already carries WindSpeedApparent.
+            var cutoff = DateTime.UtcNow.AddMinutes(-GustLullWindowMin);
+            var samples = TrackBuffer.GetSnapshot()
+                .Where(p => p.Timestamp >= cutoff && p.WindSpeedApparent is not null)
+                .Select(p => p.WindSpeedApparent!.Value * MsToKnots)
+                .ToList();
+            if (samples.Count < 5) return null;
+            double mean = samples.Average();
+            double gust = Math.Max(0, samples.Max() - mean);
+            double lull = Math.Max(0, mean - samples.Min());
+            return (gust, lull, mean);
+        }
+    }
+
+    /// <summary>
+    /// Signed TWD slope in degrees per minute over the shift-rate
+    /// window. Positive = veering (clockwise); negative = backing.
+    /// Simple linear regression over the available samples; null when
+    /// fewer than a handful of samples exist. Handles 0/360 wraparound
+    /// by unfolding against the first sample.
+    /// </summary>
+    private double? ShiftRate
+    {
+        get
+        {
+            var cutoff = DateTime.UtcNow.AddMinutes(-ShiftRateWindowMin);
+            var window = twdHistory.Where(s => s.Time >= cutoff).ToList();
+            if (window.Count < 5) return null;
+
+            // Unfold around the first sample so 359 -> 1 doesn't read
+            // as a -358 degree jump. Each subsequent sample shifts by
+            // at most +/- 180; anything bigger must have wrapped.
+            double prev = window[0].Deg;
+            double baseline = prev;
+            var unfolded = new double[window.Count];
+            double running = prev;
+            unfolded[0] = running - baseline;
+            for (int i = 1; i < window.Count; i++)
+            {
+                double d = window[i].Deg;
+                double delta = d - prev;
+                if (delta > 180) delta -= 360;
+                else if (delta < -180) delta += 360;
+                running += delta;
+                unfolded[i] = running - baseline;
+                prev = d;
+            }
+
+            // Linear regression slope: Σ(x-x̄)(y-ȳ) / Σ(x-x̄)²
+            double tMean = 0, yMean = 0;
+            var ts = new double[window.Count];
+            for (int i = 0; i < window.Count; i++)
+            {
+                ts[i] = (window[i].Time - window[0].Time).TotalSeconds;
+                tMean += ts[i];
+                yMean += unfolded[i];
+            }
+            tMean /= window.Count;
+            yMean /= window.Count;
+            double num = 0, den = 0;
+            for (int i = 0; i < window.Count; i++)
+            {
+                double dt = ts[i] - tMean;
+                num += dt * (unfolded[i] - yMean);
+                den += dt * dt;
+            }
+            if (den < 1) return null;
+            double degPerSec = num / den;
+            return degPerSec * 60;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
