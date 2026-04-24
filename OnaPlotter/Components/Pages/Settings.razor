@@ -65,13 +65,14 @@
                     <input class="form-check-input" type="checkbox" role="switch"
                            checked="@AppSettings.KeepScreenAwake"
                            @onchange="OnKeepScreenAwakeChanged" />
-                    <span class="form-check-label">Keep screen awake on Map page</span>
+                    <span class="form-check-label">Keep screen awake</span>
                 </label>
                 <small class="text-muted d-block mt-1">
-                    Holds a Screen Wake Lock while the Map page is visible so the
-                    tablet doesn't doze mid-watch. Turn off if running on battery
-                    without shore power. Quiet no-op on browsers without Wake Lock
-                    support.
+                    Holds a Screen Wake Lock across the whole app so the tablet
+                    doesn't doze mid-watch. Covers Chart, SailSteer, Wind,
+                    History -- not just the Map page. Turn off if running on
+                    battery without shore power. Quiet no-op on browsers without
+                    Wake Lock support.
                 </small>
             </div>
         </div>
@@ -360,27 +361,28 @@
         <div class="card">
             <div class="card-body">
                 <label class="form-label">Boat Draft</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="0.1" min="0" max="10"
-                           aria-label="Boat draft in meters"
-                           value="@AppSettings.BoatDraftMeters"
-                           @onchange="(e) => OnBoatDraftChanged(e)" />
-                    <span class="input-group-text">m</span>
-                </div>
-                <small class="text-muted">Used by the tide-aware anchor alarm to predict grounding at low water.</small>
                 @if (SignalkClient.Data.DraftFromSignalK is double skDraft)
                 {
-                    <small class="text-muted d-block mt-1" style="color:var(--sev-ok) !important;">
-                        SignalK reports @skDraft.ToString("F2") m (<code>design.draft</code>) &mdash;
-                        used automatically by the anchor alarm.
-                        @if (System.Math.Abs(skDraft - AppSettings.BoatDraftMeters) > 0.05)
-                        {
-                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1"
-                                    style="padding:0 6px; font-size:0.72rem;"
-                                    @onclick="() => AppSettings.SetBoatDraftMetersAsync(skDraft)">
-                                Copy to field
-                            </button>
-                        }
+                    <div class="form-control-plaintext" style="font-weight:600;">
+                        @skDraft.ToString("F2") m
+                    </div>
+                    <small class="text-muted">
+                        Read from SignalK (<code>design.draft.current</code> or
+                        <code>design.draft.maximum</code>). Used by the tide-aware
+                        anchor alarm to predict grounding at low water.
+                    </small>
+                }
+                else
+                {
+                    <div class="form-control-plaintext text-muted fst-italic">
+                        not reported
+                    </div>
+                    <small class="text-muted">
+                        Set <code>design.draft.current</code> (or
+                        <code>design.draft.maximum</code>) on the vessel's
+                        <code>vessel.json</code> on the SignalK server. The
+                        tide-aware anchor alarm stays dormant until draft is
+                        reported.
                     </small>
                 }
             </div>
@@ -414,14 +416,16 @@
                 <ul class="list-unstyled mb-0 anchor-tide-check" style="font-size:0.85rem;">
                     <li>
                         @{
-                            var effectiveDraft = SignalkClient.Data.DraftFromSignalK ?? AppSettings.BoatDraftMeters;
-                            var draftOk = effectiveDraft > 0;
-                            var draftSrc = SignalkClient.Data.DraftFromSignalK is not null ? " from SignalK" : " from Settings";
+                            var skDraftOk = SignalkClient.Data.DraftFromSignalK is > 0;
                         }
-                        <span class="@(draftOk ? "check-ok" : "check-bad")">
-                            @(draftOk ? "\u2713" : "\u2717")
+                        <span class="@(skDraftOk ? "check-ok" : "check-bad")">
+                            @(skDraftOk ? "\u2713" : "\u2717")
                         </span>
-                        Boat draft &gt; 0 (@effectiveDraft.ToString("F1") m@draftSrc)
+                        Boat draft from SignalK
+                        @if (skDraftOk)
+                        { <span>(@SignalkClient.Data.DraftFromSignalK!.Value.ToString("F1") m)</span> }
+                        else
+                        { <span class="text-muted">&mdash; needs <code>design.draft</code> on vessel.json</span> }
                     </li>
                     <li>
                         <span class="@(AppSettings.AnchorTideSafetyMargin > 0 ? "check-ok" : "check-bad")">
@@ -774,12 +778,6 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 1)
             await AppSettings.SetWindShiftLookbackMinutesAsync(val);
-    }
-
-    private async Task OnBoatDraftChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
-            await AppSettings.SetBoatDraftMetersAsync(val);
     }
 
     private async Task OnAnchorTideMarginChanged(ChangeEventArgs e)

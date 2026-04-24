@@ -216,7 +216,7 @@ public sealed class NavigationData
     /// (fallback when the current figure isn't published). Null on
     /// servers that don't advertise design data; in that case the
     /// Settings page's manual override applies instead. Consumers
-    /// should pick <c>DraftFromSignalK ?? Settings.BoatDraftMeters</c>
+    /// should use <c>DraftFromSignalK</c> directly; stays dormant when null
     /// so a well-configured SK seat wins, but manual still works.</summary>
     public double? DraftFromSignalK { get; private set; }
 

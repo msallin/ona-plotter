@@ -292,7 +292,18 @@
 
     private async void HandleSettingsChanged()
     {
-        try { await InvokeAsync(StateHasChanged); }
+        try
+        {
+            // Live-apply the wake-lock toggle so a user flipping
+            // "Keep screen awake" in Settings sees the lock engage /
+            // release immediately, without a page reload.
+            if (wakeLockModule is not null)
+            {
+                try { await wakeLockModule.InvokeVoidAsync("setWakeLock", Settings.KeepScreenAwake); }
+                catch (JSDisconnectedException) { }
+            }
+            await InvokeAsync(StateHasChanged);
+        }
         catch (ObjectDisposedException) { }
     }
 
@@ -387,6 +398,18 @@
             StateHasChanged();
             audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
 
+            // Wake lock is now managed from here rather than from the
+            // Map page, so switching Chart -> Wind / History / Settings
+            // mid-watch doesn't drop the screen lock. Lives in its own
+            // tiny module (wakeLock.js) so importing doesn't drag the
+            // whole Leaflet bundle in.
+            wakeLockModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/wakeLock.js");
+            if (Settings.KeepScreenAwake)
+            {
+                try { await wakeLockModule.InvokeVoidAsync("setWakeLock", true); }
+                catch (JSDisconnectedException) { }
+            }
+
             // First-run offline guidance. If we never connect within 5s of
             // the app loading, surface a toast pointing at the SignalK
             // config. Silenced on subsequent reconnect failures so it
@@ -397,6 +420,9 @@
                 null, 5_000, Timeout.Infinite);
         }
     }
+
+    // Keep the wake-lock module reference alive for the app's lifetime.
+    private IJSObjectReference? wakeLockModule;
 
     private void MaybeShowFirstRunOfflineToast()
     {

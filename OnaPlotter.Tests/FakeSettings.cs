@@ -27,7 +27,6 @@ internal sealed class FakeSettings : IAppSettings
     public double GuardZoneWarningFactor { get; set; } = 2.0;
     public double WindShiftAlarmThreshold { get; set; } = 15.0;
     public double WindShiftLookbackMinutes { get; set; } = 5.0;
-    public double BoatDraftMeters { get; set; } = 1.5;
     public double AnchorTideSafetyMargin { get; set; } = 1.0;
     public double ManualAnchorRadiusMeters { get; set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; set; } = 0.0;
@@ -73,7 +72,6 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetGuardZoneWarningFactorAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
-    public Task SetBoatDraftMetersAsync(double v) => Task.CompletedTask;
     public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
     public Task SetManualAnchorRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetDeadmanTimeoutMinutesAsync(double v) { DeadmanTimeoutMinutes = v; return Task.CompletedTask; }

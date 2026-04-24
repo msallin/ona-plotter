@@ -32,7 +32,8 @@ public sealed class AppSettingsService : IAppSettings
     public double GuardZoneWarningFactor { get; private set; } = 2.0;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
     public double WindShiftLookbackMinutes { get; private set; } = 5.0;
-    public double BoatDraftMeters { get; private set; } = 1.5;
+    // BoatDraftMeters was removed: draft is read from SignalK's
+    // design.draft.current / .maximum. See NavigationData.DraftFromSignalK.
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
@@ -88,7 +89,6 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneWarningFactor = await LoadDouble("guardZoneWarningFactor", 2.0);
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
-            BoatDraftMeters = await LoadDouble("boatDraftMeters", 1.5);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
@@ -243,13 +243,6 @@ public sealed class AppSettingsService : IAppSettings
     {
         WindShiftLookbackMinutes = value;
         await Save("windShiftLookbackMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
-
-    public async Task SetBoatDraftMetersAsync(double value)
-    {
-        BoatDraftMeters = value;
-        await Save("boatDraftMeters", value.ToString("F2", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

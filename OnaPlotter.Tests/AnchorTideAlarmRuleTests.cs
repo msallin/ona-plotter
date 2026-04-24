@@ -72,9 +72,10 @@ public class AnchorTideAlarmRuleTests
         // Clearance 0.7m < margin 1m but > 0 -> Warn (not Danger).
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
-        var settings = new FakeSettings { BoatDraftMeters = 0.8, AnchorTideSafetyMargin = 1.0 };
+        var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
         var nav = BuildNav(anchored: true, depth: 3.0,
-            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2));
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
+            signalkDraft: 0.8);
 
         var alarm = rule.Check(Ctx(nav, settings, now));
 
@@ -92,7 +93,8 @@ public class AnchorTideAlarmRuleTests
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
-            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
+            signalkDraft: 1.5);
 
         var alarm = rule.Check(Ctx(nav, new FakeSettings(), now));
 
@@ -102,42 +104,19 @@ public class AnchorTideAlarmRuleTests
     }
 
     [Test]
-    public async Task SignalKDraft_Preferred_Over_SettingsDraft()
+    public async Task NoSignalKDraft_NoAlarm()
     {
-        // FakeSettings.BoatDraftMeters defaults to 1.5; the SK vessel
-        // has design.draft.current = 2.0. Depth 2.3, tide drops 0.5
-        // -> LW depth 1.8. Using Settings draft 1.5 -> clearance 0.3
-        // (Warn if margin is >0.3). Using SK draft 2.0 -> clearance
-        // -0.2 (Danger: keel touches). So if SK is preferred, alarm
-        // is Danger; if Settings wins, it's at most Warn. This pins
-        // the preference explicitly.
+        // Draft comes from SignalK only. Without design.draft.current
+        // (or .maximum) the rule stays dormant -- better a quiet alarm
+        // than one running on a guessed default that could mask a real
+        // grounding risk. The dormancy hint in the HUD tells the user
+        // to set vessel.json.
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
         var nav = BuildNav(anchored: true, depth: 2.3,
-            heightNow: 2.0, heightLow: 1.5, timeLow: now.AddHours(3),
-            signalkDraft: 2.0);
-
-        var alarm = rule.Check(Ctx(nav, new FakeSettings { BoatDraftMeters = 1.5 }, now));
-
-        await Assert.That(alarm).IsNotNull();
-        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
-    }
-
-    [Test]
-    public async Task SettingsDraft_UsedWhen_SignalKDraft_Missing()
-    {
-        // No SK-published draft -> fall back to manual Settings value.
-        // Same numeric scenario as above but SK doesn't publish; manual
-        // is 1.5, so clearance 0.3 hits Warn (default margin 1.0 > 0.3).
-        var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
-        var nav = BuildNav(anchored: true, depth: 2.3,
-            heightNow: 2.0, heightLow: 1.5, timeLow: now.AddHours(3));
-
-        var alarm = rule.Check(Ctx(nav, new FakeSettings { BoatDraftMeters = 1.5 }, now));
-
-        await Assert.That(alarm).IsNotNull();
-        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(3));
+        // NB: no signalkDraft passed.
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
     }
 
     [Test]
@@ -185,7 +164,8 @@ public class AnchorTideAlarmRuleTests
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
-            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
+            signalkDraft: 1.5);
 
         var first = rule.Check(Ctx(nav, new FakeSettings(), now));
         await Assert.That(first).IsNotNull();
@@ -206,7 +186,8 @@ public class AnchorTideAlarmRuleTests
         var now = DateTime.UtcNow;
         var settings = new FakeSettings();
         var nav = BuildNav(anchored: true, depth: 2.0,
-            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
+            signalkDraft: 1.5);
 
         var first = rule.Check(Ctx(nav, settings, now));
         await Assert.That(first).IsNotNull();
@@ -218,7 +199,8 @@ public class AnchorTideAlarmRuleTests
 
         // Re-anchor with the same grounding prediction. Alarm is back.
         var again = BuildNav(anchored: true, depth: 2.0,
-            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4));
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
+            signalkDraft: 1.5);
         var second = rule.Check(Ctx(again, settings, now.AddMinutes(2)));
         await Assert.That(second).IsNotNull();
     }

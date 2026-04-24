@@ -61,7 +61,6 @@
             ManualAnchorActive="anchorManualActive"
             ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
             WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
-            BoatDraftMeters="Settings.BoatDraftMeters"
             OnSetAnchorRadius="SetManualAnchorRadius" />
 
     @* Dark Ops exit chip. Only rendered when Dark Ops is active; a tiny
@@ -1175,15 +1174,9 @@
         // applying defaults so user choices survive a reload.
         await Settings.InitializeAsync();
 
-        // Engage screen wake lock if the user has opted in (default ON).
-        // Silently no-ops on browsers that don't support the API. module
-        // is set earlier in OnAfterRenderAsync; this path only runs when
-        // the import succeeded so module is non-null here.
-        if (Settings.KeepScreenAwake)
-        {
-            try { await module.InvokeVoidAsync("setWakeLock", true); }
-            catch (JSDisconnectedException) { }
-        }
+        // Wake lock is managed globally from MainLayout now (used to be
+        // per-Map-page, but that let the screen sleep when the helm
+        // switched to Wind / History mid-watch). No-op here.
 
         // Re-enable charts the user had turned on before navigating
         // away / reloading. Snapshot the persisted set FIRST -- if we
@@ -1287,14 +1280,8 @@
     private void HandleSettingsChanged()
     {
         _ = PushGuardZoneAsync();
-        // Propagate KeepScreenAwake toggles live; a user flipping the
-        // switch from Settings should see the lock engage / release
-        // immediately, not only after navigating back to the Map page.
-        if (module is not null)
-        {
-            var wanted = Settings.KeepScreenAwake;
-            _ = InvokeVoidSafeAsync("setWakeLock", (object)wanted);
-        }
+        // Wake-lock toggles are handled by MainLayout's OnSettingsChanged
+        // handler; the Map page no longer needs to relay them.
 
         // Night-mode: if the user toggled it from Settings (not from
         // the Map page's own button) we hold a stale local `nightMode`
@@ -2655,9 +2642,9 @@
                 await module.InvokeVoidAsync("clearCurrentArrow");
                 await module.InvokeVoidAsync("clearWeatherOverlay");
                 await module.InvokeVoidAsync("disableKeyboardShortcuts");
-                // Release the wake lock when navigating off the Map page;
-                // other pages don't need the screen pinned on.
-                await module.InvokeVoidAsync("setWakeLock", false);
+                // Wake lock is owned by MainLayout now; do NOT release
+                // it here, otherwise switching Chart -> Wind would
+                // briefly drop the lock.
                 await module.InvokeVoidAsync("dispose");
                 await module.DisposeAsync();
             }

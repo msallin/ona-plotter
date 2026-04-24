@@ -67,11 +67,12 @@ public interface IAppSettings
     /// the alarm is useful on either side of that spread.</summary>
     double WindShiftLookbackMinutes { get; }
 
-    /// <summary>Boat draft in metres: the depth the keel extends below
-    /// the waterline. Used by the tide-aware anchor alarm to predict
-    /// whether the boat will touch bottom at the next low water. Users
-    /// should enter the deepest point of the hull at the widest loading.</summary>
-    double BoatDraftMeters { get; }
+    // Boat draft used to live here as a user-entered setting. Removed
+    // on the principle "don't re-enter what SignalK already knows".
+    // The tide-aware anchor alarm now reads NavigationData.DraftFromSignalK
+    // (design.draft.current / .maximum) directly and stays dormant when
+    // it's not published. A vessel.json edit on the SK server is the
+    // authoritative place to set this.
 
     /// <summary>Safety margin added to draft for the tide-aware anchor
     /// alarm: alarm fires when predicted LW depth is less than
@@ -245,7 +246,6 @@ public interface IAppSettings
     Task SetGuardZoneWarningFactorAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetWindShiftLookbackMinutesAsync(double value);
-    Task SetBoatDraftMetersAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetDeadmanTimeoutMinutesAsync(double value);

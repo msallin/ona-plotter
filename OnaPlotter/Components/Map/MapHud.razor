@@ -508,10 +508,6 @@
     /// dormancy hint so a silent rule doesn't surprise the helm.</summary>
     [Parameter] public double WaypointArrivalRadiusMeters { get; set; } = 50;
 
-    /// <summary>Boat draft in metres from Settings. Drives the anchor-
-    /// card dormancy hint: the tide-aware ANCHOR TIDE alarm needs a
-    /// non-zero draft to compute LW clearance.</summary>
-    [Parameter] public double BoatDraftMeters { get; set; } = 1.5;
 
     /// <summary>Invoked when the user picks a new radius from the inline
     /// chips. The caller persists it to IAppSettings and re-draws the
@@ -830,7 +826,8 @@
     /// </summary>
     private string? AnchorTideDormantReason()
     {
-        if (BoatDraftMeters <= 0) return "Set boat draft in Settings for tide-aware anchor alarm";
+        if (Data.DraftFromSignalK is not > 0)
+            return "No boat draft on SignalK (set design.draft.current in vessel.json)";
         if (!HasTideData) return "No tide data (install a SignalK tide plugin)";
         return null;
     }
