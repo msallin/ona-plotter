@@ -1,0 +1,53 @@
+@* Small segmented-control for picking a trailing time window
+   (e.g. "last 15 min" / "last 1 h"). Originally inline on
+   WindRose; hoisted here so History / future instrument pages
+   can reuse the same affordance.
+
+   Value flow: the parent owns the selected number of minutes;
+   this component renders the buttons and fires ValueChanged on
+   pick. Blazor's two-way bind shorthand (`@bind-Value`) works. *@
+
+@if (Choices is not null && Choices.Length > 0)
+{
+    <div class="btn-group" role="group" aria-label="@(AriaLabel ?? "Time window")">
+        @foreach (var (mins, label) in Choices)
+        {
+            string id = $"twsel-{_instanceId}-{mins}";
+            <input type="radio" class="btn-check" name="@($"twsel-{_instanceId}")"
+                   id="@id" autocomplete="off"
+                   checked="@(Value == mins)"
+                   @onchange="() => Select(mins)" />
+            <label class="btn btn-outline-secondary btn-sm" for="@id">@label</label>
+        }
+    </div>
+}
+
+@code {
+    /// <summary>Currently-selected window, in minutes.</summary>
+    [Parameter] public int Value { get; set; }
+
+    /// <summary>Fires when the user picks a different window.</summary>
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+
+    /// <summary>Available windows as (minutes, label) tuples.
+    /// Default offers a sensible race / cruise spread.</summary>
+    [Parameter] public (int Minutes, string Label)[] Choices { get; set; } =
+    [
+        (15,  "15m"),
+        (30,  "30m"),
+        (60,  "1h"),
+        (180, "3h"),
+    ];
+
+    /// <summary>Optional aria-label so screen readers can announce
+    /// what the selector controls. Default is "Time window".</summary>
+    [Parameter] public string? AriaLabel { get; set; }
+
+    // Unique suffix so multiple selectors on the same page don't share
+    // a radio group name. A short GUID is enough; don't regenerate on
+    // re-render (instance field, not a render-local).
+    private readonly string _instanceId = Guid.NewGuid().ToString("N")[..6];
+
+    private Task Select(int minutes) =>
+        Value == minutes ? Task.CompletedTask : ValueChanged.InvokeAsync(minutes);
+}

@@ -201,16 +201,9 @@
 {
     <div class="mt-4 d-flex align-items-baseline gap-3 flex-wrap">
         <h4 style="margin:0;">Wind Direction (TWD) History</h4>
-        <div class="btn-group" role="group" aria-label="Window">
-            @foreach (var (mins, label) in WindowChoices)
-            {
-                <input type="radio" class="btn-check" name="twd-window"
-                       id="@($"twd-win-{mins}")" autocomplete="off"
-                       checked="@(windowMinutes == mins)"
-                       @onchange="() => windowMinutes = mins" />
-                <label class="btn btn-outline-secondary btn-sm" for="@($"twd-win-{mins}")">@label</label>
-            }
-        </div>
+        <TimeWindowSelector @bind-Value="windowMinutes"
+                            Choices="WindowChoices"
+                            AriaLabel="TWD history window" />
     </div>
     <p class="text-muted" style="font-size:0.8rem;">
         Last @windowMinutes min (@visible.Count samples). Green line = mean TWD.
