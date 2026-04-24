@@ -831,6 +831,15 @@ article.content:has(.map-container) {
     border-top: 1px solid rgba(255,255,255,0.08);
     letter-spacing: 0.02em;
 }
+/* Compact HUD: lat/lon stacked so the top-left panel doesn't stretch
+   to fit "052 45.123'N  010 12.456'E" on one line. Expanded HUD
+   keeps the single-line form (it reads faster in the wider panel). */
+.hud-position-stacked {
+    line-height: 1.2;
+}
+.hud-position-stacked > div + div {
+    margin-top: 1px;
+}
 .night-mode .hud-position { color: rgba(255,130,130,0.4); }
 
 /* Depth color states */

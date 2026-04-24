@@ -25,7 +25,21 @@
         <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
         <div class="hud-label" style="margin-top:4px;">COG</div>
         <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
-        <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
+        @* Compact view stacks lat/lon on two lines so the HUD doesn't
+           stretch across half the top edge. Expanded view keeps them
+           on one line (the panel is already wider by that point, and
+           the single-line form reads faster alongside the DMS row). *@
+        @if (IsExpanded("tl"))
+        {
+            <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
+        }
+        else
+        {
+            <div class="hud-position hud-position-stacked">
+                <div>@NauticalFormat.FormatLat(Data.Latitude)</div>
+                <div>@NauticalFormat.FormatLon(Data.Longitude)</div>
+            </div>
+        }
         @if (IsExpanded("tl"))
         {
             <div class="hud-extra">
