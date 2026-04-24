@@ -2465,6 +2465,17 @@
                     await module.InvokeVoidAsync("clearAnchor");
                     anchorManualActive = false;
                 }
+                // Symmetric to the route-activate path: a boat that has
+                // just dropped anchor is no longer navigating a course.
+                // Leaving the active course up would keep firing XTE /
+                // APPROACH alarms against a static boat. Clear it here
+                // for server-side anchor drops; manual drops already
+                // clear in ToggleAnchor.
+                if (Data.HasActiveCourse)
+                {
+                    try { await CourseApi.ClearAsync(); }
+                    catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+                }
                 if (!mapInitialized) return;
                 await module.InvokeVoidAsync("setAnchor",
                     Data.AnchorLatitude, Data.AnchorLongitude, radius);
