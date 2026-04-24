@@ -2450,7 +2450,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     opacity: 0.8;
 }
 
-/* Red-shift instrument SVGs (Gauges, SailSteer, WindRose) for night vision.
+/* Red-shift instrument SVGs (SailSteer, WindRose) for night vision.
    Preset-specific filters so amber reads amber and red reads pure red.
    NB: the map SVG icons (AIS triangles, radar outlines, SART bullseye)
    are NOT filtered -- the AIS palette carries ship-type meaning via
