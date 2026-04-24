@@ -624,6 +624,47 @@
             </div>
         </div>
     </div>
+
+    @* === Advanced / developer tools ========================
+       Data (raw delta stream) + Paths (which SK paths the plotter
+       consumes) are techie features -- useful when debugging why
+       a gauge is empty or a plugin isn't wired right, but out of
+       the helmsman's daily flow. Surfacing them here so the top
+       nav stays focused on sailing workflows. The /raw and
+       /paths routes themselves are unchanged. *@
+    <div class="col-12 mt-3">
+        <h5 class="page-section-header">Advanced</h5>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <a href="raw" class="stretched-link text-decoration-none">
+                    <strong class="d-block">Data stream</strong>
+                </a>
+                <small class="text-muted">
+                    Live SignalK delta viewer. Shows every path the plotter
+                    subscribes to as raw JSON, with a search box and path filter.
+                    Useful for debugging "why is this reading missing?"
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <a href="paths" class="stretched-link text-decoration-none">
+                    <strong class="d-block">Paths</strong>
+                </a>
+                <small class="text-muted">
+                    Reference: which SignalK path powers each HUD / chart /
+                    alarm rule. Handy when a field reads "--" and you want to
+                    know which server-side provider or plugin to install.
+                </small>
+            </div>
+        </div>
+    </div>
 </div>
 
 @code {

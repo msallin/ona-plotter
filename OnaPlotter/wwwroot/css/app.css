@@ -1982,24 +1982,12 @@ main:has(.alarm-banner-stack) .conn-chip { top: calc(12px + 44px); }
    element with an explicit top value, which stretched the card
    floor-to-ceiling and caused the bottom-center navigation HUD to
    visibly jump every time an alarm entered / left the DOM. */
-main:has(.alarm-banner-stack) .hud-top-right,
-main:has(.alarm-banner-stack) .chart-quick-bar {
-    top: calc(12px + 44px);
-}
-main:has(.alarm-banner-stack) .hud-top-left {
-    top: calc(44px + 44px);
-}
-
-/* Same shift when only the snooze / rearm chip row is visible (alarm
-   banner already dismissed but a rule is in cooldown, or a target is
-   snoozed). Without this, the fixed-position chip row at ~96px drops
-   on top of the HUD card's SOG value. Smaller nudge than the banner
-   case -- one chip-row height instead of a full banner. */
-main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-top-left,
-main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .hud-top-right,
-main:has(.snooze-chips):not(:has(.alarm-banner-stack)) .chart-quick-bar {
-    top: calc(12px + 32px);
-}
+/* NB: the HUDs + chart-quick-bar previously slid down when an alarm
+   banner or snooze chip row appeared, to avoid the banner covering
+   the top portion of the HUD card. User feedback: the jump reads as
+   "something's broken" every time an alarm enters or leaves. Better
+   to keep layout stable and let the banner briefly overlap during
+   its own acknowledge window. */
 
 /* Smooth the top-HUD shift when alarms appear / disappear so the
    transition reads as a slide rather than a layout jump. The old

@@ -29,11 +29,6 @@
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="raw">
-                <span class="nav-icon">&#x2263;</span> Data
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
             <NavLink class="nav-link" href="history">
                 @* U+FE0E forces the text (monoline) glyph on iOS/Android
                    which otherwise renders these as colour emoji. *@
@@ -48,14 +43,10 @@
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="paths">
-                @* U+FE0E keeps the glyph monoline on iOS which otherwise
-                   renders &#x1F517; as a colour emoji. *@
-                <span class="nav-icon">&#x1F517;&#xFE0E;</span> Paths
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
             <NavLink class="nav-link" href="settings">
+                @* Settings also surfaces the Data + Paths tools (techie
+                   features; they're not first-class nav items on their
+                   own). *@
                 <span class="nav-icon">&#x2699;&#xFE0E;</span> Settings
             </NavLink>
         </div>
