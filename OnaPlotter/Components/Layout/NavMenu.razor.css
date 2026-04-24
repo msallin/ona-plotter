@@ -1,20 +1,33 @@
+/* Sidebar: icon-left, label-right. Expanded by default with visible
+   labels; narrows to icon-only when the page is in fullscreen /
+   iOS-fullbleed so the chart gets the maximum viewport.
+   See MainLayout.razor.css for the .sidebar width rules that match. */
+
 .nav-icon {
-    display: inline-block;
-    width: 1.5rem;
-    text-align: center;
-    font-size: 1.1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    flex-shrink: 0;
+    /* Bumped from 1.1rem -> 1.4rem so the icons read well at a touch
+       distance on iPad. Cabin-sunlight is hard on small glyphs. */
+    font-size: 1.4rem;
     opacity: 0.7;
+    line-height: 1;
 }
 
-/* Icon-only sidebar: labels stay in the markup for screen readers
-   but are hidden visually; the NavLink's title="..." attribute gives
-   sighted users a hover tooltip. */
+/* Labels visible by default; collapsed to icon-only in fullscreen
+   (either the real Fullscreen API state handled from .page, or the
+   iOS CSS fallback on <html>). */
 .nav-label {
-    display: none;
+    display: inline;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 ::deep .nav-item {
-    font-size: 0.85rem;
     padding-bottom: 0.3rem;
 }
 
@@ -24,12 +37,16 @@
 
 ::deep .nav-link {
     color: var(--sk-sidebar-text);
-    border-radius: 4px;
-    height: 2.5rem;
+    border-radius: 6px;
+    min-height: 3rem;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+    justify-content: flex-start;
+    gap: 0.6rem;
+    padding: 0.5rem 0.6rem;
+    /* Bigger tap target for iPad touch. */
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 ::deep .nav-link:hover {
@@ -46,8 +63,31 @@
     opacity: 1;
 }
 
+/* Scrollable nav column. Hide the scrollbar completely -- the nav
+   almost never overflows (<10 items), and on the rare narrow-
+   viewport case where it does, the hover / swipe-scroll still works
+   without the visual clutter of a scrollbar track running down the
+   side of the chrome. */
 .nav-scrollable {
     display: block;
     height: 100vh;
     overflow-y: auto;
+    scrollbar-width: none;                  /* Firefox */
+}
+.nav-scrollable::-webkit-scrollbar {
+    display: none;                          /* Chrome / Safari / Edge */
+}
+
+/* Fullscreen / iOS-fullbleed state: collapse labels, shrink link
+   padding + gap so the sidebar becomes a thin icon rail. The
+   .sidebar width itself is handled in MainLayout.razor.css. */
+html.ios-fullbleed .nav-label,
+:fullscreen .nav-label {
+    display: none;
+}
+html.ios-fullbleed ::deep .nav-link,
+:fullscreen ::deep .nav-link {
+    justify-content: center;
+    gap: 0;
+    padding: 0.5rem;
 }

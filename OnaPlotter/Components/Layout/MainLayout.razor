@@ -46,12 +46,40 @@
                 </button>
             }
 
-            <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ToggleNightMode"
-                    style="font-size:0.75rem;">
-                @(Settings.NightMode ? "Day" : "Night")
+            @* Night / day toggle. Moon = currently in day, tap to go
+               night. Sun = currently in night, tap to go day. Same
+               icon-button shape + size as the fullscreen control
+               right next to it so the topbar reads as a row of
+               consistent glyph buttons. *@
+            <button class="btn btn-sm btn-outline-secondary topbar-icon-btn ms-auto"
+                    @onclick="ToggleNightMode"
+                    title="@(Settings.NightMode ? "Day mode" : "Night mode")"
+                    aria-label="@(Settings.NightMode ? "Switch to day mode" : "Switch to night mode")">
+                @if (Settings.NightMode)
+                {
+                    @* Sun *@
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                    </svg>
+                }
+                else
+                {
+                    @* Moon *@
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                }
             </button>
 
-            <button class="btn btn-sm btn-outline-secondary topbar-fs-btn" @onclick="ToggleFullscreen"
+            @* NO Blazor @onclick -- fullscreen.js wires a native click
+               listener via attachTrigger() below. Requesting
+               fullscreen on Safari / iOS must happen synchronously
+               from a user gesture; a Blazor @onclick round-trips
+               through the Blazor event dispatcher and often loses
+               the user-gesture context, which makes
+               requestFullscreen() silently reject. *@
+            <button @ref="fsBtnRef" class="btn btn-sm btn-outline-secondary topbar-icon-btn"
                     title="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")"
                     aria-label="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")">
                 @if (isFullscreen)
@@ -273,6 +301,12 @@
     private IJSObjectReference? audioModule;
     private IJSObjectReference? fsModule;
     private DotNetObjectReference<MainLayout>? fsSelfRef;
+    // Element reference for the fullscreen button. fullscreen.js wires
+    // a native click listener to this ref instead of going through
+    // Blazor's @onclick, because Safari / iOS require
+    // requestFullscreen() to run inside a synchronous user-gesture
+    // context and Blazor's event dispatcher breaks that chain.
+    private ElementReference fsBtnRef;
     private bool isFullscreen;
     private System.Threading.Timer? staleCheckTimer;
     private System.Threading.Timer? snoozeCountdownTimer;
@@ -383,12 +417,12 @@
         StateHasChanged();
     }
 
-    private async Task ToggleFullscreen()
-    {
-        if (fsModule is null) return;
-        try { await fsModule.InvokeVoidAsync("toggle"); }
-        catch (JSDisconnectedException) { }
-    }
+    // ToggleFullscreen() was here; the button now dispatches through
+    // a native click listener wired from fullscreen.js::attachTrigger
+    // (synchronous with the user gesture, which Safari requires).
+    // Removing the C# method prevents a second caller from re-
+    // introducing the gesture-chain bug by routing through Blazor
+    // dispatch.
 
     [JSInvokable]
     public Task OnFullscreenChanged(bool fs)
@@ -440,6 +474,12 @@
             fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fullscreen.js");
             fsSelfRef = DotNetObjectReference.Create(this);
             await fsModule.InvokeVoidAsync("subscribe", fsSelfRef);
+            // Wire a native click listener to the fullscreen button
+            // (NOT via Blazor @onclick). Safari / iOS reject
+            // requestFullscreen() if the call isn't synchronous with
+            // a user gesture, and Blazor's event dispatcher crosses
+            // enough async boundaries to break the gesture chain.
+            await fsModule.InvokeVoidAsync("attachTrigger", fsBtnRef);
             isFullscreen = await fsModule.InvokeAsync<bool>("getState");
             StateHasChanged();
 

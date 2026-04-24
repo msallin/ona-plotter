@@ -12,11 +12,23 @@ main {
 .sidebar {
     background: var(--sk-sidebar-bg);
     border-right: 1px solid var(--sk-sidebar-border);
-    width: 3.5rem;
+    /* Default expanded width (icons + labels). iPad touch target
+       floor is 44 px; 10 rem leaves comfortable room for every
+       label without wrapping. Collapses to 3.5 rem in fullscreen
+       -- see rules below. */
+    width: 10rem;
     height: 100vh;
     position: sticky;
     top: 0;
     flex-shrink: 0;
+    transition: width 0.18s ease;
+}
+
+/* Fullscreen / iOS-fullbleed: narrow rail, icons only. Labels hide
+   via NavMenu.razor.css. */
+:fullscreen .sidebar,
+html.ios-fullbleed .sidebar {
+    width: 3.5rem;
 }
 
 .top-row {
@@ -43,14 +55,19 @@ article {
     padding-right: 1rem !important;
 }
 
-.topbar-fs-btn {
+/* Shared shape for topbar glyph buttons (Night / Fullscreen).
+   Fixed square so they line up as a row of identical icons, not
+   a row of differently-sized text / icon toggles. */
+.topbar-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 0.25rem 0.5rem;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
     line-height: 1;
 }
 
-.topbar-fs-btn svg {
+.topbar-icon-btn svg {
     display: block;
 }

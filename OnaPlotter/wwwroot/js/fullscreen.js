@@ -61,9 +61,19 @@ export function subscribe(ref) {
 export function unsubscribe() {
     document.removeEventListener('fullscreenchange', notify);
     document.removeEventListener('webkitfullscreenchange', notify);
+    if (_attachedBtn && _nativeHandler) {
+        _attachedBtn.removeEventListener('click', _nativeHandler);
+    }
+    _attachedBtn = null;
+    _nativeHandler = null;
     dotnetRef = null;
 }
 
+// Core toggle logic. Called either from the native click listener
+// installed by attachTrigger() (synchronous, preserves user gesture)
+// or from the legacy C# ToggleFullscreen() for tests / non-button
+// invocations. The Safari-specific requirement is the gesture chain,
+// not the function itself.
 export function toggle() {
     if (isIos()) {
         // CSS full-bleed fallback. Toggle the class on <html> and
@@ -90,6 +100,28 @@ export function toggle() {
             } catch { /* ignore */ }
         }
     }
+}
+
+// Attach a native click listener to the topbar fullscreen button.
+// This is what makes requestFullscreen actually work on Safari /
+// Chrome: the call needs to be synchronous with the user gesture,
+// and Blazor's @onclick dispatcher crosses enough async boundaries
+// to lose that context. A vanilla addEventListener inside the button
+// keeps the gesture chain intact.
+let _attachedBtn = null;
+let _nativeHandler = null;
+export function attachTrigger(btn) {
+    if (!btn || btn === _attachedBtn) return;
+    if (_attachedBtn && _nativeHandler) {
+        _attachedBtn.removeEventListener('click', _nativeHandler);
+    }
+    _attachedBtn = btn;
+    _nativeHandler = (e) => {
+        // Synchronous; user gesture intact.
+        e.preventDefault();
+        toggle();
+    };
+    btn.addEventListener('click', _nativeHandler);
 }
 
 export function getState() {

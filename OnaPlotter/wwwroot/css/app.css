@@ -1398,16 +1398,18 @@ html, body {
 
 /* iOS "fullbleed" fallback for the app-level fullscreen toggle. iPad
    Safari's Fullscreen API only works for <video>; the topbar button
-   instead toggles this class on <html> so we can visually hide the
-   sidebar + top row and let the chart fill the viewport. Home-screen
-   installed PWAs use manifest.json display:fullscreen for the real
-   thing -- this fallback is for in-browser use. */
-html.ios-fullbleed .page > .sidebar,
+   instead toggles this class on <html> so we can visually collapse
+   the sidebar to an icon rail and hide the top row, giving the chart
+   the maximum viewport iOS permits. The browser's own URL bar stays
+   -- we can't hide that from JS. Home-screen-installed PWAs get true
+   fullscreen via manifest.json display:standalone, no toggle needed.
+
+   Note: the sidebar ITSELF is NOT hidden (display:none) -- that left
+   the user without any nav affordance once in "fullscreen". Instead
+   we narrow it so the icons remain tappable. See MainLayout.razor.css
+   and NavMenu.razor.css for the width + label-collapse rules. */
 html.ios-fullbleed .page > main > .top-row {
     display: none !important;
-}
-html.ios-fullbleed .page {
-    grid-template-columns: 0 1fr;
 }
 
 .map-container {
@@ -4106,11 +4108,7 @@ main:has(.map-container.big-type) .map-fab-item {
     /* The chip is a <button>, which Safari + iOS give a default
        native look (rounded grey bevel, bold text, centered). Reset
        -webkit-appearance so the custom rounded-pill style we draw
-       below is what the user actually sees on Safari. font: inherit
-       sheds the button's default system font. Line-height and box-
-       sizing pin the height across browsers. background-image:none
-       and margin:0 are belt-and-braces against future iOS versions
-       reintroducing a bevel gradient or a UA margin in forms. */
+       below is what the user actually sees on Safari. */
     -webkit-appearance: none;
     appearance: none;
     font: inherit;
@@ -4118,8 +4116,8 @@ main:has(.map-container.big-type) .map-fab-item {
     line-height: 1.2;
     background-image: none;
     margin: 0;
-    padding: 4px 10px;
-    font-size: 0.7rem;
+    padding: 4px 12px;
+    font-size: 0.72rem;
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.12);
     background: rgba(10, 12, 18, 0.55);
@@ -4129,23 +4127,6 @@ main:has(.map-container.big-type) .map-fab-item {
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
-    /* Leading dot shows the chip's binary state. Grey on off,
-       bright accent on on -- shape + colour redundant cue so a
-       colour-blind user also reads the state. */
-    position: relative;
-    padding-left: 22px;
-}
-.chart-quick-chip::before {
-    content: "";
-    position: absolute;
-    left: 8px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.22);
-    border: 1px solid rgba(255,255,255,0.35);
 }
 
 .chart-quick-chip:hover {
@@ -4153,17 +4134,15 @@ main:has(.map-container.big-type) .map-fab-item {
     color: var(--sk-text);
 }
 
-/* Active chip: solid accent fill, white text, filled dot. No more
-   transparent wash. */
+/* Active chip: solid accent fill + bold text. The leading-dot
+   state indicator was removed on user feedback (read as "shitty"
+   on small-chip sizes); the fill + text-weight delta is strong
+   enough on its own. */
 .chart-quick-chip.active {
     background: var(--sk-accent);
     border-color: var(--sk-accent-dim);
     color: #0b1220;
     font-weight: 600;
-}
-.chart-quick-chip.active::before {
-    background: #0b1220;
-    border-color: #0b1220;
 }
 
 @media (pointer: coarse) {
