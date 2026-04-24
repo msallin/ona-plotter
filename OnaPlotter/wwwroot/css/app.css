@@ -1367,6 +1367,13 @@ html {
 
 .map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
     -webkit-tap-highlight-color: transparent;
+    /* touch-action: manipulation kills the 300 ms click delay AND the
+       double-tap-zoom reflex on these buttons. The chart is pinch-
+       zoomed via Leaflet; the buttons sit over the chart and an
+       accidental double-tap would otherwise zoom the page view,
+       breaking the helm's mental model. Viewport-level pinch-to-
+       zoom for accessibility still works (separate OS gesture). */
+    touch-action: manipulation;
 }
 
 .hud-panel, .route-panel, .anchor-panel, .autopilot-panel {
@@ -1378,8 +1385,62 @@ html {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Overscroll / rubber-band containment. Scoping this to html + body
+   (not just .map-container) is what actually stops iOS Safari from
+   reading a downward drag as "reveal URL bar" or "exit fullscreen".
+   Previously only .map-container had the hint; the gesture fires at
+   the document level so the map hint was too late. We DO NOT set
+   overflow:hidden here -- that would block legit scrolling on
+   Settings / History / Resources. Just the overscroll hint. */
+html, body {
+    overscroll-behavior: none;
+}
+
+/* iOS "fullbleed" fallback for the app-level fullscreen toggle. iPad
+   Safari's Fullscreen API only works for <video>; the topbar button
+   instead toggles this class on <html> so we can visually hide the
+   sidebar + top row and let the chart fill the viewport. Home-screen
+   installed PWAs use manifest.json display:fullscreen for the real
+   thing -- this fallback is for in-browser use. */
+html.ios-fullbleed .page > .sidebar,
+html.ios-fullbleed .page > main > .top-row {
+    display: none !important;
+}
+html.ios-fullbleed .page {
+    grid-template-columns: 0 1fr;
+}
+
 .map-container {
     overscroll-behavior: none;
+    /* touch-action: pan-x pan-y tells the browser "we'll handle
+       x/y panning ourselves; don't trigger pull-to-refresh or
+       exit-fullscreen gestures". Without this, iOS Safari reads a
+       finger-drag-down on the map as "pull to refresh" and un-
+       fullscreens the tab. */
+    touch-action: pan-x pan-y;
+}
+
+/* Leaflet tile container + all map canvases: suppress iOS text-
+   selection and the Copy / Look Up long-press callout. A long-press
+   on the map surface (or on a Leaflet tooltip / label) should only
+   trigger OUR context menu, not also the iOS system balloon. */
+#mapDiv,
+.leaflet-container {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+/* ...BUT re-enable selection inside Leaflet popups. The blanket
+   rule above would otherwise prevent users from copying an AIS
+   target's MMSI, a note's description, or coordinates out of the
+   popup -- which is a legitimate daily action and regresses on
+   every browser, not just Safari. Cross-browser reviewer flagged
+   this as mandatory, not Safari-only. */
+.leaflet-popup-content,
+.leaflet-popup-content * {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
 }
 
 /* ===== Forms (Settings page) ===== */
@@ -4042,6 +4103,21 @@ main:has(.map-container.big-type) .map-fab-item {
    glance -- the old variant was a washed-out 25 %-accent glow that
    blended with sunlit chart tiles. */
 .chart-quick-chip {
+    /* The chip is a <button>, which Safari + iOS give a default
+       native look (rounded grey bevel, bold text, centered). Reset
+       -webkit-appearance so the custom rounded-pill style we draw
+       below is what the user actually sees on Safari. font: inherit
+       sheds the button's default system font. Line-height and box-
+       sizing pin the height across browsers. background-image:none
+       and margin:0 are belt-and-braces against future iOS versions
+       reintroducing a bevel gradient or a UA margin in forms. */
+    -webkit-appearance: none;
+    appearance: none;
+    font: inherit;
+    box-sizing: border-box;
+    line-height: 1.2;
+    background-image: none;
+    margin: 0;
     padding: 4px 10px;
     font-size: 0.7rem;
     border-radius: 14px;
@@ -4052,6 +4128,7 @@ main:has(.map-container.big-type) .map-fab-item {
     white-space: nowrap;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
     /* Leading dot shows the chip's binary state. Grey on off,
        bright accent on on -- shape + colour redundant cue so a
        colour-blind user also reads the state. */
@@ -4329,6 +4406,14 @@ main:has(.map-container.big-type) .map-fab-item {
     padding: 4px 0;
     min-width: 160px;
     box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    /* Suppress iOS long-press text selection + Copy / Look Up
+       balloon. Without this, the user long-presses the map, our
+       custom menu opens under the finger, and iOS's own long-press
+       handler sees "text under finger" a beat later and offers
+       to Copy "Create Waypoint". Blocks the whole menu surface. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .ctx-menu-item {
@@ -4341,6 +4426,12 @@ main:has(.map-container.big-type) .map-fab-item {
     font-size: 0.82rem;
     text-align: left;
     cursor: pointer;
+    /* Redundant with the container rule above but safe: iOS applies
+       callout per-element, and a child <button> can opt back in if
+       a parent rule isn't specific enough. Belt-and-braces. */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }
 .ctx-menu-item:hover { background: rgba(255,255,255,0.08); }
 .ctx-menu-danger { color: var(--sk-red); }
