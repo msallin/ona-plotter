@@ -297,11 +297,19 @@
             }
             else
             {
-                <p style="font-size:0.82rem; color: var(--sk-text-muted); margin:6px 0 12px;">
-                    Tap the map to drop each vertex. Drag to reposition; per-row × removes.
-                    Name + description come after you save the shape.
-                </p>
-                <div style="display:flex; gap:6px;">
+                @* Polygon path gets the same Title + Description
+                   inputs as Circle. Title pre-fills the edit panel's
+                   name field so the user doesn't retype it, and
+                   Description is piped into SaveRegion on save.
+                   Previously this branch just said "name + description
+                   come after you save" -- confusing second step; now
+                   both branches ask the same questions up front. *@
+                <input type="text" class="route-name-input" aria-label="Region title"
+                       placeholder="Title" @bind="newRegionTitle" @bind:event="oninput" />
+                <textarea class="route-name-input note-dialog-body" aria-label="Region description"
+                          placeholder="Description (optional)" rows="3"
+                          @bind="newRegionDescription" @bind:event="oninput"></textarea>
+                <div style="display:flex; gap:6px; margin-top:10px;">
                     <button class="map-btn active" @onclick="StartPolygonFromDialog">Start drawing</button>
                     <button class="map-btn" @onclick="CancelRegionDialog">Cancel</button>
                 </div>
@@ -1698,13 +1706,20 @@
 
     // Called from the Add Region dialog when the user picks Polygon and
     // clicks "Start drawing". Closes the dialog, hands off to polygon
-    // edit mode. Name + description are collected in PolygonEditPanel
-    // so we don't ask for them twice.
+    // Dialog pre-fills the title + description; pipe them into the
+    // polygon edit so the edit-bar Name input starts populated and
+    // SavePolygonRegion picks up the description on save. The
+    // description lives on newRegionDescription (shared with the
+    // circle path) and is consumed + cleared in SavePolygonRegion.
     private async Task StartPolygonFromDialog()
     {
         regionDialogVisible = false;
         await ClearCirclePreview();  // user picked polygon, kill the circle ghost
         await StartPolygonEdit();
+        if (!string.IsNullOrWhiteSpace(newRegionTitle))
+        {
+            polygonEditName = newRegionTitle;
+        }
     }
 
     // Route + polygon edit methods live in Map.Editing.razor.cs:

@@ -246,6 +246,11 @@ let mobLabel = null;
 // Anchor watch state.
 let anchorMarker = null;
 let anchorCircle = null;
+// Radius line (boat -> anchor) + "Xm" label. Turn visual feedback
+// "where is the anchor / how much rode is out" into a first-class
+// affordance instead of only showing the watch circle.
+let anchorRadiusLine = null;
+let anchorRadiusLabel = null;
 // Swing-arc history: own-boat positions sampled while the anchor is set,
 // trimmed to ANCHOR_TRAIL_MINUTES so the captain can see at a glance how
 // much water the boat has actually covered on this tide cycle.
@@ -1702,18 +1707,54 @@ export function setAnchor(lat, lon, radiusM) {
     // Seed the trail with the current boat position so the first segment
     // renders without waiting for ANCHOR_TRAIL_SAMPLE_MS.
     if (selfLat && selfLon) anchorTrail.push({ lat: selfLat, lon: selfLon, t: Date.now() });
+    // Radius line + label from boat to the anchor dot. Gives the
+    // helm a direct visual "you're X metres from the pin" that the
+    // watch circle alone doesn't -- the circle shows the permitted
+    // swing, not the current offset.
+    redrawAnchorRadiusOverlay(lat, lon, radiusM);
 }
 
 export function clearAnchor() {
-    if (!map) { anchorMarker = null; anchorCircle = null; anchorTrailLayer = null; anchorTrail.length = 0; return; }
+    if (!map) { anchorMarker = null; anchorCircle = null; anchorTrailLayer = null; anchorTrail.length = 0; anchorRadiusLine = null; anchorRadiusLabel = null; return; }
     if (anchorMarker) { map.removeLayer(anchorMarker); anchorMarker = null; }
     if (anchorCircle) { map.removeLayer(anchorCircle); anchorCircle = null; }
     if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
+    if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
+    if (anchorRadiusLabel) { map.removeLayer(anchorRadiusLabel); anchorRadiusLabel = null; }
     anchorTrail.length = 0;
 }
 
 export function updateAnchorRadius(radiusM) {
     if (anchorCircle) anchorCircle.setRadius(radiusM);
+    if (anchorMarker) {
+        const ll = anchorMarker.getLatLng();
+        redrawAnchorRadiusOverlay(ll.lat, ll.lng, radiusM);
+    }
+}
+
+// Draws the boat<->anchor line + midpoint "Xm" label. Re-entrant:
+// callable on every position update to keep the line pinned while
+// the boat drifts on its swing. Falls back to a "waiting for fix"
+// stub when the plotter hasn't seen a self-position yet.
+function redrawAnchorRadiusOverlay(anchorLat, anchorLon, radiusM) {
+    if (!map) return;
+    if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
+    if (anchorRadiusLabel) { map.removeLayer(anchorRadiusLabel); anchorRadiusLabel = null; }
+    if (selfLat == null || selfLon == null) return;
+    anchorRadiusLine = L.polyline(
+        [[selfLat, selfLon], [anchorLat, anchorLon]],
+        { color: MapColors.anchorOk, weight: 1.5, opacity: 0.7, dashArray: '4,3', interactive: false }
+    ).addTo(map);
+    const distM = haversineMeters(selfLat, selfLon, anchorLat, anchorLon);
+    const label = distM < 1 ? `Anchor ${radiusM.toFixed(0)} m`
+                : `${distM.toFixed(0)} m / ${radiusM.toFixed(0)} m`;
+    const midLat = (selfLat + anchorLat) / 2;
+    const midLon = (selfLon + anchorLon) / 2;
+    anchorRadiusLabel = L.tooltip({
+        permanent: true, direction: 'center',
+        className: 'anchor-radius-label',
+        interactive: false,
+    }).setLatLng([midLat, midLon]).setContent(label).addTo(map);
 }
 
 function updateAnchorTrail(lat, lon) {
@@ -1738,6 +1779,15 @@ function updateAnchorTrail(lat, lon) {
     // Drop points outside the rolling window.
     const cutoff = now - ANCHOR_TRAIL_MINUTES * 60_000;
     while (anchorTrail.length > 0 && anchorTrail[0].t < cutoff) anchorTrail.shift();
+
+    // Keep the radius line + label chasing the boat as it drifts.
+    // The anchor position itself is static (set once) but the label
+    // shows current offset, so it needs a re-render each update.
+    if (anchorMarker) {
+        const a = anchorMarker.getLatLng();
+        const r = anchorCircle ? anchorCircle.getRadius() : 0;
+        redrawAnchorRadiusOverlay(a.lat, a.lng, r);
+    }
 
     if (anchorTrail.length < 2) return;
     const coords = anchorTrail.map(p => [p.lat, p.lon]);
@@ -1914,7 +1964,7 @@ export function addRoute(id, name, coords) {
     // saved routes too so the Activate / Edit / Delete popup is
     // actually reachable from the polyline.
     const hitLine = L.polyline(coords, {
-        color: MapColors.route, weight: 20, opacity: 0, interactive: true
+        color: MapColors.route, weight: 36, opacity: 0, interactive: true
     }).addTo(map);
 
     const nmTotal = routeTotalNauticalMiles(coords);
@@ -2262,7 +2312,15 @@ function insertEditVertexOnSegment(ll) {
         if (d < bestDist) { bestDist = d; bestIdx = i; }
     }
     // Insert at bestIdx + 1 so the order becomes ... prev, new, next ...
-    routeEditCoords.splice(bestIdx + 1, 0, [ll.lat, ll.lng]);
+    const insertAt = bestIdx + 1;
+    routeEditCoords.splice(insertAt, 0, [ll.lat, ll.lng]);
+    // Shift any stack entries >= insertAt up by one so historical
+    // indices still point at the same waypoint objects, then push
+    // the new insertion so undo finds it on top of the stack.
+    for (let i = 0; i < routeEditAddStack.length; i++) {
+        if (routeEditAddStack[i] >= insertAt) routeEditAddStack[i]++;
+    }
+    routeEditAddStack.push(insertAt);
     // Signal the map-level click handler (fires immediately after
     // this one in Leaflet's dispatch order) to skip the append-on-
     // map-click fallback. Without this the user gets a phantom Nth+1
@@ -2357,9 +2415,20 @@ function bindEditMarker(marker, idx) {
     });
 }
 
+// Undo history. Each entry is the index of the most recently ADDED
+// waypoint (append OR mid-route insert). Popping off the top and
+// splicing that index back out gives the user "undo = remove the
+// last thing I added", which is the intuitive semantic. The old
+// undoLastEditWaypoint just popped the last coord -- when the user
+// had inserted between two existing waypoints, the last coord was
+// the OLD endpoint, not the just-inserted vertex, and undo felt
+// wrong. See the ticket: "route edit undo does strange things".
+let routeEditAddStack = [];
+
 function addEditWaypoint(lat, lon) {
     const idx = routeEditCoords.length;
     routeEditCoords.push([lat, lon]);
+    routeEditAddStack.push(idx);
 
     const marker = L.marker([lat, lon], {
         icon: makeEditWpIcon(idx + 1),
@@ -2387,6 +2456,7 @@ export function stopRouteEdit() {
     routeEditMarkers = [];
     routeEditLine = null;
     routeEditHitLine = null;
+    routeEditAddStack = [];
 }
 
 export function getEditRouteCoords() {
@@ -2395,9 +2465,29 @@ export function getEditRouteCoords() {
 
 export function undoLastEditWaypoint() {
     if (routeEditCoords.length === 0) return;
-    routeEditCoords.pop();
-    const last = routeEditMarkers.pop();
-    if (last && routeEditLayer) routeEditLayer.removeLayer(last);
+    // Pop the index of the most recently added waypoint. For pure
+    // appends this is always "remove the last"; for mid-route
+    // inserts it's the inserted vertex, which is what the user
+    // actually wanted undone. Fallback to last-coord pop when the
+    // stack is empty (happens after a loadRouteForEdit hydrate --
+    // the existing coords weren't "added" in this session).
+    let removeIdx;
+    if (routeEditAddStack.length > 0) {
+        removeIdx = routeEditAddStack.pop();
+    } else {
+        removeIdx = routeEditCoords.length - 1;
+    }
+    if (removeIdx < 0 || removeIdx >= routeEditCoords.length) {
+        removeIdx = routeEditCoords.length - 1;
+    }
+    // Shift any remaining stack entries above the removal point down
+    // so they keep pointing at the same waypoint objects after the
+    // splice renumbers everything below them.
+    for (let i = 0; i < routeEditAddStack.length; i++) {
+        if (routeEditAddStack[i] > removeIdx) routeEditAddStack[i]--;
+    }
+    routeEditCoords.splice(removeIdx, 1);
+    rebuildRouteEditMarkers();
     redrawEditLine();
 }
 
@@ -2408,6 +2498,12 @@ export function undoLastEditWaypoint() {
 export function removeRouteEditWaypoint(index) {
     if (index < 0 || index >= routeEditCoords.length) return;
     routeEditCoords.splice(index, 1);
+    // Shift any add-stack entries. Anything at >index drops one;
+    // anything == index is dropped (the user explicitly removed
+    // it via the in-panel list, not via undo).
+    routeEditAddStack = routeEditAddStack
+        .filter(i => i !== index)
+        .map(i => i > index ? i - 1 : i);
     if (routeEditCoords.length < 2 && routeEditLine && routeEditLayer) {
         routeEditLayer.removeLayer(routeEditLine);
         if (routeEditHitLine) routeEditLayer.removeLayer(routeEditHitLine);
@@ -2439,6 +2535,11 @@ export function loadRouteForEdit(coords) {
     for (const c of coords) {
         addEditWaypoint(c[0], c[1]);
     }
+    // The loaded waypoints weren't "added" in this edit session --
+    // the user didn't tap them here, they came from the server. Clear
+    // the stack so Undo only removes vertices the user added AFTER
+    // opening the existing route for edit.
+    routeEditAddStack = [];
 }
 
 // --- Polygon editing (freeform region draw) ---
@@ -2456,9 +2557,12 @@ let polygonEditMarkers = [];
 let polygonEditShape = null;   // L.polygon once there are >= 3 vertices
 let polygonEditLine = null;    // L.polyline for 2-vertex preview
 
-const POLYGON_COLOR = '#d4a850';                    // --ann-region
-// fillOpacity below drives the translucent fill; the colour is reused
-// as both stroke and fill so we don't need a separate fill token.
+// Polygon edit uses the same violet as route-edit so "I am editing"
+// reads consistently across both drawing modes. Was amber
+// (--ann-region, #d4a850) which matched finished regions but fought
+// the route-edit cue.  User feedback: keep the in-edit colour the
+// same regardless of shape; saved-region amber kicks in on save.
+const POLYGON_COLOR = '#a78bfa';                    // --map-current
 
 function makePolygonVertexIcon(num) {
     return L.divIcon({
@@ -2654,8 +2758,16 @@ function formatWaypointTooltip(name, id, lat, lon) {
 export function addWaypointMarker(id, lat, lon, name) {
     if (!map || waypointMarkers.has(id)) return;
     const marker = L.circleMarker([lat, lon], {
-        radius: 6, color: WAYPOINT_COLOR, fillColor: WAYPOINT_COLOR, fillOpacity: 1, weight: 2
-    }).addTo(map);
+        radius: 6, color: WAYPOINT_COLOR, fillColor: WAYPOINT_COLOR, fillOpacity: 1, weight: 2,
+        interactive: false,
+    });
+    // Wider invisible hit-buffer so a finger-wide tap registers.
+    // 6 px visible radius = 12 px target; bumped to 22 px here gives
+    // a 44 px hit (iPad WCAG floor). Visual marker stays 6 px so the
+    // chart doesn't look cluttered.
+    const hit = L.circleMarker([lat, lon], {
+        radius: 22, opacity: 0, fillOpacity: 0, weight: 0, interactive: true
+    });
     // Tooltip on hover (quick identification); popup on click (full
     // name + Delete). Same pattern as notes/regions so the tap-to-act
     // affordance is consistent across user-placed objects.
@@ -2666,17 +2778,19 @@ export function addWaypointMarker(id, lat, lon, name) {
     // that GPS jitter already eats. Hemisphere letters (N/S, E/W)
     // keep the reading unambiguous when the waypoint is near the
     // equator or the prime meridian.
-    marker.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
+    // Events fire on the hit buffer; the visible marker is non-
+    // interactive so the two don't double-handle.
+    hit.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
-    marker.bindPopup(buildWaypointPopupHtml(id, name, lat, lon), {
+    hit.bindPopup(buildWaypointPopupHtml(id, name, lat, lon), {
         className: 'note-popup',
         maxWidth: 280,
         autoClose: true,
         closeButton: false,
     });
-    marker.on('click', (ev) => {
+    hit.on('click', (ev) => {
         // During edit modes, swallow the click and forward the waypoint's
         // location to whatever the user is plotting -- matches the note
         // marker's edit-mode behaviour.
@@ -2686,11 +2800,15 @@ export function addWaypointMarker(id, lat, lon, name) {
             if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
             else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
             else                       addMeasurePoint(ll.lat, ll.lng);
-            marker.closePopup();
+            hit.closePopup();
         }
     });
-    marker.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id));
-    waypointMarkers.set(id, marker);
+    hit.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id));
+    // Group + add-to-map so remove/clear takes both layers down
+    // together. MarkerLayer.remove -> map.removeLayer(group) which
+    // removes its children.
+    const group = L.layerGroup([marker, hit]).addTo(map);
+    waypointMarkers.set(id, group);
 }
 
 export function removeWaypointMarker(id) {
@@ -3270,6 +3388,7 @@ export function dispose() {
     bearingLine = null; bearingLabel = null;
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
     anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
+    anchorRadiusLine = null; anchorRadiusLabel = null;
     anchorTrail.length = 0;
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;

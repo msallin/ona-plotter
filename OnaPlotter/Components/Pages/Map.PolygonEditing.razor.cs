@@ -134,14 +134,37 @@ public partial class Map
         string name = string.IsNullOrWhiteSpace(polygonEditName)
             ? $"Region {DateTime.Now:yyyyMMdd-HHmm}"
             : polygonEditName;
+        // Description captured on the Add Region dialog (the Title +
+        // Description fields shown when the user picked Polygon) is
+        // stashed in newRegionDescription. Pipe it through so polygon
+        // regions get the same Description saved as circle regions
+        // -- previously this was hardcoded to "" and the user's input
+        // was silently dropped.
+        string description = newRegionDescription ?? "";
         Services.Api.ApiResult<string>? r = null;
-        try { r = await RegionApi.CreatePolygonAsync(name, "", coords); }
+        try { r = await RegionApi.CreatePolygonAsync(name, description, coords); }
         catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); }
 
         if (r is { Success: true, Value: { Length: > 0 } })
         {
             Toasts.Success($"Saved region '{name}' ({coords.Length} vertices)");
             loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? loadedRegions;
+            // Draw the newly-saved region on the map immediately so
+            // the user sees the result without refreshing. Previously
+            // this branch only refreshed the in-memory list +
+            // RebuildFilteredLayers, which doesn't actually add the
+            // new <polygon> to Leaflet -- the region vanished visually
+            // until a pan refetched it.
+            var created = loadedRegions.FirstOrDefault(rg => rg.Id == r.Value);
+            if (created is not null)
+            {
+                try
+                {
+                    await module.InvokeVoidAsync("addRegion",
+                        created.Id, created.OuterRings, created.Name, created.Description);
+                }
+                catch (JSDisconnectedException) { }
+            }
             RebuildFilteredLayers();
         }
         else if (Toasts.Active.Count == 0)
@@ -152,6 +175,9 @@ public partial class Map
         polygonEditCoords = null;
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
+        // Clear the dialog-sourced description so a second region
+        // doesn't inherit the previous one.
+        newRegionDescription = "";
         RemoveEditNavGuard();
         try { await module.InvokeVoidAsync("stopPolygonEdit"); }
         catch (JSDisconnectedException) { }
