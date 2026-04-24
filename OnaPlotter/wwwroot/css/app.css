@@ -2179,17 +2179,6 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .snooze-chip-time { color: #94a3b8; font-variant-numeric: tabular-nums; }
 .snooze-chip-close { color: #94a3b8; font-size: 0.9em; margin-left: 2px; }
 
-/* Rearm chip: visually distinct from snooze chips so the helm can
-   tell "alarm is in post-dismiss cooldown, will re-arm" apart from
-   "user silenced this target". Amber-tinted border + warmer label
-   colour; no hover (not clickable) + cursor default. */
-.rearm-chip {
-    border-color: rgba(245, 158, 11, 0.45);   /* --sev-warn */
-    background: rgba(40, 28, 10, 0.85);
-    cursor: default;
-}
-.rearm-chip:hover { background: rgba(40, 28, 10, 0.85); }   /* suppress hover swap */
-.rearm-chip .snooze-chip-label { color: #fbbf24; }
 @media (min-width: 641px) {
     .snooze-chips { left: 220px; }
 }
