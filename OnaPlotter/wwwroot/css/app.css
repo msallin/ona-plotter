@@ -2601,8 +2601,8 @@ main:has(.alarm-banner-stack) .snooze-chips {
     }
 }
 
-/* Zoom-level badge (bottom-right). Subtle in the default state; flips to
-   amber tint when the top chart's native max is exceeded (overzoom). */
+/* Zoom-level badge (bottom-right). Plain zoom indicator; the
+   overzoom-aware amber variant was dropped with the feature. */
 .ona-zoom-badge {
     background: rgba(10, 12, 18, 0.6);
     color: rgba(255, 255, 255, 0.75);
@@ -2613,11 +2613,6 @@ main:has(.alarm-banner-stack) .snooze-chips {
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     user-select: none;
-}
-.ona-zoom-badge-over {
-    color: #f0d49c;
-    border-color: rgba(224, 159, 62, 0.55);
-    background: rgba(30, 20, 8, 0.65);
 }
 
 /* Invisible full-area catcher that dismisses the Layers panel on a

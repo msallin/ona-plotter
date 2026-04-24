@@ -4,8 +4,6 @@
 import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          haversineMeters, bearingDeg, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
-import { isOverlayChart, computeOverzoom, applyOverzoom } from './chartOverzoom.js';
-import { discoverMaxNativeZoom, probeTileWithImage } from './chartProbe.js';
 import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
@@ -254,19 +252,10 @@ const ZoomBadge = L.Control.extend({
     update() {
         if (!this._el || !this._map) return;
         const z = this._map.getZoom();
-        let topNative = 0;
-        for (const [id, native] of chartNativeMax.entries()) {
-            if (chartOverlay.has(id)) continue;  // overlays don't count
-            if (native > topNative) topNative = native;
-        }
-        const over = topNative > 0 && z > topNative;
-        this._el.textContent = over ? `z${z} \u2191` : `z${z}`;
-        this._el.title = over
-            ? `Zoom ${z}; top chart native max ${topNative} (tiles are being scaled up)`
-            : topNative > 0
-                ? `Zoom ${z}; top chart native max ${topNative}`
-                : `Zoom ${z}`;
-        this._el.classList.toggle('ona-zoom-badge-over', over);
+        // Overzoom-awareness stripped (feature removed); the badge is
+        // now a plain zoom-level indicator.
+        this._el.textContent = `z${z}`;
+        this._el.title = `Zoom ${z}`;
     }
 });
 
@@ -606,13 +595,13 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Gated on slow-client so desktop / iPad keep the SVG renderer that
     // gives crisper outlines at high DPI.
     //
-    // maxZoom 22 lets chart tiles overzoom past their native limit (we
-    // set maxNativeZoom on chart layers to cap the tile fetch and then
-    // let Leaflet scale the last valid tile up). Base OSM still caps at
-    // its own maxZoom via the per-layer option, so we don't hit 404s.
+    // Map maxZoom matches the typical base-tile native cap (19). The
+    // overzoom-past-native feature was removed; adding it back later
+    // would bump this to 22 and re-introduce per-layer maxNativeZoom
+    // management.
     map = L.map(elementId, {
         zoomControl: false,
-        maxZoom: 22,
+        maxZoom: 19,
         preferCanvas: isSlowClient,
     }).setView([lat, lon], zoom);
     // Drop the "Leaflet |" prefix from the attribution bar. The actual
@@ -712,7 +701,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // of reports.
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
-        maxZoom: 22,
+        maxZoom: 19,
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
@@ -722,7 +711,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
-        maxZoom: 22,
+        maxZoom: 19,
         keepBuffer: 4,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
@@ -1939,57 +1928,18 @@ export function setNightMode(enabled) {
 
 // Add a chart tile layer from SignalK.
 // bounds is [west, south, east, north] or null.
-// Per-chart native maxZoom, kept so recomputeChartOverzoom() can tell
-// the top-native chart from the rest after every add/remove.
-const chartNativeMax = new Map();
-// Charts flagged as transparent overlays (e.g. OpenSeaMap seamarks).
-// They're excluded from the "pick the top-native base chart" race in
-// recomputeChartOverzoom and always get overzoom treatment, because
-// they sit on top of a real base chart and their presence shouldn't
-// prevent the base chart from stretching past its native zoom.
-const chartOverlay = new Set();
-
-export async function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
+//
+// Overzoom was removed: no probe, no tile-error calibrator, no
+// cross-layer maxZoom race. Each chart simply gets maxZoom set to its
+// declared maxZoom. When a chart's metadata lies (declared z18 but
+// server only has z15), tiles above the real max 404 and the base
+// layer shows through. Honest but simple; the feature is on the
+// backlog to revisit.
+export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     if (!map || chartLayers.has(id)) return false;
-    const declared = maxZoom || 18;
-    const floor = minZoom || 1;
-
-    // Probe BEFORE constructing the layer so we never render with a
-    // wrong maxNativeZoom. Chart metadata often declares a higher
-    // maxZoom than the tile server actually has; without this probe,
-    // Leaflet would keep requesting 404-ing tiles above the real max
-    // and the chart would appear to disappear past that zoom.
-    //
-    // Probe uses <img> (not fetch) so CORS doesn't block detection
-    // on servers that reject OPTIONS preflights. A failure to probe
-    // (network down, map already disposed) falls back to the declared
-    // value, which is the same behaviour we had before probing.
-    let native = declared;
-    try {
-        native = await discoverMaxNativeZoom({
-            tileUrl, bounds, declaredMax: declared, minZoom: floor,
-            probe: probeTileWithImage,
-        });
-        if (native !== declared) {
-            console.info(
-                `[overzoom] chart "${id}" declared native z${declared}, probed actual z${native}`);
-        }
-    } catch (err) {
-        console.warn(`[overzoom] probe failed for "${id}"; using declared z${declared}`, err);
-    }
-
-    // Re-check map still alive after the probe -- page could have
-    // been disposed during the <img> loads.
-    if (!map || chartLayers.has(id)) return false;
-
-    chartNativeMax.set(id, native);
-    if (isOverlayChart(id, tileUrl)) chartOverlay.add(id);
-    // maxZoom is set provisionally to the native cap; recomputeChartOverzoom
-    // below raises it only for the top-native chart. That way a detailed
-    // harbour chart (native 18) kicks in past a wide-area chart (native 12)
-    // instead of the wide-area chart blurring over everything at zoom 20.
+    const native = maxZoom || 18;
     const opts = {
-        minZoom: floor,
+        minZoom: minZoom || 1,
         maxNativeZoom: native,
         maxZoom: native,
         opacity: opacity || 0.8,
@@ -2018,16 +1968,12 @@ export async function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, boun
     layer.addTo(map);
     layer.setZIndex(50);
     chartLayers.set(id, layer);
-    recomputeChartOverzoom();
     restackChartOpacities();
     return true;
 }
 
 export function removeChartLayer(id) {
     chartLayers.remove(id);
-    chartNativeMax.delete(id);
-    chartOverlay.delete(id);
-    recomputeChartOverzoom();
     restackChartOpacities();
 }
 
@@ -2075,34 +2021,7 @@ export function setChartLayerOrder(orderedIds) {
         const layer = chartLayers.get(orderedIds[i]);
         if (layer) layer.setZIndex(base + i);
     }
-    recomputeChartOverzoom();
     restackChartOpacities();
-}
-
-// Smart overzoom: only the chart with the highest native max gets the
-// "stretch past its native limit" treatment. Lower-native charts keep
-// their maxZoom equal to their native max, so they naturally hide past
-// their native instead of pixel-stretching over a more-detailed chart.
-// If two charts share the top native, both overzoom -- harmless since
-// the later-added one draws on top anyway.
-function recomputeChartOverzoom() {
-    // Everything is in chartOverzoom.js now; this function is just the
-    // glue that feeds it the live MarkerLayer + mutates layer.options.
-    applyOverzoom(
-        chartLayers.keys(),
-        chartNativeMax,
-        chartOverlay,
-        (id) => chartLayers.get(id),
-        (_id, layer, effMax) => {
-            if (layer.options.maxZoom !== effMax) {
-                layer.options.maxZoom = effMax;
-                // Leaflet reads options.maxZoom on tile-visibility
-                // checks; redraw() forces it to recompute which tiles
-                // to paint at the current map zoom.
-                layer.redraw();
-            }
-        });
-    if (zoomBadge) zoomBadge.update();
 }
 
 // --- Routes ---
