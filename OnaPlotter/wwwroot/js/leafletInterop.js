@@ -5,7 +5,6 @@ import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          haversineMeters, bearingDeg, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
 import { MarkerLayer } from './markerLayer.js';
-import { splitRouteByProgress } from './routeProgress.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
 
@@ -2178,28 +2177,22 @@ const activeWpIcon = L.divIcon({
     iconAnchor: [12, 12]
 });
 
-function findClosestWaypointIndex(coords, lat, lon) {
-    let minDist = Infinity;
-    let idx = 0;
-    for (let i = 0; i < coords.length; i++) {
-        const d = haversineMeters(lat, lon, coords[i][0], coords[i][1]);
-        if (d < minDist) { minDist = d; idx = i; }
-    }
-    return idx;
-}
-
 // Draw the active route as two polylines split by progress, plus
 // numbered waypoint markers. Already-passed legs are dotted and
 // dimmed; future legs (including the current leg from the last
 // reached WP to the next) are solid. The dashed bearing line and
 // active-leg overlay drawn by setCourseLine sit on top of this.
 //
+// wpIdx is the index of the next un-reached waypoint, resolved on
+// the C# side from SignalK's next-point lat/lon. JS stays a thin
+// renderer here -- no geometry, no closest-vertex lookup.
+//
 // routeId is the SignalK resource UUID; passing it enables tap-to-
 // skip on each marker (any WP, including passed ones, can be set as
 // the new next-WP via the JumpToRouteWaypoint JSInvokable on the C#
 // side). Pass an empty string to disable taps -- e.g. when the active
 // "course" is a single waypoint destination, not a multi-WP route.
-export function setActiveRoute(coords, nextWpLat, nextWpLon, routeId) {
+export function setActiveRoute(coords, wpIdx, routeId) {
     clearActiveRoute();
     // Suppress redraw while the helm is editing the active route --
     // any in-flight SyncActiveRouteAsync that races the edit (e.g.
@@ -2211,20 +2204,19 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon, routeId) {
     if (!map || !coords || coords.length < 2) return;
 
     activeRouteCoords = coords;
-    const wpIdx = findClosestWaypointIndex(coords, nextWpLat, nextWpLon);
+    // Defensive bounds-check; C# already clamps but a stray NaN/-1
+    // from a future caller must not crash the renderer.
+    const idx = Math.max(0, Math.min(coords.length - 1, wpIdx | 0));
     activeRouteLayer = L.layerGroup().addTo(map);
     const tappable = !!(routeId && dotNetRef);
 
-    // Split the route at the boundary between reached and un-reached
-    // waypoints. The two segments share the boundary point so the
-    // dotted/solid handover renders without a visual gap.
-    const { passed, future } = splitRouteByProgress(coords, wpIdx);
-
-    // Already-passed legs: dotted, dim. lineCap:'round' turns the
-    // 2 px dash into a true round dot, which scans more cleanly than
-    // a dash at chartplotter zoom levels.
-    if (passed.length >= 2) {
-        L.polyline(passed, {
+    // Already-passed legs: dotted, dim. The two polylines share the
+    // boundary point coords[idx-1] so the dotted/solid handover
+    // renders without a visual gap. lineCap:'round' turns the 2 px
+    // dash into a true round dot, which scans more cleanly than a
+    // dash at chartplotter zoom levels.
+    if (idx >= 2) {
+        L.polyline(coords.slice(0, idx), {
             color: MapColors.bearing,
             weight: 2,
             opacity: 0.5,
@@ -2233,9 +2225,12 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon, routeId) {
         }).addTo(activeRouteLayer);
     }
 
-    // Planned (future + current) legs: solid, full weight.
-    if (future.length >= 2) {
-        L.polyline(future, {
+    // Planned (future + current) legs: solid, full weight. Starts at
+    // the last reached waypoint when idx > 0 so the current leg is
+    // included.
+    const futureStart = idx > 0 ? idx - 1 : 0;
+    if (futureStart < coords.length - 1) {
+        L.polyline(coords.slice(futureStart), {
             color: MapColors.bearing, weight: 3, opacity: 0.8
         }).addTo(activeRouteLayer);
     }
@@ -2244,8 +2239,8 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon, routeId) {
     // below). Each remaining dot is tappable: clicking asks the C# side
     // to jump pointIndex to that WP, mirroring Freeboard's gesture.
     for (let i = 0; i < coords.length; i++) {
-        const isPassed = i < wpIdx;
-        const isNext = i === wpIdx;
+        const isPassed = i < idx;
+        const isNext = i === idx;
         if (isNext) continue;
 
         const dot = L.circleMarker(coords[i], {
@@ -2267,11 +2262,11 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon, routeId) {
     }
 
     // Pulsing marker at the next waypoint.
-    nextWpMarker = L.marker(coords[wpIdx], {
+    nextWpMarker = L.marker(coords[idx], {
         icon: activeWpIcon,
         zIndexOffset: 900
     }).addTo(activeRouteLayer);
-    nextWpMarker.bindTooltip(`WP ${wpIdx + 1}`, {
+    nextWpMarker.bindTooltip(`WP ${idx + 1}`, {
         permanent: true,
         direction: 'right',
         offset: [14, 0],
