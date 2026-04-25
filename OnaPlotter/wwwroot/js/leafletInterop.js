@@ -3730,7 +3730,7 @@ function buildAtonPopupHtml(a) {
  * Replace the rendered AtoN set. Adds new ids, updates moved entries
  * (rare -- AtoNs don't usually move), removes ids missing from the
  * payload. Caller (Map.razor) pushes the whole snapshot from
- * AtoNStore on each OnAtonsUpdated event; the layer is small enough
+ * AtonStore on each OnAtonsUpdated event; the layer is small enough
  * (typical harbour 10-50 entries, big port maybe 200) that a full
  * rebuild on every change isn't a perf problem.
  *

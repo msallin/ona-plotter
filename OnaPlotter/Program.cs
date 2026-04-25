@@ -30,7 +30,7 @@ builder.Services.AddSingleton<OnaPlotter.Services.ServerNotifications.ServerNoti
 // AIS Aids to Navigation. atons.* deltas land here; the map
 // renderer subscribes to OnAtonsUpdated and pushes the snapshot
 // to Leaflet. Static enough to live on a 60s subscription tier.
-builder.Services.AddSingleton<OnaPlotter.Services.AtoNStore>();
+builder.Services.AddSingleton<OnaPlotter.Services.AtonStore>();
 // Alarm rules are DI-registered; AlarmManager picks them up via
 // IEnumerable<IAlarmRule>. Adding a new rule is a one-line registration.
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AisSartAlarmRule>();

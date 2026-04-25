@@ -3,7 +3,7 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Tests;
 
-public class AtoNTests
+public class AtonTests
 {
     private static JsonElement Parse(string json)
         => JsonDocument.Parse(json).RootElement;
@@ -11,7 +11,7 @@ public class AtoNTests
     [Test]
     public async Task Constructor_ExtractsMmsiFromContext()
     {
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         await Assert.That(a.Mmsi).IsEqualTo("992111234");
     }
 
@@ -20,14 +20,14 @@ public class AtoNTests
     {
         // Some plugins use custom identifier schemes (e.g. local
         // OpenSeaMap mark ids). Mmsi should be null rather than crash.
-        var a = new AtoN("atons.local-buoy-7");
+        var a = new Aton("atons.local-buoy-7");
         await Assert.That(a.Mmsi).IsNull();
     }
 
     [Test]
     public async Task ApplyName_SetsName()
     {
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         bool changed = a.Apply("name", Parse("\"BUOY 17\""));
         await Assert.That(changed).IsTrue();
         await Assert.That(a.Name).IsEqualTo("BUOY 17");
@@ -38,7 +38,7 @@ public class AtoNTests
     {
         // Re-applying the same value is a no-op so the UI doesn't
         // redraw on every tick. Returns false to signal "no change".
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         a.Apply("name", Parse("\"BUOY 17\""));
         bool secondChanged = a.Apply("name", Parse("\"BUOY 17\""));
         await Assert.That(secondChanged).IsFalse();
@@ -47,7 +47,7 @@ public class AtoNTests
     [Test]
     public async Task ApplyPosition_SetsLatLon()
     {
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         bool changed = a.Apply("navigation.position",
             Parse("{\"latitude\":47.5, \"longitude\":-122.25}"));
         await Assert.That(changed).IsTrue();
@@ -60,7 +60,7 @@ public class AtoNTests
     {
         // Malformed position payload: no lat/lon, just an empty object.
         // Returns false and doesn't write garbage to lat/lon.
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         bool changed = a.Apply("navigation.position", Parse("{}"));
         await Assert.That(changed).IsFalse();
         await Assert.That(a.Latitude).IsNull();
@@ -69,7 +69,7 @@ public class AtoNTests
     [Test]
     public async Task ApplyAtonType_ObjectForm_SetsIdAndName()
     {
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         bool changed = a.Apply("atonType",
             Parse("{\"id\":14, \"name\":\"Lateral Starboard\"}"));
         await Assert.That(changed).IsTrue();
@@ -83,7 +83,7 @@ public class AtoNTests
         // Some plugins publish the bare number under atonType instead
         // of the canonical {id, name} object. The handler should
         // accept both.
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         bool changed = a.Apply("atonType", Parse("9"));
         await Assert.That(changed).IsTrue();
         await Assert.That(a.TypeId).IsEqualTo(9);
@@ -93,11 +93,52 @@ public class AtoNTests
     [Test]
     public async Task ApplyVirtual_BoolValue_Sets()
     {
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         a.Apply("virtual", Parse("true"));
         await Assert.That(a.Virtual).IsTrue();
         a.Apply("virtual", Parse("false"));
         await Assert.That(a.Virtual).IsFalse();
+    }
+
+    [Test]
+    public async Task ApplyVirtual_JsonNull_ClearsToNull()
+    {
+        // Some plugins clear the virtual flag by publishing an
+        // explicit JSON null (separately from omitting the path).
+        // The handler must distinguish "null" (clear) from
+        // "unsupported value type" (no-op) so the dashed outline
+        // goes away when the server says it should.
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
+        a.Apply("virtual", Parse("true"));
+        bool changed = a.Apply("virtual", Parse("null"));
+        await Assert.That(changed).IsTrue();
+        await Assert.That(a.Virtual).IsNull();
+    }
+
+    [Test]
+    public async Task ApplyVirtual_UnknownValueType_NoChange()
+    {
+        // A malformed delta with a number where bool is expected:
+        // don't flap the dashed outline. The current state stands.
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
+        a.Apply("virtual", Parse("true"));
+        bool changed = a.Apply("virtual", Parse("42"));
+        await Assert.That(changed).IsFalse();
+        await Assert.That(a.Virtual).IsTrue();
+    }
+
+    [Test]
+    public async Task ApplyEmptyPath_NonObjectValue_IgnoredQuietly()
+    {
+        // Old behaviour stashed empty-path non-object deltas under
+        // Properties[""]. That's diagnostic noise: the SignalK spec
+        // only emits empty-path deltas as identity bundles, so a
+        // bare null / number / string on the empty path is a plugin
+        // bug we'd rather just drop.
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
+        bool changed = a.Apply("", Parse("null"));
+        await Assert.That(changed).IsFalse();
+        await Assert.That(a.Properties.ContainsKey("")).IsFalse();
     }
 
     [Test]
@@ -114,7 +155,7 @@ public class AtoNTests
             ""virtual"": true,
             ""navigation"": { ""position"": { ""latitude"": 51.5, ""longitude"": 1.0 } }
         }");
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         bool changed = a.Apply("", bundle);
 
         await Assert.That(changed).IsTrue();
@@ -132,7 +173,7 @@ public class AtoNTests
         // A plugin publishes some custom path we don't model. It should
         // land in Properties so the popover can still show it without
         // a code change.
-        var a = new AtoN("atons.urn:mrn:imo:mmsi:992111234");
+        var a = new Aton("atons.urn:mrn:imo:mmsi:992111234");
         a.Apply("plugin.custom.field", Parse("\"hello\""));
         await Assert.That(a.Properties.ContainsKey("plugin.custom.field")).IsTrue();
     }
@@ -140,15 +181,15 @@ public class AtoNTests
     [Test]
     public async Task ExtractMmsi_WellFormed()
     {
-        await Assert.That(AtoN.ExtractMmsi("atons.urn:mrn:imo:mmsi:992111234"))
+        await Assert.That(Aton.ExtractMmsi("atons.urn:mrn:imo:mmsi:992111234"))
             .IsEqualTo("992111234");
     }
 
     [Test]
     public async Task ExtractMmsi_NoMmsiSegment_ReturnsNull()
     {
-        await Assert.That(AtoN.ExtractMmsi("atons.local-buoy-7")).IsNull();
-        await Assert.That(AtoN.ExtractMmsi("atons.")).IsNull();
-        await Assert.That(AtoN.ExtractMmsi("")).IsNull();
+        await Assert.That(Aton.ExtractMmsi("atons.local-buoy-7")).IsNull();
+        await Assert.That(Aton.ExtractMmsi("atons.")).IsNull();
+        await Assert.That(Aton.ExtractMmsi("")).IsNull();
     }
 }
