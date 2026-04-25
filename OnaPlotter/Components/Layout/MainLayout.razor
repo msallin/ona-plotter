@@ -795,10 +795,42 @@
 
     private async Task AutoAdvanceAsync(string reason)
     {
-        bool hadCourseBefore = SignalkClient.Data.HasActiveCourse;
+        // Multi-plotter idempotency: when more than one chartplotter
+        // is wired to the same SK server (this app + Freeboard-SK,
+        // or two ona-plotter tabs on a phone and the helm screen),
+        // every client sees the same arrival edge and fires
+        // concurrently. The relative "advance by 1" PUT
+        // (/activeRoute/nextPoint with {value:1}) is NOT idempotent:
+        // two racing PUTs both increment the server's pointIndex
+        // and silently skip a waypoint. The absolute form
+        // (PUT /activeRoute/pointIndex {value: N}) IS idempotent --
+        // the second PUT lands on a value that's already set and is
+        // a no-op. Same reason Freeboard-SK uses pointIndex for its
+        // arrival-driven advance.
+        //
+        // Last-leg exception: SetPointIndexAsync clamps out-of-range
+        // values, so PUT pointIndex=total does NOT clear the active
+        // course. Fall back to the relative call there -- the race
+        // is inert on the final leg (nothing to skip to), and the
+        // relative call is what triggers the server's clear-on-arrive
+        // so the "Arrived at final waypoint" toast still fires.
+        var data = SignalkClient.Data;
+        bool hadCourseBefore = data.HasActiveCourse;
+        if (data.ActiveRoutePointIndex is not int currentIdx)
+        {
+            // No pointIndex means the SK server hasn't published v2
+            // course state for this leg; we'd be guessing the target.
+            // Fail loud rather than fall back to the relative call
+            // and reintroduce the multi-plotter race.
+            Toasts.Error("Auto-advance skipped: unknown route position");
+            return;
+        }
+        bool isLastLeg = data.ActiveRoutePointTotal is int total && currentIdx + 1 >= total;
         try
         {
-            var r = await CourseApi.AdvanceActiveRouteAsync();
+            var r = isLastLeg
+                ? await CourseApi.AdvanceActiveRouteAsync()
+                : await CourseApi.SetPointIndexAsync(currentIdx + 1);
             if (!r.Success)
             {
                 Toasts.Error($"Auto-advance failed: {r.Error ?? "server rejected"}");
