@@ -110,10 +110,8 @@
     // expands only the sections they need. See agents.md "UX principles".
     private bool expanded = false;
 
-    // Previously exposed an ActiveStack (reversed enabled list) used for
-    // arrow-enabled checks; that conflation of "z-stack" and "visible
-    // list" was the root of the "arrows do nothing / go the wrong way"
-    // bug. The enablement now reads directly from the iteration order
-    // above, so this helper is gone -- no place left where the two
-    // orderings can drift.
+    // Enablement reads directly from the iteration order above; do not
+    // re-introduce a separate "active stack" projection -- having both
+    // the z-stack and the visible-list as separate state lets them drift
+    // and breaks the reorder arrows.
 }

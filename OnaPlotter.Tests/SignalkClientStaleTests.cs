@@ -25,7 +25,7 @@ public class SignalkClientStaleTests
         public string CombineRadar(string path) => BaseUrl + path;
     }
 
-    private static SignalkClient NewClient()
+    private static SignalkClient NewClient(TimeProvider? time = null)
         => new(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
@@ -34,7 +34,8 @@ public class SignalkClientStaleTests
             http: new HttpClient(),
             settings: new FakeSettings(),
             serverNotifs: new OnaPlotter.Services.ServerNotifications.ServerNotificationStore(),
-            atons: new OnaPlotter.Services.AtonStore());
+            atons: new OnaPlotter.Services.AtonStore(),
+            time: time ?? TimeProvider.System);
 
     [Test]
     public async Task IsDataStale_BeforeConnect_IsFalse()

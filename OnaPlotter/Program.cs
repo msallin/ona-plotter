@@ -65,6 +65,11 @@ builder.Services.AddSingleton<IRadarApi, RadarApi>();
 // Optional: detects sbender9/signalk-buddylist-plugin at runtime.
 builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 
+// Wall-clock provider. Stale-data detection and track-point timestamps go
+// through this so tests can advance time deterministically (FakeTimeProvider
+// from Microsoft.Extensions.TimeProvider.Testing) instead of sleeping.
+builder.Services.AddSingleton(TimeProvider.System);
+
 // SignalK WebSocket delta stream.
 builder.Services.AddSingleton<SignalkClient>();
 

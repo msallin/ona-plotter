@@ -98,11 +98,21 @@ public sealed class MapFrameBuilder
         var wpLon = data.CourseNextPointLongitude;
         if (wpLat is not null && wpLon is not null && bLat is not null && bLon is not null)
         {
+            // XTE band is classified C#-side (tested in XteTests) so the
+            // JS overlay and any future XTE indicator share the same
+            // thresholds + give-way behaviour.
+            string xteSeverity = Xte.Classify(data.CrossTrackError) switch
+            {
+                Xte.Severity.OffCourse => "offCourse",
+                Xte.Severity.Drifting => "drifting",
+                _ => "onLine"
+            };
             course = new FrameCourseLine(
                 wpLat.Value, wpLon.Value,
                 data.CoursePreviousPointLatitude,
                 data.CoursePreviousPointLongitude,
-                data.CrossTrackError);
+                data.CrossTrackError,
+                xteSeverity);
             CourseLineDrawn = true;
         }
         else if (CourseLineDrawn)
@@ -165,7 +175,8 @@ public readonly record struct FramePos(
 public readonly record struct FrameCourseLine(
     double WpLat, double WpLon,
     double? PrevLat, double? PrevLon,
-    double? Xte);
+    double? Xte,
+    string XteSeverity);
 
 public readonly record struct FrameCurrentArrow(
     double Lat, double Lon,

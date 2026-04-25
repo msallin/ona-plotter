@@ -878,7 +878,7 @@ export function applyFrame(frame) {
         // when the C# side calls setActiveOverlayHidden(false) on
         // edit cancel / save.
         if (boatLat != null && boatLon != null && !activeOverlayHidden) {
-            setCourseLine(boatLat, boatLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte);
+            setCourseLine(boatLat, boatLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity);
         }
     } else if (frame.clearCourse) {
         clearCourseLine();
@@ -1192,20 +1192,13 @@ export function updateAisTargets(vessels) {
         const cpaInfo = (v.cpaNm != null && v.tcpaMin != null)
             ? { cpa: v.cpaNm, tcpa: v.tcpaMin }
             : null;
-        const isDanger = cpaInfo
-            && cpaInfo.cpa < guardZoneRadiusNm
-            && cpaInfo.tcpa < guardZoneLookaheadMin
-            && cpaInfo.tcpa > 0;
-        // Within guardZone*factor we draw an amber warning line; this gives
-        // the captain situational awareness before a red alarm fires. The
-        // factor is user-configurable via Settings.GuardZoneWarningFactor.
-        // Buddies never trigger the danger/warning overlays - they're
-        // intentionally sailing near us and shouldn't paint the map red.
-        const isDangerEff = isDanger && !v.buddy;
-        const isWarning = !isDangerEff && !v.buddy && cpaInfo
-            && cpaInfo.cpa < guardZoneRadiusNm * guardZoneWarningFactor
-            && cpaInfo.tcpa < guardZoneLookaheadMin * guardZoneWarningFactor
-            && cpaInfo.tcpa > 0;
+        // CPA threat band is also computed C#-side (Cpa.ClassifyThreat)
+        // using the helm's guard-zone radius / lookahead / warning factor.
+        // Three buckets: "danger" (red ring + red crossing line),
+        // "warning" (amber crossing line, advisory), "none" (no overlay).
+        // Buddies are exempted on the C# side so we don't re-check here.
+        const isDangerEff = v.cpaThreat === 'danger';
+        const isWarning   = v.cpaThreat === 'warning';
         // Visual fields are resolved on the C# side (AisPalette /
         // AisSart) and arrive on the vessel payload:
         //   v.sartCategory  - "SART"/"MOB"/"EPIRB" or null
@@ -1299,12 +1292,11 @@ export function updateAisTargets(vessels) {
             }
         }
 
-        // Name label visible at zoom >= 12. Prefer resolved external name
-        // over raw MMSI so the chart looks clean even for unnamed targets.
-        // Buddies get a star prefix.
-        const resolvedName = v.name || (v.mmsi ? vesselNameCacheGet(v.mmsi) : null);
-        const baseName = resolvedName || (v.mmsi ? v.mmsi : null);
-        const displayName = baseName ? (v.buddy ? '\u2605 ' + baseName : baseName) : null;
+        // Name label visible at zoom >= 12. Resolution (name -> mmsi,
+        // with buddy star prefix) happens C#-side -- Map.razor.PushAisTargets
+        // stamps v.displayName so this label and any other label-rendering
+        // surface share one fallback chain.
+        const displayName = v.displayName || null;
         if (displayName) {
             if (!aisLabels[v.context]) {
                 aisLabels[v.context] = L.tooltip({
@@ -2367,7 +2359,7 @@ export function setActiveRouteStopping(stopping) {
 
 // Draw/update course line: leg line, bearing line, XTE tick.
 // Called on every position update when an active course exists.
-export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters) {
+export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
     if (!map) return;
 
     // Leg line: previous WP to next WP.
@@ -2398,10 +2390,13 @@ export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, 
     // XTE perpendicular tick at boat position.
     if (xteMeters != null && prevLat != null && prevLon != null) {
         const absXte = Math.abs(xteMeters);
-        // Mirrors .legend-xte's gradient via the shared severity
-        // palette -- green / amber / red match the bands the XTE
-        // formula uses, and a single edit in :root restyles both.
-        const xteColor = absXte < 50 ? MapColors.anchorOk : absXte < 200 ? MapColors.guardWarn : MapColors.mob;
+        // Severity is classified C#-side (Utilities/Xte.cs + XteTests) so
+        // the legend, the alarm pipeline and this overlay share a single
+        // set of band thresholds. Each band maps onto the shared severity
+        // palette so a single edit in :root restyles both legend and tick.
+        const xteColor = xteSeverity === 'offCourse' ? MapColors.mob
+            : xteSeverity === 'drifting' ? MapColors.guardWarn
+            : MapColors.anchorOk;
         // Perpendicular to the leg bearing.
         const legBrg = bearingDeg(prevLat, prevLon, wpLat, wpLon) * RAD;
         const perpBrg = xteMeters > 0 ? legBrg + Math.PI / 2 : legBrg - Math.PI / 2;

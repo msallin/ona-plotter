@@ -115,7 +115,10 @@
     --panel-bg-strong:   rgba(16, 20, 28, 0.96);
     --panel-text:        #e2e8f0;
     --panel-text-muted:  #94a3b8;
-    --panel-border:      rgba(255, 255, 255, 0.12);
+    /* 0.22 (vs an earlier 0.12) so the panel edge is still visible
+       against the busiest dark-water tile -- the lower opacity blended
+       into the chart at typical Layers-panel size. */
+    --panel-border:      rgba(255, 255, 255, 0.22);
     --panel-shadow:      0 12px 24px rgba(0, 0, 0, 0.4);
     /* Map overlays keep the dark tier regardless of theme. */
     --panel-bg-map:      rgba(15, 17, 22, 0.92);
@@ -157,9 +160,12 @@
    components migrate to variables, without an atomic rewrite. */
 .night-mode {
     --sk-text:          #ffdddd;
-    --sk-text-muted:    rgba(255, 130, 130, 0.6);
+    /* 0.85 alpha (was 0.6) so muted labels survive helm-glance under
+       low brightness; below 0.6 they vanished into the dark surface
+       and alarm severity badges read flat compared to day mode. */
+    --sk-text-muted:    rgba(255, 130, 130, 0.85);
     --sk-accent:        #ff8080;
-    --sk-accent-dim:    rgba(255, 120, 120, 0.6);
+    --sk-accent-dim:    rgba(255, 120, 120, 0.85);
     --sk-green:         #ff9a9a;  /* collapse to red family */
     --sk-red:           #ff6060;
     --sk-orange:        #ff8c6a;
@@ -198,8 +204,11 @@
     --sk-border: #cbd5e1;             /* slate-300 */
     --sk-text: #0f172a;               /* slate-900 */
     --sk-text-muted: #64748b;         /* slate-500 */
-    --sk-accent: #0369a1;             /* sky-700 - readable on white */
-    --sk-accent-dim: #075985;         /* sky-800 */
+    /* Sky-800/900 instead of sky-700; bumps contrast on white surfaces
+       past 7:1 (WCAG AAA) so accent links and active chips stay legible
+       in direct sunlight on a tablet. */
+    --sk-accent: #075985;             /* sky-800 */
+    --sk-accent-dim: #0c4a6e;         /* sky-900 */
 
     /* Chrome palette for light mode. The sidebar reads darker than the
        content area so the visual anchor is obvious in direct sunlight on
@@ -275,6 +284,13 @@
     --sk-text-muted: #1f2937;              /* zinc-800 - still high-contrast */
     --sk-accent: #0b3d91;                  /* deep navy */
     --sk-accent-dim: #082f70;
+
+    /* Severity tokens get saturated overrides so warning amber and danger
+       red stay legible on pure white (the default greens / oranges / reds
+       drop below 7:1 against #fff). */
+    --sev-ok:     #166534;                 /* green-800 */
+    --sev-warn:   #b45309;                 /* amber-700 */
+    --sev-danger: #b91c1c;                 /* red-700 */
 
     --sk-sidebar-bg: linear-gradient(180deg, #1f2937 0%, #0b1120 100%);
     --sk-sidebar-border: #000000;
@@ -887,7 +903,9 @@ html:fullscreen .hud-bottom-right {
    additionally dims the value below so a frozen depth doesn't look
    like a live 3.2 m. */
 .hud-stale-badge {
-    font-size: 0.55rem;
+    /* 0.7rem floor (was 0.55) so the chip is legible at arm's length on
+       a 5-inch helm screen in sunlight. */
+    font-size: 0.7rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     padding: 1px 5px;

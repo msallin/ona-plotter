@@ -61,11 +61,10 @@ public sealed class AisVessel
         // Empty-path deltas carry an object payload that's a partial vessel
         // identity snapshot, e.g. { name: "SALTY BREEZE", mmsi: "211...",
         // communication: { callsignVhf: "..." } }. SK servers emit this
-        // when AIS message type 5 (static data) arrives for a vessel that
-        // previously only had position updates. Flatten and recurse so
-        // names / MMSIs show up without waiting for a separate per-path
-        // delta that may never come. User-visible effect: fixes the
-        // "ship names sometimes missing" regression.
+        // when AIS message type 5 (static data) arrives for a vessel whose
+        // identity hasn't been published as separate per-path deltas. Flatten
+        // and recurse so names / MMSIs show up without waiting for a
+        // separate delta that may never come.
         if (path.Length == 0 && rawValue is JsonElement identityEl
             && identityEl.ValueKind == JsonValueKind.Object)
         {

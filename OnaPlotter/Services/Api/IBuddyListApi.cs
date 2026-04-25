@@ -13,7 +13,7 @@ public interface IBuddyListApi
 {
     /// <summary>
     /// True if the plugin is installed and reachable. Result is cached
-    /// for the lifetime of the process - call <see cref="InvalidateAsync"/>
+    /// for the lifetime of the process - call <see cref="Invalidate"/>
     /// to re-probe after the user enables a plugin at runtime.
     /// </summary>
     Task<bool> IsAvailableAsync(CancellationToken ct = default);
@@ -25,7 +25,7 @@ public interface IBuddyListApi
     Task<IReadOnlyList<SignalkBuddy>?> GetAllAsync(CancellationToken ct = default);
 
     /// <summary>Forces the next call to re-probe instead of using the cache.</summary>
-    void InvalidateAsync();
+    void Invalidate();
 
     /// <summary>Adds a buddy by its SignalK URN (e.g.
     /// <c>urn:mrn:imo:mmsi:338246284</c>) and friendly name. <see cref="ApiResult.Error"/>

@@ -15,16 +15,11 @@ public sealed class TrackApi : ITrackApi
 
     /// <summary>
     /// Fetches recorded position history from the SignalK History API v2
-    /// (<c>/signalk/v2/api/history/values</c>). That's the modern,
-    /// resolution-tunable surface implemented by signalk-parquet and
-    /// signalk-to-influxdb2.
-    ///
-    /// Earlier versions fell back to <c>/signalk/v1/api/self/track</c>
-    /// and <c>/signalk/v2/api/resources/tracks</c>, but we dropped both
-    /// on user request: the deployment targets OnaPlotter runs against
-    /// all have a history provider, and the two track fallbacks
-    /// returned at the recorder's fixed cadence instead of honouring
-    /// the resolution the History page asked for.
+    /// (<c>/signalk/v2/api/history/values</c>). The
+    /// resolution-tunable surface is implemented by signalk-parquet and
+    /// signalk-to-influxdb2; OnaPlotter requires one of these to be
+    /// installed because the resolution the History page asks for cannot
+    /// be honoured by the fixed-cadence track resource APIs.
     ///
     /// Returns null when the history surface returns no data (empty
     /// window, provider missing, plugin not installed) so the History

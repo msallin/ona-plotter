@@ -1696,10 +1696,8 @@
                 .Where(v => v.Latitude is not null && v.Longitude is not null)
                 .Select(v =>
                 {
-                    // Pre-compute COLREGS + CPA in C#. The router's JS
-                    // used to run its own computeCpa per vessel per push;
-                    // lifting it up means (a) single source of truth
-                    // with Utilities/Cpa.cs + CpaTests, and (b) the
+                    // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs
+                    // + CpaTests is the single source of truth and (b) the
                     // BuildVesselList / PushAisTargets paths can't drift.
                     double? cpaNm = null;
                     double? tcpaMin = null;
@@ -1736,9 +1734,39 @@
                     string? sartCat = OnaPlotter.Utilities.AisSart.CategoryFromAny(v.Mmsi, v.Context);
                     string? glyphCategory = OnaPlotter.Utilities.AisPalette.ShipTypeCategory(v.ShipType);
 
+                    // CPA threat band (none / warning / danger) is computed
+                    // here against the helm's guard-zone settings. JS used
+                    // to redo this thresholding inline; lifting it up means
+                    // CpaTests.ClassifyThreat is the single source of truth
+                    // and the alarm pipeline + map overlay can't disagree.
+                    var threat = Cpa.ClassifyThreat(
+                        cpaNm, tcpaMin,
+                        Settings.CpaAlarmThreshold,
+                        Settings.GuardZoneLookaheadMinutes,
+                        Settings.GuardZoneWarningFactor,
+                        v.IsBuddy);
+                    string cpaThreat = threat switch
+                    {
+                        Cpa.Threat.Danger => "danger",
+                        Cpa.Threat.Warning => "warning",
+                        _ => "none"
+                    };
+
+                    // Display name resolution -- name -> mmsi -> null,
+                    // with buddy star prefix. Lifted out of JS so the
+                    // chart label and any future label-rendering surface
+                    // share the same fallback chain.
+                    string? baseName = !string.IsNullOrEmpty(v.Name) ? v.Name
+                        : !string.IsNullOrEmpty(v.Mmsi) ? v.Mmsi
+                        : null;
+                    string? displayName = baseName is null
+                        ? null
+                        : (v.IsBuddy ? "★ " + baseName : baseName);
+
                     return new
                     {
                         context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
+                        displayName,                   // pre-resolved label or null
                         lat = v.Latitude!.Value, lon = v.Longitude!.Value,
                         headingRad = v.Heading, cogRad = v.CourseOverGround,
                         sogMs = v.SpeedOverGround, shipType = v.ShipType,
@@ -1752,6 +1780,7 @@
                         shipColor = OnaPlotter.Utilities.AisPalette.ShipTypeColor(v.ShipType),
                         cpaNm,                         // nautical miles or null
                         tcpaMin,                       // minutes or null
+                        cpaThreat,                     // "none"/"warning"/"danger"
                         colregsLabel,
                         colregsRole,
                         // Seconds since we last heard from this target. JS
@@ -2537,10 +2566,9 @@
     private async Task ToggleNightMode()
     {
         // Persist the manual-toggle timestamp (12-h auto-suppress window).
-        // Previously tracked in an in-memory field that reset on every
-        // page navigation, so leaving and re-entering the Map page
-        // would immediately let auto-night flip back, fighting the
-        // helm's last choice.
+        // Lives in IAppSettings rather than a component field so leaving
+        // and re-entering the Map page doesn't let auto-night flip back
+        // and fight the helm's last choice.
         await Settings.MarkManualNightToggleAsync();
         nightMode = !nightMode;
         await Settings.SetNightModeAsync(nightMode);
@@ -2588,9 +2616,7 @@
 
         // Respect recent manual toggles. Source of truth is
         // Settings.LastManualNightToggleUtc so the window survives
-        // navigation / reload (audit said the 1-hour window reset
-        // on every Map re-entry, which it used to because the field
-        // was an in-memory DateTime? on the component).
+        // navigation / reload.
         if (Settings.LastManualNightToggleUtc is DateTime t
             && (now - t).TotalMinutes < ManualNightOverrideMinutes) return;
 
