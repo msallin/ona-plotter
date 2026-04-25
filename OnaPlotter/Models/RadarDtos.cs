@@ -236,41 +236,50 @@ internal sealed class LegendColorConverter : JsonConverter<RadarColor>
         if (reader.TokenType == JsonTokenType.String)
             return ParseHex(reader.GetString());
 
-        if (reader.TokenType == JsonTokenType.StartObject)
+        // Defensive: if the value is something we don't recognise (a
+        // packed-int colour, an [r,g,b] tuple, null, etc.), skip the
+        // entire value so the parent reader stays in sync. Without
+        // this a stray array would leave the reader at StartArray and
+        // the LegendPixel deserialiser would either throw or silently
+        // mis-parse subsequent properties. Transparent black is the
+        // right "I don't know what colour you meant" rendering.
+        if (reader.TokenType != JsonTokenType.StartObject)
         {
-            byte r = 0, g = 0, b = 0, a = 255;
-            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
-            {
-                if (reader.TokenType != JsonTokenType.PropertyName) continue;
-                var name = reader.GetString();
-                reader.Read();
-                // If the value isn't a primitive number, advance the
-                // reader PAST the whole value (object / array / etc.)
-                // rather than swallowing only the first token. The
-                // earlier code left the reader mid-value and the outer
-                // loop's EndObject check tripped on the nested object's
-                // closing brace, dropping every subsequent property.
-                byte v;
-                if (reader.TokenType == JsonTokenType.Number)
-                {
-                    v = (byte)Math.Clamp(reader.GetInt32(), 0, 255);
-                }
-                else
-                {
-                    v = 0;
-                    reader.Skip();
-                }
-                switch (name)
-                {
-                    case "r": r = v; break;
-                    case "g": g = v; break;
-                    case "b": b = v; break;
-                    case "a": a = v; break;
-                }
-            }
-            return new RadarColor(r, g, b, a);
+            if (reader.TokenType == JsonTokenType.StartArray) reader.Skip();
+            return default;
         }
-        return default;
+
+        byte r = 0, g = 0, b = 0, a = 255;
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+        {
+            if (reader.TokenType != JsonTokenType.PropertyName) continue;
+            var name = reader.GetString();
+            reader.Read();
+            // If the value isn't a primitive number, advance the
+            // reader PAST the whole value (object / array / etc.)
+            // rather than swallowing only the first token. The
+            // earlier code left the reader mid-value and the outer
+            // loop's EndObject check tripped on the nested object's
+            // closing brace, dropping every subsequent property.
+            byte v;
+            if (reader.TokenType == JsonTokenType.Number)
+            {
+                v = (byte)Math.Clamp(reader.GetInt32(), 0, 255);
+            }
+            else
+            {
+                v = 0;
+                reader.Skip();
+            }
+            switch (name)
+            {
+                case "r": r = v; break;
+                case "g": g = v; break;
+                case "b": b = v; break;
+                case "a": a = v; break;
+            }
+        }
+        return new RadarColor(r, g, b, a);
     }
 
     public override void Write(Utf8JsonWriter writer, RadarColor value, JsonSerializerOptions options)

@@ -224,10 +224,9 @@ create a gitignored overlay at
 ```
 
 `ASPNETCORE_ENVIRONMENT=Development` (set by the launch profile)
-picks it up automatically. `RadarServerUrl` is an optional escape
-hatch for hitting Mayara's standalone port directly (default 6502)
-instead of the SK server's built-in radar stream proxy; not needed
-for the common openplotter setup.
+picks it up automatically. The radar overlay reaches Mayara through
+the SK server's built-in proxy at the same origin, so no separate
+host/port config is needed.
 
 ### Tests
 

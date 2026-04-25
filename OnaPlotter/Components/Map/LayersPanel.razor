@@ -119,7 +119,7 @@
     [Parameter] public EventCallback<(SignalkChart chart, bool inQuickBar)> OnToggleChartQuickBar { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggleRadar { get; set; }
-    [Parameter] public EventCallback<(RadarInfo radar, int powerValue)> OnSetRadarPower { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, RadarPower power)> OnSetRadarPower { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, int rangeMeters)> OnSetRadarRange { get; set; }
     [Parameter] public EventCallback<(SignalkRoute route, bool enabled)> OnToggleRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }

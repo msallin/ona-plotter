@@ -220,6 +220,44 @@ public class RadarApiParseTests
     }
 
     [Test]
+    public async Task LegendPixel_Color_NullDegradesToTransparent()
+    {
+        // A non-conforming server could ship `"color": null`. The
+        // converter must degrade to transparent black (default RadarColor)
+        // rather than throw, otherwise one bad pixel bricks legend setup.
+        const string json = """{ "type": "normal", "color": null }""";
+        var p = JsonSerializer.Deserialize<LegendPixel>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        await Assert.That(p).IsNotNull();
+        await Assert.That(p!.Color).IsEqualTo(default(RadarColor));
+    }
+
+    [Test]
+    public async Task LegendPixel_Color_ArrayFormDegradesToTransparent()
+    {
+        // RGB-tuple form (`[r, g, b]`) is not in the spec but plausible
+        // from a misconfigured provider. The converter must NOT throw
+        // on token-kind mismatch -- treat as transparent and keep
+        // parsing the rest of the legend.
+        const string json = """{ "type": "normal", "color": [255, 0, 0] }""";
+        var p = JsonSerializer.Deserialize<LegendPixel>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        await Assert.That(p).IsNotNull();
+        await Assert.That(p!.Color).IsEqualTo(default(RadarColor));
+    }
+
+    [Test]
+    public async Task LegendPixel_Color_NumberFormDegradesToTransparent()
+    {
+        // Likewise for a packed integer; not in spec, must not throw.
+        const string json = """{ "type": "normal", "color": 16711680 }""";
+        var p = JsonSerializer.Deserialize<LegendPixel>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        await Assert.That(p).IsNotNull();
+        await Assert.That(p!.Color).IsEqualTo(default(RadarColor));
+    }
+
+    [Test]
     public async Task Capabilities_ParsesDocSample()
     {
         const string json = """

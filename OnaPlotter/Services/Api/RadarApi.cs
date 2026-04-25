@@ -33,7 +33,7 @@ public sealed class RadarApi : IRadarApi
 
     public async Task<IReadOnlyList<RadarInfo>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.CombineRadar(SignalKUrls.RadarsPath);
+        var url = _baseUrl.Combine(SignalKUrls.RadarsPath);
         HttpResponseMessage response;
         try { response = await _http.GetAsync(url, ct); }
         catch (HttpRequestException) { return []; }        // server / plugin missing
@@ -106,7 +106,7 @@ public sealed class RadarApi : IRadarApi
     public async Task<RadarCapabilities?> GetCapabilitiesAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.CombineRadar(SignalKUrls.RadarCapabilities(radarId));
+        var url = _baseUrl.Combine(SignalKUrls.RadarCapabilities(radarId));
         try
         {
             using var response = await _http.GetAsync(url, ct);
@@ -120,7 +120,7 @@ public sealed class RadarApi : IRadarApi
     public async Task<Dictionary<string, ControlValue>?> GetControlsAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.CombineRadar(SignalKUrls.RadarControls(radarId));
+        var url = _baseUrl.Combine(SignalKUrls.RadarControls(radarId));
         try
         {
             using var response = await _http.GetAsync(url, ct);
@@ -135,7 +135,7 @@ public sealed class RadarApi : IRadarApi
     {
         if (string.IsNullOrEmpty(radarId) || string.IsNullOrEmpty(controlId))
             return ApiResult.Fail("missing radar or control id");
-        var url = _baseUrl.CombineRadar(SignalKUrls.RadarControl(radarId, controlId));
+        var url = _baseUrl.Combine(SignalKUrls.RadarControl(radarId, controlId));
         try
         {
             using var response = await _http.PutAsJsonAsync(url, value, s_json, ct);
@@ -182,7 +182,7 @@ public sealed class RadarApi : IRadarApi
     public async Task<IReadOnlyList<RadarArpaTarget>?> GetTargetsAsync(string radarId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.CombineRadar(SignalKUrls.RadarTargets(radarId));
+        var url = _baseUrl.Combine(SignalKUrls.RadarTargets(radarId));
         try
         {
             using var response = await _http.GetAsync(url, ct);

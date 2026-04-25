@@ -27,10 +27,8 @@ internal static class ApiTestHelpers
         // initialising state AND capturing the parameter for later use
         // (CS9124). Either-or; reading through the property is uniform.
         public string BaseUrl { get; } = baseUrl;
-        public string RadarBaseUrl => BaseUrl;
         public Uri StreamUri(string subscribe = "none") => SignalKUrls.StreamWs(BaseUrl, subscribe);
         public string Combine(string path) => BaseUrl + path;
-        public string CombineRadar(string path) => BaseUrl + path;
     }
 
     private sealed class DelegateHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler
