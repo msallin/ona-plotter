@@ -150,12 +150,16 @@ class Reader {
 
     /** Reads a length-prefixed byte sequence as a view into the
      *  underlying buffer. No copy; the caller is expected to use it
-     *  within the same tick as the decode. */
+     *  within the same tick as the decode. Bounds-checks BEFORE
+     *  mutating offset so a malformed length (e.g. a varint claiming
+     *  4 GB) doesn't leave the reader in an out-of-bounds state that
+     *  any later code path would observe before the throw. */
     bytes() {
         const len = this.varint();
         const start = this.offset;
-        this.offset += len;
-        if (this.offset > this.buf.length) throw new Error('radar: bytes len ran off end');
+        const end = start + len;
+        if (end > this.buf.length) throw new Error('radar: bytes len ran off end');
+        this.offset = end;
         return new Uint8Array(this.buf.buffer, this.buf.byteOffset + start, len);
     }
 

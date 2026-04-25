@@ -106,6 +106,42 @@ public static class SignalKUrls
     }
 
     /// <summary>
+    /// Builds the per-radar binary spoke WebSocket URL from a base
+    /// http(s) URL. Path matches the SK server's built-in radar stream
+    /// proxy (the Mayara SK plugin re-emits spokes through this endpoint).
+    /// Mirrors <see cref="StreamWs"/>: ws over http, wss over https.
+    /// </summary>
+    public static Uri RadarSpokeWs(string baseUrl, string radarId)
+    {
+        var b = new Uri(baseUrl);
+        string ws = b.Scheme == "https" ? "wss" : "ws";
+        return new Uri(
+            $"{ws}://{b.Host}:{b.Port}/signalk/v2/api/vessels/self/radars/{Uri.EscapeDataString(radarId)}/stream");
+    }
+
+    /// <summary>
+    /// Validates that a server-supplied spoke WebSocket URL points at
+    /// the expected SK origin (scheme is ws/wss, host+port match the
+    /// page origin). A hostile or compromised plugin could otherwise
+    /// hand the client an attacker-controlled URL and the browser
+    /// would dutifully open it -- exfiltration / SSRF-via-browser /
+    /// pivoting onto LAN hosts the SK server itself can't reach.
+    /// Returns true when the URL is safe to connect to.
+    /// </summary>
+    public static bool IsSpokeUrlOnSameOrigin(string candidate, string baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(candidate)) return false;
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var u)) return false;
+        if (u.Scheme != "ws" && u.Scheme != "wss") return false;
+        var b = new Uri(baseUrl);
+        // Expected scheme transposition: http -> ws, https -> wss.
+        string expectedScheme = b.Scheme == "https" ? "wss" : "ws";
+        return string.Equals(u.Host, b.Host, StringComparison.OrdinalIgnoreCase)
+            && u.Port == b.Port
+            && string.Equals(u.Scheme, expectedScheme, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Extracts a resource UUID from a SignalK href. Accepts:
     ///   "/resources/routes/{id}", "/signalk/v2/api/resources/routes/{id}", or "{id}".
     /// </summary>

@@ -237,25 +237,14 @@ class RadarOverlay {
             // corresponds to byte value N.
             for (let i = 0; i < legend.pixels.length && i < 256; i++) {
                 const p = legend.pixels[i];
-                const rgba = parseLegendColor(p && p.color);
-                // Suppress blue-dominant "normal" echoes. Navico-style
-                // palettes paint sea clutter / noise as a blue ramp at
-                // the low-intensity end (bytes 1..6 on HALO); the
-                // resulting blue wash drowns the chart underneath
-                // without surfacing real targets the green/yellow/red
-                // band already shows clearly. We only filter type
-                // "normal" so doppler / history / target border
-                // markers (which legitimately use blue tints, e.g.
-                // doppler-receding) stay visible.
-                const type = p && p.type;
-                const isBlueDominant = rgba[2] > rgba[0] && rgba[2] > rgba[1];
-                if (type === 'normal' && isBlueDominant) {
+                if (shouldSuppressLowReturn(p, i, legend)) {
                     this.byteToRgba[i * 4 + 0] = 0;
                     this.byteToRgba[i * 4 + 1] = 0;
                     this.byteToRgba[i * 4 + 2] = 0;
                     this.byteToRgba[i * 4 + 3] = 0;
                     continue;
                 }
+                const rgba = parseLegendColor(p && p.color);
                 this.byteToRgba[i * 4 + 0] = rgba[0];
                 this.byteToRgba[i * 4 + 1] = rgba[1];
                 this.byteToRgba[i * 4 + 2] = rgba[2];
@@ -280,6 +269,11 @@ class RadarOverlay {
         }
         ws.binaryType = 'arraybuffer';
         this.ws = ws;
+        // Reset the backoff once we successfully open. A flaky link
+        // that drops repeatedly should re-stretch the wait, but the
+        // first reconnect after a long-stable session shouldn't have
+        // to climb back up the ladder.
+        ws.addEventListener('open', () => { this._reconnectMs = null; });
         ws.addEventListener('message', (ev) => this._onFrame(ev.data));
         ws.addEventListener('close', () => {
             if (this.destroyed) return;
@@ -293,9 +287,17 @@ class RadarOverlay {
     }
 
     _retryLater() {
-        // 3 s matches Freeboard-SK's retry cadence. Good enough;
-        // spoke streams don't usually reject reconnects.
-        setTimeout(() => this._openWebsocket(), 3000);
+        // Exponential backoff capped at 60 s. A permanently-dead
+        // radar with a flat 3 s retry burns battery on phone helms
+        // (waking the radio every three seconds for a connect that
+        // will never succeed); doubling each attempt up to a minute
+        // matches what a thoughtful operator would tolerate while
+        // still recovering quickly when the link comes back. Reset
+        // happens on successful open.
+        if (this._reconnectMs == null) this._reconnectMs = 3000;
+        const delay = this._reconnectMs;
+        this._reconnectMs = Math.min(delay * 2, 60000);
+        setTimeout(() => this._openWebsocket(), delay);
     }
 
     _onFrame(buffer) {
@@ -321,28 +323,29 @@ class RadarOverlay {
             this._scheduleReposition();
         }
 
-        // Before painting the new wedge, clear the pixels it covers
-        // so a moving-target trail doesn't blur with stale pixels.
-        // Cheap: we just zero a sector from first to last spoke in
-        // this batch. Freeboard does this with a clip+clear; we do
-        // it via the LUT by zeroing every pixel along the wedge.
-        //
-        // Faster approximation: zero every pixel at the exact spoke
-        // angles in this batch. Good enough because spokes usually
-        // arrive contiguously, so adjacent spokes' prior content is
-        // overwritten in the same batch anyway. If we ever see gappy
-        // batches we can widen this to a full angular sweep.
+        // Paint the new wedge. The painter folds clear-stale into
+        // the same loop as paint-new (writes alpha=0 where the new
+        // spoke says "no echo"), so each cell is touched at most
+        // once per batch instead of twice. Tracks the dirty rect
+        // across the batch so the upload at the end touches only
+        // the pixels we actually changed -- vs. uploading the full
+        // 16 MB ImageData at 17 fps under the previous code.
+        const dirty = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
         for (const spoke of spokes) {
-            this._clearSpokeIfNeeded(spoke);
-            this._paintSpoke(spoke);
+            this._paintSpoke(spoke, dirty);
         }
 
-        // Flush ImageData once per batch -- not once per spoke.
-        // No _scheduleReposition() here: the canvas element is
-        // directly parented in the overlay pane, so pixel updates
-        // show up without any DOM movement. Reposition is driven
-        // solely by boat-state / range changes.
-        this.ctx.putImageData(this.imageData, 0, 0);
+        // Flush only the dirty rectangle. Skip if no pixels actually
+        // changed (open water and the new spoke matched what was
+        // already there). No _scheduleReposition() here: the canvas
+        // element is directly parented in the overlay pane, so pixel
+        // updates show up without any DOM movement. Reposition is
+        // driven solely by boat-state / range changes.
+        if (dirty.maxX >= dirty.minX && dirty.maxY >= dirty.minY) {
+            const dw = dirty.maxX - dirty.minX + 1;
+            const dh = dirty.maxY - dirty.minY + 1;
+            this.ctx.putImageData(this.imageData, 0, 0, dirty.minX, dirty.minY, dw, dh);
+        }
         // On first-ever frame, make sure the canvas is actually in
         // the overlay pane. If no boat fix yet, the layer stays
         // detached and the canvas is invisible -- correct.
@@ -358,24 +361,19 @@ class RadarOverlay {
         this.ctx.clearRect(0, 0, this.canvasSize, this.canvasSize);
     }
 
-    _clearSpokeIfNeeded(spoke) {
-        // Zero the exact pixels this spoke will paint into so we
-        // don't blend atop a stale target.
-        const spokeIdx = this._spokeIndex(spoke);
-        const base = spokeIdx * this.maxSpokeLen;
-        const d = this.imageData.data;
-        const w = this.canvasSize;
-        const len = Math.min(spoke.data.length, this.maxSpokeLen);
-        for (let r = 0; r < len; r++) {
-            const x = this.xLut[base + r];
-            const y = this.yLut[base + r];
-            const p = (y * w + x) * 4;
-            d[p + 3] = 0;
-        }
-    }
-
-    /** @param {Spoke} spoke */
-    _paintSpoke(spoke) {
+    /**
+     * Paints one spoke into the ImageData and grows the dirty-rect
+     * accumulator. Folds the previous "clear stale, then paint" two-
+     * pass into one: when the new spoke's byte is transparent we
+     * zero the prior alpha (so a moving target leaves no trail), but
+     * skip the write entirely if the cell was already transparent --
+     * dominant case in open water, saves both the write and a dirty-
+     * rect entry.
+     *
+     * @param {Spoke} spoke
+     * @param {{minX:number,minY:number,maxX:number,maxY:number}} dirty
+     */
+    _paintSpoke(spoke, dirty) {
         const spokeIdx = this._spokeIndex(spoke);
         const base = spokeIdx * this.maxSpokeLen;
         const d = this.imageData.data;
@@ -384,17 +382,25 @@ class RadarOverlay {
         const len = Math.min(spoke.data.length, this.maxSpokeLen);
         for (let r = 0; r < len; r++) {
             const b = spoke.data[r];
-            // Bail early on transparent pixels -- common in open
-            // water and saves 4 writes.
-            const alpha = lut[b * 4 + 3];
-            if (alpha === 0) continue;
+            const newAlpha = lut[b * 4 + 3];
             const x = this.xLut[base + r];
             const y = this.yLut[base + r];
             const p = (y * w + x) * 4;
-            d[p + 0] = lut[b * 4 + 0];
-            d[p + 1] = lut[b * 4 + 1];
-            d[p + 2] = lut[b * 4 + 2];
-            d[p + 3] = alpha;
+            if (newAlpha === 0) {
+                // No echo. Skip the write (and the dirty-rect grow)
+                // when the cell was already transparent.
+                if (d[p + 3] === 0) continue;
+                d[p + 3] = 0;
+            } else {
+                d[p + 0] = lut[b * 4 + 0];
+                d[p + 1] = lut[b * 4 + 1];
+                d[p + 2] = lut[b * 4 + 2];
+                d[p + 3] = newAlpha;
+            }
+            if (x < dirty.minX) dirty.minX = x;
+            if (x > dirty.maxX) dirty.maxX = x;
+            if (y < dirty.minY) dirty.minY = y;
+            if (y > dirty.maxY) dirty.maxY = y;
         }
     }
 
@@ -511,8 +517,28 @@ function parseLegendColor(c) {
     return TRANSPARENT;
 }
 
+/** Decide whether a legend entry should be rendered transparent.
+ *  Drives the "drop sea-clutter" UX: Navico-style palettes paint low-
+ *  intensity normal echoes (sea clutter, noise) as a blue ramp, which
+ *  drowns the chart underneath without surfacing real targets the
+ *  green/yellow/red band already shows clearly. The legend's own
+ *  `mediumReturn` field marks the byte index where "real" returns
+ *  start, so suppressing 1..mediumReturn-1 (type=normal only) targets
+ *  the cause regardless of what colour the provider chose to render
+ *  with. Doppler / history / target-border markers (which legitimately
+ *  use blue tints, e.g. doppler-receding) stay visible because their
+ *  type is not "normal". When the legend ships no mediumReturn we
+ *  suppress nothing -- a non-Navico provider may not have a clutter
+ *  band at the low end at all.
+ *  Exported via `_internal` for test coverage. */
+function shouldSuppressLowReturn(pixel, index, legend) {
+    if (!pixel || pixel.type !== 'normal') return false;
+    if (typeof legend?.mediumReturn !== 'number') return false;
+    return index >= 1 && index < legend.mediumReturn;
+}
+
 // Exposed for tests; not part of the public interop API.
-export const _internal = { DEFAULT_LEGEND_PIXELS, parseHexRgba, parseLegendColor };
+export const _internal = { DEFAULT_LEGEND_PIXELS, parseHexRgba, parseLegendColor, shouldSuppressLowReturn };
 
 // ---------------------------------------------------------------------
 // CanvasGeoLayer: minimal Leaflet L.Layer subclass that parents a

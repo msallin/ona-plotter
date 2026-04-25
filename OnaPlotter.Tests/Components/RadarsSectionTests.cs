@@ -167,7 +167,97 @@ public class RadarsSectionTests
         await Assert.That(labels).Contains("1/4 nm");
         await Assert.That(labels).Contains("1/2 nm");
         await Assert.That(labels).Contains("1 nm");
-        // 1234 has no description, falls back to FormatRange ("0.7 nm").
-        await Assert.That(labels.Any(l => l.EndsWith("nm") && l != "1/4 nm" && l != "1/2 nm" && l != "1 nm")).IsTrue();
+        // 1234 m has no description: falls back to FormatRange, which
+        // formats >=1000 m as `(m/1852.0):F1` nm. Pin the exact value
+        // so a regression that returns "0.0 nm" or "1234 m" is caught
+        // (the previous predicate-based assertion accepted either).
+        await Assert.That(labels).Contains("0.7 nm");
+    }
+
+    [Test]
+    public async Task Range_Dropdown_Falls_Through_To_SupportedRanges_When_ValidValues_Empty()
+    {
+        // An older / faulty server could ship validValues: [] instead
+        // of omitting the field. The pattern guard `{ Length: > 0 }`
+        // forces the fallthrough; pin it so a future refactor that
+        // drops the length check would pin the dropdown to an empty
+        // list with no signal.
+        using var ctx = new Bunit.TestContext();
+        var caps = new Dictionary<string, RadarCapabilities?>
+        {
+            ["r1"] = new RadarCapabilities
+            {
+                SupportedRanges = [500, 1000, 2000],
+                Controls = new()
+                {
+                    ["range"] = new ControlDefinition { ValidValues = [] },
+                },
+            },
+        };
+        var cut = RenderExpanded(ctx, [Radar("r1", 1000)], caps);
+        await Assert.That(OptionValues(cut)).IsEquivalentTo([500, 1000, 2000]);
+    }
+
+    [Test]
+    public async Task Range_Dropdown_Falls_Through_To_Default_When_SupportedRanges_Empty()
+    {
+        // Both validValues and supportedRanges absent / empty -> the
+        // sane default ladder shows. Without this fall-through the
+        // dropdown would render as an empty <select>, making the radar
+        // unconfigurable in the brief gap before /capabilities lands
+        // and on misconfigured providers.
+        using var ctx = new Bunit.TestContext();
+        var caps = new Dictionary<string, RadarCapabilities?>
+        {
+            ["r1"] = new RadarCapabilities
+            {
+                SupportedRanges = [],
+                Controls = new(),
+            },
+        };
+        var cut = RenderExpanded(ctx, [Radar("r1", 1000)], caps);
+        var values = OptionValues(cut);
+        await Assert.That(values.Length).IsGreaterThan(5);
+        await Assert.That(values).Contains(1000);
+    }
+
+    [Test]
+    public async Task Range_Dropdown_Selects_Exactly_The_Current_Range()
+    {
+        // Blazor renders `selected` on the option whose value matches
+        // the select's `value=` attribute -- we no longer have to (and
+        // shouldn't) emit an explicit `selected=@(v == rangeM)` per
+        // option ourselves. Pin that exactly one option ends up
+        // selected and it's the radar's current range.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderExpanded(ctx, [Radar("r1", 1000)]);
+        var selected = cut.FindAll(".radar-range-select option")
+            .Where(o => o.HasAttribute("selected"))
+            .ToList();
+        await Assert.That(selected.Count).IsEqualTo(1);
+        await Assert.That(selected[0].GetAttribute("value")!).IsEqualTo("1000");
+    }
+
+    [Test]
+    public async Task Status_Chip_Class_Is_Whitelisted()
+    {
+        // Hostile / mid-upgrade Status strings must render as the
+        // neutral "unknown" suffix; otherwise a server-controlled
+        // string becomes a class-token-injection primitive (e.g.
+        // "transmit hidden" would visually disappear the chip).
+        // Spec-defined values render with their own suffix.
+        using var ctx = new Bunit.TestContext();
+
+        var transmitting = new RadarInfo { Id = "r1", Status = "transmit", Range = 1000 };
+        var attacker = new RadarInfo { Id = "r2", Status = "transmit hidden", Range = 1000 };
+        var unknown = new RadarInfo { Id = "r3", Status = "weatherMode", Range = 1000 };
+
+        var cut = RenderExpanded(ctx, [transmitting, attacker, unknown]);
+        var chips = cut.FindAll(".radar-status-chip");
+        await Assert.That(chips.Count).IsEqualTo(3);
+        await Assert.That(chips[0].GetAttribute("class")!).Contains("radar-status-transmit");
+        await Assert.That(chips[1].GetAttribute("class")!).Contains("radar-status-unknown");
+        await Assert.That(chips[1].GetAttribute("class")!).DoesNotContain("hidden");
+        await Assert.That(chips[2].GetAttribute("class")!).Contains("radar-status-unknown");
     }
 }

@@ -17,10 +17,8 @@ public class SignalkClientAtonTests
     private sealed class FakeBaseUrl : ISignalKBaseUrl
     {
         public string BaseUrl => "http://test.local";
-        public string RadarBaseUrl => BaseUrl;
         public Uri StreamUri(string subscribe = "none") => new("ws://test.local");
         public string Combine(string path) => BaseUrl + path;
-        public string CombineRadar(string path) => BaseUrl + path;
     }
 
     private static (SignalkClient client, AtonStore store, AisStore ais) NewClient()

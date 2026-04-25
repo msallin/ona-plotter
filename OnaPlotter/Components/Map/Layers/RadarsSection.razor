@@ -32,7 +32,12 @@
                     @DisplayName(r)
                     @if (r.Status is string s)
                     {
-                        <span class="radar-status-chip radar-status-@s.ToLowerInvariant()" title="@s">
+                        @* Class suffix is whitelisted to known spec values
+                           so a hostile server can't smuggle additional
+                           class tokens (e.g. "transmit hidden") that
+                           visually neutralise the chip. The free-form
+                           server string still shows in title + chip text. *@
+                        <span class="radar-status-chip radar-status-@StatusClassSuffix(s)" title="@s">
                             @s.ToUpperInvariant()
                         </span>
                     }
@@ -49,7 +54,7 @@
                     <button type="button"
                             class="map-btn radar-power-btn @(transmitting ? "ap-engaged" : "")"
                             title="@(transmitting ? "Stop transmitting" : "Start transmitting")"
-                            @onclick="() => OnSetPower.InvokeAsync((r, transmitting ? 1 : 2))">
+                            @onclick="() => OnSetPower.InvokeAsync((r, transmitting ? RadarPower.Standby : RadarPower.Transmit))">
                         @(transmitting ? "Standby" : "Transmit")
                     </button>
                     @if (r.Range is int rangeM)
@@ -65,10 +70,14 @@
                                read-only values the server still rejects
                                on PUT. Labels prefer the per-value
                                descriptions ("1/4 nm", "24 nm") over our
-                               own metric/nm formatting. *@
+                               own metric/nm formatting. The select's
+                               own value attribute drives the initial
+                               selection; per-option `selected` would
+                               double-bind and silently win the conflict
+                               in unpredictable browser order. *@
                             @foreach (var v in GetRangeOptions(r))
                             {
-                                <option value="@v" selected="@(v == rangeM)">@FormatRangeFor(r, v)</option>
+                                <option value="@v">@FormatRangeFor(r, v)</option>
                             }
                         </select>
                     }
@@ -84,7 +93,7 @@
     [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> Capabilities { get; set; } =
         new Dictionary<string, RadarCapabilities?>();
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggle { get; set; }
-    [Parameter] public EventCallback<(RadarInfo radar, int powerValue)> OnSetPower { get; set; }
+    [Parameter] public EventCallback<(RadarInfo radar, RadarPower power)> OnSetPower { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, int rangeMeters)> OnSetRange { get; set; }
 
     /// <summary>Per-radar range-dropdown options. Pecking order:
@@ -167,6 +176,21 @@
         !string.IsNullOrWhiteSpace(r.Name) ? r.Name!
         : !string.IsNullOrWhiteSpace(r.Model) ? r.Model!
         : r.Id;
+
+    // Whitelisted CSS-class suffix for the status chip. Only the four
+    // power states the spec defines map to a per-state colour; anything
+    // else (server bug, mid-upgrade, unknown vendor extension) renders
+    // with the neutral "unknown" style instead of letting the raw
+    // string become a class-token-injection vector.
+    private static string StatusClassSuffix(string status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "transmit" => "transmit",
+            "standby" => "standby",
+            "off" => "off",
+            "preparing" => "preparing",
+            _ => "unknown",
+        };
 
     // Range comes in metres per spec. Small ranges read better in
     // metres (200m vs 0.1nm); switch over 1000 m to nm for typical
