@@ -63,6 +63,33 @@ public class ServerNotificationsAlarmRuleTests
     }
 
     [Test]
+    public async Task DeriveTitleAndDefault_SingleSegmentUnknown_NoDotInTail()
+    {
+        // Edge case: plugin emits a single-segment notification with no
+        // dotted hierarchy, e.g. "notifications.heartbeat". The tail
+        // "heartbeat" contains no '.' so lastIndexOf returns -1, and
+        // the fallback branch must not crash on the slice. Pin the
+        // outcome: leaf == full tail, title is uppercased.
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.heartbeat");
+        await Assert.That(title).IsEqualTo("HEARTBEAT");
+        await Assert.That(msg).IsEqualTo("heartbeat");
+    }
+
+    [Test]
+    public async Task DeriveTitleAndDefault_BarePrefixOnly_GracefulFallback()
+    {
+        // Pathological: someone publishes literally "notifications." with
+        // an empty tail. Should still produce something the banner can
+        // render rather than throwing. Empty string title is acceptable;
+        // the assertion is "no exception, message round-trips".
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.");
+        await Assert.That(title).IsEqualTo("");
+        await Assert.That(msg).IsEqualTo("");
+    }
+
+    [Test]
     public async Task BuildAlarmInfo_UsesPathAsTargetKey()
     {
         // TargetKey = path so two notifications under the same Title

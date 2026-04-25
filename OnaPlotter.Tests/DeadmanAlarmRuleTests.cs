@@ -148,4 +148,52 @@ public class DeadmanAlarmRuleTests
         // Day value (5 min) applied because night override is 0. 6 > 5 -> fire.
         await Assert.That(rule.Check(ctx)).IsNotNull();
     }
+
+    [Test]
+    public async Task DayMode_NightOnlyConfigured_StaysSilent()
+    {
+        // Inverse of the Night_Override case: a helm who only wants the
+        // deadman watch at night sets day=0, night=15. During day mode
+        // the rule MUST stay silent -- the ternary picks the day value
+        // (0) when NightMode is false, and 0 disables the feature. A
+        // refactor that flipped the precedence (e.g. always preferring
+        // the larger of the two) would silently re-enable a watch the
+        // user explicitly turned off for daytime cruising.
+        var now = DateTime.UtcNow;
+        var tracker = new DeadmanTracker();
+        tracker.ForceLastInteraction(now.AddHours(-2));
+        var rule = new DeadmanAlarmRule(tracker);
+
+        var ctx = new AlarmEvaluationContext(new NavigationData(), [],
+            new FakeSettings
+            {
+                DeadmanTimeoutMinutes = 0,
+                DeadmanNightMinutes = 15,
+                NightMode = false
+            },
+            now, _ => false);
+
+        await Assert.That(rule.Check(ctx)).IsNull();
+    }
+
+    [Test]
+    public async Task NightMode_BothZero_StaysSilent()
+    {
+        // Both timeouts off -> feature fully disabled regardless of mode.
+        var now = DateTime.UtcNow;
+        var tracker = new DeadmanTracker();
+        tracker.ForceLastInteraction(now.AddHours(-3));
+        var rule = new DeadmanAlarmRule(tracker);
+
+        var ctx = new AlarmEvaluationContext(new NavigationData(), [],
+            new FakeSettings
+            {
+                DeadmanTimeoutMinutes = 0,
+                DeadmanNightMinutes = 0,
+                NightMode = true
+            },
+            now, _ => false);
+
+        await Assert.That(rule.Check(ctx)).IsNull();
+    }
 }

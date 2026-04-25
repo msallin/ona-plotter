@@ -93,4 +93,46 @@ public class FieldFreshnessTests
         nav.Apply("environment.depth.belowTransducer", 5.3);
         await Assert.That(nav.FreshnessOf(nav.DepthUpdatedUtc)).IsEqualTo(FieldFreshness.Live);
     }
+
+    [Test]
+    public async Task FreshnessOf_AtExactly10s_IsStale()
+    {
+        // The Live -> Stale boundary uses strict less-than (age < 10s),
+        // so age == 10s flips to Stale. Pin this so a tweak to the
+        // threshold to "<=" can't silently keep the HUD reading "Live"
+        // for a sensor that's a tick past the freshness budget.
+        var (nav, clock) = Make();
+        nav.Apply("environment.depth.belowTransducer", 5.0);
+        clock.Now = clock.Now.AddSeconds(10);
+        await Assert.That(nav.FreshnessOf(nav.DepthUpdatedUtc)).IsEqualTo(FieldFreshness.Stale);
+    }
+
+    [Test]
+    public async Task FreshnessOf_JustBefore10s_IsLive()
+    {
+        // The other side of the same boundary -- 9.999 s is still live.
+        var (nav, clock) = Make();
+        nav.Apply("environment.depth.belowTransducer", 5.0);
+        clock.Now = clock.Now.AddMilliseconds(9999);
+        await Assert.That(nav.FreshnessOf(nav.DepthUpdatedUtc)).IsEqualTo(FieldFreshness.Live);
+    }
+
+    [Test]
+    public async Task FreshnessOf_AtExactly30s_IsDead()
+    {
+        // Stale -> Dead boundary, strict less-than: 30 s flips to Dead.
+        var (nav, clock) = Make();
+        nav.Apply("environment.depth.belowTransducer", 5.0);
+        clock.Now = clock.Now.AddSeconds(30);
+        await Assert.That(nav.FreshnessOf(nav.DepthUpdatedUtc)).IsEqualTo(FieldFreshness.Dead);
+    }
+
+    [Test]
+    public async Task FreshnessOf_JustBefore30s_IsStale()
+    {
+        var (nav, clock) = Make();
+        nav.Apply("environment.depth.belowTransducer", 5.0);
+        clock.Now = clock.Now.AddMilliseconds(29999);
+        await Assert.That(nav.FreshnessOf(nav.DepthUpdatedUtc)).IsEqualTo(FieldFreshness.Stale);
+    }
 }

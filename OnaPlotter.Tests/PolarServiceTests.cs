@@ -237,4 +237,51 @@ public class PolarServiceTests
             await Assert.That(opt.Value.VmgKn >= 0).IsTrue();
         }
     }
+
+    [Test]
+    public async Task GetTargetSpeed_ExactlyOnLowestTwsAxis_NoInterpolationDrift()
+    {
+        // Exact-boundary case: Bracket clamps when v <= axis[0]; if the
+        // clamp condition were strict-less-than, an exact-6 TWS would
+        // fall into the interior loop and use a span where v == axis[0]
+        // gives fraction 0 anyway -- both paths must produce the same
+        // value. Pin the result so a future refactor of Bracket can't
+        // silently shift the boundary.
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var atLowest = svc.GetTargetSpeed(45, 6);   // axis[0]
+        await Assert.That(atLowest).IsEqualTo(4.0); // header column 6 row 45
+    }
+
+    [Test]
+    public async Task GetTargetSpeed_ExactlyOnHighestTwsAxis_NoOverflow()
+    {
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var atHighest = svc.GetTargetSpeed(45, 12); // axis[^1]
+        await Assert.That(atHighest).IsEqualTo(5.8); // header column 12 row 45
+    }
+
+    [Test]
+    public async Task GetTargetSpeed_ExactlyOnLowestTwaAxis_NoInterpolationDrift()
+    {
+        // Same boundary check on the TWA axis.
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var v = svc.GetTargetSpeed(45, 8); // TWA axis[0], TWS 8
+        await Assert.That(v).IsEqualTo(5.0);
+    }
+
+    [Test]
+    public async Task GetTargetSpeed_ExactlyOnHighestTwaAxis_NoInterpolationDrift()
+    {
+        var svc = NewService();
+        await svc.ImportAsync(SampleCsv);
+
+        var v = svc.GetTargetSpeed(135, 8); // TWA axis[^1], TWS 8
+        await Assert.That(v).IsEqualTo(5.8);
+    }
 }

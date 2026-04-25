@@ -323,4 +323,122 @@ public class AisStoreTests
 
         await Assert.That(raised).IsEqualTo(1);
     }
+
+    [Test]
+    public async Task RemoveContext_DoesNotBlocklist_ReAcceptsLaterDelta()
+    {
+        // Radar tracking ends and SignalkClient calls RemoveContext to
+        // clear the target. The same target id can come back later (a
+        // dropped contact reacquired) -- unlike Evict, RemoveContext
+        // must NOT add the context to the blocklist or the new delta
+        // is silently dropped and the operator sees the target vanish
+        // from the chart.
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        const string radarCtx = "radar.42.t7";
+
+        store.Apply(radarCtx, "navigation.position", pos);
+        await Assert.That(store.Count).IsEqualTo(1);
+
+        store.RemoveContext(radarCtx);
+        await Assert.That(store.Count).IsEqualTo(0);
+
+        // Next delta on the same context must be accepted.
+        store.Apply(radarCtx, "navigation.position", pos);
+        await Assert.That(store.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task RemoveContext_OnUnknownContext_NoOp()
+    {
+        // Defensive: a stray cleanup call on a context that was never
+        // tracked (or was already removed) must not throw, allocate, or
+        // fire OnAisUpdated.
+        var store = new AisStore();
+        int raised = 0;
+        store.OnAisUpdated += () => raised++;
+
+        store.RemoveContext("radar.99.unknown");
+
+        await Assert.That(store.Count).IsEqualTo(0);
+        await Assert.That(raised).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RemoveContext_NullOrEmpty_NoOp()
+    {
+        // Wire-protocol robustness: the dispatcher might pass an empty
+        // context if a delta is malformed. Same expectation as the
+        // SetName / Evict guards.
+        var store = new AisStore();
+        int raised = 0;
+        store.OnAisUpdated += () => raised++;
+
+        store.RemoveContext("");
+        store.RemoveContext(null!);
+
+        await Assert.That(raised).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetVessels_AfterApplyWithoutPosition_FiltersToPositional()
+    {
+        // Snapshot rebuild must filter on .Latitude/.Longitude. A vessel
+        // whose only delta was a name (AIS msg type 5 ahead of any 1/3/4)
+        // should NOT appear in the rendered list -- it would draw at
+        // (0,0) off the African coast otherwise.
+        var store = new AisStore();
+        store.Apply("vessels.urn:mrn:imo:mmsi:1", "name",
+            JsonSerializer.SerializeToElement("NAMED BUT NO POSITION"));
+        store.Apply("vessels.urn:mrn:imo:mmsi:2", "navigation.position",
+            JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 }));
+
+        var snapshot = store.GetVessels();
+        await Assert.That(snapshot.Length).IsEqualTo(1);
+        await Assert.That(snapshot[0].Mmsi).IsEqualTo("2");
+    }
+
+    [Test]
+    public async Task GetVessels_ConcurrentApplyAndRead_NoCorruptionAndEventualConsistency()
+    {
+        // Race scenario: WebSocket thread is firing Apply() while the UI
+        // thread reads GetVessels(). The cache rebuild must never throw
+        // (e.g. mid-rebuild dictionary mutation) and the final read must
+        // contain every vessel that finished applying. Tests the Volatile
+        // version-check + ConcurrentDictionary contract together.
+        var store = new AisStore();
+        const int writers = 4;
+        const int perWriter = 200;
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        var stopReads = false;
+
+        var writeTasks = Enumerable.Range(0, writers).Select(w => Task.Run(() =>
+        {
+            for (int i = 0; i < perWriter; i++)
+                store.Apply($"vessels.urn:mrn:imo:mmsi:{w}-{i}",
+                    "navigation.position", pos);
+        })).ToArray();
+
+        // Reader hammers GetVessels concurrently; failure mode would be
+        // an exception bubbling out (collection-modified) or a snapshot
+        // missing items that a subsequent read still doesn't show.
+        var readTask = Task.Run(() =>
+        {
+            int observedMax = 0;
+            while (!stopReads)
+            {
+                int n = store.GetVessels().Length;
+                if (n > observedMax) observedMax = n;
+            }
+            return observedMax;
+        });
+
+        await Task.WhenAll(writeTasks);
+        stopReads = true;
+        _ = await readTask;
+
+        // After all writers finished, the next snapshot must include
+        // every vessel.
+        await Assert.That(store.GetVessels().Length).IsEqualTo(writers * perWriter);
+    }
 }

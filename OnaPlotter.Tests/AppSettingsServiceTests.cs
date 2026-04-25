@@ -63,6 +63,30 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task LoadDouble_AcceptsInvariantDot_RegardlessOfStoredFormat()
+    {
+        // Pin the LOAD direction (the SetCpaAlarmThresholdAsync test
+        // above already pins the SAVE direction). A user on de-CH /
+        // fr-FR running an older buggy build might have a "0,5" in
+        // localStorage; the current loader uses InvariantCulture and
+        // must fall back to the default rather than parse a comma as
+        // a thousands separator and produce a nonsense threshold.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("cpaAlarmThreshold", "0.42");          // canonical
+        await kv.SetAsync("guardZoneLookaheadMinutes", "12,5");  // comma locale
+        await kv.SetAsync("windShiftAlarmThreshold", "garbage"); // corrupt
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.CpaAlarmThreshold).IsEqualTo(0.42);
+        // Comma-formatted value rejected -> default applied
+        await Assert.That(svc.GuardZoneLookaheadMinutes).IsEqualTo(10.0);
+        // Garbage rejected -> default applied
+        await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(15.0);
+    }
+
+    [Test]
     public async Task LastManualNightToggleUtc_RoundTripsFromIsoString()
     {
         // Regression test for the ConflictingDateTimeRoundtripStyles
