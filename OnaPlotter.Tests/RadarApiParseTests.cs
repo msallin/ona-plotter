@@ -375,6 +375,41 @@ public class RadarApiParseTests
     }
 
     [Test]
+    public async Task ControlValue_PutBody_IsMinimalSpecShape()
+    {
+        // Pin the over-the-wire shape for control writes: spec says
+        // {"value":N}, full stop. Mayara rejects the bloated body
+        // (HTTP 400) when the typed accessors NumericValue / StringValue
+        // leak into the JSON, or when ControlValue's optional sector /
+        // zone / rect fields serialise as nulls. Both are fixed via
+        // [JsonIgnore] on the accessors and WhenWritingNull on the
+        // serializer options used by RadarApi.SetControlAsync.
+        var body = new ControlValue { Value = JsonSerializer.SerializeToElement(1852) };
+        // Mirror the options bag used by RadarApi (see RadarApi.s_json).
+        var opts = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        };
+        var wire = JsonSerializer.Serialize(body, opts);
+        await Assert.That(wire).IsEqualTo("""{"value":1852}""");
+    }
+
+    [Test]
+    public async Task ControlValue_PutBody_OmitsTypedAccessors()
+    {
+        // Belt-and-braces against the [JsonIgnore] being removed:
+        // even WITHOUT WhenWritingNull, the typed accessors must
+        // never serialise -- they're not wire fields and would
+        // confuse spec-conformant servers.
+        var body = new ControlValue { Value = JsonSerializer.SerializeToElement("HALO") };
+        var defaults = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var wire = JsonSerializer.Serialize(body, defaults);
+        await Assert.That(wire).DoesNotContain("NumericValue");
+        await Assert.That(wire).DoesNotContain("StringValue");
+    }
+
+    [Test]
     public async Task ControlValue_SectorShape_RoundTrips()
     {
         // value = start angle, endValue = end angle, enabled toggle.
