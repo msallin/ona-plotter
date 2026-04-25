@@ -4,15 +4,12 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Pins the tier-registry contract used by SignalkClient to build the
-/// subscription set. Each path belongs to exactly one tier; the
-/// ReceiveLoop issues one subscribe per tier with the matching
-/// context + period.
+/// subscription set. Each path lives in exactly one
+/// <c>SubscriptionTier</c>; the ReceiveLoop iterates Tiers and issues
+/// one subscribe per tier with the matching context + period + policy.
 ///
-/// Previous design had overlapping arrays and ran set algebra at
-/// subscribe time; the tests here now verify the cleaner partition
-/// model. If a future edit re-introduces duplication OR puts a
-/// high-dynamic field into SelfSlow, one of these tests surfaces it
-/// before the change lands on CI.
+/// If a future edit re-introduces duplication OR puts a high-dynamic
+/// field into SelfSlow, one of these tests surfaces it before CI.
 /// </summary>
 public class SignalkClientSubscriptionPathsTests
 {
@@ -30,20 +27,57 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
-    public async Task Tiers_Partition_The_Path_Registry()
+    public async Task Tiers_Have_NonEmpty_Names_And_Contexts()
     {
-        // Each Paths entry has exactly one tier -- no entry duplication,
-        // no path is both SelfFast and SelfSlow. Trivially true given
-        // PathTier is an enum and each PathSubscription is immutable,
-        // but the test catches the "accidentally listed same path
-        // twice with different tiers" edit.
-        var byPath = SignalkClient.Paths
-            .GroupBy(p => p.Path)
-            .ToDictionary(g => g.Key, g => g.ToArray());
-        foreach (var (path, entries) in byPath)
+        // Every shipped tier needs a name (used by tests + diagnostics)
+        // and a context (used as the subscribe message's "context"
+        // field). An empty-string context would subscribe under the
+        // server's default which is a wire bug we don't want quietly.
+        foreach (var tier in SignalkClient.Tiers)
         {
-            await Assert.That(entries.Length).IsEqualTo(1);
+            await Assert.That(string.IsNullOrEmpty(tier.Name)).IsFalse();
+            await Assert.That(string.IsNullOrEmpty(tier.Context)).IsFalse();
         }
+    }
+
+    [Test]
+    public async Task Each_Path_Lives_In_Exactly_One_Tier()
+    {
+        // Subscribing the same path under two tiers means the server
+        // delivers it twice with potentially conflicting periods. The
+        // partition model is the whole point of the refactor; this
+        // test catches the "copy-pasted path into a second tier" edit.
+        var byPath = SignalkClient.Tiers
+            .SelectMany(t => t.Paths.Select(p => new { Tier = t.Name, Path = p }))
+            .GroupBy(x => x.Path)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Tier).ToArray());
+
+        foreach (var (path, tierNames) in byPath)
+        {
+            await Assert.That(tierNames.Length).IsEqualTo(1);
+        }
+    }
+
+    [Test]
+    public async Task Notification_Tier_Uses_Instant_Policy()
+    {
+        // Edge-triggered notifications (perpendicularPassed,
+        // arrivalCircleEntered) MUST ride policy=instant or the server
+        // can coalesce the exact transition that drives auto-advance.
+        var notif = SignalkClient.Tiers.Single(t => t.Name == "SelfFastNotifications");
+        await Assert.That(notif.Policy).IsEqualTo("instant");
+        await Assert.That(notif.Context).IsEqualTo("vessels.self");
+    }
+
+    [Test]
+    public async Task Slow_Tier_Period_Is_The_Slow_Constant()
+    {
+        // Pin the slow-tier period so a future edit can't quietly
+        // promote anchor / tide / draft to a 1 Hz subscription. Any
+        // bump to SlowSubscriptionPeriodMs is intentional and the
+        // test will track it via the constant.
+        var slow = SignalkClient.Tiers.Single(t => t.Name == "SelfSlow");
+        await Assert.That(slow.PeriodMs).IsEqualTo(SignalkClient.SlowSubscriptionPeriodMs);
     }
 
     [Test]
@@ -159,9 +193,10 @@ public class SignalkClientSubscriptionPathsTests
         // SelfFast and SelfSlow have to be disjoint or the same path
         // gets subscribed at two different periods -- the server
         // would deliver it twice.
-        var fastPaths = SignalkClient.Paths
-            .Where(p => p.Tier == SignalkClient.PathTier.SelfFast)
-            .Select(p => p.Path).ToHashSet();
+        var fastPaths = SignalkClient.Tiers
+            .Where(t => t.Name == "SelfFast")
+            .SelectMany(t => t.Paths)
+            .ToHashSet();
         foreach (var slow in SignalkClient.SlowSelfPaths)
         {
             await Assert.That(fastPaths).DoesNotContain(slow);
