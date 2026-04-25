@@ -18,10 +18,14 @@ public sealed class RadarApi : IRadarApi
 
     // One reusable options bag. The legend-color converter is
     // registered on the DTOs via attribute; no options-level setup
-    // required.
+    // required. WhenWritingNull keeps PUT bodies (control writes)
+    // minimal -- ControlValue's optional sector / zone / rect fields
+    // would otherwise serialise as "auto":null,"endValue":null,...
+    // and Mayara rejects the bloated body with HTTP 400.
     private static readonly JsonSerializerOptions s_json = new()
     {
         PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
     };
 
     public RadarApi(HttpClient http, ISignalKBaseUrl baseUrl)

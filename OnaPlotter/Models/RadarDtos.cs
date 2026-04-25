@@ -443,7 +443,12 @@ public sealed class ControlValue
 
     /// <summary>Numeric-valued controls: the primary value as a
     /// double, or null when the control is a string / button / the
-    /// value is missing.</summary>
+    /// value is missing. <see cref="JsonIgnoreAttribute"/> because
+    /// this is a typed accessor over <see cref="Value"/>, not a wire
+    /// field -- without the attribute STJ would serialise it on
+    /// every PUT and the radar provider would reject the unknown
+    /// "NumericValue" property.</summary>
+    [JsonIgnore]
     public double? NumericValue
     {
         get
@@ -454,6 +459,9 @@ public sealed class ControlValue
         }
     }
 
+    /// <summary>String-valued controls (custom name, model name).
+    /// See <see cref="NumericValue"/> for why this is <see cref="JsonIgnoreAttribute"/>.</summary>
+    [JsonIgnore]
     public string? StringValue
     {
         get
