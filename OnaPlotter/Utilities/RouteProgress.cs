@@ -9,10 +9,39 @@ namespace OnaPlotter.Utilities;
 public static class RouteProgress
 {
     /// <summary>
+    /// Picks the active leg index (= index of the next waypoint we're
+    /// heading to) for the route renderer. The server's
+    /// <c>navigation.course.activeRoute.pointIndex</c> is authoritative
+    /// when present -- it's what the SK course engine has been
+    /// tracking through every leg advance, so on page reload it
+    /// correctly reflects the "already driven" portion of the route.
+    /// Falls back to a lat/lon -> closest-waypoint lookup only when
+    /// the server didn't ship pointIndex (older provider, mid-upgrade)
+    /// AND the next-point coordinates have arrived. Returns null when
+    /// nothing is known yet, so the caller can skip the JS dispatch
+    /// rather than render the entire route as undriven.
+    /// </summary>
+    public static int? ResolveLegIndex(
+        int? serverPointIndex,
+        double[][]? coords,
+        double? nextLat,
+        double? nextLon)
+    {
+        if (serverPointIndex is int p && p >= 0) return p;
+        if (coords is null || coords.Length == 0) return null;
+        if (nextLat is double lat && nextLon is double lon)
+        {
+            return FindClosestWaypointIndex(coords, lat, lon);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Returns the index of the route waypoint nearest to (lat, lon).
     /// Used to pin SignalK's next-point payload (which carries lat/lon
     /// but not an index) to a concrete vertex in the route coordinate
-    /// list.
+    /// list. Prefer <see cref="ResolveLegIndex"/> in render code so the
+    /// server's authoritative pointIndex wins when present.
     /// </summary>
     /// <remarks>
     /// Coordinates are passed as <c>[lat, lon]</c> pairs to match the JS
