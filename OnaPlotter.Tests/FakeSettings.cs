@@ -68,6 +68,11 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
     public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
+    public Task ApplyMobileFirstRunDefaultsAsync(bool isMobile)
+    {
+        if (isMobile) SidebarCollapsed = true;
+        return Task.CompletedTask;
+    }
     public Task SetDepthAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetCpaAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;

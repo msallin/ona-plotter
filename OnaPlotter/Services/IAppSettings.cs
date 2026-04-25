@@ -234,6 +234,17 @@ public interface IAppSettings
     Task SetNightModeAsync(bool value);
     Task SetSidebarCollapsedAsync(bool value);
 
+    /// <summary>Applies a first-run sidebar default that depends on the
+    /// caller-supplied viewport hint. On a phone-width screen the rail
+    /// would otherwise eat half the visible chart, so we collapse to
+    /// the icon rail by default. No-op once the user has explicitly
+    /// toggled the chevron (we track an "explicit" flag separately so
+    /// the auto-default doesn't override an intentional choice). The
+    /// caller (MainLayout) decides what counts as "mobile" and passes
+    /// the bool here -- keeps the settings service free of viewport /
+    /// JS interop concerns.</summary>
+    Task ApplyMobileFirstRunDefaultsAsync(bool isMobile);
+
     /// <summary>Stamps <see cref="ChartsSeeded"/> so the first-run
     /// OpenSeaMap seed only runs once per device.</summary>
     Task MarkChartsSeededAsync();

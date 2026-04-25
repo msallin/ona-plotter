@@ -17,6 +17,13 @@ public sealed class AppSettingsService : IAppSettings
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
 
+    // True once the user (or the mobile first-run default) has stamped
+    // a value for "sidebarCollapsed.v1" into the KV store. Used by
+    // ApplyMobileFirstRunDefaultsAsync to distinguish "unset" from
+    // "explicitly set to false" so the auto-collapse on phone width
+    // doesn't fight an intentional desktop -> phone resize.
+    private bool _sidebarCollapsedExplicit;
+
     public bool NightMode { get; private set; }
     public bool NightModeAuto { get; private set; } = false;
     public DateTime? LastManualNightToggleUtc { get; private set; }
@@ -84,7 +91,12 @@ public sealed class AppSettingsService : IAppSettings
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
-            SidebarCollapsed = await LoadBool("sidebarCollapsed.v1", false);
+            // Read raw to detect whether the key was ever stored. A
+            // missing value triggers ApplyMobileFirstRunDefaultsAsync's
+            // viewport-aware default; a stored "false" is respected.
+            var sidebarRaw = await LoadString("sidebarCollapsed.v1");
+            _sidebarCollapsedExplicit = sidebarRaw is not null;
+            SidebarCollapsed = sidebarRaw == "true";
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 3.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
@@ -209,7 +221,23 @@ public sealed class AppSettingsService : IAppSettings
     public async Task SetSidebarCollapsedAsync(bool value)
     {
         SidebarCollapsed = value;
+        _sidebarCollapsedExplicit = true;
         await Save("sidebarCollapsed.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task ApplyMobileFirstRunDefaultsAsync(bool isMobile)
+    {
+        // Already-set sidebar wins (user toggled it intentionally on a
+        // previous visit, or the mobile-default ran on an earlier mount
+        // -- either way no overwrite). Desktop viewport doesn't change
+        // anything; the historical default is "expanded" which is
+        // already correct.
+        if (_sidebarCollapsedExplicit) return;
+        if (!isMobile) return;
+        SidebarCollapsed = true;
+        _sidebarCollapsedExplicit = true;
+        await Save("sidebarCollapsed.v1", "true");
         OnSettingsChanged?.Invoke();
     }
 

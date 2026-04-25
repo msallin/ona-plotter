@@ -29,6 +29,12 @@ deploy/staging/
 # the committed default that everyone else inherits.
 OnaPlotter/wwwroot/appsettings.Development.json
 
+# Generated build stamp consumed by the boot loading screen. Written
+# by the StampBuildInfo MSBuild target so the helm sees the current
+# git hash + UTC build time before Blazor renders. Kept out of source
+# so every build doesn't show up as a working-tree diff.
+OnaPlotter/wwwroot/js/version.g.js
+
 ## Playwright (running from repo root or UiTests)
 test-results/
 playwright-report/

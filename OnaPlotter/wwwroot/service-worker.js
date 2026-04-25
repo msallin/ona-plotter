@@ -54,7 +54,12 @@
 //             a main-as-scroll-container fallback under :fullscreen
 //             so the helm can scroll Settings while in real
 //             fullscreen.
-const CACHE_NAME = 'ona-plotter-v15';
+// v15 -> v16: branded boot loading screen (favicon-derived SVG +
+//             spinner + build stamp from js/version.g.js); phone
+//             first-run default collapses the sidebar to the icon
+//             rail; nav menu picks up a tighter @media trim under
+//             600px so labels + icons fit without crowding.
+const CACHE_NAME = 'ona-plotter-v16';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

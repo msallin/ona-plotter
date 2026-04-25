@@ -80,6 +80,26 @@
       <Compile Include="$(OnaBuildInfoFile)" />
       <FileWrites Include="$(OnaBuildInfoFile)" />
     </ItemGroup>
+
+    <!-- Same hash + timestamp written as a tiny JS module. The boot
+         loading screen (rendered before the Blazor runtime takes
+         over) reads window.OnaPlotterBuild to show a small build
+         stamp under the spinner: handy for verifying the helm is
+         on the freshly-deployed bundle without waiting for Blazor
+         to render the Settings page. Lives directly in wwwroot/js
+         so it ships as a regular static asset; gitignored to keep
+         build artefacts out of source. -->
+    <PropertyGroup>
+      <OnaVersionJsFile>$(MSBuildProjectDirectory)\wwwroot\js\version.g.js</OnaVersionJsFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <OnaVersionLines Include="// &lt;auto-generated /&gt; written by StampBuildInfo target." />
+      <OnaVersionLines Include="window.OnaPlotterBuild = { hash: &quot;$(OnaGitHash)&quot;, utc: &quot;$(OnaBuildUtc)&quot; }%3B" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(OnaVersionJsFile)"
+                      Lines="@(OnaVersionLines)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
   </Target>
 
 </Project>
