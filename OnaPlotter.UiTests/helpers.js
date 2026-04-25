@@ -14,11 +14,25 @@ export function collectErrors(page) {
         // Filter expected noise.
         if (text.includes('favicon')) return;
         if (text.includes('websocket') && text.includes('1006')) return;
-        // In dev, the webapp runs at localhost:5282 without a SignalK server;
-        // every /signalk/v1/applicationData/* and /signalk/v2/api/* request
-        // 404s. Those are handled by SafeLoad -> toast, not a crash; filter
-        // them so the smoke test doesn't false-positive on dev.
-        if (text.includes('404') && text.includes('Not Found')) return;
+        // The browser auto-logs every failed HTTP response as a generic
+        // console error: "Failed to load resource: the server responded
+        // with a status of XXX (YYY)". The C# side handles 4xx gracefully
+        // (TrackApi returns null on non-2xx, SafeLoad surfaces a toast),
+        // so these are not crashes the smoke test should care about.
+        //
+        // Two real-world cases we tolerate:
+        //   - 404: webapp running at localhost:5282 without a SignalK
+        //     server, or v1/applicationData paths the server hasn't
+        //     written to yet.
+        //   - 400: SignalK history API (/signalk/v2/api/history/values)
+        //     when no history provider plugin is installed (the History
+        //     page already shows a "no track data" hint in that case).
+        //
+        // 401/403 stay flagged (auth misconfig is a real issue) and
+        // 5xx stays flagged (server crash is a real issue).
+        if (text.includes('Failed to load resource')
+            && (text.includes('400 (Bad Request)')
+                || text.includes('404 (Not Found)'))) return;
         // Blazor logs every unhandled exception through its crit logger; it's
         // covered separately by assertBlazorErrorNotVisible.
         if (text.includes('crit:')) return;

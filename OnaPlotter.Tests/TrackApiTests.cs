@@ -169,4 +169,27 @@ public class TrackApiTests
         var pts = await api.GetServerTrackAsync("1h");
         await Assert.That(pts).IsNull();
     }
+
+    [Test]
+    public async Task History_BadRequest_Returns_Null()
+    {
+        // signalk-server returns 400 (not 404) for /history/values when
+        // it has a history-route handler registered but the request
+        // shape doesn't match the registered OpenAPI spec, or when the
+        // provider plugin rejects the params. Same outcome as 404 from
+        // the page's perspective: TrackApi returns null and the History
+        // page shows the "no track data" hint instead of a stale map.
+        // Pinned because the CI dev SignalK image hits this path on
+        // every page load and the smoke test relies on the empty-state
+        // fallback (no exception, no Blazor crash UI).
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("""{"error":"history provider not configured"}""",
+                    System.Text.Encoding.UTF8, "application/json"),
+            });
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var pts = await api.GetServerTrackAsync("1h");
+        await Assert.That(pts).IsNull();
+    }
 }
