@@ -94,3 +94,43 @@ test('parseHexRgba: short / malformed hex returns transparent', () => {
     assert.deepEqual(parseHexRgba('not a colour'), [0, 0, 0, 0]);
     assert.deepEqual(parseHexRgba('#abc'), [0, 0, 0, 0]);  // 3-digit not supported
 });
+
+const { wrapSpoke, headingToSpokeOffset } = _internal;
+
+test('wrapSpoke: in-range index unchanged', () => {
+    assert.equal(wrapSpoke(0, 2048), 0);
+    assert.equal(wrapSpoke(1024, 2048), 1024);
+    assert.equal(wrapSpoke(2047, 2048), 2047);
+});
+
+test('wrapSpoke: above-range index wraps', () => {
+    // Wire schema is uint32 so this is mostly defensive against
+    // angle + heading overflow than incoming values; pin it anyway.
+    assert.equal(wrapSpoke(2048, 2048), 0);
+    assert.equal(wrapSpoke(4096, 2048), 0);
+    assert.equal(wrapSpoke(2050, 2048), 2);
+});
+
+test('wrapSpoke: negative index wraps to positive', () => {
+    // The reason the helper exists: JS `%` preserves the sign of the
+    // dividend, so `-1 % 2048` is -1, which would index out of bounds.
+    assert.equal(wrapSpoke(-1, 2048), 2047);
+    assert.equal(wrapSpoke(-2049, 2048), 2047);
+});
+
+test('headingToSpokeOffset: north-up returns 0', () => {
+    assert.equal(headingToSpokeOffset(0, 2048), 0);
+});
+
+test('headingToSpokeOffset: full revolution wraps to spokes count', () => {
+    // 2*pi rad maps to a full revolution; before wrapSpoke applies,
+    // the offset itself can be the full count.
+    assert.equal(headingToSpokeOffset(2 * Math.PI, 2048), 2048);
+});
+
+test('headingToSpokeOffset: quarter turn east is +N/4', () => {
+    // 90deg starboard rotates the bow-relative angle by spokes/4 to
+    // align onto north-up. Pin so a future sign-flip / 2pi swap
+    // would visibly fail.
+    assert.equal(headingToSpokeOffset(Math.PI / 2, 2048), 512);
+});

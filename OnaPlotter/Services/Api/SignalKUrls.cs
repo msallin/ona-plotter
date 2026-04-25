@@ -75,7 +75,6 @@ public static class SignalKUrls
     public static string RadarControls(string id) => $"{Radar(id)}/controls";
     public static string RadarControl(string id, string controlId) =>
         $"{RadarControls(id)}/{Uri.EscapeDataString(controlId)}";
-    public static string RadarTargets(string id) => $"{Radar(id)}/targets";
 
     /// <summary>REST API exposed by sbender9/signalk-buddylist-plugin.
     /// A 200 means the plugin is installed and running; 404 means it isn't.</summary>

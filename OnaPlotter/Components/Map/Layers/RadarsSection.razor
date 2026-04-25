@@ -89,7 +89,7 @@
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<RadarInfo> Radars { get; set; } = [];
-    [Parameter, EditorRequired] public HashSet<string> Enabled { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlySet<string> Enabled { get; set; } = new HashSet<string>();
     [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> Capabilities { get; set; } =
         new Dictionary<string, RadarCapabilities?>();
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggle { get; set; }

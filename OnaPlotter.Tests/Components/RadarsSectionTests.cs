@@ -30,9 +30,10 @@ public class RadarsSectionTests
         RadarInfo[] radars,
         IReadOnlyDictionary<string, RadarCapabilities?>? caps = null)
     {
+        IReadOnlySet<string> enabled = new HashSet<string>();
         var cut = ctx.RenderComponent<RadarsSection>(p => p
             .Add(x => x.Radars, radars)
-            .Add(x => x.Enabled, [])
+            .Add(x => x.Enabled, enabled)
             .Add(x => x.Capabilities, caps ?? new Dictionary<string, RadarCapabilities?>()));
         cut.Find(".section-toggle").Click();
         return cut;

@@ -33,6 +33,8 @@
 @inject DeadmanTracker DeadmanTracker
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject OnaPlotter.Services.Radar.RadarOverlayManager RadarOverlay
+@inject OnaPlotter.Services.Radar.JsRadarOverlayHost RadarOverlayHost
 
 <PageTitle>Map</PageTitle>
 
@@ -393,9 +395,9 @@
                      EnabledCharts="enabledCharts"
                      EnabledRoutes="enabledRoutes"
                      QuickBarCharts="quickBarCharts"
-                     AvailableRadars="availableRadars"
-                     EnabledRadars="enabledRadars"
-                     RadarCapabilities="radarCapabilities"
+                     AvailableRadars="RadarOverlay.Radars"
+                     EnabledRadars="RadarOverlay.EnabledRadarIds"
+                     RadarCapabilities="RadarOverlay.Capabilities"
                      ServerTrackVisible="serverTrackVisible"
                      WeatherOverlayVisible="weatherOverlayVisible"
                      AtonsVisible="Settings.AtonsVisible"
@@ -528,19 +530,11 @@
     private bool weatherOverlayVisible;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
-    // Radar devices discovered via the Signal K Radar API v3.1.
-    // Populated on map init; re-fetched on the same resource-poll
-    // cadence as routes / waypoints. Empty when no provider plugin
-    // is installed (most servers).
-    private List<RadarInfo> availableRadars = [];
-    // Per-radar static capabilities (supportedRanges, spokes geometry,
-    // legend, control definitions). Fetched once per radar when the
-    // list first includes it, cached for the session -- the spec
-    // guarantees capabilities don't change while the radar is alive.
-    // Drives the range dropdown's actual options so the server
-    // doesn't reject our PUT with "X is not a legal value".
-    private readonly Dictionary<string, RadarCapabilities?> radarCapabilities = new(StringComparer.Ordinal);
-    private readonly HashSet<string> enabledRadars = [];
+    // Radar overlay state (device list, capabilities cache, enabled
+    // overlays, sticky-off prefs, last-range cache, auto-toggle
+    // policy) lives in RadarOverlayManager so the page stays a
+    // wiring layer. Page accesses RadarOverlay.Radars / .Capabilities
+    // for the layers panel binding.
     private readonly HashSet<string> enabledCharts = [];
     private readonly HashSet<string> enabledRoutes = [];
     // Subset of availableCharts the user has pinned to the on-map
@@ -638,8 +632,7 @@
             if (regions is not null) loadedRegions = regions;
             if (radars is not null)
             {
-                availableRadars = radars.ToList();
-                await OnRadarListUpdatedAsync();
+                await RadarOverlay.OnRadarListUpdatedAsync(radars);
             }
             RebuildFilteredLayers();
             await InvokeAsync(StateHasChanged);
@@ -698,180 +691,13 @@
         Toasts.Success("Waypoint renamed");
     }
 
-    // Per-radar sticky preference for "user explicitly turned the
-    // overlay off this session". Auto-toggle (which follows transmit
-    // status) honours this and won't re-enable until the user re-ticks
-    // the layer checkbox. Cleared on page reload by design -- a sticky
-    // off is "for this trip", not a persisted setting.
-    private readonly HashSet<string> _userDisabledRadarOverlays = new(StringComparer.Ordinal);
+    // The radar overlay's session state, the auto-toggle policy, and
+    // the JS interop all live in RadarOverlayManager. The page just
+    // forwards UI callbacks into it. The host's JS module reference
+    // is wired in OnAfterRenderAsync once leafletInterop.js loads.
+    private Task OnToggleRadarCallback((RadarInfo radar, bool enabled) t) =>
+        RadarOverlay.OnUserToggleAsync(t.radar, t.enabled);
 
-    // User-clicked the layer checkbox. Updates the sticky preference
-    // so a later auto-toggle pass respects the deliberate choice, then
-    // delegates to the same enable / disable internals the auto pass
-    // uses so all paths take exactly one code route into JS.
-    private async Task OnToggleRadarCallback((RadarInfo radar, bool enabled) t)
-    {
-        if (module is null) return;
-        if (string.IsNullOrEmpty(t.radar.Id)) return;
-        if (t.enabled)
-        {
-            _userDisabledRadarOverlays.Remove(t.radar.Id);
-            await EnableRadarOverlayAsync(t.radar);
-        }
-        else
-        {
-            _userDisabledRadarOverlays.Add(t.radar.Id);
-            await DisableRadarOverlayAsync(t.radar.Id);
-        }
-    }
-
-    // Open the spoke WebSocket + paint canvas for one radar. Internal
-    // primitive used by both the user-driven toggle and the
-    // transmit-follows-overlay auto pass; doesn't touch the sticky
-    // user-preference set so the auto pass can call it freely.
-    private async Task EnableRadarOverlayAsync(RadarInfo radar)
-    {
-        if (module is null) return;
-        if (string.IsNullOrEmpty(radar.Id)) return;
-        if (enabledRadars.Contains(radar.Id)) return;        // already on; idempotent
-
-        // Capabilities are already fetched + cached eagerly after the
-        // device list loads; this just reads what's there. A null
-        // cached value means the fetch failed earlier; in that case
-        // we fall back to whatever the device-list response gave us
-        // for geometry and a null legend (the JS layer ships a
-        // Navico-default fallback palette).
-        if (!radarCapabilities.TryGetValue(radar.Id, out var caps))
-        {
-            caps = await RadarApi.GetCapabilitiesAsync(radar.Id);
-            radarCapabilities[radar.Id] = caps;
-        }
-        // Clamp server-supplied geometry. The JS layer allocates a
-        // (2*maxLen)^2 ImageData backed by the spokes*maxLen LUT, so
-        // an unbounded value from a hostile / buggy plugin would
-        // crash the tab. RadarOverlayLimits caps to a sane envelope
-        // (Navico HALO is 2048/1024; we accept up to 8192/4096).
-        int spokes = RadarOverlayLimits.ClampSpokesPerRevolution(
-            caps?.SpokesPerRevolution ?? radar.SpokesPerRevolution);
-        int maxLen = RadarOverlayLimits.ClampSpokeLength(
-            caps?.MaxSpokeLength ?? radar.MaxSpokeLength);
-        int range = radar.Range ?? RadarOverlayLimits.DefaultRangeMetres;
-
-        // Spoke WebSocket URL. Prefer the server-supplied value (spec
-        // intent), but only if it points back at our SK origin -- a
-        // compromised plugin could otherwise hand us an attacker URL
-        // and the browser would dutifully open it (exfil / SSRF). On
-        // mismatch or absence, build the canonical SK-proxied URL
-        // ourselves; matches freeboard-sk's fallback.
-        string url = !string.IsNullOrEmpty(radar.SpokeDataUrl)
-                     && SignalKUrls.IsSpokeUrlOnSameOrigin(radar.SpokeDataUrl!, SkBaseUrl.BaseUrl)
-            ? radar.SpokeDataUrl!
-            : SignalKUrls.RadarSpokeWs(SkBaseUrl.BaseUrl, radar.Id).ToString();
-
-        var cfg = new
-        {
-            radarId = radar.Id,
-            spokeDataUrl = url,
-            spokesPerRevolution = spokes,
-            maxSpokeLength = maxLen,
-            range,
-            legend = caps?.Legend,
-            opacity = 0.75,
-        };
-        try { await module.InvokeVoidAsync("startRadarOverlay", cfg); }
-        catch (JSDisconnectedException) { return; }
-        catch (JSException ex) { Toasts.Error($"Radar {radar.Name}: overlay failed ({ex.Message})"); return; }
-        enabledRadars.Add(radar.Id);
-    }
-
-    private async Task DisableRadarOverlayAsync(string radarId)
-    {
-        if (module is null) return;
-        if (string.IsNullOrEmpty(radarId)) return;
-        if (!enabledRadars.Contains(radarId)) return;        // already off; idempotent
-        try { await module.InvokeVoidAsync("stopRadarOverlay", radarId); }
-        catch (JSDisconnectedException) { }
-        catch (JSException) { /* teardown should not block */ }
-        enabledRadars.Remove(radarId);
-    }
-
-    // After every radar-list refresh: turn the overlay on for any
-    // radar that just started transmitting (unless the user has
-    // stickily disabled it), and tear down the overlay for any radar
-    // that's no longer transmitting (the empty canvas is just noise
-    // and the WebSocket would reconnect-loop forever). The decision
-    // rule lives in RadarOverlayAutoToggle so the policy is unit-
-    // testable without bUnit / JS interop.
-    private async Task AutoToggleRadarOverlaysForTransmitChangesAsync()
-    {
-        foreach (var r in availableRadars)
-        {
-            if (string.IsNullOrEmpty(r.Id)) continue;
-            var action = RadarOverlayAutoToggle.Decide(
-                status: r.Status,
-                overlayOn: enabledRadars.Contains(r.Id),
-                userDisabled: _userDisabledRadarOverlays.Contains(r.Id));
-            switch (action)
-            {
-                case RadarOverlayAction.Enable:  await EnableRadarOverlayAsync(r); break;
-                case RadarOverlayAction.Disable: await DisableRadarOverlayAsync(r.Id); break;
-            }
-        }
-    }
-
-    // One entry point for "the radar list just changed" — covers both
-    // the init load and the periodic poll. Folds the three things that
-    // need to happen in order (capability prefetch, transmit-follow
-    // overlay toggling, range-diff push to JS) so the two callsites
-    // can't drift; init forgot the range push before this consolidation.
-    private async Task OnRadarListUpdatedAsync()
-    {
-        await EnsureRadarCapabilitiesAsync();
-        await AutoToggleRadarOverlaysForTransmitChangesAsync();
-        await PushRadarRangeUpdatesAsync();
-    }
-
-    // Per-radar last-known range, so the periodic poll only pushes
-    // updates to the JS layer when something actually changed (range
-    // is the only field the layer cares about; opacity and other
-    // bits are derived from the user's UI choices).
-    private readonly Dictionary<string, int> _lastRadarRange = new(StringComparer.Ordinal);
-
-    /// <summary>Fetch and cache capabilities for every currently-known
-    /// radar we don't have caps for yet. Idempotent: previously-fetched
-    /// ids are skipped (spec guarantees capabilities are static per
-    /// radar), so the polling path doesn't thrash the server. Failures
-    /// are stored as null so we don't re-request on every poll --
-    /// we re-try on the next add of the same id via the enable path.</summary>
-    private async Task EnsureRadarCapabilitiesAsync()
-    {
-        foreach (var r in availableRadars)
-        {
-            if (string.IsNullOrEmpty(r.Id)) continue;
-            if (radarCapabilities.ContainsKey(r.Id)) continue;
-            try
-            {
-                var caps = await RadarApi.GetCapabilitiesAsync(r.Id);
-                radarCapabilities[r.Id] = caps;
-            }
-            catch (Exception) { radarCapabilities[r.Id] = null; }
-        }
-    }
-
-    private async Task PushRadarRangeUpdatesAsync()
-    {
-        if (module is null) return;
-        foreach (var r in availableRadars)
-        {
-            if (string.IsNullOrEmpty(r.Id) || r.Range is not int range) continue;
-            if (!enabledRadars.Contains(r.Id)) continue;        // overlay off; nothing to update
-            if (_lastRadarRange.TryGetValue(r.Id, out var prev) && prev == range) continue;
-            _lastRadarRange[r.Id] = range;
-            try { await module.InvokeVoidAsync("updateRadarRange", r.Id, range); }
-            catch (JSDisconnectedException) { return; }
-            catch (JSException) { /* JS gone; next push retries */ }
-        }
-    }
 
     /// <summary>Sets a radar's power state via REST and re-syncs the
     /// device list afterwards so the UI reflects the new value. Only
@@ -908,8 +734,9 @@
             if (!r.Success) { Toasts.Error($"Radar range: {r.Error ?? "rejected by server"}"); return; }
         }
         catch (Exception ex) { Toasts.Error($"Radar range: {ex.Message}"); return; }
-        // Refresh so the new range shows in the UI; PushRadarRangeUpdatesAsync
-        // inside RefreshServerResourcesAsync forwards it to the JS layer.
+        // Refresh so the new range shows in the UI; the manager's
+        // OnRadarListUpdatedAsync (called from RefreshServerResourcesAsync)
+        // diffs and forwards it to the JS layer.
         await RefreshServerResourcesAsync();
     }
 
@@ -1201,6 +1028,14 @@
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
         dotNetRef = DotNetObjectReference.Create(this);
 
+        // Hand the loaded module to the radar overlay host so the
+        // manager can drive it. Wired here (not in DI) because the
+        // module reference only exists after the import resolves.
+        // Toast surface plugged in once -- the manager calls back
+        // through here on overlay-start failures.
+        RadarOverlayHost.SetModule(module);
+        RadarOverlay.OnError = msg => Toasts.Error(msg);
+
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
         // position on the first delta anyway, so preferring the saved
@@ -1273,8 +1108,7 @@
         // Radar device discovery. Empty list when no radar-provider
         // plugin is installed, which is the common case; the Layers
         // panel hides the section entirely in that state.
-        availableRadars   = (radarsTask.Result ?? []).ToList();
-        await OnRadarListUpdatedAsync();
+        await RadarOverlay.OnRadarListUpdatedAsync(radarsTask.Result ?? []);
 
         // Optional: buddy-list plugin. Silently no-ops if not installed.
         // The returned list seeds AisStore so vessels tracked later get

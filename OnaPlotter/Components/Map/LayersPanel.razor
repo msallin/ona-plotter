@@ -104,7 +104,7 @@
     [Parameter, EditorRequired] public HashSet<string> EnabledRoutes { get; set; } = [];
     [Parameter, EditorRequired] public HashSet<string> QuickBarCharts { get; set; } = [];
     [Parameter] public IReadOnlyList<RadarInfo> AvailableRadars { get; set; } = [];
-    [Parameter] public HashSet<string> EnabledRadars { get; set; } = [];
+    [Parameter] public IReadOnlySet<string> EnabledRadars { get; set; } = new HashSet<string>();
     [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> RadarCapabilities { get; set; } =
         new Dictionary<string, RadarCapabilities?>();
     [Parameter] public bool ServerTrackVisible { get; set; }
