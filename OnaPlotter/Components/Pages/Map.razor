@@ -640,6 +640,7 @@
             {
                 availableRadars = radars.ToList();
                 await EnsureRadarCapabilitiesAsync();
+                await AutoToggleRadarOverlaysForTransmitChangesAsync();
                 await PushRadarRangeUpdatesAsync();
             }
             RebuildFilteredLayers();
@@ -699,60 +700,114 @@
         Toasts.Success("Waypoint renamed");
     }
 
-    // Radar overlay toggle. On enable, hand the JS layer the spoke
-    // WebSocket URL + capabilities so it can open the stream. On
-    // disable, tear down the canvas + socket by id.
+    // Per-radar sticky preference for "user explicitly turned the
+    // overlay off this session". Auto-toggle (which follows transmit
+    // status) honours this and won't re-enable until the user re-ticks
+    // the layer checkbox. Cleared on page reload by design -- a sticky
+    // off is "for this trip", not a persisted setting.
+    private readonly HashSet<string> _userDisabledRadarOverlays = new(StringComparer.Ordinal);
+
+    // User-clicked the layer checkbox. Updates the sticky preference
+    // so a later auto-toggle pass respects the deliberate choice, then
+    // delegates to the same enable / disable internals the auto pass
+    // uses so all paths take exactly one code route into JS.
     private async Task OnToggleRadarCallback((RadarInfo radar, bool enabled) t)
     {
         if (module is null) return;
         if (string.IsNullOrEmpty(t.radar.Id)) return;
-
         if (t.enabled)
         {
-            // Capabilities are already fetched + cached eagerly after
-            // the device list loads; this just reads what's there. A
-            // null cached value means the fetch failed earlier; in
-            // that case we fall back to whatever the device-list
-            // response gave us for geometry and a null legend (the JS
-            // layer ships a Navico-default fallback palette).
-            if (!radarCapabilities.TryGetValue(t.radar.Id, out var caps))
-            {
-                caps = await RadarApi.GetCapabilitiesAsync(t.radar.Id);
-                radarCapabilities[t.radar.Id] = caps;
-            }
-            int spokes = caps?.SpokesPerRevolution ?? t.radar.SpokesPerRevolution ?? 2048;
-            int maxLen = caps?.MaxSpokeLength ?? t.radar.MaxSpokeLength ?? 1024;
-            int range  = t.radar.Range ?? 1000;
-
-            // Build spokeDataUrl. Spec says each RadarInfo includes
-            // one; if the server didn't populate it (older mayara),
-            // construct it from the current page origin -- same
-            // conversion freeboard-sk does.
-            string url = !string.IsNullOrEmpty(t.radar.SpokeDataUrl)
-                ? t.radar.SpokeDataUrl!
-                : BuildSpokeDataUrl(t.radar.Id);
-
-            var cfg = new
-            {
-                radarId = t.radar.Id,
-                spokeDataUrl = url,
-                spokesPerRevolution = spokes,
-                maxSpokeLength = maxLen,
-                range,
-                legend = caps?.Legend,
-                opacity = 0.75,
-            };
-            try { await module.InvokeVoidAsync("startRadarOverlay", cfg); }
-            catch (JSDisconnectedException) { return; }
-            catch (JSException ex) { Toasts.Error($"Radar {t.radar.Name}: overlay failed ({ex.Message})"); return; }
-            enabledRadars.Add(t.radar.Id);
+            _userDisabledRadarOverlays.Remove(t.radar.Id);
+            await EnableRadarOverlayAsync(t.radar);
         }
         else
         {
-            try { await module.InvokeVoidAsync("stopRadarOverlay", t.radar.Id); }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { /* teardown should not block */ }
-            enabledRadars.Remove(t.radar.Id);
+            _userDisabledRadarOverlays.Add(t.radar.Id);
+            await DisableRadarOverlayAsync(t.radar.Id);
+        }
+    }
+
+    // Open the spoke WebSocket + paint canvas for one radar. Internal
+    // primitive used by both the user-driven toggle and the
+    // transmit-follows-overlay auto pass; doesn't touch the sticky
+    // user-preference set so the auto pass can call it freely.
+    private async Task EnableRadarOverlayAsync(RadarInfo radar)
+    {
+        if (module is null) return;
+        if (string.IsNullOrEmpty(radar.Id)) return;
+        if (enabledRadars.Contains(radar.Id)) return;        // already on; idempotent
+
+        // Capabilities are already fetched + cached eagerly after the
+        // device list loads; this just reads what's there. A null
+        // cached value means the fetch failed earlier; in that case
+        // we fall back to whatever the device-list response gave us
+        // for geometry and a null legend (the JS layer ships a
+        // Navico-default fallback palette).
+        if (!radarCapabilities.TryGetValue(radar.Id, out var caps))
+        {
+            caps = await RadarApi.GetCapabilitiesAsync(radar.Id);
+            radarCapabilities[radar.Id] = caps;
+        }
+        int spokes = caps?.SpokesPerRevolution ?? radar.SpokesPerRevolution ?? 2048;
+        int maxLen = caps?.MaxSpokeLength ?? radar.MaxSpokeLength ?? 1024;
+        int range = radar.Range ?? 1000;
+
+        // Build spokeDataUrl. Spec says each RadarInfo includes one;
+        // if the server didn't populate it (Mayara SK plugin doesn't,
+        // through v0.5.5), construct it from the current page origin
+        // -- same conversion freeboard-sk does.
+        string url = !string.IsNullOrEmpty(radar.SpokeDataUrl)
+            ? radar.SpokeDataUrl!
+            : BuildSpokeDataUrl(radar.Id);
+
+        var cfg = new
+        {
+            radarId = radar.Id,
+            spokeDataUrl = url,
+            spokesPerRevolution = spokes,
+            maxSpokeLength = maxLen,
+            range,
+            legend = caps?.Legend,
+            opacity = 0.75,
+        };
+        try { await module.InvokeVoidAsync("startRadarOverlay", cfg); }
+        catch (JSDisconnectedException) { return; }
+        catch (JSException ex) { Toasts.Error($"Radar {radar.Name}: overlay failed ({ex.Message})"); return; }
+        enabledRadars.Add(radar.Id);
+    }
+
+    private async Task DisableRadarOverlayAsync(string radarId)
+    {
+        if (module is null) return;
+        if (string.IsNullOrEmpty(radarId)) return;
+        if (!enabledRadars.Contains(radarId)) return;        // already off; idempotent
+        try { await module.InvokeVoidAsync("stopRadarOverlay", radarId); }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { /* teardown should not block */ }
+        enabledRadars.Remove(radarId);
+    }
+
+    // After every radar-list refresh: turn the overlay on for any
+    // radar that just started transmitting (unless the user has
+    // stickily disabled it), and tear down the overlay for any radar
+    // that's no longer transmitting (the empty canvas is just noise
+    // and the WebSocket would reconnect-loop forever). The decision
+    // rule lives in RadarOverlayAutoToggle so the policy is unit-
+    // testable without bUnit / JS interop.
+    private async Task AutoToggleRadarOverlaysForTransmitChangesAsync()
+    {
+        foreach (var r in availableRadars)
+        {
+            if (string.IsNullOrEmpty(r.Id)) continue;
+            var action = RadarOverlayAutoToggle.Decide(
+                status: r.Status,
+                overlayOn: enabledRadars.Contains(r.Id),
+                userDisabled: _userDisabledRadarOverlays.Contains(r.Id));
+            switch (action)
+            {
+                case RadarOverlayAction.Enable:  await EnableRadarOverlayAsync(r); break;
+                case RadarOverlayAction.Disable: await DisableRadarOverlayAsync(r.Id); break;
+            }
         }
     }
 
@@ -1213,6 +1268,7 @@
         // panel hides the section entirely in that state.
         availableRadars   = (radarsTask.Result ?? []).ToList();
         await EnsureRadarCapabilitiesAsync();
+        await AutoToggleRadarOverlaysForTransmitChangesAsync();
 
         // Optional: buddy-list plugin. Silently no-ops if not installed.
         // The returned list seeds AisStore so vessels tracked later get

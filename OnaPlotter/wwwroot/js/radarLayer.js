@@ -238,6 +238,24 @@ class RadarOverlay {
             for (let i = 0; i < legend.pixels.length && i < 256; i++) {
                 const p = legend.pixels[i];
                 const rgba = parseLegendColor(p && p.color);
+                // Suppress blue-dominant "normal" echoes. Navico-style
+                // palettes paint sea clutter / noise as a blue ramp at
+                // the low-intensity end (bytes 1..6 on HALO); the
+                // resulting blue wash drowns the chart underneath
+                // without surfacing real targets the green/yellow/red
+                // band already shows clearly. We only filter type
+                // "normal" so doppler / history / target border
+                // markers (which legitimately use blue tints, e.g.
+                // doppler-receding) stay visible.
+                const type = p && p.type;
+                const isBlueDominant = rgba[2] > rgba[0] && rgba[2] > rgba[1];
+                if (type === 'normal' && isBlueDominant) {
+                    this.byteToRgba[i * 4 + 0] = 0;
+                    this.byteToRgba[i * 4 + 1] = 0;
+                    this.byteToRgba[i * 4 + 2] = 0;
+                    this.byteToRgba[i * 4 + 3] = 0;
+                    continue;
+                }
                 this.byteToRgba[i * 4 + 0] = rgba[0];
                 this.byteToRgba[i * 4 + 1] = rgba[1];
                 this.byteToRgba[i * 4 + 2] = rgba[2];
