@@ -73,7 +73,12 @@
 //             and autopilot buttons inside the non-corner HUDs (the
 //             parent .hud / .hud-panel pointer-events: none was
 //             swallowing taps on those new buttons).
-const CACHE_NAME = 'ona-plotter-v18';
+// v18 -> v19: scoped main-as-scroll-container fix for Settings /
+//             Dashboard / History / Resources in fullscreen. Just
+//             constrain <main> itself (height 100dvh, overflow-y
+//             auto); leaves html / body alone so the chain that
+//             tripped Firefox in v17 isn't reintroduced.
+const CACHE_NAME = 'ona-plotter-v19';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
