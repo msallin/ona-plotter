@@ -485,6 +485,12 @@
     // drawn on while the bearing line silently jumps to the new leg.
     private double? lastNextWpLat;
     private double? lastNextWpLon;
+    // Last server-reported active-leg index. Tracked separately from
+    // lastNextWpLat/Lon so a pointIndex change (e.g. on first arrival
+    // after page reload, before nextPoint.position lands) re-triggers
+    // SyncActiveRouteAsync and the polyline split updates without
+    // waiting for the next-point lat/lon delta.
+    private int? lastActiveRoutePointIndex;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -2809,6 +2815,7 @@
         var currentHref = Data.ActiveRouteHref;
         var nextLat = Data.CourseNextPointLatitude;
         var nextLon = Data.CourseNextPointLongitude;
+        var currentPointIndex = Data.ActiveRoutePointIndex;
 
         // Watchdog for a pending Stop Navigation: if the helm tapped
         // Stop and CourseApi.ClearAsync returned success but the SK
@@ -2843,7 +2850,13 @@
 
         bool hrefChanged = currentHref != lastActiveRouteHref;
         bool nextWpChanged = nextLat != lastNextWpLat || nextLon != lastNextWpLon;
-        if (!force && !hrefChanged && !nextWpChanged) return;
+        // pointIndex change re-triggers a redraw on its own. Important
+        // on page reload: pointIndex tends to land in the connect-time
+        // delta snapshot before nextPoint.position, and we want the
+        // "passed legs" portion of the polyline to dim straight away
+        // -- not wait for the next-point coordinates to arrive.
+        bool pointIndexChanged = currentPointIndex != lastActiveRoutePointIndex;
+        if (!force && !hrefChanged && !nextWpChanged && !pointIndexChanged) return;
 
         if (hrefChanged || force)
         {
@@ -2914,29 +2927,33 @@
             }
         }
 
-        // Redraw whenever we have the geometry and a next-WP fix.
-        // Covers the initial draw (hrefChanged or force), the leg-
-        // advance case (nextWpChanged on an unchanged route), and the
-        // post-edit refetch (force). The next-WP index is resolved
-        // here so the JS side stays a thin renderer; the lookup
-        // matches the next-point lat/lon to the closest vertex in
-        // the route and is unit-tested in RouteProgressTests.
-        if (activeRouteCoords is not null && activeRouteCoords.Length > 0
-            && nextLat is not null && nextLon is not null)
+        // Redraw whenever we have the geometry and at least one
+        // signal that tells us which leg we're on. Covers the initial
+        // draw (hrefChanged or force), the leg-advance case
+        // (nextWpChanged or pointIndexChanged on an unchanged route),
+        // and the post-edit refetch (force). The leg index is resolved
+        // here (server's pointIndex preferred, lat/lon fallback) so the
+        // JS side stays a thin renderer; precedence is unit-tested in
+        // RouteProgressTests.
+        if (activeRouteCoords is not null && activeRouteCoords.Length > 0)
         {
-            string routeId = string.IsNullOrEmpty(currentHref)
-                ? string.Empty
-                : SignalKUrls.ExtractRouteId(currentHref);
-            int nextWpIdx = OnaPlotter.Utilities.RouteProgress.FindClosestWaypointIndex(
-                activeRouteCoords, nextLat.Value, nextLon.Value);
-            await module.InvokeVoidAsync("setActiveRoute",
-                (object)activeRouteCoords,
-                nextWpIdx,
-                routeId);
+            int? legIdx = OnaPlotter.Utilities.RouteProgress.ResolveLegIndex(
+                currentPointIndex, activeRouteCoords, nextLat, nextLon);
+            if (legIdx is int idx)
+            {
+                string routeId = string.IsNullOrEmpty(currentHref)
+                    ? string.Empty
+                    : SignalKUrls.ExtractRouteId(currentHref);
+                await module.InvokeVoidAsync("setActiveRoute",
+                    (object)activeRouteCoords,
+                    idx,
+                    routeId);
+            }
         }
 
         lastNextWpLat = nextLat;
         lastNextWpLon = nextLon;
+        lastActiveRoutePointIndex = currentPointIndex;
     }
 
     private async Task ZoomToTrack()

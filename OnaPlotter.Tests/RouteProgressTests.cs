@@ -182,4 +182,94 @@ public class RouteProgressTests
         await Assert.That(RouteProgress.FindClosestWaypointIndex(route, 47.19, 8.0))
             .IsEqualTo(3);
     }
+
+    // --- ResolveLegIndex precedence (server pointIndex > lat/lon > null) ---
+
+    [Test]
+    public async Task ResolveLegIndex_ServerPointIndex_Wins_Over_LatLon_Match()
+    {
+        // The fix for "every reload resets to WP 1": the SK course
+        // engine is the source of truth for the active leg. The
+        // lat/lon match exists only as a fallback for older servers
+        // -- if the server tells us pointIndex=2, we use 2 even when
+        // the next-point lat/lon would match a different vertex
+        // (e.g. boat already crossed past the next-point and the
+        // server hasn't caught up yet).
+        var idx = RouteProgress.ResolveLegIndex(
+            serverPointIndex: 2,
+            coords: Route,
+            nextLat: Route[0][0],   // would otherwise resolve to 0
+            nextLon: Route[0][1]);
+        await Assert.That(idx).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task ResolveLegIndex_FallsBack_To_LatLon_When_PointIndex_Null()
+    {
+        // Older SK / non-conforming provider that doesn't ship
+        // pointIndex: the lat/lon match is the only signal. Pin so
+        // the fallback path keeps working.
+        var idx = RouteProgress.ResolveLegIndex(
+            serverPointIndex: null,
+            coords: Route,
+            nextLat: Route[2][0],
+            nextLon: Route[2][1]);
+        await Assert.That(idx).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task ResolveLegIndex_Returns_Null_When_Nothing_Known()
+    {
+        // No pointIndex AND no next-point lat/lon yet. Must return
+        // null rather than defaulting to 0 -- the caller skips the
+        // JS dispatch in that case so the route doesn't briefly
+        // render as entirely undriven.
+        var idx = RouteProgress.ResolveLegIndex(
+            serverPointIndex: null,
+            coords: Route,
+            nextLat: null,
+            nextLon: null);
+        await Assert.That(idx).IsNull();
+    }
+
+    [Test]
+    public async Task ResolveLegIndex_Returns_Null_When_Coords_Empty()
+    {
+        // Route geometry not loaded yet (HTTP fetch in flight). Even
+        // a known pointIndex isn't actionable without coords -- but
+        // we still return the index so the caller can decide. (Caller
+        // also guards on coords.Length > 0.) Pin the no-coords +
+        // pointIndex case explicitly: returns the pointIndex.
+        await Assert.That(RouteProgress.ResolveLegIndex(2, null, null, null)).IsEqualTo(2);
+        await Assert.That(RouteProgress.ResolveLegIndex(null, [], 47.0, 8.0)).IsNull();
+    }
+
+    [Test]
+    public async Task ResolveLegIndex_Honours_Index_Zero()
+    {
+        // Boundary: pointIndex=0 is a legal value (just-activated
+        // route, heading to first waypoint). Must not be treated as
+        // "missing" by an over-eager null check.
+        var idx = RouteProgress.ResolveLegIndex(
+            serverPointIndex: 0,
+            coords: Route,
+            nextLat: Route[3][0],   // would otherwise resolve to 3
+            nextLon: Route[3][1]);
+        await Assert.That(idx).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ResolveLegIndex_Negative_PointIndex_Falls_Back()
+    {
+        // Defensive against a malformed server delta (e.g. signed
+        // overflow). A negative index would index out of bounds in
+        // the JS layer; treat as "unknown" and use lat/lon if we
+        // have it.
+        var idx = RouteProgress.ResolveLegIndex(
+            serverPointIndex: -1,
+            coords: Route,
+            nextLat: Route[1][0],
+            nextLon: Route[1][1]);
+        await Assert.That(idx).IsEqualTo(1);
+    }
 }
