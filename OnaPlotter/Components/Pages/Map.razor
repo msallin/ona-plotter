@@ -58,6 +58,9 @@
             ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
             WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
             CourseStopping="@(_courseStopPendingUtc is not null)"
+            ActiveRouteDistanceTotal="@_activeRouteDistanceTotal"
+            OnPrevWaypoint="PrevWaypoint"
+            OnNextWaypoint="NextWaypoint"
             OnSetAnchorRadius="SetManualAnchorRadius" />
 
     @* Dark Ops exit chip. Only rendered when Dark Ops is active; a tiny
@@ -452,6 +455,22 @@
     // Active route navigation state.
     private string? lastActiveRouteHref;
     private double[][]? activeRouteCoords;
+    // Id of the route whose REGULAR polyline (from addRoute) is
+    // currently hidden because it's also the active route -- the
+    // active overlay (with passed-leg dashing) would otherwise be
+    // drawn on top of an identical polyline in the regular colour
+    // and the helm sees a confusing double line. Cleared when the
+    // active route changes / clears so the regular polyline can be
+    // restored. Tracks an id (not just a bool) so a switch from one
+    // active route to another correctly redraws the previous one
+    // while suppressing the new one.
+    private string? _activeRouteRegularSuppressed;
+    // Total leg-by-leg distance (metres) of the active route's
+    // geometry. Computed once when activeRouteCoords lands and read
+    // by MapHud's route card so the HUD shows "passed / total nm"
+    // instead of the SignalK course payload's remaining-only value.
+    // Null when no active route or before the fetch completes.
+    private double? _activeRouteDistanceTotal;
     // Last next-WP coords pushed to the JS layer. Tracking these in
     // addition to the route href is what lets SyncActiveRouteAsync
     // reposition the pulsing next-WP marker when only the leg index
@@ -2092,6 +2111,48 @@
     /// </summary>
     private Task NavigateRoute(SignalkRoute route) => NavigateRouteInternal(route);
 
+    /// <summary>Advance the active route by one waypoint via the
+    /// SignalK course API. The server owns the pointIndex; our local
+    /// model picks up the change on the next delta tick. Bound to
+    /// the &gt; button in the route HUD card.</summary>
+    private async Task NextWaypoint()
+    {
+        if (Data.ActiveRoutePointIndex is int idx
+            && Data.ActiveRoutePointTotal is int total
+            && idx + 1 >= total)
+        {
+            return; // already at last leg; button is disabled but guard anyway
+        }
+        try
+        {
+            var r = await CourseApi.AdvanceActiveRouteAsync();
+            if (!r.Success)
+            {
+                Toasts.Error($"Next waypoint failed: {r.Error ?? "server rejected"}");
+            }
+        }
+        catch (Exception ex) { Toasts.Error($"Next waypoint failed: {ex.Message}"); }
+    }
+
+    /// <summary>Step back one waypoint via SetPointIndexAsync. Used
+    /// when the helm overshoots a tack and wants to redo the
+    /// previous leg, or when an auto-advance fired prematurely
+    /// (large arrival radius + favourable current). Bound to the
+    /// &lt; button in the route HUD card.</summary>
+    private async Task PrevWaypoint()
+    {
+        if (Data.ActiveRoutePointIndex is not int idx || idx <= 0) return;
+        try
+        {
+            var r = await CourseApi.SetPointIndexAsync(idx - 1);
+            if (!r.Success)
+            {
+                Toasts.Error($"Previous waypoint failed: {r.Error ?? "server rejected"}");
+            }
+        }
+        catch (Exception ex) { Toasts.Error($"Previous waypoint failed: {ex.Message}"); }
+    }
+
     private async Task ToggleWeatherOverlay(bool enabled)
     {
         weatherOverlayVisible = enabled;
@@ -2334,7 +2395,14 @@
 
         if (enabled)
         {
-            await AddRouteToMap(route);
+            // Suppress the regular polyline if this route is the active
+            // course -- the active overlay handles the visual and a
+            // duplicate polyline underneath reads as a stuck progress
+            // bar. Same logic as SyncActiveRouteAsync.
+            if (_activeRouteRegularSuppressed != route.Id)
+            {
+                await AddRouteToMap(route);
+            }
             enabledRoutes.Add(route.Id);
         }
         else
@@ -2772,6 +2840,39 @@
 
             lastActiveRouteHref = currentHref;
 
+            // The active overlay drawn by setActiveRoute would
+            // otherwise sit on top of the regular polyline (drawn by
+            // addRoute) for the same route id, producing a visible
+            // double-stroke that confuses progress-vs-plan reading.
+            // Hide the regular polyline of the new active route, and
+            // restore the previous one if we suppressed it.
+            string? newActiveId = string.IsNullOrEmpty(currentHref)
+                ? null
+                : SignalKUrls.ExtractRouteId(currentHref);
+            if (_activeRouteRegularSuppressed is string prev
+                && prev != newActiveId
+                && enabledRoutes.Contains(prev))
+            {
+                var prevRoute = availableRoutes.FirstOrDefault(r => r.Id == prev);
+                if (prevRoute is not null)
+                {
+                    try { await AddRouteToMap(prevRoute); }
+                    catch (JSDisconnectedException) { }
+                    catch (JSException) { /* layer may already exist; harmless */ }
+                }
+                _activeRouteRegularSuppressed = null;
+            }
+            if (!string.IsNullOrEmpty(newActiveId)
+                && _activeRouteRegularSuppressed != newActiveId)
+            {
+                if (enabledRoutes.Contains(newActiveId))
+                {
+                    try { await module.InvokeVoidAsync("removeRoute", newActiveId); }
+                    catch (JSDisconnectedException) { }
+                }
+                _activeRouteRegularSuppressed = newActiveId;
+            }
+
             // Route activated: fetch geometry once. The HTTP round-trip
             // is where dispose races most often -- by the time the fetch
             // completes, the page may have navigated away. Re-check
@@ -2781,6 +2882,13 @@
             {
                 activeRouteCoords = await RouteApi.GetCoordinatesAsync(currentHref);
                 if (!mapInitialized) return;
+                _activeRouteDistanceTotal = activeRouteCoords is not null
+                    ? OnaPlotter.Utilities.RouteProgress.TotalDistanceMeters(activeRouteCoords)
+                    : null;
+            }
+            else
+            {
+                _activeRouteDistanceTotal = null;
             }
         }
 

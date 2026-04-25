@@ -36,17 +36,19 @@ main {
     overflow: hidden;
 }
 
-/* Fullscreen / iOS-fullbleed / explicit sidebar-collapsed setting:
-   narrow rail, icons only. Labels hide via NavMenu.razor.css.
-   Width 4rem (up from 3.5rem) leaves room for the 1.15rem-font
-   icons to breathe without clipping, and the forced
+/* Narrow icon-rail: 4rem (up from 3.5rem) leaves room for the
+   1.15rem-font icons without clipping, and the forced
    `overflow: hidden` above suppresses the stray scrollbar Safari
-   sometimes draws on the narrower rail. The user-toggleable
-   .sidebar-collapsed class lives on .page (set from MainLayout
-   based on Settings.SidebarCollapsed) so it shares the CSS
-   contract with the fullscreen modes -- one rule, three triggers. */
-:fullscreen .sidebar,
-html.ios-fullbleed .sidebar,
+   draws on the narrower rail.
+   Single trigger now: `.page.sidebar-collapsed`, which is mirrored
+   off Settings.SidebarCollapsed in MainLayout. The fullscreen modes
+   (`:fullscreen` / `html.ios-fullbleed`) used to ALSO force this
+   class via CSS, but that overrode the user's chevron-toggle in
+   the rail -- the helm couldn't re-expand the sidebar while
+   fullscreen was on. Now MainLayout flips Settings.SidebarCollapsed
+   in OnFullscreenChanged so entering fullscreen still defaults to
+   the icon rail (matches prior behaviour) but the manual toggle
+   wins over the auto-flip. */
 .page.sidebar-collapsed .sidebar {
     width: 4rem;
 }

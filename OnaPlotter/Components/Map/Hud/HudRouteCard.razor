@@ -40,7 +40,27 @@
                 <span class="hud-card-name">@(Snapshot.Name ?? "Active Route")</span>
                 @if (Snapshot.PointIndex is int idx && Snapshot.PointTotal is int total)
                 {
+                    @* Prev / Next waypoint controls. Disabled at the
+                       endpoints so a tap doesn't fire a no-op PUT.
+                       Sit next to the WP-progress chip so they read
+                       as "I'm at WP 3 of 7; tap > to go to 4". The
+                       server owns pointIndex; OnPrevWaypoint /
+                       OnNextWaypoint thread up to Map.razor which
+                       calls CourseApi.SetPointIndexAsync /
+                       AdvanceActiveRouteAsync. *@
+                    <button class="route-wp-step-btn"
+                            disabled="@(idx <= 0)"
+                            title="Previous waypoint" aria-label="Previous waypoint"
+                            @onclick="OnPrevWaypoint" @onclick:stopPropagation>
+                        &lsaquo;
+                    </button>
                     <span class="hud-card-progress">WP @(idx + 1) of @total</span>
+                    <button class="route-wp-step-btn"
+                            disabled="@(idx + 1 >= total)"
+                            title="Next waypoint" aria-label="Next waypoint"
+                            @onclick="OnNextWaypoint" @onclick:stopPropagation>
+                        &rsaquo;
+                    </button>
                 }
             </div>
             @if (Snapshot.ArrivalRadiusMeters <= 0)
@@ -89,7 +109,25 @@
             {
                 <div class="route-total-row">
                     <span class="route-total-label">Route total</span>
-                    @if (Snapshot.RouteDistanceRemaining is not null)
+                    @{
+                        // "passed / total" reads as progress at a glance; the
+                        // helm cares about "how far have I come" + "how far
+                        // still to go". passed = total - remaining (clamped
+                        // >= 0 against rounding noise near the destination).
+                        bool hasTotal = Snapshot.RouteDistanceRemaining is not null
+                            && Snapshot.RouteDistanceTotal is double t && t > 0;
+                        double totalM = Snapshot.RouteDistanceTotal ?? 0;
+                        double passedM = hasTotal
+                            ? Math.Max(0, totalM - (Snapshot.RouteDistanceRemaining ?? 0))
+                            : 0;
+                    }
+                    @if (hasTotal)
+                    {
+                        <span class="route-total-value">
+                            @Format.Nm(passedM) / @Format.Nm(totalM)<span class="hud-unit">nm</span>
+                        </span>
+                    }
+                    else if (Snapshot.RouteDistanceRemaining is not null)
                     {
                         <span class="route-total-value">@Format.Nm(Snapshot.RouteDistanceRemaining)<span class="hud-unit">nm</span></span>
                     }
@@ -106,6 +144,17 @@
 
 @code {
     [Parameter, EditorRequired] public RouteHudSnapshot Snapshot { get; set; }
+
+    /// <summary>Fires when the helm taps the &lt; button next to the
+    /// WP-progress chip. Map.razor handles by computing
+    /// `Snapshot.PointIndex - 1` and calling
+    /// CourseApi.SetPointIndexAsync.</summary>
+    [Parameter] public EventCallback OnPrevWaypoint { get; set; }
+
+    /// <summary>Fires when the helm taps the &gt; button. Map.razor
+    /// handles by calling CourseApi.AdvanceActiveRouteAsync (server
+    /// increments its own pointIndex).</summary>
+    [Parameter] public EventCallback OnNextWaypoint { get; set; }
 
     /// <summary>
     /// Immutable snapshot of every field the route card reads. Record-
@@ -132,5 +181,13 @@
         // the SK delta clears the active course. Defaults to false so
         // existing tests / call sites that pre-date the stopping flag
         // keep working without an exhaustive ctor update.
-        bool Stopping = false);
+        bool Stopping = false,
+        // Total leg-by-leg distance of the active route, in metres.
+        // Combined with RouteDistanceRemaining the card displays
+        // "passed / total nm" rather than just remaining; gives the
+        // helm a progress-vs-plan reading at a glance. Computed in
+        // C# via RouteProgress.TotalDistanceMeters from the same
+        // coordinate array the active polyline is drawn from. Null
+        // when the route hasn't been fetched (boot race).
+        double? RouteDistanceTotal = null);
 }

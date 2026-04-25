@@ -423,7 +423,9 @@
    is equal to the previous render. See HudRouteCard / HudAnchorCard
    for the rationale + field lists. *@
 <OnaPlotter.Components.Map.Hud.HudRouteCard
-    Snapshot="@BuildRouteSnapshot()" />
+    Snapshot="@BuildRouteSnapshot()"
+    OnPrevWaypoint="OnPrevWaypoint"
+    OnNextWaypoint="OnNextWaypoint" />
 
 <OnaPlotter.Components.Map.Hud.HudAnchorCard
     Snapshot="@BuildAnchorSnapshot()"
@@ -513,6 +515,21 @@
     /// the helm doesn't re-tap thinking the action didn't land. The
     /// card unmounts naturally when the delta arrives.</summary>
     [Parameter] public bool CourseStopping { get; set; }
+
+    /// <summary>Total leg-by-leg distance of the active route in
+    /// metres. The HUD's "Route total" line displays passed / total
+    /// nm; the remaining is from SignalK's course payload, the total
+    /// is computed locally from the route geometry. Null when the
+    /// route hasn't been fetched yet.</summary>
+    [Parameter] public double? ActiveRouteDistanceTotal { get; set; }
+
+    /// <summary>Forwarded from the route HUD's prev / next waypoint
+    /// buttons up to Map.razor, which calls the SignalK course API
+    /// (SetPointIndexAsync / AdvanceActiveRouteAsync). Kept here so
+    /// MapHud stays the single layout owner; the page handles the
+    /// PUT and any error toast.</summary>
+    [Parameter] public EventCallback OnPrevWaypoint { get; set; }
+    [Parameter] public EventCallback OnNextWaypoint { get; set; }
 
 
     /// <summary>Invoked when the user picks a new radius from the inline
@@ -857,7 +874,8 @@
             Xte: Data.CrossTrackError,
             RouteDistanceRemaining: Data.ActiveRouteDistanceRemaining,
             RouteTimeToGo: Data.ActiveRouteTimeToGo,
-            Stopping: CourseStopping);
+            Stopping: CourseStopping,
+            RouteDistanceTotal: ActiveRouteDistanceTotal);
 
     private OnaPlotter.Components.Map.Hud.HudAnchorCard.AnchorHudSnapshot BuildAnchorSnapshot() =>
         new(
