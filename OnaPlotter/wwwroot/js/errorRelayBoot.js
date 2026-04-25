@@ -43,8 +43,11 @@
     function resolveRelayUrl() {
         if (relayUrl) return relayUrl;
         try {
-            var base = document.baseURI || (window.location.origin + '/');
-            relayUrl = new URL('log', base).toString();
+            // baseHref rather than `base` -- the latter reads as a
+            // weakly-reserved word and trips up some minifiers /
+            // strict-mode passes even though plain ES6 accepts it.
+            var baseHref = document.baseURI || (window.location.origin + '/');
+            relayUrl = new URL('log', baseHref).toString();
         } catch (e) {
             relayUrl = '/log';
         }
@@ -121,8 +124,12 @@
     // payload-building only happens when we're actually going to send.
     // NEVER call console.error from inside the wrapper (would
     // recurse infinitely; the inWrapper guard catches that).
+    // The outer `if (window.__onaErrorRelay) return;` at the top of
+    // the IIFE already prevents this script from running twice in the
+    // same page, so a __onaWrapped marker check on the original here
+    // would be dead code; we just install the wrapper unconditionally.
     var originalConsoleError = console.error.bind(console);
-    if (!originalConsoleError.__onaWrapped) {
+    {
         var wrapped = function () {
             // Always pass through to the original first so devtools
             // see the entry even if our throttle gate drops it.
@@ -159,7 +166,6 @@
         // console.error rather than as an opaque closure -- click-
         // through to source still lands here, but at least the
         // function name in the stack reads sensibly.
-        wrapped.__onaWrapped = true;
         try { Object.defineProperty(wrapped, 'name', { value: 'console.error' }); } catch (_) { }
         wrapped.displayName = 'console.error';
         console.error = wrapped;

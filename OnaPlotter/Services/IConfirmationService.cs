@@ -23,10 +23,12 @@ public interface IConfirmationService
 
     /// <summary>Text-input variant. Shows the modal with an input
     /// field pre-filled with <paramref name="initialValue"/>; resolves
-    /// to the trimmed user-entered string on OK, or <c>null</c> on
-    /// Cancel / Escape. Prefer this over <c>window.prompt</c> -- the
-    /// native dialog is blocked in some iOS PWA / MDM profiles and
-    /// ignores the app theme, while this one reuses the themed
+    /// to the trimmed user-entered string on OK with non-empty input,
+    /// or <c>null</c> on Cancel / Escape OR when OK is tapped on
+    /// whitespace-only input (so callers can use <c>is null</c> to
+    /// mean "no usable answer"). Prefer this over <c>window.prompt</c>
+    /// -- the native dialog is blocked in some iOS PWA / MDM profiles
+    /// and ignores the app theme, while this one reuses the themed
     /// modal host. Destructive is forced to false so the OK button
     /// uses the primary palette (text-rename is rarely destructive).</summary>
     Task<string?> PromptAsync(string message, string initialValue = "",

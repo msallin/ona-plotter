@@ -396,7 +396,6 @@
                      WeatherOverlayVisible="weatherOverlayVisible"
                      LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
-                     OnToggleChart="OnToggleChartCallback"
                      OnToggleChartQuickBar="OnToggleChartQuickBarCallback"
                      OnReorderChart="OnReorderChartCallback"
                      OnToggleRadar="OnToggleRadarCallback"
@@ -627,8 +626,6 @@
         catch (ObjectDisposedException) { }
     }
 
-    private Task OnToggleChartCallback((SignalkChart chart, bool enabled) t) =>
-        ToggleChart(t.chart, t.enabled);
 
     // Delete-route + delete/rename-waypoint entry points from the
     // Layers panel. DeleteRouteById already handles the full flow
@@ -1501,6 +1498,11 @@
     private bool ChartIntersectsViewport(SignalkChart chart)
     {
         if (chart.Bounds is null || chart.Bounds.Length < 4) return true;
+        // Pre-bounds-fix default: before the first OnMapBoundsChanged
+        // delta arrives the view* fields are null. Mirror
+        // RouteIntersectsViewport's explicit guard so a future change
+        // to the comparison can't silently invert the default.
+        if (viewWest is null) return true;
 
         double cWest = chart.Bounds[0], cSouth = chart.Bounds[1];
         double cEast = chart.Bounds[2], cNorth = chart.Bounds[3];

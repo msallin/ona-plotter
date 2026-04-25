@@ -1,4 +1,5 @@
 @using OnaPlotter.Utilities
+@implements IDisposable
 
 @* Bottom control bar.
 
@@ -435,5 +436,19 @@
         // stays the source of truth. Mirrors Select(EventCallback).
         if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
         await OnToggleNight.InvokeAsync();
+    }
+
+    /// <summary>Dispose the three confirm-window timers when the
+    /// component unmounts. Without this, a navigation away during
+    /// an active 3 s confirm window would leave the timer running
+    /// and its callback would race InvokeAsync(StateHasChanged)
+    /// against a disposed component.</summary>
+    public void Dispose()
+    {
+        stopConfirmTimer?.Dispose();
+        mobConfirmTimer?.Dispose();
+        anchorConfirmTimer?.Dispose();
+        _nightHoldCts?.Cancel();
+        _nightHoldCts?.Dispose();
     }
 }

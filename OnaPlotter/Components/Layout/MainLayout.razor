@@ -1015,6 +1015,19 @@
             try { await themeModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
+        if (wakeLockModule is not null)
+        {
+            // Release the lock before dropping the module reference --
+            // some browsers won't garbage-collect a held WakeLockSentinel
+            // when the JS module reference goes away, leaving the screen
+            // pinned awake until the tab is closed.
+            try
+            {
+                await wakeLockModule.InvokeVoidAsync("setWakeLock", false);
+                await wakeLockModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
         fsSelfRef?.Dispose();
     }
 }
