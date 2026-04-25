@@ -77,7 +77,7 @@ public sealed class BuddyListApi : IBuddyListApi
         }
     }
 
-    public void InvalidateAsync() => _available = null;
+    public void Invalidate() => _available = null;
 
     public async Task<ApiResult> AddAsync(string urn, string name, CancellationToken ct = default)
     {

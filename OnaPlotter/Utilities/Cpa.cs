@@ -83,4 +83,36 @@ public static class Cpa
 
         return new Result(cpa / 1852.0, t / 60.0);
     }
+
+    /// <summary>
+    /// Threat severity for a single CPA hit, used to drive marker colour /
+    /// danger-ring pulse / red-vs-amber crossing line on the chart. Pure
+    /// classification, no rendering side-effects.
+    /// </summary>
+    public enum Threat { None, Warning, Danger }
+
+    /// <summary>
+    /// Maps a CPA result to a <see cref="Threat"/> level using the helm's
+    /// configured guard-zone radius and lookahead. Buddies are exempted by
+    /// the caller passing <paramref name="isBuddy"/> = true so a friend
+    /// sailing close never paints the chart red.
+    /// </summary>
+    /// <param name="cpaNm">CPA distance, nautical miles. Null = no CPA.</param>
+    /// <param name="tcpaMin">TCPA time, minutes. Null or non-positive = no closing.</param>
+    /// <param name="guardZoneRadiusNm">Helm-configured red-band radius.</param>
+    /// <param name="lookaheadMin">Helm-configured red-band lookahead.</param>
+    /// <param name="warningFactor">Multiplier on radius+lookahead for the amber band (typically 2.0).</param>
+    /// <param name="isBuddy">If true the result is always <see cref="Threat.None"/>.</param>
+    public static Threat ClassifyThreat(
+        double? cpaNm, double? tcpaMin,
+        double guardZoneRadiusNm, double lookaheadMin,
+        double warningFactor, bool isBuddy)
+    {
+        if (isBuddy) return Threat.None;
+        if (cpaNm is null || tcpaMin is null || tcpaMin <= 0) return Threat.None;
+        if (cpaNm < guardZoneRadiusNm && tcpaMin < lookaheadMin) return Threat.Danger;
+        if (cpaNm < guardZoneRadiusNm * warningFactor
+            && tcpaMin < lookaheadMin * warningFactor) return Threat.Warning;
+        return Threat.None;
+    }
 }

@@ -149,8 +149,9 @@ The Leaflet side (`wwwroot/js/leafletInterop.js`) owns the visual crossing
 lines so they can update on every position fix without Blazor re-renders.
 C# and JS each have their own copy of the CPA math:
 
-- **C# `Utilities/Cpa.cs`** — used by `MainLayout.CheckAlarms` to drive the
-  banner, and by `Map.razor.BuildVesselList` to sort the vessel list.
+- **C# `Utilities/Cpa.cs`** — used by `Services/AlarmManager` (via
+  `CpaAlarmRule`) to drive the banner, and by `Map.razor.BuildVesselList`
+  to sort the vessel list.
 - **JS `geoMath.js:computeCpa`** — used by `updateAisTargets` to colour
   targets and draw crossing lines. Covered by Node's `node:test` suite in
   `geoMath.test.js`.
@@ -170,9 +171,12 @@ push, which happens at 3 Hz on a fast delta feed.
   course and speed. In reality a vessel manoeuvring defeats the forecast.
   This is the same assumption every AIS/ARPA system makes, including
   commercial ECDIS.
-- **No radar ARPA** — only AIS today. Mayara radar target integration is
-  queued as the next step; the alarm loop is source-agnostic so ARPA targets
-  will use the same pipeline when they arrive.
+- **Radar ARPA via Mayara.** When [Mayara](https://github.com/MarineYachtRadar/mayara-server)
+  is feeding `radars.<radarId>.targets.<targetId>.*`, those targets are
+  routed into `AisStore` under a synthesised `radar.<rid>.<tid>` context
+  and run through the same CPA / snooze / banner pipeline as AIS vessels
+  -- they render as outline triangles to keep them visually distinct on
+  the chart but participate in the same alarm logic.
 - **No buddy-list integration yet** — the `BuddyListApi` detects
   `sbender9/signalk-buddylist-plugin`, but the UI doesn't yet mark buddies
   specially or exempt them from CPA alarms. On the roadmap.
@@ -185,7 +189,8 @@ push, which happens at 3 Hz on a fast delta feed.
 | CPA math (JS)                  | `OnaPlotter/wwwroot/js/geoMath.js` (`computeCpa`)         |
 | Guard-zone radius / lookahead  | `OnaPlotter/Services/AppSettingsService.cs`               |
 | Moored auto-mute               | `OnaPlotter/Services/MooredVesselTracker.cs`              |
-| Alarm pipeline (C#)            | `OnaPlotter/Components/Layout/MainLayout.razor` (`CheckAlarms`, `SetAlarm`, `SnoozeActiveAlarm`) |
+| Alarm pipeline (C#)            | `OnaPlotter/Services/AlarmManager.cs` (`Evaluate`, `DismissAsync`, `SnoozeActiveAsync`, `SnoozeAsync`) |
+| CPA alarm rule                 | `OnaPlotter/Services/Alarms/CpaAlarmRule.cs`              |
 | Audio (JS)                     | `OnaPlotter/wwwroot/js/audioAlert.js`                     |
 | Guard-zone ring + CPA lines    | `OnaPlotter/wwwroot/js/leafletInterop.js` (`drawGuardZone`, `updateCpaLine`) |
 | Settings UI                    | `OnaPlotter/Components/Pages/Settings.razor`              |

@@ -24,9 +24,7 @@ public interface IAppSettings
 
     /// <summary>UTC timestamp of the most recent manual Night toggle
     /// (tap on the Night button). Persisted so the 12-hour auto-
-    /// suppress window survives page reloads and Map re-entry --
-    /// previously the window was an in-memory field that reset on
-    /// every navigation away from the chart.</summary>
+    /// suppress window survives page reloads and Map re-entry.</summary>
     DateTime? LastManualNightToggleUtc { get; }
 
     /// <summary>Night-mode flavour. "soft" is the light-red default (warm
@@ -223,10 +221,7 @@ public interface IAppSettings
     /// curated subset of available charts; the Layers panel ticks
     /// membership here, and the quick bar then shows one chip per
     /// member and drives render state via <see cref="EnabledChartIds"/>.
-    /// Previously the quick bar showed the first 6 alphabetical
-    /// charts regardless of user preference; this makes it the
-    /// cockpit-side shortcut list the user actually wants.
-    /// Migration: first load after upgrade seeds this from
+    /// Empty on first load after upgrade -- seeded from
     /// <see cref="EnabledChartIds"/> so nothing disappears.
     /// </summary>
     IReadOnlySet<string> QuickBarChartIds { get; }

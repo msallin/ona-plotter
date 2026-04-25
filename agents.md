@@ -6,7 +6,7 @@ Pickup notes for contributors. Keep it short; add only what bit you.
 
 ```bash
 dotnet build                                          # root builds everything
-dotnet run --project OnaPlotter.Tests --no-build      # C# + bUnit (~484 tests)
+dotnet run --project OnaPlotter.Tests --no-build      # C# + bUnit (~700 tests)
 node --test 'OnaPlotter/wwwroot/js/*.test.js'         # JS unit tests
 cd OnaPlotter.UiTests && BASE_URL=http://localhost:5282/ npm test   # Playwright
 ```
@@ -46,6 +46,14 @@ Vulcan / Raymarine Axiom, not Freeboard-SK.
 `SignalkClient` owns the WebSocket and fans deltas out to `NavigationData` (own
 vessel), `TrackBuffer` (30-min rolling track), `AisStore` (others). New delta paths
 wire into one of those three; don't subscribe elsewhere.
+
+**Subscription tiers.** Subscriptions are declared as a single `SubscriptionTier`
+table near the top of `SignalkClient.cs` -- five tiers today: `SelfFast`,
+`SelfFastNotifications`, `SelfSlow`, `Ais`, `ServerNotifications`. Each tier
+specifies its context glob, paths, period, and policy (`ideal` vs `instant`).
+Adding a new path = add it to the matching tier, or add a new tier entry if the
+period / policy differs. Don't sprinkle ad-hoc `subscribe` calls outside the
+table; the reconnect path replays from the table.
 
 ## Rules
 

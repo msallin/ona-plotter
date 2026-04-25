@@ -116,6 +116,10 @@ them.
 - **Anchor-tide alarm.** When the tide plugin feeds predictions, the
   anchor watch projects bottom depth to next LW; the alarm fires early
   enough to reset before grounding.
+- **Server-side notifications.** Anything any plugin emits on
+  `notifications.*` (signalk-anchoralarm-plugin, signalk-mob-notifier,
+  custom depth alerts, ...) shows up in the same banner stack with
+  appropriate severity, so plugin alerts don't get lost.
 - **Stacked alarm banner** (up to three), ordered by
   (severity, time-to-event, priority) so `SHALLOW` at TTI=0 beats pending
   CPA. Snooze 10 min per vessel; snoozed chips show a live countdown.
@@ -147,10 +151,17 @@ them.
   and waypoint bearing.
 - **Wind Rose** — TWD history with a 15 m / 30 m / 1 h / 3 h window picker.
 - **Raw Stream** — live SignalK delta viewer with per-path filtering.
-- **History** — playback of the buffered track with step / scrub / play.
+- **Paths** — live SignalK path inventory showing which paths your boat
+  publishes, the latest value, and the source plugin. Useful for diagnosing
+  "why is this gauge empty?" without leaving the app.
+- **History** — replay of the rolling track with timespan picker,
+  play / pause / step / speed controls and a scrub bar.
 - **Settings** — Theme (System/Light/Dark), Night Mode (Soft/Amber/Red),
   sailing mode, alarm thresholds (depth, CPA, guard-zone lookahead, wind
-  shift), polar-file upload with a live polar diagram.
+  shift), polar-file upload with a live polar diagram. Polar format is a
+  CSV with TWS headers across the top and TWA values down the first
+  column; comma/semicolon/tab separators auto-detect, decimals must use
+  `.`.
 
 ### Keyboard shortcuts (Map page)
 
@@ -221,7 +232,7 @@ port than the main SK REST API.
 ### Tests
 
 ```bash
-# C# unit + bUnit (~390 tests).
+# C# unit + bUnit (~700 tests).
 # .NET 10 SDK dropped VSTest dispatch, so `dotnet test` is NOT the path --
 # TUnit runs as an executable via `dotnet run`.
 dotnet run --project OnaPlotter.Tests
@@ -276,7 +287,11 @@ Browser (Blazor WASM)                          SignalK server
 
 - **`SignalkClient`** owns the WebSocket, parses deltas, fans them out to
   `NavigationData` (own-vessel fields), `TrackBuffer` (rolling track), and
-  `AisStore` (other vessels).
+  `AisStore` (other vessels). Subscriptions are split into per-context
+  tiers (self-fast / self-fast-notifications / self-slow / AIS /
+  server-notifications) registered as a single `SubscriptionTier` table
+  near the top of the file; each tier has its own period and policy.
+  Adding a new path = add a tier entry, not a new subscribe call.
 - **`Components/Map/*`** are focused children of `Pages/Map.razor`:
   `MapHud` for the four-corner instruments + route / anchor / autopilot,
   `MapControls` for the bottom button bar, `RouteEditPanel` +
@@ -287,8 +302,11 @@ Browser (Blazor WASM)                          SignalK server
   typed data or throw `HttpRequestException`; caller decides whether to
   toast or rethrow.
 - **`Services/AlarmManager`** owns the alarm stack. Every registered
-  `IAlarmRule` (SHALLOW, CPA, WIND SHIFT, SART, ANCHOR-TIDE) gets a shot
-  at each eval tick; up to three concurrent alarms surface in the banner.
+  `IAlarmRule` under `Services/Alarms/` (SHALLOW, CPA, WIND SHIFT, SART,
+  ANCHOR-TIDE, ANCHOR-DRAG, DEADMAN, WAYPOINT-APPROACH, plus
+  SERVER-NOTIFICATIONS which surfaces upstream `notifications.*` deltas)
+  gets a shot at each eval tick; up to three concurrent alarms surface in
+  the banner.
 - **`Utilities/Cpa.cs`** is where substantive navigation math lives
   (CPA/TCPA projection). `wwwroot/js/geoMath.js` mirrors the smaller
   helpers with its own Node test suite.

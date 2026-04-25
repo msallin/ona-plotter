@@ -98,7 +98,7 @@ public class BuddyListApiTests
         await api.IsAvailableAsync();
         await Assert.That(calls).IsEqualTo(1);
 
-        api.InvalidateAsync();
+        api.Invalidate();
         await api.IsAvailableAsync();
         await Assert.That(calls).IsEqualTo(2);
     }

@@ -33,7 +33,8 @@ public class SignalkClientCourseTests
             http: new HttpClient(),
             settings: new FakeSettings(),
             serverNotifs: new OnaPlotter.Services.ServerNotifications.ServerNotificationStore(),
-            atons: new OnaPlotter.Services.AtonStore());
+            atons: new OnaPlotter.Services.AtonStore(),
+            time: TimeProvider.System);
         c.SetSelfContext("vessels.urn:mrn:imo:mmsi:261006533");
         return c;
     }

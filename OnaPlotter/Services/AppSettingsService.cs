@@ -41,8 +41,8 @@ public sealed class AppSettingsService : IAppSettings
     public double GuardZoneWarningFactor { get; private set; } = 2.0;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
     public double WindShiftLookbackMinutes { get; private set; } = 5.0;
-    // BoatDraftMeters was removed: draft is read from SignalK's
-    // design.draft.current / .maximum. See NavigationData.DraftFromSignalK.
+    // Boat draft is read from SignalK (design.draft.current / .maximum)
+    // via NavigationData.DraftFromSignalK; no manual override here.
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
@@ -441,11 +441,7 @@ public sealed class AppSettingsService : IAppSettings
         // Materialise BEFORE clearing _chartOrder -- otherwise a caller
         // passing `Settings.ChartOrder.Append(x)` (a LINQ enumerable
         // referencing _chartOrder) iterates an empty list and loses
-        // every previously-ordered chart. This was the root cause of
-        // the "chart reorder buttons do nothing" bug: each Toggle wiped
-        // the order to just the newly-toggled chart, leaving subsequent
-        // reorders with missing neighbours that failed the bounds check
-        // in ReorderChart.
+        // every previously-ordered chart.
         var copy = ids.ToList();
         _chartOrder.Clear();
         foreach (var id in copy)

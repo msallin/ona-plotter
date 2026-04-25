@@ -205,10 +205,7 @@ public sealed class NavigationData
     /// path. Typical values from signalk-solar / sun plugins: "day",
     /// "dawn", "dusk", "night". Drives auto-night mode directly -- the
     /// plugin knows about civil / nautical / astronomical twilight so
-    /// we don't reimplement those cutoffs here. The older radians
-    /// <c>environment.sun.altitude</c> fallback was removed: any plugin
-    /// worth installing publishes the string, and the redundant path
-    /// just muddied the /raw viewer.</summary>
+    /// we don't reimplement those cutoffs here.</summary>
     public string? SunState { get; private set; }
 
     /// <summary>Boat draft in metres, sourced from SignalK's
@@ -313,8 +310,8 @@ public sealed class NavigationData
                     AutopilotTargetWindAngle = value;
                     break;
                 case "steering.rudderAngle":
-                    // Preferred source; overwrites any fallback we'd
-                    // previously stored from steering.autopilot.rudderAngle.
+                    // Preferred source per SignalK spec; overwrites any
+                    // value the autopilot fallback (below) may have set.
                     RudderAngle = value;
                     break;
                 case "steering.autopilot.rudderAngle":

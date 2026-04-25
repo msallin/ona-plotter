@@ -60,6 +60,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly ISignalKBaseUrl _baseUrl;
     private string _selfContext;
     private readonly ILogger<SignalkClient> _logger;
+    private readonly TimeProvider _time;
     private CancellationTokenSource? _cts;
     private Task? _receiveLoop;
     private ClientWebSocket? _ws;
@@ -367,7 +368,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// for more than 5 seconds.
     /// </summary>
     public bool IsDataStale => IsConnected
-        && (DateTime.UtcNow.Ticks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
+        && (_time.GetUtcNow().UtcTicks - Interlocked.Read(ref _lastMessageTicks)) > StaleDataThresholdSec * TimeSpan.TicksPerSecond;
 
     // --- Own-track sampling ------------------------------------------
     // TrackBuffer capacity is 1000. Adding a point every delta (typical
@@ -384,7 +385,7 @@ public sealed class SignalkClient : IAsyncDisposable
 
     private bool ShouldSampleTrackPoint()
     {
-        long nowTicks = DateTime.UtcNow.Ticks;
+        long nowTicks = _time.GetUtcNow().UtcTicks;
         long lastTicks = Interlocked.Read(ref _lastTrackSampleTicks);
         if (nowTicks - lastTicks < TrackSampleIntervalMs * TimeSpan.TicksPerMillisecond)
             return false;
@@ -395,7 +396,8 @@ public sealed class SignalkClient : IAsyncDisposable
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
         OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs,
-        AtonStore atons)
+        AtonStore atons,
+        TimeProvider time)
     {
         _logger = logger;
         _data = new NavigationData();
@@ -408,6 +410,7 @@ public sealed class SignalkClient : IAsyncDisposable
         _selfContext = "";
         _settings = settings;
         _serverNotifs = serverNotifs;
+        _time = time;
 
         // Heading / COG preference: settings drive which SignalK path
         // wins when both true + magnetic are published. Sync now and on
@@ -612,13 +615,13 @@ public sealed class SignalkClient : IAsyncDisposable
     /// opening a real websocket.</summary>
     internal void MarkConnectionOpened()
     {
-        Interlocked.Exchange(ref _lastMessageTicks, DateTime.UtcNow.Ticks);
+        Interlocked.Exchange(ref _lastMessageTicks, _time.GetUtcNow().UtcTicks);
         IsConnected = true;
     }
 
     internal void ProcessMessage(string json)
     {
-        Interlocked.Exchange(ref _lastMessageTicks, DateTime.UtcNow.Ticks);
+        Interlocked.Exchange(ref _lastMessageTicks, _time.GetUtcNow().UtcTicks);
         OnRawMessage?.Invoke(json);
 
         try
@@ -1035,12 +1038,11 @@ public sealed class SignalkClient : IAsyncDisposable
                 //       OR navigation.course.nextPoint = null
                 //       -- signalk-server 2.x's built-in course API
                 //       nulls the PARENT object in one delta instead
-                //       of enumerating every leaf. Before this branch
-                //       existed, the delta was silently ignored and
-                //       OnaPlotter kept its old course state until a
-                //       fresh route was set. Freeboard does the same
-                //       (its processCourseData treats a null value as
-                //       "clear everything").
+                //       of enumerating every leaf. We must treat a null
+                //       parent the same as nulling every child, otherwise
+                //       course state stays stale until a fresh route is
+                //       set. Freeboard does the same (its processCourseData
+                //       treats a null value as "clear everything").
                 if (val.Path == "navigation.course.activeRoute.href"
                     || val.Path == "navigation.course.activeRoute"
                     || val.Path == "navigation.course.nextPoint")
@@ -1066,7 +1068,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 && ShouldSampleTrackPoint())
             {
                 _track.Add(new TrackPoint(
-                    DateTime.UtcNow,
+                    _time.GetUtcNow().UtcDateTime,
                     _data.Latitude.Value,
                     _data.Longitude.Value,
                     _data.SpeedOverGround,
