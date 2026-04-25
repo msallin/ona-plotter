@@ -6,10 +6,8 @@ namespace OnaPlotter.Services.Alarms;
 /// anchor radius. The signalk-anchoralarm-plugin computes
 /// <c>navigation.anchor.currentRadius</c> from live position against the
 /// drop point; this rule raises the client-side alarm when current &gt;
-/// max. Previously the only indication was a red pill on the anchor HUD
-/// card -- silent to a helmsman asleep below decks. v1 treats anchor
-/// drag as a Danger-tier audible alarm alongside the existing tide and
-/// shallow rules.
+/// max. Audible Danger-tier alarm so a helmsman asleep below decks
+/// hears it -- the anchor HUD's red pill alone isn't enough.
 ///
 /// <para>Hysteresis: to avoid chattering when a gust momentarily nudges
 /// the boat onto the ring, the current radius must exceed max by at

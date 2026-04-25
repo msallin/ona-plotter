@@ -3,10 +3,10 @@ namespace OnaPlotter.Services;
 /// <summary>
 /// Shared confirmation prompt for destructive actions (delete
 /// waypoint / stop navigation / clear route / raise anchor / ...).
-/// Every call site used to JSRuntime.InvokeAsync&lt;bool&gt;("confirm", msg)
-/// independently, which meant any future swap to a styled modal
-/// would have to touch 8+ files. Threading through a service lets
-/// that swap live behind one implementation.
+/// One implementation behind every confirmation call so the modal
+/// styling, accessibility, and theme-awareness stay consistent
+/// without 8+ call sites needing to touch the native
+/// <c>window.confirm</c> dialog.
 /// </summary>
 public interface IConfirmationService
 {

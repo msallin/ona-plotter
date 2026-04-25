@@ -232,7 +232,7 @@ for the common openplotter setup.
 ### Tests
 
 ```bash
-# C# unit + bUnit (~700 tests).
+# C# unit + bUnit (~810 tests).
 # .NET 10 SDK dropped VSTest dispatch, so `dotnet test` is NOT the path --
 # TUnit runs as an executable via `dotnet run`.
 dotnet run --project OnaPlotter.Tests
@@ -333,6 +333,20 @@ These stay honest when conditions get weird.
   `module.InvokeVoidAsync` catches `JSDisconnectedException`.
   `MooredVesselTracker` evicts vessels that drop off AIS. Long-press
   needs 700 ms of stillness within an 8 px envelope.
+- **Branded boot screen.** Before the WASM bundle finishes downloading
+  the user sees a centred favicon-derived SVG, the OnaPlotter wordmark,
+  a CSS spinner (suppressed under `prefers-reduced-motion: reduce`),
+  and a small build stamp pinned bottom-right (git short hash + UTC
+  build time, populated by `js/version.g.js` from the `StampBuildInfo`
+  MSBuild target). Lives inside `<div id="app">` so Blazor swaps it
+  out wholesale on first render.
+- **Phone-aware sidebar.** First run on a `<= 600px` viewport auto-
+  collapses the rail to the icon track via
+  `IAppSettings.ApplyMobileFirstRunDefaultsAsync`. Tracks an explicit
+  / unset distinction so a manual chevron toggle later isn't
+  overwritten. Mobile `(max-width: 600px)` also trims the nav icons,
+  labels, and link padding while keeping tap targets above the iOS
+  44 px floor.
 
 ### Contributing
 

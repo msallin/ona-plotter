@@ -4,17 +4,10 @@ namespace OnaPlotter.Services.Api;
 /// Outcome of a SignalK API mutation (Delete, Update, Set*). Wraps
 /// a success flag with an optional server-provided error message so
 /// every caller can render a specific failure reason rather than a
-/// generic "operation failed" toast.
-///
-/// <para>Before this unification the API surface was a grab-bag of
-/// <c>Task&lt;bool&gt;</c> (Route/Waypoint/Note/Region deletes,
-/// Course state, Autopilot state), <c>Task&lt;string?&gt;</c>
-/// (creates returning the new id, null on any failure), and a
-/// bespoke <c>RadarSetControlResult</c> for the one surface that
-/// cared about error bodies. Call-site code flipped between
-/// <c>if (!ok)</c>, <c>if (id == null)</c>, and
-/// <c>if (!r.Success)</c> with no consistency; this record gives
-/// every mutation one shape.</para>
+/// generic "operation failed" toast. One shape across every mutation
+/// (deletes, course / autopilot state, radar control) so call-sites
+/// don't have to switch between <c>if (!ok)</c>, <c>if (id == null)</c>,
+/// and <c>if (!r.Success)</c>.
 /// </summary>
 /// <param name="Success">True iff the server returned a 2xx.</param>
 /// <param name="Error">Server-provided error string when
