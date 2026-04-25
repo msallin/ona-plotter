@@ -716,17 +716,14 @@ h2 {
     overflow: hidden;
 }
 
-/* Fullscreen / iOS fullbleed: top-row is hidden via display:none so
-   the map should fill the full visible viewport (no -3rem). Without
-   this override the 3rem gap landed BELOW the map-container, and
-   Safari's bottom toolbar drew over the HUD + control bar that
-   live at `bottom: 12px` -- the helm saw the lower 1/3 of those
-   elements masked by the toolbar. The bottom safe-area padding
-   pushes our control bar above the iPad home-indicator strip
-   when running as a PWA standalone. */
+/* Fullscreen / iOS fullbleed safe-area padding for the control bar
+   so the bottom HUD + .map-controls cluster stay clear of the iPad
+   home-indicator strip in PWA standalone. The HEIGHT stays at the
+   non-fullscreen baseline (calc(100dvh - 3rem)) -- the topbar is
+   still rendered in fullscreen so the helm keeps zoom / night /
+   liveness / exit-fullscreen affordances. */
 html.ios-fullbleed .map-container,
 :fullscreen .map-container {
-    height: 100dvh;
     padding-bottom: env(safe-area-inset-bottom);
     box-sizing: border-box;
 }
@@ -776,6 +773,19 @@ article.content:has(.map-container) {
 .hud-bottom-right .hud-panel {
     pointer-events: auto;
     cursor: pointer;
+}
+
+/* Interactive buttons inside the non-corner HUDs (route prev/next,
+   autopilot heading nudge / mode) need pointer-events: auto explicitly.
+   The base .hud + .hud-panel carry pointer-events: none so non-button
+   chrome doesn't intercept Leaflet pan/zoom; without this rule the
+   buttons inherit the same none state and tap a no-op. The anchor
+   panel's radius chips are already covered separately
+   (.anchor-radius-chips .map-btn). */
+.route-wp-step-btn,
+.ap-btn,
+.ap-mode-btn {
+    pointer-events: auto;
 }
 /* Expanded state: extra rows render below the compact view; width
    grows modestly so the detail fits without crowding the map. */
@@ -1615,26 +1625,20 @@ html, body {
 
 /* iOS "fullbleed" fallback for the app-level fullscreen toggle. iPad
    Safari's Fullscreen API only works for <video>; the topbar button
-   instead toggles this class on <html> so we can visually collapse
-   the sidebar to an icon rail and hide the top row, giving the chart
-   the maximum viewport iOS permits. The browser's own URL bar stays
-   -- we can't hide that from JS. Home-screen-installed PWAs get true
-   fullscreen via manifest.json display:standalone, no toggle needed.
+   instead toggles this class on <html> so the sidebar collapses to an
+   icon rail (via Settings.SidebarCollapsed mirrored from
+   OnFullscreenChanged), giving the chart more room within the viewport
+   iOS permits. The browser's own URL bar stays -- we can't hide that
+   from JS. Home-screen-installed PWAs get true fullscreen via
+   manifest.json display:standalone, no toggle needed.
 
-   Note: the sidebar ITSELF is NOT hidden (display:none) -- that left
-   the user without any nav affordance once in "fullscreen". Instead
-   we narrow it so the icons remain tappable. See MainLayout.razor.css
-   and NavMenu.razor.css for the width + label-collapse rules. */
-/* Real-browser fullscreen via the Fullscreen API hides the topbar
-   too. Without this the 3rem topbar adds to the 100dvh map-container
-   below, pushing the bottom of main 3rem past the viewport edge --
-   the helm sees the lower portion of the HUD and control bar
-   clipped. Esc / F11 still exits fullscreen so the missing topbar
-   button isn't a trap. */
-html.ios-fullbleed .page > main > .top-row,
-:fullscreen .page > main > .top-row {
-    display: none !important;
-}
+   Note: the topbar is NOT hidden in fullscreen any more. An earlier
+   pass display:none-d it to claw back 3rem for the map, but that
+   removed the only visible exit-fullscreen control along with the
+   zoom / night / liveness chips the helm relies on; map-container's
+   default `calc(100dvh - 3rem)` already leaves room for the topbar
+   without overflow, and Settings / History / Resources scroll the
+   document naturally. */
 
 .map-container {
     overscroll-behavior: none;

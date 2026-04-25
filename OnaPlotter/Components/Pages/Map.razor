@@ -1123,6 +1123,18 @@
     {
         if (!firstRender) return;
 
+        // Initial-render setup is a long sequence of JS interop calls
+        // (initMap, REST seeds, marker pushes, settings restores). If the
+        // helm navigates AWAY mid-load, DisposeAsync runs concurrently
+        // and disposes `module`; any in-flight InvokeVoidAsync that
+        // resumes after that throws ObjectDisposedException, which
+        // bubbled out of OnAfterRenderAsync as an unhandled render
+        // exception and tripped the Blazor error boundary. JSDisconnected
+        // is the same idea for the SignalR-circuit case. Wrapping the
+        // whole body keeps a navigate-away-during-load benign instead of
+        // crashing the renderer.
+        try
+        {
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
         dotNetRef = DotNetObjectReference.Create(this);
 
@@ -1158,8 +1170,7 @@
         // tomorrow) target the configured server rather than the
         // page origin. With the default same-origin setup this
         // pushes "" and existing relative URLs keep working.
-        try { await module.InvokeVoidAsync("setSignalKBaseUrl", SkBaseUrl.BaseUrl); }
-        catch (JSDisconnectedException) { return; }
+        await module.InvokeVoidAsync("setSignalKBaseUrl", SkBaseUrl.BaseUrl);
 
         // Load existing track as speed-colored segments.
         var points = TrackBuffer.GetSnapshot();
@@ -1339,6 +1350,9 @@
         // buttons. Runs after the REST seed + map module are ready so
         // the target layers are already on the map.
         await ApplyMapDeepLinkAsync();
+        }
+        catch (JSDisconnectedException) { /* circuit gone -- no-op */ }
+        catch (ObjectDisposedException) { /* navigated away during load */ }
     }
 
     // Parse ?focus= or ?edit= from the URL and act on it. Silent no-op
