@@ -307,4 +307,99 @@ public class RadarOverlayManagerTests
         await Assert.That(host.Started.Count).IsEqualTo(1);
         await Assert.That(host.Started[0].SpokeDataUrl).IsEqualTo(ok.SpokeDataUrl);
     }
+
+    // --- bug 1: stable layer order -----------------------------------
+
+    [Test]
+    public async Task Radars_Sorted_By_Id_So_Layer_Order_Is_Stable()
+    {
+        // Mayara has been observed shipping [B, A] then [A, B] across
+        // calls; reordering the rows under the helm's finger as they
+        // tap is bad UX. Pin alphabetical ordinal sort.
+        var (mgr, _, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("b"), Radar("a"), Radar("c")]);
+
+        var ids = mgr.Radars.Select(r => r.Id).ToList();
+        await Assert.That(ids).IsEquivalentTo(["a", "b", "c"]);
+    }
+
+    [Test]
+    public async Task Sort_Is_Stable_Across_Repeated_Polls_With_Reordered_Server_Response()
+    {
+        // Same set, different server order on each poll. Manager
+        // output stays identical so Blazor doesn't re-shuffle the
+        // rendered rows.
+        var (mgr, _, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("nav0231B"), Radar("nav0231A")]);
+        var first = mgr.Radars.Select(r => r.Id).ToList();
+        await mgr.OnRadarListUpdatedAsync([Radar("nav0231A"), Radar("nav0231B")]);
+        var second = mgr.Radars.Select(r => r.Id).ToList();
+
+        await Assert.That(first).IsEquivalentTo(second);
+        await Assert.That(first).IsEquivalentTo(["nav0231A", "nav0231B"]);
+    }
+
+    // --- bug 4: reference-equality drives child re-render ------------
+
+    [Test]
+    public async Task EnabledRadarIds_Reference_Changes_When_Set_Mutates()
+    {
+        // Blazor's child-component change detection is reference-
+        // equality on parameter values. When the manager mutated the
+        // backing HashSet in-place, LayersPanel kept showing stale
+        // checkbox state until the user closed and reopened the
+        // panel (forcing a remount). Pin that the property returns a
+        // different reference after a mutation so re-render fires.
+        var (mgr, _, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "standby")]);
+
+        var refBefore = mgr.EnabledRadarIds;
+
+        // User-toggle on a standby radar adds it to enabled (the
+        // host call goes through; the standby status doesn't block
+        // a manual enable).
+        await mgr.OnUserToggleAsync(Radar("r1", "standby"), enabled: true);
+
+        var refAfter = mgr.EnabledRadarIds;
+        await Assert.That(ReferenceEquals(refBefore, refAfter)).IsFalse();
+        await Assert.That(refAfter.Contains("r1")).IsTrue();
+    }
+
+    [Test]
+    public async Task EnabledRadarIds_Reference_Changes_On_Auto_Enable()
+    {
+        // Same pin for the auto-toggle path -- arguably the more
+        // important case because the original bug surfaced after
+        // hitting Transmit (auto-enable) rather than the layer
+        // checkbox (user-toggle).
+        var (mgr, _, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "standby")]);
+        var refBefore = mgr.EnabledRadarIds;
+
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+
+        var refAfter = mgr.EnabledRadarIds;
+        await Assert.That(ReferenceEquals(refBefore, refAfter)).IsFalse();
+        await Assert.That(refAfter.Contains("r1")).IsTrue();
+    }
+
+    [Test]
+    public async Task Capabilities_Reference_Changes_When_New_Caps_Cached()
+    {
+        // Same reference-equality concern for the dropdown's range
+        // options binding. After a poll that learns about a new
+        // radar, Capabilities must surface as a new reference so
+        // RadarsSection re-renders with the actual validValues.
+        var (mgr, _, api) = NewManager();
+        api.CapsByRadar["r1"] = new RadarCapabilities
+        {
+            SupportedRanges = [500, 1000],
+        };
+        var refBefore = mgr.Capabilities;
+        await mgr.OnRadarListUpdatedAsync([Radar("r1")]);
+        var refAfter = mgr.Capabilities;
+
+        await Assert.That(ReferenceEquals(refBefore, refAfter)).IsFalse();
+        await Assert.That(refAfter.ContainsKey("r1")).IsTrue();
+    }
 }

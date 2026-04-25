@@ -32,11 +32,18 @@ public sealed class RadarOverlayManager
 
     // Session state. Public read-only views so the page (and bUnit)
     // can bind into the layers panel without re-implementing the
-    // accessors.
+    // accessors. The collections backing the public read-only views
+    // are REPLACED on every mutation (not mutated in-place); Blazor
+    // child-component change detection is reference-equality by
+    // default, so an in-place .Add()/.Remove() leaves LayersPanel
+    // showing stale state until a forced re-mount (the user has to
+    // close the layers panel and re-open it). Allocating a fresh
+    // copy on each change costs O(N) for tiny N (typically 1-2
+    // radars) and is invisible at the UI level.
     private List<RadarInfo> _radars = [];
-    private readonly Dictionary<string, RadarCapabilities?> _capabilities = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _enabled = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _userDisabled = new(StringComparer.Ordinal);
+    private Dictionary<string, RadarCapabilities?> _capabilities = new(StringComparer.Ordinal);
+    private HashSet<string> _enabled = new(StringComparer.Ordinal);
+    private HashSet<string> _userDisabled = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _lastRange = new(StringComparer.Ordinal);
 
     public IReadOnlyList<RadarInfo> Radars => _radars;
@@ -62,7 +69,14 @@ public sealed class RadarOverlayManager
     /// so the init path and the periodic poll can't drift.</summary>
     public async Task OnRadarListUpdatedAsync(IReadOnlyList<RadarInfo> radars, CancellationToken ct = default)
     {
-        _radars = [.. radars];
+        // Sort by id so the layers panel renders the radars in a
+        // stable order. The server's /radars endpoint returns the
+        // dict / array in unspecified order (Mayara has been observed
+        // shipping [B, A] then [A, B] across calls), and reordering
+        // the rows under the helm's finger as they tap is bad UX.
+        // Ordinal sort matches the HALO id scheme (`nav0231A` /
+        // `nav0231B` / etc.) and any future provider's ids.
+        _radars = [.. radars.OrderBy(r => r.Id ?? "", StringComparer.Ordinal)];
         await EnsureCapabilitiesAsync(ct);
         await ApplyAutoToggleAsync(ct);
         await PushRangeUpdatesAsync(ct);
@@ -78,12 +92,22 @@ public sealed class RadarOverlayManager
         if (string.IsNullOrEmpty(radar.Id)) return;
         if (enabled)
         {
-            _userDisabled.Remove(radar.Id);
+            if (_userDisabled.Contains(radar.Id))
+            {
+                var next = new HashSet<string>(_userDisabled, StringComparer.Ordinal);
+                next.Remove(radar.Id);
+                _userDisabled = next;
+            }
             await EnableAsync(radar, ct);
         }
         else
         {
-            _userDisabled.Add(radar.Id);
+            if (!_userDisabled.Contains(radar.Id))
+            {
+                var next = new HashSet<string>(_userDisabled, StringComparer.Ordinal);
+                next.Add(radar.Id);
+                _userDisabled = next;
+            }
             await DisableAsync(radar.Id, ct);
         }
     }
@@ -111,7 +135,14 @@ public sealed class RadarOverlayManager
         if (!_capabilities.TryGetValue(radar.Id, out var caps))
         {
             caps = await _radarApi.GetCapabilitiesAsync(radar.Id, ct);
-            _capabilities[radar.Id] = caps;
+            // Replace the dict reference so Blazor's reference-equality
+            // change detection on the Capabilities parameter triggers
+            // a re-render of the dropdown rows.
+            var nextCaps = new Dictionary<string, RadarCapabilities?>(_capabilities, StringComparer.Ordinal)
+            {
+                [radar.Id] = caps,
+            };
+            _capabilities = nextCaps;
         }
 
         // Clamp server-supplied geometry. The JS layer allocates a
@@ -147,7 +178,9 @@ public sealed class RadarOverlayManager
         try
         {
             await _host.StartOverlayAsync(cfg, ct);
-            _enabled.Add(radar.Id);
+            // Replace the set reference so Blazor sees the change.
+            var next = new HashSet<string>(_enabled, StringComparer.Ordinal) { radar.Id };
+            _enabled = next;
             // Seed the range cache with what we just sent so the
             // next PushRangeUpdates pass doesn't re-send the same
             // range to the JS layer (it already has it via cfg).
@@ -165,7 +198,9 @@ public sealed class RadarOverlayManager
         if (string.IsNullOrEmpty(radarId)) return;
         if (!_enabled.Contains(radarId)) return;        // already off; idempotent
         await _host.StopOverlayAsync(radarId, ct);
-        _enabled.Remove(radarId);
+        var next = new HashSet<string>(_enabled, StringComparer.Ordinal);
+        next.Remove(radarId);
+        _enabled = next;
     }
 
     /// <summary>Fetch and cache capabilities for every currently-known
@@ -176,17 +211,23 @@ public sealed class RadarOverlayManager
     /// enable path.</summary>
     private async Task EnsureCapabilitiesAsync(CancellationToken ct)
     {
+        // Collect newly-fetched entries first so we only allocate one
+        // dict copy per refresh, regardless of how many radars are
+        // present. Same allocation discipline as the per-mutation
+        // replacement above (drives Blazor re-render of the dropdown
+        // rows once caps land).
+        Dictionary<string, RadarCapabilities?>? next = null;
         foreach (var r in _radars)
         {
             if (string.IsNullOrEmpty(r.Id)) continue;
             if (_capabilities.ContainsKey(r.Id)) continue;
-            try
-            {
-                var caps = await _radarApi.GetCapabilitiesAsync(r.Id, ct);
-                _capabilities[r.Id] = caps;
-            }
-            catch (Exception) { _capabilities[r.Id] = null; }
+            RadarCapabilities? caps;
+            try { caps = await _radarApi.GetCapabilitiesAsync(r.Id, ct); }
+            catch (Exception) { caps = null; }
+            next ??= new Dictionary<string, RadarCapabilities?>(_capabilities, StringComparer.Ordinal);
+            next[r.Id] = caps;
         }
+        if (next is not null) _capabilities = next;
     }
 
     /// <summary>Turn the overlay on for any radar that just started

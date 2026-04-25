@@ -17,49 +17,66 @@ const { shouldSuppressLowReturn, parseHexRgba, parseLegendColor } = _internal;
 
 test('shouldSuppressLowReturn: normal pixel below mediumReturn is suppressed', () => {
     // Navico HALO ships mediumReturn = 5; bytes 1..4 are the blue
-    // sea-clutter ramp the user wants gone.
+    // sea-clutter ramp the user wants gone (metadata path).
     const legend = { mediumReturn: 5 };
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 1, legend), true);
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 4, legend), true);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#000033ff' }, 1, legend), true);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#0000ccff' }, 4, legend), true);
 });
 
-test('shouldSuppressLowReturn: normal pixel at mediumReturn boundary is kept', () => {
-    // The boundary itself is the start of "real" returns.
+test('shouldSuppressLowReturn: blue-dominant normal pixel above mediumReturn is also suppressed', () => {
+    // The HALO palette keeps painting blue-tinged normals above the
+    // mediumReturn metadata cutoff (bytes 5-7 are #0000ff / #0033cc /
+    // #006699). The colour check is the user-facing fix: anything
+    // that LOOKS blue gets dropped regardless of intensity class.
     const legend = { mediumReturn: 5 };
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 5, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#0000ffff' }, 5, legend), true);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#0033ccff' }, 6, legend), true);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#006699ff' }, 7, legend), true);
 });
 
-test('shouldSuppressLowReturn: normal pixel above mediumReturn is kept', () => {
+test('shouldSuppressLowReturn: green-dominant normal pixel above mediumReturn is kept', () => {
+    // Bytes 8+ on HALO transition to green-dominant
+    // (#009966, #00cc33, #00ff00, ...) -- those are real targets
+    // and must stay visible.
     const legend = { mediumReturn: 5 };
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 10, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#009966ff' }, 8, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#00cc33ff' }, 9, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#00ff00ff' }, 10, legend), false);
+});
+
+test('shouldSuppressLowReturn: red / yellow normals are kept', () => {
+    const legend = { mediumReturn: 5 };
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#ffff00ff' }, 13, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#ff0000ff' }, 15, legend), false);
 });
 
 test('shouldSuppressLowReturn: index 0 (no echo) is never suppressed', () => {
     // Byte 0 is the "no echo" marker -- already transparent in any
-    // sane palette. Suppressing it would be a no-op but the rule is
-    // worded "index >= 1" so a future change can't accidentally
-    // include it.
+    // sane palette. The metadata-path is gated on index >= 1 so the
+    // rule can't include it. The colour-path could otherwise -- a
+    // pixel of #000088ff at index 0 would be blue-dominant -- so
+    // pin both gating cases.
     const legend = { mediumReturn: 5 };
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 0, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#00000000' }, 0, legend), false);
 });
 
-test('shouldSuppressLowReturn: doppler pixels keep their colour even in suppress band', () => {
-    // Doppler-receding is rendered as a pale blue and lives below
-    // mediumReturn on some palettes; we must NOT suppress it because
-    // the user explicitly wants doppler markers visible.
+test('shouldSuppressLowReturn: doppler / history / target border kept regardless of colour', () => {
+    // Doppler-receding is rendered as a pale blue (`#90d0f0`) and
+    // would otherwise be caught by the colour check; we explicitly
+    // gate on type === 'normal' so semantic markers stay visible.
     const legend = { mediumReturn: 5 };
-    assert.equal(shouldSuppressLowReturn({ type: 'dopplerReceding' }, 2, legend), false);
-    assert.equal(shouldSuppressLowReturn({ type: 'dopplerApproaching' }, 3, legend), false);
-    assert.equal(shouldSuppressLowReturn({ type: 'history' }, 4, legend), false);
-    assert.equal(shouldSuppressLowReturn({ type: 'targetBorder' }, 1, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'dopplerReceding', color: '#90d0f0ff' }, 18, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'dopplerApproaching', color: '#0000ffff' }, 17, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'history', color: '#0000ffff' }, 19, legend), false);
+    assert.equal(shouldSuppressLowReturn({ type: 'targetBorder', color: '#0000ffff' }, 16, legend), false);
 });
 
-test('shouldSuppressLowReturn: nothing suppressed when legend lacks mediumReturn', () => {
-    // Non-Navico providers may not ship mediumReturn at all; without
-    // it we have no spec-grounded threshold so we suppress nothing.
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 2, {}), false);
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 2, null), false);
-    assert.equal(shouldSuppressLowReturn({ type: 'normal' }, 2, { mediumReturn: 'five' }), false);
+test('shouldSuppressLowReturn: colour check still fires when legend lacks mediumReturn', () => {
+    // A non-Navico provider that doesn't ship mediumReturn but does
+    // paint sea clutter as blue still gets the noise cleaned up via
+    // the colour-only path.
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#0000ffff' }, 5, {}), true);
+    assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#00ff00ff' }, 5, {}), false);
 });
 
 test('shouldSuppressLowReturn: null pixel returns false', () => {
