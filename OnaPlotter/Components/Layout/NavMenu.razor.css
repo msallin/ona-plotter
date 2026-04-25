@@ -8,12 +8,17 @@
     align-items: center;
     justify-content: center;
     width: 1.75rem;
+    height: 1.75rem;
     flex-shrink: 0;
-    /* Bumped from 1.1rem -> 1.4rem so the icons read well at a touch
-       distance on iPad. Cabin-sunlight is hard on small glyphs. */
-    font-size: 1.4rem;
     opacity: 0.7;
-    line-height: 1;
+}
+
+.nav-icon svg {
+    /* 1.4rem visible icon size keeps glyphs readable at iPad touch
+       distance / cabin sunlight. stroke="currentColor" on the SVG
+       lets the icon pick up sidebar text + active-state colours. */
+    width: 1.4rem;
+    height: 1.4rem;
 }
 
 /* Labels visible by default; collapsed to icon-only in fullscreen
