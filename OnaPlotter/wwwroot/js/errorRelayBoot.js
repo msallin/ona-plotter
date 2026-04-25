@@ -39,6 +39,15 @@
     // if a future contributor adds logging to formatErrorLike or
     // sendOnce) would otherwise crash-loop.
     var inWrapper = false;
+    // Disable the relay outright after the first non-OK response so
+    // we don't keep firing POSTs that the browser will log as
+    // "Failed to load resource: 400/404" on every error -- which
+    // happens in dev / CI where OnaPlotter runs standalone (no
+    // SignalK plugin mount, so /log doesn't exist) and would
+    // otherwise cascade into the smoke-test error collector. In
+    // production (PWA mounted under /signalk-onaplotter/) /log is
+    // wired up by deploy/index.js and this stays false.
+    var relayDisabled = false;
 
     function resolveRelayUrl() {
         if (relayUrl) return relayUrl;
@@ -55,6 +64,7 @@
     }
 
     function sendOnce(payload) {
+        if (relayDisabled) return;
         try {
             fetch(resolveRelayUrl(), {
                 method: 'POST',
@@ -65,7 +75,18 @@
                 // is unloading mid-crash; otherwise an onerror during
                 // tab close would silently drop. Firefox needs >= 116.
                 keepalive: true,
-            }).catch(function () { /* best-effort */ });
+            }).then(function (resp) {
+                // Auto-disable on a server reject (404 -- plugin not
+                // installed; 400 -- standalone dev host; 401/403 --
+                // auth lapse). One 400 still leaks a "Failed to load
+                // resource" console.error from the browser's network
+                // stack, but no more after that.
+                if (resp && !resp.ok) relayDisabled = true;
+            }).catch(function () {
+                // Network error (offline, DNS, CORS): same disable
+                // policy. The page can recover without us hammering.
+                relayDisabled = true;
+            });
         } catch (_) { /* best-effort */ }
     }
 
