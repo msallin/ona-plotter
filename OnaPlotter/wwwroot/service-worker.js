@@ -47,7 +47,14 @@
 //             cooldown 30s -> 15min; PNG PWA icons + apple-touch-icon
 //             so iPad install shows the OnaPlotter logo; prev/next
 //             waypoint buttons in route HUD; AIS popup autoPan off.
-const CACHE_NAME = 'ona-plotter-v14';
+// v14 -> v15: real-browser :fullscreen now hides the topbar (matches
+//             .ios-fullbleed) so the 100dvh map-container fits the
+//             viewport without 3rem of bottom overflow on Firefox /
+//             Chrome / Edge; Settings + other overflowing pages get
+//             a main-as-scroll-container fallback under :fullscreen
+//             so the helm can scroll Settings while in real
+//             fullscreen.
+const CACHE_NAME = 'ona-plotter-v15';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

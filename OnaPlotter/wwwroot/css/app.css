@@ -1472,6 +1472,35 @@ html {
     }
 }
 
+/* Same single-scroll-container shape for the Fullscreen API path.
+   The (display-mode: fullscreen) media feature only matches PWA
+   install modes; Firefox / Chrome real fullscreen via
+   element.requestFullscreen() does NOT trip it, so overflowing
+   pages (Settings, History, Resources) used to fall back to a
+   document-level scroll that the fullscreened html doesn't expose
+   -- the helm could see the page extended past the viewport but
+   couldn't scroll to it. Mirror the rules under :fullscreen so
+   <main> becomes the scroll container regardless of how we got
+   into fullscreen. */
+:fullscreen {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+:fullscreen body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+:fullscreen .page {
+    height: 100%;
+}
+:fullscreen main {
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
     -webkit-tap-highlight-color: transparent;
     /* touch-action: manipulation kills the 300 ms click delay AND the
@@ -1531,7 +1560,14 @@ html, body {
    the user without any nav affordance once in "fullscreen". Instead
    we narrow it so the icons remain tappable. See MainLayout.razor.css
    and NavMenu.razor.css for the width + label-collapse rules. */
-html.ios-fullbleed .page > main > .top-row {
+/* Real-browser fullscreen via the Fullscreen API hides the topbar
+   too. Without this the 3rem topbar adds to the 100dvh map-container
+   below, pushing the bottom of main 3rem past the viewport edge --
+   the helm sees the lower portion of the HUD and control bar
+   clipped. Esc / F11 still exits fullscreen so the missing topbar
+   button isn't a trap. */
+html.ios-fullbleed .page > main > .top-row,
+:fullscreen .page > main > .top-row {
     display: none !important;
 }
 
