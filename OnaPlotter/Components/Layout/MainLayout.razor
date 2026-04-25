@@ -614,6 +614,21 @@
         if (firstRender)
         {
             await Settings.InitializeAsync();
+            // First-run-on-phone default: collapse the sidebar to the
+            // icon rail so a 600px-wide screen isn't half-eaten by
+            // labels the helm rarely needs. The check happens AFTER
+            // Settings.InitializeAsync so any previously-set value
+            // wins; ApplyMobileFirstRunDefaultsAsync is a no-op once
+            // the user has toggled the chevron at least once.
+            try
+            {
+                var viewport = await JS.InvokeAsync<IJSObjectReference>(
+                    "import", "./js/viewport.js");
+                bool isMobile = await viewport.InvokeAsync<bool>("isMobile");
+                await Settings.ApplyMobileFirstRunDefaultsAsync(isMobile);
+                await viewport.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
             // Rehydrate snoozed targets from the KV store so a reload
             // doesn't forget that the ferry is silenced for another 4
             // minutes. Safe to call before anything is rendered; the

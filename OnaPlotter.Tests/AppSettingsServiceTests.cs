@@ -531,4 +531,103 @@ public class AppSettingsServiceTests
         var stored = await kv.GetAsync("mapView.v1");
         await Assert.That(stored).IsEqualTo("47.5|-122.25|12");
     }
+
+    // --- Mobile first-run sidebar default ----------------------------
+
+    [Test]
+    public async Task ApplyMobileFirstRunDefaults_OnPhoneFirstRun_CollapsesAndPersists()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: true);
+
+        await Assert.That(svc.SidebarCollapsed).IsTrue();
+        await Assert.That(await kv.GetAsync("sidebarCollapsed.v1")).IsEqualTo("true");
+    }
+
+    [Test]
+    public async Task ApplyMobileFirstRunDefaults_OnDesktopFirstRun_LeavesExpanded()
+    {
+        // Same fresh-init flow but isMobile=false: should be a no-op so
+        // the desktop user lands in the expanded rail.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: false);
+
+        await Assert.That(svc.SidebarCollapsed).IsFalse();
+        await Assert.That(await kv.GetAsync("sidebarCollapsed.v1")).IsNull();
+    }
+
+    [Test]
+    public async Task ApplyMobileFirstRunDefaults_RespectsExplicitFalse()
+    {
+        // Helm has previously expanded the rail on phone (stored false).
+        // The mobile auto-default must not flip it back to collapsed --
+        // explicit user choice wins.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("sidebarCollapsed.v1", "false");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: true);
+
+        await Assert.That(svc.SidebarCollapsed).IsFalse();
+        await Assert.That(await kv.GetAsync("sidebarCollapsed.v1")).IsEqualTo("false");
+    }
+
+    [Test]
+    public async Task ApplyMobileFirstRunDefaults_RespectsExplicitTrue()
+    {
+        // Symmetric counterpart: stored true stays true regardless of
+        // viewport hint.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("sidebarCollapsed.v1", "true");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: false);
+
+        await Assert.That(svc.SidebarCollapsed).IsTrue();
+        await Assert.That(await kv.GetAsync("sidebarCollapsed.v1")).IsEqualTo("true");
+    }
+
+    [Test]
+    public async Task ApplyMobileFirstRunDefaults_IsIdempotent()
+    {
+        // Calling twice on phone width must not re-fire OnSettingsChanged
+        // or re-write the same value -- the second call sees the
+        // explicit flag now true and bails out.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: true);
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: true);
+
+        await Assert.That(svc.SidebarCollapsed).IsTrue();
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetSidebarCollapsed_StampsExplicit_BlocksLaterMobileDefault()
+    {
+        // User toggled the rail manually (explicit). A later
+        // ApplyMobileFirstRunDefaults must not overwrite it, even
+        // though the stored value happens to match what the auto-
+        // default would set.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetSidebarCollapsedAsync(false);
+        await svc.ApplyMobileFirstRunDefaultsAsync(isMobile: true);
+
+        await Assert.That(svc.SidebarCollapsed).IsFalse();
+    }
 }

@@ -322,6 +322,81 @@ html, body {
 }
 #blazor-error-ui .reload { color: #fff; text-decoration: underline; margin-left: 10px; }
 
+/* Boot loading screen. Renders inside #app from index.html before
+   the Blazor runtime takes over -- the entire #app element is
+   replaced when App.razor mounts, so no teardown is needed. The
+   palette intentionally matches the dark-theme defaults
+   (--sk-bg / accent blue) so the transition into the app feels
+   continuous: helm doesn't watch a black-then-blue flicker on
+   cold boot. */
+.boot-shell {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: 'Helvetica Neue', Helvetica, sans-serif;
+    /* Sit below modal/error UI but above any flash-of-unstyled
+       content. z-index parity with the app shell stack so a render
+       glitch doesn't trap the boot screen on top of a live page. */
+    z-index: 1;
+}
+.boot-icon svg {
+    width: 96px;
+    height: 96px;
+    border-radius: 18px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    display: block;
+}
+.boot-title {
+    font-size: 1.5rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+}
+/* Spinner: a single rotating arc (3 px border, 32 px diameter).
+   prefers-reduced-motion honors OS-level "reduce animation"
+   accessibility setting -- shows a static ring instead so we don't
+   trigger vestibular discomfort. */
+.boot-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(96, 165, 250, 0.18);
+    border-top-color: #60a5fa;
+    border-radius: 50%;
+    animation: boot-spin 0.9s linear infinite;
+}
+@keyframes boot-spin {
+    to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .boot-spinner {
+        animation: none;
+    }
+}
+.boot-status {
+    font-size: 0.9rem;
+    color: rgba(226, 232, 240, 0.7);
+    letter-spacing: 0.04em;
+}
+/* Build stamp pinned to the bottom-right. Tiny + dim so it doesn't
+   compete with the brand frame; populated only when version.g.js
+   is present (gitignored, written by StampBuildInfo). The Settings
+   page carries the authoritative copy -- this is just a quick
+   check-the-bundle affordance during boot. */
+.boot-version {
+    position: fixed;
+    bottom: 14px;
+    right: 16px;
+    font-size: 0.7rem;
+    color: rgba(226, 232, 240, 0.4);
+    font-family: ui-monospace, 'Cascadia Mono', 'Source Code Pro', Menlo, monospace;
+    letter-spacing: 0.02em;
+}
+
 a, .btn-link {
     color: var(--sk-accent);
 }
