@@ -54,6 +54,16 @@ public sealed class CourseApi : ICourseApi
         return ResourceHttp.PutAsync(_http, url, body: new { value = 1 }, ct);
     }
 
+    public Task<ApiResult> SetPointIndexAsync(int pointIndex, CancellationToken ct = default)
+    {
+        // SignalK v2 Course API: PUT /activeRoute/pointIndex with body
+        // {"value": N} where N is the 0-based absolute leg index.
+        // Server clamps out-of-range and recomputes the rest of the
+        // course state on its end.
+        var url = _baseUrl.Combine(SignalKUrls.CourseActiveRoutePointIndexPath);
+        return ResourceHttp.PutAsync(_http, url, body: new { value = pointIndex }, ct);
+    }
+
     public Task<ApiResult> ClearAsync(CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.CoursePath), ct);
 }

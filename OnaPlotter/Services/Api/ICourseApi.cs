@@ -30,5 +30,13 @@ public interface ICourseApi
     /// confirm "arrived, on to the next leg" in one tap.</summary>
     Task<ApiResult> AdvanceActiveRouteAsync(CancellationToken ct = default);
 
+    /// <summary>Jumps the active route to an absolute leg index. Used by
+    /// the "tap a WP on the route polyline to skip to it" gesture so the
+    /// helm can re-route inside an active route without dropping it.
+    /// <paramref name="pointIndex"/> is 0-based; the server clamps to
+    /// the valid range and recomputes nextPoint / previousPoint /
+    /// calcValues for the new leg.</summary>
+    Task<ApiResult> SetPointIndexAsync(int pointIndex, CancellationToken ct = default);
+
     Task<ApiResult> ClearAsync(CancellationToken ct = default);
 }

@@ -210,4 +210,95 @@ public class SignalkClientNotificationTests
         c.ProcessMessage(payload);
         await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
     }
+
+    // --- calcValues bare-boolean form ---
+    //
+    // Stock signalk-server (without the course-provider notifications
+    // plugin) and some forks publish the leg-advance flag as a plain
+    // bool under navigation.course.calcValues.{flag}. The bare-bool
+    // fall-through in ProcessSelfDelta routes it to the same flag the
+    // notifications form sets, so MaybeAutoAdvanceWaypoint sees the
+    // same edge regardless of which shape the server uses. Without
+    // this, auto-advance silently dies on a server that doesn't ship
+    // the notifications.
+
+    [Test]
+    public async Task Perpendicular_CalcValues_BareBool_True_SetsFlag()
+    {
+        var c = NewClient();
+        string payload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""navigation.course.calcValues.perpendicularPassed"",
+              ""value"":true }}]
+          }}]
+        }}";
+        c.ProcessMessage(payload);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
+    }
+
+    [Test]
+    public async Task Perpendicular_CalcValues_BareBool_False_ClearsFlag()
+    {
+        var c = NewClient();
+        string armedPayload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""navigation.course.calcValues.perpendicularPassed"",
+              ""value"":true }}]
+          }}]
+        }}";
+        string clearedPayload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:01.000Z"",
+            ""values"":[{{ ""path"":""navigation.course.calcValues.perpendicularPassed"",
+              ""value"":false }}]
+          }}]
+        }}";
+        c.ProcessMessage(armedPayload);
+        c.ProcessMessage(clearedPayload);
+        await Assert.That(c.Data.PerpendicularPassed).IsFalse();
+    }
+
+    [Test]
+    public async Task Arrival_CalcValues_BareBool_True_SetsFlag()
+    {
+        var c = NewClient();
+        string payload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""navigation.course.calcValues.arrivalCircleEntered"",
+              ""value"":true }}]
+          }}]
+        }}";
+        c.ProcessMessage(payload);
+        await Assert.That(c.Data.ArrivalCircleEntered).IsTrue();
+    }
+
+    [Test]
+    public async Task CalcValues_BareBool_FiresOnDataChanged()
+    {
+        // Auto-advance only fires inside HandleDataChanged. If the
+        // calcValues bare-bool form didn't set changed=true on the
+        // delta processor, MaybeAutoAdvanceWaypoint would never wake
+        // up and the new subscription would be cosmetic. Pin that the
+        // event fires so the trigger chain is intact end-to-end.
+        var c = NewClient();
+        int fired = 0;
+        c.OnDataChanged += () => fired++;
+        string payload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""navigation.course.calcValues.perpendicularPassed"",
+              ""value"":true }}]
+          }}]
+        }}";
+        c.ProcessMessage(payload);
+        await Assert.That(fired).IsGreaterThanOrEqualTo(1);
+    }
 }

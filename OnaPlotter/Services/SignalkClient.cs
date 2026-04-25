@@ -164,21 +164,27 @@ public sealed class SignalkClient : IAsyncDisposable
         new("navigation.course.calcValues.bearingTrue",                      PathTier.SelfFast),
         new("navigation.course.calcValues.timeToGo",                         PathTier.SelfFast),
         new("navigation.course.calcValues.velocityMadeGood",                 PathTier.SelfFast),
-        new("navigation.course.calcValues.velocityMadeGoodToCourse",         PathTier.SelfFast),
         new("navigation.course.calcValues.crossTrackError",                  PathTier.SelfFast),
         new("navigation.course.calcValues.route.distance",                   PathTier.SelfFast),
         new("navigation.course.calcValues.route.timeToGo",                   PathTier.SelfFast),
-        // Leg-advance signals from the course-provider plugin. The
-        // plugin emits these as NOTIFICATIONS (not plain booleans),
-        // with the "notifications." prefix the Notification class
-        // adds in src/lib/alarms.ts -- see the plugin source for the
-        // exact shape. Value is {state, method, message} when armed
-        // and null when cleared; ProcessSelfDelta maps either form
-        // into NavigationData's PerpendicularPassed / ArrivalCircleEntered
+        // Leg-advance signals. The standard course-provider plugin
+        // emits these as NOTIFICATIONS, prefixed with "notifications."
+        // by the plugin's Notification class (src/lib/alarms.ts).
+        // Value is {state, method, message} when armed and null when
+        // cleared; ProcessSelfDelta normalises both shapes into
+        // NavigationData's PerpendicularPassed / ArrivalCircleEntered
         // booleans so MaybeAutoAdvanceWaypoint's edge trigger fires
         // on the enter transition.
+        //
+        // Belt and braces: also subscribe to the bare-boolean form
+        // under calcValues. Stock signalk-server's built-in course
+        // manager doesn't ship the notifications, and some forks /
+        // alternative course providers publish the boolean directly.
+        // Either form maps to the same flag via NavigationData.ApplyBool.
         new("notifications.navigation.course.perpendicularPassed",           PathTier.SelfFast),
         new("notifications.navigation.course.arrivalCircleEntered",          PathTier.SelfFast),
+        new("navigation.course.calcValues.perpendicularPassed",              PathTier.SelfFast),
+        new("navigation.course.calcValues.arrivalCircleEntered",             PathTier.SelfFast),
         // Autopilot state + target heading + target AWA (wind mode).
         new("steering.autopilot.state",                                      PathTier.SelfFast),
         new("steering.autopilot.target.headingTrue",                         PathTier.SelfFast),
