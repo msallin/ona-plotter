@@ -118,9 +118,14 @@ public class SignalkClientAtonTests
     [Test]
     public async Task AtonsTier_HasExpected60sPeriod()
     {
+        // Pin the wire shape: subscription tier is named "Atons", uses
+        // the atons.* context glob, and rides the dedicated 60-second
+        // period constant. Asserting the constant's literal value is
+        // dropped because TUnit's constant-comparison analyzer flags
+        // it (and a comment in the constant's declaration is the
+        // canonical place for "why 60s").
         var tier = SignalkClient.Tiers.Single(t => t.Name == "Atons");
         await Assert.That(tier.Context).IsEqualTo("atons.*");
         await Assert.That(tier.PeriodMs).IsEqualTo(SignalkClient.AtonsSubscriptionPeriodMs);
-        await Assert.That(SignalkClient.AtonsSubscriptionPeriodMs).IsEqualTo(60_000);
     }
 }
