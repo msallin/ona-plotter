@@ -33,7 +33,8 @@ public class SignalkClientStaleTests
             ais: new AisStore(),
             http: new HttpClient(),
             settings: new FakeSettings(),
-            serverNotifs: new OnaPlotter.Services.ServerNotifications.ServerNotificationStore());
+            serverNotifs: new OnaPlotter.Services.ServerNotifications.ServerNotificationStore(),
+            atons: new OnaPlotter.Services.AtoNStore());
 
     [Test]
     public async Task IsDataStale_BeforeConnect_IsFalse()

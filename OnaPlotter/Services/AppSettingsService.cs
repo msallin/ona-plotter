@@ -33,6 +33,7 @@ public sealed class AppSettingsService : IAppSettings
     public string MapOrientation { get; private set; } = "north";
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
+    public bool AtonsVisible { get; private set; } = true;
     public bool SidebarCollapsed { get; private set; }
     public double DepthAlarmThreshold { get; private set; } = 3.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
@@ -91,6 +92,7 @@ public sealed class AppSettingsService : IAppSettings
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
+            AtonsVisible = await LoadBool("atonsVisible.v1", true);
             // Read raw to detect whether the key was ever stored. A
             // missing value triggers ApplyMobileFirstRunDefaultsAsync's
             // viewport-aware default; a stored "false" is respected.
@@ -216,6 +218,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         LaylinesVisible = value;
         await Save("laylinesVisible", value ? "true" : "false");
+    }
+
+    public async Task SetAtonsVisibleAsync(bool value)
+    {
+        AtonsVisible = value;
+        await Save("atonsVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
     }
 
     public async Task SetSidebarCollapsedAsync(bool value)

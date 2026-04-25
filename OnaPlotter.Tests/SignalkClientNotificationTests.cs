@@ -40,7 +40,8 @@ public class SignalkClientNotificationTests
             ais: new AisStore(),
             http: new HttpClient(),
             settings: new FakeSettings(),
-            serverNotifs: store);
+            serverNotifs: store,
+            atons: new OnaPlotter.Services.AtoNStore());
         // Hello would normally set self-context; do it explicitly so
         // context-matching on the URN delta below is deterministic.
         c.SetSelfContext("vessels.urn:mrn:imo:mmsi:261006533");

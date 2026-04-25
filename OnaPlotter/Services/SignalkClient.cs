@@ -52,6 +52,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly NavigationData _data;
     private readonly TrackBuffer _track;
     private readonly AisStore _ais;
+    private readonly AtoNStore _atons;
     private readonly OnaPlotter.Services.ServerNotifications.ServerNotificationStore _serverNotifs;
     private readonly Uri _wsUri;
     private readonly HttpClient _http;
@@ -258,6 +259,21 @@ public sealed class SignalkClient : IAsyncDisposable
         "notifications.*",
     ];
 
+    /// <summary>atons.* @ 60 s. AIS Type 21 broadcasts AtoN positions
+    /// every ~3 min and the data is mostly static (a buoy doesn't
+    /// move much) -- 1 Hz would burn bandwidth + WASM main-thread
+    /// time for nothing. 60 s is what Freeboard-SK uses too. Anything
+    /// under the path tree (name, position, atonType, virtual,
+    /// communication) lands in <see cref="OnaPlotter.Services.AtoNStore"/>.</summary>
+    private static readonly string[] AtonsTierPaths =
+    [
+        "*",
+    ];
+
+    /// <summary>Period for atons.* and shore.basestations.* tiers.
+    /// Both are static enough that 60 s is plenty.</summary>
+    public const int AtonsSubscriptionPeriodMs = 60_000;
+
     /// <summary>
     /// The shipped-with-app subscription set. Reconnect iterates this
     /// in order and issues one <c>subscribe</c> per entry. Each tier
@@ -290,6 +306,11 @@ public sealed class SignalkClient : IAsyncDisposable
             Name: "ServerNotifications",
             Context: "vessels.self",
             Paths: ServerNotificationsTierPaths),
+        new SubscriptionTier(
+            Name: "Atons",
+            Context: "atons.*",
+            Paths: AtonsTierPaths,
+            PeriodMs: AtonsSubscriptionPeriodMs),
     ];
 
     /// <summary>Back-compat view: every self-context path across all
@@ -373,12 +394,14 @@ public sealed class SignalkClient : IAsyncDisposable
 
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
-        OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs)
+        OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs,
+        AtoNStore atons)
     {
         _logger = logger;
         _data = new NavigationData();
         _track = track;
         _ais = ais;
+        _atons = atons;
         _http = http;
         _baseUrl = baseUrl;
         _wsUri = baseUrl.StreamUri();
@@ -529,6 +552,11 @@ public sealed class SignalkClient : IAsyncDisposable
             // drop would be misleading. The server re-publishes the
             // active set on reconnect so they reappear naturally.
             _serverNotifs.Reset();
+            // Same logic for AtoNs: the server re-broadcasts the
+            // active set on reconnect (each AtoN sends Type 21 every
+            // ~3 min anyway) so a stale buoy 100 nm astern is just
+            // noise on the chart while we're disconnected.
+            _atons.Reset();
             OnConnectionChanged?.Invoke();
 
             // Linked delay token: cancels either when the whole client
@@ -624,6 +652,8 @@ public sealed class SignalkClient : IAsyncDisposable
 
             if (isSelf)
                 ProcessSelfDelta(delta);
+            else if (IsAtonContext(delta.Context))
+                ProcessAtonDelta(delta);
             else
                 ProcessAisDelta(delta);
         }
@@ -1066,6 +1096,31 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
 
                 _ais.Apply(delta.Context!, val.Path, val.Value);
+            }
+        }
+    }
+
+    /// <summary>True when the delta context is an AtoN context. SignalK
+    /// publishes Aids to Navigation under <c>atons.urn:mrn:imo:mmsi:NNN</c>
+    /// (and <c>shore.basestations.*</c> by extension, which a future
+    /// commit may route here too). Same dispatch site as the AIS branch
+    /// in ProcessMessage; an AtoN context never matches IsSelfContext
+    /// because we only ever set <c>_selfContext</c> from a vessels.* URN.</summary>
+    internal static bool IsAtonContext(string? context)
+    {
+        if (string.IsNullOrEmpty(context)) return false;
+        return context.StartsWith("atons.", StringComparison.Ordinal);
+    }
+
+    private void ProcessAtonDelta(SignalkDelta delta)
+    {
+        foreach (var update in delta.Updates!)
+        {
+            if (update.Values is null) continue;
+            foreach (var val in update.Values)
+            {
+                if (val.Path is null) continue;
+                _atons.Apply(delta.Context!, val.Path, val.Value);
             }
         }
     }
