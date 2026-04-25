@@ -58,14 +58,17 @@
                         <select class="map-btn radar-range-select"
                                 value="@rangeM"
                                 @onchange="(e) => OnRangeChange(r, e)">
-                            @* Prefer the radar's own supportedRanges
-                               from /capabilities so the server can't
-                               reject our PUT with "not a legal value".
-                               Falls back to a sane default ladder when
-                               capabilities haven't loaded yet. *@
+                            @* Drives off the range control's validValues
+                               (the radar's actual write whitelist) when
+                               capabilities have arrived; supportedRanges
+                               at the root is a SUPERSET that includes
+                               read-only values the server still rejects
+                               on PUT. Labels prefer the per-value
+                               descriptions ("1/4 nm", "24 nm") over our
+                               own metric/nm formatting. *@
                             @foreach (var v in GetRangeOptions(r))
                             {
-                                <option value="@v" selected="@(v == rangeM)">@FormatRange(v)</option>
+                                <option value="@v" selected="@(v == rangeM)">@FormatRangeFor(r, v)</option>
                             }
                         </select>
                     }
@@ -84,19 +87,31 @@
     [Parameter] public EventCallback<(RadarInfo radar, int powerValue)> OnSetPower { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, int rangeMeters)> OnSetRange { get; set; }
 
-    /// <summary>Per-radar range-dropdown options: prefer the radar's
-    /// own supportedRanges from capabilities; fall back to a generic
-    /// ladder only while capabilities are still loading. When the
-    /// radar's current range isn't in the list, splice it in so the
-    /// dropdown can still reflect the server's state without the
-    /// select widget silently resetting.</summary>
+    /// <summary>Per-radar range-dropdown options. Pecking order:
+    /// (1) the range control's <c>validValues</c> (the actual PUT
+    ///     whitelist; on Navico HALO this excludes the metric-only
+    ///     entries from <c>supportedRanges</c> that the server then
+    ///     rejects with "value not legal");
+    /// (2) <c>supportedRanges</c> at the capabilities root, when the
+    ///     control schema doesn't ship a validValues list;
+    /// (3) a generic ladder only while capabilities are still
+    ///     in-flight.
+    /// Always splices in the radar's current range if absent so the
+    /// select reflects server state instead of resetting silently.</summary>
     private IEnumerable<int> GetRangeOptions(RadarInfo r)
     {
         IReadOnlyList<int> ranges = DefaultRangeLadder;
-        if (Capabilities.TryGetValue(r.Id, out var caps)
-            && caps?.SupportedRanges is { Length: > 0 } supported)
+        if (Capabilities.TryGetValue(r.Id, out var caps) && caps is not null)
         {
-            ranges = supported;
+            if (caps.Controls.TryGetValue("range", out var rangeCtl)
+                && rangeCtl.ValidValues is { Length: > 0 } valid)
+            {
+                ranges = valid;
+            }
+            else if (caps.SupportedRanges is { Length: > 0 } supported)
+            {
+                ranges = supported;
+            }
         }
         if (r.Range is int current && !ranges.Contains(current))
         {
@@ -105,14 +120,33 @@
         return ranges.OrderBy(v => v);
     }
 
+    /// <summary>Label for one range option. Prefers the radar's own
+    /// per-value description ("1/4 nm", "1.5 nm", "24 nm") so the
+    /// dropdown matches what the helm sees on a brand-native MFD;
+    /// falls back to <see cref="FormatRange"/> when the description
+    /// for that exact metres value is absent.</summary>
+    private string FormatRangeFor(RadarInfo r, int meters)
+    {
+        if (Capabilities.TryGetValue(r.Id, out var caps)
+            && caps?.Controls.TryGetValue("range", out var rangeCtl) == true
+            && rangeCtl.Descriptions is { } desc
+            && desc.TryGetValue(
+                meters.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                out var label)
+            && !string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+        return FormatRange(meters);
+    }
+
     private bool expanded = false;
 
-    // A common spread of marine radar ranges in metres. Most modern
-    // sets accept these values; the server will reject anything
-    // outside its capability list. When we fetch /capabilities for
-    // an enabled radar we should swap in its supportedRanges --
-    // wiring that is left for a follow-up that surfaces capabilities
-    // to this component.
+    // Generic spread of metric ranges in metres. Used only as a
+    // placeholder while /capabilities is in flight; once caps arrive
+    // GetRangeOptions switches to the radar's own validValues. Kept
+    // as a sane no-network fallback so an early click on the dropdown
+    // before caps arrive still offers reasonable choices.
     private static readonly int[] DefaultRangeLadder =
     [
         50, 100, 250, 500, 1000, 1500, 2000, 3000, 4000, 6000,
