@@ -9,10 +9,11 @@
 @inject IAlarmManager Alarms
 @inject OnaPlotter.Services.Api.ICourseApi CourseApi
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
-<div class="page theme-@Settings.Theme @(Settings.NightMode ? $"night-mode-global night-mode-{Settings.NightModePreset}" : "")">
+<div class="page theme-@Settings.Theme @(Settings.NightMode ? $"night-mode-global night-mode-{Settings.NightModePreset}" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -46,12 +47,45 @@
                 </button>
             }
 
+            @* Zoom in / out. Only rendered when the Map page is
+               active; other pages have no map to zoom, so showing
+               inert zoom buttons would be a lie. The first button
+               of the right-side cluster carries `ms-auto` so the
+               whole group right-aligns; subsequent buttons sit
+               flush. (Sidebar collapse used to live here but moved
+               into NavMenu's foot, where the standard pattern is.) *@
+            @if (IsMapRoute)
+            {
+                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn ms-auto"
+                        @onclick="ZoomInAsync"
+                        title="Zoom in" aria-label="Zoom in">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round" aria-hidden="true">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn"
+                        @onclick="ZoomOutAsync"
+                        title="Zoom out" aria-label="Zoom out">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round" aria-hidden="true">
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                </button>
+            }
+
             @* Night / day toggle. Moon = currently in day, tap to go
                night. Sun = currently in night, tap to go day. Same
                icon-button shape + size as the fullscreen control
                right next to it so the topbar reads as a row of
-               consistent glyph buttons. *@
-            <button class="btn btn-sm btn-outline-secondary topbar-icon-btn ms-auto"
+               consistent glyph buttons. `ms-auto` only applies when
+               the zoom cluster isn't rendered (non-map pages); on
+               the map page the zoom-in button carries the auto-margin
+               and Night sits flush with the rest. *@
+            <button class="btn btn-sm btn-outline-secondary topbar-icon-btn @(IsMapRoute ? "" : "ms-auto")"
                     @onclick="ToggleNightMode"
                     title="@(Settings.NightMode ? "Day mode" : "Night mode")"
                     aria-label="@(Settings.NightMode ? "Switch to day mode" : "Switch to night mode")">
@@ -72,14 +106,23 @@
                 }
             </button>
 
-            @* NO Blazor @onclick -- fullscreen.js wires a native click
-               listener via attachTrigger() below. Requesting
+            @* Fullscreen button. Only rendered when the browser can
+               actually fullscreen a non-video element -- iPad Safari
+               (tab mode) cannot, and matching Freeboard-SK's behaviour
+               we simply hide the button there; the user installs the
+               app via Share -> Add to Home Screen to get a true
+               fullscreen launcher. See wwwroot/js/fullscreen.js
+               ::isSupported(). Standalone PWAs also hide the button
+               because they're already fullscreen at launch.
+               NO Blazor @onclick -- fullscreen.js wires a native
+               click listener via attachTrigger() below. Requesting
                fullscreen on Safari / iOS must happen synchronously
                from a user gesture; a Blazor @onclick round-trips
                through the Blazor event dispatcher and often loses
                the user-gesture context, which makes
                requestFullscreen() silently reject. *@
-            <button @ref="fsBtnRef" class="btn btn-sm btn-outline-secondary topbar-icon-btn"
+            <button @ref="fsBtnRef"
+                    class="btn btn-sm btn-outline-secondary topbar-icon-btn @(fullscreenSupported ? "" : "d-none")"
                     title="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")"
                     aria-label="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")">
                 @if (isFullscreen)
@@ -300,6 +343,16 @@
 @code {
     private IJSObjectReference? audioModule;
     private IJSObjectReference? fsModule;
+    // Leaflet module handle used by the topbar zoom buttons. Imported
+    // lazily on first click so non-map pages don't pay the cost, and
+    // shared via ES-module caching with Map.razor's own import (same
+    // URL = same module instance = same `map` variable).
+    private IJSObjectReference? leafletModule;
+    // Applies the night-mode CSS classes to <html> so body + every
+    // descendant inherits the redefined design tokens. A .page-
+    // scoped class fails to recolour body because body sits above
+    // .page in the DOM and reads var(--sk-bg) at its own scope.
+    private IJSObjectReference? themeModule;
     private DotNetObjectReference<MainLayout>? fsSelfRef;
     // Element reference for the fullscreen button. fullscreen.js wires
     // a native click listener to this ref instead of going through
@@ -308,6 +361,12 @@
     // context and Blazor's event dispatcher breaks that chain.
     private ElementReference fsBtnRef;
     private bool isFullscreen;
+    // Whether the browser can fullscreen the document root. iPad
+    // Safari (tab mode) returns false; fullscreen.js::isSupported()
+    // owns the detection and this mirrors it so Razor can hide the
+    // button. Defaults to false until JS answers; hiding is the safer
+    // default (a missing button beats a broken one).
+    private bool fullscreenSupported;
     private System.Threading.Timer? staleCheckTimer;
     private System.Threading.Timer? snoozeCountdownTimer;
     private System.Threading.Timer? firstRunOfflineTimer;
@@ -340,6 +399,12 @@
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
         Alarms.OnAlarmsChanged += HandleAlarmsChanged;
+        // Re-render when the route changes so the topbar zoom
+        // buttons appear/disappear based on IsMapRoute.
+        Nav.LocationChanged += HandleLocationChanged;
+        // Seed the cached IsMapRoute from the initial URL; the
+        // LocationChanged event only fires on subsequent changes.
+        RefreshIsMapRoute();
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
@@ -360,6 +425,19 @@
             if (wakeLockModule is not null)
             {
                 try { await wakeLockModule.InvokeVoidAsync("setWakeLock", Settings.KeepScreenAwake); }
+                catch (JSDisconnectedException) { }
+            }
+            // Re-apply the night-mode classes to <html> on every
+            // settings change so preset swaps + auto-night flips
+            // propagate globally. The JS helper is idempotent -- safe
+            // to call with identical args.
+            if (themeModule is not null)
+            {
+                try
+                {
+                    await themeModule.InvokeVoidAsync("setNightMode",
+                        Settings.NightMode, Settings.NightModePreset);
+                }
                 catch (JSDisconnectedException) { }
             }
             await InvokeAsync(StateHasChanged);
@@ -417,7 +495,7 @@
         StateHasChanged();
     }
 
-    // ToggleFullscreen() was here; the button now dispatches through
+// ToggleFullscreen() was here; the button now dispatches through
     // a native click listener wired from fullscreen.js::attachTrigger
     // (synchronous with the user gesture, which Safari requires).
     // Removing the C# method prevents a second caller from re-
@@ -429,6 +507,62 @@
     {
         isFullscreen = fs;
         return InvokeAsync(StateHasChanged);
+    }
+
+    // True when the current URL is the Map page. Drives visibility
+    // of the topbar zoom buttons -- there's no map to zoom anywhere
+    // else. Cached + refreshed only when the location actually
+    // changes (HandleLocationChanged); the property used to allocate
+    // a new Uri on every MainLayout render which fires multiple times
+    // a second during alarm chatter.
+    private bool _isMapRoute;
+    private bool IsMapRoute => _isMapRoute;
+
+    private void RefreshIsMapRoute()
+    {
+        // EndsWith("/map") covers both bare "/map" and the SignalK-
+        // webapp-mounted "/signalk-onaplotter/map" because TrimEnd
+        // collapses any trailing slash. No separate Equals check
+        // needed.
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        _isMapRoute = path.EndsWith("/map", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Topbar zoom buttons. Share the same leafletInterop.js module
+    // instance as Map.razor via ES module caching, so these drive the
+    // exact same `map` object the Map page set up. No-op when the
+    // module hasn't loaded yet / map not initialised (JS guards that).
+    private async Task EnsureLeafletModuleAsync()
+    {
+        leafletModule ??= await JS.InvokeAsync<IJSObjectReference>(
+            "import", "./js/leafletInterop.js");
+    }
+
+    private async Task ZoomInAsync()
+    {
+        try
+        {
+            await EnsureLeafletModuleAsync();
+            await leafletModule!.InvokeVoidAsync("zoomIn", 1);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task ZoomOutAsync()
+    {
+        try
+        {
+            await EnsureLeafletModuleAsync();
+            await leafletModule!.InvokeVoidAsync("zoomOut", 1);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void HandleLocationChanged(object? sender,
+        Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        RefreshIsMapRoute();
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private void ReconnectNow()
@@ -472,6 +606,15 @@
             StateHasChanged();
             audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
             fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fullscreen.js");
+            // Theme module applies night-mode classes to <html> so body
+            // background + anything outside .page honours the palette.
+            themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/themeApply.js");
+            try
+            {
+                await themeModule.InvokeVoidAsync("setNightMode",
+                    Settings.NightMode, Settings.NightModePreset);
+            }
+            catch (JSDisconnectedException) { }
             fsSelfRef = DotNetObjectReference.Create(this);
             await fsModule.InvokeVoidAsync("subscribe", fsSelfRef);
             // Wire a native click listener to the fullscreen button
@@ -479,7 +622,15 @@
             // requestFullscreen() if the call isn't synchronous with
             // a user gesture, and Blazor's event dispatcher crosses
             // enough async boundaries to break the gesture chain.
-            await fsModule.InvokeVoidAsync("attachTrigger", fsBtnRef);
+            // Resolve fullscreen support BEFORE attaching the trigger
+            // so an unsupported browser (iPad Safari tab mode) hides
+            // the button entirely; no point wiring a listener to an
+            // element about to unmount via the d-none class swap.
+            fullscreenSupported = await fsModule.InvokeAsync<bool>("isSupported");
+            if (fullscreenSupported)
+            {
+                await fsModule.InvokeVoidAsync("attachTrigger", fsBtnRef);
+            }
             isFullscreen = await fsModule.InvokeAsync<bool>("getState");
             StateHasChanged();
 
@@ -832,6 +983,7 @@
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;
         Alarms.OnAlarmsChanged -= HandleAlarmsChanged;
+        Nav.LocationChanged -= HandleLocationChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
         if (firstRunOfflineTimer is not null) await firstRunOfflineTimer.DisposeAsync();
@@ -851,6 +1003,16 @@
                 await fsModule.InvokeVoidAsync("unsubscribe");
                 await fsModule.DisposeAsync();
             }
+            catch (JSDisconnectedException) { }
+        }
+        if (leafletModule is not null)
+        {
+            try { await leafletModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+        if (themeModule is not null)
+        {
+            try { await themeModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
         fsSelfRef?.Dispose();

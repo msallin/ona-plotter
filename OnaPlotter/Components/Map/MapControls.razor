@@ -348,13 +348,22 @@
     }
 
     // --- More overflow menu ---
-    private bool MoreMenuOpen;
-    private void ToggleMoreMenu() => MoreMenuOpen = !MoreMenuOpen;
-    private void CloseMoreMenu() => MoreMenuOpen = false;
+    // MoreMenuOpen is now owned by the parent (Map.razor) so the three
+    // bottom-bar flyouts (More / Add / Layers) can be mutually
+    // exclusive -- opening one must close the others. The parent
+    // routes the tap through OnToggleMore, which flips the flag and
+    // closes the siblings.
+    [Parameter] public bool MoreMenuOpen { get; set; }
+    [Parameter] public EventCallback OnToggleMore { get; set; }
+
+    private Task ToggleMoreMenu() => OnToggleMore.InvokeAsync();
+    private Task CloseMoreMenu() => OnToggleMore.InvokeAsync();
 
     private async Task Select(EventCallback cb)
     {
-        MoreMenuOpen = false;
+        // Closing is still the parent's job; fire the toggle callback
+        // so the parent flips MoreMenuOpen off before the action runs.
+        if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
         await cb.InvokeAsync();
     }
 
@@ -394,7 +403,12 @@
             await Task.Delay(NightHoldMs, ct);
             if (ct.IsCancellationRequested) return;
             _nightHoldFired = true;
-            MoreMenuOpen = false;
+            // MoreMenuOpen is parent-owned; writing it directly would
+            // be overwritten on the next parent render and Blazor logs
+            // a warning. Route through OnToggleMore instead so the
+            // parent flips its own field. The hold only fires while
+            // the menu is open, so toggling closes it.
+            if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
             await OnToggleDarkOps.InvokeAsync();
         }
         catch (OperationCanceledException) { }
@@ -417,7 +431,9 @@
             _nightHoldFired = false;
             return;
         }
-        MoreMenuOpen = false;
+        // Route close through the parent toggle so the [Parameter]
+        // stays the source of truth. Mirrors Select(EventCallback).
+        if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
         await OnToggleNight.InvokeAsync();
     }
 }

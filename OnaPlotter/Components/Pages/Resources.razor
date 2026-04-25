@@ -17,6 +17,7 @@
 @inject INoteApi NoteApi
 @inject IRegionApi RegionApi
 @inject IToastService Toasts
+@inject NavigationManager Nav
 
 <PageTitle>Resources</PageTitle>
 
@@ -58,7 +59,11 @@
                     <td>@NameOrId(r.Name, r.Id)</td>
                     <td>@CountRouteWaypoints(r)</td>
                     <td>@(r.Distance is double d ? $"{d / Format.MetersPerNm:F2} nm" : "-")</td>
-                    <td class="text-end">
+                    <td class="text-end resource-row-actions">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: false)">View</button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: true)">Edit</button>
                         <button class="btn btn-sm btn-outline-danger"
                                 @onclick="() => DeleteRoute(r.Id, r.Name)">Delete</button>
                     </td>
@@ -76,7 +81,11 @@
                 <tr>
                     <td>@NameOrId(w.Name, w.Id)</td>
                     <td>@FormatLatLon(w.Latitude, w.Longitude)</td>
-                    <td class="text-end">
+                    <td class="text-end resource-row-actions">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => OpenOnMap(TypeWaypoint, w.Id, edit: false)">View</button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => EditWaypointName(w)">Edit</button>
                         <button class="btn btn-sm btn-outline-danger"
                                 @onclick="() => DeleteWaypoint(w.Id, w.Name)">Delete</button>
                     </td>
@@ -97,7 +106,9 @@
                     <td class="text-muted" style="max-width:360px; overflow:hidden; text-overflow:ellipsis;">
                         @(n.Description ?? "")
                     </td>
-                    <td class="text-end">
+                    <td class="text-end resource-row-actions">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => OpenOnMap(TypeNote, n.Id, edit: false)">View</button>
                         <button class="btn btn-sm btn-outline-danger"
                                 @onclick="() => DeleteNote(n.Id, n.Title)">Delete</button>
                     </td>
@@ -118,7 +129,11 @@
                     <td class="text-muted" style="max-width:360px; overflow:hidden; text-overflow:ellipsis;">
                         @(r.Description ?? "")
                     </td>
-                    <td class="text-end">
+                    <td class="text-end resource-row-actions">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: false)">View</button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: true)">Edit</button>
                         <button class="btn btn-sm btn-outline-danger"
                                 @onclick="() => DeleteRegion(r.Id, r.Name)">Delete</button>
                     </td>
@@ -135,6 +150,16 @@
     // tens-to-hundreds of entries and the math is trivial.
     private record TabDef(string Key, string Label, Func<int> Count);
     private List<TabDef> _tabs = [];
+
+    // Resource-kind tokens used when deep-linking into the Map page via
+    // /map?focus=<type>:<id> or ?edit=<type>:<id>. Defined as constants
+    // because the View/Edit buttons bind them in attribute values where
+    // escaping inline string literals inside `@onclick` lambdas is
+    // painful.
+    private const string TypeRoute = "route";
+    private const string TypeWaypoint = "waypoint";
+    private const string TypeNote = "note";
+    private const string TypeRegion = "region";
 
     private string activeTab = "routes";
     private bool loading = true;
@@ -210,7 +235,7 @@
     private async Task DeleteRoute(string id, string? name)
     {
         if (!await Confirm($"Delete route '{NameOrId(name, id)}'?")) return;
-        OnaPlotter.Services.Api.ApiResult r;
+        ApiResult r;
         try { r = await RouteApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete route failed: {ex.Message}"); return; }
         if (!r.Success) { Toasts.Error($"Delete route failed: {r.Error ?? "server rejected"}"); return; }
@@ -221,7 +246,7 @@
     private async Task DeleteWaypoint(string id, string? name)
     {
         if (!await Confirm($"Delete waypoint '{NameOrId(name, id)}'?")) return;
-        OnaPlotter.Services.Api.ApiResult r;
+        ApiResult r;
         try { r = await WaypointApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
@@ -232,7 +257,7 @@
     private async Task DeleteNote(string id, string? title)
     {
         if (!await Confirm($"Delete note '{NameOrId(title, id)}'?")) return;
-        OnaPlotter.Services.Api.ApiResult r;
+        ApiResult r;
         try { r = await NoteApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete note failed: {ex.Message}"); return; }
         if (!r.Success) { Toasts.Error($"Delete note failed: {r.Error ?? "server rejected"}"); return; }
@@ -243,12 +268,55 @@
     private async Task DeleteRegion(string id, string? name)
     {
         if (!await Confirm($"Delete region '{NameOrId(name, id)}'?")) return;
-        OnaPlotter.Services.Api.ApiResult r;
+        ApiResult r;
         try { r = await RegionApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete region failed: {ex.Message}"); return; }
         if (!r.Success) { Toasts.Error($"Delete region failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Region deleted");
         regions = regions.Where(rg => rg.Id != id).ToList();
+    }
+
+    // Navigate to the Map page and deep-link to the given resource.
+    // The Map page reads the query string in OnAfterRenderAsync (after
+    // the REST seed + module init complete) and either focuses the
+    // target (pan + zoom) or opens it in the appropriate edit flow.
+    // Waypoint edit is handled inline on this page via EditWaypointName
+    // rather than on the map -- it's a rename-only operation with no
+    // map affordance.
+    private void OpenOnMap(string type, string id, bool edit)
+    {
+        string key = edit ? "edit" : "focus";
+        string target = Uri.EscapeDataString($"{type}:{id}");
+        // Relative path so the SignalK-webapp mount point
+        // ("/signalk-onaplotter/") is preserved. NavigateTo with an
+        // absolute "/map" would jump off-mount when the app is
+        // hosted under a subpath; "map?..." resolves against the
+        // current location, which is always correct.
+        Nav.NavigateTo($"map?{key}={target}");
+    }
+
+    private async Task EditWaypointName(SignalkWaypoint wp)
+    {
+        // Themed in-app prompt via ConfirmationService. Replaced the
+        // earlier window.prompt(): the native dialog is blocked in
+        // some MDM profiles and in PWA standalone display mode on
+        // iPad, and it ignored night-mode anyway. The service
+        // returns null on Cancel / Escape and a trimmed non-empty
+        // string on OK.
+        var current = wp.Name ?? "";
+        var updated = await Confirmations.PromptAsync(
+            "New waypoint name:", current,
+            confirmLabel: "Rename");
+        if (updated is null) return;               // cancelled
+        if (updated == current) return;            // no-op
+        ApiResult r;
+        try { r = await WaypointApi.UpdateAsync(wp, updated); }
+        catch (Exception ex) { Toasts.Error($"Rename failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Rename failed: {r.Error ?? "server rejected"}"); return; }
+        Toasts.Success($"Renamed to '{updated}'");
+        // Reflect locally; no need to refetch the whole list.
+        wp.Name = updated;
+        StateHasChanged();
     }
 
     // Confirm via the shared service so a future styled-modal

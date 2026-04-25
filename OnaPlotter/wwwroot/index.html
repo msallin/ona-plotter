@@ -33,6 +33,15 @@
         <a class="dismiss">X</a>
     </div>
 
+    <!-- Error relay bootstrap: synchronous, loaded BEFORE the Blazor
+         runtime so the console.error wrapper + window listeners are
+         armed in time to catch boot-time component exceptions. The
+         Blazor WASM dispatcher catches Razor lifecycle errors
+         internally and only logs them via console.error -- if our
+         wrapper isn't installed first, those errors never reach the
+         SignalK server log. See errorRelayBoot.js header for the
+         full rationale. -->
+    <script src="js/errorRelayBoot.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="_framework/blazor.webassembly.js"></script>

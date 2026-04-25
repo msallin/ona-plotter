@@ -26,6 +26,7 @@ public sealed class AppSettingsService : IAppSettings
     public string MapOrientation { get; private set; } = "north";
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
+    public bool SidebarCollapsed { get; private set; }
     public double DepthAlarmThreshold { get; private set; } = 3.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
     public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
@@ -83,6 +84,7 @@ public sealed class AppSettingsService : IAppSettings
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
+            SidebarCollapsed = await LoadBool("sidebarCollapsed.v1", false);
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 3.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
@@ -202,6 +204,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         LaylinesVisible = value;
         await Save("laylinesVisible", value ? "true" : "false");
+    }
+
+    public async Task SetSidebarCollapsedAsync(bool value)
+    {
+        SidebarCollapsed = value;
+        await Save("sidebarCollapsed.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
     }
 
     public async Task SetDepthAlarmThresholdAsync(double value)
@@ -444,10 +453,34 @@ public sealed class AppSettingsService : IAppSettings
     {
         var v = await LoadString(key);
         if (string.IsNullOrWhiteSpace(v)) return null;
+        // RoundtripKind cannot be combined with AssumeUniversal /
+        // AssumeLocal / AdjustToUniversal -- the runtime throws
+        // ArgumentException("ConflictingDateTimeRoundtripStyles").
+        // Parse with RoundtripKind alone to preserve whatever kind
+        // the stored string declares (the "o" format we write always
+        // carries Z, so this is normally Utc); if the stored value
+        // happens to have no kind information (legacy / hand-edited
+        // localStorage), force Utc explicitly before normalising so
+        // ToUniversalTime() doesn't misinterpret it as Local and
+        // shift it by the browser's TZ offset.
         if (DateTime.TryParse(v, CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind | DateTimeStyles.AssumeUniversal, out var dt))
+                DateTimeStyles.RoundtripKind, out var dt))
         {
-            return dt.ToUniversalTime();
+            if (dt.Kind == DateTimeKind.Unspecified)
+                dt = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+            var utc = dt.ToUniversalTime();
+            // Reject degenerate values (year 0001, MaxValue, or
+            // anything pre-2020) so callers doing TimeSpan arithmetic
+            // -- e.g. the night-mode 12-hour manual-override window --
+            // don't see a 700,000-hour interval and silently treat it
+            // as "recent enough". Settings are device-local and we
+            // know we never wrote a timestamp outside this range.
+            if (utc.Year < 2020 || utc.Year > 2100)
+            {
+                Console.WriteLine($"[Settings] {key} out of range ('{v}'). Starting fresh.");
+                return null;
+            }
+            return utc;
         }
         Console.WriteLine($"[Settings] {key} parse failed ('{v}'). Starting fresh.");
         return null;

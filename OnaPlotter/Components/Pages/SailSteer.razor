@@ -1,19 +1,17 @@
 @* SailSteer: circular compass display combining wind, heading, COG, laylines, and waypoint bearing.
    Inspired by B&G SailSteer. Compass rotates opposite to heading so the boat always points up.
-   B1/B2 additions: back-to-chart chip, empty state when no wind data, Polar-driven target TWA
-   hints (second arrow at optimal upwind/downwind angle), VMG-vs-target perf bar on the right. *@
+   Empty state when no wind data, Polar-driven target TWA hints (second arrow at optimal upwind/
+   downwind angle), VMG-vs-target perf bar on the right. Back-to-chart chip was removed -- the
+   sidebar + topbar already route back to the map. *@
 
 @page "/sailsteer"
 @using OnaPlotter.Services
 @using OnaPlotter.Models
-@using OnaPlotter.Components.Shared
 @implements IDisposable
 @inject SignalkClient SignalkClient
 @inject IPolarService Polar
 
 <PageTitle>SailSteer</PageTitle>
-
-<BackToMapChip />
 
 <div class="sailsteer-container">
     @if (!HasAnyInstrument)

@@ -21,6 +21,7 @@ internal sealed class FakeSettings : IAppSettings
     public string MapOrientation { get; set; } = "north";
     public bool FollowBoat { get; set; } = true;
     public bool LaylinesVisible { get; set; }
+    public bool SidebarCollapsed { get; set; }
     public double DepthAlarmThreshold { get; set; } = 3.0;
     public double CpaAlarmThreshold { get; set; } = 0.5;
     public double GuardZoneLookaheadMinutes { get; set; } = 10.0;
@@ -66,6 +67,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
     public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
     public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
+    public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetDepthAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetCpaAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;

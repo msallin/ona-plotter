@@ -40,6 +40,12 @@
      @onkeydown="TouchDeadman">
     <div id="mapDiv"></div>
 
+    @* Zoom buttons moved into the app-level topbar (MainLayout.razor)
+       alongside Night + Fullscreen so the whole "viewport controls"
+       cluster lives in one place. They're rendered there only when
+       IsMapRoute is true. ZoomIn / ZoomOut methods kept below in
+       case keyboard / pinch alternatives want to reuse them. *@
+
     <MapHud Data="Data" Autopilot="AutopilotApi"
             LastHeadingRad="lastHeading" AnchorDragging="AnchorDragging"
             DepthAlarmThreshold="Settings.DepthAlarmThreshold"
@@ -51,6 +57,7 @@
             ManualAnchorActive="anchorManualActive"
             ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
             WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
+            CourseStopping="@(_courseStopPendingUtc is not null)"
             OnSetAnchorRadius="SetManualAnchorRadius" />
 
     @* Dark Ops exit chip. Only rendered when Dark Ops is active; a tiny
@@ -94,6 +101,8 @@
                  OnToggleLegend="() => legendOpen = !legendOpen"
                  FabMenuOpen="fabMenuOpen"
                  OnToggleFab="ToggleFabMenu"
+                 MoreMenuOpen="moreMenuOpen"
+                 OnToggleMore="ToggleMoreMenu"
                  OnFabCreateWaypoint="FabCreateWaypoint"
                  OnFabCreateNote="FabCreateNote"
                  OnFabCreateRegion="FabCreateRegion" />
@@ -171,8 +180,11 @@
                         Stats="@routeEditStats"
                         Coords="routeEditCoords"
                         Saving="@_saveInFlight"
+                        IsEditingExisting="@(routeEditId is not null)"
                         OnUndo="UndoLastWaypoint"
+                        OnReverse="ReverseEditRoute"
                         OnSave="SaveRoute"
+                        OnSaveAsCopy="SaveRouteAsCopy"
                         OnSaveAndGo="SaveRouteAndGo"
                         OnCancel="CancelRouteEdit"
                         OnRemoveWaypoint="RemoveRouteWaypoint" />
@@ -369,6 +381,8 @@
                      LoadedRegions="loadedRegions"
                      RegionsVisible="regionsVisible"
                      OnFocusRegion="FocusRegion"
+                     OnEditRegion="EditRegion"
+                     OnDeleteRegion="(r) => DeleteRegion(r.Id)"
                      OnToggleRegionsVisible="ToggleRegionsVisible"
                      Vessels="@BuildVesselList()"
                      Buddies="loadedBuddies"
@@ -442,6 +456,11 @@
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
+    // Lifted here from MapControls so the three bottom-bar flyouts
+    // (More / Add / Layers) can be mutually exclusive -- opening any
+    // one of them closes the other two. Each toggle funnels through
+    // OpenFlyoutOnly() below.
+    private bool moreMenuOpen;
     private bool legendOpen;
     // Per-tick frame-building state (previous position, laylines
     // throttle counter, course-line-drawn flag) lives in this builder
@@ -519,6 +538,20 @@
         RebuildFilteredLayers();
     }
 
+    // Mutual-exclusion guard for the three bottom-bar flyouts:
+    // Layers panel, Add (FAB) menu, More overflow menu. Callers pass
+    // the flag they're about to set true; the helper closes the other
+    // two first so only one flyout can be open at a time -- tapping a
+    // second one without explicitly dismissing the first was a common
+    // stacked-modal bug in earlier builds.
+    private enum BottomBarFlyout { Layers, Fab, More }
+    private void CloseOtherFlyouts(BottomBarFlyout keep)
+    {
+        if (keep != BottomBarFlyout.Layers) chartPanelOpen = false;
+        if (keep != BottomBarFlyout.Fab)    fabMenuOpen    = false;
+        if (keep != BottomBarFlyout.More)   moreMenuOpen   = false;
+    }
+
     // Opening the Layers panel is a natural re-sync trigger: the user is
     // about to read the list, so pull fresh waypoints / routes / notes /
     // regions from the server. Otherwise a waypoint added from another
@@ -530,6 +563,7 @@
         chartPanelOpen = !chartPanelOpen;
         if (chartPanelOpen)
         {
+            CloseOtherFlyouts(BottomBarFlyout.Layers);
             // If the map context menu is up (user long-pressed then
             // reached for Layers), dismiss it so two floating panels
             // don't fight for the tap. Same reason the menu auto-
@@ -1028,6 +1062,30 @@
     private bool serverAnchorDrawn;
     private double lastPushedAnchorRadius;
 
+    // "Raising in progress" state: set when AnchorAlarmApi.RaiseAsync
+    // returns success, cleared when SyncServerAnchorAsync sees the
+    // anchor delta arrive (Data.AnchorActive flips false). While set,
+    // the on-map anchor marker / watch circle / radius line dim via
+    // setAnchorRaising so the helm sees their tap took effect without
+    // us masking a possible server-side failure (we never hide the
+    // marker; we only style it). A wallclock watchdog of
+    // AnchorRaiseTimeoutSec surfaces a warning toast if the delta
+    // never arrives -- pointing at a real server-side issue rather
+    // than a transient delta gap.
+    private DateTime? _anchorRaisePendingUtc;
+    private const int AnchorRaiseTimeoutSec = 5;
+
+    // "Stopping navigation in progress" state: set when StopNavigation's
+    // CourseApi.ClearAsync returns success, cleared when
+    // SyncActiveRouteAsync sees Data.ActiveRouteHref become null.
+    // Same single-source-of-truth pattern as _anchorRaisePendingUtc:
+    // never mutate the data model locally, just style the on-map
+    // active-route elements as "fading out" while we wait for the
+    // server delta to confirm. Watchdog warns if the delta never
+    // arrives.
+    private DateTime? _courseStopPendingUtc;
+    private const int CourseStopTimeoutSec = 5;
+
     // First-visit welcome + touch coachmark state moved to
     // Map.FirstRun.razor.cs so the onboarding overlays stay together.
     // Fields referenced from the markup (welcomeVisible, touchCoachmarkVisible)
@@ -1241,6 +1299,80 @@
         // first-ever visit since it covers long-press explicitly.
         var welcomeShown = await MaybeShowWelcomeAsync();
         if (!welcomeShown) await MaybeShowTouchCoachmarkAsync();
+
+        // Resolve any deep-link from /map?focus=<type>:<id> or
+        // ?edit=<type>:<id> -- set by the Resources page's View / Edit
+        // buttons. Runs after the REST seed + map module are ready so
+        // the target layers are already on the map.
+        await ApplyMapDeepLinkAsync();
+    }
+
+    // Parse ?focus= or ?edit= from the URL and act on it. Silent no-op
+    // if absent or unparseable; an unknown id surfaces a toast so the
+    // user knows the target vanished (e.g. someone else deleted it on
+    // another plotter after they opened the Resources page).
+    private async Task ApplyMapDeepLinkAsync()
+    {
+        // Minimal query-string parse so we don't need the
+        // Microsoft.AspNetCore.WebUtilities package for this single
+        // call site. Only two keys are meaningful (focus / edit) and
+        // the value format is "<kind>:<id>".
+        var uri = new Uri(Nav.Uri);
+        string? raw = null;
+        bool editFlow = false;
+        foreach (var seg in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int eq = seg.IndexOf('=');
+            if (eq <= 0) continue;
+            string key = seg[..eq];
+            string val = Uri.UnescapeDataString(seg[(eq + 1)..]);
+            if (key == "edit") { raw = val; editFlow = true; break; }
+            if (key == "focus") { raw = val; editFlow = false; }
+        }
+        if (raw is null) return;
+        var parts = raw.Split(':', 2);
+        if (parts.Length != 2) return;
+        string kind = parts[0];
+        string id   = parts[1];
+
+        switch (kind)
+        {
+            case "route":
+                var route = availableRoutes.FirstOrDefault(r => r.Id == id);
+                if (route is null) { Toasts.Warning("Route not found"); break; }
+                if (editFlow) await EditRoute(route);
+                else await FocusRoute(route);
+                break;
+            case "waypoint":
+                var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
+                if (wp is null) { Toasts.Warning("Waypoint not found"); break; }
+                if (wp.Latitude is double lat && wp.Longitude is double lon
+                    && module is not null)
+                {
+                    await DisableFollowAsync();
+                    try { await module.InvokeVoidAsync("panTo", lat, lon); }
+                    catch (JSDisconnectedException) { }
+                }
+                break;
+            case "note":
+                var n = loadedNotes.FirstOrDefault(x => x.Id == id);
+                if (n is null) { Toasts.Warning("Note not found"); break; }
+                await FocusNote(n);
+                break;
+            case "region":
+                var reg = loadedRegions.FirstOrDefault(x => x.Id == id);
+                if (reg is null) { Toasts.Warning("Region not found"); break; }
+                if (editFlow) await EditRegion(reg);
+                else await FocusRegion(reg);
+                break;
+        }
+
+        // Drop the query string once consumed so a page reload doesn't
+        // re-apply the deep-link every time, and the URL shows /map
+        // cleanly from the user's perspective. Use a relative path so
+        // the SignalK-webapp mount point (e.g. /signalk-onaplotter/)
+        // is preserved -- an absolute "/map" jumps off-mount.
+        Nav.NavigateTo("map", forceLoad: false, replace: true);
     }
 
     // MaybeShowWelcomeAsync / DismissWelcome /
@@ -1666,7 +1798,17 @@
     // contextMenuLat/Lon so the existing handlers don't need to know
     // whether they were invoked from a tap or the FAB.
 
-    private void ToggleFabMenu() => fabMenuOpen = !fabMenuOpen;
+    private void ToggleFabMenu()
+    {
+        fabMenuOpen = !fabMenuOpen;
+        if (fabMenuOpen) CloseOtherFlyouts(BottomBarFlyout.Fab);
+    }
+
+    private void ToggleMoreMenu()
+    {
+        moreMenuOpen = !moreMenuOpen;
+        if (moreMenuOpen) CloseOtherFlyouts(BottomBarFlyout.More);
+    }
 
     private async Task<bool> SetTargetToMapCenterAsync()
     {
@@ -1867,6 +2009,15 @@
     {
         contextMenuVisible = false;
 
+        // In-flight guard: a previous Stop tap is still awaiting the
+        // SK delta. A second tap during that window would fire another
+        // ClearAsync (idempotent on the server, but produces a
+        // misleading "stopping..." re-toast and a duplicate audit log
+        // entry on the SK side). The route HUD card is dimmed via
+        // route-stopping CSS during this window so the helm gets
+        // clear feedback that their first tap is in progress.
+        if (_courseStopPendingUtc is not null) return;
+
         // Capture where we were heading before clearing so the Undo toast
         // can restore it. `position` via the SignalK course API works for
         // both waypoint- and route-based destinations.
@@ -1876,16 +2027,21 @@
         try { await CourseApi.ClearAsync(); }
         catch (Exception ex) { Toasts.Error($"Stop navigation failed: {ex.Message}"); return; }
 
-        // Proactively flip our local state so the route HUD vanishes
-        // immediately on tap. The server publishes a delta to confirm
-        // the clear, but the delta can arrive seconds later (or with
-        // an unexpected shape on some plugin builds); waiting for it
-        // leaves the "Stop" button click feeling broken. ClearCourse
-        // here + the delta handler + the parent-path-null fallback
-        // in ProcessSelfDelta form a belt-and-braces reset. Fire
-        // OnDataChanged so every subscriber (MapHud, RouteCard, HUD
-        // badges) re-renders.
-        Data.ClearCourse();
+        // Visual "stopping in progress" feedback until the SK delta
+        // confirms (Data.ActiveRouteHref clears). Same pattern as the
+        // anchor-raise feedback in NavigateRouteInternal / ToggleAnchor:
+        // we don't optimistically mutate Data here -- that would mask
+        // a server-side failure (PUT 200 but the plugin didn't actually
+        // clear) AND race the next delta tick which would re-establish
+        // the cleared course from the server's still-stale state. Let
+        // SyncActiveRouteAsync drive the truth; dim the on-map elements
+        // so the helm sees their tap landed.
+        _courseStopPendingUtc = DateTime.UtcNow;
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("setActiveRouteStopping", true); }
+            catch (JSDisconnectedException) { }
+        }
         await InvokeAsync(StateHasChanged);
 
         if (savedLat is not null && savedLon is not null)
@@ -2378,6 +2534,12 @@
                 return;
             }
             Toasts.Success("Anchor raised");
+            // Visual "raising in progress" feedback until the SK delta
+            // confirms (Data.AnchorActive flips false). Same pattern as
+            // the route-activate auto-raise path.
+            _anchorRaisePendingUtc = DateTime.UtcNow;
+            try { await module.InvokeVoidAsync("setAnchorRaising", true); }
+            catch (JSDisconnectedException) { }
             return;
         }
 
@@ -2451,12 +2613,15 @@
                     await module.InvokeVoidAsync("clearAnchor");
                     anchorManualActive = false;
                 }
-                // Symmetric to the route-activate path: a boat that has
-                // just dropped anchor is no longer navigating a course.
-                // Leaving the active course up would keep firing XTE /
-                // APPROACH alarms against a static boat. Clear it here
-                // for server-side anchor drops; manual drops already
-                // clear in ToggleAnchor.
+                // A boat that just dropped anchor is unambiguously not
+                // under way -- clear any active course so XTE /
+                // APPROACH alarms don't chatter against a static boat
+                // and the route HUD doesn't stack with the anchor HUD.
+                // Note: we do NOT do the reverse (auto-raise anchor
+                // when a route is activated) -- the helm may be
+                // planning the next leg while still on the hook, and
+                // auto-raising surprised users. Anchor is the more
+                // decisive intent so it wins this asymmetry.
                 if (Data.HasActiveCourse)
                 {
                     try { await CourseApi.ClearAsync(); }
@@ -2475,29 +2640,98 @@
                 await module.InvokeVoidAsync("updateAnchorRadius", radius);
                 lastPushedAnchorRadius = radius;
             }
+
+            // Watchdog: if the helm tapped raise and Data.AnchorActive
+            // is STILL true beyond the timeout, surface a warning and
+            // un-dim the marker so the helm investigates rather than
+            // staring at a dimmed-indefinitely anchor.
+            //
+            // Suppressed while the WebSocket is disconnected -- the
+            // delta might have been published server-side but the
+            // client isn't subscribed to receive it. Reset the timer
+            // on reconnect so the user gets a fresh 5 s window once
+            // we're listening again, instead of a false-positive
+            // "server didn't confirm" the moment the connection is
+            // restored. Without this, every reconnect during a raise
+            // would blast a misleading warning.
+            if (_anchorRaisePendingUtc is DateTime t)
+            {
+                if (!SignalkClient.IsConnected)
+                {
+                    _anchorRaisePendingUtc = DateTime.UtcNow;  // re-arm
+                }
+                else if ((DateTime.UtcNow - t).TotalSeconds > AnchorRaiseTimeoutSec)
+                {
+                    _anchorRaisePendingUtc = null;
+                    Toasts.Warning("Anchor raise not confirmed by server -- still anchored");
+                    if (!mapInitialized) return;
+                    try { await module.InvokeVoidAsync("setAnchorRaising", false); }
+                    catch (JSDisconnectedException) { }
+                }
+            }
         }
         else if (serverAnchorDrawn)
         {
-            // Server anchor was raised — clear from map.
+            // Server anchor was raised — clear from map. Also clear
+            // any "raising in progress" visual (the marker is going
+            // away anyway, but the flag should follow truth).
             if (!mapInitialized) return;
             await module.InvokeVoidAsync("clearAnchor");
             serverAnchorDrawn = false;
+            _anchorRaisePendingUtc = null;
         }
     }
 
     /// <summary>
-    /// Detects changes to the active route href and fetches/draws the route on the map.
+    /// Detects changes to the active route href and fetches/draws the
+    /// route on the map. With <paramref name="force"/>=true, refetches
+    /// even when the href hasn't changed -- needed after an in-place
+    /// edit of an already-active route, where the href is identical
+    /// but the route's geometry is new.
     /// </summary>
-    private async Task SyncActiveRouteAsync()
+    private async Task SyncActiveRouteAsync(bool force = false)
     {
         if (!mapInitialized || module is null) return;
 
         var currentHref = Data.ActiveRouteHref;
 
-        if (currentHref == lastActiveRouteHref) return;
+        // Watchdog for a pending Stop Navigation: if the helm tapped
+        // Stop and CourseApi.ClearAsync returned success but the SK
+        // delta hasn't cleared the active route within the timeout,
+        // surface a warning rather than leaving the polyline dimmed
+        // forever. Restore the un-dimmed style so the helm can see the
+        // route is genuinely still active server-side.
+        //
+        // Suppressed while the WebSocket is disconnected: the delta
+        // might exist server-side but the client isn't listening, so
+        // a "server didn't confirm" warning would be misleading. Re-
+        // arm the timer on every disconnected pass so the helm gets a
+        // fresh 5 s grace once we reconnect.
+        if (_courseStopPendingUtc is DateTime stopT && currentHref is not null)
+        {
+            if (!SignalkClient.IsConnected)
+            {
+                _courseStopPendingUtc = DateTime.UtcNow;  // re-arm
+            }
+            else if ((DateTime.UtcNow - stopT).TotalSeconds > CourseStopTimeoutSec)
+            {
+                _courseStopPendingUtc = null;
+                Toasts.Warning("Stop navigation not confirmed by server -- still navigating");
+                try { await module.InvokeVoidAsync("setActiveRouteStopping", false); }
+                catch (JSDisconnectedException) { }
+            }
+        }
+        // If the delta cleared the route, the pending flag should
+        // follow truth -- the dimming is moot once the polyline is
+        // gone, but the flag drives the watchdog above.
+        if (currentHref is null) _courseStopPendingUtc = null;
 
-        // Route changed or deactivated: clear previous.
-        if (lastActiveRouteHref is not null)
+        if (!force && currentHref == lastActiveRouteHref) return;
+
+        // Route changed, deactivated, or forced refresh: clear previous.
+        // For a forced refresh the href stayed the same but the
+        // geometry didn't, so we still need to wipe the old polyline.
+        if (lastActiveRouteHref is not null || force)
         {
             if (!mapInitialized) return;
             await module.InvokeVoidAsync("clearActiveRoute");
@@ -2532,6 +2766,39 @@
         if (module is not null)
             await module.InvokeVoidAsync("zoomToTrack");
     }
+
+    // Zoom the map to the bounding box of the given route. Called from
+    // the Resources-page "View" deep-link; the route may not be
+    // currently enabled, so we flip it on first so the polyline is
+    // actually visible after the fit.
+    private async Task FocusRoute(SignalkRoute route)
+    {
+        if (module is null) return;
+        chartPanelOpen = false;
+        if (!enabledRoutes.Contains(route.Id))
+        {
+            await ToggleRoute(route, true);
+        }
+        if (!routeBounds.TryGetValue(route.Id, out var bbox) || bbox is null)
+        {
+            Toasts.Warning("Route has no mappable geometry");
+            return;
+        }
+        await DisableFollowAsync();
+        try
+        {
+            await module.InvokeVoidAsync("fitBounds",
+                bbox.Value.MinLat, bbox.Value.MinLon,
+                bbox.Value.MaxLat, bbox.Value.MaxLon);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    // Zoom +/- handlers used to live here for an in-map overlay
+    // button pair. They're now in MainLayout.razor's topbar (the JS
+    // exports zoomIn/zoomOut on leafletInterop are still the
+    // contract); kept the JS exports, dropped the C# wrappers since
+    // no other call site needed them.
 
     /// <summary>
     /// One-shot pan to own-boat at the current zoom level. Distinct from

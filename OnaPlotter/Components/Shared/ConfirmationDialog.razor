@@ -4,9 +4,17 @@
 
 @* Global confirmation modal. Hosted once from MainLayout so every
    call site (Map.razor, Settings, Resources, RoutesSection, ...) that
-   does `await Confirmations.ConfirmAsync(...)` is shown through this
-   one dialog. Gated on Confirm.IsPending so the DOM footprint is
-   zero when idle. *@
+   does `await Confirmations.ConfirmAsync(...)` or `PromptAsync(...)`
+   is shown through this one dialog. Gated on Confirm.IsPending so
+   the DOM footprint is zero when idle.
+
+   Two modes:
+     - ConfirmAsync: yes/no question; no input shown.
+     - PromptAsync:  message + text input (editable, pre-filled with
+                     the caller's initial value). Enter commits, Esc
+                     cancels.
+   Enter-to-submit on the input lets the helm rename things without
+   reaching for the OK button, same muscle memory as window.prompt. *@
 
 @if (Confirm.IsPending)
 {
@@ -18,11 +26,25 @@
          @onkeydown="OnKeyDown"
          tabindex="-1">
         <div class="confirm-msg" id="confirm-msg">@Confirm.Message</div>
+        @if (Confirm.IsTextPrompt)
+        {
+            @* autofocus on the input (not on Cancel) so the user can
+               start typing immediately -- matches window.prompt. *@
+            <input type="text"
+                   class="confirm-input"
+                   @ref="_inputRef"
+                   value="@Confirm.TextValue"
+                   @oninput="OnInput"
+                   @onkeydown="OnKeyDown"
+                   autocomplete="off"
+                   spellcheck="false"
+                   aria-label="Prompt value" />
+        }
         <div class="confirm-actions">
             <button type="button"
                     class="btn confirm-btn confirm-btn-cancel"
                     @onclick="OnCancel"
-                    autofocus>
+                    autofocus="@(!Confirm.IsTextPrompt)">
                 @(string.IsNullOrEmpty(Confirm.CancelLabel) ? "Cancel" : Confirm.CancelLabel)
             </button>
             <button type="button"
@@ -37,9 +59,41 @@
 }
 
 @code {
+    // Input element ref so we can .FocusAsync() it after the dialog
+    // renders. Blazor's `autofocus` attribute isn't reliable inside
+    // a conditionally-rendered modal -- the attribute only has an
+    // effect at document load, not on subsequent DOM insertions.
+    private ElementReference _inputRef;
+    private bool _needsFocus;
+
     protected override void OnInitialized() => Confirm.OnChanged += OnStateChanged;
     public void Dispose() => Confirm.OnChanged -= OnStateChanged;
-    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnStateChanged()
+    {
+        // Schedule a focus pass for the next render cycle iff a text
+        // prompt just opened. StateHasChanged is invoked after; the
+        // actual focus happens in OnAfterRenderAsync.
+        if (Confirm.IsPending && Confirm.IsTextPrompt) _needsFocus = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsFocus && Confirm.IsPending && Confirm.IsTextPrompt)
+        {
+            _needsFocus = false;
+            try { await _inputRef.FocusAsync(); }
+            catch { /* pre-rendered or unmounted; harmless */ }
+        }
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        // Two-way binding via service state so the dialog component
+        // stays stateless. Resolve(true) reads this on OK.
+        Confirm.TextValue = e.Value?.ToString() ?? "";
+    }
 
     private void OnOk() => Confirm.Resolve(true);
     private void OnCancel() => Confirm.Resolve(false);

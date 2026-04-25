@@ -1,3 +1,6 @@
+@inject OnaPlotter.Services.IAppSettings Settings
+@implements IDisposable
+
 @* Sidebar nav. Icons are inline SVG from Lucide (lucide.dev, MIT)
    so they render offline (PWA / on-boat) and inherit theme colour
    via stroke="currentColor". The set is "glass cockpit" -- gauge,
@@ -112,4 +115,50 @@
             </NavLink>
         </div>
     </nav>
+
+    @* Sidebar collapse / expand toggle. Pinned to the bottom of the
+       rail rather than living in the top bar -- collapsing the menu
+       is a menu-level action, and most desktop UIs (VSCode, Discord,
+       Slack, Linear) put the chevron exactly here. The button reuses
+       .nav-link styling so it inherits hover / active / icon-rail
+       collapse rules without per-state CSS. Lucide chevrons-right
+       (expand) / chevrons-left (collapse) match the rest of the rail. *@
+    <div class="nav-collapse-row">
+        <button class="nav-link nav-collapse-btn" type="button"
+                @onclick="ToggleSidebar"
+                title="@(Settings.SidebarCollapsed ? "Expand menu" : "Collapse menu")"
+                aria-label="@(Settings.SidebarCollapsed ? "Expand menu" : "Collapse menu")"
+                aria-pressed="@(Settings.SidebarCollapsed ? "true" : "false")">
+            <span class="nav-icon" aria-hidden="true">
+                @if (Settings.SidebarCollapsed)
+                {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m6 17 5-5-5-5" />
+                        <path d="m13 17 5-5-5-5" />
+                    </svg>
+                }
+                else
+                {
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m11 17-5-5 5-5" />
+                        <path d="m18 17-5-5 5-5" />
+                    </svg>
+                }
+            </span>
+            <span class="nav-label">Collapse</span>
+        </button>
+    </div>
 </div>
+
+@code {
+    protected override void OnInitialized()
+        => Settings.OnSettingsChanged += HandleSettingsChanged;
+
+    public void Dispose()
+        => Settings.OnSettingsChanged -= HandleSettingsChanged;
+
+    private void HandleSettingsChanged() => InvokeAsync(StateHasChanged);
+
+    private Task ToggleSidebar()
+        => Settings.SetSidebarCollapsedAsync(!Settings.SidebarCollapsed);
+}

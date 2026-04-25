@@ -63,6 +63,83 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    public async Task LastManualNightToggleUtc_RoundTripsFromIsoString()
+    {
+        // Regression test for the ConflictingDateTimeRoundtripStyles
+        // ArgumentException that crashed boot the moment the user had
+        // tapped Night mode at least once before. The old parser
+        // combined RoundtripKind | AssumeUniversal which the runtime
+        // rejects -- the fix uses RoundtripKind alone and forces Utc
+        // when the parsed Kind is Unspecified. This test pins both
+        // behaviours: a normal "o"-format Z-suffixed string and a
+        // legacy stored value with no kind information must both
+        // load without throwing and resolve to UTC.
+        var kv = new InMemoryKv();
+        var stamp = new DateTime(2026, 4, 24, 22, 30, 0, DateTimeKind.Utc);
+        await kv.SetAsync("lastManualNightToggle.v1",
+            stamp.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.LastManualNightToggleUtc).IsEqualTo(stamp);
+    }
+
+    [Test]
+    public async Task LastManualNightToggleUtc_DegenerateYearTreatedAsMissing()
+    {
+        // Degenerate values (DateTime.MinValue, year 0001, etc.) can
+        // round-trip through TryParse as legitimate dates but blow up
+        // downstream arithmetic -- e.g. the night-mode 12-hour manual-
+        // override window does (now - lastToggle).TotalHours and a
+        // year-0001 stamp produces a 17 million hour interval that
+        // NEVER falls inside the override window. The loader should
+        // treat anything pre-2020 as missing so the auto-night flow
+        // resumes normal operation rather than locking itself out.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("lastManualNightToggle.v1", "0001-01-01T00:00:00Z");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.LastManualNightToggleUtc).IsNull();
+    }
+
+    [Test]
+    public async Task LastManualNightToggleUtc_FarFutureYearTreatedAsMissing()
+    {
+        // Symmetric guard for the upper end -- a malformed payload
+        // with year 9999 would also break "is it recent" checks. The
+        // device clock is the bound: anything beyond 2100 is almost
+        // certainly storage corruption.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("lastManualNightToggle.v1", "9999-12-31T23:59:00Z");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.LastManualNightToggleUtc).IsNull();
+    }
+
+    [Test]
+    public async Task LastManualNightToggleUtc_LegacyUnspecifiedTreatedAsUtc()
+    {
+        // Hand-edited / pre-fix localStorage values may lack a kind
+        // suffix. The loader should treat those as UTC rather than
+        // shifting them by the browser's TZ offset (which is what
+        // ToUniversalTime would otherwise do for an Unspecified
+        // DateTime, since it falls back to "assume Local").
+        var kv = new InMemoryKv();
+        await kv.SetAsync("lastManualNightToggle.v1", "2026-04-24T22:30:00");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        var expected = new DateTime(2026, 4, 24, 22, 30, 0, DateTimeKind.Utc);
+        await Assert.That(svc.LastManualNightToggleUtc).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task OnSettingsChanged_Fires()
     {
         var svc = new AppSettingsService(new InMemoryKv());

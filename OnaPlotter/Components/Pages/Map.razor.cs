@@ -325,8 +325,12 @@ public partial class Map
         // the intent is explicit. No prompt when:
         //   - nothing is active (first activation)
         //   - this exact route is already active (re-activating is a no-op)
+        // EndsWith on `/{id}` rather than Contains: a substring match
+        // could mis-classify an unrelated route whose id happens to
+        // sit inside the active href as "already active" and skip the
+        // prompt.
         if (Data.HasActiveCourse && !string.IsNullOrEmpty(Data.ActiveRouteHref)
-            && !Data.ActiveRouteHref.Contains(id, StringComparison.Ordinal))
+            && !Data.ActiveRouteHref.EndsWith($"/{id}", StringComparison.Ordinal))
         {
             var prompt = !string.IsNullOrEmpty(Data.ActiveRouteName)
                 ? $"Replace active course '{Data.ActiveRouteName}' with '{route.Name ?? route.Id}'?"
@@ -362,77 +366,39 @@ public partial class Map
     // Thin wrapper around the private NavigateRoute logic so JSInvokable
     // activation can reuse it without duplicating the try/catch.
     //
-    // Also enforces route/anchor mutual exclusion: the two HUDs share
-    // the bottom-center slot and represent incompatible intents. If the
-    // user engages a route while anchored, drop the anchor first so
-    // depth / anchor-drag alarms don't fire against a moving boat.
+    // Note on anchor / route relationship: route activation NO LONGER
+    // auto-raises the anchor. The reverse direction stays (dropping the
+    // anchor clears any active course -- see SyncServerAnchorAsync /
+    // ToggleAnchor) because anchoring is the more decisive intent: a
+    // boat that just dropped the hook is unambiguously not under way.
+    // Going the other direction (activating a route) does NOT mean the
+    // helm has actually lifted the anchor yet -- they may be planning
+    // the next leg while still on the hook. Auto-raising on activate
+    // was wrong for that workflow and surprised users when they
+    // weren't ready to leave.
     private async Task NavigateRouteInternal(SignalkRoute route)
     {
-        // Real-world workflow: the boat is on the hook, the helm plans
-        // the passage, lifts anchor, goes. Treating "activate route" as
-        // an implicit "lift anchor" command matches that flow -- the
-        // user already confirmed they want to leave by activating a
-        // route, so a second modal to confirm lifting the anchor is
-        // cockpit-theatre. The earlier "block and tell them to tap
-        // anchor first" behaviour was defensive but wrong for the
-        // sequence sailors actually follow.
-        //
-        // Order matters: raise BEFORE setting the course. If setting
-        // the course failed for some other reason we'd be left
-        // anchor-up with no active route, which is a minor re-plan
-        // nuisance; the opposite (still anchored while a course was
-        // set and CPA / APPROACH alarms start chattering against a
-        // static boat) is the state we just fought with an explicit
-        // rule in the alarm sweep.
-        if (Data.AnchorActive)
-        {
-            try
-            {
-                var r = await AnchorAlarmApi.RaiseAsync();
-                if (!r.Success)
-                {
-                    // Plugin rejected (wrong state, not installed, etc.).
-                    // Fall back to the old prompt-the-helm behaviour so
-                    // the user still has a way out.
-                    Toasts.Error($"Couldn't auto-raise anchor ({r.Error ?? "server rejected"}). Raise manually, then retry.");
-                    return;
-                }
-                Toasts.Info("Anchor raised for route");
-
-                // Proactively drop any active anchor alarm rather than
-                // waiting for the plugin's cleared-anchor delta to
-                // round-trip (can be a second or two on marine 4G).
-                // Without this, the user activates the route, sees the
-                // route draw, BUT the ANCHOR DRAG banner lingers on
-                // screen until the delta lands -- reads as "route
-                // didn't deactivate the alarm". Dismiss on the local
-                // manager side so the banner disappears immediately;
-                // the rule stays quiet afterwards because the plugin
-                // also stops publishing currentRadius once raised.
-                foreach (var a in Alarms.ActiveAlarms.ToList())
-                {
-                    if (a.Title == "ANCHOR DRAG" || a.Title == "ANCHOR TIDE")
-                        await Alarms.DismissAsync(a);
-                }
-            }
-            catch (Exception ex)
-            {
-                Toasts.Error($"Couldn't auto-raise anchor ({ex.Message}). Raise manually, then retry.");
-                return;
-            }
-        }
-        if (anchorManualActive && module is not null)
-        {
-            try { await module.InvokeVoidAsync("clearAnchor"); anchorManualActive = false; }
-            catch (JSDisconnectedException) { }
-        }
-
         try
         {
             var r = await CourseApi.SetActiveRouteAsync(route.Id);
             if (r.Success)
             {
                 Toasts.Success($"Navigating route '{route.Name ?? route.Id}'");
+
+                // Reminder, not an action: if the helm activates a
+                // route while still anchored, the boat will start
+                // moving but the server's anchor watch is still armed.
+                // The drag alarm rule fires the moment the boat leaves
+                // the anchor radius, blasting ANCHOR DRAG repeatedly.
+                // We deliberately don't auto-raise (per user spec --
+                // they may be planning the next leg from the hook),
+                // but we DO surface a non-blocking note so the helm
+                // remembers to raise before getting under way.
+                if (Data.AnchorActive || anchorManualActive)
+                {
+                    Toasts.Show("Anchor still active -- raise it before getting under way to silence the drag alarm",
+                        ToastService.ToastLevel.Info, durationSec: 8);
+                }
                 // Force an immediate route draw instead of waiting for
                 // the next delta tick to notice the href change. The
                 // href-diff lives in SyncActiveRouteAsync; just wipe

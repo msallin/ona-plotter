@@ -14,21 +14,41 @@ main {
     border-right: 1px solid var(--sk-sidebar-border);
     /* Default expanded width (icons + labels). iPad touch target
        floor is 44 px; 10 rem leaves comfortable room for every
-       label without wrapping. Collapses to 3.5 rem in fullscreen
+       label without wrapping. Collapses to 4 rem in fullscreen
        -- see rules below. */
     width: 10rem;
-    height: 100vh;
+    /* dvh (dynamic viewport height) -- vh is the FULL screen incl.
+       any browser chrome that may currently be hidden, which on
+       iPad PWA standalone exceeds the html content box (which is
+       shrunk by env(safe-area-inset-*) padding). The mismatch was
+       overflowing the sidebar past the html box and triggering a
+       page-level scrollbar. dvh tracks the live visible area, so
+       100dvh = exactly the height our html content box has. */
+    height: 100dvh;
     position: sticky;
     top: 0;
     flex-shrink: 0;
     transition: width 0.18s ease;
+    /* Prevent any scrollbar from leaking onto the sidebar itself.
+       NavMenu's .nav-scrollable already hides its scrollbar but in
+       the narrow-rail fullscreen state the outer .sidebar occasion-
+       ally showed a track on Safari; belt + braces. */
+    overflow: hidden;
 }
 
-/* Fullscreen / iOS-fullbleed: narrow rail, icons only. Labels hide
-   via NavMenu.razor.css. */
+/* Fullscreen / iOS-fullbleed / explicit sidebar-collapsed setting:
+   narrow rail, icons only. Labels hide via NavMenu.razor.css.
+   Width 4rem (up from 3.5rem) leaves room for the 1.15rem-font
+   icons to breathe without clipping, and the forced
+   `overflow: hidden` above suppresses the stray scrollbar Safari
+   sometimes draws on the narrower rail. The user-toggleable
+   .sidebar-collapsed class lives on .page (set from MainLayout
+   based on Settings.SidebarCollapsed) so it shares the CSS
+   contract with the fullscreen modes -- one rule, three triggers. */
 :fullscreen .sidebar,
-html.ios-fullbleed .sidebar {
-    width: 3.5rem;
+html.ios-fullbleed .sidebar,
+.page.sidebar-collapsed .sidebar {
+    width: 4rem;
 }
 
 .top-row {

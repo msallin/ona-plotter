@@ -1,9 +1,10 @@
 @using OnaPlotter.Models
+@using OnaPlotter.Services
+@inject IConfirmationService Confirmations
 
 @* Server-stored regions (polygonal areas -- anchorages, no-go zones,
-   fishing areas). Each row has a Focus button that fits the map to the
-   region and opens its popup. Show/Hide toggle in the header hides all
-   region polygons on the map without dropping the list. *@
+   fishing areas). Mirrors RoutesSection: show/hide toggle in the
+   header; per-row Focus / Edit / Delete actions. *@
 
 @if (Regions.Count == 0) return;
 
@@ -30,15 +31,22 @@
     @foreach (var r in filtered)
     {
         <div @key="r.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-            <div class="chart-item-body">
+            <div class="chart-item-body" style="flex:1;">
                 <div class="chart-name">@(string.IsNullOrWhiteSpace(r.Name) ? "(untitled)" : r.Name)</div>
                 @if (!string.IsNullOrWhiteSpace(r.Description))
                 {
                     <div class="chart-desc">@Truncate(r.Description!, 60)</div>
                 }
             </div>
-            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                    @onclick="() => OnFocus.InvokeAsync(r)">Focus</button>
+            <button class="map-btn route-action-btn"
+                    @onclick="() => OnFocus.InvokeAsync(r)"
+                    title="Zoom the map to this region">Focus</button>
+            <button class="map-btn route-action-btn"
+                    @onclick="() => OnEdit.InvokeAsync(r)"
+                    title="Edit region">Edit</button>
+            <button class="map-btn route-action-btn route-action-danger"
+                    @onclick="() => ConfirmDelete(r)"
+                    title="Delete region">Delete</button>
         </div>
     }
 }
@@ -47,6 +55,8 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRegion> Regions { get; set; } = [];
     [Parameter] public bool Visible { get; set; } = true;
     [Parameter] public EventCallback<SignalkRegion> OnFocus { get; set; }
+    [Parameter] public EventCallback<SignalkRegion> OnEdit { get; set; }
+    [Parameter] public EventCallback<SignalkRegion> OnDelete { get; set; }
     [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
@@ -54,6 +64,19 @@
 
     private static string Truncate(string s, int n)
         => s.Length <= n ? s : s[..n] + "...";
+
+    private async Task ConfirmDelete(SignalkRegion region)
+    {
+        // Fall through Name -> Id -> "(untitled)" so a malformed
+        // payload with neither set doesn't render "Delete region ''?"
+        // which is both ungrammatical and gives the user no signal
+        // about what they're about to delete.
+        string label = !string.IsNullOrWhiteSpace(region.Name) ? region.Name!
+            : !string.IsNullOrWhiteSpace(region.Id) ? region.Id
+            : "(untitled)";
+        bool ok = await Confirmations.ConfirmAsync($"Delete region '{label}'?");
+        if (ok) await OnDelete.InvokeAsync(region);
+    }
 
     private static IReadOnlyList<SignalkRegion> Filter(
         IReadOnlyList<SignalkRegion> all, string? filter)

@@ -21,6 +21,39 @@ public class MapControlsTests
         return ctx.RenderComponent<MapControls>(p => configure?.Invoke(p));
     }
 
+    /// <summary>Simulates the Map.razor parent that owns MoreMenuOpen
+    /// state. Tests that exercise opening / closing the menu wire
+    /// OnToggleMore through this helper so the parameter flip is
+    /// applied to the rendered tree, matching how the real parent
+    /// drives the controlled component.</summary>
+    private sealed class MoreMenuController
+    {
+        public bool Open { get; private set; }
+        public IRenderedComponent<MapControls> Cut { get; set; } = default!;
+        public EventCallback Toggle => EventCallback.Factory.Create(this, () =>
+        {
+            Open = !Open;
+            Cut.SetParametersAndRender(p => p.Add(x => x.MoreMenuOpen, Open));
+        });
+    }
+
+    private static IRenderedComponent<MapControls> RenderWithMoreController(
+        Bunit.TestContext ctx,
+        out MoreMenuController controller,
+        Action<ComponentParameterCollectionBuilder<MapControls>>? extra = null)
+    {
+        var c = new MoreMenuController();
+        var cut = ctx.RenderComponent<MapControls>(p =>
+        {
+            p.Add(x => x.MoreMenuOpen, false);
+            p.Add(x => x.OnToggleMore, c.Toggle);
+            extra?.Invoke(p);
+        });
+        c.Cut = cut;
+        controller = c;
+        return cut;
+    }
+
     [Test]
     public async Task More_Button_Shows_Dot_When_Contained_Toggle_Is_On()
     {
@@ -65,7 +98,7 @@ public class MapControlsTests
     public async Task More_Menu_Opens_On_Click_And_Backdrop_Dismisses()
     {
         using var ctx = new Bunit.TestContext();
-        var cut = Render(ctx);
+        var cut = RenderWithMoreController(ctx, out _);
 
         // Closed initially: no menu, no backdrop.
         await Assert.That(cut.FindAll(".ctrl-more-menu").Count).IsEqualTo(0);
@@ -88,7 +121,7 @@ public class MapControlsTests
         // state change for one tap.
         using var ctx = new Bunit.TestContext();
         int fired = 0;
-        var cut = Render(ctx, p => p
+        var cut = RenderWithMoreController(ctx, out _, p => p
             .Add(x => x.OnToggleLaylines, EventCallback.Factory.Create(this, () => fired++)));
 
         cut.Find(".ctrl-more-wrap > button").Click();
@@ -114,7 +147,7 @@ public class MapControlsTests
         // this is a menu and whether it's open. Keyboard-only users
         // on a 21" helm need this to navigate.
         using var ctx = new Bunit.TestContext();
-        var cut = Render(ctx);
+        var cut = RenderWithMoreController(ctx, out _);
 
         var btn = cut.Find(".ctrl-more-wrap > button");
         await Assert.That(btn.GetAttribute("aria-haspopup")).IsEqualTo("menu");
