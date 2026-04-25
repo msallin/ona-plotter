@@ -223,9 +223,14 @@ public sealed class AlarmManager : IAlarmManager
         var thisTick = new Dictionary<AlarmKey, (AlarmInfo info, IAlarmRule rule)>();
         foreach (var rule in _rules)
         {
-            var alarm = rule.Check(ctx);
-            if (alarm is null) continue;
-            thisTick[new AlarmKey(alarm.Title, alarm.TargetKey)] = (alarm, rule);
+            // CheckMany wraps Check by default (single rule -> one alarm),
+            // so existing rules don't need to change. The
+            // ServerNotificationsAlarmRule overrides it to surface every
+            // active server notification on each tick.
+            foreach (var alarm in rule.CheckMany(ctx))
+            {
+                thisTick[new AlarmKey(alarm.Title, alarm.TargetKey)] = (alarm, rule);
+            }
         }
 
         bool changed = false;

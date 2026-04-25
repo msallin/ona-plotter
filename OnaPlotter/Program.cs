@@ -23,6 +23,10 @@ builder.Services.AddSingleton<AisStore>();
 builder.Services.AddSingleton<IToastService, ToastService>();
 builder.Services.AddSingleton<IConfirmationService, ConfirmationService>();
 builder.Services.AddSingleton<IPolarService, PolarService>();
+// Server-side SignalK notifications store. SignalkClient pushes
+// notifications.* deltas here; the rule below reads the active set
+// every Evaluate tick and surfaces each as an alarm-banner entry.
+builder.Services.AddSingleton<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>();
 // Alarm rules are DI-registered; AlarmManager picks them up via
 // IEnumerable<IAlarmRule>. Adding a new rule is a one-line registration.
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AisSartAlarmRule>();
@@ -32,6 +36,7 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorDragA
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
+builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule>();
 builder.Services.AddSingleton<DeadmanTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.DeadmanAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();

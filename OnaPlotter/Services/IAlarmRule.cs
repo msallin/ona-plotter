@@ -32,9 +32,25 @@ public interface IAlarmRule
     /// <summary>
     /// Evaluates the rule against the current snapshot. Return null to say
     /// "no alarm"; return an AlarmInfo to raise / update. Must be cheap
-    /// because it runs on every Evaluate tick.
+    /// because it runs on every Evaluate tick. Single-output rules
+    /// implement this; the manager wraps the result through
+    /// <see cref="CheckMany"/>.
     /// </summary>
     AlarmInfo? Check(AlarmEvaluationContext ctx);
+
+    /// <summary>
+    /// Multi-output variant for rules that surface several simultaneous
+    /// alarms (e.g. a server-notification feed where depth + anchor +
+    /// collision can all be active at once). Default wraps
+    /// <see cref="Check"/> as a one-or-zero sequence so existing
+    /// single-output rules don't have to change. Override when the rule
+    /// genuinely emits more than one alarm per tick.
+    /// </summary>
+    IEnumerable<AlarmInfo> CheckMany(AlarmEvaluationContext ctx)
+    {
+        var single = Check(ctx);
+        if (single is not null) yield return single;
+    }
 
     /// <summary>
     /// Called by <see cref="AlarmManager"/> immediately after the user
