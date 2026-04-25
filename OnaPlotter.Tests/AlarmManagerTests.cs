@@ -827,4 +827,92 @@ public class AlarmManagerTests
         await mgr.DismissAsync(topAlarm);
         await Assert.That(fires).IsEqualTo(1);
     }
+
+    // --- Multi-output rule (CheckMany) ---------------------------------
+    //
+    // ServerNotificationsAlarmRule emits one alarm per active server
+    // notification. The manager has to call CheckMany, accumulate them
+    // all into thisTick, and auto-clear them when CheckMany stops
+    // yielding the matching key. Without these tests, the multi-output
+    // path could regress to a Check-only fold and silently drop all
+    // but the first server alarm.
+
+    /// <summary>Trivial multi-output rule for unit-testing the
+    /// CheckMany pathway without dragging the whole
+    /// ServerNotificationStore + ServerNotificationsAlarmRule combo
+    /// into AlarmManager tests. Yields one alarm per string in the
+    /// supplied list each Evaluate tick.</summary>
+    private sealed class MultiAlarmRule : IAlarmRule
+    {
+        private readonly Func<IEnumerable<AlarmInfo>> _supply;
+        public MultiAlarmRule(Func<IEnumerable<AlarmInfo>> supply) { _supply = supply; }
+        public string Title => "MULTI";
+        public int Priority => 250;
+        public bool AutoClear => true;
+        public AlarmInfo? Check(AlarmEvaluationContext ctx) => null;
+        public IEnumerable<AlarmInfo> CheckMany(AlarmEvaluationContext ctx) => _supply();
+    }
+
+    private static (AlarmManager mgr, MutableClock clock, FakeSettings settings) NewMgrWithMulti(MultiAlarmRule rule)
+    {
+        var clock = new MutableClock();
+        var settings = new FakeSettings();
+        IAlarmRule[] rules = [rule];
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
+            culture: null)!;
+        return (mgr, clock, settings);
+    }
+
+    [Test]
+    public async Task MultiOutputRule_AllAlarmsAddedToStack()
+    {
+        // Three concurrent server notifications (depth + anchor +
+        // collision). Manager must surface all three, not just the
+        // first.
+        var alarms = new List<AlarmInfo>
+        {
+            new("DEPTH",     "shallow",    AlarmSeverity.Danger, TargetKey: "notifications.environment.depth"),
+            new("ANCHOR",    "dragging",   AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
+            new("COLLISION", "approaching", AlarmSeverity.Warn,  TargetKey: "notifications.security.collision"),
+        };
+        var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => alarms));
+
+        mgr.Evaluate(new NavigationData(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(3);
+        await Assert.That(mgr.ActiveAlarms.Any(a => a.Title == "DEPTH")).IsTrue();
+        await Assert.That(mgr.ActiveAlarms.Any(a => a.Title == "ANCHOR")).IsTrue();
+        await Assert.That(mgr.ActiveAlarms.Any(a => a.Title == "COLLISION")).IsTrue();
+    }
+
+    [Test]
+    public async Task MultiOutputRule_KeysAutoClearWhenSourceStopsYielding()
+    {
+        // Server clears anchor notification: store removes path,
+        // CheckMany no longer yields ANCHOR, manager auto-drops the
+        // banner entry.
+        var supply = new List<AlarmInfo>
+        {
+            new("DEPTH",  "shallow",  AlarmSeverity.Danger, TargetKey: "notifications.environment.depth"),
+            new("ANCHOR", "dragging", AlarmSeverity.Danger, TargetKey: "notifications.navigation.anchor"),
+        };
+        var (mgr, clock, settings) = NewMgrWithMulti(new MultiAlarmRule(() => supply));
+        mgr.Evaluate(new NavigationData(), [], settings);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(2);
+
+        // Drop the anchor entry from the supply list, advance past
+        // the evaluate debounce, re-evaluate.
+        supply.RemoveAt(1);
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(new NavigationData(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(mgr.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
+    }
 }

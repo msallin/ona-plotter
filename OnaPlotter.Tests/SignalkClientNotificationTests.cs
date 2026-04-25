@@ -28,18 +28,23 @@ public class SignalkClientNotificationTests
     }
 
     private static SignalkClient NewClient()
+        => NewClientWithStore().client;
+
+    private static (SignalkClient client, OnaPlotter.Services.ServerNotifications.ServerNotificationStore store) NewClientWithStore()
     {
+        var store = new OnaPlotter.Services.ServerNotifications.ServerNotificationStore();
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
             logger: NullLogger<SignalkClient>.Instance,
             track: new TrackBuffer(),
             ais: new AisStore(),
             http: new HttpClient(),
-            settings: new FakeSettings());
+            settings: new FakeSettings(),
+            serverNotifs: store);
         // Hello would normally set self-context; do it explicitly so
         // context-matching on the URN delta below is deterministic.
         c.SetSelfContext("vessels.urn:mrn:imo:mmsi:261006533");
-        return c;
+        return (c, store);
     }
 
     // Helpers to build the exact shapes observed against openplotter:
@@ -300,5 +305,139 @@ public class SignalkClientNotificationTests
         }}";
         c.ProcessMessage(payload);
         await Assert.That(fired).IsGreaterThanOrEqualTo(1);
+    }
+
+    // --- Generic server-notification routing -------------------------
+    //
+    // The notifications.* wildcard subscription delivers anything a
+    // plugin armed under notifications/. ProcessSelfDelta should drop
+    // the parsed shape into ServerNotificationStore so the alarm rule
+    // can surface it on the next Evaluate tick. The course-specific
+    // paths above are handled BEFORE this generic path; this group
+    // pins the everything-else route.
+
+    private static string GenericNotificationDelta(string path, string? state, string? message)
+    {
+        string value;
+        if (state is null)
+        {
+            value = "null";
+        }
+        else
+        {
+            // Reflect the real plugin envelope shape (state + method
+            // + message). message is optional; the server can omit it.
+            string msgField = message is null ? "" : $@",""message"":""{message}""";
+            value = $@"{{
+              ""state"":""{state}"",
+              ""method"":[""visual""]{msgField}
+            }}";
+        }
+        return $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""{path}"", ""value"":{value} }}]
+          }}]
+        }}";
+    }
+
+    [Test]
+    public async Task ServerNotification_AlarmStateAndMessage_LandsInStore()
+    {
+        var (c, store) = NewClientWithStore();
+
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.environment.depth.belowTransducer", "alarm", "Below 3m"));
+
+        await Assert.That(store.Count).IsEqualTo(1);
+        var n = store.Active.Single();
+        await Assert.That(n.State).IsEqualTo("alarm");
+        await Assert.That(n.Message).IsEqualTo("Below 3m");
+    }
+
+    [Test]
+    public async Task ServerNotification_NormalState_ClearsExisting()
+    {
+        var (c, store) = NewClientWithStore();
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.navigation.anchor.position", "alarm", "dragging"));
+        await Assert.That(store.Count).IsEqualTo(1);
+
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.navigation.anchor.position", "normal", null));
+
+        await Assert.That(store.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ServerNotification_NullValue_ClearsExisting()
+    {
+        // Some plugins clear by publishing JSON null on the value
+        // rather than state="normal". Both shapes have to remove the
+        // entry.
+        var (c, store) = NewClientWithStore();
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.navigation.anchor.position", "alarm", "dragging"));
+
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.navigation.anchor.position", state: null, message: null));
+
+        await Assert.That(store.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ServerNotification_MultiplePaths_AllStored()
+    {
+        // Concurrent depth + anchor + custom plugin: the store
+        // accumulates one entry per path, all surface in the alarm
+        // banner via ServerNotificationsAlarmRule.CheckMany.
+        var (c, store) = NewClientWithStore();
+
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.environment.depth.belowTransducer", "alarm", "shallow"));
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.navigation.anchor.position", "alarm", "dragging"));
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.plugin.custom.alarm", "warn", "custom"));
+
+        await Assert.That(store.Count).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task ServerNotification_FiresOnDataChanged()
+    {
+        // The receive loop's OnDataChanged drives MainLayout's
+        // HandleDataChanged -> Alarms.Evaluate -> banner repaint.
+        // If notifications routing didn't set changed=true the new
+        // notification would sit in the store invisibly until the
+        // next vessel position update.
+        var (c, _) = NewClientWithStore();
+        int fired = 0;
+        c.OnDataChanged += () => fired++;
+
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.navigation.anchor.position", "alarm", "dragging"));
+
+        await Assert.That(fired).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task ServerNotification_CourseFlagPathsDoNotDoubleFire()
+    {
+        // The course-specific paths are handled BEFORE the generic
+        // notifications routing in ProcessSelfDelta. The course
+        // handler 'continue's, so the generic store path doesn't see
+        // the same delta. Pin that: a perpendicularPassed delta sets
+        // the NavigationData flag but does NOT show up as a server
+        // notification in the store (otherwise we'd see "ALARM"
+        // banners every time the boat reaches a leg waypoint).
+        var (c, store) = NewClientWithStore();
+
+        c.ProcessMessage(Delta(
+            "notifications.navigation.course.perpendicularPassed", "alert"));
+
+        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(store.Count).IsEqualTo(0);
     }
 }

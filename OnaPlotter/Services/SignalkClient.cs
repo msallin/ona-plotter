@@ -52,6 +52,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly NavigationData _data;
     private readonly TrackBuffer _track;
     private readonly AisStore _ais;
+    private readonly OnaPlotter.Services.ServerNotifications.ServerNotificationStore _serverNotifs;
     private readonly Uri _wsUri;
     private readonly HttpClient _http;
     private readonly IAppSettings _settings;
@@ -239,6 +240,24 @@ public sealed class SignalkClient : IAsyncDisposable
         "buddy",
     ];
 
+    /// <summary>vessels.self @ 1 Hz. The notifications.* wildcard catches
+    /// every server-side notification (signalk-anchoralarm-plugin,
+    /// signalk-mob-notifier, depth alarms, custom plugin alerts) so they
+    /// can be surfaced in our alarm banner. Self-context only for now;
+    /// AIS-context notifications (server alerts about a specific
+    /// vessel) are a follow-up if a real plugin produces them.
+    /// <para>
+    /// The two course-provider notification flags
+    /// (perpendicularPassed / arrivalCircleEntered) are ALSO handled
+    /// by SelfFastNotificationsTierPaths above at 100 ms / instant
+    /// for auto-advance edge detection -- we'll see them via both
+    /// subscriptions; the handlers are idempotent.
+    /// </para></summary>
+    private static readonly string[] ServerNotificationsTierPaths =
+    [
+        "notifications.*",
+    ];
+
     /// <summary>
     /// The shipped-with-app subscription set. Reconnect iterates this
     /// in order and issues one <c>subscribe</c> per entry. Each tier
@@ -267,6 +286,10 @@ public sealed class SignalkClient : IAsyncDisposable
             Name: "Ais",
             Context: "vessels.*",
             Paths: AisTierPaths),
+        new SubscriptionTier(
+            Name: "ServerNotifications",
+            Context: "vessels.self",
+            Paths: ServerNotificationsTierPaths),
     ];
 
     /// <summary>Back-compat view: every self-context path across all
@@ -349,7 +372,8 @@ public sealed class SignalkClient : IAsyncDisposable
     }
 
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
-        TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings)
+        TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
+        OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs)
     {
         _logger = logger;
         _data = new NavigationData();
@@ -360,6 +384,7 @@ public sealed class SignalkClient : IAsyncDisposable
         _wsUri = baseUrl.StreamUri();
         _selfContext = "";
         _settings = settings;
+        _serverNotifs = serverNotifs;
 
         // Heading / COG preference: settings drive which SignalK path
         // wins when both true + magnetic are published. Sync now and on
@@ -498,6 +523,12 @@ public sealed class SignalkClient : IAsyncDisposable
 
             _ws = null;
             IsConnected = false;
+            // Drop any cached server notifications: while we're
+            // offline we can't see if the server has cleared one,
+            // and a stale "ANCHOR DRAGGING" banner from before the
+            // drop would be misleading. The server re-publishes the
+            // active set on reconnect so they reappear naturally.
+            _serverNotifs.Reset();
             OnConnectionChanged?.Invoke();
 
             // Linked delay token: cancels either when the whole client
@@ -922,6 +953,20 @@ public sealed class SignalkClient : IAsyncDisposable
                     _logger.LogInformation("CourseNotification {Path} armed={Armed}", val.Path, armed);
                     _data.ApplyBool(val.Path, armed);
                     changed = true;
+                    continue;
+                }
+
+                // Generic server-side SignalK notifications. Anything
+                // under "notifications.*" that we didn't already
+                // intercept above (the course-specific flags use a
+                // dedicated NavigationData boolean path for
+                // auto-advance) lands in the ServerNotificationStore
+                // so the ServerNotificationsAlarmRule can surface it
+                // in the banner stack on the next Evaluate tick.
+                if (val.Path.StartsWith("notifications.", StringComparison.Ordinal))
+                {
+                    if (RouteServerNotification(val.Path, val.Value))
+                        changed = true;
                     continue;
                 }
 
@@ -1546,6 +1591,71 @@ public sealed class SignalkClient : IAsyncDisposable
         if (val.ValueKind != JsonValueKind.String) return false;
         _ais.Apply(context, path, val);
         return true;
+    }
+
+    /// <summary>
+    /// Routes a notifications.* delta into the
+    /// <see cref="ServerNotifications.ServerNotificationStore"/>. The
+    /// SignalK shape is one of:
+    /// <list type="bullet">
+    /// <item>Object: <c>{ "state": "alarm"|"warn"|..., "method": [...], "message": "..." }</c> (armed)</item>
+    /// <item>JSON null OR object with state="normal" (cleared)</item>
+    /// </list>
+    /// Unknown shapes (bare booleans, strings) fail safe to a clear --
+    /// no point flapping the alarm stack on a malformed message.
+    /// Returns true when the store changed (caller fires OnDataChanged
+    /// so AlarmManager re-evaluates promptly).
+    /// </summary>
+    private bool RouteServerNotification(string path, object? rawValue)
+    {
+        // JSON null on the value: server cleared the notification.
+        if (IsNullDelta(rawValue))
+        {
+            return _serverNotifs.Clear(path);
+        }
+
+        // Anything that isn't a JsonElement at this point is unexpected
+        // (the parser hands us JsonElement consistently). Treat as a
+        // clear rather than an arm so we don't manufacture an alarm
+        // out of garbage.
+        if (rawValue is not JsonElement el)
+        {
+            return _serverNotifs.Clear(path);
+        }
+
+        // Object form: pull state + message. Missing state on a
+        // present object treats as "alarm" (most plugins emit only
+        // object-when-armed, omit-state-when-they-mean-it; safer to
+        // surface than to drop).
+        if (el.ValueKind == JsonValueKind.Object)
+        {
+            string? state = null;
+            string? message = null;
+            if (el.TryGetProperty("state", out var stateEl)
+                && stateEl.ValueKind == JsonValueKind.String)
+            {
+                state = stateEl.GetString();
+            }
+            if (el.TryGetProperty("message", out var msgEl)
+                && msgEl.ValueKind == JsonValueKind.String)
+            {
+                message = msgEl.GetString();
+            }
+            // Missing-state-on-an-object: assume armed at "alarm"
+            // severity. Clears require an explicit normal/cleared
+            // string OR a JSON null payload.
+            state ??= "alarm";
+            return _serverNotifs.Apply(path, state, message);
+        }
+
+        // Bare bool true: rare legacy form ("we have a notification");
+        // treat as armed. Anything else (numbers, strings, arrays):
+        // clear, so a malformed delta doesn't latch.
+        if (el.ValueKind == JsonValueKind.True)
+        {
+            return _serverNotifs.Apply(path, "alarm", null);
+        }
+        return _serverNotifs.Clear(path);
     }
 
     // Returns the wrapped .value if this is a SignalK leaf, otherwise the

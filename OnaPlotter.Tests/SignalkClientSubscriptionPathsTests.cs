@@ -230,4 +230,18 @@ public class SignalkClientSubscriptionPathsTests
         // regression: the tier-refactor must not drop it.
         await Assert.That(SignalkClient.SelfPaths).Contains("radars.*.targets.*");
     }
+
+    [Test]
+    public async Task ServerNotifications_Tier_Subscribes_Wildcard()
+    {
+        // The "ServerNotifications" tier is what plumbs server-side
+        // SignalK notifications (signalk-anchoralarm-plugin et al)
+        // into the alarm banner. If this tier disappears, server-
+        // decided alarms go silent on our end -- helm relies on this
+        // to surface plugin-driven alerts.
+        var tier = SignalkClient.Tiers.SingleOrDefault(t => t.Name == "ServerNotifications");
+        await Assert.That(tier).IsNotNull();
+        await Assert.That(tier!.Context).IsEqualTo("vessels.self");
+        await Assert.That(tier.Paths).Contains("notifications.*");
+    }
 }

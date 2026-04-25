@@ -19,7 +19,8 @@ public class SignalkClientSelfContextTests
             track: new TrackBuffer(),
             ais: store,
             http: new HttpClient(),
-            settings: new FakeSettings());
+            settings: new FakeSettings(),
+            serverNotifs: new OnaPlotter.Services.ServerNotifications.ServerNotificationStore());
 
     private sealed class FakeBaseUrl : ISignalKBaseUrl
     {
