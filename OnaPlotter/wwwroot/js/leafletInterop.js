@@ -3755,9 +3755,14 @@ export function setAtons(atons) {
             existing.setIcon(icon);
             existing.setPopupContent(buildAtonPopupHtml(a));
         } else {
+            // Honour the visibility flag on creation. Without this
+            // guard a setAtons that runs while atonsVisible=false
+            // would silently add fresh markers to the map -- the user
+            // hides the layer, a reconnect repopulates the store, and
+            // the buoys reappear despite the toggle being off.
             const m = L.marker([a.lat, a.lon], { icon })
-                .addTo(map)
                 .bindPopup(buildAtonPopupHtml(a), { autoPan: false });
+            if (atonsVisible) m.addTo(map);
             atonMarkers.set(a.context, m);
         }
     }
