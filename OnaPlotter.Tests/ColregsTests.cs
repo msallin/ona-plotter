@@ -119,4 +119,39 @@ public class ColregsTests
         await Assert.That(Colregs.ShortLabel(Colregs.Category.Indeterminate)).IsEqualTo("");
         await Assert.That(Colregs.RoleLabel(Colregs.Role.GiveWay)).IsEqualTo("Give way");
     }
+
+    [Test]
+    public async Task SamePosition_NoCrash_ReturnsResult()
+    {
+        // Degenerate: two vessels at exactly the same lat/lon. The
+        // bearing math collapses to atan2(0,0) = 0, so the classifier
+        // sees the target dead ahead. This is unphysical (two boats
+        // can't occupy the same point) but a noisy GPS or a SignalK
+        // self/AIS dispatch race could produce it. Pin: must not throw,
+        // must return SOMETHING -- callers can decide whether to
+        // suppress display when ownDistance == 0.
+        var r = Colregs.Classify(
+            ownLat: 47.5, ownLon: 8.5, ownCogRad: 0, ownSogMs: 5,
+            tgtLat: 47.5, tgtLon: 8.5, tgtCogRad: Math.PI, tgtSogMs: 5);
+        // No exception is the main contract here. Category is whatever
+        // the bearing-is-0-and-courses-reciprocal math produces.
+        await Assert.That(r.Category).IsNotEqualTo((Colregs.Category)999);
+    }
+
+    [Test]
+    public async Task InfiniteCog_ReturnsIndeterminate()
+    {
+        // Defense-in-depth alongside the existing NaN_Inputs test:
+        // PositiveInfinity / NegativeInfinity should hit the same
+        // !double.IsFinite guard and bail out.
+        var r1 = Colregs.Classify(
+            ownLat: 0, ownLon: 0, ownCogRad: double.PositiveInfinity, ownSogMs: 5,
+            tgtLat: 0.01, tgtLon: 0, tgtCogRad: Math.PI, tgtSogMs: 5);
+        await Assert.That(r1.Category).IsEqualTo(Colregs.Category.Indeterminate);
+
+        var r2 = Colregs.Classify(
+            ownLat: 0, ownLon: 0, ownCogRad: 0, ownSogMs: 5,
+            tgtLat: 0.01, tgtLon: 0, tgtCogRad: 0, tgtSogMs: double.NegativeInfinity);
+        await Assert.That(r2.Category).IsEqualTo(Colregs.Category.Indeterminate);
+    }
 }

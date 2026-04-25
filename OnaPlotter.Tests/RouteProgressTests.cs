@@ -143,4 +143,43 @@ public class RouteProgressTests
         // Nearing destination.
         await Assert.That(RouteProgress.FindClosestWaypointIndex(route, 47.2000, 8.3500)).IsEqualTo(4);
     }
+
+    [Test]
+    public async Task NaNCoordinate_DoesNotWin_LegitimateNeighbourPicked()
+    {
+        // A corrupt route fetch could produce a NaN lat / lon at one
+        // waypoint. The squared-distance compare must not let NaN
+        // silently outrank a real waypoint -- NaN < any is false in
+        // IEEE-754, so the algorithm relies on that. Pin the contract
+        // so a refactor that flips to >= or rearranges the compare
+        // cannot silently "win" with the NaN entry.
+        double[][] route =
+        [
+            [47.0, 8.0],
+            [double.NaN, double.NaN], // corrupt
+            [47.5, 8.0],
+        ];
+
+        // Probe near WP2 (47.5, 8.0). Must pick index 2, NOT the NaN row.
+        await Assert.That(RouteProgress.FindClosestWaypointIndex(route, 47.49, 8.0))
+            .IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task InfinityCoordinate_DoesNotWin()
+    {
+        double[][] route =
+        [
+            [47.0, 8.0],
+            [double.PositiveInfinity, 8.0],
+            [double.NegativeInfinity, 8.0],
+            [47.2, 8.0],
+        ];
+
+        // Probe near WP3 (47.2, 8.0). The infinities propagate through
+        // the squared distance and remain ineligible (Infinity * any
+        // produces Infinity / NaN; neither beats a finite minimum).
+        await Assert.That(RouteProgress.FindClosestWaypointIndex(route, 47.19, 8.0))
+            .IsEqualTo(3);
+    }
 }
