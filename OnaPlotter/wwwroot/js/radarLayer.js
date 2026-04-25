@@ -529,23 +529,29 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
 }
 
 /** Decide whether a legend entry should be rendered transparent.
- *  Drives the "drop sea-clutter" UX: Navico-style palettes paint low-
- *  intensity normal echoes (sea clutter, noise) as a blue ramp, which
- *  drowns the chart underneath without surfacing real targets the
- *  green/yellow/red band already shows clearly. The legend's own
- *  `mediumReturn` field marks the byte index where "real" returns
- *  start, so suppressing 1..mediumReturn-1 (type=normal only) targets
- *  the cause regardless of what colour the provider chose to render
- *  with. Doppler / history / target-border markers (which legitimately
- *  use blue tints, e.g. doppler-receding) stay visible because their
- *  type is not "normal". When the legend ships no mediumReturn we
- *  suppress nothing -- a non-Navico provider may not have a clutter
- *  band at the low end at all.
+ *  Drives the "drop sea-clutter" UX: Navico-style palettes paint
+ *  low-intensity normal echoes (sea clutter, noise) as a blue ramp
+ *  AND the medium-strength normals also lean blue / cyan / blue-green
+ *  on HALO. The user's complaint is visual ("anything that looks
+ *  blue draws too much attention regardless of intensity"), so we
+ *  combine two checks for normal pixels:
+ *    1. Metadata: byte indices 1..mediumReturn-1 are sea clutter
+ *       per the legend's own classification (covers ramps where the
+ *       provider doesn't pick blue but still flags noise).
+ *    2. Colour: anything where blue is the dominant channel
+ *       (B > R AND B > G) -- catches the cyan / pure-blue / blue-green
+ *       ramp that on HALO extends past the metadata cutoff (bytes
+ *       5-7 are still blue-dominant by RGB even though they're
+ *       above mediumReturn).
+ *  Doppler / history / target-border markers stay visible regardless
+ *  of colour because the check is gated on type === 'normal'.
  *  Exported via `_internal` for test coverage. */
 function shouldSuppressLowReturn(pixel, index, legend) {
     if (!pixel || pixel.type !== 'normal') return false;
-    if (typeof legend?.mediumReturn !== 'number') return false;
-    return index >= 1 && index < legend.mediumReturn;
+    if (typeof legend?.mediumReturn === 'number'
+        && index >= 1 && index < legend.mediumReturn) return true;
+    const rgba = parseLegendColor(pixel.color);
+    return rgba[2] > rgba[0] && rgba[2] > rgba[1];
 }
 
 // Exposed for tests; not part of the public interop API.
