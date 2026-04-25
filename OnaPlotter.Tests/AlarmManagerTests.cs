@@ -370,8 +370,11 @@ public class AlarmManagerTests
         mgr.Evaluate(Nav(), [], settings);
         await mgr.DismissAsync(mgr.ActiveAlarm!);
 
-        // Advance past the cooldown.
-        clock.Now = clock.Now.AddSeconds(AlarmManager.DismissCooldownSeconds + 5);
+        // Advance past the cooldown. CPA uses the longer per-title
+        // window (CpaDismissCooldownSeconds = 15 min) instead of the
+        // default 30s, so we have to step past that or the dismiss
+        // remains in effect.
+        clock.Now = clock.Now.AddSeconds(AlarmManager.CpaDismissCooldownSeconds + 5);
         mgr.Evaluate(Nav(), [], settings);
 
         await Assert.That(mgr.ActiveAlarm).IsNotNull();
