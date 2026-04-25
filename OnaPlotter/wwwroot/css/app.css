@@ -3778,7 +3778,7 @@ html.night-mode-global body {
 .legend-radar      { background: transparent;
                      border: 2px solid var(--map-radar); }
 .legend-route      { background: transparent;
-                     border-top: 3px dashed var(--ann-route);
+                     border-top: 3px solid var(--ann-route);
                      margin-top: 8px;
                      height: 4px;
                      border-radius: 0; }
@@ -3827,6 +3827,19 @@ html.night-mode-global body {
     background-position: center;
     height: 2px;
     align-self: center;
+}
+/* Passed leg: cyan dotted, dim. Mirrors the dashArray '2,6'
+   round-cap dots drawn on the map for already-crossed legs of the
+   active route. CSS native "dotted" border produces evenly spaced
+   round dots which match the rendered look closely enough for a
+   swatch. Opacity 0.5 mirrors the on-map opacity. */
+.legend-passed-leg {
+    background: transparent;
+    border-top: 3px dotted var(--map-bearing);
+    margin-top: 8px;
+    height: 4px;
+    border-radius: 0;
+    opacity: 0.5;
 }
 /* XTE gradient: bar that fades green -> amber -> red to match the
    threshold bands the actual tick uses. */
