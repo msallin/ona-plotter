@@ -98,6 +98,34 @@ public sealed class RegionApi : IRegionApi
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
 
+    /// <summary>In-place update for polygon regions. PUT /resources/regions/{id}
+    /// with a freshly-built polygon feature. Mirrors RouteApi.UpdateAsync --
+    /// used when the user opens an existing region via the Layers-panel
+    /// Edit button so tweaks replace the original instead of spawning
+    /// a second region on save.</summary>
+    public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description,
+        double[][] vertices, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(id))
+            return Task.FromResult(ApiResult.Fail("region id required"));
+        if (vertices is null || vertices.Length < 3)
+            return Task.FromResult(ApiResult.Fail("polygon needs at least 3 vertices"));
+        var ring = new double[vertices.Length + 1][];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            if (vertices[i] is null || vertices[i].Length < 2)
+                return Task.FromResult(ApiResult.Fail("polygon vertex missing lat / lon"));
+            ring[i] = [vertices[i][1], vertices[i][0]];
+        }
+        ring[vertices.Length] = ring[0];
+        var body = GeoJsonBuilder.RegionFeatureBody(
+            name,
+            GeoJsonBuilder.Polygon(ring),
+            description);
+        var url = _baseUrl.Combine(SignalKUrls.Region(id));
+        return ResourceHttp.PutAsync(_http, url, body, ct);
+    }
+
     public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Region(id)), ct);
 

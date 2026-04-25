@@ -166,7 +166,15 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Position</h6>
-                <p class="card-text metric-md">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</p>
+                @* Stack lat/lon so this card matches the height of the
+                   COG/TWD cards in the same row, and each value gets its
+                   own line for easy reading at a glance. Both lines use
+                   mb-0 so the card's total height matches the sibling
+                   cards' single display-6 line rather than inheriting
+                   Bootstrap's default paragraph bottom-margin on the
+                   first line. *@
+                <p class="card-text metric-lg mb-0">@NauticalFormat.FormatLat(Data.Latitude)</p>
+                <p class="card-text metric-lg mb-0">@NauticalFormat.FormatLon(Data.Longitude)</p>
             </div>
         </div>
     </div>
@@ -179,7 +187,12 @@ else if (Polar.HasPolar)
         Tide
         @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
         {
-            <span class="tide-station-name">@Data.TideStationName</span>
+            @* NOAA station names are often long and push the layout; cap
+               at 22 chars plus a 3-char ellipsis (25 visible). Keep the
+               full name as title text so hovering restores it. *@
+            <span class="tide-station-name" title="@Data.TideStationName">
+                @TruncateStation(Data.TideStationName!)
+            </span>
         }
     </h6>
     <div class="row g-3 mb-4">
@@ -203,7 +216,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">Next HW</h6>
-                        <p class="card-text metric-lg">
+                        <p class="card-text display-6">
                             @th.ToLocalTime().ToString("HH:mm")
                         </p>
                         <small class="text-muted">
@@ -223,7 +236,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">Next LW</h6>
-                        <p class="card-text metric-lg">
+                        <p class="card-text display-6">
                             @tl.ToLocalTime().ToString("HH:mm")
                         </p>
                         <small class="text-muted">
@@ -357,6 +370,13 @@ else if (Polar.HasPolar)
         Data.TideHeightNow is not null
         || Data.TideTimeHigh is not null
         || Data.TideTimeLow is not null;
+
+    // NOAA/UKHO station names often run 40+ chars ("Honolulu Harbor,
+    // Reef Runway, Pearl Harbor Entrance ..."). Cap at 22 so the header
+    // doesn't wrap awkwardly; full name stays available on hover.
+    private const int StationNameMaxChars = 22;
+    private static string TruncateStation(string s) =>
+        s.Length <= StationNameMaxChars ? s : s[..StationNameMaxChars] + "...";
 
     private static string FormatDashInterval(DateTime futureUtc)
     {

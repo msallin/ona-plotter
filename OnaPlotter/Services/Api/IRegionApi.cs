@@ -23,5 +23,11 @@ public interface IRegionApi
     Task<ApiResult<string>> CreatePolygonAsync(string name, string description,
         double[][] vertices, CancellationToken ct = default);
 
+    /// <summary>Rewrites an existing polygon region (name + description
+    /// + vertices) in place via PUT. Used by the Layers-panel Edit
+    /// button; parallels RouteApi.UpdateAsync.</summary>
+    Task<ApiResult> UpdatePolygonAsync(string id, string name, string description,
+        double[][] vertices, CancellationToken ct = default);
+
     Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default);
 }

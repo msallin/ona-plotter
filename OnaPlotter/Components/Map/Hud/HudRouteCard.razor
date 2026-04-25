@@ -25,8 +25,17 @@
        exclusive). Removing the button from here saves a full row. *@
 @if (Snapshot.Visible)
 {
+    @* `route-stopping` class drives a dim+pulse style during the
+       window between the user tapping Stop Navigation and the SK
+       delta confirming course-clear. Without this the helm sees the
+       polyline dim on the chart but the HUD card stays bright with
+       distance + ETA + waypoint count, and reads it as "Stop didn't
+       work" -- could double-tap or mistake it for a navigational
+       state mismatch. The dim resolves naturally when the delta
+       lands and the whole card unmounts (Snapshot.Visible flips
+       false). *@
     <div class="hud hud-route">
-        <div class="hud-panel route-panel">
+        <div class="hud-panel route-panel @(Snapshot.Stopping ? "route-stopping" : "")">
             <div class="hud-card-title">
                 <span class="hud-card-name">@(Snapshot.Name ?? "Active Route")</span>
                 @if (Snapshot.PointIndex is int idx && Snapshot.PointTotal is int total)
@@ -116,5 +125,12 @@
         double? TimeToGo,
         double? Xte,
         double? RouteDistanceRemaining,
-        double? RouteTimeToGo);
+        double? RouteTimeToGo,
+        // Visual-state flag: true while a Stop Navigation tap is
+        // pending server confirmation. Drives the route-stopping CSS
+        // class on the panel so the card reads as "stopping..." until
+        // the SK delta clears the active course. Defaults to false so
+        // existing tests / call sites that pre-date the stopping flag
+        // keep working without an exhaustive ctor update.
+        bool Stopping = false);
 }

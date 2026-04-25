@@ -3,13 +3,53 @@
 
 // v2 -> v3: chartOverzoom module extraction (shape change).
 // v3 -> v4: chart-tile cache-as-you-view (new rule below).
-const CACHE_NAME = 'ona-plotter-v4';
+// v4 -> v5: errorRelayBoot.js + themeApply.js + index.html shell update;
+//           bundle precaches the new boot script so an iPad that
+//           loaded an older version doesn't keep serving it offline.
+//           Bump CACHE_NAME on EVERY shell-asset change going forward
+//           (favicon, css, html, any APP_SHELL entry).
+// v5 -> v6: harden tileCacheFirst against Cache API rejections so
+//           Firefox no longer surfaces tile fetches as
+//           "ServiceWorker intercepted ... unexpected error".
+// v6 -> v7: PWA standalone scrollbar fix (sidebar 100dvh + body
+//           overflow lock) + sidebar-collapse user toggle. CSS
+//           changes only, but APP_SHELL precaches need a refresh.
+// v7 -> v8: anchor-on-route-activate JS marker clear (race fix)
+//           + in-place route edit forces active-route refetch.
+//           Bundled C# changes won't affect SW behaviour but the
+//           helm should see the fixed flow on the next reload, so
+//           bump triggers an app shell refresh.
+// v8 -> v9: sidebar-collapse moved into NavMenu foot; iOS fullbleed
+//           map-container fills full viewport (no -3rem topbar gap)
+//           so Safari's bottom toolbar no longer overlaps the HUD.
+// v9 -> v10: anchor-raise visual feedback (dim marker until SK delta
+//            confirms) replaces the optimistic clear that masked
+//            errors and raced the next sync tick.
+// v10 -> v11: wheel zoom + arrow-step + reverse + save-as-copy in
+//             route edit; Stop Navigation now uses the same dim-and-
+//             wait pattern as anchor raise instead of optimistically
+//             clearing local state.
+// v11 -> v12: route activation no longer auto-raises the anchor (only
+//             the reverse direction stays); editing the active route
+//             temporarily hides the active overlay to avoid double-
+//             drawing, restores after Cancel/Save.
+// v12 -> v13: tile cache cap 1000 -> 5000 + LRU promotion on hit
+//             (delete+re-put moves entries to end of insertion order
+//             so trim evicts least-recently-used). keepBuffer 4 -> 6
+//             on tile layers for snappier route-planning pans.
+const CACHE_NAME = 'ona-plotter-v13';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
-// Cap on the tile cache so a passage up the coast doesn't fill disk.
-// Approx 1000 tiles * ~40kb = 40 MB. Rolled FIFO: when we exceed the
-// cap, oldest entries are evicted. Blue-water cruisers with offline
-// needs should manually pre-fetch a route (separate feature, TBD).
-const TILE_CACHE_MAX_ENTRIES = 1000;
+// Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
+// is comfortable on iPad / desktop and fits one or two full route-
+// planning sessions. Eviction is LRU (see tileCacheFirst): on every
+// cache hit we delete + re-put the entry, which moves it to the end
+// of the cache's insertion order. trimTileCache below evicts from
+// the start, so the LEAST-recently-used tiles are dropped first --
+// the home anchorage tiles you visit every session survive across
+// sessions even when the cache rolls. Bump this number rather than
+// switching to a separate offline-tiles feature for typical
+// coastal / rivers users.
+const TILE_CACHE_MAX_ENTRIES = 5000;
 // Use relative URLs so the worker works both at root and under a subpath
 // (SignalK webapp serves at /signalk-onaplotter/).
 const SCOPE = self.registration ? self.registration.scope : self.location.href;
@@ -17,7 +57,13 @@ const APP_SHELL = [
     SCOPE,
     new URL('css/app.css', SCOPE).toString(),
     new URL('favicon.svg', SCOPE).toString(),
-    new URL('manifest.json', SCOPE).toString()
+    new URL('manifest.json', SCOPE).toString(),
+    // errorRelayBoot.js is loaded synchronously from index.html before
+    // the Blazor runtime so the relay listeners are armed in time to
+    // catch boot-time exceptions. Precaching it here means a stale
+    // copy is invalidated cleanly when CACHE_NAME bumps; without it
+    // the catch-all opportunistic cache could pin an old broken copy.
+    new URL('js/errorRelayBoot.js', SCOPE).toString()
 ];
 
 self.addEventListener('install', (event) => {
@@ -41,23 +87,67 @@ self.addEventListener('activate', (event) => {
 // Cache-first for tile URLs: respond from cache if present, otherwise
 // go to network, store the response, and return it. Enforces a rolling
 // cap so the cache doesn't grow unbounded across multi-week passages.
+//
+// Defensive shape: every Cache API call is wrapped so an unexpected
+// failure (storage quota exceeded, corrupted index, partial-content
+// responses that cache.put refuses, no-store headers, etc.) falls
+// through to a plain network fetch rather than rejecting the
+// respondWith() promise -- which Firefox surfaces as
+// "ServiceWorker intercepted the request and encountered an
+// unexpected error" and renders as a broken tile in Leaflet.
 async function tileCacheFirst(request) {
-    const cache = await caches.open(TILE_CACHE_NAME);
-    const cached = await cache.match(request);
-    if (cached) return cached;
+    let cache = null;
     try {
-        const response = await fetch(request);
-        if (response.ok) {
-            // clone() needs to happen BEFORE returning so both the cache
-            // and the caller get a fresh body.
-            cache.put(request, response.clone()).then(() => trimTileCache(cache));
+        cache = await caches.open(TILE_CACHE_NAME);
+        const cached = await cache.match(request);
+        if (cached) {
+            // LRU promotion: re-insert this hit so it moves to the
+            // end of the cache's insertion order. trimTileCache below
+            // evicts FIFO from the start, so this turns the cap into
+            // an effective LRU policy without needing a sidecar
+            // IndexedDB index.
+            //
+            // Clone BEFORE returning -- Response bodies are single-
+            // use streams and the caller (event.respondWith) will
+            // start consuming the original immediately. Cloning here,
+            // synchronously with the cache.match, guarantees we still
+            // have an unread body for the put.
+            const promote = cached.clone();
+            (async () => {
+                try {
+                    await cache.delete(request);
+                    await cache.put(request, promote);
+                } catch (_) { /* promotion is best-effort */ }
+            })();
+            return cached;
         }
-        return response;
-    } catch (err) {
+    } catch (_) {
+        // Cache layer unavailable; degrade to a pure-network path
+        // below. cache stays null, the put attempt is skipped.
+    }
+
+    let response;
+    try {
+        response = await fetch(request);
+    } catch (_) {
         // Offline + no cache entry. Return a harmless 504 so Leaflet
         // shows its errorTileUrl placeholder rather than hanging.
         return new Response('', { status: 504, statusText: 'Offline' });
     }
+
+    // Best-effort cache write. cache.put rejects on partial-content
+    // (206), no-store headers, quota exceeded, and a few other Response
+    // shapes that the spec disallows. None of those should affect the
+    // caller -- swallow the rejection and just return the response.
+    if (cache && response.ok) {
+        try {
+            const clone = response.clone();
+            cache.put(request, clone)
+                .then(() => trimTileCache(cache).catch(() => { /* trim is best-effort */ }))
+                .catch(() => { /* put rejected; tile not cached, fine */ });
+        } catch (_) { /* clone() threw on a weird response body */ }
+    }
+    return response;
 }
 
 async function trimTileCache(cache) {

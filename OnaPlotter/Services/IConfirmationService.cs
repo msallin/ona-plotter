@@ -21,6 +21,27 @@ public interface IConfirmationService
     Task<bool> ConfirmAsync(string message, bool destructive = true,
         string? confirmLabel = null, string? cancelLabel = null);
 
+    /// <summary>Text-input variant. Shows the modal with an input
+    /// field pre-filled with <paramref name="initialValue"/>; resolves
+    /// to the trimmed user-entered string on OK, or <c>null</c> on
+    /// Cancel / Escape. Prefer this over <c>window.prompt</c> -- the
+    /// native dialog is blocked in some iOS PWA / MDM profiles and
+    /// ignores the app theme, while this one reuses the themed
+    /// modal host. Destructive is forced to false so the OK button
+    /// uses the primary palette (text-rename is rarely destructive).</summary>
+    Task<string?> PromptAsync(string message, string initialValue = "",
+        string? confirmLabel = null, string? cancelLabel = null);
+
+    /// <summary>True when the pending prompt is a text-input prompt;
+    /// the dialog renders an <c>&lt;input&gt;</c> in that mode.
+    /// False for a yes/no confirmation.</summary>
+    bool IsTextPrompt { get; }
+
+    /// <summary>Current text-input value. The dialog two-way binds
+    /// to this; on Resolve the committed value is returned to the
+    /// awaiting PromptAsync caller.</summary>
+    string TextValue { get; set; }
+
     /// <summary>Fires whenever the pending state changes so the modal
     /// host component can re-render. Irrelevant to non-UI callers.</summary>
     event Action? OnChanged;
@@ -47,6 +68,8 @@ public interface IConfirmationService
     bool IsPending { get; }
 
     /// <summary>Called by the modal host when the user picks a
-    /// button; resolves the pending ConfirmAsync task.</summary>
+    /// button; resolves the pending ConfirmAsync / PromptAsync task.
+    /// For text prompts, <paramref name="ok"/>=true returns the
+    /// current <see cref="TextValue"/>; false returns null.</summary>
     void Resolve(bool ok);
 }

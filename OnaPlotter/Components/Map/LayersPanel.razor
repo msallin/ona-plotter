@@ -59,6 +59,8 @@
                     Visible="RegionsVisible"
                     LayerFilter="@LayerFilter"
                     OnFocus="OnFocusRegion"
+                    OnEdit="OnEditRegion"
+                    OnDelete="OnDeleteRegion"
                     OnToggleVisible="OnToggleRegionsVisible" />
 
     <BuddiesSection Buddies="Buddies"
@@ -126,6 +128,8 @@
     [Parameter] public EventCallback<SignalkNote> OnFocusNote { get; set; }
     [Parameter] public EventCallback<bool> OnToggleNotesVisible { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnFocusRegion { get; set; }
+    [Parameter] public EventCallback<SignalkRegion> OnEditRegion { get; set; }
+    [Parameter] public EventCallback<SignalkRegion> OnDeleteRegion { get; set; }
     [Parameter] public EventCallback<bool> OnToggleRegionsVisible { get; set; }
     [Parameter] public EventCallback<string> OnFocusVessel { get; set; }
     [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }

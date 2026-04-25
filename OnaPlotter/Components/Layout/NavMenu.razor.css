@@ -21,6 +21,13 @@
     height: 1.4rem;
 }
 
+/* Inline SVG icons (Chart / Resources) track currentColor for stroke
+   and pick up the .nav-icon font-size via 1.1em so they read at the
+   same apparent weight as the unicode glyphs on the other links. */
+.nav-icon svg {
+    display: block;
+}
+
 /* Labels visible by default; collapsed to icon-only in fullscreen
    (either the real Fullscreen API state handled from .page, or the
    iOS CSS fallback on <html>). */
@@ -72,10 +79,16 @@
    almost never overflows (<10 items), and on the rare narrow-
    viewport case where it does, the hover / swipe-scroll still works
    without the visual clutter of a scrollbar track running down the
-   side of the chrome. */
+   side of the chrome.
+   Flex column so the collapse button at the bottom can be pushed
+   to the rail's foot via margin-top:auto without forcing a fixed
+   height on the nav above it. dvh tracks the live visible area
+   (matches our html content box, which has env(safe-area-inset-*)
+   padding) -- 100vh would overflow on iPad PWA standalone. */
 .nav-scrollable {
-    display: block;
-    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
     overflow-y: auto;
     scrollbar-width: none;                  /* Firefox */
 }
@@ -83,16 +96,58 @@
     display: none;                          /* Chrome / Safari / Edge */
 }
 
-/* Fullscreen / iOS-fullbleed state: collapse labels, shrink link
-   padding + gap so the sidebar becomes a thin icon rail. The
-   .sidebar width itself is handled in MainLayout.razor.css. */
+/* Fullscreen / iOS-fullbleed / explicit sidebar-collapsed: collapse
+   labels, shrink link padding + gap so the sidebar becomes a thin
+   icon rail. The .sidebar width itself is handled in
+   MainLayout.razor.css.
+   The .page.sidebar-collapsed branch is the user-driven toggle from
+   the topbar (Settings.SidebarCollapsed); it shares this rule so a
+   collapsed sidebar reads identically whether the user collapsed it
+   manually or fullscreen mode forced it. */
 html.ios-fullbleed .nav-label,
-:fullscreen .nav-label {
+:fullscreen .nav-label,
+.page.sidebar-collapsed .nav-label {
     display: none;
 }
 html.ios-fullbleed ::deep .nav-link,
-:fullscreen ::deep .nav-link {
+:fullscreen ::deep .nav-link,
+.page.sidebar-collapsed ::deep .nav-link {
     justify-content: center;
     gap: 0;
     padding: 0.5rem;
+}
+
+/* Icon-rail mode: shrink the 1.4rem day-size icons so they fit
+   comfortably inside the 4rem sidebar without touching the rail
+   borders. 1.15rem keeps them legible at arm's length on an iPad
+   while leaving ~0.5rem padding on each side. */
+html.ios-fullbleed .nav-icon,
+:fullscreen .nav-icon,
+.page.sidebar-collapsed .nav-icon {
+    font-size: 1.15rem;
+    width: auto;
+}
+
+/* Collapse / expand button at the foot of the rail. margin-top:auto
+   pushes it past the spaced nav items so it sits at the bottom
+   regardless of how many items the rail holds. The button reuses
+   .nav-link styling for hover + sidebar-collapsed icon-rail rules,
+   so the chevron shrinks alongside the page icons. A subtle top
+   border separates it from the navigation cluster, matching the
+   collapse-button placement convention in VSCode / Linear / Slack. */
+.nav-collapse-row {
+    margin-top: auto;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 0.4rem 0.75rem 0.6rem;
+}
+.nav-collapse-btn {
+    background: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+}
+.nav-collapse-btn:focus-visible {
+    outline: 2px solid var(--sk-accent-dim, rgba(255,255,255,0.3));
+    outline-offset: -2px;
 }

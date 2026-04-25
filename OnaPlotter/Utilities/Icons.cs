@@ -50,6 +50,9 @@ public static class Icons
 
     // Plus (add waypoint, etc.)
     public const string Plus = Wrap + "<line x1=\"12\" y1=\"5\" x2=\"12\" y2=\"19\"/><line x1=\"5\" y1=\"12\" x2=\"19\" y2=\"12\"/>" + End;
+    // (A Minus icon was added briefly for the custom zoom buttons but
+    // they're now in MainLayout.razor and inline their own SVGs;
+    // removed to avoid a constant with no callers.)
 
     // Undo.
     public const string Undo = Wrap + "<path d=\"M3 10h10a5 5 0 0 1 0 10h-2\"/><polyline points=\"7,6 3,10 7,14\"/>" + End;

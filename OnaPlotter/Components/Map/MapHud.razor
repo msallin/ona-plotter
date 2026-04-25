@@ -508,6 +508,12 @@
     /// dormancy hint so a silent rule doesn't surprise the helm.</summary>
     [Parameter] public double WaypointArrivalRadiusMeters { get; set; } = 50;
 
+    /// <summary>True while a Stop Navigation tap is awaiting the SK
+    /// course-clear delta. Drives the route HUD's dim+pulse style so
+    /// the helm doesn't re-tap thinking the action didn't land. The
+    /// card unmounts naturally when the delta arrives.</summary>
+    [Parameter] public bool CourseStopping { get; set; }
+
 
     /// <summary>Invoked when the user picks a new radius from the inline
     /// chips. The caller persists it to IAppSettings and re-draws the
@@ -850,7 +856,8 @@
             TimeToGo: Data.CourseNextPointTimeToGo,
             Xte: Data.CrossTrackError,
             RouteDistanceRemaining: Data.ActiveRouteDistanceRemaining,
-            RouteTimeToGo: Data.ActiveRouteTimeToGo);
+            RouteTimeToGo: Data.ActiveRouteTimeToGo,
+            Stopping: CourseStopping);
 
     private OnaPlotter.Components.Map.Hud.HudAnchorCard.AnchorHudSnapshot BuildAnchorSnapshot() =>
         new(

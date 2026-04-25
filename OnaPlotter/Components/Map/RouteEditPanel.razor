@@ -50,11 +50,30 @@
     <button class="map-btn" @onclick="OnUndo"
             disabled="@((Coords?.Length ?? 0) == 0 || Saving)"
             title="@((Coords?.Length ?? 0) == 0 ? "Nothing to undo" : "Remove last waypoint")">Undo</button>
+    @* Reverse: flips waypoint order. The classic case is "I planned
+       outbound, now I want the return leg" -- without this the user
+       would re-add waypoints in opposite order. *@
+    <button class="map-btn" @onclick="OnReverse"
+            disabled="@(!enoughPoints || Saving)"
+            title="@(!enoughPoints ? "Need at least 2 waypoints" : "Reverse waypoint order")">Reverse</button>
     <button class="map-btn" @onclick="OnSave"
             disabled="@(!canSave)"
             title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save route")">
         @(Saving ? "Saving..." : "Save")
     </button>
+    @* Save as copy: only meaningful when editing an existing route
+       (IsEditingExisting). Saves the current geometry as a NEW route
+       instead of overwriting the original -- useful when the helm
+       wants a variant without losing the source. Hidden in fresh-
+       create flows where it'd be redundant with Save. *@
+    @if (IsEditingExisting)
+    {
+        <button class="map-btn" @onclick="OnSaveAsCopy"
+                disabled="@(!canSave)"
+                title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save as a new route, leave the original unchanged")">
+            Save copy
+        </button>
+    }
     @* Save+Go lands the helm on the map with the route already active.
        The two-step "save, then dig into Layers to activate it" workflow
        was the most frequent complaint. The Saving gate stops a double-
@@ -78,8 +97,15 @@
     /// Flips back to false once the REST round-trip + side-effects
     /// complete (success or failure).</summary>
     [Parameter] public bool Saving { get; set; }
+    /// <summary>True when the panel is editing an existing route
+    /// (Layers-panel Edit), false on a fresh create. Drives whether
+    /// the "Save copy" button is rendered -- copying makes no sense
+    /// in the fresh-create flow.</summary>
+    [Parameter] public bool IsEditingExisting { get; set; }
     [Parameter] public EventCallback OnUndo { get; set; }
+    [Parameter] public EventCallback OnReverse { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnSaveAsCopy { get; set; }
     [Parameter] public EventCallback OnSaveAndGo { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback<int> OnRemoveWaypoint { get; set; }

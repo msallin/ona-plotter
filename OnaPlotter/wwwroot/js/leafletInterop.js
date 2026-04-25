@@ -221,6 +221,12 @@ let serverTrackLayer = null;
 
 // Active route navigation.
 let activeRouteLayer = null;   // L.layerGroup: full route polyline + waypoint markers
+// True while the helm is editing the currently-active route. Used
+// to suppress redraws of the active polyline + course-line by
+// applyFrame so they don't fight the edit-mode polyline. Toggled
+// from C# via setActiveOverlayHidden when EditRoute / CancelRoute /
+// SaveRoute fire on the active route.
+let activeOverlayHidden = false;
 let activeRouteCoords = null;  // [[lat, lon], ...] cached for WP index lookup
 let nextWpMarker = null;       // Pulsing marker at next waypoint
 let courseLineLeg = null;       // Polyline: previous WP to next WP
@@ -250,7 +256,9 @@ let anchorCircle = null;
 // "where is the anchor / how much rode is out" into a first-class
 // affordance instead of only showing the watch circle.
 let anchorRadiusLine = null;
-let anchorRadiusLabel = null;
+// (anchorRadiusLabel removed -- the midpoint distance chip was dropped
+// per user request; the boat<->anchor line alone now communicates the
+// radius implicitly relative to the alarm circle.)
 // Swing-arc history: own-boat positions sampled while the anchor is set,
 // trimmed to ANCHOR_TRAIL_MINUTES so the captain can see at a glance how
 // much water the boat has actually covered on this tide cycle.
@@ -506,6 +514,16 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         zoomControl: false,
         maxZoom: 19,
         preferCanvas: isSlowClient,
+        // Leaflet's default wheelPxPerZoomLevel = 60 means a 100 px
+        // wheel tick (the value Linux/X11 reports for one notch on a
+        // standard mouse) zooms ~1.66 levels per tick, which the user
+        // reads as "two steps". Bumping to 100 makes one mouse-wheel
+        // notch == one zoom level on Linux. macOS / Windows trackpads
+        // and high-resolution wheels emit smaller delta-values that
+        // accumulate via wheelDebounceTime, so they still zoom
+        // smoothly -- this just removes the over-quantisation on the
+        // notched mouse path.
+        wheelPxPerZoomLevel: 100,
     }).setView([lat, lon], zoom);
     // Drop the "Leaflet |" prefix from the attribution bar. The actual
     // OSM / OpenSeaMap attribution stays (ODbL / CC-BY-SA require it);
@@ -520,8 +538,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         ml.setMap(map);
     }
 
-    // Zoom control in top-right to avoid HUD overlap.
-    L.control.zoom({ position: 'topright' }).addTo(map);
+    // Leaflet's native +/- zoom control is turned off above
+    // (zoomControl: false). The replacement lives in the app topbar
+    // (Components/Layout/MainLayout.razor, gated on IsMapRoute) and
+    // calls zoomIn / zoomOut below via JS interop. The native 26px
+    // control was too small at arm's length in a rolling cockpit;
+    // the topbar pair is bigger and reachable one-handed.
 
     // Scale bars + zoom badge all sit bottom-left, stacked, so a helm
     // glance gets "how far is that dot / am I overzoomed" in one place.
@@ -569,7 +591,13 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 19,
-        keepBuffer: 4,
+        // keepBuffer 6 (up from 4) keeps three extra rings of tiles
+        // outside the viewport in the DOM. Small pans during route
+        // planning don't trigger a fetch -- the next ring is already
+        // rendered and just gets revealed. Tradeoff is more DOM nodes
+        // (~80-150 extra per layer at typical iPad zoom) which is
+        // negligible on the modern WebKit/Chromium tile pipeline.
+        keepBuffer: 6,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
         attribution: '&copy; OpenStreetMap contributors',
@@ -579,7 +607,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 19,
-        keepBuffer: 4,
+        keepBuffer: 6,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
         attribution: '&copy; OpenSeaMap',
@@ -812,6 +840,20 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
  * export functions (updatePosition etc.) stay exported so anything
  * outside the per-tick hot path can still call them directly.
  */
+// Zoom control exports. Blazor draws its own +/- buttons (MapZoomButtons)
+// and calls these so the native Leaflet zoom control can stay off. Uses
+// map.zoomIn / zoomOut which already respect minZoom / maxZoom, so we
+// don't need to clamp here. No-ops before initMap so Blazor can race-
+// call without blowing up.
+export function zoomIn(step) {
+    if (!map) return;
+    map.zoomIn(typeof step === 'number' ? step : 1);
+}
+export function zoomOut(step) {
+    if (!map) return;
+    map.zoomOut(typeof step === 'number' ? step : 1);
+}
+
 export function applyFrame(frame) {
     if (!map || !frame) return;
     if (frame.pos) {
@@ -828,7 +870,14 @@ export function applyFrame(frame) {
         // it and the C# side already sent it, no reason to duplicate.
         const boatLat = frame.pos ? frame.pos.lat : null;
         const boatLon = frame.pos ? frame.pos.lon : null;
-        if (boatLat != null && boatLon != null) {
+        // While editing the active route, suppress the course-line
+        // overlay (leg + bearing + XTE tick). The user is actively
+        // moving waypoints so the course-line would point at stale
+        // geometry; we already cleared the active polyline + next-
+        // waypoint marker via setActiveOverlayHidden(true). Re-emerges
+        // when the C# side calls setActiveOverlayHidden(false) on
+        // edit cancel / save.
+        if (boatLat != null && boatLon != null && !activeOverlayHidden) {
             setCourseLine(boatLat, boatLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte);
         }
     } else if (frame.clearCourse) {
@@ -1715,13 +1764,38 @@ export function setAnchor(lat, lon, radiusM) {
 }
 
 export function clearAnchor() {
-    if (!map) { anchorMarker = null; anchorCircle = null; anchorTrailLayer = null; anchorTrail.length = 0; anchorRadiusLine = null; anchorRadiusLabel = null; return; }
+    if (!map) { anchorMarker = null; anchorCircle = null; anchorTrailLayer = null; anchorTrail.length = 0; anchorRadiusLine = null; return; }
     if (anchorMarker) { map.removeLayer(anchorMarker); anchorMarker = null; }
     if (anchorCircle) { map.removeLayer(anchorCircle); anchorCircle = null; }
     if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
     if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
-    if (anchorRadiusLabel) { map.removeLayer(anchorRadiusLabel); anchorRadiusLabel = null; }
     anchorTrail.length = 0;
+}
+
+// Visually mark the anchor as "raising" while we wait for the server's
+// cleared-anchor delta to land. Dims the marker + watch-circle + radius
+// line so the helm sees the action took effect without us optimistically
+// hiding the marker (which would mask a server-side raise failure and
+// race the next SyncServerAnchorAsync tick). The setStyle calls fall
+// through to no-op when a layer is null, so it's safe to call before
+// or after setAnchor / clearAnchor.
+export function setAnchorRaising(raising) {
+    if (!map) return;
+    if (anchorMarker) {
+        anchorMarker.setStyle(raising
+            ? { opacity: 0.35, fillOpacity: 0.4 }
+            : { opacity: 1.0, fillOpacity: 1.0 });
+    }
+    if (anchorCircle) {
+        anchorCircle.setStyle(raising
+            ? { opacity: 0.35, fillOpacity: 0.02, dashArray: '4,6' }
+            : { opacity: 1.0, fillOpacity: 0.06, dashArray: '6,4' });
+    }
+    if (anchorRadiusLine) {
+        anchorRadiusLine.setStyle(raising
+            ? { opacity: 0.3 }
+            : { opacity: 0.7 });
+    }
 }
 
 export function updateAnchorRadius(radiusM) {
@@ -1736,25 +1810,28 @@ export function updateAnchorRadius(radiusM) {
 // callable on every position update to keep the line pinned while
 // the boat drifts on its swing. Falls back to a "waiting for fix"
 // stub when the plotter hasn't seen a self-position yet.
-function redrawAnchorRadiusOverlay(anchorLat, anchorLon, radiusM) {
+// Anchor radius overlay: dashed line from boat to anchor.
+// Mutate-in-place via setLatLngs so the 1 Hz position update doesn't
+// rebuild the SVG path each tick. Guards against missing fix and
+// against NaN sensor glitches (a divide-by-zero upstream would
+// otherwise leave the polyline in an invalid state and break
+// subsequent setLatLngs calls).
+function redrawAnchorRadiusOverlay(anchorLat, anchorLon, _radiusM) {
     if (!map) return;
-    if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
-    if (anchorRadiusLabel) { map.removeLayer(anchorRadiusLabel); anchorRadiusLabel = null; }
-    if (selfLat == null || selfLon == null) return;
-    anchorRadiusLine = L.polyline(
-        [[selfLat, selfLon], [anchorLat, anchorLon]],
-        { color: MapColors.anchorOk, weight: 1.5, opacity: 0.7, dashArray: '4,3', interactive: false }
-    ).addTo(map);
-    const distM = haversineMeters(selfLat, selfLon, anchorLat, anchorLon);
-    const label = distM < 1 ? `Anchor ${radiusM.toFixed(0)} m`
-                : `${distM.toFixed(0)} m / ${radiusM.toFixed(0)} m`;
-    const midLat = (selfLat + anchorLat) / 2;
-    const midLon = (selfLon + anchorLon) / 2;
-    anchorRadiusLabel = L.tooltip({
-        permanent: true, direction: 'center',
-        className: 'anchor-radius-label',
-        interactive: false,
-    }).setLatLng([midLat, midLon]).setContent(label).addTo(map);
+    if (!Number.isFinite(selfLat) || !Number.isFinite(selfLon)
+        || !Number.isFinite(anchorLat) || !Number.isFinite(anchorLon)) {
+        if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
+        return;
+    }
+
+    if (!anchorRadiusLine) {
+        anchorRadiusLine = L.polyline(
+            [[selfLat, selfLon], [anchorLat, anchorLon]],
+            { color: MapColors.anchorOk, weight: 1.5, opacity: 0.7, dashArray: '4,3', interactive: false }
+        ).addTo(map);
+    } else {
+        anchorRadiusLine.setLatLngs([[selfLat, selfLon], [anchorLat, anchorLon]]);
+    }
 }
 
 function updateAnchorTrail(lat, lon) {
@@ -1862,7 +1939,9 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
         // end so the drag stays smooth. detectRetina on fast clients
         // sharpens chart tiles on high-DPI displays (iPad Retina would
         // otherwise blur the 256-px source up to 512 px of screen).
-        keepBuffer: 4,
+        // keepBuffer 6 (up from 4) keeps three rings of tiles outside
+        // the viewport in DOM so route-planning pans feel snappier.
+        keepBuffer: 6,
         updateWhenIdle: isSlowClient,
         detectRetina: !isSlowClient,
         crossOrigin: 'anonymous',
@@ -2106,6 +2185,13 @@ function findClosestWaypointIndex(coords, lat, lon) {
 // Highlights the next waypoint and dims passed ones.
 export function setActiveRoute(coords, nextWpLat, nextWpLon) {
     clearActiveRoute();
+    // Suppress redraw while the helm is editing the active route --
+    // any in-flight SyncActiveRouteAsync that races the edit (e.g.
+    // a stale data tick that fired between EditRoute clearing the
+    // overlay and the suppression flag landing) would otherwise
+    // re-establish the active polyline on top of the edit polyline,
+    // exactly the visual mess this whole flag was added to prevent.
+    if (activeOverlayHidden) return;
     if (!map || !coords || coords.length < 2) return;
 
     activeRouteCoords = coords;
@@ -2160,6 +2246,50 @@ export function clearActiveRoute() {
     activeRouteLayer = null;
     activeRouteCoords = null;
     nextWpMarker = null;
+}
+
+// Toggle the "edit-active-route in progress" suppression flag. While
+// hidden, applyFrame skips setCourseLine (so the leg / bearing / XTE
+// tick don't keep redrawing on every position update against stale
+// pre-edit geometry) and any stray setActiveRoute call during edit
+// is a no-op. Also tears down the course-line elements so the helm's
+// view is clean from the moment edit starts. C# pairs every true
+// with a false on edit cancel / save -- the next position frame
+// then redraws the course-line from the updated coords.
+export function setActiveOverlayHidden(hidden) {
+    activeOverlayHidden = !!hidden;
+    if (hidden) {
+        clearCourseLine();
+    }
+}
+
+// Visually mark the active route + course line as "stopping" while we
+// wait for the SK delta to confirm. Same single-source-of-truth
+// pattern as setAnchorRaising: dim the elements (so the helm sees
+// their tap landed) but never tear them down -- the delta drives the
+// real teardown via SyncActiveRouteAsync. Iterates the layer group's
+// children with setStyle so polyline + waypoint dots all dim
+// together. Course-line leg + bearing + XTE tick (drawn separately
+// in setCourseLine) get their own dim treatment via the same call.
+export function setActiveRouteStopping(stopping) {
+    if (!map) return;
+    const opacity = stopping ? 0.3 : 1.0;
+    const fillOpacity = stopping ? 0.3 : 1.0;
+    if (activeRouteLayer) {
+        activeRouteLayer.eachLayer(function (l) {
+            try { l.setStyle({ opacity: opacity, fillOpacity: fillOpacity }); }
+            catch (_) { /* tooltips have no setStyle; ignore */ }
+        });
+    }
+    if (courseLineLeg) {
+        try { courseLineLeg.setStyle({ opacity: opacity }); } catch (_) { }
+    }
+    if (typeof courseLineBearing !== 'undefined' && courseLineBearing) {
+        try { courseLineBearing.setStyle({ opacity: opacity }); } catch (_) { }
+    }
+    if (typeof courseLineXte !== 'undefined' && courseLineXte) {
+        try { courseLineXte.setStyle({ opacity: opacity }); } catch (_) { }
+    }
 }
 
 // Update only the active waypoint highlight (lightweight, no full redraw).
@@ -2491,6 +2621,19 @@ export function undoLastEditWaypoint() {
     redrawEditLine();
 }
 
+// Reverse the order of all edit waypoints in place. Used when the
+// user wants to flip a route's direction (e.g. they planned outbound
+// and now need the return leg). The marker numbers and the polyline
+// are rebuilt from the reversed coord array; the add-stack is wiped
+// because per-vertex add-order tracking is meaningless after a flip.
+export function reverseEditRoute() {
+    if (routeEditCoords.length < 2) return;
+    routeEditCoords.reverse();
+    routeEditAddStack = [];
+    rebuildRouteEditMarkers();
+    redrawEditLine();
+}
+
 // Remove a specific waypoint by index (called from the in-panel list).
 // Removing the middle of an N-point route means every subsequent marker's
 // number changes, so we tear down the dragging markers and rebuild from
@@ -2668,6 +2811,18 @@ export function startPolygonEdit() {
     polygonEditLayer = L.layerGroup().addTo(map);
 }
 
+// Seed an existing polygon's vertices into edit mode. Called from the
+// Layers-panel Edit button on a region row. Mirrors loadRouteForEdit.
+export function loadPolygonForEdit(coords) {
+    stopPolygonEdit();
+    polygonEditMode = true;
+    polygonEditLayer = L.layerGroup().addTo(map);
+    if (!coords) return;
+    for (const c of coords) {
+        addPolygonVertexInternal(c[0], c[1]);
+    }
+}
+
 export function stopPolygonEdit() {
     polygonEditMode = false;
     if (polygonEditLayer && map) map.removeLayer(polygonEditLayer);
@@ -2833,28 +2988,33 @@ const NOTE_COLOR = '#c8892e';
 const NOTE_COLOR_STROKE = '#7a5418';
 
 function makeNoteIcon() {
-    // Folded-page pin, 20x24. Subtle drop shadow so it reads on land or
-    // water. Anchor is bottom-centre so the tip of the pin lands on the
-    // map coordinate.
+    // Modern sticky-note pin, 22x28. Rounded-corner card (no skeuomorphic
+    // folded-corner), white text strokes for better contrast against the
+    // amber fill, clean teardrop tail pointing down to the map coord.
+    // Anchor is bottom-centre so the tip of the tail lands on the target
+    // lat/lon. Softer drop-shadow than the v1 icon so the pin lifts off
+    // the chart without adding visual noise.
     const svg = `
-        <svg width="20" height="24" viewBox="0 0 20 24" xmlns="http://www.w3.org/2000/svg"
-             style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.4));">
-            <path d="M3 2 L14 2 L17 5 L17 18 L3 18 Z"
+        <svg width="22" height="28" viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg"
+             style="filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.35));">
+            <rect x="2" y="2" width="18" height="18" rx="4" ry="4"
+                  fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2"/>
+            <line x1="6"  y1="8"  x2="16" y2="8"
+                  stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
+            <line x1="6"  y1="12" x2="16" y2="12"
+                  stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
+            <line x1="6"  y1="16" x2="12" y2="16"
+                  stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
+            <path d="M8 20 Q11 20 11 26 Q11 20 14 20 Z"
                   fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2"
                   stroke-linejoin="round"/>
-            <path d="M14 2 L14 5 L17 5" fill="none"
-                  stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2" stroke-linejoin="round"/>
-            <line x1="6" y1="8"  x2="14" y2="8"  stroke="${NOTE_COLOR_STROKE}" stroke-width="0.9" opacity="0.7"/>
-            <line x1="6" y1="11" x2="14" y2="11" stroke="${NOTE_COLOR_STROKE}" stroke-width="0.9" opacity="0.7"/>
-            <line x1="6" y1="14" x2="11" y2="14" stroke="${NOTE_COLOR_STROKE}" stroke-width="0.9" opacity="0.7"/>
-            <polygon points="10,18 7,22 13,22" fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2" stroke-linejoin="round"/>
         </svg>`;
     return L.divIcon({
         className: 'note-icon',
         html: svg,
-        iconSize: [20, 24],
-        iconAnchor: [10, 24],
-        popupAnchor: [0, -22],
+        iconSize: [22, 28],
+        iconAnchor: [11, 28],
+        popupAnchor: [0, -26],
     });
 }
 
@@ -2960,6 +3120,16 @@ export function clearNotes() { noteMarkers.clear(); }
 // Pan the map to a given lat/lon without changing the current zoom.
 // Used by the layers-panel "Focus" button on notes (and potentially
 // other resources that need a "show me where this is" action).
+// Fit a lat/lon rectangle into the viewport. Used by deep-links from
+// the Resources page for routes / regions so "View" does a sensible
+// zoom-to-extents rather than dropping at an arbitrary zoom. Padding
+// is 40 px per side so the subject isn't flush against a HUD edge.
+export function fitBounds(minLat, minLon, maxLat, maxLon) {
+    if (!map) return;
+    const bounds = L.latLngBounds([[minLat, minLon], [maxLat, maxLon]]);
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
+}
+
 export function panTo(lat, lon) {
     if (!map) return;
     map.panTo([lat, lon]);
@@ -3269,21 +3439,31 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         // Skip if user is typing in an input.
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
+        // Don't hijack browser shortcuts. Ctrl+R / Cmd+R (reload),
+        // Ctrl+W (close tab), etc. all involve a modifier -- the map's
+        // single-letter shortcuts don't, so dropping modifier combos
+        // here is harmless and stops us clobbering "r" -> reload on
+        // desktop Chromium + Safari. Arrow keys still fire below even
+        // with Shift (Shift = coarse pan) but no other combos.
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
         // Arrow keys pan the map. Leaflet's built-in keyboard handler
         // requires the map container to have focus, which gets lost
         // whenever the user clicks any other element -- in practice
         // arrows just scrolled the page. Drive it directly so arrows
         // always pan the chart, regardless of focus.
         //
-        // Step size: 1/3 of viewport by default (cockpit helmsman
-        // wants to look ahead in meaningful chunks, not 80px at a
-        // time). Shift = full viewport for coarse scrubbing.
+        // Step size: 1/5 of viewport by default. Earlier 1/3 lurched
+        // the chart noticeably with each tap; user feedback was that
+        // a smaller step gives better fine-positioning at the helm
+        // without going as small as the previous 1/8. Shift = full
+        // viewport for coarse scrubbing across passages.
         if (map && (e.key === 'ArrowUp' || e.key === 'ArrowDown'
                     || e.key === 'ArrowLeft' || e.key === 'ArrowRight'))
         {
             e.preventDefault();
             const size = map.getSize();
-            const frac = e.shiftKey ? 1.0 : 1 / 3;
+            const frac = e.shiftKey ? 1.0 : 1 / 5;
             let dx = 0, dy = 0;
             switch (e.key) {
                 case 'ArrowUp':    dy = -size.y * frac; break;
@@ -3388,7 +3568,7 @@ export function dispose() {
     bearingLine = null; bearingLabel = null;
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
     anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
-    anchorRadiusLine = null; anchorRadiusLabel = null;
+    anchorRadiusLine = null;
     anchorTrail.length = 0;
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;

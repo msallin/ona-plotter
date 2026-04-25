@@ -59,6 +59,15 @@ builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 // SignalK WebSocket delta stream.
 builder.Services.AddSingleton<SignalkClient>();
 
+// Client-error relay to the SignalK plugin's /log endpoint. Makes
+// iPad Safari exceptions visible in the SignalK server log for
+// SSH-based debugging at the helm. The actual install happens in
+// wwwroot/js/errorRelayBoot.js (loaded synchronously from index.html
+// BEFORE the Blazor runtime, so it catches boot-time exceptions);
+// this DI singleton is the C# entry-point for code that wants to
+// relay a caught exception explicitly. See Services/ClientErrorRelay.cs.
+builder.Services.AddSingleton<ClientErrorRelay>();
+
 var host = builder.Build();
 
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).

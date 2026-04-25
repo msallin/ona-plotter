@@ -3,7 +3,6 @@
 @page "/wind"
 @using OnaPlotter.Services
 @using OnaPlotter.Models
-@using OnaPlotter.Components.Shared
 @implements IDisposable
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
@@ -11,7 +10,9 @@
 
 <PageTitle>Wind Rose</PageTitle>
 
-<BackToMapChip />
+@* Back-to-chart chip removed -- the sidebar + topbar already surface
+   navigation back to the map, and the chip duplicated that affordance
+   without earning its screen real estate. *@
 
 <h2>Wind Rose</h2>
 <p class="text-muted">Apparent wind angle vs. speed. Color indicates wind speed.</p>

@@ -46,6 +46,14 @@ public interface IAppSettings
     bool LaylinesVisible { get; }
     double DepthAlarmThreshold { get; }
 
+    /// <summary>When true, the sidebar collapses to the icon-only rail
+    /// (4 rem wide, no labels). Persisted across reloads so a helm
+    /// who prefers the compact layout doesn't re-toggle on every
+    /// session. Independent of fullscreen / iOS-fullbleed mode -- the
+    /// user can have a wide sidebar in fullscreen if they wanted, or
+    /// a narrow one in PWA standalone mode.</summary>
+    bool SidebarCollapsed { get; }
+
     /// <summary>Guard-zone CPA threshold (nautical miles). A projected CPA
     /// smaller than this triggers a collision alarm.</summary>
     double CpaAlarmThreshold { get; }
@@ -224,6 +232,7 @@ public interface IAppSettings
 
     Task InitializeAsync();
     Task SetNightModeAsync(bool value);
+    Task SetSidebarCollapsedAsync(bool value);
 
     /// <summary>Stamps <see cref="ChartsSeeded"/> so the first-run
     /// OpenSeaMap seed only runs once per device.</summary>

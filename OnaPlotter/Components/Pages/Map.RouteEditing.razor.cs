@@ -29,6 +29,11 @@ public partial class Map
     // entered the editor via the Layers panel's "Edit" button and
     // Save should PUT in place rather than POST a new resource.
     private string? routeEditId;
+    // Name the route had at edit-start. SaveAsCopy uses this to decide
+    // whether to auto-append " (copy)" to the new route's name -- if
+    // the helm has already typed a different name, leave it alone;
+    // only append when the field still shows the source route's name.
+    private string? routeEditOriginalName;
 
     // --- Route Editing --------------------------------------------------
 
@@ -85,12 +90,30 @@ public partial class Map
 
         routeEditMode = false;
         routeEditId = null;
+        routeEditOriginalName = null;
         routeEditCoords = null;
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
         RemoveEditNavGuard();
         if (module is not null)
             await module.InvokeVoidAsync("stopRouteEdit");
+
+        // If we were editing the active route, EditRoute hid the
+        // active-route overlay to avoid double-drawing. Clear the
+        // suppression flag FIRST so the subsequent setActiveRoute
+        // call from SyncActiveRouteAsync isn't no-op'd by the gate
+        // we added in JS, then re-fetch and redraw from
+        // Data.ActiveRouteHref.
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("setActiveOverlayHidden", false); }
+            catch (JSDisconnectedException) { }
+        }
+        if (Data.ActiveRouteHref is not null)
+        {
+            try { await SyncActiveRouteAsync(force: true); }
+            catch (JSDisconnectedException) { }
+        }
     }
 
     private async Task UndoLastWaypoint()
@@ -133,8 +156,41 @@ public partial class Map
         routeEditMode = true;
         routeEditId = route.Id;                 // save will PUT in place
         routeEditName = route.Name ?? "";
+        routeEditOriginalName = routeEditName;  // baseline for SaveAsCopy
         chartPanelOpen = false; // Close layers panel so user can see the map.
         InstallEditNavGuard();
+
+        // Editing the currently-active route: hide the active-route
+        // overlay (the leg polyline + next-waypoint marker) during the
+        // edit so it doesn't overlap the edit-mode polyline in a
+        // different colour and confuse the helm. The server-side
+        // course state stays active throughout -- this is a purely
+        // visual suppression.
+        //
+        // CRITICAL: do NOT reset lastActiveRouteHref here. The href on
+        // the server hasn't changed (same route id), so on the next
+        // data tick SyncActiveRouteAsync's gate
+        // (`currentHref == lastActiveRouteHref`) keeps the sync silent
+        // and the active overlay stays cleared. Resetting it would
+        // make the gate fire as "route changed" and immediately
+        // redraw the overlay we just hid -- the bug fix this comment
+        // protects against. CancelRouteEdit + SaveRouteCoreInner
+        // restore via SyncActiveRouteAsync(force: true) which bypasses
+        // the gate and re-fetches the (possibly edited) coordinates.
+        if (Data.ActiveRouteHref is string activeHref
+            && activeHref.EndsWith($"/{route.Id}", StringComparison.Ordinal))
+        {
+            // setActiveOverlayHidden(true) does the clearActiveRoute
+            // AND clears the course-line + sets the JS-side suppress
+            // flag so applyFrame stops redrawing the leg / bearing /
+            // XTE tick on every position update. Without the flag the
+            // course-line would otherwise tick along against the OLD
+            // next-waypoint coordinates, pointing the helm at stale
+            // geometry that the edit is in the middle of changing.
+            try { await module.InvokeVoidAsync("setActiveOverlayHidden", true); }
+            catch (JSDisconnectedException) { }
+        }
+
         await module.InvokeVoidAsync("loadRouteForEdit", (object)coords.ToArray());
         routeStatsTimer = new System.Threading.Timer(
             _ => _ = UpdateRouteStats(), null,
@@ -179,12 +235,47 @@ public partial class Map
         await UpdateRouteStats();
     }
 
+    /// <summary>Flip the waypoint order in place. JS owns the array;
+    /// the next stats-poll tick mirrors the new order back into
+    /// routeEditCoords so the panel's numbered list re-renders.</summary>
+    private async Task ReverseEditRoute()
+    {
+        if (module is null) return;
+        try { await module.InvokeVoidAsync("reverseEditRoute"); }
+        catch (JSDisconnectedException) { return; }
+        await UpdateRouteStats();
+    }
+
     // Save + optional auto-activate are the same pipeline; SaveRoute
     // just stops there, SaveRouteAndGo threads `activate:true` through
     // so the Layers-panel detour isn't needed for the single most
-    // common follow-up step.
+    // common follow-up step. SaveRouteAsCopy clears routeEditId before
+    // hitting SaveRouteCore so the save path takes the POST (create)
+    // branch instead of the PUT (update-in-place) branch -- the
+    // current geometry lands as a NEW route on the server, leaving
+    // the original untouched.
     private Task SaveRoute() => SaveRouteCore(activate: false);
     private Task SaveRouteAndGo() => SaveRouteCore(activate: true);
+
+    private Task SaveRouteAsCopy()
+    {
+        // Clearing routeEditId here is intentional: SaveRouteCoreInner
+        // reads it as "edit-in-place vs create-fresh". A copy is a
+        // create. The "(copy)" suffix only appends when the helm
+        // hasn't customised the name -- if they typed "Better Plan"
+        // we keep it as-is; if the field still shows the source
+        // route's name, we auto-disambiguate so the Layers list
+        // doesn't end up with two entries called "Approach via X".
+        if (routeEditOriginalName is not null
+            && routeEditName == routeEditOriginalName
+            && routeEditName.Length > 0
+            && !routeEditName.EndsWith(" (copy)", StringComparison.Ordinal))
+        {
+            routeEditName += " (copy)";
+        }
+        routeEditId = null;
+        return SaveRouteCore(activate: false);
+    }
 
     private async Task SaveRouteCore(bool activate)
     {
@@ -242,6 +333,12 @@ public partial class Map
             // multi-client setups.
             string? newRouteId = null;
             string? errMsg = null;
+            // Local flag so the failure-toast branch below doesn't
+            // need to inspect the global toast stack (which would
+            // mistake an unrelated Info/Success toast for "we
+            // already toasted this error" and silently swallow the
+            // save failure).
+            bool errorToasted = false;
             try
             {
                 if (existingId is not null)
@@ -259,7 +356,12 @@ public partial class Map
                     if (ok) newRouteId = r.Value;
                 }
             }
-            catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); ok = false; errMsg = ex.Message; }
+            catch (Exception ex)
+            {
+                Toasts.Error($"Save route failed: {ex.Message}");
+                ok = false; errMsg = ex.Message;
+                errorToasted = true;
+            }
 
             if (ok)
             {
@@ -289,6 +391,21 @@ public partial class Map
                         catch (JSDisconnectedException) { }
                         catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
                     }
+
+                    // If the saved route is currently the active course,
+                    // force the active-route polyline + next-waypoint
+                    // marker to refetch from the new geometry. The href
+                    // didn't change (same id), so the default href-diff
+                    // sync would skip the refetch and the active overlay
+                    // would still render the OLD coordinates -- which is
+                    // exactly what the helmsman sees on Save+Go after
+                    // editing the route they're already navigating.
+                    if (Data.ActiveRouteHref is string href
+                        && href.EndsWith($"/{existingId}", StringComparison.Ordinal))
+                    {
+                        try { await SyncActiveRouteAsync(force: true); }
+                        catch (JSDisconnectedException) { }
+                    }
                 }
                 else if (existingId is null && newRoute is not null && !string.IsNullOrEmpty(newRoute.Id))
                 {
@@ -301,7 +418,7 @@ public partial class Map
                 }
                 RebuildFilteredLayers();
             }
-            else if (Toasts.Active.Count == 0) // only if we haven't already toasted the exception
+            else if (!errorToasted)
             {
                 Toasts.Error(string.IsNullOrWhiteSpace(errMsg)
                     ? "Failed to save route"
@@ -316,6 +433,7 @@ public partial class Map
             // user's next interaction landed on a ghost edit session.
             routeEditMode = false;
             routeEditId = null;
+            routeEditOriginalName = null;
             routeEditCoords = null;
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;
@@ -323,6 +441,27 @@ public partial class Map
             try { await module.InvokeVoidAsync("stopRouteEdit"); }
             catch (JSDisconnectedException) { }
             catch (JSException) { /* JS already torn down; overlay will go on next init */ }
+
+            // If we entered edit mode while a course was active,
+            // EditRoute hid the active-route overlay so it didn't
+            // double-draw with the edit polyline. Clear the JS
+            // suppression flag FIRST -- the subsequent setActiveRoute
+            // call from SyncActiveRouteAsync would otherwise be
+            // gated to a no-op. The in-place edit branch above
+            // already force-syncs when the saved route IS the active
+            // one; this catches SaveAsCopy / failed-save / fresh-save
+            // where the original active route is still on the server
+            // but its visual was suppressed for the edit session.
+            if (module is not null)
+            {
+                try { await module.InvokeVoidAsync("setActiveOverlayHidden", false); }
+                catch (JSDisconnectedException) { }
+            }
+            if (Data.ActiveRouteHref is not null)
+            {
+                try { await SyncActiveRouteAsync(force: true); }
+                catch (JSDisconnectedException) { }
+            }
         }
 
         // Save+Go: activate the route the user just created so the

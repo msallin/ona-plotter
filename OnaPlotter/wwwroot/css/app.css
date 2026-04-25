@@ -557,10 +557,54 @@ h2 {
     border-color: var(--sk-accent);
 }
 
+/* Resources page row-action cluster: three buttons (View / Edit /
+   Delete) per row need breathing room so they don't merge into one
+   tap target on iPad. Uses a right-aligned flex so variable-count
+   rows (notes have only View+Delete) still line up. Button sizing
+   floors to 36x56 so rolling-cockpit thumbs don't accidentally hit
+   Delete when they meant View. */
+.resource-row-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+}
+.resource-row-actions .btn {
+    min-height: 36px;
+    min-width: 56px;
+}
+@media (pointer: coarse) {
+    .resource-row-actions .btn {
+        min-height: 44px;
+    }
+}
+
 /* Buttons */
 .btn-outline-secondary {
     color: var(--sk-text-muted);
     border-color: var(--sk-border);
+}
+
+/* Settings page build-stamp chip (git hash + UTC build time). Muted
+   so it reads as metadata; tabular-nums keeps the timestamp from
+   jittering column width across different-hour loads. `code` inside
+   re-uses the monospace font the browser picks for <code>. */
+.build-stamp {
+    font-size: 0.72rem;
+    color: var(--sk-text-muted);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    text-align: right;
+    padding-top: 0.4rem;
+    white-space: nowrap;
+}
+.build-stamp code {
+    color: var(--sk-text);
+    font-size: 0.72rem;
+}
+.build-stamp-time {
+    display: block;
+    opacity: 0.7;
 }
 .btn-outline-secondary:hover {
     color: var(--sk-text);
@@ -597,6 +641,21 @@ h2 {
     overflow: hidden;
 }
 
+/* Fullscreen / iOS fullbleed: top-row is hidden via display:none so
+   the map should fill the full visible viewport (no -3rem). Without
+   this override the 3rem gap landed BELOW the map-container, and
+   Safari's bottom toolbar drew over the HUD + control bar that
+   live at `bottom: 12px` -- the helm saw the lower 1/3 of those
+   elements masked by the toolbar. The bottom safe-area padding
+   pushes our control bar above the iPad home-indicator strip
+   when running as a PWA standalone. */
+html.ios-fullbleed .map-container,
+:fullscreen .map-container {
+    height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-sizing: border-box;
+}
+
 /* Prevent page scroll when the map page is active (map fills the viewport). */
 body:has(.map-container) {
     overflow: hidden;
@@ -622,6 +681,7 @@ article.content:has(.map-container) {
 
 .hud-panel {
     background: rgba(10, 12, 18, 0.9);
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border-radius: 10px;
     padding: 8px 14px;
@@ -686,10 +746,19 @@ article.content:has(.map-container) {
 }
 
 /* All four corner HUD panels share the same 12 px edge inset. The
-   top-right panel adds extra right offset for the Leaflet zoom control.
-   The control bar is centered so the bottom corners stay clear. */
+   control bar is centered so the bottom corners stay clear. The
+   earlier top-right panel had a 56 px inset to dodge Leaflet's
+   native zoom control; the zoom buttons now live in the app topbar
+   (MainLayout), so hud-top-right lines up vertically with
+   hud-bottom-right at the same right edge -- the AWA/AWS and HDG
+   panels read as a single vertical column. */
 .hud-top-left    { top: 12px; left: 12px; }
-.hud-top-right   { top: 12px; right: 56px; }
+.hud-top-right   { top: 12px; right: 12px; }
+
+/* Zoom buttons moved to the app-level topbar (MainLayout.razor)
+   alongside the Night + Fullscreen cluster; see .topbar-icon-btn
+   in MainLayout.razor.css. The previous .map-zoom-btns overlay +
+   backdrop-filter rules were removed with that relocation. */
 .hud-bottom-left { bottom: 12px; left: 12px; }
 .hud-bottom-right{ bottom: 12px; right: 12px; }
 
@@ -704,7 +773,7 @@ html:fullscreen .hud-top-left {
     left: max(24px, env(safe-area-inset-left));
 }
 html:fullscreen .hud-top-right {
-    right: max(68px, calc(56px + env(safe-area-inset-right)));
+    right: max(24px, env(safe-area-inset-right));
 }
 html:fullscreen .hud-bottom-left {
     bottom: max(24px, env(safe-area-inset-bottom));
@@ -858,6 +927,7 @@ html:fullscreen .hud-bottom-right {
     pointer-events: auto;
     touch-action: manipulation;
     background: rgba(10, 12, 18, 0.9);
+    -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 14px;
@@ -985,6 +1055,7 @@ html:fullscreen .hud-bottom-right {
     min-height: 32px;
     box-sizing: border-box;
     background: rgba(30, 34, 44, 0.9);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
@@ -1144,6 +1215,7 @@ html:fullscreen .hud-bottom-right {
     color: #e2e8f0 !important;
     border-radius: 10px !important;
     box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
 }
 .leaflet-popup-tip {
@@ -1363,6 +1435,41 @@ html:fullscreen .hud-bottom-right {
 /* iOS-specific: safe areas, momentum scroll, tap highlight */
 html {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    /* Disable browser pinch-zoom + double-tap-zoom everywhere. Single-
+       finger pan (both axes) still works, so scrollable pages like
+       Settings / Resources / Dashboard stay scrollable. Leaflet's own
+       map element manages its own touch-action internally and still
+       handles pinch-to-zoom on the chart -- this rule only suppresses
+       the default iOS browser zoom on chrome OUTSIDE the map (topbar,
+       sidebar, HUD, settings cards). Viewport-level pinch-for-
+       accessibility (3-finger tap OS gesture) is unaffected. */
+    touch-action: pan-x pan-y;
+}
+
+/* PWA standalone / installed app: lock the document so the helm
+   doesn't see a body-level scrollbar (a few-pixel layout drift from
+   safe-area padding + the sidebar's 100dvh used to add up to a
+   scrollable html). Page content that legitimately overflows
+   (Settings cards, Resources tables, Dashboard) scrolls inside
+   <main> instead -- single scroll container, no double-scrollbar
+   confusion. Tab-mode Safari is left alone so its address bar can
+   still collapse on body scroll. */
+@media all and (display-mode: standalone), all and (display-mode: fullscreen) {
+    html, body {
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+    .page {
+        height: 100%;
+    }
+    main {
+        height: 100%;
+        overflow-y: auto;
+        /* iOS momentum scroll inside a constrained container --
+           noop on iOS 13+ but harmless and reads as intent. */
+        -webkit-overflow-scrolling: touch;
+    }
 }
 
 .map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
@@ -1374,6 +1481,22 @@ html {
        breaking the helm's mental model. Viewport-level pinch-to-
        zoom for accessibility still works (separate OS gesture). */
     touch-action: manipulation;
+}
+
+/* Stopping-in-progress visual on the route HUD card. Mirrors the
+   leaflet-side setActiveRouteStopping dim-and-wait pattern so the
+   helm sees the WHOLE route presentation (HUD + polyline + course
+   line) fade together while the SK delta is in flight. The pulse
+   makes "in progress" obvious without taking up extra space; the
+   card unmounts naturally when the delta confirms course-clear and
+   Snapshot.Visible flips false. */
+.route-panel.route-stopping {
+    opacity: 0.45;
+    animation: route-stopping-pulse 1.2s ease-in-out infinite;
+}
+@keyframes route-stopping-pulse {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 0.65; }
 }
 
 .hud-panel, .route-panel, .anchor-panel, .autopilot-panel {
@@ -1435,9 +1558,8 @@ html.ios-fullbleed .page > main > .top-row {
 /* ...BUT re-enable selection inside Leaflet popups. The blanket
    rule above would otherwise prevent users from copying an AIS
    target's MMSI, a note's description, or coordinates out of the
-   popup -- which is a legitimate daily action and regresses on
-   every browser, not just Safari. Cross-browser reviewer flagged
-   this as mandatory, not Safari-only. */
+   popup -- which is a legitimate daily action that should work in
+   every browser, not just Safari. */
 .leaflet-popup-content,
 .leaflet-popup-content * {
     -webkit-user-select: text;
@@ -1489,6 +1611,7 @@ html.ios-fullbleed .page > main > .top-row {
     inset: 0;
     z-index: var(--z-modal);
     background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -1572,6 +1695,7 @@ html.ios-fullbleed .page > main > .top-row {
     border-radius: 8px;
     font-size: 0.85rem;
     background: rgba(15, 18, 25, 0.95);
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.1);
     color: var(--sk-text);
@@ -1653,6 +1777,7 @@ html.ios-fullbleed .page > main > .top-row {
     font-size: 0.9rem;
     text-align: center;
     animation: alarm-flash 1s ease-in-out infinite;
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
@@ -1997,6 +2122,7 @@ html.ios-fullbleed .page > main > .top-row {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
+    -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
     z-index: calc(var(--z-modal) - 1);
     animation: welcome-fade 0.2s ease-out;
@@ -2078,6 +2204,7 @@ html.ios-fullbleed .page > main > .top-row {
     border-radius: 999px;
     border: 1px solid var(--sk-border);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -2139,6 +2266,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     color: #cbd5e1;
     font-size: 0.72rem;
     cursor: pointer;
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
     -webkit-tap-highlight-color: transparent;
 }
@@ -2210,6 +2338,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border-radius: 8px;
     color: var(--panel-text);
     box-shadow: var(--panel-shadow);
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     display: flex;
     flex-direction: column;
@@ -2361,6 +2490,48 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-text: #ffcccc;
     --sk-text-muted: #996666;
     --sk-accent: #cc4444;
+    /* Sidebar + topbar token overrides. These are read by the
+       SCOPED rules in MainLayout.razor.css (.sidebar / .top-row),
+       which Blazor rewrites with the component's scope attribute
+       and therefore wins the specificity battle against global
+       `.night-mode-global .sidebar { ... }` rules. Redefining the
+       tokens here means the scoped rule naturally picks up the
+       night palette without needing to touch the scoped file. */
+    --sk-sidebar-bg: linear-gradient(180deg, #200808 0%, #1a0505 100%);
+    --sk-sidebar-border: #3a1515;
+    --sk-sidebar-text: #ffcccc;
+    --sk-sidebar-text-active: #ffdddd;
+    --sk-sidebar-hover-bg: #2a0a0a;
+    --sk-sidebar-active-bg: #3a1515;
+    --sk-top-row-bg: #1a0505;
+    --sk-top-row-border: #3a1515;
+    --sk-top-row-text: #ffcccc;
+}
+
+/* Amber preset: topbar/sidebar tokens shift to the amber palette. */
+.night-mode-global.night-mode-amber {
+    --sk-sidebar-bg: linear-gradient(180deg, #2a1a00 0%, #1a1000 100%);
+    --sk-sidebar-border: #3a2810;
+    --sk-sidebar-text: #ffcc80;
+    --sk-sidebar-text-active: #ffd89a;
+    --sk-sidebar-hover-bg: #3a2608;
+    --sk-sidebar-active-bg: #4a3010;
+    --sk-top-row-bg: #1a1000;
+    --sk-top-row-border: #3a2810;
+    --sk-top-row-text: #ffcc80;
+}
+
+/* Red preset: pure-red palette for long watches. */
+.night-mode-global.night-mode-red {
+    --sk-sidebar-bg: linear-gradient(180deg, #1a0000 0%, #0a0000 100%);
+    --sk-sidebar-border: #401010;
+    --sk-sidebar-text: #ff8080;
+    --sk-sidebar-text-active: #ffa0a0;
+    --sk-sidebar-hover-bg: #240404;
+    --sk-sidebar-active-bg: #401010;
+    --sk-top-row-bg: #0a0000;
+    --sk-top-row-border: #401010;
+    --sk-top-row-text: #ff8080;
 }
 
 /* Preset: Amber. Brighter, warmer than soft; good around dusk when the
@@ -2438,6 +2609,17 @@ main:has(.alarm-banner-stack) .snooze-chips {
 
 .night-mode-global .sidebar {
     background: var(--sk-bg);
+}
+
+/* Explicit body / html paint so the scoped MainLayout styles aren't
+   the only path to a night-shifted backdrop. Applied on <html>
+   because themeApply.js puts the class there (not just on .page)
+   so body's background picks up --sk-bg even though body sits
+   outside the .page wrapper. */
+html.night-mode-global,
+html.night-mode-global body {
+    background-color: var(--sk-bg);
+    color: var(--sk-text);
 }
 
 /* Mobile responsive: stack HUD and controls for small screens */
@@ -2717,6 +2899,11 @@ main:has(.alarm-banner-stack) .snooze-chips {
     font-size: 0.68rem;
     padding: 3px 8px;
     min-width: 0;
+    /* Keep the Focus / Edit / Delete cluster at its intrinsic size
+       even when a long region/route name in .chart-item-body wants
+       more room. Without this, narrow iPad-portrait width squashes
+       the buttons to ambiguous widths. */
+    flex-shrink: 0;
 }
 @media (pointer: coarse) {
     .route-action-btn {
@@ -3380,6 +3567,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border: 1px solid rgba(96, 165, 250, 0.35);
     border-radius: 8px;
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     animation: fab-pop 0.16s ease-out;
     z-index: var(--z-controls);
@@ -3481,6 +3669,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border: 1px solid rgba(96, 165, 250, 0.35);
     border-radius: 8px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     z-index: var(--z-controls);
     animation: fab-pop-up 0.16s ease-out;
@@ -4038,6 +4227,7 @@ main:has(.map-container.big-type) .map-fab-item {
     font-size: 0.8rem;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
 }
 .dark-ops-exit:hover,
@@ -4065,6 +4255,7 @@ main:has(.map-container.big-type) .map-fab-item {
     transform: translateX(-50%);
     z-index: 800;
     background: rgba(10, 12, 18, 0.92);
+    -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border-radius: 10px;
     padding: 12px 16px;
@@ -4098,6 +4289,20 @@ main:has(.map-container.big-type) .map-fab-item {
     justify-content: center;
     max-width: 90%;
     pointer-events: auto;
+}
+
+/* iPad + desktop: avoid wrapping chips onto a second row when they
+   would comfortably fit side-by-side. Horizontal scroll on overflow
+   so nothing clips on the rare many-charts case. The phone-width
+   default (< 600px) keeps wrap so two thumb-sized chips can still
+   stack without overflowing the viewport. */
+@media (min-width: 600px) {
+    .chart-quick-bar {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .chart-quick-bar::-webkit-scrollbar { display: none; }
 }
 
 /* Inactive chip: dimmed text, hollow background, muted border. The
@@ -4167,6 +4372,7 @@ main:has(.map-container.big-type) .map-fab-item {
     gap: 6px;
     align-items: center;
     background: rgba(15, 17, 22, 0.92);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border-radius: 8px;
     padding: 8px 12px;
@@ -4214,6 +4420,7 @@ main:has(.map-container.big-type) .map-fab-item {
     z-index: 800;
     background: rgba(167, 139, 250, 0.2);
     color: #e0e7ff;
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border-radius: 16px;
     padding: 6px 14px;
@@ -4284,6 +4491,7 @@ main:has(.map-container.big-type) .map-fab-item {
     right: 10px;
     z-index: var(--z-controls);
     background: rgba(15, 17, 22, 0.92);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border-radius: 8px;
     border: 1px solid rgba(167, 139, 250, 0.3);
@@ -4397,6 +4605,7 @@ main:has(.map-container.big-type) .map-fab-item {
     position: absolute;
     z-index: 900;
     background: rgba(15, 17, 22, 0.95);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.1);
@@ -4443,6 +4652,7 @@ main:has(.map-container.big-type) .map-fab-item {
     z-index: 900;
     background: var(--panel-bg-strong);
     color: var(--panel-text);
+    -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border-radius: 8px;
     border: 1px solid var(--panel-border);
@@ -4806,6 +5016,7 @@ main:has(.map-container.big-type) .map-fab-item {
     border-radius: 10px;
     text-align: center;
     font-size: 0.9rem;
+    -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
 }
 .instrument-empty-state strong {
@@ -5106,19 +5317,11 @@ main:has(.map-container.big-type) .map-fab-item {
 /* Midpoint label on the boat<->anchor radius line. Small pill,
    matches the anchor-ok severity palette so the three elements
    (anchor dot, line, label) read as one overlay. */
-.anchor-radius-label {
-    background: rgba(15, 17, 22, 0.85);
-    color: var(--sev-ok);
-    border: 1px solid rgba(var(--sev-ok-rgb), 0.5);
-    border-radius: 10px;
-    padding: 1px 6px;
-    font-size: 10px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-    white-space: nowrap;
-}
-.anchor-radius-label::before { display: none !important; }
+/* .anchor-radius-label rules removed -- the midpoint distance chip
+   that used this class was dropped per user request (line alone is
+   sufficient; the distance is implicit relative to the alarm radius
+   circle, and the chip added noise). See redrawAnchorRadiusOverlay
+   in leafletInterop.js. */
 
 /* Note marker click target. The SVG inside is 20x24 which is a
    miserable touch target on iPad. Padding + negative margin on the
@@ -5209,6 +5412,7 @@ html[data-slow-client="1"] * {
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
     z-index: var(--z-modal);
+    -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
 }
 .confirm-dialog {
@@ -5238,6 +5442,30 @@ html[data-slow-client="1"] * {
     font-size: 0.95rem;
     line-height: 1.4;
     color: var(--sk-text);
+}
+/* Text-prompt variant: themed input inside the modal. Reuses the
+   same design tokens as the rest of the dialog so night mode / light
+   theme / high-contrast all look consistent without a separate rule
+   per theme. min-height 44px matches the WCAG tap target floor on
+   coarse pointers (iPad thumb) -- a rename dialog shouldn't need
+   precision clicks. */
+.confirm-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font: inherit;
+    color: var(--sk-text);
+    background: var(--sk-surface);
+    border: 1px solid var(--sk-border);
+    border-radius: 6px;
+    outline: none;
+    min-height: 44px;
+}
+.confirm-input:focus-visible {
+    border-color: var(--sk-accent-dim);
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
 }
 .confirm-actions {
     display: flex;

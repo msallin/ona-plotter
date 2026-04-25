@@ -43,4 +43,43 @@
     <InternalsVisibleTo Include="OnaPlotter.Tests" />
   </ItemGroup>
 
+  <!-- Build stamp. Emits obj/BuildInfo.g.cs with the short git hash
+       and a UTC build timestamp so the Settings page can render
+       "build abc1234 (2026-04-24 12:34 UTC)" and the helm can
+       visually verify which bundle is loaded (service worker / HTTP
+       caching otherwise make it ambiguous). Runs before CoreCompile,
+       so the generated file participates in the same build pass. On
+       build environments without git (CI containers, tarball builds)
+       the Exec's ContinueOnError gracefully yields an empty hash;
+       the timestamp alone is still useful. -->
+  <Target Name="StampBuildInfo" BeforeTargets="CoreCompile">
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true"
+          ContinueOnError="true" StandardOutputImportance="low"
+          IgnoreExitCode="true">
+      <Output PropertyName="OnaGitHash" TaskParameter="ConsoleOutput" />
+    </Exec>
+    <PropertyGroup>
+      <OnaGitHash Condition="'$(OnaGitHash)' == ''">unknown</OnaGitHash>
+      <OnaBuildUtc>$([System.DateTime]::UtcNow.ToString(`yyyy-MM-dd HH:mm`))</OnaBuildUtc>
+      <OnaBuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</OnaBuildInfoFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <OnaBuildInfoLines Include="// &lt;auto-generated /&gt; written by StampBuildInfo target." />
+      <OnaBuildInfoLines Include="namespace OnaPlotter%3B" />
+      <OnaBuildInfoLines Include="internal static class BuildInfo" />
+      <OnaBuildInfoLines Include="{" />
+      <OnaBuildInfoLines Include="    public const string CommitHash = &quot;$(OnaGitHash)&quot;%3B" />
+      <OnaBuildInfoLines Include="    public const string BuildUtc   = &quot;$(OnaBuildUtc)&quot;%3B" />
+      <OnaBuildInfoLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(OnaBuildInfoFile)"
+                      Lines="@(OnaBuildInfoLines)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(OnaBuildInfoFile)" />
+      <FileWrites Include="$(OnaBuildInfoFile)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

@@ -8,10 +8,24 @@
 @inject IConfirmationService Confirmations
 @inject OnaPlotter.Services.SignalkClient SignalkClient
 @inject IJSRuntime JS
+@inject ClientErrorRelay ErrorRelay
 
 <PageTitle>Settings</PageTitle>
 
-<h2>Settings</h2>
+@* Settings header: title on the left, build-stamp chip on the right.
+   The chip (git short-hash + UTC build time) is pinned here rather
+   than in the topbar because it's only useful when the helm is
+   actually trying to diagnose "is my cached bundle stale?" -- hiding
+   it inside the Settings page keeps it out of the operational UI
+   while staying one tap away. Values come from the generated
+   BuildInfo.g.cs (see StampBuildInfo target in OnaPlotter.csproj). *@
+<div class="d-flex align-items-start justify-content-between" style="max-width: 1200px;">
+    <h2 class="mb-0">Settings</h2>
+    <span class="build-stamp" title="Build identifier; useful when checking whether the browser loaded the latest bundle">
+        build <code>@OnaPlotter.BuildInfo.CommitHash</code>
+        <span class="build-stamp-time">@OnaPlotter.BuildInfo.BuildUtc UTC</span>
+    </span>
+</div>
 
 @* Quick-jump filter. Matches against every form-label on the page;
    first match gets a subtle highlight and scrolls into view. Page is
@@ -357,37 +371,10 @@
         </div>
     </div>
 
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Boat Draft</label>
-                @if (SignalkClient.Data.DraftFromSignalK is double skDraft)
-                {
-                    <div class="form-control-plaintext" style="font-weight:600;">
-                        @skDraft.ToString("F2") m
-                    </div>
-                    <small class="text-muted">
-                        Read from SignalK (<code>design.draft.current</code> or
-                        <code>design.draft.maximum</code>). Used by the tide-aware
-                        anchor alarm to predict grounding at low water.
-                    </small>
-                }
-                else
-                {
-                    <div class="form-control-plaintext text-muted fst-italic">
-                        not reported
-                    </div>
-                    <small class="text-muted">
-                        Set <code>design.draft.current</code> (or
-                        <code>design.draft.maximum</code>) on the vessel's
-                        <code>vessel.json</code> on the SignalK server. The
-                        tide-aware anchor alarm stays dormant until draft is
-                        reported.
-                    </small>
-                }
-            </div>
-        </div>
-    </div>
+    @* Boat Draft card removed -- the same information is surfaced on
+       the Paths page (`design.draft.current` / `.maximum` with live
+       values) and is also called out in the Anchor Tide Alarm setup
+       card below, so a third card here was redundant. *@
 
     <div class="col-sm-6">
         <div class="card">
@@ -596,7 +583,7 @@
                 <small class="text-muted d-block mt-1">
                     Reads <code>environment.sun</code> (string: day / dawn / dusk / night).
                     Needs a solar-position plugin on the SignalK server (see the Paths page).
-                    A manual Night tap suppresses the auto-flip for 1 hour so the app doesn't
+                    A manual Night tap suppresses the auto-flip for 12 hours so the app doesn't
                     fight your choice.
                 </small>
 
@@ -669,6 +656,31 @@
             </div>
         </div>
     </div>
+
+    @* Error-relay self-test. Sends a synthetic "client-error" POST
+       through ClientErrorRelay to the SignalK plugin's /log endpoint
+       and tells the user where to look for it (server log, tailed
+       over SSH). Useful when diagnosing "is the hook even plumbed?"
+       after deploying a new build to the Pi. *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <strong class="d-block">Send test log entry</strong>
+                <small class="text-muted d-block mb-2">
+                    Posts a sample payload to the SignalK plugin's
+                    <code>/log</code> endpoint so you can verify the
+                    relay is wired. Grep <code>[onaplotter]</code> in the
+                    SignalK server log (e.g. <code>journalctl -u signalk</code>)
+                    or the Admin UI logs tab.
+                </small>
+                <button class="btn btn-sm btn-outline-secondary"
+                        disabled="@testLogInFlight"
+                        @onclick="SendTestLog">
+                    @(testLogInFlight ? "Sending..." : "Send test log")
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 @code {
@@ -679,6 +691,34 @@
     // doesn't collapse the block the user just opened. <details> with a
     // bound `open` attribute keeps the DOM in sync with Blazor.
     private bool polarHelpOpen = false;
+
+    // In-flight guard for the "Send test log" button so a double-tap
+    // during a slow network round-trip doesn't queue a second POST.
+    private bool testLogInFlight;
+
+    private async Task SendTestLog()
+    {
+        if (testLogInFlight) return;
+        testLogInFlight = true;
+        try
+        {
+            // Synthetic payload: includes build info so the log line
+            // identifies WHICH build sent it -- useful when you've
+            // rebuilt multiple times and want to confirm the latest
+            // landed on the Pi. ReportAsync returns false if the JS
+            // bootstrap isn't reachable, so the toast tells the truth
+            // about whether anything actually went out (the previous
+            // version always reported success).
+            bool ok = await ErrorRelay.ReportAsync(
+                $"test log from Settings @ build {OnaPlotter.BuildInfo.CommitHash} ({OnaPlotter.BuildInfo.BuildUtc} UTC)");
+            if (ok) Toasts.Success("Test log sent. Check the SignalK server log for [onaplotter].");
+            else    Toasts.Error("Test log relay unavailable -- is the SignalK plugin loaded?");
+        }
+        finally
+        {
+            testLogInFlight = false;
+        }
+    }
 
     private void OnPolarHelpToggle(EventArgs _)
     {

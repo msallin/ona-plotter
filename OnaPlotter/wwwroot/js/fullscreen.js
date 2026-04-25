@@ -127,3 +127,21 @@ export function attachTrigger(btn) {
 export function getState() {
     return isFullscreen();
 }
+
+// True when tapping the button will produce a visible change.
+//
+// Three cases:
+//   1. Standalone PWA -- already fullscreen at launch, button is
+//      noise. Return false so it's hidden.
+//   2. iPad Safari tab -- requestFullscreen on the document root
+//      silently rejects, BUT toggle() falls back to a CSS class
+//      (.ios-fullbleed) that hides the topbar and narrows the
+//      sidebar. That's a real "give me more chart" affordance,
+//      worth showing the button for. Return true.
+//   3. Desktop / Android Chromium / Firefox -- standard
+//      Fullscreen API works. Return document.fullscreenEnabled.
+export function isSupported() {
+    if (isStandalone()) return false;
+    if (isIos()) return true;       // CSS fallback in toggle() is meaningful
+    return !!document.fullscreenEnabled;
+}

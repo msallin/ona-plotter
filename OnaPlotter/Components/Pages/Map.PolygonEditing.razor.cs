@@ -25,6 +25,14 @@ public partial class Map
     private string polygonEditStats = "0 vertices";
     private double[][]? polygonEditCoords;
     private System.Threading.Timer? polygonStatsTimer;
+    // Id of the region currently being edited, or null when drawing a
+    // fresh one. Non-null means Save should PUT in place rather than
+    // POST a new region. Mirrors routeEditId.
+    private string? polygonEditId;
+    // Description carried across Save for edit flows. The new-region
+    // dialog drops its entered description into newRegionDescription;
+    // edit flows stash the existing region's description here.
+    private string polygonEditDescription = "";
 
     private async Task StartPolygonEdit()
     {
@@ -34,6 +42,8 @@ public partial class Map
         polygonEditName = "";
         polygonEditStats = "0 vertices";
         polygonEditCoords = null;
+        polygonEditId = null;
+        polygonEditDescription = "";
         InstallEditNavGuard();
         if (module is not null)
         {
@@ -45,10 +55,63 @@ public partial class Map
             RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
     }
 
+    /// <summary>Open an existing region for editing. Loads the first
+    /// outer ring into polygon-edit mode so the user can drag vertices
+    /// / insert / remove; Save PUTs the update in place (see
+    /// <see cref="SavePolygonRegion"/>). Regions with multiple rings
+    /// surface a toast -- we don't yet have a multi-ring UI.</summary>
+    private async Task EditRegion(Models.SignalkRegion region)
+    {
+        if (module is null) return;
+        if (region.OuterRings.Count == 0)
+        {
+            Toasts.Error("Region has no editable geometry");
+            return;
+        }
+        if (region.OuterRings.Count > 1)
+        {
+            Toasts.Warning("Editing the first ring only (multi-ring not yet supported)");
+        }
+        if (routeEditMode) await CancelRouteEdit();
+        // A polygon edit already in progress (user was drawing a
+        // fresh region, then clicked Edit on an existing one in the
+        // Layers panel) leaves the old polygonStatsTimer running
+        // against a torn-down Leaflet state. Cancel the prior session
+        // cleanly so the timer is disposed and the nav guard
+        // reference-count stays balanced.
+        if (polygonEditMode) await CancelPolygonEdit();
+        // Close the Layers panel so the chart is visible while editing.
+        chartPanelOpen = false;
+        polygonEditMode = true;
+        polygonEditName = region.Name ?? "";
+        polygonEditStats = "0 vertices";
+        polygonEditCoords = null;
+        polygonEditId = region.Id;
+        polygonEditDescription = region.Description ?? "";
+        InstallEditNavGuard();
+        // The stored ring is closed (last point == first); drop the
+        // duplicate before seeding the edit vertices so the user
+        // doesn't see a zero-length segment at vertex N.
+        var ring = region.OuterRings[0];
+        var drawn = ring.Length > 1
+            && ring[0].Length >= 2 && ring[^1].Length >= 2
+            && ring[0][0] == ring[^1][0] && ring[0][1] == ring[^1][1]
+            ? ring[..^1]
+            : ring;
+        try { await module.InvokeVoidAsync("loadPolygonForEdit", (object)drawn); }
+        catch (JSDisconnectedException) { return; }
+        polygonStatsTimer = new System.Threading.Timer(
+            _ => _ = UpdatePolygonStats(), null,
+            RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
+    }
+
     private async Task CancelPolygonEdit()
     {
         polygonEditMode = false;
         polygonEditCoords = null;
+        polygonEditId = null;
+        polygonEditDescription = "";
+        newRegionDescription = "";
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
         RemoveEditNavGuard();
@@ -122,61 +185,85 @@ public partial class Map
         if (coords is null || coords.Length < 3)
         {
             Toasts.Show("Add at least 3 vertices before saving");
-            polygonEditMode = false;
-            polygonEditCoords = null;
-            polygonStatsTimer?.Dispose();
-            polygonStatsTimer = null;
-            RemoveEditNavGuard();
-            try { await module.InvokeVoidAsync("stopPolygonEdit"); }
-            catch (JSDisconnectedException) { }
+            // Defer the full state reset to CancelPolygonEdit so any
+            // future field added to the cancel path (e.g. a new edit-
+            // mode flag) automatically applies here too. Without this
+            // the abort path would leave polygonEditId populated from
+            // the prior edit, which would make the next Save PUT over
+            // that old region instead of creating a fresh one.
+            await CancelPolygonEdit();
             return;
         }
         string name = string.IsNullOrWhiteSpace(polygonEditName)
             ? $"Region {DateTime.Now:yyyyMMdd-HHmm}"
             : polygonEditName;
-        // Description captured on the Add Region dialog (the Title +
-        // Description fields shown when the user picked Polygon) is
-        // stashed in newRegionDescription. Pipe it through so polygon
-        // regions get the same Description saved as circle regions
-        // -- previously this was hardcoded to "" and the user's input
-        // was silently dropped.
-        string description = newRegionDescription ?? "";
-        Services.Api.ApiResult<string>? r = null;
-        try { r = await RegionApi.CreatePolygonAsync(name, description, coords); }
-        catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); }
+        // New region: description comes from the Add-Region dialog
+        // (newRegionDescription). Edit: description is the one the
+        // region already had, stashed in polygonEditDescription at
+        // EditRegion time. The edit-bar doesn't currently expose a
+        // description field; if we add one later, polygonEditDescription
+        // becomes the bound state.
+        string description = polygonEditId is null
+            ? (newRegionDescription ?? "")
+            : polygonEditDescription;
 
-        if (r is { Success: true, Value: { Length: > 0 } })
+        string? savedId = null;
+        string? failReason = null;
+        try
         {
-            Toasts.Success($"Saved region '{name}' ({coords.Length} vertices)");
+            if (polygonEditId is string editingId)
+            {
+                // In-place update of an existing region.
+                var upd = await RegionApi.UpdatePolygonAsync(editingId, name, description, coords);
+                if (upd.Success) savedId = editingId;
+                else failReason = upd.Error ?? "server rejected";
+            }
+            else
+            {
+                // Fresh region.
+                var create = await RegionApi.CreatePolygonAsync(name, description, coords);
+                if (create is { Success: true, Value: { Length: > 0 } }) savedId = create.Value;
+                else failReason = create?.Error ?? "server rejected";
+            }
+        }
+        catch (Exception ex) { failReason = ex.Message; }
+
+        if (savedId is not null)
+        {
+            Toasts.Success(polygonEditId is null
+                ? $"Saved region '{name}' ({coords.Length} vertices)"
+                : $"Updated region '{name}' ({coords.Length} vertices)");
             loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? loadedRegions;
-            // Draw the newly-saved region on the map immediately so
-            // the user sees the result without refreshing. Previously
-            // this branch only refreshed the in-memory list +
-            // RebuildFilteredLayers, which doesn't actually add the
-            // new <polygon> to Leaflet -- the region vanished visually
-            // until a pan refetched it.
-            var created = loadedRegions.FirstOrDefault(rg => rg.Id == r.Value);
-            if (created is not null)
+            // Re-draw on the map. For edits, the existing Leaflet layer
+            // still shows the old polygon; remove it first before adding
+            // the updated one so we don't stack two overlapping shapes.
+            if (polygonEditId is string editedId)
+            {
+                try { await module.InvokeVoidAsync("removeRegion", editedId); }
+                catch (JSDisconnectedException) { }
+            }
+            var saved = loadedRegions.FirstOrDefault(rg => rg.Id == savedId);
+            if (saved is not null)
             {
                 try
                 {
                     await module.InvokeVoidAsync("addRegion",
-                        created.Id, created.OuterRings, created.Name, created.Description);
+                        saved.Id, saved.OuterRings, saved.Name, saved.Description);
                 }
                 catch (JSDisconnectedException) { }
             }
             RebuildFilteredLayers();
         }
-        else if (Toasts.Active.Count == 0)
+        else
         {
-            Toasts.Error($"Save region failed: {r?.Error ?? "server rejected"}");
+            Toasts.Error($"Save region failed: {failReason}");
         }
         polygonEditMode = false;
         polygonEditCoords = null;
+        polygonEditId = null;
+        polygonEditDescription = "";
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
-        // Clear the dialog-sourced description so a second region
-        // doesn't inherit the previous one.
         newRegionDescription = "";
         RemoveEditNavGuard();
         try { await module.InvokeVoidAsync("stopPolygonEdit"); }

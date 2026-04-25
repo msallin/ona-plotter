@@ -21,6 +21,15 @@
 // fallback. The regex excludes paths containing a '.' so a
 // missing .wasm / .css / .js still returns a proper 404 instead
 // of pretending to be HTML.
+//
+// The plugin also registers POST /log as a client-side error sink.
+// Blazor's "An unhandled error has occurred" banner is opaque on
+// iPad, and SSH-tailing the SignalK server log is the practical
+// debug path at the helm -- so the Blazor host installs window
+// error listeners that POST to this endpoint. We forward each
+// payload through app.error() so the entry appears in the
+// standard SignalK log (journalctl -u signalk / /var/log/signalk).
+// Throttled on the client to 1 Hz; the server-side is stateless.
 
 const path = require('path');
 const fs = require('fs');
@@ -50,6 +59,37 @@ module.exports = function (app) {
                 );
                 return;
             }
+
+            // Error relay: POST /<pkg>/log. Accepts JSON bodies of the
+            // shape { message, stack?, url?, userAgent?, ts? } and
+            // forwards to the SignalK server log. We cap the payload
+            // size so a misbehaving client can't flood the log with
+            // a minified stack the size of the world.
+            //
+            // SignalK's webapp HTTP surface already applies the admin
+            // auth middleware before our handlers run, so only an
+            // authenticated user can reach this endpoint. No CORS
+            // needed because the Blazor client is same-origin.
+            const MAX_BYTES = 8 * 1024;
+            app.post(ROUTE_PREFIX + '/log', (req, res) => {
+                try {
+                    const body = req.body || {};
+                    const message = String(body.message || 'no message').slice(0, 800);
+                    const stack   = String(body.stack   || '').slice(0, MAX_BYTES);
+                    const url     = String(body.url     || '').slice(0, 400);
+                    const ua      = String(body.userAgent || '').slice(0, 200);
+                    const ts      = String(body.ts      || new Date().toISOString());
+                    app.error(
+                        '[onaplotter] client-error ' + ts + ' ' + ua + ' | ' +
+                        message + (stack ? ' | ' + stack : '') +
+                        (url ? ' | at ' + url : '')
+                    );
+                    res.json({ ok: true });
+                } catch (e) {
+                    res.status(400).json({ ok: false, error: String(e) });
+                }
+            });
+
             // Match any GET under the webapp prefix that doesn't
             // contain a '.' (i.e. not a file extension). Real assets
             // like /<pkg>/_framework/foo.wasm keep flowing through
@@ -60,7 +100,7 @@ module.exports = function (app) {
                 res.sendFile(INDEX_HTML);
             });
             app.setPluginStatus(
-                'SPA fallback registered at ' + ROUTE_PREFIX + '/*'
+                'SPA fallback + error relay registered at ' + ROUTE_PREFIX + '/*'
             );
         },
 

@@ -25,6 +25,8 @@ internal sealed class FakeConfirmationService : IConfirmationService
     public string? ConfirmLabel { get; private set; }
     public string? CancelLabel { get; private set; }
     public bool IsPending => false;
+    public bool IsTextPrompt { get; private set; }
+    public string TextValue { get; set; } = "";
     public void Resolve(bool ok) { /* tests resolve synchronously via AutoConfirm */ }
 
     public Task<bool> ConfirmAsync(string message, bool destructive = true,
@@ -35,6 +37,26 @@ internal sealed class FakeConfirmationService : IConfirmationService
         Destructive = destructive;
         ConfirmLabel = confirmLabel;
         CancelLabel = cancelLabel;
+        IsTextPrompt = false;
         return Task.FromResult(AutoConfirm);
+    }
+
+    /// <summary>Auto-answer for <see cref="PromptAsync"/>. Defaults
+    /// to null (simulates a Cancel). Tests that exercise the rename
+    /// flow set this to the desired string; AutoConfirm also gates
+    /// this -- false means return null regardless.</summary>
+    public string? AutoPromptValue { get; set; }
+
+    public Task<string?> PromptAsync(string message, string initialValue = "",
+        string? confirmLabel = null, string? cancelLabel = null)
+    {
+        CallCount++;
+        LastMessage = message;
+        Destructive = false;
+        ConfirmLabel = confirmLabel;
+        CancelLabel = cancelLabel;
+        IsTextPrompt = true;
+        TextValue = initialValue;
+        return Task.FromResult(AutoConfirm ? AutoPromptValue : null);
     }
 }
