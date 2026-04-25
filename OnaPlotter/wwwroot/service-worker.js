@@ -59,7 +59,13 @@
 //             first-run default collapses the sidebar to the icon
 //             rail; nav menu picks up a tighter @media trim under
 //             600px so labels + icons fit without crowding.
-const CACHE_NAME = 'ona-plotter-v16';
+// v16 -> v17: drop the body { overflow: hidden } chain we added under
+//             :fullscreen for non-map pages. On Firefox the chain
+//             ate Settings / History / Resources scroll instead of
+//             routing it to <main>; reverting to the natural document
+//             scroll restores it. Map page is still locked via the
+//             body:has(.map-container) rule.
+const CACHE_NAME = 'ona-plotter-v17';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

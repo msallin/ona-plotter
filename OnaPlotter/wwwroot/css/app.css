@@ -1547,33 +1547,23 @@ html {
     }
 }
 
-/* Same single-scroll-container shape for the Fullscreen API path.
-   The (display-mode: fullscreen) media feature only matches PWA
-   install modes; Firefox / Chrome real fullscreen via
-   element.requestFullscreen() does NOT trip it, so overflowing
-   pages (Settings, History, Resources) used to fall back to a
-   document-level scroll that the fullscreened html doesn't expose
-   -- the helm could see the page extended past the viewport but
-   couldn't scroll to it. Mirror the rules under :fullscreen so
-   <main> becomes the scroll container regardless of how we got
-   into fullscreen. */
+/* Real-browser fullscreen: keep the layout chain natural rather than
+   forcing a main-is-scroll-container model. Earlier we mirrored the
+   PWA-standalone @media block here (body overflow:hidden + main
+   overflow-y:auto), which worked on Chrome but on Firefox the chain
+   silently swallowed Settings / History / Resources scroll: the body
+   was locked, main's overflow-y:auto didn't expose a usable scroll
+   container, and the helm got a non-scrollable page.
+   Simpler approach: the map page already pins itself with
+   body:has(.map-container) { overflow: hidden } above (line ~735),
+   and the topbar-hide rule below makes the 100dvh map fill the
+   viewport. Non-map pages don't need an explicit lock; the document
+   scrolls on its own when content exceeds the fullscreen viewport,
+   exactly like the non-fullscreen baseline. Only overscroll-behavior
+   stays so a downward drag doesn't trip "exit fullscreen" gestures
+   on iPad / Chromebook trackpads. */
 :fullscreen {
-    height: 100%;
-    overflow: hidden;
     overscroll-behavior: none;
-}
-:fullscreen body {
-    height: 100%;
-    overflow: hidden;
-    overscroll-behavior: none;
-}
-:fullscreen .page {
-    height: 100%;
-}
-:fullscreen main {
-    height: 100%;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
 }
 
 .map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
