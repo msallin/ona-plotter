@@ -514,6 +514,16 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         zoomControl: false,
         maxZoom: 19,
         preferCanvas: isSlowClient,
+        // Half-step zoom. Default 1.0 jumps a full power-of-two per
+        // tap which is too coarse for chart work -- the helm sees a
+        // 2x scale change when usually 1.4x is what's wanted to nudge
+        // detail in / out. zoomSnap: 0.5 + zoomDelta: 0.5 lands every
+        // mouse / topbar tap at half-integer levels (17.5, 18.0, 18.5).
+        // Pinch + wheel inherit the same snap. Matches Freeboard-SK's
+        // behaviour where its OpenLayers view allows fractional zoom
+        // by default.
+        zoomSnap: 0.5,
+        zoomDelta: 0.5,
         // Leaflet's default wheelPxPerZoomLevel = 60 means a 100 px
         // wheel tick (the value Linux/X11 reports for one notch on a
         // standard mouse) zooms ~1.66 levels per tick, which the user
@@ -845,13 +855,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 // map.zoomIn / zoomOut which already respect minZoom / maxZoom, so we
 // don't need to clamp here. No-ops before initMap so Blazor can race-
 // call without blowing up.
+// Default step matches map.zoomDelta (0.5 since the half-step zoom
+// landed). Topbar tap, keyboard +/- and wheel all snap to the same
+// half-integer levels. Blazor passes a step explicitly when it wants
+// 1.0; null / undefined falls through to the map's own delta.
 export function zoomIn(step) {
     if (!map) return;
-    map.zoomIn(typeof step === 'number' ? step : 1);
+    map.zoomIn(typeof step === 'number' ? step : map.options.zoomDelta);
 }
 export function zoomOut(step) {
     if (!map) return;
-    map.zoomOut(typeof step === 'number' ? step : 1);
+    map.zoomOut(typeof step === 'number' ? step : map.options.zoomDelta);
 }
 
 export function applyFrame(frame) {
