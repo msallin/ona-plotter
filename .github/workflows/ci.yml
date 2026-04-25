@@ -124,16 +124,17 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      # Smoke is required. Fuzz runs with a small budget (80 clicks,
-      # ~2 min) so CI still catches "banner path crashes after 50
-      # random clicks"-class regressions the full 10-min fuzz
-      # exercises locally. Seed is fixed so a failure reproduces on
-      # a dev machine with the same input.
+      # Smoke is required. Fuzz uses a 200-click budget which fills
+      # the test's 3-min cap (avg ~0.4 s per click on a healthy CI
+      # runner -- ~80 s real-time, plenty of headroom). Higher click
+      # counts catch "banner path crashes after N random clicks"
+      # regressions the local 10-min fuzz exercises. Seed is fixed
+      # so a failure reproduces on a dev machine with the same input.
       - name: Playwright smoke + actions + short fuzz
         working-directory: OnaPlotter.UiTests
         env:
           BASE_URL: http://localhost:5282/
-          FUZZ_CLICKS: "80"
+          FUZZ_CLICKS: "200"
           FUZZ_SEED: "20260419"
         # Explicit spec list keeps the diagnose-*.spec.js files (manual
         # debug helpers that only log) out of the CI run. Ordering:
