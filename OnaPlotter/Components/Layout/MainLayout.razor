@@ -503,10 +503,26 @@
     // dispatch.
 
     [JSInvokable]
-    public Task OnFullscreenChanged(bool fs)
+    public async Task OnFullscreenChanged(bool fs)
     {
         isFullscreen = fs;
-        return InvokeAsync(StateHasChanged);
+        // Auto-flip the sidebar to match the fullscreen state. Helms
+        // who entered fullscreen historically expected the rail to
+        // collapse to icons-only ("more chart for the same screen");
+        // historically that was wired via a CSS-only `:fullscreen
+        // .sidebar` rule, but that rule overrode the user's chevron-
+        // toggle in the rail (the sidebar couldn't be re-expanded
+        // while fullscreen was on). Now we mirror the state into
+        // Settings.SidebarCollapsed so the manual toggle stays
+        // authoritative -- enter fullscreen collapses, exit expands,
+        // and a tap on the rail chevron after either direction wins.
+        // Skip the write if the setting already matches to avoid
+        // firing OnSettingsChanged on every fullscreenchange.
+        if (Settings.SidebarCollapsed != fs)
+        {
+            await Settings.SetSidebarCollapsedAsync(fs);
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     // True when the current URL is the Map page. Drives visibility

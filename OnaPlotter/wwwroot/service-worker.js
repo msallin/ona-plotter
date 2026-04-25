@@ -37,7 +37,17 @@
 //             (delete+re-put moves entries to end of insertion order
 //             so trim evicts least-recently-used). keepBuffer 4 -> 6
 //             on tile layers for snappier route-planning pans.
-const CACHE_NAME = 'ona-plotter-v13';
+// v13 -> v14: post-sail-readiness follow-ups -- sidebar-collapse
+//             driven by user setting only (no longer forced by
+//             :fullscreen / .ios-fullbleed CSS so the chevron toggle
+//             works in fullscreen); active-route hides the regular
+//             polyline so the dashed-leg overlay isn't double-drawn;
+//             route HUD shows passed/total nm; iPad follow centres
+//             the boat above the geometric centre; CPA dismiss
+//             cooldown 30s -> 15min; PNG PWA icons + apple-touch-icon
+//             so iPad install shows the OnaPlotter logo; prev/next
+//             waypoint buttons in route HUD; AIS popup autoPan off.
+const CACHE_NAME = 'ona-plotter-v14';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -63,7 +73,14 @@ const APP_SHELL = [
     // catch boot-time exceptions. Precaching it here means a stale
     // copy is invalidated cleanly when CACHE_NAME bumps; without it
     // the catch-all opportunistic cache could pin an old broken copy.
-    new URL('js/errorRelayBoot.js', SCOPE).toString()
+    new URL('js/errorRelayBoot.js', SCOPE).toString(),
+    // PNG icons for the iPad / iOS home-screen install path. The SVG
+    // is still listed as a manifest icon (Android handles SVG fine)
+    // but Safari needs the rasterised versions for apple-touch-icon
+    // and PWA splash; precache so the install flow works offline.
+    new URL('apple-touch-icon-180.png', SCOPE).toString(),
+    new URL('icon-192.png', SCOPE).toString(),
+    new URL('icon-512.png', SCOPE).toString()
 ];
 
 self.addEventListener('install', (event) => {

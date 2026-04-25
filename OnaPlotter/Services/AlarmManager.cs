@@ -23,6 +23,18 @@ public sealed class AlarmManager : IAlarmManager
     /// so we never hide a worsening situation.</summary>
     public const int DismissCooldownSeconds = 30;
 
+    /// <summary>CPA-specific dismiss window. The default 30s is right
+    /// for SHALLOW / depth where seconds matter, but for an AIS target
+    /// the helm has already evaluated the meeting (called on VHF, made
+    /// a deliberate course choice, or judged the geometry safe) and
+    /// will be passed by the same ferry / freighter for several
+    /// minutes more. Re-firing CPA every 30s in that window is just
+    /// noise. 15 min is the request from helms running in the channel
+    /// at Zürich where the same boat triggers half a dozen times on
+    /// the same encounter. Escalation (Warning -> Danger) still
+    /// bypasses, so a meaningfully worse geometry breaks through.</summary>
+    public const int CpaDismissCooldownSeconds = 15 * 60;
+
     /// <summary>Hard cap on the banner stack size. Beyond this a lower-
     /// priority alarm is dropped; it will re-add on the next tick if still
     /// live. Keeps the banner from burying the viewport when everything
@@ -398,8 +410,13 @@ public sealed class AlarmManager : IAlarmManager
 
     private void RecordDismissCooldown(AlarmKey key, AlarmSeverity severity, DateTime now)
     {
+        // Per-title window: CPA gets 15 min instead of the default 30s
+        // (see CpaDismissCooldownSeconds for rationale). Other titles
+        // keep the default; add cases here as more long-cycle threats
+        // surface a similar "dismissing every 30s is noise" pattern.
+        int seconds = key.Title == "CPA" ? CpaDismissCooldownSeconds : DismissCooldownSeconds;
         _dismissCooldown[key] = new DismissCooldown(
-            now.AddSeconds(DismissCooldownSeconds), severity);
+            now.AddSeconds(seconds), severity);
     }
 
     /// <summary>True if the alarm should be suppressed this tick. Cooldown

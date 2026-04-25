@@ -934,9 +934,27 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         if (vectorLabel) { map.removeLayer(vectorLabel); vectorLabel = null; }
     }
 
-    if (followBoat) {
+    if (followBoat && Number.isFinite(lat) && Number.isFinite(lon)) {
         suppressMoveEnd = true;
-        map.panTo([lat, lon], { animate: true, duration: 0.5 });
+        // Shift the boat slightly above the geometric viewport centre
+        // so more chart area is visible AHEAD of it (the helm's typical
+        // task is "what's coming up?" not "where have I been?"). On
+        // iPad the top-side HUDs (AWA/AWS, position) and the lower
+        // route/depth/anchor cards leave the unobstructed chart area
+        // skewed downward, so a literal-centre panTo lands the boat
+        // visually too low. 40% from the top works on landscape iPad +
+        // desktop without disorienting the helm.
+        //
+        // Implementation: project the boat to pixel space, push the
+        // map centre DOWN in pixels (positive Y) by 10% of the
+        // viewport height, then unproject back to a latLng. panTo
+        // that latLng so the boat lands at (cx, cy*0.4).
+        const z = map.getZoom();
+        const size = map.getSize();
+        const boatPx = map.project([lat, lon], z);
+        const newCenterPx = boatPx.add(L.point(0, size.y * 0.1));
+        const newCenter = map.unproject(newCenterPx, z);
+        map.panTo(newCenter, { animate: true, duration: 0.5 });
         setTimeout(() => { suppressMoveEnd = false; }, 600);
     }
 
@@ -1321,8 +1339,16 @@ export function updateAisTargets(vessels) {
             // Buddy / Snooze links. At 280 px the action row wrapped onto
             // three lines on iPad landscape and the MT / VF links split
             // across rows; 420 keeps them on one line and reads cleaner.
+            // autoPan: false -- a CPA banner often prompts the helm to
+            // tap the threatening AIS marker to investigate, and the
+            // default Leaflet popup auto-pan would shift the map away
+            // from own boat to fit the popup. The helm wanted "no
+            // focus change on collision course" -- they want to see
+            // own boat AND the threat geometry, not have the chart
+            // jerk to keep a popup on screen. Helm can still pan
+            // manually.
             marker.bindPopup('',
-                { closeButton: false, maxWidth: 420, className: 'ais-popup' });
+                { closeButton: false, maxWidth: 420, className: 'ais-popup', autoPan: false });
             marker.on('popupopen', () => {
                 if (marker._onaVesselSnapshot) {
                     marker.setPopupContent(buildAisPopupHtml(marker._onaVesselSnapshot));

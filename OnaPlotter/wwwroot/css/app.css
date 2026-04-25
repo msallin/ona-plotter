@@ -3414,6 +3414,43 @@ html.night-mode-global body {
    then lands here once, not N times at the callsites). */
 .hud-card-progress-alarm { color: var(--sev-danger); }
 
+/* Prev / Next waypoint step buttons in the route HUD card. Sit
+   either side of the WP-progress chip and round-trip through
+   SignalK's course API (SetPointIndexAsync / AdvanceActiveRouteAsync).
+   Sized at 28px so they clear the 44px iOS tap-target floor when
+   counting their padding. Disabled state at the route endpoints
+   reads as "no further forward / back" rather than a no-op tap. */
+.route-wp-step-btn {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--sk-border);
+    color: var(--sk-text);
+    border-radius: 4px;
+    padding: 0 6px;
+    margin: 0 2px;
+    min-width: 28px;
+    height: 24px;
+    line-height: 1;
+    font-size: 1rem;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+.route-wp-step-btn:hover:not(:disabled),
+.route-wp-step-btn:focus-visible {
+    background: var(--sk-surface-hover);
+    border-color: var(--sk-accent-dim);
+    outline: none;
+}
+.route-wp-step-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+@media (pointer: coarse) {
+    .route-wp-step-btn { min-width: 36px; height: 32px; }
+}
+
 /* Back-compat aliases so older markup still renders until it's
    migrated. Drop these in a follow-up once no component references
    the route-panel-* names. */
@@ -4298,24 +4335,22 @@ main:has(.map-container.big-type) .map-fab-item {
     z-index: 700;
     display: flex;
     gap: 4px;
+    /* Wrap is the default everywhere now: take as much horizontal
+       space as is available between the top-left and top-right HUDs,
+       then drop to a second / third row instead of disappearing
+       behind the HUDs. The earlier nowrap + overflow-x:auto on
+       tablet sized screens hid chips behind a no-scrollbar
+       overflow that the helm couldn't reach without trackpad. */
     flex-wrap: wrap;
     justify-content: center;
-    max-width: 90%;
     pointer-events: auto;
-}
-
-/* iPad + desktop: avoid wrapping chips onto a second row when they
-   would comfortably fit side-by-side. Horizontal scroll on overflow
-   so nothing clips on the rare many-charts case. The phone-width
-   default (< 600px) keeps wrap so two thumb-sized chips can still
-   stack without overflowing the viewport. */
-@media (min-width: 600px) {
-    .chart-quick-bar {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        scrollbar-width: none;
-    }
-    .chart-quick-bar::-webkit-scrollbar { display: none; }
+    /* Reserve ~180 px on each side for the top-left / top-right
+       HUDs (AWA / HDG / position cards), with a 24 px breathing gap
+       so the chip cluster never touches a HUD edge. The minimum
+       width keeps the bar usable even on narrow viewports where the
+       reservation would otherwise leave 0 px for chips. */
+    max-width: min(90%, calc(100% - 360px));
+    min-width: 12rem;
 }
 
 /* Inactive chip: dimmed text, hollow background, muted border. The
