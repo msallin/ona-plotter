@@ -72,75 +72,48 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly HashSet<string> _extraPaths = [];
 
     /// <summary>
-    /// Subscription tier for a SignalK path. The ReceiveLoopAsync
-    /// groups paths by tier and issues one subscribe per tier with the
-    /// matching context + period + policy. Adding a new path is a
-    /// one-line addition to <see cref="Paths"/>; no set math to keep
-    /// in sync.
+    /// One subscription bucket: a (context, period, policy) tuple plus
+    /// the paths that belong in it. The reconnect loop iterates the
+    /// <see cref="Tiers"/> registry and issues one Signal K
+    /// <c>subscribe</c> message per non-empty tier.
+    ///
+    /// Adding a new context (atons.*, notifications.*, aircraft.*) is a
+    /// new <see cref="SubscriptionTier"/> entry below. Each entry is
+    /// independently toggleable in the future (for now they're all
+    /// always-on).
     /// </summary>
-    internal enum PathTier
-    {
-        /// <summary>vessels.self at 1 Hz. Self-only fields (wind, depth,
-        /// course-next-point, autopilot, tidal current). The shared
-        /// nav fields (position / SOG / COG / heading) are NOT here --
-        /// they live in <see cref="Ais"/> and reach self via the
-        /// vessels.* wildcard, avoiding duplicate delivery.</summary>
-        SelfFast,
+    internal sealed record SubscriptionTier(
+        string Name,
+        string Context,
+        IReadOnlyList<string> Paths,
+        int PeriodMs = StandardSubscriptionPeriodMs,
+        string Policy = "ideal"
+    );
 
-        /// <summary>vessels.self at 10 s. Plugin-driven slow fields
-        /// (anchor radii, tide, solar state, active-route progress).
-        /// Subscribed separately so we don't wake the WASM main
-        /// thread once per second for data that changes every few
-        /// minutes.</summary>
-        SelfSlow,
+    // --- Path lists by tier ---------------------------------------------
+    //
+    // Each list lives next to the tier that subscribes it so the wire-
+    // format intent is local. Adding a new path is one entry in the
+    // matching list -- no enum to extend, no set algebra to maintain.
 
-        /// <summary>vessels.* (which matches self too) at 1 Hz. Shared
-        /// nav fields + AIS-only static data (name, MMSI, callsign,
-        /// ship type, buddy). Going via the wildcard means self gets
-        /// these once AND every AIS vessel gets them once -- no
-        /// duplication on self.</summary>
-        Ais,
-    }
-
-    internal readonly record struct PathSubscription(string Path, PathTier Tier);
-
-    /// <summary>
-    /// The single registry of every path the app subscribes to. One
-    /// entry per path, exactly one tier per entry. Exposed as internal
-    /// so the test project (InternalsVisibleTo) can pin the partition
-    /// contract. Order within a tier is preserved because SendSubscription
-    /// iterates in list order; that doesn't affect delivery semantics
-    /// but keeps the wire format stable for the /raw viewer.
-    /// </summary>
-    internal static readonly PathSubscription[] Paths =
+    /// <summary>vessels.self @ 1 Hz. Self-only fields (wind, depth,
+    /// course-next-point, autopilot, tidal current). The shared nav
+    /// fields (position / SOG / COG / heading) are NOT here -- they
+    /// live in the AIS tier and reach self via the vessels.* wildcard,
+    /// avoiding duplicate delivery.</summary>
+    private static readonly string[] SelfFastTierPaths =
     [
-        // --- AIS + shared nav (vessels.* reaches self + others) ---
-        new("navigation.position",                                           PathTier.Ais),
-        new("navigation.speedOverGround",                                    PathTier.Ais),
-        new("navigation.courseOverGroundTrue",                               PathTier.Ais),
-        new("navigation.courseOverGroundMagnetic",                           PathTier.Ais),
-        new("navigation.headingTrue",                                        PathTier.Ais),
-        new("navigation.headingMagnetic",                                    PathTier.Ais),
-        new("name",                                                          PathTier.Ais),
-        new("mmsi",                                                          PathTier.Ais),
-        new("communication.callsignVhf",                                     PathTier.Ais),
-        new("design.aisShipType",                                            PathTier.Ais),
-        // Published by sbender9/signalk-buddylist-plugin when installed.
-        // AisVessel.Apply sets IsBuddy; unknown when the plugin is absent.
-        new("buddy",                                                         PathTier.Ais),
-
-        // --- Self-only fast fields (1 Hz) ---
-        new("environment.depth.belowTransducer",                             PathTier.SelfFast),
-        new("environment.wind.angleApparent",                                PathTier.SelfFast),
-        new("environment.wind.speedApparent",                                PathTier.SelfFast),
-        new("environment.wind.angleTrueWater",                               PathTier.SelfFast),
-        new("environment.wind.speedTrue",                                    PathTier.SelfFast),
-        new("environment.wind.directionTrue",                                PathTier.SelfFast),
+        "environment.depth.belowTransducer",
+        "environment.wind.angleApparent",
+        "environment.wind.speedApparent",
+        "environment.wind.angleTrueWater",
+        "environment.wind.speedTrue",
+        "environment.wind.directionTrue",
         // Mayara radar ARPA targets. Paths arrive as
         // radars.<radarId>.targets.<targetId>.(position|course|speed|...)
-        // under context vessels.self; ProcessSelfDelta detects and routes
-        // them into AisStore with a synthesised radar.* context.
-        new("radars.*.targets.*",                                            PathTier.SelfFast),
+        // under context vessels.self; ProcessSelfDelta detects and
+        // routes them into AisStore with a synthesised radar.* context.
+        "radars.*.targets.*",
         // Active course / route next-WP fields. The Signal K v2 course
         // surface lives at navigation.course.*; the course-provider
         // plugin derives per-leg numbers under
@@ -152,77 +125,91 @@ public sealed class SignalkClient : IAsyncDisposable
         // tech-debt pass. NavigationData.Apply's v1 case labels
         // remain as a safety net for any plugin that still emits
         // them.
-        new("navigation.course.activeRoute",                                 PathTier.SelfFast),
-        new("navigation.course.activeRoute.href",                            PathTier.SelfFast),
-        new("navigation.course.activeRoute.name",                            PathTier.SelfFast),
-        new("navigation.course.activeRoute.pointIndex",                      PathTier.SelfFast),
-        new("navigation.course.activeRoute.pointTotal",                      PathTier.SelfFast),
-        new("navigation.course.nextPoint",                                   PathTier.SelfFast),
-        new("navigation.course.nextPoint.position",                          PathTier.SelfFast),
-        new("navigation.course.previousPoint.position",                      PathTier.SelfFast),
-        new("navigation.course.calcValues.distance",                         PathTier.SelfFast),
-        new("navigation.course.calcValues.bearingTrue",                      PathTier.SelfFast),
-        new("navigation.course.calcValues.timeToGo",                         PathTier.SelfFast),
-        new("navigation.course.calcValues.velocityMadeGood",                 PathTier.SelfFast),
-        new("navigation.course.calcValues.crossTrackError",                  PathTier.SelfFast),
-        new("navigation.course.calcValues.route.distance",                   PathTier.SelfFast),
-        new("navigation.course.calcValues.route.timeToGo",                   PathTier.SelfFast),
-        // Leg-advance signals. The standard course-provider plugin
-        // emits these as NOTIFICATIONS, prefixed with "notifications."
-        // by the plugin's Notification class (src/lib/alarms.ts).
-        // Value is {state, method, message} when armed and null when
-        // cleared; ProcessSelfDelta normalises both shapes into
-        // NavigationData's PerpendicularPassed / ArrivalCircleEntered
-        // booleans so MaybeAutoAdvanceWaypoint's edge trigger fires
-        // on the enter transition.
-        //
-        // Belt and braces: also subscribe to the bare-boolean form
-        // under calcValues. Stock signalk-server's built-in course
-        // manager doesn't ship the notifications, and some forks /
-        // alternative course providers publish the boolean directly.
-        // Either form maps to the same flag via NavigationData.ApplyBool.
-        new("notifications.navigation.course.perpendicularPassed",           PathTier.SelfFast),
-        new("notifications.navigation.course.arrivalCircleEntered",          PathTier.SelfFast),
-        new("navigation.course.calcValues.perpendicularPassed",              PathTier.SelfFast),
-        new("navigation.course.calcValues.arrivalCircleEntered",             PathTier.SelfFast),
+        "navigation.course.activeRoute",
+        "navigation.course.activeRoute.href",
+        "navigation.course.activeRoute.name",
+        "navigation.course.activeRoute.pointIndex",
+        "navigation.course.activeRoute.pointTotal",
+        "navigation.course.nextPoint",
+        "navigation.course.nextPoint.position",
+        "navigation.course.previousPoint.position",
+        "navigation.course.calcValues.distance",
+        "navigation.course.calcValues.bearingTrue",
+        "navigation.course.calcValues.timeToGo",
+        "navigation.course.calcValues.velocityMadeGood",
+        "navigation.course.calcValues.crossTrackError",
+        "navigation.course.calcValues.route.distance",
+        "navigation.course.calcValues.route.timeToGo",
+        // Bare-boolean leg-advance fallbacks. The notification-shaped
+        // siblings live in SelfFastNotificationsTierPaths below (separate
+        // tier so they ride policy=instant and don't get coalesced).
+        "navigation.course.calcValues.perpendicularPassed",
+        "navigation.course.calcValues.arrivalCircleEntered",
         // Autopilot state + target heading + target AWA (wind mode).
-        new("steering.autopilot.state",                                      PathTier.SelfFast),
-        new("steering.autopilot.target.headingTrue",                         PathTier.SelfFast),
-        new("steering.autopilot.target.windAngleApparent",                   PathTier.SelfFast),
-        // Rudder angle. Spec path is steering.rudderAngle; some AP plugins
-        // publish steering.autopilot.rudderAngle instead, so we subscribe
-        // both and let NavigationData prefer the canonical one.
-        new("steering.rudderAngle",                                          PathTier.SelfFast),
-        new("steering.autopilot.rudderAngle",                                PathTier.SelfFast),
+        "steering.autopilot.state",
+        "steering.autopilot.target.headingTrue",
+        "steering.autopilot.target.windAngleApparent",
+        // Rudder angle. Spec path is steering.rudderAngle; some AP
+        // plugins publish steering.autopilot.rudderAngle instead, so
+        // we subscribe both and let NavigationData prefer the canonical
+        // one.
+        "steering.rudderAngle",
+        "steering.autopilot.rudderAngle",
         // Tidal current: drift + set, used for the map arrow overlay.
-        new("environment.current.setTrue",                                   PathTier.SelfFast),
-        new("environment.current.drift",                                     PathTier.SelfFast),
+        "environment.current.setTrue",
+        "environment.current.drift",
+    ];
 
-        // --- Self-only slow fields (10 s) ---
+    /// <summary>vessels.self @ 100 ms with policy=instant. The standard
+    /// course-provider plugin emits leg-advance flags as NOTIFICATIONS
+    /// (prepended "notifications." in src/lib/alarms.ts). Value is
+    /// {state, method, message} when armed and null when cleared;
+    /// ProcessSelfDelta normalises both shapes into NavigationData's
+    /// PerpendicularPassed / ArrivalCircleEntered booleans so
+    /// MaybeAutoAdvanceWaypoint's edge trigger fires on the enter
+    /// transition.
+    ///
+    /// policy=instant matters: these are edge-triggered state
+    /// transitions (normal -> alert -> null) that the default "ideal"
+    /// policy can coalesce away when surrounded by a high-frequency
+    /// delta burst -- swallowing the exact transition that drives
+    /// auto-advance.</summary>
+    private static readonly string[] SelfFastNotificationsTierPaths =
+    [
+        "notifications.navigation.course.perpendicularPassed",
+        "notifications.navigation.course.arrivalCircleEntered",
+    ];
+
+    /// <summary>vessels.self @ 10 s. Plugin-driven slow fields (anchor
+    /// radii, tide, solar state, design draft). Subscribed separately
+    /// so we don't wake the WASM main thread once per second for data
+    /// that changes every few minutes.</summary>
+    private static readonly string[] SelfSlowTierPaths =
+    [
         // Anchor alarm plugin (sbender9/signalk-anchoralarm-plugin).
-        new("navigation.anchor.position",                                    PathTier.SelfSlow),
-        new("navigation.anchor.maxRadius",                                   PathTier.SelfSlow),
-        new("navigation.anchor.currentRadius",                               PathTier.SelfSlow),
+        "navigation.anchor.position",
+        "navigation.anchor.maxRadius",
+        "navigation.anchor.currentRadius",
         // Tide height + next extremes (openwatersio/signalk-tides &
         // similar plugins). No-ops when the plugin isn't installed.
-        new("environment.tide.heightNow",                                    PathTier.SelfSlow),
-        new("environment.tide.heightHigh",                                   PathTier.SelfSlow),
-        new("environment.tide.heightLow",                                    PathTier.SelfSlow),
-        new("environment.tide.timeHigh",                                     PathTier.SelfSlow),
-        new("environment.tide.timeLow",                                      PathTier.SelfSlow),
-        new("environment.tide.stationName",                                  PathTier.SelfSlow),
+        "environment.tide.heightNow",
+        "environment.tide.heightHigh",
+        "environment.tide.heightLow",
+        "environment.tide.timeHigh",
+        "environment.tide.timeLow",
+        "environment.tide.stationName",
         // Solar state string for auto night-mode. Published by
         // signalk-solar / signalk-sun-position: "day" / "dawn" /
         // "dusk" / "night". Servers without such a plugin get a
         // dormant auto toggle.
-        new("environment.sun",                                               PathTier.SelfSlow),
+        "environment.sun",
         // Vessel design draft. Usually static (in vessel.json) but
         // signalk-load-data updates it per voyage; either way, 10 s
-        // is more than fast enough and the slow tier keeps it off the
-        // per-fix stream. Feeds the anchor-tide alarm and the
+        // is more than fast enough and the slow tier keeps it off
+        // the per-fix stream. Feeds the anchor-tide alarm and the
         // Settings draft auto-fill.
-        new("design.draft.current",                                          PathTier.SelfSlow),
-        new("design.draft.maximum",                                          PathTier.SelfSlow),
+        "design.draft.current",
+        "design.draft.maximum",
         // (Route-total progress: the v2 equivalents live at
         //  navigation.course.calcValues.route.* on the fast tier; the
         //  legacy v1 aggregates (courseGreatCircle.activeRoute.*) were
@@ -231,24 +218,80 @@ public sealed class SignalkClient : IAsyncDisposable
         //  if a server emits them on the fast stream.)
     ];
 
-    /// <summary>Back-compat view: every path the self-subscriptions
-    /// cover (fast + slow). Used by <c>CoreSelfPaths</c> / RawStream's
-    /// path-filter defaults.</summary>
-    internal static IReadOnlyList<string> SelfPaths =>
-        Paths.Where(p => p.Tier is PathTier.SelfFast or PathTier.SelfSlow)
-             .Select(p => p.Path).ToArray();
+    /// <summary>vessels.* (which matches self too) @ 1 Hz. Shared nav
+    /// fields + AIS-only static data (name, MMSI, callsign, ship type,
+    /// buddy). Going via the wildcard means self gets these once AND
+    /// every AIS vessel gets them once -- no duplication on self.</summary>
+    private static readonly string[] AisTierPaths =
+    [
+        "navigation.position",
+        "navigation.speedOverGround",
+        "navigation.courseOverGroundTrue",
+        "navigation.courseOverGroundMagnetic",
+        "navigation.headingTrue",
+        "navigation.headingMagnetic",
+        "name",
+        "mmsi",
+        "communication.callsignVhf",
+        "design.aisShipType",
+        // Published by sbender9/signalk-buddylist-plugin when installed.
+        // AisVessel.Apply sets IsBuddy; unknown when the plugin is absent.
+        "buddy",
+    ];
 
-    /// <summary>Back-compat view: only the slow tier. Subscription tests
-    /// assert SlowSelfPaths doesn't leak fast-moving fields.</summary>
-    internal static IReadOnlyList<string> SlowSelfPaths =>
-        Paths.Where(p => p.Tier == PathTier.SelfSlow)
-             .Select(p => p.Path).ToArray();
+    /// <summary>
+    /// The shipped-with-app subscription set. Reconnect iterates this
+    /// in order and issues one <c>subscribe</c> per entry. Each tier
+    /// is independent: dropping one (toggling AIS off, say) is a
+    /// matter of filtering this list, no other code path knows about
+    /// the wire shape.
+    /// </summary>
+    internal static readonly SubscriptionTier[] Tiers =
+    [
+        new SubscriptionTier(
+            Name: "SelfFast",
+            Context: "vessels.self",
+            Paths: SelfFastTierPaths),
+        new SubscriptionTier(
+            Name: "SelfFastNotifications",
+            Context: "vessels.self",
+            Paths: SelfFastNotificationsTierPaths,
+            PeriodMs: 100,
+            Policy: "instant"),
+        new SubscriptionTier(
+            Name: "SelfSlow",
+            Context: "vessels.self",
+            Paths: SelfSlowTierPaths,
+            PeriodMs: SlowSubscriptionPeriodMs),
+        new SubscriptionTier(
+            Name: "Ais",
+            Context: "vessels.*",
+            Paths: AisTierPaths),
+    ];
+
+    /// <summary>Back-compat view: every self-context path across all
+    /// self tiers (fast + notifications + slow). Used by RawStream's
+    /// chip-list defaults and by <c>SubscribedPaths</c>. Cached eagerly
+    /// because callers iterate it in tight UI loops.</summary>
+    internal static IReadOnlyList<string> SelfPaths { get; } =
+        Tiers.Where(t => t.Context == "vessels.self")
+             .SelectMany(t => t.Paths)
+             .Distinct(StringComparer.Ordinal)
+             .ToArray();
+
+    /// <summary>Back-compat view: just the slow self tier. Subscription
+    /// tests assert it doesn't leak fast-moving fields.</summary>
+    internal static IReadOnlyList<string> SlowSelfPaths { get; } =
+        Tiers.Where(t => t.Name == "SelfSlow")
+             .SelectMany(t => t.Paths)
+             .ToArray();
 
     /// <summary>Back-compat view: AIS tier. vessels.* matches self too,
     /// so these reach own-boat without appearing in SelfPaths.</summary>
-    internal static IReadOnlyList<string> AisPaths =>
-        Paths.Where(p => p.Tier == PathTier.Ais)
-             .Select(p => p.Path).ToArray();
+    internal static IReadOnlyList<string> AisPaths { get; } =
+        Tiers.Where(t => t.Context == "vessels.*")
+             .SelectMany(t => t.Paths)
+             .ToArray();
 
     /// <summary>
     /// Raised when navigation data changes. Subscribers must handle thread-safety themselves
@@ -369,50 +412,24 @@ public sealed class SignalkClient : IAsyncDisposable
                 OnConnectionChanged?.Invoke();
                 backoffMs = InitialBackoffMs;
 
-                // Group the Paths registry by tier and issue one
-                // subscription per tier. Each path lives in exactly
-                // one tier now; no set math needed, no overlap to
-                // strip. See PathTier docs for the context+period
-                // story.
-                //
-                //   - SelfFast (1 Hz, vessels.self): nav / wind / depth
-                //     / course next-point / autopilot / tidal current.
-                //     Safety-critical / high-dynamic.
-                //   - SelfSlow (10 s, vessels.self): anchor radii, tide,
-                //     solar, route-total progress. Plugin-driven
-                //     fields that change on the scale of minutes.
-                //   - Ais (1 Hz, vessels.*): shared nav + AIS-specific.
-                //     vessels.* matches self too, so position / SOG /
-                //     COG / heading reach own-boat via the wildcard
-                //     (no duplicate delivery).
+                // Iterate the Tiers registry: one Signal K
+                // <c>subscribe</c> message per tier with the matching
+                // (context, period, policy). Adding a new context type
+                // (atons.*, notifications.*, aircraft.*) is a new tier
+                // entry above; this loop doesn't change. Tier order
+                // is preserved on the wire so the /raw debug viewer
+                // sees a stable shape across reconnects.
                 //
                 // Extra paths added by the RawStream page use the
                 // instant-with-minPeriod profile for live debugging;
-                // they stay outside the registry because they're
+                // they stay outside the Tiers registry because they're
                 // runtime-discovered, not a shipped-with-app set.
-                var byTier = Paths.ToLookup(p => p.Tier, p => p.Path);
-                // Most SelfFast paths ride on the "ideal" policy which
-                // coalesces identical values. The two course-provider
-                // notification paths are edge-triggered state
-                // transitions (normal -> alert -> null); coalescing
-                // them with a surrounding high-frequency delta burst
-                // can swallow the exact transition that drives auto-
-                // advance. Send those two with policy=instant so the
-                // server never dedupes them, and subscribe the rest
-                // of SelfFast the regular way.
-                var notificationPaths = byTier[PathTier.SelfFast]
-                    .Where(p => p.StartsWith("notifications.", StringComparison.Ordinal))
-                    .ToArray();
-                var regularSelfFast = byTier[PathTier.SelfFast]
-                    .Where(p => !p.StartsWith("notifications.", StringComparison.Ordinal))
-                    .ToArray();
-                await SendSubscriptionAsync("vessels.self", regularSelfFast);
-                if (notificationPaths.Length > 0)
-                    await SendSubscriptionAsync("vessels.self", notificationPaths,
-                        periodMs: 100, policy: "instant");
-                await SendSubscriptionAsync("vessels.self", byTier[PathTier.SelfSlow],
-                    periodMs: SlowSubscriptionPeriodMs);
-                await SendSubscriptionAsync("vessels.*", byTier[PathTier.Ais]);
+                foreach (var tier in Tiers)
+                {
+                    if (tier.Paths.Count == 0) continue;
+                    await SendSubscriptionAsync(tier.Context, tier.Paths,
+                        tier.PeriodMs, tier.Policy);
+                }
                 if (_extraPaths.Count > 0)
                     await SendSubscriptionAsync("vessels.self", _extraPaths,
                         periodMs: RawStreamSubscriptionPeriodMs, policy: "instant");
