@@ -42,13 +42,18 @@ test('Create Waypoint context-menu item opens the waypoint dialog', async ({ pag
     });
     await page.locator('.ctx-menu-item:has-text("Create Waypoint")').click();
 
-    // Dialog with the name input is up.
-    await expect(page.locator('.waypoint-dialog')).toBeVisible();
-    await expect(page.locator('.route-name-input').first()).toBeVisible();
+    // Scope by the unique aria-label so the selector survives a future
+    // dialog refactor (and so it doesn't accidentally match an input
+    // from a different open dialog -- the three create dialogs all
+    // share .waypoint-dialog .note-dialog classes).
+    const dialog = page.locator('.waypoint-dialog')
+        .filter({ has: page.locator('input[aria-label="Waypoint name"]') });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('input[aria-label="Waypoint name"]')).toBeVisible();
 
     // Cancel path: dialog closes, no crash.
-    await page.locator('.map-btn:has-text("Cancel")').click();
-    await expect(page.locator('.waypoint-dialog')).not.toBeVisible();
+    await dialog.locator('.map-btn:has-text("Cancel")').click();
+    await expect(dialog).not.toBeVisible();
     await assertBlazorErrorNotVisible();
 });
 
@@ -91,7 +96,12 @@ test('Add Region dialog shows radius preset chips', async ({ page }) => {
     });
     await page.locator('.ctx-menu-item:has-text("Add Region")').click();
 
-    const dialog = page.locator('.note-dialog');
+    // Scope by the unique aria-label so a class refactor (or a second
+    // dialog being open) can't match the wrong markup. The waypoint /
+    // note / region dialogs all share .waypoint-dialog .note-dialog,
+    // which used to make this test pass against the wrong dialog.
+    const dialog = page.locator('.waypoint-dialog')
+        .filter({ has: page.locator('input[aria-label="Region title"]') });
     await expect(dialog).toBeVisible();
     // All five preset chips should render.
     for (const label of ['100 m', '250 m', '500 m', '1 nm', '2 nm']) {
@@ -107,8 +117,11 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     await page.goto('settings');
     await waitForMapReady(page);
 
-    // Find the depth input (first number input in the alarms block).
-    const depthInput = page.locator('input[type="number"]').first();
+    // Scope by aria-label, not "first number input". A new number input
+    // anywhere above the alarms block on the page (e.g. a units picker)
+    // would otherwise silently shadow this and make the test edit the
+    // wrong field.
+    const depthInput = page.locator('input[aria-label="Depth alarm threshold in meters"]');
     await depthInput.fill('4.5');
     await depthInput.blur();
 
@@ -125,13 +138,13 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
     // Reload and re-read.
     await page.reload();
     await waitForMapReady(page);
-    const reloaded = await page.locator('input[type="number"]').first().inputValue();
+    const reloaded = await page.locator('input[aria-label="Depth alarm threshold in meters"]').inputValue();
     expect(reloaded).toBe('4.5');
 
     // Restore default so subsequent test runs start clean. Same poll
     // pattern ensures the restore actually landed before the test
     // exits, so a retry starts from a clean state.
-    const restore = page.locator('input[type="number"]').first();
+    const restore = page.locator('input[aria-label="Depth alarm threshold in meters"]');
     await restore.fill('3');
     await restore.blur();
     await expect.poll(async () => Number.parseFloat(await readDepthKv()),
