@@ -1,0 +1,27 @@
+@* Toggle for the AIS Aids to Navigation overlay. Type 21 marks
+   (cardinal / lateral / isolated danger / safe water / special) plus
+   virtual AtoNs are rendered when the AIS receiver is in range. The
+   data is broadcast roughly every 3 min per buoy; the layer fills
+   in over the first few minutes after connect. *@
+
+<SectionHeader Title="Aids to Navigation"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    <label class="chart-item">
+        <input type="checkbox" checked="@Visible"
+               @onchange="(e) => OnToggle.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">AtoNs (AIS)</div>
+            <div class="chart-desc">Buoys, beacons, lighthouses, racons. Virtual AtoNs render dashed.</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggle { get; set; }
+
+    private bool expanded = false;
+}

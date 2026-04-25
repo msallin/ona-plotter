@@ -44,6 +44,15 @@ public interface IAppSettings
     string MapOrientation { get; }
     bool FollowBoat { get; }
     bool LaylinesVisible { get; }
+
+    /// <summary>Show AIS Aids to Navigation on the map. Enabled by
+    /// default because AtoN data is broadcast under <c>atons.*</c>
+    /// only when an AIS receiver is in range; in inland or remote
+    /// waters the layer is just empty rather than wrong. Helms who
+    /// already see the same buoys on a vector chart may want to
+    /// declutter -- this is the toggle.</summary>
+    bool AtonsVisible { get; }
+
     double DepthAlarmThreshold { get; }
 
     /// <summary>When true, the sidebar collapses to the icon-only rail
@@ -260,6 +269,7 @@ public interface IAppSettings
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
+    Task SetAtonsVisibleAsync(bool value);
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetGuardZoneLookaheadMinutesAsync(double value);

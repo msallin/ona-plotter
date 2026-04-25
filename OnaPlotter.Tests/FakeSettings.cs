@@ -21,6 +21,7 @@ internal sealed class FakeSettings : IAppSettings
     public string MapOrientation { get; set; } = "north";
     public bool FollowBoat { get; set; } = true;
     public bool LaylinesVisible { get; set; }
+    public bool AtonsVisible { get; set; } = true;
     public bool SidebarCollapsed { get; set; }
     public double DepthAlarmThreshold { get; set; } = 3.0;
     public double CpaAlarmThreshold { get; set; } = 0.5;
@@ -68,6 +69,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
     public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
+    public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }
     public Task ApplyMobileFirstRunDefaultsAsync(bool isMobile)
     {
         if (isMobile) SidebarCollapsed = true;

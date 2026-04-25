@@ -11,6 +11,7 @@
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
 @inject AisStore AisStore
+@inject AtoNStore AtoNs
 @inject IChartApi ChartApi
 @inject IRouteApi RouteApi
 @inject IWaypointApi WaypointApi
@@ -397,6 +398,7 @@
                      RadarCapabilities="radarCapabilities"
                      ServerTrackVisible="serverTrackVisible"
                      WeatherOverlayVisible="weatherOverlayVisible"
+                     AtonsVisible="Settings.AtonsVisible"
                      LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
                      OnToggleChartQuickBar="OnToggleChartQuickBarCallback"
@@ -414,6 +416,7 @@
                      OnFocusVessel="FocusVessel"
                      OnToggleServerTrack="ToggleServerTrack"
                      OnToggleWeatherOverlay="ToggleWeatherOverlay"
+                     OnToggleAtonsVisible="ToggleAtonsVisible"
                      OnGpxImport="HandleGpxImport"
                      OnGpxExport="ExportGpx" />
     }
@@ -1308,6 +1311,12 @@
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
+        // AtoNs are static enough not to need a timer -- push on
+        // store-change events plus once after init. AtonsVisible
+        // setting is honoured by setAtonsVisible JS-side.
+        AtoNs.OnAtonsUpdated += HandleAtonsUpdated;
+        await module.InvokeVoidAsync("setAtonsVisible", Settings.AtonsVisible);
+        _ = PushAtons();
         // Resource re-sync: waypoints / routes / notes / regions added
         // from another plotter are otherwise invisible until the user
         // toggles the Layers panel. 60 s poll keeps the list in sync
@@ -1437,6 +1446,11 @@
                 _ = InvokeVoidSafeAsync("setNightMode", (object)nightMode);
             _ = InvokeAsync(StateHasChanged);
         }
+
+        // AtoN visibility toggle. The marker layer state survives the
+        // hide/show cycle so flipping back doesn't have to re-fetch.
+        if (module is not null)
+            _ = InvokeVoidSafeAsync("setAtonsVisible", (object)Settings.AtonsVisible);
     }
 
     // Minimal swallower for fire-and-forget module calls from sync
@@ -1757,6 +1771,62 @@
             // rationale: silent-but-logged stops a JS regression from
             // taking down the whole map UI.
             Console.Error.WriteLine($"[interop] PushAisTargets: {ex.Message}");
+        }
+    }
+
+    private void HandleAtonsUpdated()
+    {
+        // AtoNStore.OnAtonsUpdated fires from the websocket thread on
+        // every delta-affecting change. WASM is single-threaded so
+        // there's no thread-marshal needed; we just kick off the JS
+        // push and let it await on its own. Idempotent re-pushes are
+        // cheap (the JS side diffs by id), so we don't bother
+        // debouncing -- the C# AtoNStore.GetAtons cache already
+        // means a re-push on no-data-change is just a snapshot read.
+        _ = PushAtons();
+    }
+
+    private async Task PushAtons()
+    {
+        if (!mapInitialized || module is null) return;
+        try
+        {
+            // Resolve the symbol kind + cardinal/lateral side here in C#
+            // via AtonTypeCatalog.Lookup so JS stays a dumb renderer
+            // (per the project's "decisions in C# with tests" rule).
+            // Virtual flag: prefer the AtoN's own published value;
+            // otherwise fall back to the catalog's "20-25 are virtual"
+            // hint so an older plugin that omits the flag still
+            // renders dashed.
+            var atons = AtoNs.GetAtons();
+            var jsAtons = atons
+                .Where(a => a.Latitude is not null && a.Longitude is not null)
+                .Select(a =>
+                {
+                    var info = AtonTypeCatalog.Lookup(a.TypeId);
+                    bool isVirtual = a.Virtual ?? info.VirtualHint;
+                    return new
+                    {
+                        context = a.Context,
+                        name = a.Name,
+                        mmsi = a.Mmsi,
+                        lat = a.Latitude!.Value,
+                        lon = a.Longitude!.Value,
+                        typeId = a.TypeId,
+                        typeName = a.TypeName,
+                        symbol = info.Symbol.ToString(),
+                        side = info.Side.ToString(),
+                        @virtual = isVirtual,
+                    };
+                })
+                .ToArray();
+            await module.InvokeVoidAsync("setAtons", (object)jsAtons);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[interop] PushAtons: {ex.Message}");
         }
     }
 
@@ -2172,6 +2242,15 @@
         {
             await module.InvokeVoidAsync("clearWeatherOverlay");
         }
+    }
+
+    private async Task ToggleAtonsVisible(bool enabled)
+    {
+        // Settings.SetAtonsVisibleAsync fires OnSettingsChanged; the
+        // handler in HandleSettingsChanged forwards the new value to
+        // setAtonsVisible JS-side. Persist via Settings so the helm's
+        // choice survives reload.
+        await Settings.SetAtonsVisibleAsync(enabled);
     }
 
     // --- Race Timer ---
@@ -2993,6 +3072,7 @@
         mapInitialized = false;
         SignalkClient.OnDataChanged -= HandleDataChanged;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
+        AtoNs.OnAtonsUpdated -= HandleAtonsUpdated;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         RemoveEditNavGuard();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
