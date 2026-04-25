@@ -65,7 +65,15 @@
 //             routing it to <main>; reverting to the natural document
 //             scroll restores it. Map page is still locked via the
 //             body:has(.map-container) rule.
-const CACHE_NAME = 'ona-plotter-v17';
+// v17 -> v18: stop hiding the topbar in :fullscreen / .ios-fullbleed
+//             so zoom / night / liveness / exit-fullscreen affordances
+//             stay visible while fullscreen. Map-container falls back
+//             to its non-fullscreen calc(100dvh - 3rem) height. Also
+//             explicit pointer-events: auto on the route prev/next
+//             and autopilot buttons inside the non-corner HUDs (the
+//             parent .hud / .hud-panel pointer-events: none was
+//             swallowing taps on those new buttons).
+const CACHE_NAME = 'ona-plotter-v18';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
