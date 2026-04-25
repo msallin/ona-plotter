@@ -453,6 +453,15 @@
     // Active route navigation state.
     private string? lastActiveRouteHref;
     private double[][]? activeRouteCoords;
+    // Last next-WP coords pushed to the JS layer. Tracking these in
+    // addition to the route href is what lets SyncActiveRouteAsync
+    // reposition the pulsing next-WP marker when only the leg index
+    // changes (Freeboard advances within the active route, our own
+    // AdvanceActiveRouteAsync runs, server auto-advances). Without
+    // this, the pulsing marker stays glued to the WP it was first
+    // drawn on while the bearing line silently jumps to the new leg.
+    private double? lastNextWpLat;
+    private double? lastNextWpLon;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -2683,17 +2692,31 @@
     }
 
     /// <summary>
-    /// Detects changes to the active route href and fetches/draws the
-    /// route on the map. With <paramref name="force"/>=true, refetches
-    /// even when the href hasn't changed -- needed after an in-place
-    /// edit of an already-active route, where the href is identical
-    /// but the route's geometry is new.
+    /// Drives the JS active-route layer in response to course changes.
+    /// Triggers:
+    /// 1) Route href changes (activation / deactivation / replace) --
+    ///    fetches the route geometry once and draws the polyline.
+    /// 2) Next-WP coords change while href stays the same (leg
+    ///    advance from any source: our own button, auto-advance, or
+    ///    another client like Freeboard). Reuses cached coords so the
+    ///    pulsing marker hops to the new leg without an HTTP fetch.
+    /// 3) <paramref name="force"/>=true -- refetches even on unchanged
+    ///    href. Needed after an in-place edit of an already-active
+    ///    route, where the href is identical but geometry is new.
+    ///
+    /// Also runs the Stop Navigation watchdog as a side effect:
+    /// CourseApi.ClearAsync returned success but the SK delta hasn't
+    /// cleared the active route within CourseStopTimeoutSec. We warn
+    /// and un-dim the polyline rather than leaving the helm staring
+    /// at a dimmed route forever.
     /// </summary>
     private async Task SyncActiveRouteAsync(bool force = false)
     {
         if (!mapInitialized || module is null) return;
 
         var currentHref = Data.ActiveRouteHref;
+        var nextLat = Data.CourseNextPointLatitude;
+        var nextLon = Data.CourseNextPointLongitude;
 
         // Watchdog for a pending Stop Navigation: if the helm tapped
         // Stop and CourseApi.ClearAsync returned success but the SK
@@ -2726,39 +2749,61 @@
         // gone, but the flag drives the watchdog above.
         if (currentHref is null) _courseStopPendingUtc = null;
 
-        if (!force && currentHref == lastActiveRouteHref) return;
+        bool hrefChanged = currentHref != lastActiveRouteHref;
+        bool nextWpChanged = nextLat != lastNextWpLat || nextLon != lastNextWpLon;
+        if (!force && !hrefChanged && !nextWpChanged) return;
 
-        // Route changed, deactivated, or forced refresh: clear previous.
-        // For a forced refresh the href stayed the same but the
-        // geometry didn't, so we still need to wipe the old polyline.
-        if (lastActiveRouteHref is not null || force)
+        if (hrefChanged || force)
         {
-            if (!mapInitialized) return;
-            await module.InvokeVoidAsync("clearActiveRoute");
-            if (!mapInitialized) return;
-            await module.InvokeVoidAsync("clearCourseLine");
-            activeRouteCoords = null;
-            _frameBuilder.CourseLineDrawn = false;
-        }
-
-        lastActiveRouteHref = currentHref;
-
-        // Route activated: fetch and draw. The HTTP round-trip is where
-        // dispose races most often -- by the time the fetch completes,
-        // the page may have navigated away. Re-check mapInitialized
-        // after each await so a disposed module doesn't get called.
-        if (!string.IsNullOrEmpty(currentHref))
-        {
-            activeRouteCoords = await RouteApi.GetCoordinatesAsync(currentHref);
-            if (!mapInitialized) return;
-            if (activeRouteCoords is not null && activeRouteCoords.Length > 0)
+            // Route changed, deactivated, or forced refresh: clear
+            // previous. For a forced refresh the href stayed the same
+            // but the geometry didn't, so we still need to wipe the old
+            // polyline.
+            if (lastActiveRouteHref is not null || force)
             {
-                await module.InvokeVoidAsync("setActiveRoute",
-                    (object)activeRouteCoords,
-                    Data.CourseNextPointLatitude ?? 0,
-                    Data.CourseNextPointLongitude ?? 0);
+                await module.InvokeVoidAsync("clearActiveRoute");
+                if (!mapInitialized) return;
+                await module.InvokeVoidAsync("clearCourseLine");
+                activeRouteCoords = null;
+                _frameBuilder.CourseLineDrawn = false;
+            }
+
+            lastActiveRouteHref = currentHref;
+
+            // Route activated: fetch geometry once. The HTTP round-trip
+            // is where dispose races most often -- by the time the fetch
+            // completes, the page may have navigated away. Re-check
+            // mapInitialized after the await so a disposed module
+            // doesn't get called.
+            if (!string.IsNullOrEmpty(currentHref))
+            {
+                activeRouteCoords = await RouteApi.GetCoordinatesAsync(currentHref);
+                if (!mapInitialized) return;
             }
         }
+
+        // Redraw whenever we have the geometry and a next-WP fix.
+        // Covers the initial draw (hrefChanged or force), the leg-
+        // advance case (nextWpChanged on an unchanged route), and the
+        // post-edit refetch (force). setActiveRoute styles the dots
+        // based on which one is closest to the next-WP coords, which
+        // is how the leg indicator stays correct without us having to
+        // thread pointIndex separately.
+        if (activeRouteCoords is not null && activeRouteCoords.Length > 0
+            && nextLat is not null && nextLon is not null)
+        {
+            string routeId = string.IsNullOrEmpty(currentHref)
+                ? string.Empty
+                : SignalKUrls.ExtractRouteId(currentHref);
+            await module.InvokeVoidAsync("setActiveRoute",
+                (object)activeRouteCoords,
+                nextLat.Value,
+                nextLon.Value,
+                routeId);
+        }
+
+        lastNextWpLat = nextLat;
+        lastNextWpLon = nextLon;
     }
 
     private async Task ZoomToTrack()

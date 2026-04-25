@@ -88,10 +88,40 @@ public class SignalkClientSubscriptionPathsTests
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.bearingTrue");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.timeToGo");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.velocityMadeGood");
-        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.velocityMadeGoodToCourse");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.crossTrackError");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.route.distance");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.route.timeToGo");
+    }
+
+    [Test]
+    public async Task Course_LegAdvance_Notifications_Subscribed()
+    {
+        // Two trigger paths for auto-advance:
+        //   - notifications.navigation.course.{flag} -- emitted by the
+        //     standard SignalK course-provider plugin via its
+        //     Notification class (prepends "notifications." in
+        //     src/lib/alarms.ts).
+        //   - navigation.course.calcValues.{flag} -- bare-boolean
+        //     fallback for stock signalk-server builds and forks that
+        //     publish the flag without going through the notifications
+        //     subsystem.
+        // Both shapes route to the same NavigationData flag; subscribing
+        // to both is belt-and-braces against future plugin churn.
+        await Assert.That(SignalkClient.SelfPaths).Contains("notifications.navigation.course.perpendicularPassed");
+        await Assert.That(SignalkClient.SelfPaths).Contains("notifications.navigation.course.arrivalCircleEntered");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.perpendicularPassed");
+        await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.calcValues.arrivalCircleEntered");
+    }
+
+    [Test]
+    public async Task DeadCourse_Subscriptions_NotResurrected()
+    {
+        // velocityMadeGoodToCourse was a hopeful-but-wrong fallback
+        // subscription -- the course-provider plugin only emits
+        // velocityMadeGood. Pinning the absence so a future "let's
+        // subscribe to everything" sweep doesn't drag dead paths back
+        // in.
+        await Assert.That(SignalkClient.SelfPaths).DoesNotContain("navigation.course.calcValues.velocityMadeGoodToCourse");
     }
 
     [Test]

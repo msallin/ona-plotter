@@ -300,16 +300,7 @@ public sealed class NavigationData
                 case "navigation.course.calcValues.timeToGo":
                     CourseNextPointTimeToGo = value;
                     break;
-                // course-provider-plugin uses velocityMadeGood, but
-                // emits null when VMG doesn't make sense on a non-wind
-                // leg. velocityMadeGoodToCourse is its fallback (the
-                // boat's closing speed projected onto the rhumb to
-                // the next WP) and is the more useful HUD number in
-                // practice. Accept both under a single field; the
-                // null-from-VMG case is overwritten by the next tick's
-                // VMGToCourse.
                 case "navigation.course.calcValues.velocityMadeGood":
-                case "navigation.course.calcValues.velocityMadeGoodToCourse":
                     CourseNextPointVmg = value;
                     break;
                 case "navigation.course.calcValues.crossTrackError":

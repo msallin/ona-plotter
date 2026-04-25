@@ -184,6 +184,62 @@ public class WaypointCourseApiTests
     }
 
     [Test]
+    public async Task CourseApi_SetPointIndex_PutsAbsoluteIndex()
+    {
+        // SignalK v2 Course API: PUT /activeRoute/pointIndex with body
+        // {"value": N} jumps to leg N. Used by the "tap a WP on the
+        // route polyline to skip to it" gesture. Must hit the
+        // dedicated endpoint, not /nextPoint (which expects a relative
+        // delta) and not /activeRoute (which would re-resolve the href
+        // and is heavier).
+        string? capturedUrl = null;
+        string? capturedBody = null;
+        HttpMethod? capturedMethod = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedUrl = req.RequestUri?.AbsoluteUri;
+            capturedMethod = req.Method;
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var r = await api.SetPointIndexAsync(3);
+
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Put);
+        await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex");
+        await Assert.That(capturedBody).Contains("\"value\":3");
+    }
+
+    [Test]
+    public async Task CourseApi_SetPointIndex_AcceptsZero()
+    {
+        // 0 is a legitimate target (jump back to the first leg) and
+        // must not be coerced or treated as "no value sent". Pin it.
+        string? capturedBody = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        await api.SetPointIndexAsync(0);
+
+        await Assert.That(capturedBody).Contains("\"value\":0");
+    }
+
+    [Test]
+    public async Task CourseApi_SetPointIndex_SurfacesServerFailure()
+    {
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest));
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        await Assert.That((await api.SetPointIndexAsync(2)).Success).IsFalse();
+    }
+
+    [Test]
     public async Task CourseApi_Clear_DeletesCourse()
     {
         string? capturedUrl = null;

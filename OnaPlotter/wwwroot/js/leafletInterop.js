@@ -2193,7 +2193,13 @@ function findClosestWaypointIndex(coords, lat, lon) {
 // dimmed; future legs (including the current leg from the last
 // reached WP to the next) are solid. The dashed bearing line and
 // active-leg overlay drawn by setCourseLine sit on top of this.
-export function setActiveRoute(coords, nextWpLat, nextWpLon) {
+//
+// routeId is the SignalK resource UUID; passing it enables tap-to-
+// skip on each marker (any WP, including passed ones, can be set as
+// the new next-WP via the JumpToRouteWaypoint JSInvokable on the C#
+// side). Pass an empty string to disable taps -- e.g. when the active
+// "course" is a single waypoint destination, not a multi-WP route.
+export function setActiveRoute(coords, nextWpLat, nextWpLon, routeId) {
     clearActiveRoute();
     // Suppress redraw while the helm is editing the active route --
     // any in-flight SyncActiveRouteAsync that races the edit (e.g.
@@ -2207,6 +2213,7 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon) {
     activeRouteCoords = coords;
     const wpIdx = findClosestWaypointIndex(coords, nextWpLat, nextWpLon);
     activeRouteLayer = L.layerGroup().addTo(map);
+    const tappable = !!(routeId && dotNetRef);
 
     // Split the route at the boundary between reached and un-reached
     // waypoints. The two segments share the boundary point so the
@@ -2233,29 +2240,30 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon) {
         }).addTo(activeRouteLayer);
     }
 
-    // Waypoint markers.
+    // Waypoint markers (skip the next WP -- it gets the pulsing marker
+    // below). Each remaining dot is tappable: clicking asks the C# side
+    // to jump pointIndex to that WP, mirroring Freeboard's gesture.
     for (let i = 0; i < coords.length; i++) {
         const isPassed = i < wpIdx;
         const isNext = i === wpIdx;
-        const radius = isNext ? 0 : (isPassed ? 3 : 5);
+        if (isNext) continue;
 
-        if (!isNext) {
-            const dot = L.circleMarker(coords[i], {
-                radius,
-                color: MapColors.bearing,
-                fillColor: isPassed ? '#64748b' : MapColors.bearing,
-                fillOpacity: isPassed ? 0.35 : 1,
-                weight: isPassed ? 1 : 1.5,
-                opacity: isPassed ? 0.35 : 1
-            });
-            dot.bindTooltip(`${i + 1}`, {
-                permanent: false,
-                direction: 'right',
-                offset: [8, 0],
-                className: 'route-wp-tooltip'
-            });
-            dot.addTo(activeRouteLayer);
-        }
+        const dot = L.circleMarker(coords[i], {
+            radius: isPassed ? 3 : 5,
+            color: MapColors.bearing,
+            fillColor: isPassed ? '#64748b' : MapColors.bearing,
+            fillOpacity: isPassed ? 0.35 : 1,
+            weight: isPassed ? 1 : 1.5,
+            opacity: isPassed ? 0.35 : 1
+        });
+        dot.bindTooltip(`${i + 1}`, {
+            permanent: false,
+            direction: 'right',
+            offset: [8, 0],
+            className: 'route-wp-tooltip'
+        });
+        if (tappable) attachJumpHandler(dot, routeId, i);
+        dot.addTo(activeRouteLayer);
     }
 
     // Pulsing marker at the next waypoint.
@@ -2268,6 +2276,19 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon) {
         direction: 'right',
         offset: [14, 0],
         className: 'route-wp-tooltip'
+    });
+}
+
+// Wires a click on a route-polyline waypoint dot to the C# handler
+// that PUTs /activeRoute/pointIndex with the absolute leg index.
+// Stops Leaflet's bubbling so the click doesn't also pan/zoom the map
+// or trigger the long-press context menu underneath.
+function attachJumpHandler(layer, routeId, pointIndex) {
+    layer.on('click', (e) => {
+        if (e && e.originalEvent) L.DomEvent.stopPropagation(e);
+        if (!dotNetRef) return;
+        dotNetRef.invokeMethodAsync('JumpToRouteWaypoint', routeId, pointIndex)
+            .catch(() => {});
     });
 }
 
@@ -2322,12 +2343,6 @@ export function setActiveRouteStopping(stopping) {
     }
 }
 
-// Update only the active waypoint highlight (lightweight, no full redraw).
-export function updateActiveWaypoint(nextWpLat, nextWpLon) {
-    if (!activeRouteCoords || !map) return;
-    // Full redraw is simplest and still fast for typical route sizes (<50 WPs).
-    setActiveRoute(activeRouteCoords, nextWpLat, nextWpLon);
-}
 
 // Draw/update course line: leg line, bearing line, XTE tick.
 // Called on every position update when an active course exists.

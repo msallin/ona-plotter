@@ -54,6 +54,12 @@ public static class SignalKUrls
     public const string CourseDestinationPath = "/signalk/v2/api/vessels/self/navigation/course/destination";
     public const string CourseActiveRoutePath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute";
     public const string CourseActiveRouteNextPointPath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint";
+    // Absolute jump to a leg index. Body is {value: N} with N the 0-based
+    // pointIndex. Mirrors Freeboard-SK's "tap a WP on the polyline to
+    // skip to it" gesture; lighter than re-PUTting the whole activeRoute
+    // because the server only has to flip the leg, not re-resolve the
+    // route href.
+    public const string CourseActiveRoutePointIndexPath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex";
 
     public const string AutopilotStatePath = "/signalk/v2/api/vessels/self/steering/autopilot/state";
     public const string AutopilotAdjustHeadingPath = "/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";

@@ -342,6 +342,50 @@ public partial class Map
         await NavigateRouteInternal(route);
     }
 
+    /// <summary>
+    /// Jumps the active route to a specific 0-based leg index. Wired to a
+    /// click on a non-active waypoint dot in the route polyline (the
+    /// pulsing next-WP marker is skipped since it's already the target).
+    /// Mirrors Freeboard-SK's "tap a WP to make it the next leg" gesture.
+    /// </summary>
+    /// <remarks>
+    /// Defence-in-depth: the JS side passes the route id it drew with,
+    /// but the user could tap a stale dot a moment after a course change.
+    /// Verify the id still matches the current active course before
+    /// PUTting, otherwise we'd risk silently re-activating an old route.
+    /// Confirmation is on -- accidental taps mid-passage shouldn't
+    /// re-route the boat.
+    /// </remarks>
+    [JSInvokable]
+    public async Task JumpToRouteWaypoint(string routeId, int pointIndex)
+    {
+        if (string.IsNullOrEmpty(routeId)) return;
+        var activeHref = Data.ActiveRouteHref;
+        if (string.IsNullOrEmpty(activeHref)) return;
+        if (!string.Equals(SignalKUrls.ExtractRouteId(activeHref), routeId, StringComparison.Ordinal))
+            return;
+        if (pointIndex < 0) return;
+        if (Data.ActiveRoutePointIndex == pointIndex) return; // already there
+
+        int wpNumber = pointIndex + 1;
+        string routeLabel = Data.ActiveRouteName is { Length: > 0 } n ? $"'{n}'" : "the active route";
+        bool ok = await Confirmations.ConfirmAsync(
+            $"Skip to waypoint {wpNumber} of {routeLabel}?");
+        if (!ok) return;
+
+        try
+        {
+            var r = await CourseApi.SetPointIndexAsync(pointIndex);
+            if (!r.Success)
+            {
+                Toasts.Error($"Skip to WP {wpNumber} failed: {r.Error ?? "server rejected"}");
+                return;
+            }
+            Toasts.Success($"Skipped to WP {wpNumber}");
+        }
+        catch (Exception ex) { Toasts.Error($"Skip to WP {wpNumber} failed: {ex.Message}"); }
+    }
+
     [JSInvokable]
     public async Task DeleteRouteById(string id)
     {

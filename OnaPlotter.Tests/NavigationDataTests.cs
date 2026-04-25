@@ -199,18 +199,28 @@ public class NavigationDataTests
     }
 
     [Test]
-    [Arguments("navigation.course.calcValues.velocityMadeGood")]
-    [Arguments("navigation.course.calcValues.velocityMadeGoodToCourse")]
-    public async Task Apply_CourseVmg_SetsProperty_FromEitherCalcValuesLeaf(string path)
+    public async Task Apply_CourseVmg_SetsProperty_FromVelocityMadeGood()
     {
         // course-provider-plugin publishes velocityMadeGood (null when
-        // VMG isn't meaningful on a motor leg) AND
-        // velocityMadeGoodToCourse (closing speed projected onto the
-        // rhumb); both feed CourseNextPointVmg.
+        // VMG isn't meaningful on a motor leg). The earlier hypothetical
+        // velocityMadeGoodToCourse fallback was unsupported by the
+        // upstream plugin and has been dropped.
         var nav = new NavigationData();
         var je = JsonSerializer.SerializeToElement(3.45);
-        await Assert.That(nav.Apply(path, je)).IsTrue();
+        await Assert.That(nav.Apply("navigation.course.calcValues.velocityMadeGood", je)).IsTrue();
         await Assert.That(nav.CourseNextPointVmg).IsEqualTo(3.45);
+    }
+
+    [Test]
+    public async Task Apply_VelocityMadeGoodToCourse_NotRecognized()
+    {
+        // Pin the absence: nothing in the SignalK Course API spec or
+        // the course-provider plugin emits velocityMadeGoodToCourse.
+        // Apply must return false so a future re-add to NavigationData
+        // shows up here before it ships.
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(3.45);
+        await Assert.That(nav.Apply("navigation.course.calcValues.velocityMadeGoodToCourse", je)).IsFalse();
     }
 
     [Test]
