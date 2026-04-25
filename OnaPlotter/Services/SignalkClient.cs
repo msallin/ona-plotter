@@ -408,7 +408,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 await ws.ConnectAsync(_wsUri, ct);
                 _ws = ws;
                 _logger.LogInformation("Connected to SignalK");
-                IsConnected = true;
+                MarkConnectionOpened();
                 OnConnectionChanged?.Invoke();
                 backoffMs = InitialBackoffMs;
 
@@ -536,6 +536,25 @@ public sealed class SignalkClient : IAsyncDisposable
     {
         if (IsConnected) return;
         try { _backoffCts?.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Flips <see cref="IsConnected"/> to true and seeds
+    /// <c>_lastMessageTicks</c> with the current UTC ticks. Without
+    /// the seed, the field defaults to 0 (Unix epoch) and
+    /// <see cref="IsDataStale"/> reports true the moment IsConnected
+    /// becomes true -- before any deltas have arrived. The connection
+    /// chip then renders "Stale" on first paint, and the
+    /// MainLayout-side change tracker (wasStale flips on
+    /// IsDataStale-state transitions) misses the false-to-false
+    /// "data started flowing" event because both before and after
+    /// values look identical from its point of view, leaving the
+    /// chip stuck on "Stale" until the next unrelated render.
+    /// Exposed internally so tests can drive the same flow without
+    /// opening a real websocket.</summary>
+    internal void MarkConnectionOpened()
+    {
+        Interlocked.Exchange(ref _lastMessageTicks, DateTime.UtcNow.Ticks);
+        IsConnected = true;
     }
 
     internal void ProcessMessage(string json)
