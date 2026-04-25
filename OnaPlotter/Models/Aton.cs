@@ -15,11 +15,11 @@ namespace OnaPlotter.Models;
 /// changes.
 /// </para>
 /// </summary>
-public sealed class AtoN
+public sealed class Aton
 {
     /// <summary>Full SignalK context, e.g.
     /// <c>atons.urn:mrn:imo:mmsi:992111234</c>. Used as the dictionary
-    /// key in <see cref="OnaPlotter.Services.AtoNStore"/>.</summary>
+    /// key in <see cref="OnaPlotter.Services.AtonStore"/>.</summary>
     public string Context { get; }
 
     /// <summary>9-digit MMSI extracted from the context. AtoNs use the
@@ -60,7 +60,7 @@ public sealed class AtoN
 
     public DateTime LastSeen { get; set; }
 
-    public AtoN(string context)
+    public Aton(string context)
     {
         Context = context;
         LastSeen = DateTime.UtcNow;
@@ -81,19 +81,35 @@ public sealed class AtoN
         // Plugins emit this on the first delta after the AIS Type 21
         // arrives, then sometimes never resend the per-leaf paths --
         // flatten so we don't have to wait for individual updates that
-        // may never come.
-        if (path.Length == 0 && rawValue is JsonElement bundle
-            && bundle.ValueKind == JsonValueKind.Object)
+        // may never come. A non-object empty-path delta (rare, e.g.
+        // a plugin error) is silently ignored rather than stashed
+        // under Properties[""] which would be diagnostic noise.
+        if (path.Length == 0)
         {
-            return ApplyIdentityBundle(bundle);
+            if (rawValue is JsonElement bundle
+                && bundle.ValueKind == JsonValueKind.Object)
+            {
+                return ApplyIdentityBundle(bundle);
+            }
+            return false;
         }
 
         switch (path)
         {
             case "name":
-                return SetIfChanged(ref _name, AsString(rawValue), v => Name = v);
+                {
+                    var v = AsString(rawValue);
+                    if (Name == v) return false;
+                    Name = v;
+                    return true;
+                }
             case "mmsi":
-                return SetIfChanged(ref _mmsi, AsString(rawValue), v => Mmsi = v);
+                {
+                    var v = AsString(rawValue);
+                    if (Mmsi == v) return false;
+                    Mmsi = v;
+                    return true;
+                }
             case "navigation.position":
                 return ApplyPosition(rawValue);
             case "atonType":
@@ -101,21 +117,12 @@ public sealed class AtoN
             case "virtual":
                 return ApplyVirtual(rawValue);
             default:
-                // Stash unknown paths for the popover. Replace existing
-                // value if any -- plugins re-publish on change.
+                // Stash unknown paths for the popover. Replace any
+                // existing value -- plugins re-publish on change.
                 Properties[path] = rawValue;
                 return true;
         }
     }
-
-    // Backing fields used for SetIfChanged so we don't redundantly fire
-    // the OnChanged event on a re-applied unchanged value.
-    private string? _name;
-    private string? _mmsi;
-    private double? _lat, _lon;
-    private int? _typeId;
-    private string? _typeName;
-    private bool? _virtual;
 
     private bool ApplyIdentityBundle(JsonElement bundle)
     {
@@ -123,20 +130,22 @@ public sealed class AtoN
         if (bundle.TryGetProperty("name", out var n)
             && n.ValueKind == JsonValueKind.String)
         {
-            changed |= SetIfChanged(ref _name, n.GetString(), v => Name = v);
+            var nameStr = n.GetString();
+            if (Name != nameStr) { Name = nameStr; changed = true; }
         }
         if (bundle.TryGetProperty("mmsi", out var m)
             && m.ValueKind == JsonValueKind.String)
         {
-            changed |= SetIfChanged(ref _mmsi, m.GetString(), v => Mmsi = v);
+            var mmsiStr = m.GetString();
+            if (Mmsi != mmsiStr) { Mmsi = mmsiStr; changed = true; }
         }
         if (bundle.TryGetProperty("atonType", out var t))
         {
             changed |= ApplyAtonType(t);
         }
-        if (bundle.TryGetProperty("virtual", out var v))
+        if (bundle.TryGetProperty("virtual", out var virtualEl))
         {
-            changed |= ApplyVirtual(v);
+            changed |= ApplyVirtual(virtualEl);
         }
         if (bundle.TryGetProperty("navigation", out var nav)
             && nav.ValueKind == JsonValueKind.Object
@@ -160,8 +169,8 @@ public sealed class AtoN
         var lat = latEl.GetDouble();
         var lon = lonEl.GetDouble();
         bool changed = false;
-        changed |= SetIfChanged(ref _lat, lat, v => Latitude = v);
-        changed |= SetIfChanged(ref _lon, lon, v => Longitude = v);
+        if (Latitude != lat) { Latitude = lat; changed = true; }
+        if (Longitude != lon) { Longitude = lon; changed = true; }
         return changed;
     }
 
@@ -175,19 +184,24 @@ public sealed class AtoN
             if (el.TryGetProperty("id", out var idEl)
                 && idEl.ValueKind == JsonValueKind.Number)
             {
-                changed |= SetIfChanged(ref _typeId, idEl.GetInt32(), v => TypeId = v);
+                var v = idEl.GetInt32();
+                if (TypeId != v) { TypeId = v; changed = true; }
             }
             if (el.TryGetProperty("name", out var nameEl)
                 && nameEl.ValueKind == JsonValueKind.String)
             {
-                changed |= SetIfChanged(ref _typeName, nameEl.GetString(), v => TypeName = v);
+                var v = nameEl.GetString();
+                if (TypeName != v) { TypeName = v; changed = true; }
             }
             return changed;
         }
         // Bare-number form: just the id.
         if (el.ValueKind == JsonValueKind.Number)
         {
-            return SetIfChanged(ref _typeId, el.GetInt32(), v => TypeId = v);
+            var v = el.GetInt32();
+            if (TypeId == v) return false;
+            TypeId = v;
+            return true;
         }
         return false;
     }
@@ -195,14 +209,20 @@ public sealed class AtoN
     private bool ApplyVirtual(object? rawValue)
     {
         if (rawValue is not JsonElement el) return false;
+        // True / false set the flag; explicit JSON null clears it.
+        // Anything else (numbers, strings, undefined value) is a no-op
+        // -- we don't want to flap the dashed outline based on a
+        // malformed delta.
         bool? newVal = el.ValueKind switch
         {
             JsonValueKind.True => true,
             JsonValueKind.False => false,
-            _ => null,
+            JsonValueKind.Null => null,
+            _ => Virtual,    // unchanged sentinel
         };
-        if (newVal is null) return false;
-        return SetIfChanged(ref _virtual, newVal, v => Virtual = v);
+        if (Virtual == newVal) return false;
+        Virtual = newVal;
+        return true;
     }
 
     private static string? AsString(object? rawValue)
@@ -211,14 +231,6 @@ public sealed class AtoN
         if (rawValue is JsonElement el && el.ValueKind == JsonValueKind.String)
             return el.GetString();
         return rawValue.ToString();
-    }
-
-    private static bool SetIfChanged<T>(ref T backing, T? newValue, Action<T?> setter)
-    {
-        if (EqualityComparer<T?>.Default.Equals(backing, newValue)) return false;
-        backing = newValue is null ? default! : newValue;
-        setter(newValue);
-        return true;
     }
 
     /// <summary>Extracts the 9-digit MMSI from a SignalK AtoN context

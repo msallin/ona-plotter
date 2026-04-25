@@ -3,7 +3,7 @@ using OnaPlotter.Services;
 
 namespace OnaPlotter.Tests;
 
-public class AtoNStoreTests
+public class AtonStoreTests
 {
     private static JsonElement Parse(string json)
         => JsonDocument.Parse(json).RootElement;
@@ -11,7 +11,7 @@ public class AtoNStoreTests
     [Test]
     public async Task Apply_UnseenContext_AddsToStore()
     {
-        var s = new AtoNStore();
+        var s = new AtonStore();
         s.Apply("atons.urn:mrn:imo:mmsi:992111234", "name", Parse("\"BUOY\""));
         await Assert.That(s.Count).IsEqualTo(1);
     }
@@ -19,7 +19,7 @@ public class AtoNStoreTests
     [Test]
     public async Task Apply_FiresOnAtonsUpdated_OnChange()
     {
-        var s = new AtoNStore();
+        var s = new AtonStore();
         int fires = 0;
         s.OnAtonsUpdated += () => fires++;
         s.Apply("atons.urn:mrn:imo:mmsi:992111234", "name", Parse("\"BUOY\""));
@@ -29,9 +29,9 @@ public class AtoNStoreTests
     [Test]
     public async Task Apply_NoOp_DoesNotFireEvent()
     {
-        // Re-applying the same value: AtoN.Apply returns false, store
+        // Re-applying the same value: Aton.Apply returns false, store
         // skips the event. UI doesn't re-render on every tick.
-        var s = new AtoNStore();
+        var s = new AtonStore();
         s.Apply("atons.urn:mrn:imo:mmsi:992111234", "name", Parse("\"BUOY\""));
         int fires = 0;
         s.OnAtonsUpdated += () => fires++;
@@ -45,7 +45,7 @@ public class AtoNStoreTests
         // Store keeps every context that ever had a delta, but the
         // map only renders the ones with a position. GetAtons filters
         // to render-ready entries.
-        var s = new AtoNStore();
+        var s = new AtonStore();
         s.Apply("atons.urn:mrn:imo:mmsi:1", "name", Parse("\"NO_POS\""));
         s.Apply("atons.urn:mrn:imo:mmsi:2", "navigation.position",
             Parse("{\"latitude\":1.0, \"longitude\":2.0}"));
@@ -61,7 +61,7 @@ public class AtoNStoreTests
         // Snapshot is rebuilt only on version change. Two consecutive
         // calls without an Apply in between return the same array
         // reference.
-        var s = new AtoNStore();
+        var s = new AtonStore();
         s.Apply("atons.urn:mrn:imo:mmsi:2", "navigation.position",
             Parse("{\"latitude\":1.0, \"longitude\":2.0}"));
         var first = s.GetAtons();
@@ -74,7 +74,7 @@ public class AtoNStoreTests
     {
         // Conversely, a new Apply that changes the underlying state
         // should bust the cache so GetAtons returns a fresh snapshot.
-        var s = new AtoNStore();
+        var s = new AtonStore();
         s.Apply("atons.urn:mrn:imo:mmsi:2", "navigation.position",
             Parse("{\"latitude\":1.0, \"longitude\":2.0}"));
         var first = s.GetAtons();
@@ -90,7 +90,7 @@ public class AtoNStoreTests
     [Test]
     public async Task Reset_ClearsAndFires()
     {
-        var s = new AtoNStore();
+        var s = new AtonStore();
         s.Apply("atons.urn:mrn:imo:mmsi:2", "navigation.position",
             Parse("{\"latitude\":1.0, \"longitude\":2.0}"));
         int fires = 0;
@@ -108,7 +108,7 @@ public class AtoNStoreTests
         // Reset on an already-empty store is a no-op (nothing to clear).
         // Skipping the event spares listeners from spurious "I should
         // re-render now" wake-ups.
-        var s = new AtoNStore();
+        var s = new AtonStore();
         int fires = 0;
         s.OnAtonsUpdated += () => fires++;
         s.Reset();

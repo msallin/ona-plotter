@@ -21,7 +21,7 @@ public class SignalkClientSelfContextTests
             http: new HttpClient(),
             settings: new FakeSettings(),
             serverNotifs: new OnaPlotter.Services.ServerNotifications.ServerNotificationStore(),
-            atons: new OnaPlotter.Services.AtoNStore());
+            atons: new OnaPlotter.Services.AtonStore());
 
     private sealed class FakeBaseUrl : ISignalKBaseUrl
     {

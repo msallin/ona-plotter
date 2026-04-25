@@ -16,9 +16,9 @@ namespace OnaPlotter.Services;
 /// almost certainly means the boat moved out of receiver range.
 /// </para>
 /// </summary>
-public sealed class AtoNStore
+public sealed class AtonStore
 {
-    private readonly ConcurrentDictionary<string, AtoN> _atons = new();
+    private readonly ConcurrentDictionary<string, Aton> _atons = new();
     // AtoN broadcasts are roughly every 3 min per AIS standard; 24 h is
     // ~480 missed transmissions, well past any normal gap. Keeps the
     // store clean across multi-day passages where a buoy was visible
@@ -26,7 +26,7 @@ public sealed class AtoNStore
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(24);
     private static readonly TimeSpan PruneInterval = TimeSpan.FromMinutes(15);
 
-    private AtoN[]? _cachedSnapshot;
+    private Aton[]? _cachedSnapshot;
     private DateTime _lastPruneTime;
     private int _version;
     private int _snapshotVersion = -1;
@@ -37,11 +37,11 @@ public sealed class AtoNStore
     public event Action? OnAtonsUpdated;
 
     /// <summary>Apply a delta. Creates the AtoN entry on first sight,
-    /// then forwards to <see cref="AtoN.Apply"/>. Bumps the version on
+    /// then forwards to <see cref="Aton.Apply"/>. Bumps the version on
     /// changes so <see cref="GetAtons"/> rebuilds its snapshot lazily.</summary>
     public void Apply(string context, string path, object? value)
     {
-        var aton = _atons.GetOrAdd(context, ctx => new AtoN(ctx));
+        var aton = _atons.GetOrAdd(context, ctx => new Aton(ctx));
         if (aton.Apply(path, value))
         {
             Interlocked.Increment(ref _version);
@@ -52,7 +52,7 @@ public sealed class AtoNStore
     /// <summary>Returns a cached snapshot of AtoNs that have a position.
     /// Snapshot is rebuilt only when data has changed (version-bump
     /// invalidates the cache).</summary>
-    public AtoN[] GetAtons()
+    public Aton[] GetAtons()
     {
         var now = DateTime.UtcNow;
         if (now - _lastPruneTime > PruneInterval)
@@ -77,11 +77,14 @@ public sealed class AtoNStore
     /// <summary>Drop everything. Called from SignalkClient on a websocket
     /// drop so a stale AtoN from before the disconnect doesn't haunt
     /// the map while we're offline -- the server re-publishes the
-    /// active set on reconnect anyway.</summary>
+    /// active set on reconnect anyway. Resets the prune-timer too so
+    /// the post-Reset state is symmetric with a freshly-constructed
+    /// store.</summary>
     public void Reset()
     {
         if (_atons.IsEmpty) return;
         _atons.Clear();
+        _lastPruneTime = default;
         Interlocked.Increment(ref _version);
         OnAtonsUpdated?.Invoke();
     }

@@ -6,7 +6,7 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Routes AIS-AtoN deltas through SignalkClient.ProcessMessage and
-/// pins that they land in <see cref="AtoNStore"/> instead of being
+/// pins that they land in <see cref="AtonStore"/> instead of being
 /// confused with own-boat or AIS vessel deltas. The dispatch order
 /// in ProcessMessage matters: self-context first, then atons-context,
 /// then AIS-context. Without correct ordering atons would land in
@@ -23,9 +23,9 @@ public class SignalkClientAtonTests
         public string CombineRadar(string path) => BaseUrl + path;
     }
 
-    private static (SignalkClient client, AtoNStore store, AisStore ais) NewClient()
+    private static (SignalkClient client, AtonStore store, AisStore ais) NewClient()
     {
-        var atons = new AtoNStore();
+        var atons = new AtonStore();
         var ais = new AisStore();
         var c = new SignalkClient(
             baseUrl: new FakeBaseUrl(),
@@ -64,7 +64,7 @@ public class SignalkClientAtonTests
     }
 
     [Test]
-    public async Task AtonDelta_LandsInAtoNStore()
+    public async Task AtonDelta_LandsInAtonStore()
     {
         var (c, atons, _) = NewClient();
         c.ProcessMessage(AtonDelta(

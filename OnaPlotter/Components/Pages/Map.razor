@@ -11,7 +11,7 @@
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
 @inject AisStore AisStore
-@inject AtoNStore AtoNs
+@inject AtonStore Atons
 @inject IChartApi ChartApi
 @inject IRouteApi RouteApi
 @inject IWaypointApi WaypointApi
@@ -1314,7 +1314,7 @@
         // AtoNs are static enough not to need a timer -- push on
         // store-change events plus once after init. AtonsVisible
         // setting is honoured by setAtonsVisible JS-side.
-        AtoNs.OnAtonsUpdated += HandleAtonsUpdated;
+        Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await module.InvokeVoidAsync("setAtonsVisible", Settings.AtonsVisible);
         _ = PushAtons();
         // Resource re-sync: waypoints / routes / notes / regions added
@@ -1776,12 +1776,12 @@
 
     private void HandleAtonsUpdated()
     {
-        // AtoNStore.OnAtonsUpdated fires from the websocket thread on
+        // AtonStore.OnAtonsUpdated fires from the websocket thread on
         // every delta-affecting change. WASM is single-threaded so
         // there's no thread-marshal needed; we just kick off the JS
         // push and let it await on its own. Idempotent re-pushes are
         // cheap (the JS side diffs by id), so we don't bother
-        // debouncing -- the C# AtoNStore.GetAtons cache already
+        // debouncing -- the C# AtonStore.GetAtons cache already
         // means a re-push on no-data-change is just a snapshot read.
         _ = PushAtons();
     }
@@ -1798,7 +1798,7 @@
             // otherwise fall back to the catalog's "20-25 are virtual"
             // hint so an older plugin that omits the flag still
             // renders dashed.
-            var atons = AtoNs.GetAtons();
+            var atons = Atons.GetAtons();
             var jsAtons = atons
                 .Where(a => a.Latitude is not null && a.Longitude is not null)
                 .Select(a =>
@@ -3072,7 +3072,7 @@
         mapInitialized = false;
         SignalkClient.OnDataChanged -= HandleDataChanged;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
-        AtoNs.OnAtonsUpdated -= HandleAtonsUpdated;
+        Atons.OnAtonsUpdated -= HandleAtonsUpdated;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         RemoveEditNavGuard();
         if (aisTimer is not null) await aisTimer.DisposeAsync();

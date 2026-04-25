@@ -52,7 +52,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly NavigationData _data;
     private readonly TrackBuffer _track;
     private readonly AisStore _ais;
-    private readonly AtoNStore _atons;
+    private readonly AtonStore _atons;
     private readonly OnaPlotter.Services.ServerNotifications.ServerNotificationStore _serverNotifs;
     private readonly Uri _wsUri;
     private readonly HttpClient _http;
@@ -264,7 +264,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// move much) -- 1 Hz would burn bandwidth + WASM main-thread
     /// time for nothing. 60 s is what Freeboard-SK uses too. Anything
     /// under the path tree (name, position, atonType, virtual,
-    /// communication) lands in <see cref="OnaPlotter.Services.AtoNStore"/>.</summary>
+    /// communication) lands in <see cref="OnaPlotter.Services.AtonStore"/>.</summary>
     private static readonly string[] AtonsTierPaths =
     [
         "*",
@@ -395,7 +395,7 @@ public sealed class SignalkClient : IAsyncDisposable
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
         OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs,
-        AtoNStore atons)
+        AtonStore atons)
     {
         _logger = logger;
         _data = new NavigationData();
