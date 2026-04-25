@@ -112,7 +112,6 @@
     [Parameter] public string LayerFilter { get; set; } = "";
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
 
-    [Parameter] public EventCallback<(SignalkChart chart, bool enabled)> OnToggleChart { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, bool inQuickBar)> OnToggleChartQuickBar { get; set; }
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorderChart { get; set; }
     [Parameter] public EventCallback<(RadarInfo radar, bool enabled)> OnToggleRadar { get; set; }

@@ -107,18 +107,20 @@ async function tileCacheFirst(request) {
             // an effective LRU policy without needing a sidecar
             // IndexedDB index.
             //
+            // Just `cache.put` -- not delete-then-put. The Cache spec
+            // says put atomically replaces an existing entry with
+            // the same Request key, and major engines (Chromium /
+            // WebKit / Gecko) move the replacement to the end of
+            // insertion order. Avoiding the explicit delete also
+            // closes the race window where a sibling fetch for the
+            // same tile during the gap would miss the cache and
+            // trigger a redundant network round-trip.
+            //
             // Clone BEFORE returning -- Response bodies are single-
             // use streams and the caller (event.respondWith) will
-            // start consuming the original immediately. Cloning here,
-            // synchronously with the cache.match, guarantees we still
-            // have an unread body for the put.
+            // start consuming the original immediately.
             const promote = cached.clone();
-            (async () => {
-                try {
-                    await cache.delete(request);
-                    await cache.put(request, promote);
-                } catch (_) { /* promotion is best-effort */ }
-            })();
+            cache.put(request, promote).catch(() => { /* best-effort */ });
             return cached;
         }
     } catch (_) {
