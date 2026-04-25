@@ -218,16 +218,16 @@ create a gitignored overlay at
 ```json
 {
   "SignalK": {
-    "ServerUrl": "https://openplotter.local",
-    "RadarServerUrl": "https://openplotter.local:6502"
+    "ServerUrl": "https://openplotter.local"
   }
 }
 ```
 
 `ASPNETCORE_ENVIRONMENT=Development` (set by the launch profile)
-picks it up automatically. `RadarServerUrl` is only needed when
-the radar provider plugin (mayara-server) listens on a different
-port than the main SK REST API.
+picks it up automatically. `RadarServerUrl` is an optional escape
+hatch for hitting Mayara's standalone port directly (default 6502)
+instead of the SK server's built-in radar stream proxy; not needed
+for the common openplotter setup.
 
 ### Tests
 

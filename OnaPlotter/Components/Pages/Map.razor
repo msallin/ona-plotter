@@ -837,17 +837,18 @@
         await RefreshServerResourcesAsync();
     }
 
-    // Falls back to the RADAR server origin (not main SK) when the
-    // list response didn't carry a spokeDataUrl. mayara-server on
-    // OpenPlotter commonly lives on port 6502 behind its own origin
-    // while the main SK API lives on 443 -- the user configures
-    // SignalK:RadarServerUrl to point at the radar host, and
-    // ISignalKBaseUrl.RadarBaseUrl falls back to BaseUrl when unset.
+    // Falls back to the SK server's built-in radar stream proxy when
+    // the radar list didn't carry a streamUrl. The Mayara SK plugin
+    // (v0.5.5) doesn't populate streamUrl/spokeDataUrl in getRadarInfo,
+    // so every client has to construct one. This path goes through SK
+    // so cookies / TLS / port match the page origin -- no need to know
+    // about Mayara's standalone port (6502). Matches freeboard-sk's
+    // fallback in radar-render.service.ts.
     private string BuildSpokeDataUrl(string radarId)
     {
         var baseUri = new Uri(SkBaseUrl.RadarBaseUrl);
         string scheme = baseUri.Scheme == "https" ? "wss" : "ws";
-        return $"{scheme}://{baseUri.Host}:{baseUri.Port}/signalk/v2/api/vessels/self/radars/{Uri.EscapeDataString(radarId)}/spokes";
+        return $"{scheme}://{baseUri.Host}:{baseUri.Port}/signalk/v2/api/vessels/self/radars/{Uri.EscapeDataString(radarId)}/stream";
     }
 
     // Layers -> Charts checkbox toggles membership of the quick-bar
