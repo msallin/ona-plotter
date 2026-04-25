@@ -1575,23 +1575,29 @@ html {
     }
 }
 
-/* Real-browser fullscreen: keep the layout chain natural rather than
-   forcing a main-is-scroll-container model. Earlier we mirrored the
-   PWA-standalone @media block here (body overflow:hidden + main
-   overflow-y:auto), which worked on Chrome but on Firefox the chain
-   silently swallowed Settings / History / Resources scroll: the body
-   was locked, main's overflow-y:auto didn't expose a usable scroll
-   container, and the helm got a non-scrollable page.
-   Simpler approach: the map page already pins itself with
-   body:has(.map-container) { overflow: hidden } above (line ~735),
-   and the topbar-hide rule below makes the 100dvh map fill the
-   viewport. Non-map pages don't need an explicit lock; the document
-   scrolls on its own when content exceeds the fullscreen viewport,
-   exactly like the non-fullscreen baseline. Only overscroll-behavior
-   stays so a downward drag doesn't trip "exit fullscreen" gestures
-   on iPad / Chromebook trackpads. */
+/* Real-browser fullscreen + iPad CSS-fallback fullscreen: pages with
+   overflowing content (Settings / Dashboard / History / Resources)
+   don't get a usable document scroll. Browsers clamp the fullscreen
+   element to the screen and don't expose a body / html scrollbar,
+   and the iPad .ios-fullbleed mode inherits the same problem because
+   sidebar's 100dvh + content >100dvh would otherwise make body
+   overflow without a scroll container.
+   Earlier attempts locked html + body and made main scroll, which
+   worked on Chrome but Firefox's fullscreen layout silently
+   swallowed the chain. The narrower fix here: constrain ONLY main
+   to 100dvh with its own overflow-y:auto, leaving html / body
+   alone. Inside main the topbar (3rem, sticky) sits at the top and
+   the article scrolls underneath it. Works on Chrome / Firefox /
+   Safari / iPad consistently because no parent-height chain has to
+   propagate. */
 :fullscreen {
     overscroll-behavior: none;
+}
+:fullscreen main,
+html.ios-fullbleed main {
+    height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .map-btn, .ap-btn, .ap-mode-btn, .ctx-menu-item, .path-chip {
