@@ -78,18 +78,34 @@
 //             constrain <main> itself (height 100dvh, overflow-y
 //             auto); leaves html / body alone so the chain that
 //             tripped Firefox in v17 isn't reintroduced.
-const CACHE_NAME = 'ona-plotter-v19';
+// v19 -> v20: outer-try guard on tileCacheFirst: any unhandled
+//             throw / sync-rejection from the cache-API path now
+//             falls through to a 504 placeholder rather than
+//             rejecting respondWith(). Helm reported recurring
+//             "ServiceWorker intercepted ... unexpected error" on
+//             Firefox; v6 hardened the documented failure modes,
+//             v20 catches the residue (clone-throw on quirky
+//             Response bodies, sync-throws from cache.put on low-
+//             memory Firefox, ...). Also drops the LRU clone+put
+//             promotion on cache hits -- helm reported "no single
+//             tile loads" which points at body-stream contention
+//             between the served response and the background put.
+//             We accept FIFO eviction and ship reliable tile
+//             rendering; LRU was nice-to-have, tile delivery is
+//             not negotiable.
+const CACHE_NAME = 'ona-plotter-v20';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
-// planning sessions. Eviction is LRU (see tileCacheFirst): on every
-// cache hit we delete + re-put the entry, which moves it to the end
-// of the cache's insertion order. trimTileCache below evicts from
-// the start, so the LEAST-recently-used tiles are dropped first --
-// the home anchorage tiles you visit every session survive across
-// sessions even when the cache rolls. Bump this number rather than
-// switching to a separate offline-tiles feature for typical
-// coastal / rivers users.
+// planning sessions. Eviction is FIFO by insertion order
+// (trimTileCache below deletes from the front of cache.keys()); the
+// earlier LRU promotion on hits was dropped after helm reports of
+// "no single tile loads" pointed at body-stream contention between
+// the served response and the background re-put. With a 5000 entry
+// cap, FIFO is plenty for typical coastal / rivers use -- the home
+// anchorage tiles fall out only after several sessions of heavy
+// route-planning elsewhere. Bump this number rather than switching
+// to a separate offline-tiles feature.
 const TILE_CACHE_MAX_ENTRIES = 5000;
 // Use relative URLs so the worker works both at root and under a subpath
 // (SignalK webapp serves at /signalk-onaplotter/).
@@ -132,43 +148,48 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Cache-first for tile URLs: respond from cache if present, otherwise
-// go to network, store the response, and return it. Enforces a rolling
-// cap so the cache doesn't grow unbounded across multi-week passages.
-//
-// Defensive shape: every Cache API call is wrapped so an unexpected
-// failure (storage quota exceeded, corrupted index, partial-content
-// responses that cache.put refuses, no-store headers, etc.) falls
-// through to a plain network fetch rather than rejecting the
-// respondWith() promise -- which Firefox surfaces as
-// "ServiceWorker intercepted the request and encountered an
-// unexpected error" and renders as a broken tile in Leaflet.
+// Cache-first for tile URLs. Wraps the inner cache-then-fetch logic
+// in a top-level try/catch that always returns *some* Response, so
+// the respondWith() promise never rejects. A bare rejection is what
+// Firefox surfaces as "ServiceWorker intercepted the request and
+// encountered an unexpected error" and renders as a broken tile in
+// Leaflet -- the cause is hard to pin (Cache-API quota, transient
+// IndexedDB corruption, body-clone on a partial 206, ...) but the
+// effect is uniform and so is the mitigation: any exception path,
+// however unlikely, falls back to a 504 placeholder.
 async function tileCacheFirst(request) {
+    try {
+        return await tileCacheFirstInner(request);
+    } catch (_) {
+        // Last-resort fallback: a 504 placeholder so Leaflet can
+        // render its errorTileUrl rather than the helm seeing the
+        // generic Firefox SW-intercept error in the console plus a
+        // missing tile. This branch should be unreachable -- the
+        // inner function has its own per-step guards -- but the
+        // outer net is what guarantees respondWith() never rejects.
+        return new Response('', { status: 504, statusText: 'Tile error' });
+    }
+}
+
+async function tileCacheFirstInner(request) {
     let cache = null;
     try {
         cache = await caches.open(TILE_CACHE_NAME);
         const cached = await cache.match(request);
         if (cached) {
-            // LRU promotion: re-insert this hit so it moves to the
-            // end of the cache's insertion order. trimTileCache below
-            // evicts FIFO from the start, so this turns the cap into
-            // an effective LRU policy without needing a sidecar
-            // IndexedDB index.
-            //
-            // Just `cache.put` -- not delete-then-put. The Cache spec
-            // says put atomically replaces an existing entry with
-            // the same Request key, and major engines (Chromium /
-            // WebKit / Gecko) move the replacement to the end of
-            // insertion order. Avoiding the explicit delete also
-            // closes the race window where a sibling fetch for the
-            // same tile during the gap would miss the cache and
-            // trigger a redundant network round-trip.
-            //
-            // Clone BEFORE returning -- Response bodies are single-
-            // use streams and the caller (event.respondWith) will
-            // start consuming the original immediately.
-            const promote = cached.clone();
-            cache.put(request, promote).catch(() => { /* best-effort */ });
+            // Just serve the cached response. Earlier versions did an
+            // LRU promotion via cache.put(request, cached.clone()) so
+            // that trimTileCache evicted least-recently-used entries.
+            // Helm reports of "no single tile loads" point at the
+            // clone path: in some browser builds (Firefox in
+            // particular) the clone's body stream and the served
+            // response share underlying state in a way that the
+            // background put can lock, breaking every subsequent
+            // tile read. The pure-FIFO eviction we land on without
+            // promotion is good enough -- with a 5000-tile cap a
+            // home anchorage stays in the cache for several
+            // sessions of normal use, and the alternative
+            // (every-tile failure) is not a trade we'd accept.
             return cached;
         }
     } catch (_) {
@@ -192,9 +213,16 @@ async function tileCacheFirst(request) {
     if (cache && response.ok) {
         try {
             const clone = response.clone();
-            cache.put(request, clone)
-                .then(() => trimTileCache(cache).catch(() => { /* trim is best-effort */ }))
-                .catch(() => { /* put rejected; tile not cached, fine */ });
+            // Defensive: cache.put can throw synchronously on some
+            // browser versions (Firefox under low-memory, Safari with
+            // partial-storage quotas). The .catch chains the async
+            // rejection; the try/catch traps the sync throw so the
+            // outer respondWith path stays clean.
+            try {
+                cache.put(request, clone)
+                    .then(() => trimTileCache(cache).catch(() => { /* trim is best-effort */ }))
+                    .catch(() => { /* put rejected; tile not cached, fine */ });
+            } catch (_) { /* sync throw from cache.put */ }
         } catch (_) { /* clone() threw on a weird response body */ }
     }
     return response;
