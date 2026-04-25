@@ -62,6 +62,15 @@ builder.Services.AddSingleton<IPathApi, PathApi>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.
 builder.Services.AddSingleton<IRadarApi, RadarApi>();
+// Radar overlay: host wraps the JS module; manager owns session
+// state (capabilities cache, sticky-off prefs, last-range cache,
+// auto-toggle decisions). The page injects the manager and calls
+// into it; the host's module ref is wired by the page after the
+// JS module loads.
+builder.Services.AddSingleton<OnaPlotter.Services.Radar.JsRadarOverlayHost>();
+builder.Services.AddSingleton<OnaPlotter.Services.Radar.IRadarOverlayHost>(
+    sp => sp.GetRequiredService<OnaPlotter.Services.Radar.JsRadarOverlayHost>());
+builder.Services.AddSingleton<OnaPlotter.Services.Radar.RadarOverlayManager>();
 // Optional: detects sbender9/signalk-buddylist-plugin at runtime.
 builder.Services.AddSingleton<IBuddyListApi, BuddyListApi>();
 

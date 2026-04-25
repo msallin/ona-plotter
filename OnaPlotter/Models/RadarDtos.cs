@@ -214,14 +214,10 @@ public sealed class LegendPixel
 }
 
 /// <summary>RGBA pixel, 0-255 per channel. A zero alpha means the
-/// byte should render as transparent (no echo, hidden).</summary>
-public readonly record struct RadarColor(byte R, byte G, byte B, byte A)
-{
-    public string ToCssRgba() =>
-        A == 255
-            ? $"rgb({R},{G},{B})"
-            : $"rgba({R},{G},{B},{(A / 255.0).ToString("F3", System.Globalization.CultureInfo.InvariantCulture)})";
-}
+/// byte should render as transparent (no echo, hidden). Wire-shape
+/// only; the JS renderer consumes legend bytes via its own LUT and
+/// no C# code path ever needs to format these as a CSS string.</summary>
+public readonly record struct RadarColor(byte R, byte G, byte B, byte A);
 
 /// <summary>
 /// Accepts both <c>"#RRGGBBAA"</c> strings and

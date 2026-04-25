@@ -406,19 +406,13 @@ class RadarOverlay {
 
     /** Map a spoke's wire angle/bearing onto our canvas's north-up
      *  spoke index. Bearing (if present) wins since it's already
-     *  true-north-referenced. Defensive modulo: spec says bearing
-     *  is a uint32 so it can't be negative on the wire, but JS
-     *  `%` preserves sign for any signed-number corruption coming
-     *  from a non-conforming provider. Cheap to guard, expensive
-     *  to diagnose (negative index -> out-of-bounds LUT read ->
-     *  silently wrong pixels). */
+     *  true-north-referenced; angle requires rotating by the boat's
+     *  current heading to compensate for the radar being bow-up.
+     *  Both paths funnel through wrapSpoke for the defensive modulo. */
     _spokeIndex(spoke) {
         const n = this.spokes;
-        if (spoke.bearing != null) {
-            return ((spoke.bearing % n) + n) % n;
-        }
-        const hdgSpokes = Math.round(boatState.headingRad * n / (2 * Math.PI));
-        return (((spoke.angle + hdgSpokes) % n) + n) % n;
+        if (spoke.bearing != null) return wrapSpoke(spoke.bearing, n);
+        return wrapSpoke(spoke.angle + headingToSpokeOffset(boatState.headingRad, n), n);
     }
 
     setRange(range) {
@@ -517,6 +511,23 @@ function parseLegendColor(c) {
     return TRANSPARENT;
 }
 
+/** Defensive positive-modulo into [0, n). JS `%` preserves the sign
+ *  of the dividend; a signed-number corruption from a non-conforming
+ *  provider would otherwise produce a negative index and an out-of-
+ *  bounds LUT read (silently wrong pixels). Cheap to guard, expensive
+ *  to diagnose. */
+function wrapSpoke(i, n) {
+    return ((i % n) + n) % n;
+}
+
+/** Convert the boat's heading (radians, 0..2pi from true north) into
+ *  the spoke-index offset that aligns a bow-relative `angle` field
+ *  onto the canvas's north-up grid. Spokes per revolution determines
+ *  the discretisation. */
+function headingToSpokeOffset(headingRad, spokesPerRevolution) {
+    return Math.round(headingRad * spokesPerRevolution / (2 * Math.PI));
+}
+
 /** Decide whether a legend entry should be rendered transparent.
  *  Drives the "drop sea-clutter" UX: Navico-style palettes paint low-
  *  intensity normal echoes (sea clutter, noise) as a blue ramp, which
@@ -538,7 +549,14 @@ function shouldSuppressLowReturn(pixel, index, legend) {
 }
 
 // Exposed for tests; not part of the public interop API.
-export const _internal = { DEFAULT_LEGEND_PIXELS, parseHexRgba, parseLegendColor, shouldSuppressLowReturn };
+export const _internal = {
+    DEFAULT_LEGEND_PIXELS,
+    parseHexRgba,
+    parseLegendColor,
+    shouldSuppressLowReturn,
+    wrapSpoke,
+    headingToSpokeOffset,
+};
 
 // ---------------------------------------------------------------------
 // CanvasGeoLayer: minimal Leaflet L.Layer subclass that parents a

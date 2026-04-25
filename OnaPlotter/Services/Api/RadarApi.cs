@@ -1,4 +1,3 @@
-using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using OnaPlotter.Models;
@@ -179,22 +178,4 @@ public sealed class RadarApi : IRadarApi
         return null;
     }
 
-    public async Task<IReadOnlyList<RadarArpaTarget>?> GetTargetsAsync(string radarId, CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(radarId)) return null;
-        var url = _baseUrl.Combine(SignalKUrls.RadarTargets(radarId));
-        try
-        {
-            using var response = await _http.GetAsync(url, ct);
-            // 501 is the spec signal for "provider doesn't support
-            // ARPA". Surface as null so the UI can hide the targets
-            // row rather than toast a transient error.
-            if (response.StatusCode == HttpStatusCode.NotImplemented) return null;
-            if (!response.IsSuccessStatusCode) return [];
-            var list = await response.Content.ReadFromJsonAsync<List<RadarArpaTarget>>(s_json, ct);
-            return list ?? [];
-        }
-        catch (HttpRequestException) { return []; }
-        catch (JsonException) { return []; }
-    }
 }

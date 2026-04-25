@@ -94,4 +94,21 @@ public class RadarOverlayAutoToggleTests
         await Assert.That(RadarOverlayAutoToggle.Decide("off", true, false))
             .IsEqualTo(RadarOverlayAction.Disable);
     }
+
+    [Test]
+    public async Task Status_With_Surrounding_Whitespace_Is_Not_Transmitting()
+    {
+        // Spec mandates the literal "transmit" but a server might
+        // trim-fail and ship "transmit\n" or " transmit". The compare
+        // is OrdinalIgnoreCase WITHOUT trim, so anything but the bare
+        // word forces the safe direction (no auto-enable; require an
+        // explicit user click). This pins the behaviour so future
+        // maintainers see the trim-skip is deliberate.
+        await Assert.That(RadarOverlayAutoToggle.Decide("transmit\n", false, false))
+            .IsEqualTo(RadarOverlayAction.NoOp);
+        await Assert.That(RadarOverlayAutoToggle.Decide(" transmit", false, false))
+            .IsEqualTo(RadarOverlayAction.NoOp);
+        await Assert.That(RadarOverlayAutoToggle.Decide("transmit ", false, false))
+            .IsEqualTo(RadarOverlayAction.NoOp);
+    }
 }

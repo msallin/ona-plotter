@@ -5,9 +5,13 @@ namespace OnaPlotter.Services.Api;
 /// <summary>
 /// Client for the Signal K Radar API v3.1 REST surface. Everything
 /// that's not spoke data goes through here: device discovery,
-/// capabilities / legend, control read + write, and ARPA target
-/// polling. The binary spoke stream is opened JS-side (we just hand
-/// it the <see cref="RadarInfo.SpokeDataUrl"/>).
+/// capabilities / legend, and control read + write. The binary spoke
+/// stream is opened JS-side (we hand it the URL constructed via
+/// <see cref="SignalKUrls.RadarSpokeWs"/>). ARPA target polling is
+/// not exposed yet -- the consumer (overlay markers) doesn't exist;
+/// adding the call now would force an API shape (3-state null,
+/// discriminated result, or pre-cached capability) without a real
+/// caller to design for. Re-add when the targets UI lands.
 /// </summary>
 public interface IRadarApi
 {
@@ -35,9 +39,4 @@ public interface IRadarApi
     /// value 12000 is not a legal value" -- worth surfacing verbatim
     /// so the helm knows which value the server rejected).</summary>
     Task<ApiResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default);
-
-    /// <summary>All currently tracked ARPA targets for this radar.
-    /// Empty list when the radar isn't tracking anything; null when
-    /// the provider returned 501 (ARPA unsupported).</summary>
-    Task<IReadOnlyList<RadarArpaTarget>?> GetTargetsAsync(string radarId, CancellationToken ct = default);
 }
