@@ -161,22 +161,37 @@ test('keyboard shortcut ? opens and Esc closes the shortcut overlay', async ({ p
     // Matches what a desktop-keyboard user would do once in a session.
     await page.goto('settings');
     await waitForMapReady(page);
-    const hintsSwitch = page.locator('input[type="checkbox"][role="switch"]').filter({
-        has: page.locator('..'),
-    }).nth(0);
-    // More robust: find the switch by its associated label text.
+
+    // Find the switch by its associated label text; use a real click()
+    // (not check({ force: true }), which can skip the @onchange dispatch
+    // Blazor needs to flip its in-memory copy + persist to KV).
     const byLabel = page.locator('label.form-check')
         .filter({ hasText: 'keyboard shortcut hints' })
         .locator('input[type="checkbox"]');
-    if (await byLabel.count() > 0 && !(await byLabel.isChecked())) {
-        await byLabel.check({ force: true });
+    await expect(byLabel).toBeAttached({ timeout: 5_000 });
+    if (!(await byLabel.isChecked())) {
+        await byLabel.click();
+        // Wait for the persisted value to land before navigating away;
+        // Blazor's @onchange is async and a same-frame goto can race.
+        await expect.poll(
+            async () => await page.evaluate(
+                () => window.localStorage.getItem('ona.showKeyboardHints.v1')),
+            { timeout: 3_000 }).toBe('true');
     }
 
     await page.goto('map');
     await waitForMapReady(page);
+    // Wait for the JS keyboard listener to actually attach.
+    // Map.razor.OnAfterRenderAsync calls enableKeyboardShortcuts AFTER
+    // initMap + many other async setup steps, so '.leaflet-container'
+    // is in the DOM well before the listener exists. The handler
+    // stamps html[data-ona-key-shortcuts="on"] when it attaches; wait
+    // for that as the deterministic ready signal.
+    await page.waitForSelector('html[data-ona-key-shortcuts="on"]',
+        { timeout: 10_000 });
 
     await page.keyboard.press('Shift+Slash');      // '?' on US layouts
-    await expect(page.locator('.shortcuts-overlay')).toBeVisible({ timeout: 2000 });
+    await expect(page.locator('.shortcuts-overlay')).toBeVisible({ timeout: 5_000 });
 
     await page.keyboard.press('Escape');
     await expect(page.locator('.shortcuts-overlay')).not.toBeVisible();

@@ -1503,6 +1503,12 @@
                 // are enabled in Settings. Default off so touch-only
                 // users don't land on an unexpected modal if they
                 // connect a keyboard and brush the key.
+                // InitializeAsync is idempotent (semaphore-guarded
+                // _initialized flag); awaiting here closes the race
+                // where the JS keyboard handler attaches before
+                // MainLayout's first-render Settings load completes
+                // and a fast helm hits '?' inside that gap.
+                await Settings.InitializeAsync();
                 if (Settings.ShowKeyboardHints) shortcutsVisible = !shortcutsVisible;
                 break;
             case "escape":

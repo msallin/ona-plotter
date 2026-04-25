@@ -1401,7 +1401,11 @@ export function updateAisTargets(vessels) {
             // collision track without having to click the marker. Format:
             //   MV Aurora
             //   0.42 nm · T-5m
-            const cpaName = baseName || 'Unknown';
+            // displayName is the C#-resolved fallback chain (name ->
+            // mmsi -> short context); falls back to v.name / v.mmsi
+            // explicitly here so the label still renders something
+            // useful if the C# pipeline missed a tick.
+            const cpaName = v.displayName || v.name || v.mmsi || 'Unknown';
             const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)} nm · T-${cpaInfo.tcpa.toFixed(0)}m`;
             let lbl = aisCpaLabels[v.context];
             if (!lbl) {
@@ -3554,10 +3558,18 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         }
     };
     document.addEventListener('keydown', keyHandler);
+    // Mark on the document so tests can wait for the handler to be
+    // ready. Also useful for debugging "did the shortcut listener
+    // attach?" without a network probe.
+    document.documentElement.setAttribute('data-ona-key-shortcuts', 'on');
 }
 
 export function disableKeyboardShortcuts() {
-    if (keyHandler) { document.removeEventListener('keydown', keyHandler); keyHandler = null; }
+    if (keyHandler) {
+        document.removeEventListener('keydown', keyHandler);
+        keyHandler = null;
+        document.documentElement.removeAttribute('data-ona-key-shortcuts');
+    }
 }
 
 // --- Controls ---
