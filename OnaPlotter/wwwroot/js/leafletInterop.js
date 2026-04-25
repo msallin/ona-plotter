@@ -5,6 +5,7 @@ import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
          haversineMeters, bearingDeg, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
 import { MarkerLayer } from './markerLayer.js';
+import { splitRouteByProgress } from './routeProgress.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
 
@@ -1941,6 +1942,12 @@ export function setChartLayerOrder(orderedIds) {
 // Route polyline colour lives in MapColors.route (read from
 // --ann-route at init). Call-sites use MapColors.route directly so
 // a palette edit propagates without a module reload.
+//
+// Line-style convention used across the chartplotter:
+//   - solid  = "planned" (a saved route, or future legs of an active route)
+//   - dashed = "ship-to-waypoint" (bearing line, current-leg overlay)
+//   - dotted = "already passed" (legs of the active route the boat crossed)
+// Keep this consistent when adding new route-like overlays.
 
 // Add a route as a polyline. coords is [[lat, lon], ...].
 //
@@ -1953,13 +1960,13 @@ export function setChartLayerOrder(orderedIds) {
 export function addRoute(id, name, coords) {
     if (!map || routeLayers.has(id)) return;
     const line = L.polyline(coords, {
-        color: MapColors.route, weight: 2.5, opacity: 0.8, dashArray: '8,6'
+        color: MapColors.route, weight: 2.5, opacity: 0.8
     }).addTo(map);
 
     // Invisible wider polyline acts as the tap hitbox. The visible
-    // route is 2.5 px and dashed, which is a miserable target on
-    // a touch screen (users end up dropping waypoints on the map
-    // while trying to activate a route). Same pattern used by the
+    // route is only 2.5 px wide, which is a miserable target on a
+    // touch screen (users end up dropping waypoints on the map while
+    // trying to activate a route). Same pattern used by the
     // route-edit flow below for live-edit vertices; do it on all
     // saved routes too so the Activate / Edit / Delete popup is
     // actually reachable from the polyline.
@@ -2102,8 +2109,11 @@ function findClosestWaypointIndex(coords, lat, lon) {
     return idx;
 }
 
-// Draw the full active route polyline with numbered waypoint markers.
-// Highlights the next waypoint and dims passed ones.
+// Draw the active route as two polylines split by progress, plus
+// numbered waypoint markers. Already-passed legs are dotted and
+// dimmed; future legs (including the current leg from the last
+// reached WP to the next) are solid. The dashed bearing line and
+// active-leg overlay drawn by setCourseLine sit on top of this.
 export function setActiveRoute(coords, nextWpLat, nextWpLon) {
     clearActiveRoute();
     if (!map || !coords || coords.length < 2) return;
@@ -2112,10 +2122,30 @@ export function setActiveRoute(coords, nextWpLat, nextWpLon) {
     const wpIdx = findClosestWaypointIndex(coords, nextWpLat, nextWpLon);
     activeRouteLayer = L.layerGroup().addTo(map);
 
-    // Full route polyline.
-    L.polyline(coords, {
-        color: MapColors.bearing, weight: 3, opacity: 0.8
-    }).addTo(activeRouteLayer);
+    // Split the route at the boundary between reached and un-reached
+    // waypoints. The two segments share the boundary point so the
+    // dotted/solid handover renders without a visual gap.
+    const { passed, future } = splitRouteByProgress(coords, wpIdx);
+
+    // Already-passed legs: dotted, dim. lineCap:'round' turns the
+    // 2 px dash into a true round dot, which scans more cleanly than
+    // a dash at chartplotter zoom levels.
+    if (passed.length >= 2) {
+        L.polyline(passed, {
+            color: MapColors.bearing,
+            weight: 2,
+            opacity: 0.5,
+            dashArray: '2,6',
+            lineCap: 'round'
+        }).addTo(activeRouteLayer);
+    }
+
+    // Planned (future + current) legs: solid, full weight.
+    if (future.length >= 2) {
+        L.polyline(future, {
+            color: MapColors.bearing, weight: 3, opacity: 0.8
+        }).addTo(activeRouteLayer);
+    }
 
     // Waypoint markers.
     for (let i = 0; i < coords.length; i++) {
