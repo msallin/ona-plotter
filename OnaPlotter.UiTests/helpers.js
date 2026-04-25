@@ -18,15 +18,17 @@ export function collectErrors(page) {
         // console error: "Failed to load resource: the server responded
         // with a status of XXX (YYY)". The C# side handles 4xx gracefully
         // (TrackApi returns null on non-2xx, SafeLoad surfaces a toast),
-        // so these are not crashes the smoke test should care about.
+        // and the error-relay POST to the SignalK plugin's /log endpoint
+        // 400s in dev / CI where the plugin isn't loaded -- so these are
+        // not crashes the smoke test should care about.
         //
-        // Two real-world cases we tolerate:
+        // Real-world cases we tolerate:
         //   - 404: webapp running at localhost:5282 without a SignalK
         //     server, or v1/applicationData paths the server hasn't
         //     written to yet.
         //   - 400: SignalK history API (/signalk/v2/api/history/values)
-        //     when no history provider plugin is installed (the History
-        //     page already shows a "no track data" hint in that case).
+        //     when no history provider plugin is installed; or the
+        //     error-relay /log endpoint in dev / CI standalone mode.
         //
         // 401/403 stay flagged (auth misconfig is a real issue) and
         // 5xx stays flagged (server crash is a real issue).
