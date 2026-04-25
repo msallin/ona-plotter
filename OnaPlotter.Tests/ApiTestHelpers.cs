@@ -22,11 +22,15 @@ internal static class ApiTestHelpers
 
     private sealed class FakeBaseUrl(string baseUrl) : ISignalKBaseUrl
     {
+        // Read the captured primary-constructor parameter through the
+        // BaseUrl property so the compiler doesn't warn about both
+        // initialising state AND capturing the parameter for later use
+        // (CS9124). Either-or; reading through the property is uniform.
         public string BaseUrl { get; } = baseUrl;
-        public string RadarBaseUrl { get; } = baseUrl;
+        public string RadarBaseUrl => BaseUrl;
         public Uri StreamUri(string subscribe = "none") => SignalKUrls.StreamWs(BaseUrl, subscribe);
         public string Combine(string path) => BaseUrl + path;
-        public string CombineRadar(string path) => baseUrl + path;
+        public string CombineRadar(string path) => BaseUrl + path;
     }
 
     private sealed class DelegateHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

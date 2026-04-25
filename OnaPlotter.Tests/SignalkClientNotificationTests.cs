@@ -87,7 +87,7 @@ public class SignalkClientNotificationTests
         // armed delta that follows registers as an edge.
         var c = NewClient();
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "normal"));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
+        await Assert.That(c.Data.PerpendicularPassed).IsFalse();
     }
 
     [Test]
@@ -95,7 +95,7 @@ public class SignalkClientNotificationTests
     {
         var c = NewClient();
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "alert"));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
     }
 
     [Test]
@@ -105,7 +105,7 @@ public class SignalkClientNotificationTests
         // arm, then clear with value=null (plugin emits on exit)
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "alert"));
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", null));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
+        await Assert.That(c.Data.PerpendicularPassed).IsFalse();
     }
 
     [Test]
@@ -113,7 +113,7 @@ public class SignalkClientNotificationTests
     {
         var c = NewClient();
         c.ProcessMessage(Delta("notifications.navigation.course.arrivalCircleEntered", "alert"));
-        await Assert.That(c.Data.ArrivalCircleEntered).IsEqualTo(true);
+        await Assert.That(c.Data.ArrivalCircleEntered).IsTrue();
     }
 
     [Test]
@@ -146,13 +146,13 @@ public class SignalkClientNotificationTests
         var path = "notifications.navigation.course.perpendicularPassed";
 
         c.ProcessMessage(Delta(path, "normal"));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
+        await Assert.That(c.Data.PerpendicularPassed).IsFalse();
 
         c.ProcessMessage(Delta(path, "alert"));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
 
         c.ProcessMessage(Delta(path, null));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
+        await Assert.That(c.Data.PerpendicularPassed).IsFalse();
     }
 
     // --- fail-safe: unknown / missing severity states ---
@@ -166,7 +166,7 @@ public class SignalkClientNotificationTests
         // isn't misled into thinking a situation is quiet when it isn't.
         var c = NewClient();
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "emergency"));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
     }
 
     [Test]
@@ -177,7 +177,7 @@ public class SignalkClientNotificationTests
         var c = NewClient();
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "alert"));
         c.ProcessMessage(Delta("notifications.navigation.course.perpendicularPassed", "cleared"));
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(false);
+        await Assert.That(c.Data.PerpendicularPassed).IsFalse();
     }
 
     [Test]
@@ -197,7 +197,7 @@ public class SignalkClientNotificationTests
           }}]
         }}";
         c.ProcessMessage(payload);
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
     }
 
     [Test]
@@ -215,7 +215,7 @@ public class SignalkClientNotificationTests
           }}]
         }}";
         c.ProcessMessage(payload);
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
     }
 
     // --- calcValues bare-boolean form ---
@@ -439,7 +439,7 @@ public class SignalkClientNotificationTests
         c.ProcessMessage(Delta(
             "notifications.navigation.course.perpendicularPassed", "alert"));
 
-        await Assert.That(c.Data.PerpendicularPassed).IsEqualTo(true);
+        await Assert.That(c.Data.PerpendicularPassed).IsTrue();
         await Assert.That(store.Count).IsEqualTo(0);
     }
 }
