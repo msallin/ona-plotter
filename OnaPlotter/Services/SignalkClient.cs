@@ -81,9 +81,9 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <c>subscribe</c> message per non-empty tier.
     ///
     /// Adding a new context (atons.*, notifications.*, aircraft.*) is a
-    /// new <see cref="SubscriptionTier"/> entry below. Each entry is
-    /// independently toggleable in the future (for now they're all
-    /// always-on).
+    /// new <see cref="SubscriptionTier"/> entry below. Tiers are
+    /// always-on today; per-tier opt-out via Settings is a future
+    /// extension when a real "I don't care about AIS" use case appears.
     /// </summary>
     internal sealed record SubscriptionTier(
         string Name,
@@ -245,9 +245,9 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>vessels.self @ 1 Hz. The notifications.* wildcard catches
     /// every server-side notification (signalk-anchoralarm-plugin,
     /// signalk-mob-notifier, depth alarms, custom plugin alerts) so they
-    /// can be surfaced in our alarm banner. Self-context only for now;
-    /// AIS-context notifications (server alerts about a specific
-    /// vessel) are a follow-up if a real plugin produces them.
+    /// can be surfaced in our alarm banner. Self-context only -- expand
+    /// to AIS-context notifications (server alerts about a specific
+    /// vessel) when a real plugin produces them.
     /// <para>
     /// The two course-provider notification flags
     /// (perpendicularPassed / arrivalCircleEntered) are ALSO handled

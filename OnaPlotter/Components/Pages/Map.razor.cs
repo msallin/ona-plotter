@@ -305,9 +305,9 @@ public partial class Map
     // --- Route popup actions -------------------------------------------
     //
     // Activated from the tap-to-popup on a saved route polyline. The
-    // popup surfaces Activate + Delete without making the user open the
-    // Layers panel -- the common "pick this route" workflow was a half-
-    // dozen taps via the panel, now it's one tap on the line itself.
+    // popup surfaces Activate + Delete in a single tap on the line so
+    // the helm doesn't have to open the Layers panel and walk through
+    // half a dozen taps for the common "pick this route" flow.
     //
     // Matching JS calls:
     //   dotNetRef.invokeMethodAsync('ActivateRouteById', id)

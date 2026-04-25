@@ -4,7 +4,8 @@ namespace OnaPlotter.Services.Api;
 /// Thin client for the <c>signalk-anchoralarm-plugin</c> REST API.
 /// Only the endpoints we actually drive from the map UI are exposed;
 /// the plugin has more (setRadius, setRodeLength, ...) but the plotter
-/// only needs to raise a live anchor for now.
+/// only needs to raise a live anchor. Add new methods here when a new
+/// UI surface needs them; this interface intentionally stays minimal.
 ///
 /// Docs: https://github.com/sbender9/signalk-anchoralarm-plugin
 /// </summary>

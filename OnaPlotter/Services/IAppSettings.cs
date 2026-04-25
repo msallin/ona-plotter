@@ -18,8 +18,8 @@ public interface IAppSettings
 
     /// <summary>True once the first-run chart seeding has run. Prevents
     /// the "auto-enable OpenSeaMap" fallback from re-firing every time
-    /// a user disables every chart, which used to "reset" their choice
-    /// on the next Map entry / page reload.</summary>
+    /// a user has disabled every chart deliberately -- without this
+    /// flag the next Map entry would silently re-enable OpenSeaMap.</summary>
     bool ChartsSeeded { get; }
 
     /// <summary>UTC timestamp of the most recent manual Night toggle
@@ -82,12 +82,11 @@ public interface IAppSettings
     /// the alarm is useful on either side of that spread.</summary>
     double WindShiftLookbackMinutes { get; }
 
-    // Boat draft used to live here as a user-entered setting. Removed
-    // on the principle "don't re-enter what SignalK already knows".
-    // The tide-aware anchor alarm now reads NavigationData.DraftFromSignalK
-    // (design.draft.current / .maximum) directly and stays dormant when
-    // it's not published. A vessel.json edit on the SK server is the
-    // authoritative place to set this.
+    // Boat draft is intentionally NOT a setting here. Read instead from
+    // NavigationData.DraftFromSignalK (design.draft.current / .maximum);
+    // the tide-aware anchor alarm stays dormant when it's not published.
+    // A vessel.json edit on the SK server is the authoritative place
+    // to set draft -- "don't re-enter what SignalK already knows".
 
     /// <summary>Safety margin added to draft for the tide-aware anchor
     /// alarm: alarm fires when predicted LW depth is less than

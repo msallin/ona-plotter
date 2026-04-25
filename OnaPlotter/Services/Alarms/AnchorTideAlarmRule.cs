@@ -76,8 +76,7 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         if (drop <= 0) return null;                // tide still rising
 
         // Draft comes from SignalK (design.draft.current / .maximum)
-        // only. The per-plotter manual draft setting was removed on the
-        // "don't re-enter what the bus already knows" principle; the
+        // only -- "don't re-enter what the bus already knows". The
         // tide-aware anchor alarm stays dormant when draft is absent
         // rather than run on a stale client-side default.
         if (ctx.Data.DraftFromSignalK is not double draft) return null;
