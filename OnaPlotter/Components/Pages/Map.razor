@@ -2787,20 +2787,21 @@
         // Redraw whenever we have the geometry and a next-WP fix.
         // Covers the initial draw (hrefChanged or force), the leg-
         // advance case (nextWpChanged on an unchanged route), and the
-        // post-edit refetch (force). setActiveRoute styles the dots
-        // based on which one is closest to the next-WP coords, which
-        // is how the leg indicator stays correct without us having to
-        // thread pointIndex separately.
+        // post-edit refetch (force). The next-WP index is resolved
+        // here so the JS side stays a thin renderer; the lookup
+        // matches the next-point lat/lon to the closest vertex in
+        // the route and is unit-tested in RouteProgressTests.
         if (activeRouteCoords is not null && activeRouteCoords.Length > 0
             && nextLat is not null && nextLon is not null)
         {
             string routeId = string.IsNullOrEmpty(currentHref)
                 ? string.Empty
                 : SignalKUrls.ExtractRouteId(currentHref);
+            int nextWpIdx = OnaPlotter.Utilities.RouteProgress.FindClosestWaypointIndex(
+                activeRouteCoords, nextLat.Value, nextLon.Value);
             await module.InvokeVoidAsync("setActiveRoute",
                 (object)activeRouteCoords,
-                nextLat.Value,
-                nextLon.Value,
+                nextWpIdx,
                 routeId);
         }
 
