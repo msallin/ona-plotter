@@ -173,7 +173,14 @@ public sealed class RadarOverlayManager
             MaxSpokeLength: maxLen,
             Range: range,
             Legend: caps?.Legend,
-            Opacity: 0.75);
+            // 0.50: chart underneath stays comfortably readable
+            // (depth contours, soundings, "Shallow Sand Bar" labels)
+            // while strong radar returns still draw the eye. Was 0.75
+            // which the helm reported as drowning chart features at
+            // helm distance. Affects only the radar canvas; other
+            // layers (charts, AIS, regions, routes) have their own
+            // opacity settings and are unchanged.
+            Opacity: 0.50);
 
         try
         {
