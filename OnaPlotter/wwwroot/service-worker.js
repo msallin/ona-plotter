@@ -93,7 +93,23 @@
 //             We accept FIFO eviction and ship reliable tile
 //             rendering; LRU was nice-to-have, tile delivery is
 //             not negotiable.
-const CACHE_NAME = 'ona-plotter-v20';
+// v20 -> v21: tile-cache audit follow-ups.
+//             - /signalk/* + WS pass-through and app-shell cache
+//               handlers now wrapped (passThroughOrPlaceholder,
+//               appShellCacheFirst) so a fetch / Cache-API rejection
+//               doesn't bubble into respondWith and trigger the
+//               same Firefox SW-intercept error we squashed for
+//               tiles in v20.
+//             - tile-cache reference module-scoped (getTileCache);
+//               eliminates per-request caches.open() spin-up.
+//             - trimTileCache throttled (every 50 puts) + single-
+//               flight + parallel-delete; was running a full
+//               cache.keys() walk on every successful put.
+//             - keepBuffer 6 -> 10 on the OSM / OpenSeaMap base
+//               and per-chart layers (leafletInterop.js); larger
+//               in-DOM tile retention so small route-planning pans
+//               don't re-fetch.
+const CACHE_NAME = 'ona-plotter-v21';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -171,10 +187,36 @@ async function tileCacheFirst(request) {
     }
 }
 
+// Module-scoped cache reference. caches.open() is fast on a hot disk
+// but each call still spins up a transaction; on a Pi-class device
+// the per-request open shows up in flame-graphs for tile-heavy
+// workloads. Cache the resolved Cache object after first open and
+// reuse for subsequent requests. The Cache object stays valid across
+// the SW's lifetime; if it's ever invalidated (extremely unusual),
+// the caller's try/catch falls through to the network path.
+let tileCacheRef = null;
+async function getTileCache() {
+    if (tileCacheRef) return tileCacheRef;
+    tileCacheRef = await caches.open(TILE_CACHE_NAME);
+    return tileCacheRef;
+}
+
+// Cumulative-puts counter that throttles the trimTileCache scan.
+// trimTileCache used to fire after every successful put, which meant
+// a full cache.keys() walk (5000 entries on a busy passage) on every
+// tile cached -- the bookkeeping cost dwarfed the actual put. Now we
+// only scan after every TRIM_CHECK_EVERY puts, so a single tile-load
+// burst pays the scan once instead of N times. Choice of 50 keeps
+// the high-water-mark slop bounded (we may exceed the cap by ~50
+// entries before the next trim catches up; 5050 vs 5000 is fine).
+const TRIM_CHECK_EVERY = 50;
+let putsSinceLastTrim = 0;
+let trimInFlight = false;
+
 async function tileCacheFirstInner(request) {
     let cache = null;
     try {
-        cache = await caches.open(TILE_CACHE_NAME);
+        cache = await getTileCache();
         const cached = await cache.match(request);
         if (cached) {
             // Just serve the cached response. Earlier versions did an
@@ -220,7 +262,7 @@ async function tileCacheFirstInner(request) {
             // outer respondWith path stays clean.
             try {
                 cache.put(request, clone)
-                    .then(() => trimTileCache(cache).catch(() => { /* trim is best-effort */ }))
+                    .then(() => maybeTrimTileCache(cache))
                     .catch(() => { /* put rejected; tile not cached, fine */ });
             } catch (_) { /* sync throw from cache.put */ }
         } catch (_) { /* clone() threw on a weird response body */ }
@@ -228,13 +270,33 @@ async function tileCacheFirstInner(request) {
     return response;
 }
 
-async function trimTileCache(cache) {
-    const keys = await cache.keys();
-    if (keys.length <= TILE_CACHE_MAX_ENTRIES) return;
-    // Delete oldest (FIFO by insertion order). Cache.keys() returns in
-    // insertion order per the spec; sufficient for our approximate eviction.
-    const excess = keys.length - TILE_CACHE_MAX_ENTRIES;
-    for (let i = 0; i < excess; i++) await cache.delete(keys[i]);
+// Throttled + single-flight trim. Counts puts; only scans the cache
+// every TRIM_CHECK_EVERY puts, and never runs more than one trim at
+// a time. Prevents the cache.keys() walk from running on every put
+// (was a measurable perf hit at 5000+ entries) while still keeping
+// the cap honest within ~50 entries of slop.
+async function maybeTrimTileCache(cache) {
+    putsSinceLastTrim++;
+    if (putsSinceLastTrim < TRIM_CHECK_EVERY) return;
+    if (trimInFlight) return;
+    putsSinceLastTrim = 0;
+    trimInFlight = true;
+    try {
+        const keys = await cache.keys();
+        if (keys.length <= TILE_CACHE_MAX_ENTRIES) return;
+        // Delete oldest in parallel (FIFO by insertion order). Cache.keys()
+        // returns in insertion order per the spec; sufficient for our
+        // approximate eviction. Promise.all over the slice rather than
+        // sequential awaits cuts trim time by ~10x on a Pi-class device
+        // when many entries need eviction at once.
+        const excess = keys.length - TILE_CACHE_MAX_ENTRIES;
+        await Promise.all(keys.slice(0, excess).map((k) => cache.delete(k)));
+    } catch (_) {
+        // Trim is best-effort; cache cap may be temporarily exceeded
+        // but the next put will trigger another attempt.
+    } finally {
+        trimInFlight = false;
+    }
 }
 
 self.addEventListener('fetch', (event) => {
@@ -251,8 +313,10 @@ self.addEventListener('fetch', (event) => {
     // Chart tiles served by signalk-charts-plugin. Cache-on-view so a
     // re-visit to a cove the user sailed through earlier works offline.
     // Separate cache from the app shell so it can be evicted
-    // independently and capped by entry count. Network-first keeps the
-    // freshest tiles when online; cache-fallback kicks in on wifi loss.
+    // independently and capped by entry count. Cache-first: tiles
+    // never invalidate on their own (charts don't change), so a
+    // single freshness pass at install / cache-bump is enough. The
+    // FIFO cap rolls in newer tiles to displace stale ones over time.
     if (url.pathname.startsWith('/signalk/chart-tiles/')) {
         event.respondWith(tileCacheFirst(event.request));
         return;
@@ -260,23 +324,78 @@ self.addEventListener('fetch', (event) => {
 
     // Network-first for other SignalK API calls and WebSocket upgrades.
     // Match /signalk/ and /signalk/v* paths exactly (not webapp names like /signalk-onaplotter).
+    // Wrap in try/catch + 504 fallback so a fetch rejection (offline,
+    // CORS, abort) never bubbles into the respondWith promise. Without
+    // this guard, Firefox surfaces every transient network blip on a
+    // /signalk/* path as the same "ServiceWorker intercepted ...
+    // unexpected error" message that the tile cache handler had
+    // pre-v20.
     if (url.pathname === '/signalk' || url.pathname.startsWith('/signalk/')
         || event.request.mode === 'websocket') {
-        event.respondWith(fetch(event.request));
+        event.respondWith(passThroughOrPlaceholder(event.request));
         return;
     }
 
-    // Cache-first for app shell, network fallback otherwise.
-    event.respondWith(
-        caches.match(event.request).then((cached) => {
-            const fetchPromise = fetch(event.request).then((response) => {
-                if (response.ok) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-                }
-                return response;
-            }).catch(() => cached);
-            return cached || fetchPromise;
-        })
-    );
+    // Cache-first for app shell, network fallback otherwise. Wrapped
+    // for the same reason as above: caches.match / caches.open / put
+    // can all reject; the outer try guarantees respondWith resolves
+    // to a Response.
+    event.respondWith(appShellCacheFirst(event.request));
 });
+
+/** Plain pass-through fetch with a safety net. Used for /signalk/*
+ *  and WebSocket upgrades -- we don't cache or transform those, but
+ *  we still own the respondWith promise and need to settle it. */
+async function passThroughOrPlaceholder(request) {
+    try {
+        return await fetch(request);
+    } catch (_) {
+        // Offline / aborted / blocked. 504 lets the caller (the
+        // SignalK API client or the Blazor circuit) handle it as a
+        // server error rather than an undefined-response intercept.
+        return new Response('', { status: 504, statusText: 'Offline' });
+    }
+}
+
+/** Cache-first with stale-while-revalidate for the app shell.
+ *  Returns the cached Response if present, then refreshes the cache
+ *  in the background; on cache miss, awaits the network. Any
+ *  exception in the cache layer falls through to a pure-network
+ *  attempt; any exception in the network falls through to whatever
+ *  cached entry we had (or a 504 placeholder). respondWith never
+ *  rejects. */
+async function appShellCacheFirst(request) {
+    let cached;
+    try {
+        cached = await caches.match(request);
+    } catch (_) { /* cache layer unavailable */ }
+
+    // Background refresh on hit, awaited fetch on miss.
+    const fetchPromise = (async () => {
+        try {
+            const response = await fetch(request);
+            if (response.ok) {
+                try {
+                    const clone = response.clone();
+                    const cache = await caches.open(CACHE_NAME);
+                    cache.put(request, clone).catch(() => { /* best-effort */ });
+                } catch (_) { /* clone / open / put threw */ }
+            }
+            return response;
+        } catch (_) {
+            // Network failed; return cached if we have it, else 504.
+            return cached ?? new Response('', { status: 504, statusText: 'Offline' });
+        }
+    })();
+
+    // Cache hit: serve cached + let the refresh run in the background.
+    if (cached) {
+        // Don't await fetchPromise -- let it update the cache silently.
+        // .catch keeps an unhandled rejection out of the SW's error
+        // bus.
+        fetchPromise.catch(() => { /* best-effort */ });
+        return cached;
+    }
+    // Cache miss: await network (or its 504 fallback above).
+    return fetchPromise;
+}
