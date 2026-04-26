@@ -466,14 +466,21 @@ public class RadarApiParseTests
     [Test]
     public async Task ControlValue_PutBody_IsMinimalSpecShape()
     {
-        // Pin the over-the-wire shape for control writes: spec says
-        // {"value":N}, full stop. Mayara rejects the bloated body
-        // (HTTP 400) when the typed accessors NumericValue / StringValue
-        // leak into the JSON, or when ControlValue's optional sector /
-        // zone / rect fields serialise as nulls. Both are fixed via
-        // [JsonIgnore] on the accessors and WhenWritingNull on the
-        // serializer options used by RadarApi.SetControlAsync.
-        var body = new ControlValue { Value = JsonSerializer.SerializeToElement(1852) };
+        // Pin the over-the-wire shape for control writes: only the
+        // primary value field, no nulls, no typed-accessor leakage.
+        // Mayara/SK rejects the bloated body (HTTP 400) when the typed
+        // accessors NumericValue / StringValue leak into the JSON, or
+        // when ControlValue's optional sector / zone / rect fields
+        // serialise as nulls. Both are fixed via [JsonIgnore] on the
+        // accessors and WhenWritingNull on the serializer options used
+        // by RadarApi.SetControlAsync.
+        //
+        // Note the value carries as a JSON string ("1852"), not a
+        // number. SK's PUT layer rejects JSON-number values for range
+        // controls with HTTP 400 even when the metres are valid; the
+        // helm in Map.SetRadarRangeAsync stringifies before serialising
+        // for exactly this reason. See that method's comment.
+        var body = new ControlValue { Value = JsonSerializer.SerializeToElement("1852") };
         // Mirror the options bag used by RadarApi (see RadarApi.s_json).
         var opts = new JsonSerializerOptions
         {
@@ -481,7 +488,7 @@ public class RadarApiParseTests
             DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
         };
         var wire = JsonSerializer.Serialize(body, opts);
-        await Assert.That(wire).IsEqualTo("""{"value":1852}""");
+        await Assert.That(wire).IsEqualTo("""{"value":"1852"}""");
     }
 
     [Test]
