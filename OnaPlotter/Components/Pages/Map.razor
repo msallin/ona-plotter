@@ -724,7 +724,16 @@
             if (!r.Success) { Toasts.Error($"Radar power: {r.Error ?? "rejected by server"}"); return; }
         }
         catch (Exception ex) { Toasts.Error($"Radar power: {ex.Message}"); return; }
-        await RefreshServerResourcesAsync();
+        // Targeted refresh: only re-fetch the radar list (1 GET),
+        // not the broad resource refresh (which fired 5+ unrelated
+        // GETs for waypoints / routes / notes / regions / charts).
+        await RefreshRadarsAsync();
+        // Schedule a follow-up: HALO transitions standby <-> transmit
+        // through an intermediate "off" / "preparing" status that
+        // Mayara reports for ~1s. The first refresh catches that
+        // transient; the follow-up catches the settled state without
+        // making the helm click a second time.
+        ScheduleRadarRefreshAfter(TimeSpan.FromMilliseconds(1500));
     }
 
     public async Task SetRadarRangeAsync(string radarId, int rangeMeters)
@@ -751,10 +760,35 @@
             if (!r.Success) { Toasts.Error($"Radar range: {r.Error ?? "rejected by server"}"); return; }
         }
         catch (Exception ex) { Toasts.Error($"Radar range: {ex.Message}"); return; }
-        // Refresh so the new range shows in the UI; the manager's
-        // OnRadarListUpdatedAsync (called from RefreshServerResourcesAsync)
-        // diffs and forwards it to the JS layer.
-        await RefreshServerResourcesAsync();
+        // Range writes apply immediately on Mayara -- a single
+        // targeted refresh is enough; no transitional state to
+        // wait through.
+        await RefreshRadarsAsync();
+    }
+
+    // Re-fetch ONLY the radar list and feed it through the manager.
+    // Avoids the broad RefreshServerResourcesAsync which also pulls
+    // waypoints / routes / notes / regions / charts -- noise the
+    // operator's network tab fills up with on every Transmit click.
+    // The Mayara SK plugin doesn't publish radar paths over the SK
+    // WebSocket delta stream (probed against openplotter -- 195
+    // unique paths, zero radar-related), so REST polling is the only
+    // way to learn about state changes.
+    private async Task RefreshRadarsAsync()
+    {
+        try
+        {
+            var radars = await RadarApi.GetAllAsync();
+            await RadarOverlay.OnRadarListUpdatedAsync(radars);
+            StateHasChanged();
+        }
+        catch (Exception) { /* next regular poll retries */ }
+    }
+
+    private void ScheduleRadarRefreshAfter(TimeSpan delay)
+    {
+        _ = Task.Delay(delay).ContinueWith(_ =>
+            InvokeAsync(RefreshRadarsAsync));
     }
 
     // Layers -> Charts checkbox toggles membership of the quick-bar
