@@ -247,6 +247,91 @@ public class RadarApiParseTests
     }
 
     [Test]
+    public async Task RadarLegend_DopplerBands_AcceptArrayWireShape()
+    {
+        // Mayara ships dopplerApproaching / dopplerReceding as
+        // [startByte, count] arrays, NOT scalars. Earlier the DTO
+        // typed them as int? -- STJ threw JsonException on the array
+        // token, RadarApi.GetCapabilitiesAsync swallowed it and
+        // returned null, the JS layer fell back to its default
+        // palette, and the operator saw bright blue spokes
+        // everywhere (default fallback paints bytes 1-4 as #0000c8).
+        // Pin the wire shape so a future "let's tighten the type"
+        // refactor can't regress this.
+        const string json = """
+            {
+              "lowReturn": 1,
+              "mediumReturn": 5,
+              "strongReturn": 10,
+              "dopplerApproaching": [17, 1],
+              "dopplerReceding": [18, 1],
+              "dopplerRain": null,
+              "historyStart": 19,
+              "pixelColors": 16,
+              "pixels": [
+                { "type": "normal", "color": "#000000ff" }
+              ]
+            }
+            """;
+        var leg = JsonSerializer.Deserialize<RadarLegend>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        await Assert.That(leg).IsNotNull();
+        await Assert.That(leg!.MediumReturn).IsEqualTo(5);
+        await Assert.That(leg.DopplerApproaching).IsEquivalentTo([17, 1]);
+        await Assert.That(leg.DopplerReceding).IsEquivalentTo([18, 1]);
+        await Assert.That(leg.DopplerRain).IsNull();
+        await Assert.That(leg.Pixels.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task RadarCapabilities_DeserialisesFullMayaraResponse()
+    {
+        // End-to-end pin: the actual openplotter / Mayara
+        // /capabilities response previously made GetCapabilitiesAsync
+        // return null because of the doppler-array shape. Verify the
+        // full document round-trips and the legend lands non-null
+        // (the legend null check inside the JS layer's _setLegend was
+        // the symptom -- bytes 1-4 falling back to default blue).
+        const string json = """
+            {
+              "maxRange": 66672,
+              "minRange": 50,
+              "supportedRanges": [50, 100, 1852],
+              "spokesPerRevolution": 2048,
+              "maxSpokeLength": 1024,
+              "pixelValues": 16,
+              "legend": {
+                "dopplerApproaching": [17, 1],
+                "dopplerReceding": [18, 1],
+                "dopplerRain": null,
+                "historyStart": 19,
+                "lowReturn": 1,
+                "mediumReturn": 5,
+                "strongReturn": 10,
+                "pixelColors": 16,
+                "pixels": [
+                  { "type": "normal", "color": "#00000000" },
+                  { "type": "normal", "color": "#000033ff" }
+                ]
+              },
+              "hasDoppler": true,
+              "hasDualRange": true,
+              "hasDualRadar": true,
+              "hasSparseSpokes": false,
+              "noTransmitSectors": 4,
+              "stationary": false,
+              "controls": {}
+            }
+            """;
+        var caps = JsonSerializer.Deserialize<RadarCapabilities>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        await Assert.That(caps).IsNotNull();
+        await Assert.That(caps!.Legend).IsNotNull();
+        await Assert.That(caps.Legend!.MediumReturn).IsEqualTo(5);
+        await Assert.That(caps.Legend.Pixels.Length).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task LegendPixel_Color_NumberFormDegradesToTransparent()
     {
         // Likewise for a packed integer; not in spec, must not throw.
@@ -307,6 +392,10 @@ public class RadarApiParseTests
         await Assert.That(cap.Legend!.PixelColors).IsEqualTo(16);
         await Assert.That(cap.Legend.TargetBorder).IsEqualTo(17);
         await Assert.That(cap.Legend.Pixels.Length).IsEqualTo(2);
+        // The spec doc form uses a scalar for the doppler bands;
+        // the converter normalises to a single-element array.
+        await Assert.That(cap.Legend.DopplerApproaching).IsEquivalentTo([18]);
+        await Assert.That(cap.Legend.DopplerReceding).IsEquivalentTo([19]);
     }
 
     [Test]

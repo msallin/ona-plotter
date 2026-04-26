@@ -169,11 +169,35 @@ public sealed class RadarLegend
     [JsonPropertyName("targetBorder")]
     public int? TargetBorder { get; set; }
 
+    /// <summary>Where doppler-approaching pixels live in the byte
+    /// table. Two wire shapes have been observed: the SK spec
+    /// docs use a scalar (e.g. <c>18</c>, the byte index), while
+    /// Mayara on openplotter ships a 2-element array
+    /// (<c>[startByte, count]</c>, e.g. <c>[17, 1]</c>). The same
+    /// semantic is also encoded in <see cref="LegendPixel.Type"/>
+    /// on each pixel entry, which is what the renderer actually
+    /// reads -- this field is wire-shape only. The custom
+    /// converter normalises both forms to an int array so an
+    /// earlier <c>int?</c> typing can't regress: that typing made
+    /// STJ throw on the array form, the catch in
+    /// <c>RadarApi.GetCapabilitiesAsync</c> swallowed it,
+    /// capabilities returned null, and the JS layer fell back to
+    /// its default palette which paints the sea-clutter byte band
+    /// as bright blue.</summary>
     [JsonPropertyName("dopplerApproaching")]
-    public int? DopplerApproaching { get; set; }
+    [JsonConverter(typeof(IntOrIntArrayConverter))]
+    public int[]? DopplerApproaching { get; set; }
 
     [JsonPropertyName("dopplerReceding")]
-    public int? DopplerReceding { get; set; }
+    [JsonConverter(typeof(IntOrIntArrayConverter))]
+    public int[]? DopplerReceding { get; set; }
+
+    /// <summary>Optional doppler-rain band; same dual wire shape as
+    /// <see cref="DopplerApproaching"/>. Null on radars that don't
+    /// emit a separate rain doppler classification.</summary>
+    [JsonPropertyName("dopplerRain")]
+    [JsonConverter(typeof(IntOrIntArrayConverter))]
+    public int[]? DopplerRain { get; set; }
 
     /// <summary>First byte value in the history-trail range. Null when
     /// the provider doesn't emit trails.</summary>
@@ -300,6 +324,50 @@ internal sealed class LegendColorConverter : JsonConverter<RadarColor>
     private static bool TryHex(string s, int offset, out byte value) =>
         byte.TryParse(s.AsSpan(offset, 2), System.Globalization.NumberStyles.HexNumber,
             System.Globalization.CultureInfo.InvariantCulture, out value);
+}
+
+/// <summary>
+/// Tolerates the two wire shapes observed for the legend's doppler-
+/// band markers: a scalar (older SK spec docs, e.g. <c>18</c>) and a
+/// 2-element array (Mayara, e.g. <c>[17, 1]</c> = startByte + count).
+/// Normalises both to <c>int[]</c> so callers don't branch. Without
+/// this the array form throws JsonException and the entire
+/// capabilities response gets discarded -- losing the legend and
+/// forcing the JS layer onto its default palette.
+/// </summary>
+internal sealed class IntOrIntArrayConverter : JsonConverter<int[]?>
+{
+    public override int[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.Number:
+                return [reader.GetInt32()];
+            case JsonTokenType.StartArray:
+                var list = new List<int>(2);
+                while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+                {
+                    if (reader.TokenType == JsonTokenType.Number) list.Add(reader.GetInt32());
+                    else reader.Skip();
+                }
+                return [.. list];
+            default:
+                // Unknown token -- skip the value so the parent reader
+                // stays in sync, return null.
+                reader.Skip();
+                return null;
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, int[]? value, JsonSerializerOptions options)
+    {
+        if (value is null) { writer.WriteNullValue(); return; }
+        writer.WriteStartArray();
+        foreach (var v in value) writer.WriteNumberValue(v);
+        writer.WriteEndArray();
+    }
 }
 
 /// <summary>
