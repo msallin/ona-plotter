@@ -247,17 +247,19 @@ public class RadarApiParseTests
     }
 
     [Test]
-    public async Task RadarLegend_DopplerBands_AcceptArrayWireShape()
+    public async Task RadarLegend_DopplerArrayForm_DoesNotBreakDeserialisation()
     {
         // Mayara ships dopplerApproaching / dopplerReceding as
         // [startByte, count] arrays, NOT scalars. Earlier the DTO
         // typed them as int? -- STJ threw JsonException on the array
-        // token, RadarApi.GetCapabilitiesAsync swallowed it and
-        // returned null, the JS layer fell back to its default
+        // token, RadarApi.GetCapabilitiesAsync's catch swallowed it
+        // and returned null, the JS layer fell back to its default
         // palette, and the operator saw bright blue spokes
         // everywhere (default fallback paints bytes 1-4 as #0000c8).
-        // Pin the wire shape so a future "let's tighten the type"
-        // refactor can't regress this.
+        // The doppler-band byte indices are intentionally not modelled
+        // (see RadarDtos.cs), so STJ skips them and the rest of the
+        // legend lands. Pin that the array form is harmless: every
+        // other legend field reaches the DTO regardless.
         const string json = """
             {
               "lowReturn": 1,
@@ -265,7 +267,7 @@ public class RadarApiParseTests
               "strongReturn": 10,
               "dopplerApproaching": [17, 1],
               "dopplerReceding": [18, 1],
-              "dopplerRain": null,
+              "dopplerRain": [19, 1],
               "historyStart": 19,
               "pixelColors": 16,
               "pixels": [
@@ -277,9 +279,8 @@ public class RadarApiParseTests
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         await Assert.That(leg).IsNotNull();
         await Assert.That(leg!.MediumReturn).IsEqualTo(5);
-        await Assert.That(leg.DopplerApproaching).IsEquivalentTo([17, 1]);
-        await Assert.That(leg.DopplerReceding).IsEquivalentTo([18, 1]);
-        await Assert.That(leg.DopplerRain).IsNull();
+        await Assert.That(leg.HistoryStart).IsEqualTo(19);
+        await Assert.That(leg.PixelColors).IsEqualTo(16);
         await Assert.That(leg.Pixels.Length).IsEqualTo(1);
     }
 
@@ -392,10 +393,6 @@ public class RadarApiParseTests
         await Assert.That(cap.Legend!.PixelColors).IsEqualTo(16);
         await Assert.That(cap.Legend.TargetBorder).IsEqualTo(17);
         await Assert.That(cap.Legend.Pixels.Length).IsEqualTo(2);
-        // The spec doc form uses a scalar for the doppler bands;
-        // the converter normalises to a single-element array.
-        await Assert.That(cap.Legend.DopplerApproaching).IsEquivalentTo([18]);
-        await Assert.That(cap.Legend.DopplerReceding).IsEquivalentTo([19]);
     }
 
     [Test]
@@ -463,6 +460,15 @@ public class RadarApiParseTests
         await Assert.That(cv.Auto).IsFalse();
     }
 
+    // Mirror the options bag used by RadarApi.SetControlAsync (see
+    // RadarApi.s_json). Reused across the wire-shape tests below so a
+    // future tweak to the serialiser options propagates everywhere.
+    private static readonly JsonSerializerOptions s_putOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
     [Test]
     public async Task ControlValue_PutBody_IsMinimalSpecShape()
     {
@@ -472,23 +478,42 @@ public class RadarApiParseTests
         // accessors NumericValue / StringValue leak into the JSON, or
         // when ControlValue's optional sector / zone / rect fields
         // serialise as nulls. Both are fixed via [JsonIgnore] on the
-        // accessors and WhenWritingNull on the serializer options used
-        // by RadarApi.SetControlAsync.
+        // accessors and WhenWritingNull on the serializer options.
         //
-        // Note the value carries as a JSON string ("1852"), not a
-        // number. SK's PUT layer rejects JSON-number values for range
-        // controls with HTTP 400 even when the metres are valid; the
-        // helm in Map.SetRadarRangeAsync stringifies before serialising
-        // for exactly this reason. See that method's comment.
-        var body = new ControlValue { Value = JsonSerializer.SerializeToElement("1852") };
-        // Mirror the options bag used by RadarApi (see RadarApi.s_json).
-        var opts = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        };
-        var wire = JsonSerializer.Serialize(body, opts);
+        // Driven through ControlValue.ForRange so the test exercises
+        // the actual production factory, not a stand-in. The value
+        // carries as a JSON string ("1852") not a number; see
+        // ForRange's doc comment for the SK quirk that requires this.
+        var wire = JsonSerializer.Serialize(ControlValue.ForRange(1852), s_putOptions);
         await Assert.That(wire).IsEqualTo("""{"value":"1852"}""");
+    }
+
+    [Test]
+    public async Task ControlValue_ForRange_WireShapeIsCultureInvariant()
+    {
+        // Lock the contract that the range PUT body does not depend on
+        // CurrentCulture. int.ToString() is implicitly culture-invariant
+        // for the default ("G") format -- so this test passes without
+        // the InvariantCulture argument too -- but the contract matters:
+        // a future refactor that adopts a culture-sensitive format
+        // string (e.g. ToString("N0")) would otherwise round-trip
+        // "74.080" or "74,080" to a non-en-US helm and the server would
+        // reject the value as out of range.
+        var prev = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            // de-DE uses "." as thousands separator and "," as decimal,
+            // so any leak from CurrentCulture into the wire shape would
+            // change the digits or punctuation in the string.
+            System.Globalization.CultureInfo.CurrentCulture =
+                new System.Globalization.CultureInfo("de-DE");
+            var wire = JsonSerializer.Serialize(ControlValue.ForRange(74080), s_putOptions);
+            await Assert.That(wire).IsEqualTo("""{"value":"74080"}""");
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = prev;
+        }
     }
 
     [Test]
@@ -498,11 +523,16 @@ public class RadarApiParseTests
         // even WITHOUT WhenWritingNull, the typed accessors must
         // never serialise -- they're not wire fields and would
         // confuse spec-conformant servers.
+        // Assert on parsed property names rather than substring so a
+        // future field whose name contains "NumericValue" / "StringValue"
+        // (e.g. "NumericValueAuto") doesn't false-flag.
         var body = new ControlValue { Value = JsonSerializer.SerializeToElement("HALO") };
         var defaults = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var wire = JsonSerializer.Serialize(body, defaults);
-        await Assert.That(wire).DoesNotContain("NumericValue");
-        await Assert.That(wire).DoesNotContain("StringValue");
+        using var doc = JsonDocument.Parse(wire);
+        var names = doc.RootElement.EnumerateObject().Select(p => p.Name).ToHashSet();
+        await Assert.That(names).DoesNotContain("NumericValue");
+        await Assert.That(names).DoesNotContain("StringValue");
     }
 
     [Test]

@@ -739,21 +739,11 @@
     public async Task SetRadarRangeAsync(string radarId, int rangeMeters)
     {
         if (string.IsNullOrEmpty(radarId) || rangeMeters <= 0) return;
-        // SK's radar plugin rejects a JSON-number value for the range
-        // control with HTTP 400 even when the metres value is in the
-        // radar's own validValues. The OpenAPI spec
-        // (/skServer/openapi/radar) declares the value field as
-        // "numeric or string" with no type set, so both look legal on
-        // paper, but the live SK + Mayara stack only accepts string for
-        // range. Send {"value":"1852"} not {"value":1852}.
-        // Stringify with invariant culture so a locale-specific
-        // separator never sneaks in (e.g. "1,852" would round-trip as
-        // a different integer on the server side).
-        var body = new ControlValue
-        {
-            Value = JsonSerializer.SerializeToElement(
-                rangeMeters.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-        };
+        // Body shape (string-valued, not numeric) lives on the DTO so
+        // the wire-shape contract is testable without spinning up a
+        // Razor host. See ControlValue.ForRange for the SK quirk that
+        // motivates the string form.
+        var body = ControlValue.ForRange(rangeMeters);
         try
         {
             var r = await RadarApi.SetControlAsync(radarId, "range", body);
