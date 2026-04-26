@@ -601,13 +601,16 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 19,
-        // keepBuffer 6 (up from 4) keeps three extra rings of tiles
-        // outside the viewport in the DOM. Small pans during route
-        // planning don't trigger a fetch -- the next ring is already
-        // rendered and just gets revealed. Tradeoff is more DOM nodes
-        // (~80-150 extra per layer at typical iPad zoom) which is
-        // negligible on the modern WebKit/Chromium tile pipeline.
-        keepBuffer: 6,
+        // keepBuffer 10 (up from 6, default 2): ten extra rings of
+        // tiles outside the viewport stay in the DOM, so small pans
+        // during route planning don't trigger a fetch -- the next
+        // ring is already rendered and just gets revealed. Trade-off
+        // is more DOM nodes (~250-400 extra per layer at typical
+        // iPad zoom), still negligible on modern WebKit / Chromium
+        // tile pipelines, and on the Pi-local-wifi setup where
+        // re-fetch RTT is low but visible the smoothness gain is
+        // noticeable.
+        keepBuffer: 10,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
         attribution: '&copy; OpenStreetMap contributors',
@@ -617,7 +620,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
         maxNativeZoom: 19,
         maxZoom: 19,
-        keepBuffer: 6,
+        keepBuffer: 10,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
         attribution: '&copy; OpenSeaMap',
@@ -1975,9 +1978,10 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
         // end so the drag stays smooth. detectRetina on fast clients
         // sharpens chart tiles on high-DPI displays (iPad Retina would
         // otherwise blur the 256-px source up to 512 px of screen).
-        // keepBuffer 6 (up from 4) keeps three rings of tiles outside
-        // the viewport in DOM so route-planning pans feel snappier.
-        keepBuffer: 6,
+        // keepBuffer 10 (up from 6, default 2): ten rings of tiles
+        // outside the viewport stay in DOM so route-planning pans
+        // feel snappier and small zig-zags don't re-fetch.
+        keepBuffer: 10,
         updateWhenIdle: isSlowClient,
         detectRetina: !isSlowClient,
         crossOrigin: 'anonymous',
