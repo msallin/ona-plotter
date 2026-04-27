@@ -718,6 +718,19 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     };
     map.on('movestart dragstart zoomstart', cancelLongPress);
 
+    // A pointerdown anywhere on an alarm banner cancels any pending
+    // map long-press. Reason: the map timer can be armed by an
+    // earlier touch on the map, then the alarm pops up overlaying
+    // the user's finger position. Without this cancel, the user
+    // dismisses the alarm and the map's context menu fires a beat
+    // later at the original coordinate. Pointerdown on the alarm
+    // is a stronger signal of intent than the lingering map timer.
+    document.addEventListener('pointerdown', (e) => {
+        if (e.target && e.target.closest && e.target.closest('.alarm-banner-stack')) {
+            cancelLongPress();
+        }
+    }, { passive: true });
+
     mapEl.addEventListener('touchstart', (e) => {
         cancelLongPress();
         if (e.touches.length !== 1) return; // two-finger pinch, etc.
