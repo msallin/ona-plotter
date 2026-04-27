@@ -47,16 +47,20 @@
         bool enoughPoints = (Coords?.Length ?? 0) >= 2;
         bool canSave = enoughPoints && !Saving;
     }
-    <button class="map-btn" @onclick="OnUndo"
-            disabled="@((Coords?.Length ?? 0) == 0 || Saving)"
-            title="@((Coords?.Length ?? 0) == 0 ? "Nothing to undo" : "Remove last waypoint")">Undo</button>
-    @* Reverse: flips waypoint order. The classic case is "I planned
-       outbound, now I want the return leg" -- without this the user
+    @* Reverse: flips waypoint order. Classic case: "I planned the
+       outbound, now I want the return leg" -- without this the helm
        would re-add waypoints in opposite order. *@
     <button class="map-btn" @onclick="OnReverse"
             disabled="@(!enoughPoints || Saving)"
             title="@(!enoughPoints ? "Need at least 2 waypoints" : "Reverse waypoint order")">Reverse</button>
-    <button class="map-btn" @onclick="OnSave"
+    @* Save is the primary action in every flow. Was previously secondary
+       to Save & Go, but the helm pointed out that:
+         (a) editing an active route makes Save and Save & Go the
+             *same* operation (the route is already active), and
+         (b) on a fresh create the helm reads "Save" as the obvious
+             commit verb anyway. Promoting Save to primary in both
+             cases removes the "wait, which button do I want?" pause. *@
+    <button class="map-btn active" @onclick="OnSave"
             disabled="@(!canSave)"
             title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save route")">
         @(Saving ? "Saving..." : "Save")
@@ -74,16 +78,20 @@
             Save copy
         </button>
     }
-    @* Save+Go lands the helm on the map with the route already active.
-       The two-step "save, then dig into Layers to activate it" workflow
-       was the most frequent complaint. The Saving gate stops a double-
-       tap from posting two identical routes -- the first tap disables
-       the button until the Save round-trip completes. *@
-    <button class="map-btn active" @onclick="OnSaveAndGo"
-            disabled="@(!canSave)"
-            title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save and start navigating")">
-        @(Saving ? "Starting..." : "Save & Go")
-    </button>
+    @* Save & Go: only useful when the route is NOT already active --
+       saves AND sets it as the active course in one tap. Hidden when
+       the route is already active because Save and Save & Go would
+       then perform identical operations and the duplicated button
+       just adds confusion. The Saving gate stops a double-tap from
+       posting two identical routes. *@
+    @if (!IsEditingActiveRoute)
+    {
+        <button class="map-btn" @onclick="OnSaveAndGo"
+                disabled="@(!canSave)"
+                title="@(Saving ? "Saving..." : !enoughPoints ? "Need at least 2 waypoints" : "Save and start navigating")">
+            @(Saving ? "Starting..." : "Save & Go")
+        </button>
+    }
     <button class="map-btn" @onclick="OnCancel" disabled="@Saving">Cancel</button>
 </div>
 
@@ -102,7 +110,12 @@
     /// the "Save copy" button is rendered -- copying makes no sense
     /// in the fresh-create flow.</summary>
     [Parameter] public bool IsEditingExisting { get; set; }
-    [Parameter] public EventCallback OnUndo { get; set; }
+    /// <summary>True when the existing route is the currently-active
+    /// course. In that case Save & Go is hidden because saving
+    /// already keeps the route active -- the two operations would be
+    /// identical. Also influences future deactivate / re-activate
+    /// affordances if added.</summary>
+    [Parameter] public bool IsEditingActiveRoute { get; set; }
     [Parameter] public EventCallback OnReverse { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnSaveAsCopy { get; set; }

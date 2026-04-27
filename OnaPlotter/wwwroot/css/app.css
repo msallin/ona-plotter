@@ -3332,31 +3332,10 @@ html.night-mode-global body {
     .leaflet-control-attribution { font-size: 8px !important; padding: 1px 4px !important; }
 }
 
-/* Scale bars -- Leaflet's default km/m line plus our nautical-miles
-   sibling. Both are dark-on-dim so they don't compete with the chart. */
-.leaflet-control-scale-line {
-    background: rgba(10, 12, 18, 0.55) !important;
-    color: rgba(255, 255, 255, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.3) !important;
-    border-top: none !important;
-    font-size: 10px !important;
-    text-shadow: none !important;
-    padding: 1px 5px 2px !important;
-    line-height: 1.1 !important;
-}
-.leaflet-control-scale-line:first-child {
-    border-top: 1px solid rgba(255, 255, 255, 0.3) !important;
-}
-.ona-scale-nm {
-    border-color: rgba(224, 159, 62, 0.55) !important;
-    color: #f0d49c !important;
-}
-
-/* Scale bars + zoom badge in a horizontal row, bottom-left corner of
-   the map but lifted ABOVE the depth-HUD card so the two don't
-   collide. Leaflet's default bottom-left stack is vertical via
-   floats; we flip it to flex-row so "N m / N nm / z N" reads as
-   one strip in one glance.
+/* Zoom badge in the bottom-left corner of the map but lifted ABOVE
+   the depth-HUD card so the two don't collide. Scale bars used to
+   live alongside it; helm asked for them gone (rose / radar overlays
+   carry their own range cues).
 
    The bottom offset clears a typical depth card (~80 px tall when
    expanded) plus the HUD edge token. Hand-tuned -- a CSS-variable-
@@ -4821,7 +4800,6 @@ html.night-mode-global body {
 .map-container.dark-ops .route-edit-hint,
 .map-container.dark-ops .route-edit-list,
 .map-container.dark-ops .leaflet-control-zoom,
-.map-container.dark-ops .leaflet-control-scale,
 .map-container.dark-ops .ona-zoom-badge {
     display: none !important;
 }
@@ -5649,6 +5627,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .route-popup-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .route-activate-btn,
+.route-deactivate-btn,
 .route-edit-btn,
 .route-delete-btn {
     background: transparent;
@@ -5660,11 +5639,19 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     -webkit-tap-highlight-color: transparent;
     border: 1px solid rgba(148, 163, 184, 0.35);
 }
-.route-activate-btn {
+/* Activate + Deactivate share the amber primary styling: visually
+   they're the same control surface (toggle the route's active state),
+   only the wording differs. Without sharing the size class
+   .route-deactivate-btn fell back to the default browser button look,
+   which made the popup wrap onto two rows because the buttons were
+   different heights. */
+.route-activate-btn,
+.route-deactivate-btn {
     color: #f1c47c;
     border-color: rgba(224, 159, 62, 0.55);
 }
-.route-activate-btn:hover {
+.route-activate-btn:hover,
+.route-deactivate-btn:hover {
     background: rgba(224, 159, 62, 0.18);
     color: #fde0a8;
     border-color: #e09f3e;
@@ -5688,6 +5675,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 @media (pointer: coarse) {
     .route-activate-btn,
+    .route-deactivate-btn,
     .route-edit-btn,
     .route-delete-btn { min-height: 44px; padding: 11px 16px; font-size: 0.85rem; }
 }

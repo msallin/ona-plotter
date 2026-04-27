@@ -209,6 +209,45 @@ public class NavigationDataTests
         await Assert.That(nav.AnchorPeakRadius).IsEqualTo(5.0);
     }
 
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_PeakResetsOnReDropWithoutClear()
+    {
+        // Some plugins / workflows re-drop without nulling the previous
+        // anchor position first ("move anchor", plugin upgrade, two
+        // clients racing the drop). Without the in-position-change
+        // reset the previous-spot peak persists into the new location
+        // and the HUD shows yesterday's high-water mark on tonight's
+        // arrival.
+        var nav = new NavigationData();
+        nav.ApplyAnchorPosition(47.39, 8.54);
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(35.0));
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(35.0);
+        // Re-drop a few hundred metres away without ClearAnchor first.
+        nav.ApplyAnchorPosition(47.395, 8.545);
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(5.0));
+        // Peak should now reflect only the new anchorage; the 35 m
+        // figure belonged to the previous spot.
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(5.0);
+    }
+
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_PeakUnchangedOnIdenticalPositionUpdate()
+    {
+        // Plugins that re-broadcast the same anchor.position every
+        // delta tick must not reset the peak. The 1 m floor in
+        // ApplyAnchorPosition is what protects against that. Mirror
+        // a typical "still at the same drop" scenario.
+        var nav = new NavigationData();
+        nav.ApplyAnchorPosition(47.39, 8.54);
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(28.0));
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(28.0);
+        // GPS jitter on the anchor position itself: same metric coords,
+        // sub-millimetre lat/lon delta.
+        nav.ApplyAnchorPosition(47.390000005, 8.540000005);
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(12.0));
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(28.0);
+    }
+
     // --- Course properties ---
 
     [Test]

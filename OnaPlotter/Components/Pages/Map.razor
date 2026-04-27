@@ -188,13 +188,19 @@
 
     @if (routeEditMode)
     {
+        @* IsEditingActiveRoute: true when the route currently being
+           edited is the same one driving the helm's active course.
+           Hides the redundant "Save & Go" button (saving the active
+           route IS keeping it active; the two operations are the
+           same). _activeRouteRegularSuppressed already tracks the
+           active route id elsewhere on the page so we reuse it. *@
         <RouteEditPanel Name="@routeEditName"
                         NameChanged="v => routeEditName = v"
                         Stats="@routeEditStats"
                         Coords="routeEditCoords"
                         Saving="@_saveInFlight"
                         IsEditingExisting="@(routeEditId is not null)"
-                        OnUndo="UndoLastWaypoint"
+                        IsEditingActiveRoute="@(routeEditId is not null && routeEditId == _activeRouteRegularSuppressed)"
                         OnReverse="ReverseEditRoute"
                         OnSave="SaveRoute"
                         OnSaveAsCopy="SaveRouteAsCopy"
@@ -1922,12 +1928,37 @@
     /// </summary>
     private async Task ToggleHarborMode()
     {
-        await Settings.SetHarborModeAsync(!Settings.HarborMode);
+        // Failure mode this guards against (PARA-001): if the JS interop
+        // throws after the C# flag has flipped to true, CpaAlarmRule
+        // short-circuits (alarms muted) but the chart still shows live
+        // AIS labels, COG vectors, and CPA arcs because the JS-side
+        // teardown never ran. The helm gets the worst of both worlds:
+        // alarms suppressed, visual cues unchanged, no signal that
+        // anything went wrong. Roll back the C# flag and toast the
+        // operator so the safety invariant ("alarms armed by default")
+        // is preserved.
+        bool requested = !Settings.HarborMode;
+        await Settings.SetHarborModeAsync(requested);
+        bool jsOk = true;
         if (module is not null)
         {
-            try { await module.InvokeVoidAsync("setHarborMode", Settings.HarborMode); }
+            try
+            {
+                await module.InvokeVoidAsync("setHarborMode", Settings.HarborMode);
+            }
             catch (JSDisconnectedException) { }
             catch (ObjectDisposedException) { }
+            catch (Exception ex)
+            {
+                jsOk = false;
+                Console.Error.WriteLine($"[interop] setHarborMode: {ex.Message}");
+            }
+        }
+        if (!jsOk)
+        {
+            await Settings.SetHarborModeAsync(!requested);
+            Toasts.Error("Harbor mode could not be applied; alarms remain active.");
+            return;
         }
         // Force an immediate AIS push so the moored-vessel filter takes
         // effect now rather than at the next 3 s tick. Without this
@@ -2023,7 +2054,7 @@
     }
 
     // Route + polygon edit methods live in Map.Editing.razor.cs:
-    //   StartRouteEdit / CancelRouteEdit / UndoLastWaypoint / EditRoute
+    //   StartRouteEdit / CancelRouteEdit / EditRoute
     //   UpdateRouteStats / CoordsEqual / RemoveRouteWaypoint
     //   SaveRoute / SaveRouteAndGo / SaveRouteCore / SaveRouteCoreInner
     //   StartPolygonEdit / CancelPolygonEdit / UndoLastPolygonVertex
