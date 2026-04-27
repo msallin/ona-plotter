@@ -239,10 +239,6 @@ let laylinePort = null;         // Red polyline from boat
 let laylineWpStarboard = null;  // Green polyline from waypoint (dimmer)
 let laylineWpPort = null;       // Red polyline from waypoint (dimmer)
 
-// Bearing/distance tool.
-let bearingLine = null;
-let bearingLabel = null;
-
 // MOB state.
 let mobMarker = null;
 let mobCircle = null;
@@ -642,6 +638,15 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // tapping outside or tapping the marker again.
     boatMarker.bindPopup('', { className: 'ais-popup', maxWidth: 260, closeButton: false });
     boatMarker.on('popupopen', () => {
+        // In measure mode, tapping the boat means "anchor this leg to the
+        // vessel" -- the measurement starts (or continues) from the boat
+        // and tracks it as it moves. Swallow the popup so the helm doesn't
+        // get the data card flashed up while they're plotting a distance.
+        if (measureActive) {
+            boatMarker.closePopup();
+            addVesselMeasurePoint();
+            return;
+        }
         const data = boatMarker._onaSelfData || {};
         boatMarker.setPopupContent(buildSelfPopupHtml(data));
     });
@@ -674,13 +679,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             return;
         }
         if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu').catch(() => {});
-        clearBearingLine();
-    });
-    // Double-click: toggle bearing/distance measurement line.
-    map.on('dblclick', (e) => {
-        L.DomEvent.stopPropagation(e);
-        if (bearingLine) clearBearingLine();
-        else drawBearingLine(e.latlng.lat, e.latlng.lng);
     });
 
     // Right-click (desktop) and long-press (touch) -> context menu callback to Blazor.
@@ -1014,6 +1012,14 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         const inside = dist <= anchorCircle.getRadius();
         const acColor = inside ? MapColors.anchorOk : MapColors.anchorDrag;
         anchorCircle.setStyle({ color: acColor, fillColor: acColor });
+    }
+
+    // Vessel-anchored measurement segments need their geometry + bearing
+    // / distance label re-derived from the new own-boat position. Skip
+    // the rebuild when no measurement leg references the boat to avoid
+    // wasting work on every NMEA tick.
+    if (measureActive && measurePoints.length > 0 && hasVesselMeasurePoint()) {
+        redrawMeasure();
     }
 }
 
@@ -1641,39 +1647,18 @@ function drawGuardZone() {
     }
 }
 
-// --- Bearing/Distance ---
-
-function drawBearingLine(lat, lon) {
-    if (!map || !boatMarker) return;
-    clearBearingLine();
-
-    const dist = haversineMeters(selfLat, selfLon, lat, lon) * NM_PER_METER;
-    const brg = bearingDeg(selfLat, selfLon, lat, lon);
-
-    bearingLine = L.polyline([[selfLat, selfLon], [lat, lon]], {
-        color: '#e2e8f0', weight: 1.5, dashArray: '8,6', opacity: 0.7
-    }).addTo(map);
-
-    bearingLabel = L.tooltip({ permanent: true, direction: 'center', className: 'bearing-tooltip' })
-        .setLatLng([(selfLat + lat)/2, (selfLon + lon)/2])
-        .setContent(`${brg.toFixed(0)}&deg; / ${dist.toFixed(2)} nm`)
-        .addTo(map);
-}
-
-function clearBearingLine() {
-    if (bearingLine) { map.removeLayer(bearingLine); bearingLine = null; }
-    if (bearingLabel) { map.removeLayer(bearingLabel); bearingLabel = null; }
-}
-
 // --- Persistent measurement tool ---
-// Multi-segment ruler: clicks drop measurement points, each segment
-// is labelled with bearing + distance, running total shown on the
-// last point. Intentionally NOT anchored to own-boat (the dblclick
-// helper above covers that) -- this is for chart planning, e.g.
-// summing the distance of a route before you create it.
+// Multi-segment ruler: clicks drop measurement points, each segment is
+// labelled with bearing + distance and the last point shows a running
+// total. A point can be vessel-anchored (tracks own-boat as it moves)
+// or fixed on the chart, which lets the helm answer both "how far is
+// that island from where I am?" and "how long is this planned leg?"
+// with the same tool. The colour matches what used to be the
+// double-click "bearing line" so the two overlays read as one feature.
+const MEASURE_COLOR = '#e2e8f0';
 let measureActive = false;
-let measurePoints = [];     // [[lat, lon], ...]
-const measureLayers = [];    // parallel array of L.Polyline / L.Marker
+let measurePoints = [];     // [{ lat, lon, vessel: bool }, ...]
+const measureLayers = [];    // L.Layer[] -- rebuilt by redrawMeasure()
 
 export function setMeasureMode(active) {
     measureActive = !!active;
@@ -1692,43 +1677,101 @@ export function clearMeasure() {
     measurePoints = [];
 }
 
+// Returns the current chart position for a measurement point. Vessel-
+// anchored points read live own-boat coords so the segment they
+// participate in updates as the boat moves.
+function measurePointLatLng(p) {
+    return p.vessel ? [selfLat, selfLon] : [p.lat, p.lon];
+}
+
+function hasVesselMeasurePoint() {
+    for (const p of measurePoints) if (p.vessel) return true;
+    return false;
+}
+
 function addMeasurePoint(lat, lon) {
     if (!map) return;
-    measurePoints.push([lat, lon]);
+    measurePoints.push({ lat, lon, vessel: false });
+    redrawMeasure();
+}
 
-    // A big enough dot to tap-to-delete later; also a waypoint-style visual.
-    // Cyan (bearing hue) so the measurement shares a family with the
-    // bearing-to-WP overlay -- "tools the user drew". The legend maps
-    // .legend-measure to --map-bearing, so this keeps the two in sync.
-    const dot = L.circleMarker([lat, lon], {
-        radius: 5, color: MapColors.bearing, fillColor: MapColors.bearing,
-        fillOpacity: 1, weight: 2
-    }).addTo(map);
-    measureLayers.push(dot);
+// Adds a vessel-anchored measurement point. Used by the boat-marker
+// click handler in measure mode and by measureFromVesselTo() below.
+function addVesselMeasurePoint() {
+    if (!map) return;
+    measurePoints.push({ lat: selfLat, lon: selfLon, vessel: true });
+    redrawMeasure();
+}
 
-    if (measurePoints.length >= 2) {
-        const a = measurePoints[measurePoints.length - 2];
-        const b = measurePoints[measurePoints.length - 1];
-        const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
-        const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
-        const seg = L.polyline([a, b], {
-            color: MapColors.bearing, weight: 2, dashArray: '6,4', opacity: 0.85
+// Tear down and rebuild every measure layer from the points array.
+// We rebuild rather than mutate-in-place because vessel-anchored
+// points need their dot, segment line, and tooltip all repositioned
+// together on every position update; a redraw is simpler than tracking
+// per-segment layer references and avoids drift when points are added
+// or cleared mid-update.
+function redrawMeasure() {
+    if (!map) return;
+    for (const layer of measureLayers) map.removeLayer(layer);
+    measureLayers.length = 0;
+    if (measurePoints.length === 0) return;
+
+    const positions = measurePoints.map(measurePointLatLng);
+
+    // Pre-compute running totals so the last-point tooltip can show
+    // the cumulative distance without re-walking the array each tick.
+    let runningTotalNm = 0;
+    for (let i = 0; i < positions.length; i++) {
+        const [lat, lon] = positions[i];
+
+        // Big enough dot to tap-to-delete later; also a waypoint-style
+        // visual cue. Vessel-anchored points get a slightly thicker
+        // ring so the helm can tell which leg follows the boat.
+        const dot = L.circleMarker([lat, lon], {
+            radius: 5,
+            color: MEASURE_COLOR,
+            fillColor: MEASURE_COLOR,
+            fillOpacity: 1,
+            weight: measurePoints[i].vessel ? 3 : 2,
+            className: 'ona-measure-dot',
         }).addTo(map);
-        measureLayers.push(seg);
+        measureLayers.push(dot);
 
-        const totalDist = measurePoints.slice(1).reduce((acc, p, i) => {
-            return acc + haversineMeters(measurePoints[i][0], measurePoints[i][1], p[0], p[1]);
-        }, 0) * NM_PER_METER;
+        if (i >= 1) {
+            const [aLat, aLon] = positions[i - 1];
+            const segDist = haversineMeters(aLat, aLon, lat, lon) * NM_PER_METER;
+            const segBrg = bearingDeg(aLat, aLon, lat, lon);
+            runningTotalNm += segDist;
 
-        const tooltip = L.tooltip({
-            permanent: true, direction: 'right', offset: [8, 0],
-            className: 'measure-tooltip'
-        })
-            .setLatLng(b)
-            .setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${totalDist.toFixed(2)} nm`)
-            .addTo(map);
-        measureLayers.push(tooltip);
+            const seg = L.polyline([[aLat, aLon], [lat, lon]], {
+                color: MEASURE_COLOR, weight: 2, dashArray: '6,4', opacity: 0.85,
+                className: 'ona-measure-line',
+            }).addTo(map);
+            measureLayers.push(seg);
+
+            const tooltip = L.tooltip({
+                permanent: true, direction: 'right', offset: [8, 0],
+                className: 'measure-tooltip'
+            })
+                .setLatLng([lat, lon])
+                .setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${runningTotalNm.toFixed(2)} nm`)
+                .addTo(map);
+            measureLayers.push(tooltip);
+        }
     }
+}
+
+// Public entry point for "Measure Here" in the map context menu.
+// Drops a fresh two-point measurement: vessel as the moving anchor,
+// the clicked spot as the fixed endpoint. Activates measure mode so
+// the helm can keep tapping to extend the ruler if they want a
+// multi-leg distance.
+export function measureFromVesselTo(lat, lon) {
+    if (!map) return;
+    clearMeasure();
+    measureActive = true;
+    map.getContainer().style.cursor = 'crosshair';
+    addVesselMeasurePoint();
+    addMeasurePoint(lat, lon);
 }
 
 // --- MOB ---
@@ -3872,7 +3915,6 @@ export function dispose() {
     chartLayers.clear();
     routeLayers.clear();
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];
-    bearingLine = null; bearingLabel = null;
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
     anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
     anchorRadiusLine = null;
