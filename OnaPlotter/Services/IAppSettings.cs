@@ -194,6 +194,15 @@ public interface IAppSettings
     /// heading nudges and the Stby / Auto / Wind / Route mode row.</summary>
     bool ShowAutopilotHud { get; }
 
+    /// <summary>When true, the dedicated Radar control card is rendered
+    /// on the map. Default OFF -- the layers panel already exposes
+    /// transmit / standby and a range dropdown, and helms on a vessel
+    /// without a radar plugin shouldn't see a permanently-empty card.
+    /// Operators with an active radar (Mayara / Garmin / Furuno via SK)
+    /// can enable this to get a glanceable status + range stepper +
+    /// transmit toggle without opening the layers panel mid-watch.</summary>
+    bool ShowRadarHud { get; }
+
     /// <summary>When true, Heading on the HUD / SailSteer / alarms
     /// resolves to <c>navigation.headingMagnetic</c> when published;
     /// otherwise <c>navigation.headingTrue</c> wins. Fluxgate compasses
@@ -298,6 +307,7 @@ public interface IAppSettings
     Task SetWaypointArrivalRadiusMetersAsync(double value);
     Task SetShowKeyboardHintsAsync(bool value);
     Task SetShowAutopilotHudAsync(bool value);
+    Task SetShowRadarHudAsync(bool value);
     Task SetPreferMagneticHeadingAsync(bool value);
     Task SetPreferMagneticCourseAsync(bool value);
     Task SetAutoAdvanceWaypointsAsync(bool value);

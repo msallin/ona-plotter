@@ -4666,6 +4666,73 @@ html.night-mode-global body {
     to   { width: 100%; }
 }
 
+/* Radar HUD card. Shares the autopilot card's chrome (.ap-engaged
+   border tint when transmitting; .ap-mode-btn for the power buttons;
+   the .holding sweep on the Transmit button via .ap-engage-btn) so
+   the helm reads "this is a hold-to-confirm" without learning new
+   visual language. Sits at the top of the bottom-right HUD stack. */
+.radar-hud-panel { min-width: 160px; text-align: center; }
+
+/* Picker shown only when more than one radar is detected. Sized like
+   the existing radar-range-select dropdown so the row height stays
+   stable when the picker swaps in/out. */
+.radar-hud-picker {
+    width: 100%;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    min-height: 26px;
+    margin: 4px 0;
+    background: var(--panel-bg);
+    color: var(--panel-text);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+}
+
+/* Single-radar fallback row: just the device name, slightly muted. */
+.radar-hud-name {
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+    margin: 4px 0 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Range stepper: -  1.5 nm  + on a single row. The value is the hero
+   number; the buttons are the same size as the autopilot heading
+   nudges so they tap cleanly through gloves. */
+.radar-hud-range-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    margin: 6px 0 4px;
+}
+.radar-hud-range-step {
+    min-width: 32px;
+    padding: 4px 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    line-height: 1;
+}
+.radar-hud-range-step:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+.radar-hud-range-value {
+    flex: 1 1 auto;
+    font-size: 0.95rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--sk-text);
+    min-width: 60px;
+}
+
+/* Power row reuses .ap-modes layout for spacing parity with the
+   autopilot card; .radar-hud-power is just a hook for future tweaks
+   without touching the AP rules. */
+.radar-hud-power { margin-top: 2px; }
+
 /* ===== Dark Ops =====
    Chrome-off mode for long offshore watches. The map + the alarm
    banner remain; everything else hides. Explicit opt-in via a long-
