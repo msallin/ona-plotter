@@ -458,6 +458,39 @@ html, body {
     color: var(--sk-text);
 }
 
+/* Theme tokens live on .page (e.g. .page.theme-light redefines
+   --sk-bg / --sk-text / etc), but the html, body rule above reads
+   --sk-bg from :root, so the body backdrop stays dark even when
+   the user picks Light or High-contrast. Result: any text rendered
+   OUTSIDE a card -- page h1, h2, h6.page-section-header,
+   .app-page-subtitle -- inherits the themed foreground colour but
+   paints on the unthemed (still dark) body BG, dropping to ~1-2.5:1
+   contrast (effectively invisible).
+
+   Hoisting the theme palette one level up via :has() exposes it to
+   :root, so the html/body rule above sees the flipped value. Mirrors
+   what the .night-mode-global rule (further down) does for night
+   mode: the redefinition lives on <html>, body inherits via cascade.
+   No-op when theme is dark/system-OS-dark/system-no-pref-cs (the
+   fallback branch is the original :root values). */
+html:has(.page.theme-light) {
+    --sk-bg: #f8fafc;
+    --sk-text: #0f172a;
+    --sk-text-muted: #475569;
+}
+html:has(.page.theme-high-contrast) {
+    --sk-bg: #ffffff;
+    --sk-text: #000000;
+    --sk-text-muted: #1f2937;
+}
+@media (prefers-color-scheme: light) {
+    html:has(.page.theme-system) {
+        --sk-bg: #f8fafc;
+        --sk-text: #0f172a;
+        --sk-text-muted: #475569;
+    }
+}
+
 /* Blazor error UI: hidden by default, shown by the framework on exception. */
 #blazor-error-ui {
     display: none;
@@ -708,6 +741,12 @@ a, .btn-link {
     margin-left: 0.18em;
     vertical-align: baseline;
     letter-spacing: 0.01em;
+    /* Reset the tabular-nums inherited from .metric-xl -- the unit
+       glyph ("kn" / "m" / "°") is alphabetic, not numeric, and the
+       tabular variant table has no useful effect on it. Explicit
+       reset signals intent so a future glyph (Greek, special) doesn't
+       silently inherit a tabular-numeric form. */
+    font-variant-numeric: normal;
 }
 
 .content {
@@ -740,9 +779,16 @@ h2 {
     background-color: var(--sk-surface-hover);
 }
 
+/* Bootstrap's default display-6 is weight 300 (Light cut). On Inter
+   Variable, weight 300 reads as wispy at iPad arm's length under
+   sun -- the secondary tier of the Dashboard (AWA / AWS / TWA / TWS /
+   HDG / COG / TWD / DTG / BRG / VMG / etc) all share this rule, so
+   the whole supporting band ends up undersized vs the .metric-xl
+   hero (700). 500 is the matching mid-range tier the HUD uses for
+   its .hud-value -- keeps cross-page rhythm consistent. */
 .card .display-6 {
     font-size: 2rem;
-    font-weight: 300;
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
     color: var(--sk-text);
 }
@@ -1341,10 +1387,15 @@ html:fullscreen .hud-stack-br {
    default so it's glanceable context ("you'll hear an alarm below
    this"); switches to a pulsing danger-red when the current depth is
    actually below the threshold - that's the value Skip asked for on
-   the helm: the exact number that just triggered the audio. */
+   the helm: the exact number that just triggered the audio.
+
+   Colour is an ALPHA-COMPOSITED off-white at the same opacity as
+   --hud-ink-dim so it lifts above WCAG AA body-text contrast on the
+   panel BG (was rgba(255,255,255,0.35), 3.2:1 -- below AA). Safety
+   info; the sailor needs to read what threshold is armed in sun. */
 .hud-threshold {
     font-size: 0.6rem;
-    color: rgba(255,255,255,0.35);
+    color: var(--hud-ink-dim);
     margin-top: 3px;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
@@ -1355,11 +1406,15 @@ html:fullscreen .hud-stack-br {
     animation: alarm-flash 2.5s ease-in-out infinite;
 }
 
-/* Position display in HUD */
+/* Position display in HUD.
+   Colour aligned with --hud-ink-dim so the lat/lon row clears WCAG
+   AA on the HUD panel BG (was rgba(255,255,255,0.4), 3.82:1 -- below
+   AA body-text floor). Helm reads this for situational awareness;
+   undermuting it was a sun-readability miss. */
 .hud-position {
     font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
-    color: rgba(255,255,255,0.4);
+    color: var(--hud-ink-dim);
     margin-top: 6px;
     padding-top: 5px;
     border-top: 1px solid rgba(255,255,255,0.08);
@@ -6276,16 +6331,21 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     transition: transform 0.3s ease-out;
 }
 
+/* Reads from token (--sk-text-muted) so night-mode + theme switches
+   propagate without per-rule overrides. Hard-coded rgba(255,255,255)
+   alphas were ignored by the night-mode token redefinition AND fell
+   below 4.5:1 contrast (especially the .sailsteer-unit alpha 0.35,
+   which composited to 3.2:1). */
 .sailsteer-label {
     font-size: 11px;
-    fill: rgba(255,255,255,0.45);
+    fill: var(--sk-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
 .sailsteer-value {
     font-size: 18px;
-    fill: #fff;
+    fill: var(--sk-text);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
@@ -6293,13 +6353,15 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    SignalK input rather than a confident zero. The sailor's eye
    catches the lighter colour faster than re-reading the dashes. */
 .sailsteer-value-muted {
-    fill: rgba(255,255,255,0.3);
+    fill: var(--sk-text-muted);
     font-style: italic;
+    opacity: 0.7;
 }
 
 .sailsteer-unit {
     font-size: 10px;
-    fill: rgba(255,255,255,0.35);
+    fill: var(--sk-text-muted);
+    opacity: 0.85;
 }
 
 /* Responsive: on narrow viewports (iPad mini portrait, phones) the
