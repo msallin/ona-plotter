@@ -1,0 +1,273 @@
+@using OnaPlotter.Models
+
+@* Radar control HUD card. Glanceable status + range stepper + power
+   toggle for the helm; mirrors the autopilot card's hold-to-engage
+   safety pattern (Transmit needs a 600 ms press to avoid radiating
+   on an accidental tap). When more than one radar is detected a
+   small picker swaps the controlled device.
+
+   Hidden when no radars are present (no SignalK radar plugin) so a
+   user who flipped the setting on without a real backend doesn't see
+   a permanently-empty card. The Layers panel's RadarsSection uses
+   the same callbacks (OnSetPower / OnSetRange) so both surfaces
+   stay in lock-step. *@
+
+@if (Radars.Count == 0) return;
+
+@{
+    // Resolve the displayed radar from the current selection. Re-runs
+    // on every render so a server poll that drops the previously-
+    // selected unit silently rolls forward to whatever's left instead
+    // of leaving the card pointing at a stale id.
+    var radar = ResolveSelected();
+}
+
+<div class="hud-panel hud-card radar-hud-panel @(IsTransmitting(radar) ? "ap-engaged" : "")">
+    <div class="hud-card-title">
+        <span class="hud-card-name">Radar</span>
+        @if (radar.Status is string s)
+        {
+            <span class="radar-status-chip radar-status-@StatusClassSuffix(s)" title="@s">
+                @s.ToUpperInvariant()
+            </span>
+        }
+    </div>
+
+    @if (Radars.Count > 1)
+    {
+        @* Picker only renders with multiple radars. A boat with one
+           HALO + one Garmin xHD is the realistic case; a single
+           radar shows just the name on the row above so the picker
+           dropdown doesn't waste a row. *@
+        <select class="map-btn radar-hud-picker"
+                value="@radar.Id"
+                @onchange="OnRadarPicked"
+                aria-label="Active radar">
+            @foreach (var r in Radars)
+            {
+                <option value="@r.Id">@DisplayName(r)</option>
+            }
+        </select>
+    }
+    else
+    {
+        <div class="radar-hud-name" title="@($"{radar.Brand} {radar.Model}".Trim())">
+            @DisplayName(radar)
+        </div>
+    }
+
+    @{
+        var rangeOptions = GetRangeOptions(radar);
+        int currentIdx = rangeOptions.FindIndex(v => v == (radar.Range ?? -1));
+    }
+    <div class="radar-hud-range-row">
+        <button class="ap-btn radar-hud-range-step"
+                disabled="@(currentIdx <= 0)"
+                @onclick="() => StepRange(radar, rangeOptions, -1)"
+                title="Range down">-</button>
+        <div class="radar-hud-range-value" title="Range">
+            @(radar.Range is int rm ? FormatRangeFor(radar, rm) : "--")
+        </div>
+        <button class="ap-btn radar-hud-range-step"
+                disabled="@(currentIdx < 0 || currentIdx >= rangeOptions.Count - 1)"
+                @onclick="() => StepRange(radar, rangeOptions, +1)"
+                title="Range up">+</button>
+    </div>
+
+    @* Power row. Stby is instant (the safety direction); Transmit
+       needs a 600 ms hold to avoid radiating on an accidental tap.
+       Same .ap-engage-btn / .holding visual language as the autopilot
+       engage modes so the helm reads "this is a hold-to-confirm" with
+       no extra learning. *@
+    <div class="ap-modes radar-hud-power">
+        <button class="ap-mode-btn @(IsStandby(radar) ? "active" : "")"
+                @onclick="() => OnSetPower.InvokeAsync((radar.Id, RadarPower.Standby))"
+                title="Standby (instant)">Stby</button>
+        <button class="ap-mode-btn ap-engage-btn @(IsTransmitting(radar) ? "active" : "") @(holding == radar.Id ? "holding" : "")"
+                @onpointerdown='@(() => HoldStart(radar.Id))'
+                @onpointerup="HoldEnd" @onpointerleave="HoldEnd"
+                @onpointercancel="HoldEnd"
+                title="Hold to transmit">Transmit</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RadarInfo> Radars { get; set; } = [];
+
+    [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> Capabilities { get; set; } =
+        new Dictionary<string, RadarCapabilities?>();
+
+    /// <summary>Fires when the user taps Stby or completes the
+    /// hold-to-engage on Transmit. Map.razor handles by calling
+    /// <c>RadarApi.SetControlAsync(radarId, "power", ...)</c>.</summary>
+    [Parameter] public EventCallback<(string radarId, RadarPower power)> OnSetPower { get; set; }
+
+    /// <summary>Fires when the user steps range up or down. Map.razor
+    /// handles by calling <c>RadarApi.SetControlAsync(radarId,
+    /// "range", ControlValue.ForRange(metres))</c>.</summary>
+    [Parameter] public EventCallback<(string radarId, int rangeMeters)> OnSetRange { get; set; }
+
+    /// <summary>Hold threshold for the Transmit button. Mirrors the
+    /// autopilot engage-mode hold so a helm gets a single muscle-memory
+    /// pattern across all "this could be dangerous if accidental"
+    /// controls. CSS animation duration must match.</summary>
+    private const int TransmitHoldMs = 600;
+
+    private string? _selectedRadarId;
+    private string? holding;
+    private CancellationTokenSource? _holdCts;
+
+    /// <summary>Picks the radar the card displays. Honours an explicit
+    /// user selection when still valid; otherwise prefers the
+    /// transmitting radar (the one with live data on the chart) and
+    /// falls back to the first radar so a freshly-loaded card always
+    /// has something useful to show even before the user picks.</summary>
+    private RadarInfo ResolveSelected()
+    {
+        if (_selectedRadarId is string id)
+        {
+            var match = Radars.FirstOrDefault(r => r.Id == id);
+            if (match is not null) return match;
+        }
+        return Radars.FirstOrDefault(r =>
+                string.Equals(r.Status, "transmit", StringComparison.OrdinalIgnoreCase))
+            ?? Radars[0];
+    }
+
+    private void OnRadarPicked(ChangeEventArgs e)
+    {
+        _selectedRadarId = e.Value?.ToString();
+    }
+
+    private async Task StepRange(RadarInfo radar, List<int> options, int direction)
+    {
+        if (options.Count == 0) return;
+        int idx = options.FindIndex(v => v == (radar.Range ?? -1));
+        // Current range absent from the option list (mid-step / custom
+        // firmware): seed from the nearest end so a step still moves.
+        if (idx < 0) idx = direction > 0 ? -1 : options.Count;
+        int next = idx + direction;
+        if (next < 0 || next >= options.Count) return;
+        await OnSetRange.InvokeAsync((radar.Id, options[next]));
+    }
+
+    // Hold-to-engage state machine. Identical pattern to MapHud's
+    // autopilot engage; kept local rather than shared because the
+    // duplication is ~20 lines and the two cards may diverge (e.g.
+    // a future "long-press for transmit-with-half-power" variant
+    // belongs only here). Tracks the radar id so a multi-radar
+    // helm can't have two transmit-presses overlapping their state.
+    private void HoldStart(string radarId)
+    {
+        _holdCts?.Cancel();
+        _holdCts = new CancellationTokenSource();
+        holding = radarId;
+        _ = RunHoldAsync(radarId, _holdCts.Token);
+    }
+
+    private async Task RunHoldAsync(string radarId, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TransmitHoldMs, ct);
+            if (ct.IsCancellationRequested) return;
+            holding = null;
+            await OnSetPower.InvokeAsync((radarId, RadarPower.Transmit));
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { /* released before threshold */ }
+    }
+
+    private void HoldEnd()
+    {
+        _holdCts?.Cancel();
+        _holdCts = null;
+        if (holding is not null)
+        {
+            holding = null;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static bool IsTransmitting(RadarInfo r) =>
+        string.Equals(r.Status, "transmit", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsStandby(RadarInfo r) =>
+        string.Equals(r.Status, "standby", StringComparison.OrdinalIgnoreCase);
+
+    private static string DisplayName(RadarInfo r) =>
+        !string.IsNullOrWhiteSpace(r.Name) ? r.Name!
+        : !string.IsNullOrWhiteSpace(r.Model) ? r.Model!
+        : r.Id;
+
+    // Whitelisted CSS class suffix for the status chip. Mirrors the
+    // logic in RadarsSection so both surfaces use the same palette
+    // and an unrecognised server string can't smuggle extra class
+    // tokens in via the chip.
+    private static string StatusClassSuffix(string status) =>
+        status?.Trim().ToLowerInvariant() switch
+        {
+            "transmit" => "transmit",
+            "standby" => "standby",
+            "off" => "off",
+            "preparing" => "preparing",
+            _ => "unknown",
+        };
+
+    /// <summary>Range options for the stepper. Same pecking order as
+    /// RadarsSection.GetRangeOptions: range control's validValues
+    /// first (the actual PUT whitelist), supportedRanges next
+    /// (looser superset), DefaultRangeLadder only while capabilities
+    /// are still in flight. Always splices the radar's current range
+    /// in if absent so the value stays selectable across step taps.</summary>
+    private List<int> GetRangeOptions(RadarInfo r)
+    {
+        IReadOnlyList<int> ranges = DefaultRangeLadder;
+        if (Capabilities.TryGetValue(r.Id, out var caps) && caps is not null)
+        {
+            if (caps.Controls.TryGetValue("range", out var rangeCtl)
+                && rangeCtl.ValidValues is { Length: > 0 } valid)
+            {
+                ranges = valid;
+            }
+            else if (caps.SupportedRanges is { Length: > 0 } supported)
+            {
+                ranges = supported;
+            }
+        }
+        var sorted = ranges.OrderBy(v => v).ToList();
+        if (r.Range is int current && !sorted.Contains(current))
+        {
+            sorted.Add(current);
+            sorted.Sort();
+        }
+        return sorted;
+    }
+
+    private string FormatRangeFor(RadarInfo r, int meters)
+    {
+        if (Capabilities.TryGetValue(r.Id, out var caps)
+            && caps?.Controls.TryGetValue("range", out var rangeCtl) == true
+            && rangeCtl.Descriptions is { } desc
+            && desc.TryGetValue(
+                meters.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                out var label)
+            && !string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+        return FormatRange(meters);
+    }
+
+    private static string FormatRange(int m) =>
+        m < 1000 ? $"{m} m" : $"{(m / 1852.0):F1} nm";
+
+    // Generic spread of metric ranges in metres. Used only as a
+    // placeholder while /capabilities is in flight; once caps arrive
+    // GetRangeOptions switches to the radar's own validValues.
+    private static readonly int[] DefaultRangeLadder =
+    [
+        50, 100, 250, 500, 1000, 1500, 2000, 3000, 4000, 6000,
+        8000, 12000, 16000, 24000, 36000, 48000, 74080,
+    ];
+}

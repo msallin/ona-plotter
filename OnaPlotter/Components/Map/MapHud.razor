@@ -271,14 +271,28 @@
     </div>
 </div>
 
-@* === Bottom-right stack: race + autopilot + heading compass ===
-   All three cards share the bottom-right corner. Heading compass is the
-   always-on anchor (last in DOM = corner-most visually). Race appears
-   above when in race mode + polar present. Autopilot above heading when
-   ShowAutopilotHud is enabled. Flex column auto-stacks them with
+@* === Bottom-right stack: radar + race + autopilot + heading compass ===
+   Heading compass is the always-on anchor (last in DOM = corner-most
+   visually). Race appears above when in race mode + polar present.
+   Autopilot above heading when ShowAutopilotHud is enabled. Radar
+   sits at the top of the stack when ShowRadarHud is on AND the
+   server actually has radars. Flex column auto-stacks them with
    --hud-gap, so adding/removing cards just collapses the gap -- no
    sibling pixel offsets to keep in sync. *@
 <div class="hud-stack hud-stack-br">
+
+@if (ShowRadarHud)
+{
+    @* HudRadarCard guards Radars.Count == 0 internally so a server
+       without a radar plugin shows nothing rather than an empty
+       card; the wrapping `if` here keeps the parameter wiring
+       cheap when the user has the feature off. *@
+    <OnaPlotter.Components.Map.Hud.HudRadarCard
+        Radars="Radars"
+        Capabilities="RadarCapabilities"
+        OnSetPower="OnSetRadarPower"
+        OnSetRange="OnSetRadarRange" />
+}
 
 @* === Race HUD (race mode + polar + wind; otherwise hidden) ===
    Compact performance card: current TWA, target boat speed from the
@@ -591,6 +605,34 @@
     /// Defaults to false because the engage buttons are easy to fat-
     /// finger on a touch device.</summary>
     [Parameter] public bool ShowAutopilotHud { get; set; } = false;
+
+    /// <summary>When true, render the dedicated Radar control card
+    /// (status / range stepper / Stby / Transmit). The card guards
+    /// itself against an empty <see cref="Radars"/> list, so this
+    /// parameter is the user opt-in and the radar list is the
+    /// data-availability gate. Defaults to false: a vessel without a
+    /// radar plugin shouldn't see a permanently-empty card just
+    /// because the setting was on by default.</summary>
+    [Parameter] public bool ShowRadarHud { get; set; } = false;
+
+    /// <summary>Radar devices the SignalK server knows about. Empty
+    /// list (default) is "no radar plugin"; the radar HUD card uses
+    /// it as its visibility gate.</summary>
+    [Parameter] public IReadOnlyList<OnaPlotter.Models.RadarInfo> Radars { get; set; } = [];
+
+    /// <summary>Per-radar static capabilities (range whitelist, control
+    /// metadata). Drives the range stepper's option list.</summary>
+    [Parameter] public IReadOnlyDictionary<string, OnaPlotter.Models.RadarCapabilities?> RadarCapabilities { get; set; } =
+        new Dictionary<string, OnaPlotter.Models.RadarCapabilities?>();
+
+    /// <summary>Forwarded from the radar HUD's Stby / Transmit buttons
+    /// up to Map.razor, which calls
+    /// <c>RadarApi.SetControlAsync(radarId, "power", ...)</c>.</summary>
+    [Parameter] public EventCallback<(string radarId, OnaPlotter.Models.RadarPower power)> OnSetRadarPower { get; set; }
+
+    /// <summary>Forwarded from the radar HUD's range stepper. Map.razor
+    /// calls <c>RadarApi.SetControlAsync(radarId, "range", ...)</c>.</summary>
+    [Parameter] public EventCallback<(string radarId, int rangeMeters)> OnSetRadarRange { get; set; }
 
     /// <summary>Polar service for target-speed + optimal-TWA lookup.
     /// Optional -- the race card hides when null or no polar is loaded.</summary>
