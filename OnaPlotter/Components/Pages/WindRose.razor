@@ -15,52 +15,61 @@
    without earning its screen real estate. *@
 
 @*
-   Layout: a two-column grid on screens >= 960px (covers iPad landscape
-   and any normal helm display), single column below. Left column owns
-   the polar rose; right column owns the live readouts and the TWD
-   history strip. Stacking the windplot below the rose -- the previous
-   layout -- wasted half the screen on big displays and pushed the
-   "current wind" reading below the fold.
+   Layout: two-column grid on screens >= 960 px (iPad landscape and
+   any helm display); single column below. Left = polar rose; right =
+   live readouts + TWD history. Both columns sit inside .wind-card so
+   the page reads as two grouped instrument clusters rather than four
+   floating tiles. Card chrome is now theme-agnostic -- the previous
+   "card on light only" rationale was wrong; what was missing on dark
+   theme was containment, not contrast.
 
-   Typography is consolidated to one scale (page title, section header,
-   meta, hero values) instead of the prior h2 / h4 / h6 / <p> mix that
-   read as "different widget per row".
+   SVG colours come from theme tokens (no hex literals on the page)
+   so night-mode + high-contrast modes follow without per-chart
+   overrides. SVG text inherits Inter Variable via .wind-page svg
+   text { font-family: inherit } -- one rule fixes the "mixed fonts"
+   complaint everywhere SVG text appears (compass / ring / axis).
 
-   Surface fills on the SVGs are dropped: on dark theme the
-   (--sk-surface) tint barely registers and just adds visual noise; on
-   light theme each section sits in a card via .wind-section so the
-   framing is delivered by the wrapper, not the SVG itself.
+   Subtitle dropped: it described "apparent wind angle vs speed"
+   but the page now also shows TWD history, gust / lull, shift rate
+   and a polar overlay. A subtitle that paraphrases one widget while
+   ignoring the rest is noise.
 *@
 <div class="app-page wind-page">
     <header class="app-page-header">
         <h1>Wind</h1>
-        <p class="app-page-subtitle">Apparent wind angle vs. speed; color indicates wind speed.</p>
     </header>
 
     <div class="wind-grid">
         @* === Left column: the polar rose + colour legend === *@
-        <section class="wind-section wind-rose-section" aria-label="Wind rose">
+        <section class="wind-card wind-rose-section" aria-label="Wind rose">
             <div class="wind-rose-canvas">
                 @if (!HasAnyWind)
                 {
-                    @* Empty state on top of the compass grid so the chrome is
-                       visible but the user sees "no sensor data yet". *@
+                    @* Empty state. Earlier copy mentioned the literal
+                       SignalK paths (environment.wind.angleApparent etc),
+                       which read as a developer message to the helm.
+                       Plain-English wording instead; the troubleshooting
+                       detail belongs in the docs / Settings page, not
+                       overlaid on the rose. *@
                     <div class="instrument-empty-state" role="status">
                         <strong>Waiting for wind data</strong>
-                        WindRose needs <em>environment.wind.angleApparent</em> +
-                        <em>speedApparent</em>. Connect a wind sensor or check the
-                        SignalK server.
+                        Connect a wind sensor or check the SignalK server.
                     </div>
                 }
                 <svg class="wind-rose-svg" viewBox="0 0 @Size @Size">
-        @* Background circles *@
+        @* Background circles. Stroke uses the theme token so the
+           grid follows night / light / high-contrast modes. *@
         @for (int i = 1; i <= RingCount; i++)
         {
             double r = i * ringSpacing;
-            <circle cx="@Cx" cy="@Cy" r="@r" fill="none" stroke="#444" stroke-width="0.5" />
+            <circle cx="@Cx" cy="@Cy" r="@r" fill="none"
+                    style="stroke: var(--sk-border);" stroke-width="0.5" />
         }
 
-        @* Compass direction lines and labels *@
+        @* Compass direction lines + labels. Cardinals (N/E/S/W) are
+           emphasised: larger size, weight 600, full --sk-text colour
+           so the eye anchors on them at a glance. Numeric inter-
+           mediates stay muted. Standard compass-rose convention. *@
         @foreach (var deg in compassDegrees)
         {
             double rad = deg * Math.PI / 180.0;
@@ -70,16 +79,25 @@
             double y2 = Cy - Math.Cos(rad) * MaxRadius;
             double lx = Cx + Math.Sin(rad) * (MaxRadius + 14);
             double ly = Cy - Math.Cos(rad) * (MaxRadius + 14);
-            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2" stroke="#555" stroke-width="0.5" />
-            @SvgText(lx, ly, CompassLabel(deg), "#aaa", 11)
+            bool isCardinal = deg is 0 or 90 or 180 or 270;
+            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                  style="stroke: var(--sk-border);" stroke-width="0.5" />
+            @SvgText(lx, ly, CompassLabel(deg),
+                isCardinal ? "var(--sk-text)" : "var(--sk-text-muted)",
+                isCardinal ? 13 : 10,
+                fontWeight: isCardinal ? "600" : null)
         }
 
-        @* Speed ring labels (knots) *@
+        @* Speed ring labels (knots). Placed just INSIDE each ring at
+           the top so the outermost ("30 kn") doesn't crowd the
+           cardinal label sitting outside the ring. Token colour, no
+           hex literal. *@
         @for (int i = 1; i <= RingCount; i++)
         {
             double r = i * ringSpacing;
             double kn = i * speedPerRing;
-            @SvgText(Cx + 2, Cy - r - 2, $"{kn:F0} kn", "#666", 10, anchor: "start")
+            @SvgText(Cx + 4, Cy - r + 12, $"{kn:F0} kn",
+                "var(--sk-text-muted)", 10, anchor: "start")
         }
 
         @* Historical wind data points *@
@@ -159,92 +177,100 @@
             </div>
         </section>
 
-        @* === Right column: live readouts + TWD history === *@
-        <aside class="wind-aside">
-            @* Hero card. The previous "Current: 12.3 kn at 45° apparent"
-               sentence sat below the rose, well below the fold on tall
-               displays. The hero pulls the live reading up to where the
-               eye lands first. Speed dominates (it's what determines
-               sail trim); angle is secondary. Empty dashes ("--")
-               keep the layout stable when the sensor isn't reporting. *@
-            <div class="wind-hero">
-                <div class="wind-hero-primary">
-                    <span class="wind-hero-value">@(currentWind?.SpeedKn.ToString("F1") ?? "--")</span>
-                    <span class="wind-hero-unit">kn</span>
+        @* === Right column: live readouts + TWD history.
+           Was <aside> -- semantically wrong: this column is the page's
+           primary live data, not a tangentially-related sidebar. <section>
+           announces correctly to screen readers ("region" / labelled). *@
+        <section class="wind-aside" aria-label="Live wind and direction history">
+            @* Hero card. Eyebrow ("Apparent wind") sits ABOVE the value
+               so the qualifier doesn't compete with the unit "kn" --
+               they're different *kinds* of label and need different
+               typographic weight (eyebrow is muted small-caps, unit is
+               muted small-caps inline). Layout reserves min-height so a
+               sensor dropout doesn't collapse the column and shove the
+               history section up. *@
+            <section class="wind-card wind-hero" aria-label="Live wind">
+                <div class="wind-hero-eyebrow">Apparent wind</div>
+                <div class="wind-hero-readouts">
+                    <div class="wind-hero-primary">
+                        <span class="wind-hero-value">@(currentWind?.SpeedKn.ToString("F1") ?? "--")</span>
+                        <span class="wind-hero-unit">kn</span>
+                    </div>
+                    <div class="wind-hero-secondary">
+                        <span class="wind-hero-angle">
+                            @(currentWind is null ? "--" : ((currentWind.Value.Angle * 180 / Math.PI + 360) % 360).ToString("F0") + "°")
+                        </span>
+                    </div>
                 </div>
-                <div class="wind-hero-secondary">
-                    <span class="wind-hero-angle">
-                        @(currentWind is null ? "--" : ((currentWind.Value.Angle * 180 / Math.PI + 360) % 360).ToString("F0") + "°")
-                    </span>
-                    <span class="wind-hero-label">apparent</span>
-                </div>
-            </div>
 
-            @* === Tactical badges row ===
-               Gust / lull over the last 2 min and shift-rate over the last 5 min.
-               Each renders nothing when its underlying sample count is
-               insufficient, so "this badge is silent" stays meaningful. *@
-            @if (GustLull is not null || ShiftRate is not null)
-            {
-                <div class="wind-badges">
-                    @if (GustLull is (double gust, double lull, double mean))
-                    {
-                        <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                              title="Peak AWS minus mean over the last @GustLullWindowMin min">
-                            <span class="instrument-badge-label">Gust</span>
-                            +@gust.ToString("F1") kn
-                        </span>
-                        <span class="instrument-badge"
-                              title="Lowest AWS minus mean over the last @GustLullWindowMin min">
-                            <span class="instrument-badge-label">Lull</span>
-                            -@lull.ToString("F1") kn
-                        </span>
-                        <span class="instrument-badge"
-                              title="Mean AWS over the last @GustLullWindowMin min">
-                            <span class="instrument-badge-label">Mean</span>
-                            @mean.ToString("F1") kn
-                        </span>
-                    }
-                    @if (ShiftRate is double rate)
-                    {
-                        string cls = Math.Abs(rate) >= 3 ? "instrument-badge-warn"
-                                   : Math.Abs(rate) >= 1 ? "instrument-badge"
-                                   : "instrument-badge-good";
-                        string sign = rate >= 0 ? "+" : "";
-                        <span class="instrument-badge @cls"
-                              title="TWD slope over the last @ShiftRateWindowMin min -- positive = veering, negative = backing">
-                            <span class="instrument-badge-label">Shift</span>
-                            @sign@rate.ToString("F1") &deg;/min
-                        </span>
-                    }
-                </div>
-            }
+                @* === Tactical chips: gust / lull / mean (last 2 min) +
+                       shift-rate (last 5 min). Each renders nothing when
+                       its sample count is insufficient, so "this chip is
+                       silent" stays meaningful. *@
+                @if (GustLull is not null || ShiftRate is not null)
+                {
+                    <div class="wind-badges">
+                        @if (GustLull is (double gust, double lull, double mean))
+                        {
+                            <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
+                                  title="Peak AWS minus mean over the last @GustLullWindowMin min">
+                                <span class="instrument-badge-label">Gust</span>
+                                +@gust.ToString("F1") kn
+                            </span>
+                            <span class="instrument-badge"
+                                  title="Lowest AWS minus mean over the last @GustLullWindowMin min">
+                                <span class="instrument-badge-label">Lull</span>
+                                -@lull.ToString("F1") kn
+                            </span>
+                            <span class="instrument-badge"
+                                  title="Mean AWS over the last @GustLullWindowMin min">
+                                <span class="instrument-badge-label">Mean</span>
+                                @mean.ToString("F1") kn
+                            </span>
+                        }
+                        @if (ShiftRate is double rate)
+                        {
+                            string cls = Math.Abs(rate) >= 3 ? "instrument-badge-warn"
+                                       : Math.Abs(rate) >= 1 ? "instrument-badge"
+                                       : "instrument-badge-good";
+                            string sign = rate >= 0 ? "+" : "";
+                            <span class="instrument-badge @cls"
+                                  title="TWD slope over the last @ShiftRateWindowMin min -- positive = veering, negative = backing">
+                                <span class="instrument-badge-label">Shift</span>
+                                @sign@rate.ToString("F1") &deg;/min
+                            </span>
+                        }
+                    </div>
+                }
+            </section>
 
-            @* === TWD history strip === *@
+            @* === TWD history strip ===
+               Render bar:
+                 - Suppress the chart entirely when fewer than 5 samples
+                   exist or the timespan is < 30 s. A 2-point line with
+                   a degenerate axis is misleading on a tactical display.
+                 - Sample count moves to the section header (right-
+                   aligned), separating "ambient state" from "chart
+                   legend" -- the previous one-line meta concatenated
+                   three orthogonal facts. *@
             @{
-                // Sliding window view of the TWD history. The buffer itself always
-                // holds MaxWindowMinutes worth of samples; what the user sees is a
-                // trailing slice selected by the segmented control. Short windows
-                // (15m) are great for spotting a pending shift mid-race; long
-                // windows (3h) are useful for a sunset wind-clocking pattern on a
-                // cruise.
                 var cutoff = DateTime.UtcNow.AddMinutes(-windowMinutes);
                 var visible = twdHistory.Where(s => s.Time >= cutoff).ToList();
+                bool hasUsableHistory = visible.Count >= 5
+                    && (visible[^1].Time - visible[0].Time).TotalSeconds >= 30;
             }
 
             @if (twdHistory.Count > 1)
             {
-                <section class="wind-section wind-history-section" aria-label="Wind direction history">
+                <section class="wind-card wind-history-section" aria-label="Wind direction history">
                     <header class="wind-section-header">
                         <h2 class="wind-section-title">TWD history</h2>
                         <TimeWindowSelector @bind-Value="windowMinutes"
                                             Choices="WindowChoices"
                                             AriaLabel="TWD history window" />
+                        <span class="wind-section-meta wind-section-count">@visible.Count samples</span>
                     </header>
-                    <p class="wind-section-meta">
-                        Last @windowMinutes min &middot; @visible.Count samples &middot; green = mean
-                    </p>
-                    @if (visible.Count > 1)
+                    @if (hasUsableHistory)
                     {
                         <svg class="wind-history-svg" viewBox="0 0 @WpWidth @WpHeight">
         @* Y-axis labels (degrees) *@
@@ -261,13 +287,17 @@
             double timeSpan = Math.Max((newest - oldest).TotalSeconds, 1);
         }
 
-        @* Grid lines *@
+        @* Grid lines + degree axis. Stroke colours come from theme
+           tokens so night / high-contrast modes follow without per-
+           chart overrides. *@
         @for (int i = 0; i <= 4; i++)
         {
             double y = WpPad + (WpPlotH * i / 4.0);
             double deg = twdMax - (twdMax - twdMin) * i / 4.0;
-            <line x1="@WpPad" y1="@F(y)" x2="@(WpWidth - 10)" y2="@F(y)" stroke="#333" stroke-width="0.5" />
-            @SvgText(WpPad - 4, y, $"{deg:F0}", "#666", 10, anchor: "end")
+            <line x1="@WpPad" y1="@F(y)" x2="@(WpWidth - 10)" y2="@F(y)"
+                  style="stroke: var(--sk-border);" stroke-width="0.5" />
+            @SvgText(WpPad - 4, y, $"{deg:F0}",
+                "var(--sk-text-muted)", 10, anchor: "end")
         }
 
         @* Mean TWD line *@
@@ -281,19 +311,41 @@
         <polyline fill="none" style="stroke: var(--sk-accent);" stroke-width="1.5" opacity="0.9"
                   points="@TwdPolylinePoints(visible, twdMin, twdMax, oldest, timeSpan)" />
 
-        @* Time axis labels *@
+        @* Time axis labels. Format adapts to the actual span: seconds
+           for < 60 s, decimal minutes for < 10 min, integer minutes
+           otherwise. The previous code rounded to integer minutes
+           always and produced "-0m -0m -0m -0m" for sub-minute spans
+           (when the helm just opened the page and only a few samples
+           had landed). *@
         @for (int i = 0; i <= 3; i++)
         {
             double x = WpPad + (WpPlotW * i / 3.0);
-            double secs = timeSpan * i / 3.0;
-            string label = $"-{(int)((timeSpan - secs) / 60)}m";
-            @SvgText(x, WpHeight - 4, label, "#666", 10)
+            double secsAgo = timeSpan * (1 - i / 3.0);
+            @SvgText(x, WpHeight - 4, FormatAgo(secsAgo),
+                "var(--sk-text-muted)", 10)
         }
+
+        @* Inline legend (mean / now) so the chart self-documents and
+           the meta line below the section header doesn't have to
+           carry "green = mean" alongside the sample count. *@
+        <line x1="@(WpWidth - 80)" y1="14" x2="@(WpWidth - 64)" y2="14"
+              style="stroke: var(--sev-ok);" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7" />
+        @SvgText(WpWidth - 60, 14, "mean", "var(--sk-text-muted)", 10, anchor: "start")
                         </svg>
+                    }
+                    else
+                    {
+                        @* Not enough samples for a useful chart yet.
+                           A 2-point line on a degenerate axis is more
+                           misleading than no chart, so suppress until
+                           we have meaningful data. *@
+                        <p class="wind-history-empty">
+                            Collecting samples; chart appears once @(5 - visible.Count) more land.
+                        </p>
                     }
                 </section>
             }
-        </aside>
+        </section>
     </div>
 </div>
 
@@ -529,6 +581,25 @@
         return new MarkupString(
             $"<text x=\"{x}\" y=\"{y}\" style=\"fill: {fill};\" font-size=\"{fontSize}\"{weight} " +
             $"text-anchor=\"{anchor}\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+
+    /// <summary>
+    /// Formats a "seconds ago" value as a short human-readable label
+    /// for the TWD time axis. Adapts to the magnitude:
+    ///   &lt; 60 s -> "-Ns"   (e.g. "-15s")
+    ///   &lt; 10 min -> "-N.Nm" (e.g. "-3.5m")
+    ///   otherwise -> "-Nm"   (e.g. "-25m")
+    /// At the rightmost tick (now) returns "now" rather than "-0s".
+    /// Replaces an integer-minute formatter that produced "-0m -0m
+    /// -0m -0m" when the visible span was under a minute.
+    /// </summary>
+    private static string FormatAgo(double secsAgo)
+    {
+        if (secsAgo < 0.5) return "now";
+        if (secsAgo < 60)  return $"-{(int)Math.Round(secsAgo)}s";
+        double mins = secsAgo / 60.0;
+        if (mins < 10) return $"-{mins.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}m";
+        return $"-{(int)Math.Round(mins)}m";
     }
 
     /// <summary>
