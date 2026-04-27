@@ -39,7 +39,7 @@ public class AlarmManagerTests
         IAlarmRule[] rules =
         [
             new ShallowAlarmRule(),
-            new CpaAlarmRule(),
+            new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker()),
             new WindShiftAlarmRule(),
         ];
         // Reflection access to the internal clock-injecting constructor.

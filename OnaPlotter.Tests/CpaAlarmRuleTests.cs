@@ -78,7 +78,7 @@ public class CpaAlarmRuleTests
     {
         // Head-on closer at 200 m with closing speed 10 m/s -> TCPA ~0.33 min,
         // CPA ~0 nm. Settings default (CPA 0.5, lookahead 10 min) -> alarm.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
         var threat = ThreatNorthOf(200, speedMs: 5, name: "MV Close");
         var alarm = rule.Check(Ctx(nav, [threat], new FakeSettings()));
@@ -101,7 +101,7 @@ public class CpaAlarmRuleTests
         // audio alarm comes through here -- pinning that the rule
         // short-circuits when Settings.HarborMode is true so a
         // dismissed visual overlay can't keep the klaxon chirping.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
         var threat = ThreatNorthOf(200, speedMs: 5, name: "MV Close");
         var settings = new FakeSettings { HarborMode = true };
@@ -116,7 +116,7 @@ public class CpaAlarmRuleTests
         // pin the symmetry so a future regression that gates Harbor
         // mode by other means (e.g. a settings cache) can't leave the
         // alarms silenced after the helm releases the toggle.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
         var threat = ThreatNorthOf(200, speedMs: 5);
         var settings = new FakeSettings { HarborMode = false };
@@ -128,7 +128,7 @@ public class CpaAlarmRuleTests
     {
         // If own SOG is null the rule can't project -- must return null
         // rather than compute on bogus defaults.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = new NavigationData();
         nav.ApplyPosition(OwnLat, OwnLon);
         // Intentionally no COG / SOG applied.
@@ -139,7 +139,7 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task Silent_WhenVesselLacksMotion()
     {
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var threat = new AisVessel("vessels.x")
         {
             Latitude = OwnLat + 0.01,
@@ -158,7 +158,7 @@ public class CpaAlarmRuleTests
         // tick still fires -- the tracker isn't convinced yet; the
         // second tick past 60s later skips. Exercises the dwell flow
         // end-to-end through the rule's private tracker.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
         var parked = ThreatNorthOf(120, speedMs: 0.25, name: "Anchored Cat");
         var t0 = DateTime.UtcNow;
@@ -181,7 +181,7 @@ public class CpaAlarmRuleTests
         // Just above the 1 kn cutoff -- still a threat. Pins the
         // boundary so a future refactor doesn't accidentally widen
         // the filter into "ignore anyone under 2 kn".
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var crawling = ThreatNorthOf(200, speedMs: 0.6, name: "Slow Mover");
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [crawling], new FakeSettings()))).IsNotNull();
     }
@@ -191,7 +191,7 @@ public class CpaAlarmRuleTests
     {
         // Same closing scenario as "fires" but marked as buddy -- must
         // NOT fire. This is the spec: friends are never threats.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var buddy = ThreatNorthOf(200, name: "Sailing Companion", buddy: true);
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [buddy], new FakeSettings()))).IsNull();
     }
@@ -199,7 +199,7 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task HonoursSnoozePredicate()
     {
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var threat = ThreatNorthOf(200);
         bool IsSnoozed(string ctx) => ctx == threat.Context;
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings(), IsSnoozed))).IsNull();
@@ -213,7 +213,7 @@ public class CpaAlarmRuleTests
         // Bit-exact equality is brittle to floating-point drift in
         // the Cpa.Compute projection, so we pin the inequality with
         // a 10% margin on each side rather than a 0% edge.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = OwnShipUnderway();
         double cpaLimitNm = 0.5;
         double metresPerDegLon = 111_320 * Math.Cos(OwnLat * Math.PI / 180);
@@ -254,7 +254,7 @@ public class CpaAlarmRuleTests
         // Threat inside CPA radius but TCPA way beyond lookahead.
         // 80 nm distant (~ 148 km), closing at 5+5 = 10 m/s -> TCPA ~ 247 min.
         // Default GuardZoneLookaheadMinutes = 10. Must not fire.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var threat = ThreatNorthOf(metresNorth: 148_000, speedMs: 5);
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings()))).IsNull();
     }
@@ -266,7 +266,7 @@ public class CpaAlarmRuleTests
         // happens to hit first (the spec is "any threat fires"; the
         // AlarmManager orders + stacks). Just assert SOME threat fires
         // and the TargetKey is one of the two inputs.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var a = ThreatNorthOf(200, name: "Close A");
         var b = ThreatNorthOf(300, name: "Close B");
         var alarm = rule.Check(Ctx(OwnShipUnderway(), [a, b], new FakeSettings()));
@@ -279,7 +279,7 @@ public class CpaAlarmRuleTests
     {
         // A fresh rule with an empty vessel list returns null, which
         // AlarmManager uses to auto-clear any stale CPA entry.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [], new FakeSettings()))).IsNull();
     }
 
@@ -290,7 +290,7 @@ public class CpaAlarmRuleTests
         // ordering and stack semantics. If any of these change
         // accidentally, rules above/below this priority level re-
         // order, which is a subtle visual regression.
-        var rule = new CpaAlarmRule();
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         await Assert.That(rule.Title).IsEqualTo("CPA");
         await Assert.That(rule.Priority).IsEqualTo(200);
         await Assert.That(rule.AutoClear).IsTrue();

@@ -16,7 +16,14 @@ public sealed class CpaAlarmRule : IAlarmRule
     public int Priority => 200;    // between grounding and wind shift
     public bool AutoClear => true;
 
-    private readonly MooredVesselTracker _moored = new();
+    // Shared moored-vessel tracker. Was previously instantiated locally
+    // here AND in Map.razor's PushAisTargets, so the two paths kept
+    // separate dwell counters and could disagree on whether a given
+    // vessel was moored. One registered service means alarm + harbour
+    // filter share a single source of truth and the SK navigation.state
+    // rules below only need to live in one place.
+    private readonly IMooredVesselTracker _moored;
+    public CpaAlarmRule(IMooredVesselTracker moored) => _moored = moored;
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
