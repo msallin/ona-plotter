@@ -84,7 +84,13 @@
            and TWS values sit below in matching colours so the eye can
            pair value <-> arrow without needing the AWA/TWA letters
            spelled out (the colours do that work). *@
-        <div class="hud-label"><span class="wind-label-aws">AW</span><span class="wind-label-sep"> / </span><span class="wind-label-tws">TW</span></div>
+        @* Label is just "AW" -- the big number below is the apparent
+           wind speed. The dial still draws BOTH arrows (apparent blue
+           + true green) so the angular delta reads at-a-glance, but
+           the numeric reading stays single + uncluttered. TWA / TWS
+           are spelled out in the expanded view for when the helm
+           wants the precise true-wind numbers. *@
+        <div class="hud-label">AW</div>
         @* Same dial radius as the HDG compass (r=24 in a -26..26 viewBox)
            so the two dials read as a matched pair across the right column. *@
         <svg width="52" height="52" viewBox="-26 -26 52 52" class="wind-dial"
@@ -113,18 +119,11 @@
             }
             <circle cx="0" cy="0" r="2" fill="rgba(255,255,255,0.5)"/>
         </svg>
-        @* Combined value line "AW / TW kn" -- both speeds share the
-           same row + a single "kn" unit so the card stays narrow.
-           Hidden entirely when neither wind speed is present. *@
-        @if (Data.WindSpeedApparent is not null || Data.WindSpeedTrue is not null)
+        @* Just the apparent wind speed. The true-wind speed is in the
+           expanded extras below as a labelled "TWS" row. *@
+        @if (Data.WindSpeedApparent is not null)
         {
-            <div class="hud-value">@if (Data.WindSpeedApparent is not null) {
-                <span class="wind-aws">@Format.Speed(Data.WindSpeedApparent)</span>
-            }@if (Data.WindSpeedApparent is not null && Data.WindSpeedTrue is not null) {
-                <span class="wind-sep"> / </span>
-            }@if (Data.WindSpeedTrue is not null) {
-                <span class="wind-tws">@Format.Speed(Data.WindSpeedTrue)</span>
-            }<span class="hud-unit">kn</span></div>
+            <div class="hud-value">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
         }
         @if (IsExpanded("tr"))
         {
