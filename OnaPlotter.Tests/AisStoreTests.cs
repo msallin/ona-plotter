@@ -398,6 +398,91 @@ public class AisStoreTests
         await Assert.That(snapshot[0].Mmsi).IsEqualTo("2");
     }
 
+    // --- Stale eviction: long-running session must not leak vessels ---
+
+    [Test]
+    public async Task GetVessels_AfterLongIdle_PrunesStaleEntries()
+    {
+        // Boats sitting at anchor in port watch the AIS list grow for
+        // hours. The store evicts entries whose LastSeen is older than
+        // 10 min during a throttled prune (every 2 min). A vessel that
+        // hasn't been seen for 15 min must drop off the snapshot.
+        //
+        // Reflection drives the LastSeen field directly because the
+        // wire-side interface only sets it through Apply() and we
+        // can't move the wall clock back to "12 minutes ago" without
+        // either real waits or model changes. The reflection is
+        // brittle by design: a rename should fail this test loudly so
+        // the prune contract gets an explicit follow-up.
+        var store = new AisStore();
+        var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:stale-1", "navigation.position", pos);
+        store.Apply("vessels.urn:mrn:imo:mmsi:stale-2", "navigation.position", pos);
+        store.Apply("vessels.urn:mrn:imo:mmsi:fresh-1", "navigation.position", pos);
+
+        // Backdate two of the three vessels. LastSeen is a public
+        // setter so we can mutate without reflection. The store also
+        // keeps a private _lastPruneTime gating the 2-min throttle;
+        // we nudge that via reflection so the next GetVessels triggers
+        // a prune sweep.
+        var staleCutoff = DateTime.UtcNow.AddMinutes(-15);
+        foreach (var v in store.GetVessels())
+        {
+            if (v.Context.Contains("stale"))
+            {
+                v.LastSeen = staleCutoff;
+            }
+        }
+
+        // Reset the throttle so the next GetVessels triggers a prune.
+        var pruneField = typeof(AisStore).GetField(
+            "_lastPruneTime", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        pruneField.SetValue(store, DateTime.UtcNow.AddMinutes(-3));
+
+        var snapshot = store.GetVessels();
+        await Assert.That(snapshot.Length).IsEqualTo(1);
+        await Assert.That(snapshot[0].Context).IsEqualTo("vessels.urn:mrn:imo:mmsi:fresh-1");
+    }
+
+    [Test]
+    public async Task UpdateBuddies_NoChange_DoesNotFire()
+    {
+        // Calling UpdateBuddies with the same set as last time must not
+        // refire OnAisUpdated -- the observer would otherwise repaint
+        // the entire vessel list on every settings tick. Boundary case
+        // for the "if (changed)" guard.
+        var store = new AisStore();
+        var pos = System.Text.Json.JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:bud-1", "navigation.position", pos);
+        store.UpdateBuddies(["vessels.urn:mrn:imo:mmsi:bud-1"]);
+
+        int fires = 0;
+        store.OnAisUpdated += () => fires++;
+
+        // Same set again -- the buddy flag for bud-1 is already true,
+        // so no flip happens and the event must not fire.
+        store.UpdateBuddies(["vessels.urn:mrn:imo:mmsi:bud-1"]);
+        await Assert.That(fires).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Evict_NullOrEmpty_NoOp()
+    {
+        // Wire-protocol robustness: a malformed delta could feed an
+        // empty context here. The guard mirrors RemoveContext and
+        // SetName -- early-return so no event fires and no spurious
+        // blocklist entry is added.
+        var store = new AisStore();
+        int fires = 0;
+        store.OnAisUpdated += () => fires++;
+
+        store.Evict("");
+        store.Evict(null!);
+
+        await Assert.That(fires).IsEqualTo(0);
+        await Assert.That(store.Count).IsEqualTo(0);
+    }
+
     [Test]
     public async Task GetVessels_ConcurrentApplyAndRead_NoCorruptionAndEventualConsistency()
     {

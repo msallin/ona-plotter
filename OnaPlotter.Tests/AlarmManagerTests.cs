@@ -915,4 +915,209 @@ public class AlarmManagerTests
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(mgr.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
     }
+
+    // --- HiddenAlarmsCount: stack overflow visibility ---
+
+    [Test]
+    public async Task HiddenAlarmsCount_ZeroByDefault_AndWhenStackUnderCap()
+    {
+        // Boundary: empty stack + small stack must both report 0.
+        // The chip surfaces only when active alarms exceed MaxActiveAlarms.
+        var a = new StubRule("A", 100, AlarmSeverity.Danger);
+        var b = new StubRule("B", 200, AlarmSeverity.Warn);
+        var (mgr, _, settings) = NewMgrWith(a, b);
+
+        await Assert.That(mgr.HiddenAlarmsCount).IsEqualTo(0);
+
+        mgr.Evaluate(Nav(), [], settings);
+        await Assert.That(mgr.HiddenAlarmsCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task HiddenAlarmsCount_ReportsOverflowOnceStackExceedsCap()
+    {
+        // Five concurrent alarms hit a 3-alarm cap -> 2 hidden. The
+        // chip's job is to tell the helm "you have more alarms; expand
+        // the panel to see them" so a fourth alarm doesn't silently
+        // disappear behind the visible top three.
+        var a = new StubRule("A", 100, AlarmSeverity.Danger);
+        var b = new StubRule("B", 110, AlarmSeverity.Danger);
+        var c = new StubRule("C", 120, AlarmSeverity.Danger);
+        var d = new StubRule("D", 130, AlarmSeverity.Warn);
+        var e = new StubRule("E", 140, AlarmSeverity.Warn);
+        var (mgr, _, settings) = NewMgrWith(a, b, c, d, e);
+        mgr.Evaluate(Nav(), [], settings);
+
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(AlarmManager.MaxActiveAlarms);
+        await Assert.That(mgr.HiddenAlarmsCount).IsEqualTo(5 - AlarmManager.MaxActiveAlarms);
+    }
+
+    // --- RearmStatuses: forwards each rule's rearm chip to the UI ---
+
+    [Test]
+    public async Task RearmStatuses_EmptyByDefault()
+    {
+        // No rule has been dismissed yet -- the panel chip section must
+        // be empty so the UI doesn't render a phantom "rearm pending" row.
+        var rule = new ShallowAlarmRule();
+        var (mgr, clock, settings) = NewMgrWith(rule);
+        await Assert.That(mgr.RearmStatuses(clock.Now).Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RearmStatuses_SurfacesShallowRearmAfterDismiss()
+    {
+        // After a SHALLOW dismiss while still on the shoal, the rule
+        // reports an indefinite-wait status; the manager forwards it.
+        // Pin the wiring so a new rule that overrides GetRearmStatus
+        // (e.g. a future wind-shift cooldown) auto-shows up too.
+        var rule = new ShallowAlarmRule();
+        var (mgr, clock, settings) = NewMgrWith(rule);
+        var data = Nav(depth: 1.5);
+        mgr.Evaluate(data, [], settings);
+
+        var alarm = mgr.ActiveAlarm;
+        await Assert.That(alarm).IsNotNull();
+        await mgr.DismissAsync(alarm!);
+
+        // Still shallow on the next tick; rule starts the rearm flow.
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(depth: 1.5), [], settings);
+
+        var statuses = mgr.RearmStatuses(clock.Now);
+        await Assert.That(statuses.Count).IsEqualTo(1);
+        await Assert.That(statuses[0].Title).IsEqualTo("SHALLOW");
+    }
+
+    // --- InitializeAsync: snooze-list rehydration on restart ---
+
+    [Test]
+    public async Task InitializeAsync_HydratesPersistedSnoozes()
+    {
+        // The helm snoozed an AIS target before reload. After reload
+        // the snooze must still suppress the next CPA hit on that
+        // target (otherwise a quick refresh would re-arm everything
+        // mid-channel). Pin the JSON payload here so a serialiser
+        // schema change (e.g. switching to camelCase) shows up.
+        var kv = new InMemoryKv();
+        var future = DateTime.UtcNow.AddMinutes(20);
+        var json = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new SnoozedTarget("vessels.urn:mrn:imo:mmsi:111", "Ferry Roe", future),
+        });
+        await kv.SetAsync("alarmSnoozes.v1", json);
+
+        var clock = new MutableClock();
+        var rule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.urn:mrn:imo:mmsi:111");
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)new IAlarmRule[] { rule },
+                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
+            culture: null)!;
+
+        await mgr.InitializeAsync();
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(1);
+        await Assert.That(mgr.SnoozedTargets[0].TargetKey).IsEqualTo("vessels.urn:mrn:imo:mmsi:111");
+    }
+
+    [Test]
+    public async Task InitializeAsync_DropsExpiredSnoozesOnLoad()
+    {
+        // Persisted snoozes whose ExpiresAt is in the past must be
+        // dropped on hydration so a long-shutdown boat doesn't wake
+        // up with stale silencers carrying over from yesterday.
+        var kv = new InMemoryKv();
+        var past = DateTime.UtcNow.AddMinutes(-30);
+        var json = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new SnoozedTarget("vessels.urn:mrn:imo:mmsi:222", "Old Ferry", past),
+        });
+        await kv.SetAsync("alarmSnoozes.v1", json);
+
+        var clock = new MutableClock();
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)Array.Empty<IAlarmRule>(),
+                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
+            culture: null)!;
+
+        await mgr.InitializeAsync();
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task InitializeAsync_MalformedJson_StartsEmpty()
+    {
+        // Storage corruption / hand-edited entries must not crash the
+        // manager at boot -- the rest of the app is more useful than
+        // a perfectly-restored snooze list.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("alarmSnoozes.v1", "{not-json");
+
+        var clock = new MutableClock();
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)Array.Empty<IAlarmRule>(),
+                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
+            culture: null)!;
+
+        await mgr.InitializeAsync();   // must not throw
+        await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task InitializeAsync_Idempotent_OnlyReadsOnce()
+    {
+        // Multiple components (Map, Dashboard) call InitializeAsync
+        // concurrently on first load. The second call must be a no-op
+        // -- otherwise the snooze list could double-up if a slow KV
+        // read interleaved with a Snooze action between calls. The
+        // _initialized flag guards this.
+        var kv = new CountingKv();
+        var clock = new MutableClock();
+        var mgr = (AlarmManager)Activator.CreateInstance(
+            typeof(AlarmManager),
+            bindingAttr: System.Reflection.BindingFlags.Instance
+                       | System.Reflection.BindingFlags.NonPublic
+                       | System.Reflection.BindingFlags.Public,
+            binder: null,
+            args: [(IEnumerable<IAlarmRule>)Array.Empty<IAlarmRule>(),
+                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
+            culture: null)!;
+
+        await mgr.InitializeAsync();
+        await mgr.InitializeAsync();
+        await mgr.InitializeAsync();
+
+        await Assert.That(kv.GetCount("alarmSnoozes.v1")).IsEqualTo(1);
+    }
+
+    // The InMemoryKv fake used here lives earlier in the file (around
+    // line 696) and is reused for the new InitializeAsync coverage above.
+    // Counting variant lives here because it's only needed for the
+    // idempotent-init test added in this round.
+    private sealed class CountingKv : IKeyValueStore
+    {
+        private readonly Dictionary<string, int> _counts = [];
+        public int GetCount(string key) => _counts.GetValueOrDefault(key, 0);
+        public Task<string?> GetAsync(string key, CancellationToken ct = default)
+        {
+            _counts[key] = _counts.GetValueOrDefault(key, 0) + 1;
+            return Task.FromResult<string?>(null);
+        }
+        public Task SetAsync(string key, string value, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RemoveAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+    }
 }

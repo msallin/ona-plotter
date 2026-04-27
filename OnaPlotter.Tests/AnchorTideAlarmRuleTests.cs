@@ -204,4 +204,114 @@ public class AnchorTideAlarmRuleTests
         var second = rule.Check(Ctx(again, settings, now.AddMinutes(2)));
         await Assert.That(second).IsNotNull();
     }
+
+    // --- Missing-data prerequisites: each "no X, no alarm" branch ---
+
+    [Test]
+    public async Task Anchored_NoDepth_NoAlarm()
+    {
+        // Boundary: depth from below-transducer never showed up. Without
+        // a depth reading the rule can't subtract the predicted drop, so
+        // it must stay quiet -- doing the math against null would mean
+        // emitting a phantom warn off zero clearance.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
+            signalkDraft: 1.5);
+        // Note: no depth.
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
+    }
+
+    [Test]
+    public async Task Anchored_NoTideHeightNow_NoAlarm()
+    {
+        // Tide plugin half-published: heightLow + timeLow but no heightNow.
+        // Without the current value we can't compute the drop.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 3.0,
+            heightLow: 0.5, timeLow: now.AddHours(2),
+            signalkDraft: 1.5);
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
+    }
+
+    [Test]
+    public async Task Anchored_NoTideHeightLow_NoAlarm()
+    {
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 3.0,
+            heightNow: 2.0, timeLow: now.AddHours(2),
+            signalkDraft: 1.5);
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
+    }
+
+    [Test]
+    public async Task Anchored_NoTideTimeLow_NoAlarm()
+    {
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 3.0,
+            heightNow: 2.0, heightLow: 0.5,
+            signalkDraft: 1.5);
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
+    }
+
+    // --- Time-formatting branch: hours vs minutes-only display ---
+
+    [Test]
+    public async Task Anchored_LowWaterUnderOneHour_MessageShowsMinutesOnly()
+    {
+        // When LW is < 1 hour away, the message reads "Xmin" (no hours
+        // segment) so the helm sees the urgency clearly. The two
+        // formatting branches matter because a copy-paste regression
+        // could format both identically and lose the punchy "23 min"
+        // form.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddMinutes(35),
+            signalkDraft: 1.5);
+
+        var alarm = rule.Check(Ctx(nav, new FakeSettings(), now));
+        await Assert.That(alarm).IsNotNull();
+        // Format is "{mm}min" (no leading h0) -- pin the absence of "h"
+        // so a refactor that always prints "0h35" doesn't ship.
+        await Assert.That(alarm!.Message).Contains("min");
+        await Assert.That(alarm.Message).DoesNotContain("0h");
+    }
+
+    [Test]
+    public async Task Anchored_LowWaterMultipleHours_MessageShowsHoursAndMinutes()
+    {
+        // The hours-and-minutes branch: at 2h35m the message reads
+        // "2h35" so the helm can compare against "do I have time to
+        // sleep?". Pin both sides of the formatter.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true, depth: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddMinutes(155),  // 2h35
+            signalkDraft: 1.5);
+
+        var alarm = rule.Check(Ctx(nav, new FakeSettings(), now));
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Message).Contains("2h");
+    }
+
+    [Test]
+    public async Task ExactlyAtMargin_StaysSilent()
+    {
+        // Boundary: clearance exactly equals margin -> alarm is silent
+        // (uses >=). A refactor that flipped to a strict > would
+        // suddenly start nagging at the safe-margin boundary.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
+        // 3m depth, 1m drop -> 2m at LW. 1m draft -> 1m clearance == margin.
+        var nav = BuildNav(anchored: true, depth: 3.0,
+            heightNow: 2.0, heightLow: 1.0, timeLow: now.AddHours(2),
+            signalkDraft: 1.0);
+        await Assert.That(rule.Check(Ctx(nav, settings, now))).IsNull();
+    }
 }
