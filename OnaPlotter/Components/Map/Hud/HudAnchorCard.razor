@@ -9,8 +9,7 @@
 
 @if (Snapshot.Visible)
 {
-    <div class="hud hud-anchor">
-        <div class="hud-panel anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "")">
+    <div class="hud-panel hud-card anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "")">
             <div class="hud-card-title">
                 <span class="hud-card-name">Anchor Watch</span>
                 @if (Snapshot.Dragging)
@@ -61,7 +60,6 @@
                 </div>
             }
         </div>
-    </div>
 }
 
 @code {

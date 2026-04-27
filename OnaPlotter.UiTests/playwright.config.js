@@ -40,5 +40,13 @@ export default defineConfig({
             name: 'chromium',
             use: { ...devices['Desktop Chrome'] },
         },
+        // WebKit ~= Safari engine. Catches most iOS Safari / macOS Safari
+        // rendering differences (backdrop-filter, dvh handling, container
+        // query timing) without needing a real iPad. iOS-specific quirks
+        // still need a device pass.
+        {
+            name: 'webkit',
+            use: { ...devices['Desktop Safari'] },
+        },
     ],
 });

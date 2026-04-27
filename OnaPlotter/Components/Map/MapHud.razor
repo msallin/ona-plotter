@@ -13,8 +13,8 @@
    DMS-formatted position below the decimal one. The panel stays docked
    in its corner; only its height grows, which avoids shoving the map
    controls around. *@
-<div class="hud hud-top-left">
-    <div class="hud-panel @(IsExpanded("tl") ? "hud-panel-expanded" : "")"
+<div class="hud-stack hud-stack-tl">
+    <div class="hud-panel hud-card @(IsExpanded("tl") ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded("tl") ? "true" : "false")"
          aria-label="Speed, course, position -- click for more detail"
@@ -25,21 +25,11 @@
         <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
         <div class="hud-label" style="margin-top:4px;">COG</div>
         <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
-        @* Compact view stacks lat/lon on two lines so the HUD doesn't
-           stretch across half the top edge. Expanded view keeps them
-           on one line (the panel is already wider by that point, and
-           the single-line form reads faster alongside the DMS row). *@
-        @if (IsExpanded("tl"))
-        {
-            <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
-        }
-        else
-        {
-            <div class="hud-position hud-position-stacked">
-                <div>@NauticalFormat.FormatLat(Data.Latitude)</div>
-                <div>@NauticalFormat.FormatLon(Data.Longitude)</div>
-            </div>
-        }
+        @* lat/lon stays on a single horizontal line. Stacking them was
+           used to keep the card narrow, but it cramped SOG/COG -- the
+           wider single-line position lets the hero numbers above breathe.
+           Expanded view adds the DMS-formatted row underneath. *@
+        <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
         @if (IsExpanded("tl"))
         {
             <div class="hud-extra">
@@ -79,40 +69,62 @@
 @* === Top-Right: Wind (apparent + true when available) ===
    Expanded: port/starboard-labelled angles, TWD absolute from north,
    Beaufort labels for the speeds. *@
-<div class="hud hud-top-right">
-    <div class="hud-panel @(IsExpanded("tr") ? "hud-panel-expanded" : "")"
-         style="text-align:center;"
+<div class="hud-stack hud-stack-tr">
+    <div class="hud-panel hud-card @(IsExpanded("tr") ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded("tr") ? "true" : "false")"
          aria-label="Wind -- click for more detail"
          @onclick='() => ToggleExpanded("tr")' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, "tr")'
          title="Click for more detail">
-        <div class="hud-label">AWA / AWS</div>
-        @if (Data.WindSpeedApparent is not null)
+        @* Single dial -- both apparent (blue) and true (green) arrows
+           share the same circle, rotated to their own angles. Reads as
+           one wind picture, not two cards: the angular delta between
+           the two arrows IS the lift/header you're sailing in. AWS
+           and TWS values sit below in matching colours so the eye can
+           pair value <-> arrow without needing the AWA/TWA letters
+           spelled out (the colours do that work). *@
+        <div class="hud-label"><span class="wind-label-aws">AW</span><span class="wind-label-sep"> / </span><span class="wind-label-tws">TW</span></div>
+        @* Same dial radius as the HDG compass (r=24 in a -26..26 viewBox)
+           so the two dials read as a matched pair across the right column. *@
+        <svg width="52" height="52" viewBox="-26 -26 52 52" class="wind-dial"
+             role="img" aria-label="Wind: apparent and true">
+            <circle cx="0" cy="0" r="24" fill="none"
+                    stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
+            @* Cardinal tick marks (N, E, S, W). Subtle -- the arrow IS
+               the data; the rim is reference. *@
+            <line x1="0" y1="-24" x2="0" y2="-20" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
+            <line x1="0" y1="20"  x2="0" y2="24"  stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+            <line x1="-24" y1="0" x2="-20" y2="0" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+            <line x1="20" y1="0"  x2="24" y2="0"  stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+            @* True wind first so apparent overlays it. Both arrows scaled
+               to match the HDG needle proportions. *@
+            @if (Data.WindSpeedTrue is not null)
+            {
+                <g style="transform: rotate(@TrueWindAngleDegStr);">
+                    <polygon points="0,-20 4,-7 0,-11 -4,-7" fill="#22c55e" opacity="0.85"/>
+                </g>
+            }
+            @if (Data.WindSpeedApparent is not null)
+            {
+                <g style="transform: rotate(@WindAngleDegStr);">
+                    <polygon points="0,-20 5,-6 0,-10 -5,-6" fill="#3b82f6"/>
+                </g>
+            }
+            <circle cx="0" cy="0" r="2" fill="rgba(255,255,255,0.5)"/>
+        </svg>
+        @* Combined value line "AW / TW kn" -- both speeds share the
+           same row + a single "kn" unit so the card stays narrow.
+           Hidden entirely when neither wind speed is present. *@
+        @if (Data.WindSpeedApparent is not null || Data.WindSpeedTrue is not null)
         {
-            <svg width="48" height="48" viewBox="-24 -24 48 48" class="wind-arrow"
-                 style="transform: rotate(@WindAngleDegStr);" role="img" aria-label="Apparent wind">
-                <circle cx="0" cy="0" r="22" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-                <polygon points="0,-20 4,-8 0,-12 -4,-8" fill="#3b82f6" stroke="none"/>
-            </svg>
-            <div class="hud-value" style="font-size:1.1rem;">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
-        }
-        else
-        {
-            <div style="color: rgba(255,255,255,0.25); font-size:0.8rem; padding: 4px 0;">--</div>
-        }
-        @if (Data.WindSpeedTrue is not null)
-        {
-            <div style="margin-top:4px; border-top:1px solid rgba(255,255,255,0.1); padding-top:4px;">
-                <div class="hud-label">TWA / TWS</div>
-                <svg width="36" height="36" viewBox="-18 -18 36 36" class="wind-arrow"
-                     style="transform: rotate(@TrueWindAngleDegStr);" role="img" aria-label="True wind">
-                    <circle cx="0" cy="0" r="16" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
-                    <polygon points="0,-14 3,-6 0,-9 -3,-6" fill="#22c55e" stroke="none"/>
-                </svg>
-                <div class="hud-value" style="font-size:1rem;">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></div>
-            </div>
+            <div class="hud-value">@if (Data.WindSpeedApparent is not null) {
+                <span class="wind-aws">@Format.Speed(Data.WindSpeedApparent)</span>
+            }@if (Data.WindSpeedApparent is not null && Data.WindSpeedTrue is not null) {
+                <span class="wind-sep"> / </span>
+            }@if (Data.WindSpeedTrue is not null) {
+                <span class="wind-tws">@Format.Speed(Data.WindSpeedTrue)</span>
+            }<span class="hud-unit">kn</span></div>
         }
         @if (IsExpanded("tr"))
         {
@@ -155,8 +167,8 @@
    the same question from a sailor's point of view -- water under the
    boat NOW (depth) and where it's heading (tide). Depth alarm threshold
    still lives here; a tide row appears only when the plugin publishes. *@
-<div class="hud hud-bottom-left">
-    <div class="hud-panel @(IsExpanded("bl") ? "hud-panel-expanded" : "")"
+<div class="hud-stack hud-stack-bl">
+    <div class="hud-panel hud-card @(IsExpanded("bl") ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded("bl") ? "true" : "false")"
          aria-label="Depth and tide -- click for more detail"
@@ -177,7 +189,7 @@
                 <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s -- do not rely on this reading">dead</span>
             }
         </div>
-        <div class="hud-value @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
+        <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
             {
                 @* Non-colour signal: below-threshold depth gets a warning
                    glyph that colour-blind sailors can read. Paired with the
@@ -252,6 +264,15 @@
     </div>
 </div>
 
+@* === Bottom-right stack: race + autopilot + heading compass ===
+   All three cards share the bottom-right corner. Heading compass is the
+   always-on anchor (last in DOM = corner-most visually). Race appears
+   above when in race mode + polar present. Autopilot above heading when
+   ShowAutopilotHud is enabled. Flex column auto-stacks them with
+   --hud-gap, so adding/removing cards just collapses the gap -- no
+   sibling pixel offsets to keep in sync. *@
+<div class="hud-stack hud-stack-br">
+
 @* === Race HUD (race mode + polar + wind; otherwise hidden) ===
    Compact performance card: current TWA, target boat speed from the
    polar, actual speed, optimal TWA for the current tack. Only shown
@@ -260,8 +281,7 @@
    polar -> card hidden; no wind -> hidden). *@
 @if (ShowRacePanel)
 {
-    <div class="hud hud-race">
-        <div class="hud-panel race-panel">
+        <div class="hud-panel hud-card race-panel">
             <div class="hud-label">Race</div>
             @{
                 int twaDeg = (int)Math.Round(Math.Abs(Data.WindAngleTrue!.Value * RadToDeg));
@@ -313,16 +333,61 @@
                 </div>
             }
         </div>
-    </div>
 }
 
-@* === Bottom-Right: Heading compass ===
+@* === Autopilot control ===
+   Off by default (Settings.ShowAutopilotHud). The extended HDG HUD
+   below already shows AP state / target / rudder; this panel adds
+   tappable engage + heading-nudge controls that deserve an explicit
+   opt-in per user feedback (accidental taps on a touch device).
+   Stacked just above the heading compass so the helm sees AP state
+   and the compass needle in the same eye scan. *@
+@if (ShowAutopilotHud && Data.AutopilotState is not null)
+{
+        <div class="hud-panel hud-card autopilot-panel @(Data.AutopilotState != "standby" ? "ap-engaged" : "")">
+            <div class="hud-label">Autopilot</div>
+            <div class="ap-state">@(Data.AutopilotState?.ToUpperInvariant() ?? "--")</div>
+            @if (Data.AutopilotTargetHeading is not null)
+            {
+                <div class="hud-value route-value" style="font-size:1.1rem;">
+                    @Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span>
+                </div>
+            }
+            <div class="ap-controls">
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-10)'>-10</button>
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-1)'>-1</button>
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(1)'>+1</button>
+                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(10)'>+10</button>
+            </div>
+            @* Engaging the autopilot into any non-standby mode is potentially
+               dangerous on a charter boat where crew can knock a button in
+               passing. Stby stays an instant tap (that's the "safety"
+               direction). Auto / Wind / Route require a 600 ms hold; an
+               accidental tap does nothing. *@
+            <div class="ap-modes">
+                <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
+                        @onclick='() => Autopilot.SetStateAsync("standby")'>Stby</button>
+                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "auto" ? "active" : "") @(holding == "auto" ? "holding" : "")"
+                        @onpointerdown='@(() => ApHoldStart("auto"))'
+                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
+                        @onpointercancel="ApHoldEnd" title="Hold to engage Auto">Auto</button>
+                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "wind" ? "active" : "") @(holding == "wind" ? "holding" : "")"
+                        @onpointerdown='@(() => ApHoldStart("wind"))'
+                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
+                        @onpointercancel="ApHoldEnd" title="Hold to engage Wind">Wind</button>
+                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "route" ? "active" : "") @(holding == "route" ? "holding" : "")"
+                        @onpointerdown='@(() => ApHoldStart("route"))'
+                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
+                        @onpointercancel="ApHoldEnd" title="Hold to engage Route">Route</button>
+            </div>
+        </div>
+}
+
+@* === Heading compass (always present, corner-most card) ===
    Expanded: COG next to HDG and their signed delta (boat's apparent
    leeway/drift angle), plus the autopilot target heading when the
    autopilot is engaged. *@
-<div class="hud hud-bottom-right">
-    <div class="hud-panel @(IsExpanded("br") ? "hud-panel-expanded" : "")"
-         style="text-align:center;"
+    <div class="hud-panel hud-card @(IsExpanded("br") ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded("br") ? "true" : "false")"
          aria-label="Heading compass -- click for more detail"
@@ -342,6 +407,18 @@
                 <polygon points="0,-20 5,-6 0,-10 -5,-6" fill="#60a5fa" stroke="none"/>
                 <polygon points="0,12 3,4 0,6 -3,4" fill="rgba(96,165,250,0.5)" stroke="none"/>
             </g>
+            @* COG ghost pointer: hollow triangle pointing along the
+               course-over-ground vector. The angular delta against the
+               heading needle reads as leeway / set pre-attentively
+               (the arrow drifting off the boat axis). Hidden when COG
+               isn't published yet. *@
+            @if (Data.CourseOverGround is not null)
+            {
+                <g class="compass-cog-ghost" style="transform: rotate(@CourseDegStr);">
+                    <polygon points="0,-20 4.5,-7 0,-9 -4.5,-7"
+                             fill="none" stroke="#7CC4FF" stroke-width="1.2"/>
+                </g>
+            }
             <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
         </svg>
         @* Suffix T or M so the helm knows which reference the number
@@ -349,17 +426,12 @@
            that's the difference between the rocks and the channel.
            Derived from PreferMagneticHeading so the label always
            matches the value actually being displayed. *@
-        <div class="hud-value" style="font-size:1.1rem;">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;@(Data.Heading is null ? "" : (Data.PreferMagneticHeading ? "M" : "T"))</span></div>
+        <div class="hud-value">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;@(Data.Heading is null ? "" : (Data.PreferMagneticHeading ? "M" : "T"))</span></div>
         @if (IsExpanded("br"))
         {
             <div class="hud-extra">
-                @if (Data.CourseOverGround is not null)
-                {
-                    <div class="hud-extra-row">
-                        <span class="hud-extra-k">COG</span>
-                        <span class="hud-extra-v">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;@(Data.PreferMagneticCourse ? "M" : "T")</span></span>
-                    </div>
-                }
+                @* COG already lives on the TL card -- duplicating it here
+                   crowded the expanded BR panel for no extra information. *@
                 @if (LeewayDeg is int lw)
                 {
                     <div class="hud-extra-row" title="Signed delta between COG and HDG; rough leeway indicator.">
@@ -417,67 +489,27 @@
     </div>
 </div>
 
-@* Route and anchor cards are extracted as child components so only
-   the section whose data actually changed re-renders. Both take a
+@* === Bottom-center stack: route OR anchor (mutually exclusive) ===
+   Route progress when navigating, anchor watch when at anchor. Each
+   child guards its own rendering with the Snapshot.Visible flag, so
+   the stack collapses to nothing when neither is active. Sits above
+   the .map-controls bar via .hud-stack-bc's --panel-bottom anchor.
+
+   Route and anchor are extracted as child components so only the
+   section whose data actually changed re-renders. Both take a
    record-struct snapshot; Blazor skips the render when the snapshot
    is equal to the previous render. See HudRouteCard / HudAnchorCard
    for the rationale + field lists. *@
-<OnaPlotter.Components.Map.Hud.HudRouteCard
-    Snapshot="@BuildRouteSnapshot()"
-    OnPrevWaypoint="OnPrevWaypoint"
-    OnNextWaypoint="OnNextWaypoint" />
+<div class="hud-stack hud-stack-bc">
+    <OnaPlotter.Components.Map.Hud.HudRouteCard
+        Snapshot="@BuildRouteSnapshot()"
+        OnPrevWaypoint="OnPrevWaypoint"
+        OnNextWaypoint="OnNextWaypoint" />
 
-<OnaPlotter.Components.Map.Hud.HudAnchorCard
-    Snapshot="@BuildAnchorSnapshot()"
-    OnSetRadius="OnSetAnchorRadius" />
-
-@* === Autopilot control === *@
-@* Off by default (Settings.ShowAutopilotHud). The extended HDG HUD
-   above already shows AP state / target / rudder; this panel adds
-   tappable engage + heading-nudge controls that deserve an explicit
-   opt-in per user feedback (accidental taps on a touch device). *@
-@if (ShowAutopilotHud && Data.AutopilotState is not null)
-{
-    <div class="hud hud-autopilot">
-        <div class="hud-panel autopilot-panel @(Data.AutopilotState != "standby" ? "ap-engaged" : "")">
-            <div class="hud-label">Autopilot</div>
-            <div class="ap-state">@(Data.AutopilotState?.ToUpperInvariant() ?? "--")</div>
-            @if (Data.AutopilotTargetHeading is not null)
-            {
-                <div class="hud-value route-value" style="font-size:1.1rem;">
-                    @Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span>
-                </div>
-            }
-            <div class="ap-controls">
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-10)'>-10</button>
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-1)'>-1</button>
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(1)'>+1</button>
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(10)'>+10</button>
-            </div>
-            @* Engaging the autopilot into any non-standby mode is potentially
-               dangerous on a charter boat where crew can knock a button in
-               passing. Stby stays an instant tap (that's the "safety"
-               direction). Auto / Wind / Route require a 600 ms hold; an
-               accidental tap does nothing. *@
-            <div class="ap-modes">
-                <button class="ap-mode-btn @(Data.AutopilotState == "standby" ? "active" : "")"
-                        @onclick='() => Autopilot.SetStateAsync("standby")'>Stby</button>
-                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "auto" ? "active" : "") @(holding == "auto" ? "holding" : "")"
-                        @onpointerdown='@(() => ApHoldStart("auto"))'
-                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
-                        @onpointercancel="ApHoldEnd" title="Hold to engage Auto">Auto</button>
-                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "wind" ? "active" : "") @(holding == "wind" ? "holding" : "")"
-                        @onpointerdown='@(() => ApHoldStart("wind"))'
-                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
-                        @onpointercancel="ApHoldEnd" title="Hold to engage Wind">Wind</button>
-                <button class="ap-mode-btn ap-engage-btn @(Data.AutopilotState == "route" ? "active" : "") @(holding == "route" ? "holding" : "")"
-                        @onpointerdown='@(() => ApHoldStart("route"))'
-                        @onpointerup="ApHoldEnd" @onpointerleave="ApHoldEnd"
-                        @onpointercancel="ApHoldEnd" title="Hold to engage Route">Route</button>
-            </div>
-        </div>
-    </div>
-}
+    <OnaPlotter.Components.Map.Hud.HudAnchorCard
+        Snapshot="@BuildAnchorSnapshot()"
+        OnSetRadius="OnSetAnchorRadius" />
+</div>
 
 @code {
     private const double RadToDeg = 180.0 / Math.PI;
@@ -839,6 +871,16 @@
 
     private double HeadingRad => LastHeadingRad ?? 0;
     private string HeadingDegStr => $"{(HeadingRad * RadToDeg):F0}deg";
+
+    /// <summary>
+    /// COG rotation in degrees, formatted for the SVG transform. Used
+    /// by the hollow ghost pointer on the compass: drifting arrow off
+    /// the heading needle = leeway/set in one glance.
+    /// </summary>
+    private string CourseDegStr =>
+        Data.CourseOverGround is not null
+            ? $"{(Data.CourseOverGround.Value * RadToDeg):F0}deg"
+            : "0deg";
 
     /// <summary>
     /// Explains why the ANCHOR TIDE alarm can't fire right now, or returns

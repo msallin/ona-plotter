@@ -44,7 +44,7 @@ public class MapHudTests
         var data = new NavigationData();
         var cut = Render(ctx, data);
 
-        var panel = cut.Find(".hud-top-left .hud-panel");
+        var panel = cut.Find(".hud-stack-tl .hud-panel");
         panel.Click();
 
         await Assert.That(panel.ClassList).Contains("hud-panel-expanded");
@@ -63,11 +63,11 @@ public class MapHudTests
         var data = new NavigationData();
         var cut = Render(ctx, data);
 
-        cut.Find(".hud-top-left .hud-panel").Click();
-        cut.Find(".hud-top-right .hud-panel").Click();
+        cut.Find(".hud-stack-tl .hud-panel").Click();
+        cut.Find(".hud-stack-tr .hud-panel").Click();
 
-        await Assert.That(cut.Find(".hud-top-left .hud-panel").ClassList.Contains("hud-panel-expanded")).IsFalse();
-        await Assert.That(cut.Find(".hud-top-right .hud-panel").ClassList).Contains("hud-panel-expanded");
+        await Assert.That(cut.Find(".hud-stack-tl .hud-panel").ClassList.Contains("hud-panel-expanded")).IsFalse();
+        await Assert.That(cut.Find(".hud-stack-tr .hud-panel").ClassList).Contains("hud-panel-expanded");
     }
 
     [Test]
@@ -78,10 +78,10 @@ public class MapHudTests
         data.ApplyPosition(47.3769, 8.5417); // Zurich-ish
         var cut = Render(ctx, data);
 
-        cut.Find(".hud-top-left .hud-panel").Click();
+        cut.Find(".hud-stack-tl .hud-panel").Click();
 
         // DMS should show degree, minute, second glyphs and N/E hemisphere.
-        var extras = cut.Find(".hud-top-left .hud-extra").TextContent;
+        var extras = cut.Find(".hud-stack-tl .hud-extra").TextContent;
         await Assert.That(extras).Contains("\u00B0");  // degree
         await Assert.That(extras).Contains("\u2032");  // minute
         await Assert.That(extras).Contains("\u2033");  // second
@@ -101,9 +101,9 @@ public class MapHudTests
         data.Apply("environment.wind.speedTrue", 9.0);
         var cut = Render(ctx, data);
 
-        cut.Find(".hud-top-right .hud-panel").Click();
+        cut.Find(".hud-stack-tr .hud-panel").Click();
 
-        var extras = cut.Find(".hud-top-right .hud-extra").TextContent;
+        var extras = cut.Find(".hud-stack-tr .hud-extra").TextContent;
         await Assert.That(extras).Contains("35\u00B0 STBD");   // AWA
         await Assert.That(extras).Contains("60\u00B0 STBD");   // TWA
         await Assert.That(extras).Contains("F5");              // Beaufort
@@ -118,9 +118,9 @@ public class MapHudTests
         data.Apply("environment.wind.speedApparent", 5.0);
         var cut = Render(ctx, data);
 
-        cut.Find(".hud-top-right .hud-panel").Click();
+        cut.Find(".hud-stack-tr .hud-panel").Click();
 
-        var extras = cut.Find(".hud-top-right .hud-extra").TextContent;
+        var extras = cut.Find(".hud-stack-tr .hud-extra").TextContent;
         await Assert.That(extras).Contains("45\u00B0 PORT");
     }
 
@@ -135,10 +135,10 @@ public class MapHudTests
         data.Apply("environment.depth.belowTransducer", 8.5);
         var cut = Render(ctx, data);
 
-        cut.Find(".hud-bottom-left .hud-panel").Click();
+        cut.Find(".hud-stack-bl .hud-panel").Click();
 
         // Expanded block renders, but should have no rows inside.
-        var extras = cut.FindAll(".hud-bottom-left .hud-extra-row");
+        var extras = cut.FindAll(".hud-stack-bl .hud-extra-row");
         await Assert.That(extras.Count).IsEqualTo(0);
     }
 
@@ -150,7 +150,7 @@ public class MapHudTests
         // readers and Tab navigation this is an actionable element.
         using var ctx = new Bunit.TestContext();
         var cut = Render(ctx, new NavigationData());
-        var panel = cut.Find(".hud-top-left .hud-panel");
+        var panel = cut.Find(".hud-stack-tl .hud-panel");
 
         await Assert.That(panel.GetAttribute("role")).IsEqualTo("button");
         await Assert.That(panel.GetAttribute("tabindex")).IsEqualTo("0");
@@ -167,7 +167,7 @@ public class MapHudTests
         // button behaviour.
         using var ctx = new Bunit.TestContext();
         var cut = Render(ctx, new NavigationData());
-        var panel = cut.Find(".hud-top-left .hud-panel");
+        var panel = cut.Find(".hud-stack-tl .hud-panel");
 
         panel.KeyDown("Enter");
         await Assert.That(panel.ClassList).Contains("hud-panel-expanded");
@@ -186,11 +186,11 @@ public class MapHudTests
         data.Apply("navigation.courseOverGroundTrue", 100.0 * System.Math.PI / 180);
         var cut = Render(ctx, data);
 
-        cut.Find(".hud-bottom-right .hud-panel").Click();
+        cut.Find(".hud-stack-br .hud-panel").Click();
 
-        var extras = cut.Find(".hud-bottom-right .hud-extra").TextContent;
-        // COG and drift of +10° should be visible.
-        await Assert.That(extras).Contains("100");
+        var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
+        // Drift of +10° should be visible. COG itself is intentionally
+        // not duplicated in BR's extras -- it lives on the TL card.
         await Assert.That(extras).Contains("+10");
     }
 
@@ -205,7 +205,7 @@ public class MapHudTests
         data.PreferMagneticHeading = false;
         var cut = Render(ctx, data);
 
-        var heading = cut.Find(".hud-bottom-right .hud-value").TextContent;
+        var heading = cut.Find(".hud-stack-br .hud-value").TextContent;
         await Assert.That(heading).Contains("T");
     }
 
@@ -218,7 +218,7 @@ public class MapHudTests
         data.PreferMagneticHeading = true;
         var cut = Render(ctx, data);
 
-        var heading = cut.Find(".hud-bottom-right .hud-value").TextContent;
+        var heading = cut.Find(".hud-stack-br .hud-value").TextContent;
         await Assert.That(heading).Contains("M");
     }
 
@@ -239,7 +239,7 @@ public class MapHudTests
         clock.Now = now.AddSeconds(20);
         var cut = Render(ctx, data);
 
-        var depthLabel = cut.Find(".hud-bottom-left .hud-label").TextContent;
+        var depthLabel = cut.Find(".hud-stack-bl .hud-label").TextContent;
         await Assert.That(depthLabel).Contains("stale");
     }
 
@@ -254,7 +254,7 @@ public class MapHudTests
         clock.Now = now.AddSeconds(60);
         var cut = Render(ctx, data);
 
-        var depthLabel = cut.Find(".hud-bottom-left .hud-label").TextContent;
+        var depthLabel = cut.Find(".hud-stack-bl .hud-label").TextContent;
         await Assert.That(depthLabel).Contains("dead");
     }
 

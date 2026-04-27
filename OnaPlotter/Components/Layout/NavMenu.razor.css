@@ -111,6 +111,10 @@
     gap: 0;
     padding: 0.5rem;
 }
+/* The collapsed-rail icon-centring overrides for .nav-item / .nav-link
+   are in app.css (global). Blazor CSS isolation scopes those scoped
+   rules to the NavMenu host attribute, which the .page selector
+   doesn't carry, so they wouldn't apply here. */
 
 /* Icon-rail mode: shrink the 1.4rem day-size icons so they fit
    comfortably inside the 4rem sidebar without touching the rail
