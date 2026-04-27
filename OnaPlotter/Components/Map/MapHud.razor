@@ -510,11 +510,19 @@
     </div>
 </div>
 
-@* === Bottom-center stack: route OR anchor (mutually exclusive) ===
-   Route progress when navigating, anchor watch when at anchor. Each
-   child guards its own rendering with the Snapshot.Visible flag, so
-   the stack collapses to nothing when neither is active. Sits above
-   the .map-controls bar via .hud-stack-bc's --panel-bottom anchor.
+@* === Bottom-center stack: anchor + route ===
+   Route progress when navigating, anchor watch when at anchor. The
+   two are NOT mutually exclusive -- a helm planning the next leg
+   from the hook still sees both cards (the anchor stays armed until
+   they raise it explicitly). Each child guards its own rendering
+   with the Snapshot.Visible flag, so the stack collapses to nothing
+   when neither is active. Sits above the .map-controls bar via
+   .hud-stack-bc's --panel-bottom anchor.
+
+   Anchor renders BEFORE route in the markup -- the stack is a
+   flex column so DOM order = visual stacking order, and the helm
+   asked for anchor on top when both are active (peak drift +
+   alarm radius is the time-critical readout while at the dock).
 
    Route and anchor are extracted as child components so only the
    section whose data actually changed re-renders. Both take a
@@ -522,14 +530,14 @@
    is equal to the previous render. See HudRouteCard / HudAnchorCard
    for the rationale + field lists. *@
 <div class="hud-stack hud-stack-bc">
+    <OnaPlotter.Components.Map.Hud.HudAnchorCard
+        Snapshot="@BuildAnchorSnapshot()"
+        OnSetRadius="OnSetAnchorRadius" />
+
     <OnaPlotter.Components.Map.Hud.HudRouteCard
         Snapshot="@BuildRouteSnapshot()"
         OnPrevWaypoint="OnPrevWaypoint"
         OnNextWaypoint="OnNextWaypoint" />
-
-    <OnaPlotter.Components.Map.Hud.HudAnchorCard
-        Snapshot="@BuildAnchorSnapshot()"
-        OnSetRadius="OnSetAnchorRadius" />
 </div>
 
 @code {

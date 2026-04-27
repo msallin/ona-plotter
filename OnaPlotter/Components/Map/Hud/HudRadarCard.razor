@@ -74,20 +74,31 @@
                 title="Range up">+</button>
     </div>
 
-    @* Power row. Stby is instant (the safety direction); Transmit
-       needs a 600 ms hold to avoid radiating on an accidental tap.
-       Same .ap-engage-btn / .holding visual language as the autopilot
-       engage modes so the helm reads "this is a hold-to-confirm" with
-       no extra learning. *@
+    @* Power toggle. One button rather than separate Stby + Transmit
+       so the helm has a single decision surface for "is the radar
+       radiating right now?". Behaviour:
+        * Transmitting -> button reads "Stby"; instant tap (the safe
+          direction never asks for confirmation).
+        * Standby / off -> button reads "Transmit"; 600 ms hold to
+          confirm so an accidental tap can't put the array under
+          power. Same .ap-engage-btn / .holding visual language as
+          the autopilot engage modes so the helm reads "this is a
+          hold-to-confirm" with no extra learning. *@
     <div class="ap-modes radar-hud-power">
-        <button class="ap-mode-btn @(IsStandby(radar) ? "active" : "")"
-                @onclick="() => OnSetPower.InvokeAsync((radar.Id, RadarPower.Standby))"
-                title="Standby (instant)">Stby</button>
-        <button class="ap-mode-btn ap-engage-btn @(IsTransmitting(radar) ? "active" : "") @(holding == radar.Id ? "holding" : "")"
-                @onpointerdown='@(() => HoldStart(radar.Id))'
-                @onpointerup="HoldEnd" @onpointerleave="HoldEnd"
-                @onpointercancel="HoldEnd"
-                title="Hold to transmit">Transmit</button>
+        @if (IsTransmitting(radar))
+        {
+            <button class="ap-mode-btn active"
+                    @onclick="() => OnSetPower.InvokeAsync((radar.Id, RadarPower.Standby))"
+                    title="Standby (instant)">Stby</button>
+        }
+        else
+        {
+            <button class="ap-mode-btn ap-engage-btn @(holding == radar.Id ? "holding" : "")"
+                    @onpointerdown='@(() => HoldStart(radar.Id))'
+                    @onpointerup="HoldEnd" @onpointerleave="HoldEnd"
+                    @onpointercancel="HoldEnd"
+                    title="Hold to transmit">Transmit</button>
+        }
     </div>
 </div>
 
@@ -191,9 +202,6 @@
 
     private static bool IsTransmitting(RadarInfo r) =>
         string.Equals(r.Status, "transmit", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsStandby(RadarInfo r) =>
-        string.Equals(r.Status, "standby", StringComparison.OrdinalIgnoreCase);
 
     private static string DisplayName(RadarInfo r) =>
         !string.IsNullOrWhiteSpace(r.Name) ? r.Name!

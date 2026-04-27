@@ -147,13 +147,17 @@ public class HudRadarCardTests
     {
         // Stby is the safety direction; instant tap (no hold). Clicking
         // it must report RadarPower.Standby for the radar whose card
-        // is showing, not whatever was first in the list.
+        // is showing, not whatever was first in the list. The power
+        // row collapsed to a single state-dependent toggle, so a
+        // transmitting radar shows exactly one button -- "Stby".
         using var ctx = new Bunit.TestContext();
         (string Id, RadarPower P)? captured = null;
         var cut = Render(ctx, [Radar("r1")], onPower: t => captured = t);
 
-        // First button in .ap-modes is Stby (Transmit needs a hold).
-        cut.FindAll(".radar-hud-power .ap-mode-btn")[0].Click();
+        // Single button in .ap-modes when transmitting -- Stby.
+        var btns = cut.FindAll(".radar-hud-power .ap-mode-btn");
+        await Assert.That(btns.Count).IsEqualTo(1);
+        btns[0].Click();
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Value.Id).IsEqualTo("r1");
         await Assert.That(captured!.Value.P).IsEqualTo(RadarPower.Standby);
@@ -167,10 +171,14 @@ public class HudRadarCardTests
         // only way to fire Transmit is the 600 ms pointer-hold path
         // (validated end-to-end via the autopilot card's identical
         // pattern). Pinning the structural shape here catches a
-        // refactor that re-adds @onclick "for parity with Stby".
+        // refactor that re-adds @onclick "for parity with Stby". With
+        // the power row now a state-dependent toggle, a standby radar
+        // shows exactly one button -- "Transmit".
         using var ctx = new Bunit.TestContext();
         var cut = Render(ctx, [Radar("r1", status: "standby")]);
-        var transmit = cut.FindAll(".radar-hud-power .ap-mode-btn")[1];
+        var btns = cut.FindAll(".radar-hud-power .ap-mode-btn");
+        await Assert.That(btns.Count).IsEqualTo(1);
+        var transmit = btns[0];
 
         // Blazor renders @onclick / @onpointerdown / etc. as Blazor-
         // internal handlers (no DOM attribute), so we can't test by
@@ -179,6 +187,24 @@ public class HudRadarCardTests
         // dispatch succeeds, the structural contract is broken.
         var ex = Assert.Throws<Bunit.MissingEventHandlerException>(() => transmit.Click());
         await Assert.That(ex).IsNotNull();
+    }
+
+    [Test]
+    public async Task PowerToggle_RendersExactlyOneButton()
+    {
+        // Single-button toggle contract: helm asked for one decision
+        // surface on power, not two side-by-side. Whether the radar is
+        // transmitting, on standby, or any other state, the row shows
+        // exactly one button (label + behaviour switches by state).
+        using var ctx = new Bunit.TestContext();
+        var transmitting = Render(ctx, [Radar("r1", status: "transmit")]);
+        await Assert.That(transmitting.FindAll(".radar-hud-power .ap-mode-btn").Count).IsEqualTo(1);
+        await Assert.That(transmitting.Find(".radar-hud-power .ap-mode-btn").TextContent.Trim()).IsEqualTo("Stby");
+
+        using var ctx2 = new Bunit.TestContext();
+        var standby = Render(ctx2, [Radar("r2", status: "standby")]);
+        await Assert.That(standby.FindAll(".radar-hud-power .ap-mode-btn").Count).IsEqualTo(1);
+        await Assert.That(standby.Find(".radar-hud-power .ap-mode-btn").TextContent.Trim()).IsEqualTo("Transmit");
     }
 
     [Test]

@@ -4072,14 +4072,16 @@ html.night-mode-global body {
 
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
    the card eats width (plentiful on landscape) instead of height
-   (scarce on the helm screen). flex-wrap lets narrow portrait iPads
-   break to a second row before we overflow the map. Each metric sits
-   in its own .route-info-item so the label+value pair wraps together
-   rather than splitting across the wrap point. */
+   (scarce on the helm screen). flex-wrap: nowrap keeps every metric
+   visible at once -- helm asked for "all fields beside each other"
+   so one glance covers distance + bearing + speed + time + cross-
+   track. Each metric sits in its own .route-info-item; the gap
+   tightens on narrow viewports rather than wrapping (the card
+   itself can outgrow .hud-stack-bc's max-width when needed). */
 .route-info-row {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px 18px;
+    flex-wrap: nowrap;
+    gap: 4px 14px;
     margin-top: 4px;
     align-items: baseline;
 }
@@ -4087,6 +4089,10 @@ html.night-mode-global body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    /* flex-shrink lets long content (e.g. "12:34" ETA) coexist
+       with neighbours by giving each item the same shrinkable
+       priority instead of letting the first column hog the row. */
+    flex-shrink: 1;
 }
 
 /* Route-total row: single-line summary of distance / TTG / ETA for
@@ -6395,15 +6401,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
        parent .hud-stack-bc centres each child at its own width. */
 }
 
-/* Mirror .route-info-row's geometry exactly so the two HUD cards
-   read as the same family. Same gap rhythm (4 / 18), same wrap
-   behaviour, same baseline alignment. Earlier the anchor row had
-   a different gap and no wrap, which made a dragging anchor's
-   Dist / Radius pair sit tighter and taller than the route's
-   DTW / BRG / etc. row. */
+/* Mirror .route-info-row's geometry so the two HUD cards read as
+   the same family: same gap rhythm (4 / 18), same baseline
+   alignment, same single-row layout. flex-wrap: nowrap keeps Dist
+   / Peak / Radius beside each other ("show me everything in one
+   glance") rather than stacking them on a narrow card. */
 .anchor-info-row {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 4px 18px;
     margin-top: 4px;
     align-items: baseline;
