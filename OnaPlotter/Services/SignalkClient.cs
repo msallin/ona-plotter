@@ -1513,7 +1513,12 @@ public sealed class SignalkClient : IAsyncDisposable
         finally { doc?.Dispose(); }
     }
 
-    private async Task SeedSelfCourseFromRestAsync(CancellationToken ct)
+    // internal (not private) so SignalkClientCourseTests can drive the
+    // seed directly with a mock HttpClient. The full ReceiveLoopAsync
+    // path requires a real WebSocket; testing the REST seed alone is
+    // enough to pin the regression-prone bit -- the active-route state
+    // that lets the map repaint its polyline on page reload.
+    internal async Task SeedSelfCourseFromRestAsync(CancellationToken ct)
     {
         JsonDocument? doc = null;
         try

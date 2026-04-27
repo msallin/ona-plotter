@@ -1260,6 +1260,21 @@
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
+
+        // Seed-vs-subscribe race: SignalkClient.SeedSelfCourseFromRestAsync
+        // fires its OnDataChanged right after the WebSocket connects,
+        // long before this method has finished its REST seeds + chart /
+        // route restores and reaches the subscription line above. Without
+        // a kick, NavigationData holds the active-route href but the map
+        // is still oblivious -- and on a moored vessel with no live
+        // position deltas, nothing ever triggers a follow-up sync, so
+        // the helm sees their active route silently disappear on every
+        // page reload. Fire one HandleDataChanged() now to catch up; the
+        // diff-based logic in SyncActiveRouteAsync makes it a no-op when
+        // the seed hasn't landed yet, and the seed's own OnDataChanged
+        // (now subscribed) handles the late case.
+        HandleDataChanged();
+
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
         // AtoNs are static enough not to need a timer -- push on
         // store-change events plus once after init. AtonsVisible
