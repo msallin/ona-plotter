@@ -43,9 +43,8 @@
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Heading</h6>
                 <p class="card-text metric-xl">
-                    @Format.Degrees(Data.Heading)
+                    @Format.Degrees(Data.Heading)&deg;
                 </p>
-                <small class="text-muted">deg</small>
             </div>
         </div>
     </div>
@@ -107,8 +106,8 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">AWA</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)</p>
-                <small class="text-muted">apparent angle</small>
+                <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)&deg;</p>
+                <small class="text-muted">apparent</small>
             </div>
         </div>
     </div>
@@ -125,8 +124,8 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">TWA</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)</p>
-                <small class="text-muted">true angle</small>
+                <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)&deg;</p>
+                <small class="text-muted">true</small>
             </div>
         </div>
     </div>
@@ -148,17 +147,22 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">COG</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.CourseOverGround)</p>
-                <small class="text-muted">deg</small>
+                <p class="card-text display-6">@Format.Degrees(Data.CourseOverGround)&deg;</p>
             </div>
         </div>
     </div>
     <div class="col-md-4 col-sm-6">
         <div class="card">
             <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">TWD</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindDirectionTrue)</p>
-                <small class="text-muted">from</small>
+                @* TWD is the meteorological "where the wind is coming
+                   FROM" angle, not the "where it's going TO" angle like
+                   COG. The convention is universal in sailing but worth
+                   disambiguating in a tooltip rather than a stray small
+                   caption (the previous one read just "from" with no
+                   context, which raised "what is from?" reactions). *@
+                <h6 class="card-subtitle mb-1 text-muted"
+                    title="True wind direction (the bearing the wind is coming FROM)">TWD</h6>
+                <p class="card-text display-6">@Format.Degrees(Data.WindDirectionTrue)&deg;</p>
             </div>
         </div>
     </div>
@@ -201,11 +205,20 @@ else if (Polar.HasPolar)
             <div class="col-md-4 col-sm-6">
                 <div class="card">
                     <div class="card-body text-center">
+                        @* "Chart datum" is the proper term sailors recognise -- the
+                           reference depth on the chart against which both tide heights
+                           and depth soundings are stated. The previous "above datum"
+                           was technically correct but read as jargon ("what is datum?").
+                           Tooltip on the small caption explains the underlying datum
+                           convention for non-sailors. *@
                         <h6 class="card-subtitle mb-1 text-muted">Height now</h6>
                         <p class="card-text display-6">
                             @hNow.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
                         </p>
-                        <small class="text-muted">m above datum</small>
+                        <small class="text-muted"
+                               title="Metres above chart datum (the reference depth used on charts; usually Lowest Astronomical Tide)">
+                            m above chart datum
+                        </small>
                     </div>
                 </div>
             </div>
@@ -273,8 +286,7 @@ else if (Polar.HasPolar)
             <div class="card">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">BRG</h6>
-                    <p class="card-text display-6">@Format.Degrees(Data.CourseNextPointBearing)</p>
-                    <small class="text-muted">deg</small>
+                    <p class="card-text display-6">@Format.Degrees(Data.CourseNextPointBearing)&deg;</p>
                 </div>
             </div>
         </div>
