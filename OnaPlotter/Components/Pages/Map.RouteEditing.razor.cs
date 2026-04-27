@@ -286,8 +286,18 @@ public partial class Map
     private async Task SaveRouteCore(bool activate)
     {
         if (module is null) return;
-        if (_saveInFlight) return;
+        // Stale-flag escape hatch: if the previous save threw before
+        // its try/finally cleared _saveInFlight (or hung > 30 s in
+        // a JS call), force-reset and proceed. Without this the Save
+        // button stays silently disabled until the page is reloaded.
+        if (_saveInFlight)
+        {
+            var heldFor = (DateTime.UtcNow - _saveInFlightStartedUtc).TotalSeconds;
+            if (heldFor < SaveInFlightTimeoutSec) return;
+            Console.Error.WriteLine($"[SaveRoute] _saveInFlight stuck for {heldFor:F0}s; resetting.");
+        }
         _saveInFlight = true;
+        _saveInFlightStartedUtc = DateTime.UtcNow;
         try
         {
             await SaveRouteCoreInner(activate);

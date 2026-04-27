@@ -87,6 +87,17 @@ public sealed class AppSettingsService : IAppSettings
 
     public async Task InitializeAsync()
     {
+        // KV key naming convention (any new key MUST follow this):
+        //   * "<camelCaseName>.vN" where N is the schema version of the
+        //     value. Bump N on a breaking format change (e.g. bool ->
+        //     enum string, scalar -> struct) so a load-time mismatch
+        //     surfaces as "key not found, use default" instead of a
+        //     deserialise crash that leaves localStorage poisoned.
+        //   * Older keys without ".vN" predate the convention; leave
+        //     them as-is until they need a format change. Don't add
+        //     new ".v1" duplicates of existing un-versioned keys.
+        //   * Reads + writes share the exact key string; the load
+        //     site is the single source of truth.
         if (_initialized) return;
         await _initLock.WaitAsync();
         try

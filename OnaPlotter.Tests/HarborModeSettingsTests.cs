@@ -16,10 +16,21 @@ public class HarborModeSettingsTests
     private sealed class FakeKv : IKeyValueStore
     {
         public Dictionary<string, string> Storage { get; } = new();
-        public Task<string?> GetAsync(string key, CancellationToken ct = default) =>
-            Task.FromResult(Storage.TryGetValue(key, out var v) ? v : null);
+        // Tracking Get + Set call sites separately so we can pin the
+        // "no harbor key was even ATTEMPTED to be loaded" contract --
+        // a future regression that adds a LoadBool("harborMode.vN")
+        // would surface here even before the Storage dict shows
+        // anything.
+        public List<string> Gets { get; } = new();
+        public List<string> Sets { get; } = new();
+        public Task<string?> GetAsync(string key, CancellationToken ct = default)
+        {
+            Gets.Add(key);
+            return Task.FromResult(Storage.TryGetValue(key, out var v) ? v : null);
+        }
         public Task SetAsync(string key, string value, CancellationToken ct = default)
         {
+            Sets.Add(key);
             Storage[key] = value;
             return Task.CompletedTask;
         }
@@ -98,5 +109,24 @@ public class HarborModeSettingsTests
         var s = new AppSettingsService(kv);
         await s.InitializeAsync();
         await Assert.That(s.HarborMode).IsFalse();
+    }
+
+    [Test]
+    public async Task HarborMode_NoLoadAttempt_AtAnyHarborKey()
+    {
+        // Pin not just "the flag is false" but "no GetAsync was even
+        // CALLED for a harbor-prefixed key". A regression that
+        // accidentally adds LoadBool("harborMode.v2", false) to
+        // InitializeAsync would silently rehydrate from any future
+        // KV key the helm typed -- catching that here means CI fails
+        // the moment a load path appears, not after a helm complains
+        // their forgotten Harbor mode came back on next sail.
+        var kv = new FakeKv();
+        var s = new AppSettingsService(kv);
+        await s.InitializeAsync();
+
+        bool anyHarborKey = kv.Gets.Any(k =>
+            k.Contains("harbor", StringComparison.OrdinalIgnoreCase));
+        await Assert.That(anyHarborKey).IsFalse();
     }
 }

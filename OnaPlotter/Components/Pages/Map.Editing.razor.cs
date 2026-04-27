@@ -35,7 +35,20 @@ public partial class Map
     // posts two identical routes + activates both. Silent re-entry is
     // the intended behaviour; the disabled button styling in the panel
     // is the visible affordance.
+    //
+    // Stale-flag escape hatch: every entry to a save flow stamps the
+    // start time. If a future code path throws synchronously before
+    // the try/finally that clears _saveInFlight (or a JS interop
+    // hangs forever), the flag would otherwise stick "true" and every
+    // subsequent Save tap would silently no-op -- the worst-case
+    // failure for a button helms hammer when the server is unhappy.
+    // SaveInFlightTimeoutSec defines how long the guard is allowed to
+    // hold; past that the next caller treats the flag as stuck and
+    // resets it. Real saves take ~1 s on a Pi-local-wifi setup;
+    // 30 s is well past pathological.
     private bool _saveInFlight;
+    private DateTime _saveInFlightStartedUtc;
+    private const int SaveInFlightTimeoutSec = 30;
 
     // Registered while route-edit OR polygon-edit is active. Router
     // fires LocationChanging before committing nav; we intercept and
