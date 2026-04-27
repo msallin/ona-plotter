@@ -30,6 +30,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool ChartsSeeded { get; private set; }
     public string NightModePreset { get; private set; } = "soft";
     public string Theme { get; private set; } = "system";
+    public string WindHeroMode { get; private set; } = "apparent";
     public string MapOrientation { get; private set; } = "north";
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
@@ -89,6 +90,7 @@ public sealed class AppSettingsService : IAppSettings
             ChartsSeeded = await LoadBool("chartsSeeded.v1", false);
             NightModePreset = NormalizeNightPreset(await LoadString("nightModePreset"));
             Theme = NormalizeTheme(await LoadString("theme"));
+            WindHeroMode = NormalizeWindHeroMode(await LoadString("windHeroMode.v1"));
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
@@ -193,6 +195,19 @@ public sealed class AppSettingsService : IAppSettings
     {
         "light" or "dark" or "system" or "high-contrast" => raw,
         _ => "system",
+    };
+
+    public async Task SetWindHeroModeAsync(string value)
+    {
+        WindHeroMode = NormalizeWindHeroMode(value);
+        await Save("windHeroMode.v1", WindHeroMode);
+        OnSettingsChanged?.Invoke();
+    }
+
+    private static string NormalizeWindHeroMode(string? raw) => raw switch
+    {
+        "apparent" or "true" => raw,
+        _ => "apparent",
     };
 
     private static string NormalizeNightPreset(string? raw) => raw switch

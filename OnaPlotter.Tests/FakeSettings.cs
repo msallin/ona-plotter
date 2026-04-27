@@ -18,6 +18,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool ChartsSeeded { get; set; }
     public string NightModePreset { get; set; } = "soft";
     public string Theme { get; set; } = "dark";
+    public string WindHeroMode { get; set; } = "apparent";
     public string MapOrientation { get; set; } = "north";
     public bool FollowBoat { get; set; } = true;
     public bool LaylinesVisible { get; set; }
@@ -65,6 +66,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetNightModeAutoAsync(bool v) => Task.CompletedTask;
     public Task SetNightModePresetAsync(string v) => Task.CompletedTask;
     public Task SetThemeAsync(string v) => Task.CompletedTask;
+    public Task SetWindHeroModeAsync(string v) { WindHeroMode = v; return Task.CompletedTask; }
     public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
     public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
     public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;

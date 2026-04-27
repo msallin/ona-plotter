@@ -39,6 +39,12 @@ public interface IAppSettings
     /// of whichever base palette is active.</summary>
     string Theme { get; }
 
+    /// <summary>"apparent" (default) shows AWA + AWS in the Wind page hero
+    /// for racers reading sail trim; "true" shows TWD + TWS for cruisers
+    /// (anchoring decisions) and tacticians (tactical reading). Persisted
+    /// across reloads so the helm doesn't re-pick on every session.</summary>
+    string WindHeroMode { get; }
+
     string MapOrientation { get; }
     bool FollowBoat { get; }
     bool LaylinesVisible { get; }
@@ -260,6 +266,7 @@ public interface IAppSettings
     Task SetNightModeAutoAsync(bool value);
     Task SetNightModePresetAsync(string value);
     Task SetThemeAsync(string value);
+    Task SetWindHeroModeAsync(string value);
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
