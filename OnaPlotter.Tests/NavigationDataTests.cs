@@ -141,6 +141,9 @@ public class NavigationDataTests
         await Assert.That(nav.AnchorLongitude).IsNull();
         await Assert.That(nav.AnchorMaxRadius).IsNull();
         await Assert.That(nav.AnchorCurrentRadius).IsNull();
+        // Peak resets too -- the next anchor drop must not greet the
+        // helm with yesterday's worst-case distance.
+        await Assert.That(nav.AnchorPeakRadius).IsNull();
     }
 
     [Test]
@@ -159,6 +162,51 @@ public class NavigationDataTests
         var je = JsonSerializer.SerializeToElement(18.3);
         await Assert.That(nav.Apply("navigation.anchor.currentRadius", je)).IsTrue();
         await Assert.That(nav.AnchorCurrentRadius).IsEqualTo(18.3);
+    }
+
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_TracksPeakOnFirstWrite()
+    {
+        var nav = new NavigationData();
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(12.5));
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(12.5);
+    }
+
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_PeakBumpsOnHigherValue()
+    {
+        var nav = new NavigationData();
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(12.5));
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(18.0));
+        await Assert.That(nav.AnchorCurrentRadius).IsEqualTo(18.0);
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(18.0);
+    }
+
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_PeakHoldsOnLowerValue()
+    {
+        // Boat swings closer to the anchor: live value drops, but the
+        // peak must hold so the helm can still see "we drifted to N m
+        // at the worst" once the boat is back inside the alarm circle.
+        var nav = new NavigationData();
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(25.0));
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(18.0));
+        await Assert.That(nav.AnchorCurrentRadius).IsEqualTo(18.0);
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(25.0);
+    }
+
+    [Test]
+    public async Task Apply_AnchorCurrentRadius_PeakResetsOnClearAnchor()
+    {
+        var nav = new NavigationData();
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(40.0));
+        nav.ClearAnchor();
+        // After ClearAnchor the next anchor drop must start from a
+        // clean slate, otherwise yesterday's drift would shadow the
+        // current watch.
+        nav.ApplyAnchorPosition(47.39, 8.54);
+        nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(5.0));
+        await Assert.That(nav.AnchorPeakRadius).IsEqualTo(5.0);
     }
 
     // --- Course properties ---

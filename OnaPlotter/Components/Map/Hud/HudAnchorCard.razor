@@ -33,6 +33,19 @@
                         <div class="hud-value route-value @distClass">@Format.MetersDual(Snapshot.CurrentRadius)</div>
                     </div>
                 }
+                @if (Snapshot.PeakRadius is not null)
+                {
+                    @* Peak observed distance during this anchor watch.
+                       Helm uses it to answer "how close did we get to
+                       the alarm threshold?" without remembering the
+                       highest live value they happened to glance at.
+                       Only shown when the plugin pushes currentRadius
+                       (manual anchors don't track peak). *@
+                    <div>
+                        <div class="hud-label">Peak</div>
+                        <div class="hud-value route-value">@Format.MetersDual(Snapshot.PeakRadius)</div>
+                    </div>
+                }
                 @if (Snapshot.MaxRadius is not null)
                 {
                     <div>
@@ -79,5 +92,6 @@
         double ManualRadiusMeters,
         double? CurrentRadius,
         double? MaxRadius,
-        string? DormantReason);
+        string? DormantReason,
+        double? PeakRadius = null);
 }

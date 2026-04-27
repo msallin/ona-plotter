@@ -120,6 +120,14 @@ public sealed class NavigationData
     public double? AnchorLongitude { get; private set; }
     public double? AnchorMaxRadius { get; private set; }
     public double? AnchorCurrentRadius { get; private set; }
+    /// <summary>The largest <see cref="AnchorCurrentRadius"/> observed
+    /// since the anchor was dropped this session. Helm reads it as
+    /// "we drifted to X m at peak; the alarm threshold is Y m" without
+    /// having to remember the highest value they saw scrolling. Reset
+    /// to null on <see cref="ClearAnchor"/>; only updated on the
+    /// server-driven (plugin) path -- manual anchors don't publish a
+    /// currentRadius.</summary>
+    public double? AnchorPeakRadius { get; private set; }
     public bool AnchorActive => AnchorLatitude is not null && AnchorLongitude is not null;
 
     // Active course / route info
@@ -292,6 +300,15 @@ public sealed class NavigationData
                 case "navigation.anchor.currentRadius":
                     AnchorCurrentRadius = value;
                     AnchorRadiusUpdatedUtc = _now();
+                    // Track the peak observed distance so the helm can
+                    // tell at a glance "we drifted to N m at the worst,
+                    // alarm is M m" without watching the live value
+                    // tick up and down. Monotonic until ClearAnchor()
+                    // resets it on the next anchor drop.
+                    if (AnchorPeakRadius is null || value > AnchorPeakRadius.Value)
+                    {
+                        AnchorPeakRadius = value;
+                    }
                     break;
                 case "navigation.course.calcValues.distance":
                     CourseNextPointDistance = value;
@@ -411,6 +428,10 @@ public sealed class NavigationData
             AnchorLongitude = null;
             AnchorMaxRadius = null;
             AnchorCurrentRadius = null;
+            // Peak resets so the next anchor drop starts from zero --
+            // helm doesn't want yesterday's peak greeting them on
+            // tonight's arrival.
+            AnchorPeakRadius = null;
         }
     }
 
