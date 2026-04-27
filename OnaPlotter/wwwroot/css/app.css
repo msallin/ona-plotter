@@ -3329,12 +3329,22 @@ html.night-mode-global body {
    .hud-stack-bl rule's padding-bottom (above), not by overriding
    the bottom inset on the cards. */
 
-/* Zoom-level badge: hidden -- the topbar exposes zoom controls and
-   the badge competed with the bottom-left depth card for the same
-   corner. Removing it lets .hud-stack-bl sit at the same --hud-edge
-   inset as .hud-stack-br for symmetric bottom padding. */
+/* Zoom-level badge sits in Leaflet's bottom-left control stack which
+   .leaflet-bottom.leaflet-left repositions to bottom-right (alongside
+   the metric + nautical scale bars). Reads "z 14" so the helm can
+   tell at a glance whether they're at z14 or z16 without poking the
+   +/- buttons until tile detail changes. Same dark-on-dim treatment
+   as the scale bars + attribution chip so all chrome reads as one
+   muted strip at the foot of the chart. */
 .ona-zoom-badge {
-    display: none !important;
+    background: rgba(10, 12, 18, 0.55);
+    color: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    font-size: 10px;
+    line-height: 1.1;
+    padding: 1px 5px 2px;
+    font-weight: 500;
+    pointer-events: none;
 }
 
 /* Move the leaflet bottom-left controls (scale bars) into the

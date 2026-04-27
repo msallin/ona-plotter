@@ -551,20 +551,26 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // control was too small at arm's length in a rolling cockpit;
     // the topbar pair is bigger and reachable one-handed.
 
-    // Scale bars + zoom badge all sit bottom-left, stacked, so a helm
-    // glance gets "how far is that dot / am I overzoomed" in one place.
-    // Metric ON (km/m) + Nautical ON (custom subclass below, since
-    // Scale bar was removed on user request: the zoom badge already
-    // communicates chart resolution, and at typical helm zoom levels
-    // the operator reads distances from the Measure tool or the route
-    // HUD rather than an edge-of-screen ruler. The NauticalScale class
-    // stays defined above in case we want to reintroduce it behind a
-    // setting; instantiation is just commented out here.
+    // Scale bars + zoom badge all sit bottom-left of the Leaflet
+    // control area (CSS pushes that stack to the bottom-right corner so
+    // it doesn't fight the depth HUD card). Helm glance gets "how far
+    // is that dot" + "what zoom am I at" in one place.
+    //
+    // Metric line uses Leaflet's built-in implementation (km / m); the
+    // imperial line is suppressed because nm is the marine unit anyone
+    // on the helm cares about, and our NauticalScale subclass renders
+    // it (cables under 1 nm so a berth-level zoom doesn't read "0 nm").
+    L.control.scale({
+        metric: true,
+        imperial: false,
+        maxWidth: 200,
+        position: 'bottomleft'
+    }).addTo(map);
+    new NauticalScale({ maxWidth: 200, position: 'bottomleft' }).addTo(map);
 
-    // Zoom-level badge: "z 14" chip, amber when the top chart is
-    // overzooming (map zoom > native) so the helmsman knows tiles are
-    // stretched. Bottom-left with the scale bars so all chart-scale
-    // context lives in one corner.
+    // Zoom-level badge: "z14" chip so the helm can tell at a glance
+    // whether they're at z14 or z16 without poking the +/- buttons
+    // until tile detail changes.
     zoomBadge = new ZoomBadge({ position: 'bottomleft' });
     zoomBadge.addTo(map);
     map.on('zoomend', () => zoomBadge.update());
