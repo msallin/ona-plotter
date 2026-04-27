@@ -7,6 +7,7 @@
 @inject SignalkClient SignalkClient
 @inject TrackBuffer TrackBuffer
 @inject IPolarService Polar
+@inject IAppSettings Settings
 
 <PageTitle>Wind</PageTitle>
 
@@ -45,15 +46,17 @@
             <div class="wind-rose-canvas">
                 @if (!HasAnyWind)
                 {
-                    @* Empty state. Earlier copy mentioned the literal
-                       SignalK paths (environment.wind.angleApparent etc),
-                       which read as a developer message to the helm.
-                       Plain-English wording instead; the troubleshooting
-                       detail belongs in the docs / Settings page, not
-                       overlaid on the rose. *@
+                    @* State-aware empty state -- the helm landing on the page
+                       with no rose data wants to know WHY. Three diagnoses:
+                       (a) no SignalK feed at all, (b) feed up but cold-start
+                       (no environment.wind.* paths yet), (c) feed up but
+                       stale (link wedged after a few good deltas). The
+                       SignalkClient already exposes IsConnected and
+                       IsDataStale, so the page just dispatches on those. *@
+                    var emptyState = ResolveEmptyState();
                     <div class="instrument-empty-state" role="status">
-                        <strong>Waiting for wind data</strong>
-                        Connect a wind sensor or check the SignalK server.
+                        <strong>@emptyState.Title</strong>
+                        @emptyState.Detail
                     </div>
                 }
                 <svg class="wind-rose-svg" viewBox="0 0 @Size @Size">
@@ -228,7 +231,7 @@
                    headline above the history chart, where it belongs
                    tactically (Marius and Tom both blocked without it
                    per the field study). *@
-                @if (GustLull is (double gust, double lull, double mean))
+                @if (AwsStats is (double gust, double lull, double mean, double sigma))
                 {
                     <div class="wind-badges">
                         <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
@@ -245,6 +248,19 @@
                               title="Mean AWS over the last @GustLullWindowMin min">
                             <span class="instrument-badge-label">Mean</span>
                             @mean.ToString("F1") kn
+                        </span>
+                        @* Sigma (standard deviation) of AWS over the same
+                           window. Tactical "how variable is the wind?"
+                           number that gust+lull individually don't
+                           summarise -- sigma > 4 kn means visible wave-by-
+                           wave gusting where reefing or extra trim
+                           anticipation pays. The "&#963;" entity is the
+                           Greek lower-case sigma so the chip reads as a
+                           statistician would expect. *@
+                        <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
+                              title="Standard deviation of AWS over the last @GustLullWindowMin min -- higher = gustier / more variable">
+                            <span class="instrument-badge-label">&#963;</span>
+                            @sigma.ToString("F1") kn
                         </span>
                     </div>
                 }
@@ -421,13 +437,23 @@
 
     // Hero view selector: "apparent" shows AWA + AWS, "true" shows
     // TWD + TWS. Cruisers + tacticians want true; racers want apparent.
+    // Default seeded from IAppSettings on init so the helm's last
+    // pick survives a page reload.
     private string heroMode = "apparent";
 
     // History view selector: "direction" plots TWD over time (shift
     // detection); "speed" plots TWS (settling / building trend).
+    // Per-session (no persistence) -- toggling history view is a quick
+    // diagnostic check, not a stable preference.
     private string historyView = "direction";
 
-    private void SetHeroMode(string mode) => heroMode = mode;
+    private async Task SetHeroMode(string mode)
+    {
+        if (heroMode == mode) return;
+        heroMode = mode;
+        await Settings.SetWindHeroModeAsync(mode);
+    }
+
     private void SetHistoryView(string view) => historyView = view;
 
     // Windplot: TWD + TWS over time. Buffer is sized for the longest
@@ -470,11 +496,13 @@
         || twdHistory.Count > 0;
 
     /// <summary>
-    /// Gust + lull relative to the short-window mean. A "gust" of +4
-    /// means peak AWS was 4 kn above the window mean; "lull" likewise
-    /// on the low side. Both in knots; never negative.
+    /// AWS variability over the gust/lull window: gust (+ above mean),
+    /// lull (- below mean), mean, and sigma (standard deviation -- a
+    /// single-number summary of how variable the wind is, regardless
+    /// of which direction the spread leans). All in knots; gust and
+    /// lull are non-negative magnitudes.
     /// </summary>
-    private (double Gust, double Lull, double Mean)? GustLull
+    private (double Gust, double Lull, double Mean, double Sigma)? AwsStats
     {
         get
         {
@@ -490,7 +518,14 @@
             double mean = samples.Average();
             double gust = Math.Max(0, samples.Max() - mean);
             double lull = Math.Max(0, mean - samples.Min());
-            return (gust, lull, mean);
+            // Population sigma: sqrt(sum((x - mean)^2) / N). Population
+            // (not sample) variance is appropriate here -- the helm cares
+            // about the dispersion of THIS specific window, not an
+            // estimate for an unseen larger population.
+            double sumSq = 0;
+            foreach (var s in samples) { double d = s - mean; sumSq += d * d; }
+            double sigma = Math.Sqrt(sumSq / samples.Count);
+            return (gust, lull, mean, sigma);
         }
     }
 
@@ -584,9 +619,39 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Settings.InitializeAsync is idempotent; calling it here means
+        // a deep-link straight to /wind doesn't race the MainLayout's
+        // own init (the hero mode would otherwise flash "apparent" then
+        // flip to the persisted value once settings landed).
+        await Settings.InitializeAsync();
+        heroMode = Settings.WindHeroMode;
+
         RefreshData(fullRebuild: true);
         TrackBuffer.OnTrackUpdated += HandleTrackUpdated;
         await Polar.InitializeAsync();
+    }
+
+    /// <summary>
+    /// Picks a state-aware empty-state message for the rose overlay.
+    /// Three diagnoses:
+    ///   * <c>NoFeed</c>: SignalK websocket is not connected.
+    ///   * <c>Stale</c>: connected but no message in &gt; 5 s
+    ///     (SignalkClient.IsDataStale).
+    ///   * <c>Cold</c>: connected and live but no wind sample yet (the
+    ///     server isn't publishing environment.wind.* paths). The
+    ///     helm needs to go check the sensor / SK paths config.
+    /// Returns <c>null</c> Detail when there's nothing helpful to add.
+    /// </summary>
+    private (string Title, string Detail) ResolveEmptyState()
+    {
+        if (!SignalkClient.IsConnected)
+            return ("No SignalK feed",
+                    "Check the server URL or wait while the client reconnects.");
+        if (SignalkClient.IsDataStale)
+            return ("SignalK feed stale",
+                    "Connected, but no message has arrived for several seconds.");
+        return ("Awaiting wind sensor",
+                "Connected. No environment.wind.* data yet; check the sensor or SK paths.");
     }
 
     private async void HandleTrackUpdated()
