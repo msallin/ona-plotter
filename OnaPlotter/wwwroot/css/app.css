@@ -5740,8 +5740,15 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .wind-hero {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.5rem;
     min-height: 5rem;
+}
+.wind-hero-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 .wind-hero-eyebrow {
     font-size: 0.7rem;
@@ -5845,6 +5852,53 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .segmented .btn-check:focus-visible + .btn {
     outline: 2px solid var(--sk-accent);
     outline-offset: 2px;
+}
+/* Compact variant: shorter cells for inline placement next to a
+   chip / heading where vertical space is constrained. */
+.segmented.segmented-sm .btn,
+.segmented.segmented-sm label.btn {
+    padding: 2px 10px;
+    font-size: 0.72rem;
+    min-height: 22px;
+}
+
+/* TWD slope numeric headline. Always rendered (even when no signal)
+   so the helm has a stable place to look for the tactical "is the
+   wind shifting?" answer. Three states:
+     * Strong shift (>= 3 deg/min): emphasised colour, the helm
+       should react now.
+     * Mid shift (1..3 deg/min): regular colour.
+     * Weak / steady (< 1 deg/min): dimmed.
+     * No signal (fewer than 5 samples in the slope window): muted
+       italic placeholder. */
+.wind-shift-headline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    font-variant-numeric: tabular-nums;
+    margin: 0.25rem 0 0;
+    flex-wrap: wrap;
+}
+.wind-shift-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--sk-text);
+    line-height: 1.1;
+}
+.wind-shift-value.wind-shift-strong { color: var(--sev-warn); }
+.wind-shift-value.wind-shift-mid    { color: var(--sk-text); }
+.wind-shift-value.wind-shift-weak   { color: var(--sk-text); opacity: 0.7; }
+.wind-shift-label {
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+}
+.wind-shift-empty {
+    font-size: 0.85rem;
+    color: var(--sk-text-muted);
+    font-style: italic;
 }
 
 /* TWD history section: title + segmented selector on one line; meta

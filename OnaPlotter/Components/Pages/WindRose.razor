@@ -162,10 +162,16 @@
                     <span class="wind-legend-label">Speed (kn)</span>
                     <svg width="30" height="180" aria-hidden="true">
                         <defs>
+                            @* Viridis stops -- match SpeedColor() in the
+                               @code block. Perceptually uniform in
+                               lightness so the legend reads the same
+                               under colour-blindness and polarised sun. *@
                             <linearGradient id="@GradientId" x1="0" y1="1" x2="0" y2="0">
-                                <stop offset="0%" stop-color="#2196F3" />
-                                <stop offset="50%" stop-color="#FFEB3B" />
-                                <stop offset="100%" stop-color="#F44336" />
+                                <stop offset="0%"   stop-color="#440154" />
+                                <stop offset="25%"  stop-color="#3b528b" />
+                                <stop offset="50%"  stop-color="#21918c" />
+                                <stop offset="75%"  stop-color="#5ec962" />
+                                <stop offset="100%" stop-color="#fde725" />
                             </linearGradient>
                         </defs>
                         <rect x="0" y="0" width="16" height="180" fill="url(#@GradientId)" rx="2" />
@@ -182,64 +188,64 @@
            primary live data, not a tangentially-related sidebar. <section>
            announces correctly to screen readers ("region" / labelled). *@
         <section class="wind-aside" aria-label="Live wind and direction history">
-            @* Hero card. Eyebrow ("Apparent wind") sits ABOVE the value
-               so the qualifier doesn't compete with the unit "kn" --
-               they're different *kinds* of label and need different
-               typographic weight (eyebrow is muted small-caps, unit is
-               muted small-caps inline). Layout reserves min-height so a
-               sensor dropout doesn't collapse the column and shove the
-               history section up. *@
+            @* Hero card. Eyebrow + value pair, with an Apparent / True
+               toggle in the header so cruisers and tacticians (who
+               read TWD/TWS for anchoring + tactical decisions) and
+               racers (who read AWA/AWS for sail trim) both get the
+               number they actually want, without page-level config.
+               True mode shows TWD (compass-from-north) + TWS; apparent
+               shows AWA (0-360 relative to bow) + AWS. *@
             <section class="wind-card wind-hero" aria-label="Live wind">
-                <div class="wind-hero-eyebrow">Apparent wind</div>
+                <div class="wind-hero-header">
+                    <div class="wind-hero-eyebrow">@(heroMode == "true" ? "True wind" : "Apparent wind")</div>
+                    <div class="segmented segmented-sm" role="group" aria-label="Wind reference">
+                        <input type="radio" class="btn-check" name="@($"hero-{_uid}")"
+                               id="@($"hero-app-{_uid}")" autocomplete="off"
+                               checked="@(heroMode == "apparent")"
+                               @onchange='() => SetHeroMode("apparent")' />
+                        <label class="btn" for="@($"hero-app-{_uid}")">Apparent</label>
+                        <input type="radio" class="btn-check" name="@($"hero-{_uid}")"
+                               id="@($"hero-true-{_uid}")" autocomplete="off"
+                               checked="@(heroMode == "true")"
+                               @onchange='() => SetHeroMode("true")' />
+                        <label class="btn" for="@($"hero-true-{_uid}")">True</label>
+                    </div>
+                </div>
                 <div class="wind-hero-readouts">
                     <div class="wind-hero-primary">
-                        <span class="wind-hero-value">@(currentWind?.SpeedKn.ToString("F1") ?? "--")</span>
+                        <span class="wind-hero-value">@HeroSpeedDisplay</span>
                         <span class="wind-hero-unit">kn</span>
                     </div>
                     <div class="wind-hero-secondary">
-                        <span class="wind-hero-angle">
-                            @(currentWind is null ? "--" : ((currentWind.Value.Angle * 180 / Math.PI + 360) % 360).ToString("F0") + "°")
-                        </span>
+                        <span class="wind-hero-angle">@HeroAngleDisplay</span>
                     </div>
                 </div>
 
-                @* === Tactical chips: gust / lull / mean (last 2 min) +
-                       shift-rate (last 5 min). Each renders nothing when
-                       its sample count is insufficient, so "this chip is
-                       silent" stays meaningful. *@
-                @if (GustLull is not null || ShiftRate is not null)
+                @* Gust / Lull / Mean over the last 2 min. Renders
+                   nothing when sample count is too low so "this chip
+                   is silent" stays meaningful. The Shift chip moved
+                   out of here -- it's now the always-on numeric
+                   headline above the history chart, where it belongs
+                   tactically (Marius and Tom both blocked without it
+                   per the field study). *@
+                @if (GustLull is (double gust, double lull, double mean))
                 {
                     <div class="wind-badges">
-                        @if (GustLull is (double gust, double lull, double mean))
-                        {
-                            <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                                  title="Peak AWS minus mean over the last @GustLullWindowMin min">
-                                <span class="instrument-badge-label">Gust</span>
-                                +@gust.ToString("F1") kn
-                            </span>
-                            <span class="instrument-badge"
-                                  title="Lowest AWS minus mean over the last @GustLullWindowMin min">
-                                <span class="instrument-badge-label">Lull</span>
-                                -@lull.ToString("F1") kn
-                            </span>
-                            <span class="instrument-badge"
-                                  title="Mean AWS over the last @GustLullWindowMin min">
-                                <span class="instrument-badge-label">Mean</span>
-                                @mean.ToString("F1") kn
-                            </span>
-                        }
-                        @if (ShiftRate is double rate)
-                        {
-                            string cls = Math.Abs(rate) >= 3 ? "instrument-badge-warn"
-                                       : Math.Abs(rate) >= 1 ? "instrument-badge"
-                                       : "instrument-badge-good";
-                            string sign = rate >= 0 ? "+" : "";
-                            <span class="instrument-badge @cls"
-                                  title="TWD slope over the last @ShiftRateWindowMin min -- positive = veering, negative = backing">
-                                <span class="instrument-badge-label">Shift</span>
-                                @sign@rate.ToString("F1") &deg;/min
-                            </span>
-                        }
+                        <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
+                              title="Peak AWS minus mean over the last @GustLullWindowMin min">
+                            <span class="instrument-badge-label">Gust</span>
+                            +@gust.ToString("F1") kn
+                        </span>
+                        <span class="instrument-badge"
+                              title="Lowest AWS minus mean over the last @GustLullWindowMin min">
+                            <span class="instrument-badge-label">Lull</span>
+                            -@lull.ToString("F1") kn
+                        </span>
+                        <span class="instrument-badge"
+                              title="Mean AWS over the last @GustLullWindowMin min">
+                            <span class="instrument-badge-label">Mean</span>
+                            @mean.ToString("F1") kn
+                        </span>
                     </div>
                 }
             </section>
@@ -262,61 +268,104 @@
 
             @if (twdHistory.Count > 1)
             {
-                <section class="wind-card wind-history-section" aria-label="Wind direction history">
+                <section class="wind-card wind-history-section" aria-label="Wind history">
                     <header class="wind-section-header">
-                        <h2 class="wind-section-title">TWD history</h2>
+                        <h2 class="wind-section-title">Wind history</h2>
+                        @* Direction / Speed toggle. Cruisers (Ulrike)
+                           ask "is the breeze settling for the night?";
+                           racers (Marius, Tom) ask "is the wind shifting
+                           right?". Same chart machinery, different y-axis
+                           projection. Project-owned segmented control
+                           shares the chip vocabulary so it doesn't read
+                           as a third button system on the page. *@
+                        <div class="segmented segmented-sm" role="group" aria-label="History view">
+                            <input type="radio" class="btn-check" name="@($"hview-{_uid}")"
+                                   id="@($"hview-dir-{_uid}")" autocomplete="off"
+                                   checked="@(historyView == "direction")"
+                                   @onchange='() => SetHistoryView("direction")' />
+                            <label class="btn" for="@($"hview-dir-{_uid}")">Direction</label>
+                            <input type="radio" class="btn-check" name="@($"hview-{_uid}")"
+                                   id="@($"hview-spd-{_uid}")" autocomplete="off"
+                                   checked="@(historyView == "speed")"
+                                   @onchange='() => SetHistoryView("speed")' />
+                            <label class="btn" for="@($"hview-spd-{_uid}")">Speed</label>
+                        </div>
                         <TimeWindowSelector @bind-Value="windowMinutes"
                                             Choices="WindowChoices"
-                                            AriaLabel="TWD history window" />
+                                            AriaLabel="History window" />
                         <span class="wind-section-meta wind-section-count">@visible.Count samples</span>
                     </header>
+
+                    @* TWD slope numeric headline, always-on (replaces the
+                       prior conditional "Shift" chip). Field study
+                       finding T1/M2: Marius and Tom both want this as the
+                       tactical headline. Three states: (a) numeric value
+                       with veering/backing/steady label and a directional
+                       glyph; (b) "Steady" when |slope| < 0.5 deg/min;
+                       (c) "Awaiting samples" when fewer than 5 samples in
+                       the 5-min slope window. *@
+                    <div class="wind-shift-headline" aria-live="polite">
+                        @if (ShiftRate is double rate)
+                        {
+                            string trend = Math.Abs(rate) < 0.5 ? "Steady"
+                                         : rate > 0 ? "Veering" : "Backing";
+                            string glyph = Math.Abs(rate) < 0.5 ? "—"
+                                         : rate > 0 ? "▲" : "▼";
+                            string sign = rate >= 0 ? "+" : "";
+                            string cls = Math.Abs(rate) >= 3 ? "wind-shift-strong"
+                                       : Math.Abs(rate) >= 1 ? "wind-shift-mid"
+                                       : "wind-shift-weak";
+                            <span class="wind-shift-value @cls">@glyph @sign@rate.ToString("F1")&deg;/min</span>
+                            <span class="wind-shift-label">@trend &middot; last @ShiftRateWindowMin min</span>
+                        }
+                        else
+                        {
+                            <span class="wind-shift-empty">Awaiting samples for shift detection</span>
+                        }
+                    </div>
+
                     @if (hasUsableHistory)
                     {
                         <svg class="wind-history-svg" viewBox="0 0 @WpWidth @WpHeight">
-        @* Y-axis labels (degrees) *@
+        @* Compute axis bounds once per render. For Direction view we
+           use the unfolded degree range; for Speed view, knots. Mean
+           line follows the same axis. *@
         @{
-            double twdMin = visible.Min(t => t.Deg);
-            double twdMax = visible.Max(t => t.Deg);
-            double twdRange = Math.Max(twdMax - twdMin, 20); // min 20 degree range
-            double twdMid = (twdMin + twdMax) / 2;
-            twdMin = twdMid - twdRange / 2 - 5;
-            twdMax = twdMid + twdRange / 2 + 5;
-            double meanTwd = visible.Average(t => t.Deg);
+            (double yMin, double yMax, double yMean) = ComputeYAxis(visible, historyView);
             DateTime oldest = visible[0].Time;
             DateTime newest = visible[^1].Time;
             double timeSpan = Math.Max((newest - oldest).TotalSeconds, 1);
+            double yRange = yMax - yMin;
+            string axisUnit = historyView == "speed" ? "kn" : "°";
+            string axisFmt = historyView == "speed" ? "F1" : "F0";
         }
 
-        @* Grid lines + degree axis. Stroke colours come from theme
-           tokens so night / high-contrast modes follow without per-
-           chart overrides. *@
+        @* Grid lines + axis labels. *@
         @for (int i = 0; i <= 4; i++)
         {
             double y = WpPad + (WpPlotH * i / 4.0);
-            double deg = twdMax - (twdMax - twdMin) * i / 4.0;
+            double yVal = yMax - yRange * i / 4.0;
             <line x1="@WpPad" y1="@F(y)" x2="@(WpWidth - 10)" y2="@F(y)"
                   style="stroke: var(--sk-border);" stroke-width="0.5" />
-            @SvgText(WpPad - 4, y, $"{deg:F0}",
+            @SvgText(WpPad - 4, y, yVal.ToString(axisFmt, System.Globalization.CultureInfo.InvariantCulture),
                 "var(--sk-text-muted)", 10, anchor: "end")
         }
+        @* Y-axis unit (top-left corner) so the helm doesn't have to
+           guess "is this kn or degrees?" when toggling views. *@
+        @SvgText(WpPad - 4, WpPad - 14, axisUnit, "var(--sk-text-muted)", 10, anchor: "end")
 
-        @* Mean TWD line *@
+        @* Mean line *@
         @{
-            double meanY = WpPad + WpPlotH * (1 - (meanTwd - twdMin) / (twdMax - twdMin));
+            double meanY = WpPad + WpPlotH * (1 - (yMean - yMin) / yRange);
         }
         <line x1="@WpPad" y1="@F(meanY)" x2="@(WpWidth - 10)" y2="@F(meanY)"
               style="stroke: var(--sev-ok);" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7" />
 
-        @* TWD data line -- accent blue token so night mode red-shifts it. *@
+        @* Data polyline. Accent blue so night mode red-shifts it. *@
         <polyline fill="none" style="stroke: var(--sk-accent);" stroke-width="1.5" opacity="0.9"
-                  points="@TwdPolylinePoints(visible, twdMin, twdMax, oldest, timeSpan)" />
+                  points="@HistoryPolylinePoints(visible, yMin, yMax, oldest, timeSpan, historyView)" />
 
-        @* Time axis labels. Format adapts to the actual span: seconds
-           for < 60 s, decimal minutes for < 10 min, integer minutes
-           otherwise. The previous code rounded to integer minutes
-           always and produced "-0m -0m -0m -0m" for sub-minute spans
-           (when the helm just opened the page and only a few samples
-           had landed). *@
+        @* Time axis labels. Format adapts to span (-Ns / -N.Nm / -Nm). *@
         @for (int i = 0; i <= 3; i++)
         {
             double x = WpPad + (WpPlotW * i / 3.0);
@@ -325,9 +374,7 @@
                 "var(--sk-text-muted)", 10)
         }
 
-        @* Inline legend (mean / now) so the chart self-documents and
-           the meta line below the section header doesn't have to
-           carry "green = mean" alongside the sample count. *@
+        @* Inline mean legend top-right. *@
         <line x1="@(WpWidth - 80)" y1="14" x2="@(WpWidth - 64)" y2="14"
               style="stroke: var(--sev-ok);" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7" />
         @SvgText(WpWidth - 60, 14, "mean", "var(--sk-text-muted)", 10, anchor: "start")
@@ -335,10 +382,6 @@
                     }
                     else
                     {
-                        @* Not enough samples for a useful chart yet.
-                           A 2-point line on a degenerate axis is more
-                           misleading than no chart, so suppress until
-                           we have meaningful data. *@
                         <p class="wind-history-empty">
                             Collecting samples; chart appears once @(5 - visible.Count) more land.
                         </p>
@@ -369,24 +412,39 @@
 
     private List<WindPoint> windPoints = [];
     private (double Angle, double SpeedKn)? currentWind;
+    private (double TwdRad, double TwsKn)? currentTrueWind;
     private int lastProcessedCount;
 
-    // Windplot: TWD over time for shift detection. The buffer is sized
-    // for the longest window offered; the user picks a trailing slice
-    // of it via WindowChoices below. Hard cap MaxTwdSamples keeps
-    // memory bounded even if we're fed a 10Hz TWD stream.
+    // Per-instance suffix for radio-group names so two WindRose
+    // components on a page (unlikely but cheap) don't share a group.
+    private readonly string _uid = Guid.NewGuid().ToString("N")[..6];
+
+    // Hero view selector: "apparent" shows AWA + AWS, "true" shows
+    // TWD + TWS. Cruisers + tacticians want true; racers want apparent.
+    private string heroMode = "apparent";
+
+    // History view selector: "direction" plots TWD over time (shift
+    // detection); "speed" plots TWS (settling / building trend).
+    private string historyView = "direction";
+
+    private void SetHeroMode(string mode) => heroMode = mode;
+    private void SetHistoryView(string view) => historyView = view;
+
+    // Windplot: TWD + TWS over time. Buffer is sized for the longest
+    // window offered; the user picks a trailing slice via WindowChoices.
+    // Hard cap MaxWindHistorySamples keeps memory bounded under 10Hz feeds.
     private const int MaxWindowMinutes = 180;
-    private const int MaxTwdSamples = 10800;   // 3h at 1 sample/sec; headroom for faster rates
+    private const int MaxWindHistorySamples = 10800;   // 3h at 1 sample/sec; headroom
     private const int WpWidth = 420;
     private const int WpHeight = 180;
     private const int WpPad = 40;
     private const int WpPlotW = WpWidth - WpPad - 10;
     private const int WpPlotH = WpHeight - WpPad - 20;
-    private List<TwdSample> twdHistory = [];
+    private List<WindSample> twdHistory = [];
 
-    // User-selectable trailing window. Defaults to 30 min (unchanged
-    // from the previous fixed behaviour). 15 min for racers spotting
-    // a shift mid-leg; 1 h / 3 h for cruisers watching a sunset clock.
+    // User-selectable trailing window. Defaults to 30 min. 15 min for
+    // racers spotting a shift mid-leg; 1 h / 3 h for cruisers watching
+    // a sunset clock.
     private int windowMinutes = 30;
 
     private static readonly (int minutes, string label)[] WindowChoices =
@@ -454,14 +512,14 @@
             // Unfold around the first sample so 359 -> 1 doesn't read
             // as a -358 degree jump. Each subsequent sample shifts by
             // at most +/- 180; anything bigger must have wrapped.
-            double prev = window[0].Deg;
+            double prev = window[0].TwdDeg;
             double baseline = prev;
             var unfolded = new double[window.Count];
             double running = prev;
             unfolded[0] = running - baseline;
             for (int i = 1; i < window.Count; i++)
             {
-                double d = window[i].Deg;
+                double d = window[i].TwdDeg;
                 double delta = d - prev;
                 if (delta > 180) delta -= 360;
                 else if (delta < -180) delta += 360;
@@ -491,6 +549,36 @@
             if (den < 1) return null;
             double degPerSec = num / den;
             return degPerSec * 60;
+        }
+    }
+
+    /// <summary>Hero speed display in knots, formatted to 1 decimal,
+    /// or "--" when the chosen wind reference (apparent / true) lacks
+    /// a value. Driven by <see cref="heroMode"/>.</summary>
+    private string HeroSpeedDisplay => heroMode == "true"
+        ? (currentTrueWind?.TwsKn.ToString("F1") ?? "--")
+        : (currentWind?.SpeedKn.ToString("F1") ?? "--");
+
+    /// <summary>Hero angle display. In apparent mode shows AWA in
+    /// 0..360 (0 = dead ahead). In true mode shows TWD (compass
+    /// bearing the wind is coming FROM). Both rounded to whole
+    /// degrees with the degree glyph; "--" when missing.</summary>
+    private string HeroAngleDisplay
+    {
+        get
+        {
+            if (heroMode == "true")
+            {
+                if (currentTrueWind is null) return "--";
+                double twdDeg = (currentTrueWind.Value.TwdRad * 180 / Math.PI + 360) % 360;
+                return twdDeg.ToString("F0") + "°";
+            }
+            else
+            {
+                if (currentWind is null) return "--";
+                double awaDeg = (currentWind.Value.Angle * 180 / Math.PI + 360) % 360;
+                return awaDeg.ToString("F0") + "°";
+            }
         }
     }
 
@@ -538,18 +626,26 @@
         else
             currentWind = null;
 
-        // Update TWD history for windplot.
-        if (data.WindDirectionTrue is not null)
+        if (data.WindDirectionTrue is not null && data.WindSpeedTrue is not null)
+            currentTrueWind = (data.WindDirectionTrue.Value, data.WindSpeedTrue.Value * MsToKnots);
+        else
+            currentTrueWind = null;
+
+        // Update wind history. Both TWD and TWS must be present for a
+        // sample to land -- the chart toggles between the two and
+        // having one without the other would create a half-rendered
+        // chart on the unselected view. For TWD-only feeds the chart
+        // simply waits until TWS shows up.
+        if (data.WindDirectionTrue is not null && data.WindSpeedTrue is not null)
         {
             double twdDeg = data.WindDirectionTrue.Value * 180.0 / Math.PI;
             if (twdDeg < 0) twdDeg += 360;
-            twdHistory.Add(new TwdSample(DateTime.UtcNow, twdDeg));
-            // Prune: retain up to the maximum supported window; the
-            // visible slice picks its own cutoff.
+            double twsKn = data.WindSpeedTrue.Value * MsToKnots;
+            twdHistory.Add(new WindSample(DateTime.UtcNow, twdDeg, twsKn));
             var cutoff = DateTime.UtcNow.AddMinutes(-MaxWindowMinutes);
             twdHistory.RemoveAll(s => s.Time < cutoff);
-            if (twdHistory.Count > MaxTwdSamples)
-                twdHistory.RemoveRange(0, twdHistory.Count - MaxTwdSamples);
+            if (twdHistory.Count > MaxWindHistorySamples)
+                twdHistory.RemoveRange(0, twdHistory.Count - MaxWindHistorySamples);
         }
     }
 
@@ -603,27 +699,40 @@
     }
 
     /// <summary>
-    /// Interpolates blue -> yellow -> red based on 0..1 fraction.
+    /// Maps a 0..1 fraction to a viridis colour (purple -> blue ->
+    /// teal -> green -> yellow). Replaces the previous blue->yellow->red
+    /// ramp, which (a) failed for ~8% of male sailors with deutera-
+    /// nomaly in the yellow-green band, and (b) washed out under
+    /// polarised sunglasses where yellow disappears. Viridis is
+    /// perceptually uniform in lightness so it preserves ordering
+    /// under both colour-deficient vision and bright sun.
     /// </summary>
     private static string SpeedColor(double frac)
     {
         frac = Math.Clamp(frac, 0, 1);
-        int r, g, b;
-        if (frac < 0.5)
+        // Five-stop viridis approximation -- the canonical 256-step
+        // matplotlib colormap is overkill for a polar-rose dot scatter,
+        // and linear interpolation between stops at 0 / 0.25 / 0.5 /
+        // 0.75 / 1.0 is indistinguishable to the eye from the full
+        // table at the dot size we render.
+        ReadOnlySpan<(double Stop, int R, int G, int B)> stops = stackalloc (double, int, int, int)[]
         {
-            double t = frac * 2;
-            r = (int)(0x21 + t * (0xFF - 0x21));
-            g = (int)(0x96 + t * (0xEB - 0x96));
-            b = (int)(0xF3 + t * (0x3B - 0xF3));
-        }
-        else
-        {
-            double t = (frac - 0.5) * 2;
-            r = (int)(0xFF + t * (0xF4 - 0xFF));
-            g = (int)(0xEB + t * (0x43 - 0xEB));
-            b = (int)(0x3B + t * (0x36 - 0x3B));
-        }
-        return $"rgb({r},{g},{b})";
+            (0.00,  68,   1,  84),  // dark purple
+            (0.25,  59,  82, 139),  // blue
+            (0.50,  33, 145, 140),  // teal
+            (0.75,  94, 201,  98),  // green
+            (1.00, 253, 231,  37),  // yellow
+        };
+        int i = 0;
+        while (i < stops.Length - 1 && frac > stops[i + 1].Stop) i++;
+        var a = stops[i];
+        var b = i + 1 < stops.Length ? stops[i + 1] : a;
+        double span = b.Stop - a.Stop;
+        double t = span > 1e-6 ? (frac - a.Stop) / span : 0;
+        int r = (int)(a.R + t * (b.R - a.R));
+        int g = (int)(a.G + t * (b.G - a.G));
+        int bl = (int)(a.B + t * (b.B - a.B));
+        return $"rgb({r},{g},{bl})";
     }
 
     private static string CompassLabel(int deg) => deg switch
@@ -639,15 +748,55 @@
 
     private static string F(double v) => v.ToString("F1");
 
-    private string TwdPolylinePoints(IReadOnlyList<TwdSample> samples,
-        double twdMin, double twdMax, DateTime oldest, double timeSpanSecs)
+    /// <summary>
+    /// Computes y-axis bounds + mean for the history chart. For
+    /// "direction" view returns the unfolded TWD range padded by 5°
+    /// either side; for "speed" view returns the TWS range padded by
+    /// 1 kn either side. Floor on range width keeps a dead-flat trace
+    /// from rendering as a hairline pinned to one grid stripe.
+    /// </summary>
+    private static (double Min, double Max, double Mean) ComputeYAxis(
+        IReadOnlyList<WindSample> samples, string view)
+    {
+        if (view == "speed")
+        {
+            double sMin = samples.Min(s => s.TwsKn);
+            double sMax = samples.Max(s => s.TwsKn);
+            double sMid = (sMin + sMax) / 2;
+            double sRange = Math.Max(sMax - sMin, 4); // min 4 kn range
+            sMin = sMid - sRange / 2 - 1;
+            sMax = sMid + sRange / 2 + 1;
+            double sMean = samples.Average(s => s.TwsKn);
+            return (sMin, sMax, sMean);
+        }
+        else
+        {
+            double dMin = samples.Min(s => s.TwdDeg);
+            double dMax = samples.Max(s => s.TwdDeg);
+            double dMid = (dMin + dMax) / 2;
+            double dRange = Math.Max(dMax - dMin, 20); // min 20 deg range
+            dMin = dMid - dRange / 2 - 5;
+            dMax = dMid + dRange / 2 + 5;
+            double dMean = samples.Average(s => s.TwdDeg);
+            return (dMin, dMax, dMean);
+        }
+    }
+
+    /// <summary>
+    /// Generates the SVG polyline points string for the history chart.
+    /// Picks TwdDeg or TwsKn off each sample based on <paramref name="view"/>.
+    /// </summary>
+    private string HistoryPolylinePoints(IReadOnlyList<WindSample> samples,
+        double yMin, double yMax, DateTime oldest, double timeSpanSecs, string view)
     {
         var sb = new System.Text.StringBuilder();
+        double range = yMax - yMin;
         foreach (var s in samples)
         {
             double t = (s.Time - oldest).TotalSeconds;
+            double v = view == "speed" ? s.TwsKn : s.TwdDeg;
             double x = WpPad + WpPlotW * (t / timeSpanSecs);
-            double y = WpPad + WpPlotH * (1 - (s.Deg - twdMin) / (twdMax - twdMin));
+            double y = WpPad + WpPlotH * (1 - (v - yMin) / range);
             if (sb.Length > 0) sb.Append(' ');
             sb.Append($"{x:F1},{y:F1}");
         }
@@ -655,5 +804,5 @@
     }
 
     private readonly record struct WindPoint(double X, double Y, string Color);
-    private readonly record struct TwdSample(DateTime Time, double Deg);
+    private readonly record struct WindSample(DateTime Time, double TwdDeg, double TwsKn);
 }
