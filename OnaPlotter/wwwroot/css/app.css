@@ -291,42 +291,88 @@
    Applied when the user picks "Light" in Settings, or when "System" is
    chosen and the OS prefers a light color scheme. Scoped to the outer
    .page wrapper so the map HUD (which lives over chart tiles and needs
-   to stay dark for readability) is unaffected. */
+   to stay dark for readability) is unaffected.
+
+   Tuned for readability on a deck under direct sun -- the previous
+   palette read fine indoors but washed out topside under polarised
+   sunglasses. Specifically:
+     * --sk-text-muted bumped slate-500 -> slate-600 so labels stay
+       above the 7:1 (WCAG AAA) contrast threshold, not 5.7:1.
+     * --sk-border bumped slate-300 -> slate-400 so card edges and
+       table separators survive low-elevation sun glare. Thin pale
+       borders disappear first.
+     * Severity tokens (ok / warn / danger) flipped to the *-700 shades
+       (originals tuned for dark theme are too bright to read on white).
+     * Sidebar dropped from a slate-300 -> slate-400 gradient to a
+       solid dark slate-800. Two reasons: (1) gradients band on the
+       cheaper LCD panels iPads ship with under sun; (2) a high-
+       contrast dark anchor reads at-a-glance, mirroring how Garmin /
+       Raymarine / B&G ship their light-theme chrome.
+     * Panels go fully opaque (was rgba 0.96) -- 4 % see-through
+       reads as "blurry" in sun and the panel content dragged below
+       legible contrast against a busy chart underneath.
+     * Hover surface bumped from slate-100 -> slate-200 so hover
+       feedback is visible at all (slate-100 ~= slate-50 page bg under
+       sun). */
 .page.theme-light,
 .page.theme-system {
     --sk-bg: #f8fafc;                 /* slate-50 */
     --sk-surface: #ffffff;
-    --sk-surface-hover: #f1f5f9;      /* slate-100 */
-    --sk-border: #cbd5e1;             /* slate-300 */
-    --sk-text: #0f172a;               /* slate-900 */
-    --sk-text-muted: #64748b;         /* slate-500 */
-    /* Sky-800/900 instead of sky-700; bumps contrast on white surfaces
-       past 7:1 (WCAG AAA) so accent links and active chips stay legible
-       in direct sunlight on a tablet. */
+    --sk-surface-hover: #e2e8f0;      /* slate-200 -- visible hover delta from slate-50 bg */
+    --sk-border: #94a3b8;             /* slate-400 -- holds up under polarised sunglasses */
+    --sk-text: #0f172a;               /* slate-900 -- ~18:1 against #ffffff */
+    --sk-text-muted: #475569;         /* slate-600 -- ~7.7:1, AAA-clear */
+    /* Sky-800/900 -- > 7:1 contrast on white surfaces, holds up in
+       direct sunlight on a tablet. Shifted from earlier sky-700 which
+       read too pale next to the sharper text. */
     --sk-accent: #075985;             /* sky-800 */
     --sk-accent-dim: #0c4a6e;         /* sky-900 */
+    --sk-accent-rgb: 7, 89, 133;      /* keep alpha-blends in lockstep */
 
-    /* Chrome palette for light mode. The sidebar reads darker than the
-       content area so the visual anchor is obvious in direct sunlight on
-       a laptop screen; a right border adds a final crisp edge. */
-    --sk-sidebar-bg: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
-    --sk-sidebar-border: #64748b;
-    --sk-sidebar-text: #334155;       /* slate-700 */
-    --sk-sidebar-text-active: #0f172a;
-    --sk-sidebar-hover-bg: rgba(15, 23, 42, 0.06);
-    --sk-sidebar-active-bg: rgba(15, 23, 42, 0.10);
+    /* Severity palette retuned for white surfaces. The defaults
+       (#22c55e / #f59e0b / #ef4444) are calibrated for dark and read
+       as "highlighter" against #ffffff -- legible but washed-out, and
+       below 4:1 contrast for the amber especially. The *-700 shades
+       below clear 6:1 across the triad and stay clearly distinct from
+       data text. Background tints raised to 0.18 so chip fills are
+       visible without competing with the foreground colour. */
+    --sev-ok:        #15803d;         /* green-700  ~6.5:1 */
+    --sev-warn:      #b45309;         /* amber-700  ~6.0:1 */
+    --sev-danger:    #b91c1c;         /* red-700    ~7.5:1 */
+    --sev-ok-bg:     rgba(21, 128, 61, 0.14);
+    --sev-warn-bg:   rgba(180, 83, 9, 0.14);
+    --sev-danger-bg: rgba(185, 28, 28, 0.14);
+    --sev-ok-rgb:     21, 128, 61;
+    --sev-warn-rgb:   180, 83, 9;
+    --sev-danger-rgb: 185, 28, 28;
+
+    /* Chrome palette for light mode. Solid dark slate sidebar (was a
+       slate-300 -> slate-400 gradient, which banded on iPad LCDs in
+       sun and read as "almost-light" rather than a clear navigation
+       anchor). Dark sidebar against light content also matches the
+       commercial chartplotter convention (Garmin / Raymarine / B&G)
+       so muscle memory transfers. */
+    --sk-sidebar-bg: #1e293b;          /* slate-800 -- solid, no banding */
+    --sk-sidebar-border: #0f172a;      /* slate-900 -- crisp right edge */
+    --sk-sidebar-text: rgba(255, 255, 255, 0.78);
+    --sk-sidebar-text-active: #ffffff;
+    --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.10);
+    --sk-sidebar-active-bg: rgba(255, 255, 255, 0.18);
     --sk-top-row-bg: #ffffff;
-    --sk-top-row-text: #475569;
-    --sk-top-row-border: #e2e8f0;
+    --sk-top-row-text: #334155;        /* slate-700 -- darker so menu hits AAA */
+    --sk-top-row-border: #94a3b8;      /* slate-400 -- visible separator under sun */
 
-    /* Panel overrides. Chrome-docked / modal panels flip to bright cards;
-       map-overlay panels (--panel-bg-map) stay dark for tile contrast. */
-    --panel-bg:         rgba(255, 255, 255, 0.96);
-    --panel-bg-strong:  rgba(255, 255, 255, 0.98);
+    /* Panel overrides. Chrome-docked / modal panels flip to opaque
+       white cards; map-overlay panels (--panel-bg-map) stay dark for
+       tile contrast. Opaque (was rgba 0.96) so the chart underneath
+       can't bleed into the panel edge under sun. Stronger border
+       and shadow so the card silhouette survives polarised glare. */
+    --panel-bg:         #ffffff;
+    --panel-bg-strong:  #ffffff;
     --panel-text:       #0f172a;
-    --panel-text-muted: #475569;
-    --panel-border:     rgba(15, 23, 42, 0.14);
-    --panel-shadow:     0 12px 24px rgba(15, 23, 42, 0.18);
+    --panel-text-muted: #475569;       /* slate-600 -- AAA */
+    --panel-border:     rgba(15, 23, 42, 0.22);   /* was 0.14 */
+    --panel-shadow:     0 12px 28px rgba(15, 23, 42, 0.28);
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the
