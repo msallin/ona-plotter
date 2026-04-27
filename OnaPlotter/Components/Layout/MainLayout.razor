@@ -427,14 +427,16 @@
                 try { await wakeLockModule.InvokeVoidAsync("setWakeLock", Settings.KeepScreenAwake); }
                 catch (JSDisconnectedException) { }
             }
-            // Re-apply the night-mode classes to <html> on every
-            // settings change so preset swaps + auto-night flips
-            // propagate globally. The JS helper is idempotent -- safe
-            // to call with identical args.
+            // Re-apply the theme + night-mode classes to <html> on
+            // every settings change so preset swaps + auto-night flips
+            // + theme picks propagate globally. Both helpers are
+            // idempotent -- safe to call with identical args.
             if (themeModule is not null)
             {
                 try
                 {
+                    await themeModule.InvokeVoidAsync("setTheme",
+                        Settings.Theme);
                     await themeModule.InvokeVoidAsync("setNightMode",
                         Settings.NightMode, Settings.NightModePreset);
                 }
@@ -637,11 +639,14 @@
             StateHasChanged();
             audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
             fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fullscreen.js");
-            // Theme module applies night-mode classes to <html> so body
-            // background + anything outside .page honours the palette.
+            // Theme module applies theme + night-mode classes to <html>
+            // so body background + anything outside .page honours the
+            // palette. Both writes go through the helper's whitelist so
+            // a corrupt Settings store can't smuggle a class injection.
             themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/themeApply.js");
             try
             {
+                await themeModule.InvokeVoidAsync("setTheme", Settings.Theme);
                 await themeModule.InvokeVoidAsync("setNightMode",
                     Settings.NightMode, Settings.NightModePreset);
             }

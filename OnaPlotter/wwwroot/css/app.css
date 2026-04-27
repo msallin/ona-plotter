@@ -314,8 +314,16 @@
      * Hover surface bumped from slate-100 -> slate-200 so hover
        feedback is visible at all (slate-100 ~= slate-50 page bg under
        sun). */
-.page.theme-light,
-.page.theme-system {
+/* Selectors live on :root (== <html>) rather than .page so the body
+   bg actually flips with the theme. body { background: var(--sk-bg); }
+   reads from :root's inherited scope; a .page-scoped override never
+   reaches it, leaving every page-level h1/h2/h6 rendered dark-on-dark
+   in light theme (the helm's "I flipped to light to fight glare and
+   now nothing reads" complaint). themeApply.js::setTheme keeps the
+   class in sync on <html>; .page still carries a duplicate class for
+   any css-isolation rules that referenced it historically. */
+:root.theme-light,
+:root.theme-system {
     --sk-bg: #f8fafc;                 /* slate-50 */
     --sk-surface: #ffffff;
     --sk-surface-hover: #e2e8f0;      /* slate-200 -- visible hover delta from slate-50 bg */
@@ -379,7 +387,7 @@
    OS is dark (or prefers-color-scheme is not supported), system falls
    through to the default dark palette. */
 @media (prefers-color-scheme: dark) {
-    .page.theme-system {
+    :root.theme-system {
         --sk-bg: #0f1117;
         --sk-surface: #1a1e28;
         --sk-surface-hover: #242a36;
@@ -417,7 +425,7 @@
        under polarised sunglasses
    Leaves the map HUD untouched (it already has its own dark palette
    tuned for tile contrast). */
-.page.theme-high-contrast {
+:root.theme-high-contrast {
     --sk-bg: #ffffff;
     --sk-surface: #ffffff;
     --sk-surface-hover: #e5e7eb;           /* zinc-200 */
