@@ -45,6 +45,14 @@ public interface IAppSettings
     /// across reloads so the helm doesn't re-pick on every session.</summary>
     string WindHeroMode { get; }
 
+    /// <summary>When true, the Wind page renders in compact density:
+    /// card chrome (background / border / padding) drops, gaps tighten,
+    /// max screen real estate goes to data. Targeted at tacticians on
+    /// big helm screens (Tom in the field study) who want information
+    /// density over breathing room. Default OFF -- relaxed mode is the
+    /// better default for cruisers and casual racers.</summary>
+    bool WindPageCompact { get; }
+
     string MapOrientation { get; }
     bool FollowBoat { get; }
     bool LaylinesVisible { get; }
@@ -267,6 +275,7 @@ public interface IAppSettings
     Task SetNightModePresetAsync(string value);
     Task SetThemeAsync(string value);
     Task SetWindHeroModeAsync(string value);
+    Task SetWindPageCompactAsync(bool value);
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);

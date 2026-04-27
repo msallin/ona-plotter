@@ -31,6 +31,7 @@ public sealed class AppSettingsService : IAppSettings
     public string NightModePreset { get; private set; } = "soft";
     public string Theme { get; private set; } = "system";
     public string WindHeroMode { get; private set; } = "apparent";
+    public bool WindPageCompact { get; private set; }
     public string MapOrientation { get; private set; } = "north";
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
@@ -91,6 +92,7 @@ public sealed class AppSettingsService : IAppSettings
             NightModePreset = NormalizeNightPreset(await LoadString("nightModePreset"));
             Theme = NormalizeTheme(await LoadString("theme"));
             WindHeroMode = NormalizeWindHeroMode(await LoadString("windHeroMode.v1"));
+            WindPageCompact = await LoadBool("windPageCompact.v1", false);
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
@@ -209,6 +211,13 @@ public sealed class AppSettingsService : IAppSettings
         "apparent" or "true" => raw,
         _ => "apparent",
     };
+
+    public async Task SetWindPageCompactAsync(bool value)
+    {
+        WindPageCompact = value;
+        await Save("windPageCompact.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
 
     private static string NormalizeNightPreset(string? raw) => raw switch
     {
