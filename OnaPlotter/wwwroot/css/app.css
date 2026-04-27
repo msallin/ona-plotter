@@ -4424,11 +4424,13 @@ html.night-mode-global body {
     border: 2px solid #fff;
     border-radius: 50%;
 }
-/* Measurement: two-point cyan dashed line, same hue as the bearing
-   overlay so the two share a "tools I draw myself" family. */
+/* Measurement: two-point white dashed line. The measure tool now
+   doubles as the old "bearing line" overlay (the helm can drop a
+   vessel-anchored point that tracks own-boat), so it gets the same
+   white hue the bearing line used to have. */
 .legend-measure {
     background: linear-gradient(90deg,
-        var(--map-bearing) 0 50%,
+        #e2e8f0 0 50%,
         transparent 50% 100%);
     background-size: 6px 2px;
     background-repeat: repeat-x;
