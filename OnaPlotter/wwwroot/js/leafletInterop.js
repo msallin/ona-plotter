@@ -2213,19 +2213,19 @@ export function setNightMode(enabled) {
 // backlog to revisit.
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     if (!map || chartLayers.has(id)) return false;
-    // First chart enabled -> drop ONLY the OSM road basemap (it's
-    // redundant underneath a SignalK chart-tiles base AND its attached
-    // tile layer leaks the "OpenStreetMap contributors" attribution
-    // into the bottom-right control even when no OSM tiles are
-    // visible). The OpenSeaMap *seamark overlay* (seaBaseLayer) is
-    // explicitly NOT removed -- it's a transparent overlay providing
-    // buoys / lights / marinas on top of whatever basemap is active,
-    // and it's the single most useful layer for sailing. An earlier
-    // version of this code dropped both pairs together; that broke
-    // seamarks for any helm using SignalK charts.
-    if (chartLayers.size === 0) {
-        if (osmBaseLayer && map.hasLayer(osmBaseLayer)) map.removeLayer(osmBaseLayer);
-    }
+    // OSM + OpenSeaMap stay attached as permanent fallback layers
+    // even when SignalK chart-tiles are active:
+    //   * OpenStreetMap road tiles fill anywhere SK chart tiles fail
+    //     to fetch (404, network error, beyond chart bounds) so the
+    //     helm sees something useful instead of a blank rectangle.
+    //   * OpenSeaMap seamark overlay (transparent) draws buoys /
+    //     lights / marinas on top of whatever basemap is showing.
+    // Earlier versions of this function removed one or both layers
+    // when a chart was added -- that broke the fallback behaviour
+    // and (for OpenSeaMap) the seamark overlay itself. The original
+    // "OSM attribution leaks when OSM is inactive" concern was
+    // misdiagnosed: OSM IS active (attached, fills the gaps) and the
+    // attribution is correctly shown for that reason.
     const native = maxZoom || 18;
     const opts = {
         minZoom: minZoom || 1,
@@ -2266,13 +2266,8 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
 
 export function removeChartLayer(id) {
     chartLayers.remove(id);
-    // Last chart layer gone -> bring the OSM road basemap back so the
-    // helm has a fallback. seaBaseLayer was never removed (see the
-    // comment in addChartLayer) so seamarks have been visible the
-    // whole time and don't need re-adding.
-    if (chartLayers.size === 0 && map) {
-        if (osmBaseLayer && !map.hasLayer(osmBaseLayer)) osmBaseLayer.addTo(map);
-    }
+    // OSM + OpenSeaMap were never removed in addChartLayer (see the
+    // comment there for why), so nothing to re-add here.
     restackChartOpacities();
 }
 
