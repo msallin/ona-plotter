@@ -1,19 +1,22 @@
-// OSM attribution leak guard.
+// OSM + OpenSeaMap fallback-layer guard.
 //
-// Pins the behaviour around the OpenStreetMap road basemap: when the
-// helm enables a SignalK chart-tiles base the OSM road layer is
-// removed (it's redundant underneath the SK chart AND its attached
-// tile layer leaked the "OpenStreetMap contributors" string into the
-// bottom-right attribution control). When the last chart layer is
-// removed, the OSM basemap comes back as the fallback.
+// OSM (road tiles) and OpenSeaMap (transparent seamark overlay) stay
+// attached to the map as permanent fallback layers, even when the
+// helm enables a SignalK chart-tiles base. Two reasons:
+//   * OSM fills anywhere the SignalK chart tiles fail to fetch
+//     (404, network error, beyond chart bounds). Without this the
+//     helm would see a blank rectangle for missing tiles.
+//   * OpenSeaMap is the seamark overlay (buoys / lights / marinas)
+//     that draws on top of any basemap. The single most useful
+//     sailing layer.
 //
-// CRITICAL: the OpenSeaMap *seamark overlay* is intentionally NOT
-// part of this dance. It's a transparent overlay providing buoy /
-// light / marina symbols on top of any basemap (OSM road tiles or
-// SignalK charts), and it's the single most useful sailing layer.
-// An earlier commit dropped both layers as a pair, which broke
-// seamarks for any helm using SignalK charts. This test asserts the
-// OSM road basemap toggles, but OpenSeaMap stays visible throughout.
+// Earlier versions of leafletInterop.js removed these layers when a
+// chart was added -- intended as an "OSM attribution leak" fix, but
+// the diagnosis was wrong. OSM data IS being used (as fallback) so
+// the attribution is correctly shown. Two regressions resulted:
+// helm using SignalK charts lost seamarks AND lost the fallback
+// for failed tiles. This test pins the corrected contract: OSM and
+// OpenSeaMap attributions are always present.
 //
 // Tests at the JS-interop layer (window.* exports from
 // leafletInterop.js) so we exercise the actual addChartLayer /
@@ -53,7 +56,7 @@ test.describe('OSM attribution', () => {
         expect(text).toContain('OpenSeaMap');
     });
 
-    test('OSM clears but OpenSeaMap stays when a SignalK chart layer is added', async ({ page }) => {
+    test('OSM + OpenSeaMap stay attached when a SignalK chart layer is added', async ({ page }) => {
         // The leafletInterop module is loaded into the Blazor JS runtime
         // and exposed by Map.razor. Fish it out of the dynamic import map
         // instead of relying on a window.* shim.
@@ -68,15 +71,14 @@ test.describe('OSM attribution', () => {
         // Allow Leaflet's attribution control a tick to update.
         await page.waitForTimeout(200);
         const text = await page.locator('.leaflet-control-attribution').textContent();
-        // OSM road basemap removed -> attribution leaves.
-        expect(text || '').not.toContain('OpenStreetMap');
-        // OpenSeaMap seamark overlay stays attached -> attribution
-        // stays. The seamark layer is the single most useful sailing
-        // overlay; removing it on chart add was a regression.
+        // Both attributions remain visible: OSM is the fallback for
+        // any tiles the SignalK chart fails to fetch; OpenSeaMap is
+        // the always-on seamark overlay.
+        expect(text || '').toContain('OpenStreetMap');
         expect(text || '').toContain('OpenSeaMap');
     });
 
-    test('OSM basemap restores when the last chart layer is removed', async ({ page }) => {
+    test('OSM + OpenSeaMap still present after chart add + remove cycle', async ({ page }) => {
         await page.evaluate(async () => {
             const mod = await import('/_content/OnaPlotter/js/leafletInterop.js')
                 .catch(() => import('/js/leafletInterop.js'));
