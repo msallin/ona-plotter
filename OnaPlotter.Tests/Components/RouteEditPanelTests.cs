@@ -39,18 +39,19 @@ public class RouteEditPanelTests
     }
 
     [Test]
-    public async Task SaveButton_Fires_OnSave()
+    public async Task SaveButton_Fires_OnSave_AndIsPrimary()
     {
         using var ctx = new Bunit.TestContext();
         int fires = 0;
         var cut = ctx.RenderComponent<RouteEditPanel>(p => p
             .Add(x => x.OnSave, EventCallback.Factory.Create(this, () => fires++)));
 
-        // Save is no longer the .active button -- Save & Go is (it's the
-        // primary action now). Match by text to keep the test robust to
-        // future styling shuffles.
+        // Save is the primary action -- carries the .active class
+        // (helm-flagged: Save & Go is hidden when editing the active
+        // route, and Save is the obvious commit verb in every flow).
         var save = cut.FindAll("button.map-btn")
             .First(b => b.TextContent.Trim() == "Save");
+        await Assert.That(save.GetAttribute("class") ?? "").Contains("active");
         save.Click();
 
         await Assert.That(fires).IsEqualTo(1);
@@ -76,26 +77,39 @@ public class RouteEditPanelTests
     }
 
     [Test]
-    public async Task UndoAndCancel_Fire_ResultingCallbacks()
+    public async Task CancelButton_Fires_OnCancel()
     {
+        // The "Undo" button (and its OnUndo callback) was dropped on
+        // helm request -- the per-waypoint × on the list rows plus
+        // marker-drag-to-reposition cover the same UX, and Undo was
+        // redundant chrome. Cancel remains; assert it still wires.
         using var ctx = new Bunit.TestContext();
-        int undo = 0, cancel = 0;
+        int cancel = 0;
         var cut = ctx.RenderComponent<RouteEditPanel>(p => p
-            .Add(x => x.OnUndo, EventCallback.Factory.Create(this, () => undo++))
             .Add(x => x.OnCancel, EventCallback.Factory.Create(this, () => cancel++)));
 
-        // Four .map-btn children: Undo, Save, Save & Go (.active), Cancel.
-        // Pick by text.
-        var buttons = cut.FindAll("button.map-btn");
-        foreach (var b in buttons)
-        {
-            var t = b.TextContent.Trim();
-            if (t == "Undo") b.Click();
-            if (t == "Cancel") b.Click();
-        }
+        var btn = cut.FindAll("button.map-btn")
+            .First(b => b.TextContent.Trim() == "Cancel");
+        btn.Click();
 
-        await Assert.That(undo).IsEqualTo(1);
         await Assert.That(cancel).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SaveAndGo_Hidden_When_EditingActiveRoute()
+    {
+        // Editing an existing route that is ALSO the currently-active
+        // course: Save and Save & Go would perform identical operations
+        // (the route is already active), so the "& Go" button is
+        // hidden to remove the duplicated verb. Save remains primary.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<RouteEditPanel>(p => p
+            .Add(x => x.IsEditingExisting, true)
+            .Add(x => x.IsEditingActiveRoute, true));
+
+        var labels = cut.FindAll("button.map-btn").Select(b => b.TextContent.Trim()).ToList();
+        await Assert.That(labels).DoesNotContain("Save & Go");
+        await Assert.That(labels).Contains("Save");
     }
 
     [Test]

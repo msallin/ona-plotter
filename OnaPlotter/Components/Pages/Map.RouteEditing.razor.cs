@@ -119,12 +119,15 @@ public partial class Map
         }
     }
 
-    private async Task UndoLastWaypoint()
-    {
-        if (module is not null)
-            await module.InvokeVoidAsync("undoLastEditWaypoint");
-        await UpdateRouteStats();
-    }
+    // UndoLastWaypoint() and the corresponding "Undo" button on the
+    // route-edit panel were dropped on helm request: in the current
+    // implementation the per-waypoint remove (× on the list rows) and
+    // the marker-drag-to-reposition gestures cover the same UX, so the
+    // Undo button was redundant chrome. The JS-side
+    // undoLastEditWaypoint export stays for now in case a future
+    // gesture (e.g. swipe-back) wants to call it -- it's a few lines
+    // and removing it now would force a follow-up commit if the
+    // gesture lands later.
 
     /// <summary>JS-invokable entry point for the "Edit" button on the
     /// route popup (click on a route polyline -> Edit). Looks up the

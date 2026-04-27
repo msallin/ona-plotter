@@ -415,8 +415,26 @@ public sealed class NavigationData
     {
         lock (_lock)
         {
+            // Re-drop without an explicit ClearAnchor in between (plugin
+            // upgrade, two clients racing the drop, "move anchor" workflow):
+            // the previous-spot peak would otherwise persist into the new
+            // location and the HUD would show "Peak 35 m" while the boat
+            // is currently swinging at 5 m. >1 m delta is an arbitrary
+            // floor that ignores GPS jitter on the same drop while still
+            // catching a deliberate re-anchor a few metres over.
+            const double ReDropResetMetres = 1.0;
+            bool isReDrop = AnchorLatitude is double prevLat
+                && AnchorLongitude is double prevLon
+                && (Math.Abs(prevLat - latitude) > 1e-7
+                    || Math.Abs(prevLon - longitude) > 1e-7)
+                && OnaPlotter.Utilities.RouteProgress.HaversineMeters(prevLat, prevLon, latitude, longitude) > ReDropResetMetres;
             AnchorLatitude = latitude;
             AnchorLongitude = longitude;
+            if (isReDrop)
+            {
+                AnchorPeakRadius = null;
+                AnchorCurrentRadius = null;
+            }
         }
     }
 

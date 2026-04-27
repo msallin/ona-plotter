@@ -137,63 +137,6 @@ let zoomBadge = null;
 // be held across every page, not just the Map. MainLayout manages it
 // now.
 
-// Nautical-miles scale control. Leaflet bundles metric + imperial; the
-// nautical scale is identical in shape but divides by 1852 m/nm. We
-// subclass L.Control.Scale so we get the same "nice round number"
-// rendering behaviour for free.
-const NauticalScale = L.Control.Scale.extend({
-    options: { metric: false, imperial: false, nautical: true },
-    onAdd(map) {
-        const className = 'leaflet-control-scale';
-        const container = L.DomUtil.create('div', className);
-        this._nauticalLine = L.DomUtil.create('div', 'leaflet-control-scale-line ona-scale-nm', container);
-        map.on(this.options.updateWhenIdle ? 'moveend' : 'move', this._update, this);
-        map.whenReady(this._update, this);
-        return container;
-    },
-    _update() {
-        if (!this._nauticalLine) return;
-        const size = this._map.getSize();
-        if (size.x <= 0) return;  // layout not settled -- Leaflet re-fires on move
-        const bounds = this._map.getBounds();
-        const centerLat = bounds.getCenter().lat;
-        const halfWorldMeters = 6378137 * Math.PI * Math.cos(centerLat * Math.PI / 180);
-        const dist = halfWorldMeters * (bounds.getNorthEast().lng - bounds.getSouthWest().lng) / 180;
-        const maxMeters = dist * (this.options.maxWidth / size.x);
-        if (!isFinite(maxMeters) || maxMeters <= 0) return;
-        const maxNm = maxMeters / 1852;
-        const d = this._getRoundNum(maxNm);
-        if (!isFinite(d) || d <= 0) return;
-        // Width is the chosen round value's share of the max width. Matches
-        // the metric bar's behaviour exactly so both stack at the same px
-        // width within a factor of 1.85 (nm/km ratio).
-        this._nauticalLine.style.width = ((d * 1852) / maxMeters * this.options.maxWidth) + 'px';
-        // Label rules, small-to-large:
-        //   * d <  0.1 nm  (~185 m)  : metres, rounded to 10 m
-        //   * d <  1   nm             : cables (0.1 nm), one decimal
-        //   * otherwise               : nautical miles, integer
-        // Without the metres case a berth-level zoom would show
-        // "0 cbl" because Math.round(0.02 * 10) = 0.
-        const metres = d * 1852;
-        if (d < 0.1) {
-            const rounded = Math.max(10, Math.round(metres / 10) * 10);
-            this._nauticalLine.innerHTML = `${rounded} m`;
-        } else if (d < 1) {
-            // Trim "1.0 cbl" to "1 cbl" but keep "1.5 cbl".
-            const cbl = Math.round(d * 100) / 10;
-            const label = Number.isInteger(cbl) ? `${cbl.toFixed(0)}` : `${cbl.toFixed(1)}`;
-            this._nauticalLine.innerHTML = `${label} cbl`;
-        } else {
-            this._nauticalLine.innerHTML = `${d} nm`;
-        }
-    },
-    onRemove(map) {
-        // Avoid leaking the move listener when the control (or map) is torn
-        // down. Leaflet's built-in L.Control.Scale does the same.
-        map.off(this.options.updateWhenIdle ? 'moveend' : 'move', this._update, this);
-    }
-});
-
 // Zoom-level badge. Compact "z N" at glance; an amber "↑" appears
 // when the map is zoomed past the top chart's native max so tiles
 // are being scaled up. Full "native K" text moves to the title
@@ -551,12 +494,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // control was too small at arm's length in a rolling cockpit;
     // the topbar pair is bigger and reachable one-handed.
 
-    // Scale bars + zoom badge were dropped on user request -- they
-    // landed in an awkward spot in the bottom-left Leaflet control
-    // stack and the helm preferred a clean chart edge. The
-    // NauticalScale + ZoomBadge classes stay defined above in case
-    // we want to reintroduce them behind a setting; the topbar +/-
-    // buttons cover the zoom-control case.
+    // Zoom-level badge in the bottom-left of the Leaflet control area:
+    // "z14" chip so the helm can tell at a glance whether they're at
+    // z14 or z16 without poking the +/- buttons until tile detail
+    // changes. The metric + nautical scale bars used to live here too
+    // but were removed -- the helm asked for a quieter chrome strip
+    // and the rose / radar overlays both carry their own range cues
+    // already (rings, radar range chip), so the scale was redundant.
+    zoomBadge = new ZoomBadge({ position: 'bottomleft' });
+    zoomBadge.addTo(map);
+    map.on('zoomend', () => zoomBadge.update());
+    zoomBadge.update();
 
     // isSlowClient was set at the top of initMap; the same flag drives
     // tile updateWhenIdle here so all perf gates decide together.
@@ -1641,6 +1589,19 @@ export function setGuardZone(radiusNm, lookaheadMin, warningFactor) {
 // tears down any in-flight overlays so the helm sees the declutter
 // take effect immediately, not after the next AIS push tick.
 let harborMode = false;
+// Helper: best-effort layer removal that never throws. Some entries in
+// the per-context dicts can be null / undefined under tear-down races
+// (a concurrent updateAisTargets that just deleted the key, or a
+// disposed Leaflet layer); without the guard map.removeLayer(undefined)
+// throws TypeError: Cannot read properties of undefined ('_layerAdd')
+// and the whole setHarborMode call rejects -- which the C# side then
+// has to roll back via the toast path (see Map.razor.ToggleHarborMode).
+// Catching here makes the JS-side teardown best-effort and lets the
+// C# happy path stay green.
+function _safeRemoveLayer(layer) {
+    if (!layer || !map) return;
+    try { map.removeLayer(layer); } catch (_) { /* already gone */ }
+}
 export function setHarborMode(enabled) {
     harborMode = !!enabled;
     if (!map) return;
@@ -1650,23 +1611,23 @@ export function setHarborMode(enabled) {
             delete aisLabels[ctx];
         }
         for (const ctx of Object.keys(aisVectors)) {
-            map.removeLayer(aisVectors[ctx]);
+            _safeRemoveLayer(aisVectors[ctx]);
             delete aisVectors[ctx];
         }
         for (const ctx of Object.keys(aisCpaOwnLines)) {
-            map.removeLayer(aisCpaOwnLines[ctx]);
+            _safeRemoveLayer(aisCpaOwnLines[ctx]);
             delete aisCpaOwnLines[ctx];
         }
         for (const ctx of Object.keys(aisCpaTgtLines)) {
-            map.removeLayer(aisCpaTgtLines[ctx]);
+            _safeRemoveLayer(aisCpaTgtLines[ctx]);
             delete aisCpaTgtLines[ctx];
         }
         for (const ctx of Object.keys(aisCpaLabels)) {
-            map.removeLayer(aisCpaLabels[ctx]);
+            _safeRemoveLayer(aisCpaLabels[ctx]);
             delete aisCpaLabels[ctx];
         }
         if (guardZoneRing) {
-            map.removeLayer(guardZoneRing);
+            _safeRemoveLayer(guardZoneRing);
             guardZoneRing = null;
         }
     } else {
