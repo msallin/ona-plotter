@@ -2360,7 +2360,7 @@ export function addRoute(id, name, coords) {
     }).addTo(map);
 
     const nmTotal = routeTotalNauticalMiles(coords);
-    const popupOptions = { className: 'route-popup', maxWidth: 260, autoClose: true };
+    const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
     const popupHtml = () => buildRoutePopupHtml(id, name, coords.length, nmTotal);
     line.bindPopup(popupHtml(), popupOptions);
     hitLine.bindPopup(popupHtml(), popupOptions);
@@ -2608,7 +2608,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
             color: MapColors.bearing, weight: 36, opacity: 0, interactive: true,
         }).addTo(activeRouteLayer);
         const nmTotal = routeTotalNauticalMiles(coords);
-        const popupOptions = { className: 'route-popup', maxWidth: 260, autoClose: true };
+        const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
         hitLine.bindPopup(buildActiveRoutePopupHtml(routeId, routeName, coords.length, nmTotal), popupOptions);
         hitLine.on('popupopen', (ev) => {
             wireRouteDeactivate(ev.popup);
