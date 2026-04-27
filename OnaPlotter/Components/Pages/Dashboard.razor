@@ -14,16 +14,18 @@
     <div class="text-muted mb-4" style="opacity: 0.6;">Waiting for data...</div>
 }
 
-@* === Primary: the three values you check most often === *@
+@* === Primary: the three values you check most often ===
+   Units sit inline after each digit in .dash-unit (small + muted),
+   not as a separate caption below; saves vertical space without
+   losing the "this is the unit, not part of the number" cue. *@
 <div class="row g-3 mb-4">
     <div class="col-md-4 col-sm-6">
         <div class="card dash-card-primary">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Speed</h6>
                 <p class="card-text metric-xl">
-                    @Format.Speed(Data.SpeedOverGround)
+                    @Format.Speed(Data.SpeedOverGround)<span class="dash-unit">kn</span>
                 </p>
-                <small class="text-muted">kn SOG</small>
             </div>
         </div>
     </div>
@@ -32,9 +34,8 @@
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Depth</h6>
                 <p class="card-text metric-xl @Format.DepthClass(Data.Depth)">
-                    @Format.Depth(Data.Depth)
+                    @Format.Depth(Data.Depth)<span class="dash-unit">m</span>
                 </p>
-                <small class="text-muted">m</small>
             </div>
         </div>
     </div>
@@ -43,7 +44,7 @@
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Heading</h6>
                 <p class="card-text metric-xl">
-                    @Format.Degrees(Data.Heading)&deg;
+                    @Format.Degrees(Data.Heading)<span class="dash-unit">&deg;</span>
                 </p>
             </div>
         </div>
@@ -106,7 +107,7 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">AWA</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)&deg;</p>
+                <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)<span class="dash-unit">&deg;</span></p>
                 <small class="text-muted">apparent</small>
             </div>
         </div>
@@ -115,8 +116,7 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">AWS</h6>
-                <p class="card-text display-6">@Format.Speed(Data.WindSpeedApparent)</p>
-                <small class="text-muted">kn apparent</small>
+                <p class="card-text display-6">@Format.Speed(Data.WindSpeedApparent)<span class="dash-unit">kn</span></p>
             </div>
         </div>
     </div>
@@ -124,8 +124,7 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">TWA</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)&deg;</p>
-                <small class="text-muted">true</small>
+                <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)<span class="dash-unit">&deg;</span></p>
             </div>
         </div>
     </div>
@@ -133,25 +132,35 @@ else if (Polar.HasPolar)
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">TWS</h6>
-                <p class="card-text display-6">@Format.Speed(Data.WindSpeedTrue)</p>
-                <small class="text-muted">kn true</small>
+                <p class="card-text display-6">@Format.Speed(Data.WindSpeedTrue)<span class="dash-unit">kn</span></p>
             </div>
         </div>
     </div>
 </div>
 
-@* === Navigation: COG, TWD, Position === *@
+@* === Navigation: HDG, COG, TWD, Position ===
+   HDG repeats here (it's also one of the three primary cards above)
+   because navigators expect it next to COG -- the angular delta
+   between the two is the heart of leeway / set-and-drift reading. *@
 <h6 class="page-section-header mb-2">Navigation</h6>
 <div class="row g-3 mb-4">
-    <div class="col-md-4 col-sm-6">
+    <div class="col-md-3 col-sm-6">
         <div class="card">
             <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">COG</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.CourseOverGround)&deg;</p>
+                <h6 class="card-subtitle mb-1 text-muted">HDG</h6>
+                <p class="card-text display-6">@Format.Degrees(Data.Heading)<span class="dash-unit">&deg;</span></p>
             </div>
         </div>
     </div>
-    <div class="col-md-4 col-sm-6">
+    <div class="col-md-3 col-sm-6">
+        <div class="card">
+            <div class="card-body text-center">
+                <h6 class="card-subtitle mb-1 text-muted">COG</h6>
+                <p class="card-text display-6">@Format.Degrees(Data.CourseOverGround)<span class="dash-unit">&deg;</span></p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6">
         <div class="card">
             <div class="card-body text-center">
                 @* TWD is the meteorological "where the wind is coming
@@ -162,11 +171,11 @@ else if (Polar.HasPolar)
                    context, which raised "what is from?" reactions). *@
                 <h6 class="card-subtitle mb-1 text-muted"
                     title="True wind direction (the bearing the wind is coming FROM)">TWD</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindDirectionTrue)&deg;</p>
+                <p class="card-text display-6">@Format.Degrees(Data.WindDirectionTrue)<span class="dash-unit">&deg;</span></p>
             </div>
         </div>
     </div>
-    <div class="col-md-4 col-sm-6">
+    <div class="col-md-3 col-sm-6">
         <div class="card">
             <div class="card-body text-center">
                 <h6 class="card-subtitle mb-1 text-muted">Position</h6>
@@ -277,8 +286,7 @@ else if (Polar.HasPolar)
             <div class="card">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">DTG</h6>
-                    <p class="card-text display-6">@Format.Nm(Data.CourseNextPointDistance)</p>
-                    <small class="text-muted">nm</small>
+                    <p class="card-text display-6">@Format.Nm(Data.CourseNextPointDistance)<span class="dash-unit">nm</span></p>
                 </div>
             </div>
         </div>
@@ -286,7 +294,7 @@ else if (Polar.HasPolar)
             <div class="card">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">BRG</h6>
-                    <p class="card-text display-6">@Format.Degrees(Data.CourseNextPointBearing)&deg;</p>
+                    <p class="card-text display-6">@Format.Degrees(Data.CourseNextPointBearing)<span class="dash-unit">&deg;</span></p>
                 </div>
             </div>
         </div>
@@ -296,8 +304,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">VMG</h6>
-                        <p class="card-text display-6">@Format.Speed(Data.CourseNextPointVmg)</p>
-                        <small class="text-muted">kn</small>
+                        <p class="card-text display-6">@Format.Speed(Data.CourseNextPointVmg)<span class="dash-unit">kn</span></p>
                     </div>
                 </div>
             </div>

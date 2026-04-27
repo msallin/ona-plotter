@@ -650,6 +650,20 @@ a, .btn-link {
     font-variant-numeric: tabular-nums;
 }
 
+/* Small inline unit (kn / m / deg) sitting after a metric digit on
+   the dashboard. Reuses the muted-text colour the unit used to have
+   when it lived as a separate <small> below the digit -- the move
+   inline saves vertical space without losing the "this is the unit
+   not part of the number" visual distinction. */
+.dash-unit {
+    font-size: 0.42em;
+    font-weight: 400;
+    color: var(--sk-text-muted);
+    margin-left: 0.18em;
+    vertical-align: baseline;
+    letter-spacing: 0.01em;
+}
+
 .content {
     padding-top: 1.1rem;
 }
@@ -1031,15 +1045,16 @@ article.content:has(.map-container) {
 }
 /* Bottom-center: route + anchor (and future expanded autopilot) live
    here when active. Sits ABOVE the .map-controls bar via --panel-bottom
-   (already calculated in :root). align-items: stretch lets a wide route
-   card span the full available width on phone. */
+   (already calculated in :root). The stack itself is content-sized and
+   centred -- a short anchor-watch card stays narrow instead of stretching
+   to the route card's width. max-width caps a long route card so it
+   never spans more of the helm display than its info needs. */
 .hud-stack-bc {
     bottom: var(--panel-bottom);
     left: 50%;
     transform: translateX(-50%);
-    align-items: stretch;
-    width: min(560px, calc(100% - 2 * var(--hud-edge)));
-    max-width: none;
+    align-items: center;
+    max-width: min(560px, calc(100% - 2 * var(--hud-edge)));
 }
 
 /* Fullscreen safe-area: when the app is fullscreen the stacks need
