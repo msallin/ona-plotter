@@ -36,6 +36,19 @@ public sealed class AisVessel
     public string? ShipType { get; set; }
 
     /// <summary>
+    /// SignalK <c>navigation.state</c>: a free-form-but-conventional string
+    /// that an AIS-class A transmitter (or a SK plugin) publishes for the
+    /// vessel's mode. Common values: <c>"moored"</c>, <c>"anchored"</c>,
+    /// <c>"sailing"</c>, <c>"motoring"</c>, <c>"under way"</c>,
+    /// <c>"fishing"</c>, <c>"drifting"</c>, <c>"restricted manoeuverability"</c>.
+    /// Authoritative when present -- the moored-vessel filter trusts it
+    /// over the SOG &lt; 1 kn / 60 s heuristic, which would otherwise tag
+    /// any boat ghosting under sail in light wind, or a fishing vessel
+    /// jogging on station, as "moored".
+    /// </summary>
+    public string? NavigationState { get; set; }
+
+    /// <summary>
     /// True when the vessel is in the captain's buddy list (populated from
     /// sbender9/signalk-buddylist-plugin, either via the REST seed at startup
     /// or the `buddy` path on the delta stream). Buddies are exempt from the
@@ -104,6 +117,17 @@ public sealed class AisVessel
             case "speed":
                 SpeedOverGround = ToDouble(rawValue);
                 return SpeedOverGround is not null;
+
+            case "navigation.state":
+                {
+                    // Lowercase and trim for stable matching downstream
+                    // (MooredVesselTracker compares against fixed lower-
+                    // case strings). SK servers vary on capitalisation.
+                    var parsed = TryGetString(rawValue);
+                    if (parsed is null) return false;
+                    NavigationState = parsed.Trim().ToLowerInvariant();
+                    return true;
+                }
 
             case "name":
                 {

@@ -37,6 +37,10 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AisSartAlar
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ShallowAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorTideAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorDragAlarmRule>();
+// Shared moored-vessel classifier. Singleton so CpaAlarmRule and the
+// Harbor-mode filter in Map.razor.PushAisTargets see the same dwell
+// state and the same SK navigation.state interpretation.
+builder.Services.AddSingleton<OnaPlotter.Services.IMooredVesselTracker, OnaPlotter.Services.MooredVesselTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();

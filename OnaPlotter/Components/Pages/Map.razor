@@ -1662,13 +1662,13 @@
         }
     }
 
-    // Single MooredVesselTracker shared with CpaAlarmRule's classifier
-    // would be ideal but the rule owns its own instance; we instantiate
-    // a parallel tracker here (pure C#, no allocations on the hot path)
-    // so harbor mode can hide moored vessels without depending on the
-    // alarm pipeline's tick. Both trackers converge on the same
-    // moored-state for any vessel that's been observed long enough.
-    private readonly OnaPlotter.Services.MooredVesselTracker _harborMooredTracker = new();
+    // Shared moored-vessel classifier (singleton DI). Same instance the
+    // CPA alarm rule uses, so the harbour filter and the alarm-suppress
+    // path can never disagree on whether a given vessel is moored. Was
+    // previously a local `new MooredVesselTracker()` here that ticked
+    // a parallel dwell ring; the duplication invited "alarm thinks X is
+    // moored, harbour filter doesn't" debugging.
+    [Inject] private OnaPlotter.Services.IMooredVesselTracker MooredVessels { get; set; } = default!;
 
     private async Task PushAisTargets()
     {
@@ -1697,12 +1697,12 @@
             var now = DateTime.UtcNow;
             if (harbor)
             {
-                _harborMooredTracker.Cleanup(vessels.Select(v => v.Context).ToHashSet());
+                MooredVessels.Cleanup(vessels.Select(v => v.Context).ToHashSet());
             }
 
             var jsVessels = vessels
                 .Where(v => v.Latitude is not null && v.Longitude is not null)
-                .Where(v => !harbor || !_harborMooredTracker.IsMoored(v, now))
+                .Where(v => !harbor || !MooredVessels.IsMoored(v, now))
                 .Select(v =>
                 {
                     // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs

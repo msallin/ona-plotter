@@ -3,17 +3,49 @@ using OnaPlotter.Models;
 namespace OnaPlotter.Services;
 
 /// <summary>
-/// Tracks how long each AIS vessel has held near-zero speed. Once the dwell
-/// crosses <see cref="MooredHoldSeconds"/> the vessel is considered moored
-/// (harbour tug, anchored fishing boat, ferry holding for a berth) and alarm
-/// logic can skip it.
+/// Decision interface for "is this AIS vessel moored / parked?". One
+/// implementation today (heuristic + nav-state); registered as a singleton
+/// so the CPA alarm pipeline and the Harbor-mode filter share a single
+/// source of truth (and don't tick a parallel state ring per consumer).
+/// </summary>
+public interface IMooredVesselTracker
+{
+    /// <summary>True when the vessel should be treated as moored. Honours
+    /// SK <c>navigation.state</c> when present, otherwise falls back to
+    /// the SOG-dwell heuristic.</summary>
+    bool IsMoored(AisVessel v, DateTime now);
+
+    /// <summary>Drops dwell-state for vessels no longer in the active
+    /// context set so a long session doesn't leak memory on every AIS
+    /// target that ever appeared.</summary>
+    void Cleanup(IReadOnlyCollection<string> activeContexts);
+}
+
+/// <summary>
+/// Tracks how long each AIS vessel has held near-zero speed AND honours
+/// SignalK's <c>navigation.state</c> when published. Once the dwell
+/// crosses <see cref="MooredHoldSeconds"/> -- or the vessel publishes a
+/// moored-class <c>navigation.state</c> -- it's considered moored
+/// (harbour tug, anchored fishing boat, ferry holding for a berth) and
+/// alarm logic / harbour-mode filtering can skip it.
 /// <para>
-/// Callers must invoke <see cref="Cleanup"/> periodically with the set of
-/// currently visible AIS contexts; otherwise vessels that drop out of AIS
-/// range would accumulate entries forever.
+/// Trust order (decisive at the first hit):
+///   1. <c>navigation.state == "moored" / "anchored" / "aground"</c>
+///      -- moored regardless of speed or dwell.
+///   2. <c>navigation.state ==</c> any "underway" / "sailing" /
+///      "motoring" / "fishing" / "drifting" -- NOT moored regardless of
+///      speed (lets a sailboat ghost in light wind without being tagged).
+///   3. SOG &lt; 1 kn for &gt;= 60 s straight -- the legacy heuristic
+///      that handles the typical case where a vessel doesn't publish
+///      <c>navigation.state</c> at all.
+/// </para>
+/// <para>
+/// Callers must invoke <see cref="Cleanup"/> periodically with the set
+/// of currently visible AIS contexts; otherwise vessels that drop out
+/// of AIS range would accumulate entries forever.
 /// </para>
 /// </summary>
-public sealed class MooredVesselTracker
+public sealed class MooredVesselTracker : IMooredVesselTracker
 {
     /// <summary>Below this SOG (m/s, ~1 kn) a vessel is treated as
     /// stopped. The cutoff bands slow-drifting anchored boats,
@@ -28,14 +60,52 @@ public sealed class MooredVesselTracker
     /// silently exempted from the projection.</summary>
     public const int MooredHoldSeconds = 60;
 
+    // navigation.state classification. AIS message type 1/2/3 broadcasts
+    // a numeric nav-status code; SK servers map it to a string. Values
+    // here are the lower-case forms that AisVessel.Apply normalises to.
+    private static readonly HashSet<string> _mooredStates = new(StringComparer.Ordinal)
+    {
+        "moored", "anchored", "aground",
+        // Less common but unambiguous: a vessel "not under command"
+        // that is also stationary by any reasonable definition.
+        "not under command",
+    };
+    private static readonly HashSet<string> _underwayStates = new(StringComparer.Ordinal)
+    {
+        // The whole AIS-message-5 "Navigation Status" set that says
+        // "I'm operating, not parked". Any of these bypasses the
+        // SOG-dwell heuristic so a sailboat ghosting under 1 kn in
+        // light wind isn't tagged moored after a minute.
+        "sailing", "motoring", "fishing", "drifting",
+        "under way", "under way using engine", "under way sailing",
+        "restricted manoeuverability", "restricted maneuverability",
+        "constrained by her draught", "engaged in fishing",
+        "power-driven vessel towing astern", "power-driven vessel towing alongside",
+    };
+
     private readonly Dictionary<string, DateTime> _lowSpeedSince = [];
 
-    /// <summary>
-    /// Returns true once the vessel has held low speed for MooredHoldSeconds.
-    /// Transitions back to "moving" reset the clock.
-    /// </summary>
     public bool IsMoored(AisVessel v, DateTime now)
     {
+        // Authoritative SK signal trumps the heuristic when published.
+        var navState = v.NavigationState;
+        if (navState is not null)
+        {
+            if (_mooredStates.Contains(navState))
+            {
+                // Reset the dwell ring so a re-classification back to
+                // underway via heuristic doesn't carry stale dwell data.
+                _lowSpeedSince.Remove(v.Context);
+                return true;
+            }
+            if (_underwayStates.Contains(navState))
+            {
+                _lowSpeedSince.Remove(v.Context);
+                return false;
+            }
+            // Unknown nav state value -- fall through to the heuristic.
+        }
+
         string key = v.Context;
         bool slow = v.SpeedOverGround is not null && v.SpeedOverGround.Value < MooredSpeedThresholdMs;
         if (!slow)
@@ -51,7 +121,6 @@ public sealed class MooredVesselTracker
         return (now - since).TotalSeconds >= MooredHoldSeconds;
     }
 
-    /// <summary>Drops state for vessels no longer visible in AIS.</summary>
     public void Cleanup(IReadOnlyCollection<string> activeContexts)
     {
         if (_lowSpeedSince.Count == 0) return;
