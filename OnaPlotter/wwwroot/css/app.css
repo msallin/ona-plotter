@@ -1025,6 +1025,19 @@ article.content:has(.map-container) {
     justify-content: space-between;
     align-items: baseline;
     gap: 8px;
+    /* Constrain children so a long value (Tide / depth station names
+       can be 30+ chars from SignalK) can't push the row past the
+       card's width. min-width:0 on the value child below + overflow
+       rules give the truncation a place to land. */
+    min-width: 0;
+}
+.hud-extra-row > .hud-extra-k {
+    flex: 0 0 auto;
+}
+.hud-extra-row > .hud-extra-v {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: right;
 }
 .hud-extra-k {
     color: rgba(255, 255, 255, 0.55);
@@ -1039,14 +1052,19 @@ article.content:has(.map-container) {
     font-weight: 500;
     white-space: nowrap;
     /* Tide / depth station names from SignalK can be arbitrarily long
-       ("ZH-Wollishofen Tiefenmesser am Steg 4" and similar). Without
-       these the text overflows the card width and pushes the right-edge
-       glyph (or the next card on a tight viewport) off-screen. The
-       parent .hud-card has its own width budget; clamp here so the
-       station label gracefully ellipsises instead of breaking layout. */
+       ("ZH-Wollishofen Tiefenmesser am Steg 4" and similar). Two
+       things were needed for ellipsis to actually fire:
+        (a) display: block / inline-block -- the default <span>
+            inline behaviour silently ignores overflow rules
+        (b) a width budget the text can hit -- max-width: 24ch on
+            the value caps the card itself instead of leaning on
+            flex shrinkage from the row, which only triggers once
+            the row is already constrained by something further up
+            the chain (and the BL depth card doesn't have that). */
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    display: block;
+    max-width: 24ch;
 }
 
 /* === HUD stack containers ===
@@ -1329,7 +1347,7 @@ html:fullscreen .hud-stack-br {
 .hud-threshold.threshold-active {
     color: var(--sev-danger);
     font-weight: 600;
-    animation: alarm-flash 1s ease-in-out infinite;
+    animation: alarm-flash 2.5s ease-in-out infinite;
 }
 
 /* Position display in HUD */
@@ -2348,7 +2366,7 @@ html, body {
     padding: 10px 16px;
     font-size: 0.9rem;
     text-align: center;
-    animation: alarm-flash 1s ease-in-out infinite;
+    animation: alarm-flash 2.5s ease-in-out infinite;
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     display: flex;
@@ -2685,8 +2703,13 @@ html, body {
 }
 
 @keyframes alarm-flash {
+    /* 2.5 s pulse with a deeper dim at the trough -- slow enough to
+       read the alarm text comfortably, deep enough to still register
+       as "this is moving / pay attention". The previous 1s / 0.6
+       pulse was hard for the helm to read at a glance because the
+       text never sat still long enough. */
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
+    50% { opacity: 0.4; }
 }
 
 /* ===== First-run welcome card =====
@@ -3350,21 +3373,14 @@ html.night-mode-global body {
     flex: 0 0 auto;
 }
 
-/* Zoom-level badge sits in Leaflet's bottom-left control stack
-   alongside the metric + nautical scale bars (see .leaflet-bottom.
-   leaflet-left above). Reads "z 14" so the helm can tell at a
-   glance whether they're at z14 or z16 without poking the +/-
-   buttons until tile detail changes. Same dark-on-dim treatment as
-   the scale bars so all bottom-left chrome reads as one muted strip. */
+/* Zoom-level badge: hidden -- the topbar +/- pair covers the
+   zoom-control case, and the badge ended up in an awkward spot
+   inside Leaflet's bottom-left control stack on the helm's
+   layout. Class stays defined (instantiation is currently
+   commented out in initMap) so a future re-introduction has
+   styling to fall back on. */
 .ona-zoom-badge {
-    background: rgba(10, 12, 18, 0.55);
-    color: rgba(255, 255, 255, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    font-size: 10px;
-    line-height: 1.1;
-    padding: 1px 5px 2px;
-    font-weight: 500;
-    pointer-events: none;
+    display: none !important;
 }
 
 /* (Earlier iteration moved the bottom-left controls to the bottom-
@@ -4086,12 +4102,17 @@ html.night-mode-global body {
     align-items: baseline;
 }
 .route-info-item {
+    /* Label + value inline so a "DTW 1.5 nm" pair reads as one line
+       of text. Previously each item was a 2-line column (label
+       above value), which the helm read as "two rows of fields"
+       even though it was one row of items. flex-direction: row
+       collapses each pair to a single line; the gap keeps "DTW"
+       and "1.5 nm" visually distinct. */
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
     min-width: 0;
-    /* flex-shrink lets long content (e.g. "12:34" ETA) coexist
-       with neighbours by giving each item the same shrinkable
-       priority instead of letting the first column hog the row. */
     flex-shrink: 1;
 }
 
@@ -4492,7 +4513,7 @@ html.night-mode-global body {
     font-size: 0.7em;
     color: var(--sev-danger);
     vertical-align: middle;
-    animation: alarm-flash 1s ease-in-out infinite;
+    animation: alarm-flash 2.5s ease-in-out infinite;
 }
 
 /* Depth trend: "↓ 0.3 m/min" chip next to the depth value. Arrow
@@ -6414,12 +6435,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     align-items: baseline;
 }
 /* Anchor info items don't have their own wrapper class in the
-   markup (the cells are plain <div>). Apply the same flex-column
-   shape as .route-info-item so label+value pairs wrap as a unit
-   on narrow viewports. */
+   markup (the cells are plain <div>). Mirror the route-info-item
+   shape: label + value inline so each pair reads as one line of
+   text rather than a two-line column. */
 .anchor-info-row > div {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 4px;
     min-width: 0;
 }
 

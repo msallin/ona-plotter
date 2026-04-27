@@ -551,30 +551,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // control was too small at arm's length in a rolling cockpit;
     // the topbar pair is bigger and reachable one-handed.
 
-    // Scale bars + zoom badge all sit bottom-left of the Leaflet
-    // control area (CSS pushes that stack to the bottom-right corner so
-    // it doesn't fight the depth HUD card). Helm glance gets "how far
-    // is that dot" + "what zoom am I at" in one place.
-    //
-    // Metric line uses Leaflet's built-in implementation (km / m); the
-    // imperial line is suppressed because nm is the marine unit anyone
-    // on the helm cares about, and our NauticalScale subclass renders
-    // it (cables under 1 nm so a berth-level zoom doesn't read "0 nm").
-    L.control.scale({
-        metric: true,
-        imperial: false,
-        maxWidth: 200,
-        position: 'bottomleft'
-    }).addTo(map);
-    new NauticalScale({ maxWidth: 200, position: 'bottomleft' }).addTo(map);
-
-    // Zoom-level badge: "z14" chip so the helm can tell at a glance
-    // whether they're at z14 or z16 without poking the +/- buttons
-    // until tile detail changes.
-    zoomBadge = new ZoomBadge({ position: 'bottomleft' });
-    zoomBadge.addTo(map);
-    map.on('zoomend', () => zoomBadge.update());
-    zoomBadge.update();
+    // Scale bars + zoom badge were dropped on user request -- they
+    // landed in an awkward spot in the bottom-left Leaflet control
+    // stack and the helm preferred a clean chart edge. The
+    // NauticalScale + ZoomBadge classes stay defined above in case
+    // we want to reintroduce them behind a setting; the topbar +/-
+    // buttons cover the zoom-control case.
 
     // isSlowClient was set at the top of initMap; the same flag drives
     // tile updateWhenIdle here so all perf gates decide together.
@@ -2727,22 +2709,21 @@ export function setActiveRouteStopping(stopping) {
 }
 
 
-// Draw/update course line: leg line, bearing line, XTE tick.
-// Called on every position update when an active course exists.
+// Draw/update course line: bearing line + XTE tick. Called on every
+// position update when an active course exists. The previous-WP to
+// next-WP "leg line" used to render here as a faint white dashed
+// stroke from the spot where navigation started; helm reported it as
+// noise (no actionable information beyond "where I was when the
+// course started"), so it's gone. The bearing line + active-route
+// polyline cover the live navigational picture.
 export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
     if (!map) return;
 
-    // Leg line: previous WP to next WP.
-    if (prevLat != null && prevLon != null) {
-        const legCoords = [[prevLat, prevLon], [wpLat, wpLon]];
-        if (courseLineLeg) {
-            courseLineLeg.setLatLngs(legCoords);
-        } else {
-            courseLineLeg = L.polyline(legCoords, {
-                color: '#fff', weight: 2, opacity: 0.25, dashArray: '10,8'
-            }).addTo(map);
-        }
-    } else if (courseLineLeg) {
+    // Tear down any leftover leg line from a previous build that
+    // still emitted it. courseLineLeg stays declared at module scope
+    // so dispose() can null it; this just guarantees the layer is
+    // gone if some older state left it behind.
+    if (courseLineLeg) {
         map.removeLayer(courseLineLeg);
         courseLineLeg = null;
     }
