@@ -18,6 +18,7 @@
 @inject IRegionApi RegionApi
 @inject IToastService Toasts
 @inject NavigationManager Nav
+@inject SignalkClient SignalkClient
 
 <PageTitle>Resources</PageTitle>
 
@@ -64,7 +65,7 @@
         {
             <ResourceTable Columns="RouteColumns"
                            IsEmpty="routes.Count == 0"
-                           EmptyMessage="No routes on the server.">
+                           EmptyMessage="@EmptyMessageFor("routes", routesLoadFailed)">
                 @foreach (var r in routes)
                 {
                     <tr>
@@ -89,7 +90,7 @@
         {
             <ResourceTable Columns="WaypointColumns"
                            IsEmpty="waypoints.Count == 0"
-                           EmptyMessage="No waypoints on the server.">
+                           EmptyMessage="@EmptyMessageFor("waypoints", waypointsLoadFailed)">
                 @foreach (var w in waypoints)
                 {
                     <tr>
@@ -113,7 +114,7 @@
         {
             <ResourceTable Columns="NoteColumns"
                            IsEmpty="notes.Count == 0"
-                           EmptyMessage="No notes on the server.">
+                           EmptyMessage="@EmptyMessageFor("notes", notesLoadFailed)">
                 @foreach (var n in notes)
                 {
                     <tr>
@@ -138,7 +139,7 @@
         {
             <ResourceTable Columns="RegionColumns"
                            IsEmpty="regions.Count == 0"
-                           EmptyMessage="No regions on the server.">
+                           EmptyMessage="@EmptyMessageFor("regions", regionsLoadFailed)">
                 @foreach (var r in regions)
                 {
                     <tr>
@@ -198,6 +199,16 @@
     private List<SignalkNote> notes = [];
     private List<SignalkRegion> regions = [];
 
+    // Per-resource load-failed flags so the empty-state copy can
+    // distinguish "server returned an empty list" from "we couldn't
+    // reach the server". Shown as "Couldn't reach the server -- check
+    // the SignalK connection." instead of the misleading "No routes on
+    // the server." when the fetch threw.
+    private bool routesLoadFailed;
+    private bool waypointsLoadFailed;
+    private bool notesLoadFailed;
+    private bool regionsLoadFailed;
+
     protected override async Task OnInitializedAsync()
     {
         _tabs =
@@ -213,21 +224,28 @@
     private async Task LoadAllAsync()
     {
         loading = true;
+        // Reset failure flags on each (re)load so a previous offline
+        // state doesn't leak into a successful retry.
+        routesLoadFailed = waypointsLoadFailed = notesLoadFailed = regionsLoadFailed = false;
         try
         {
             // Parallel load: the four endpoints are independent and the
             // server has no shared-lock hazard we'd hit by asking at once.
             // Cuts perceived load time on a typical Raspberry Pi SK server
             // from ~600 ms serial to ~200 ms.
-            var rTask = SafeCall(() => RouteApi.GetAllAsync());
-            var wTask = SafeCall(() => WaypointApi.GetAllAsync());
-            var nTask = SafeCall(() => NoteApi.GetAllAsync());
-            var gTask = SafeCall(() => RegionApi.GetAllAsync());
+            var rTask = SafeCall("routes", () => RouteApi.GetAllAsync());
+            var wTask = SafeCall("waypoints", () => WaypointApi.GetAllAsync());
+            var nTask = SafeCall("notes", () => NoteApi.GetAllAsync());
+            var gTask = SafeCall("regions", () => RegionApi.GetAllAsync());
             await Task.WhenAll(rTask, wTask, nTask, gTask);
             routes    = rTask.Result ?? [];
             waypoints = wTask.Result ?? [];
             notes     = nTask.Result ?? [];
             regions   = gTask.Result ?? [];
+            routesLoadFailed    = rTask.Result is null;
+            waypointsLoadFailed = wTask.Result is null;
+            notesLoadFailed     = nTask.Result is null;
+            regionsLoadFailed   = gTask.Result is null;
         }
         finally
         {
@@ -237,16 +255,30 @@
 
     // Any one endpoint being down shouldn't take the whole page with it --
     // the Settings / Paths pages follow the same pattern so a partial
-    // outage still shows the healthy tabs with their real data.
-    private async Task<List<T>?> SafeCall<T>(Func<Task<List<T>>> call)
+    // outage still shows the healthy tabs with their real data. While
+    // SignalK is offline we suppress per-kind toasts and let the
+    // connection chip + empty-state copy speak; otherwise the helm sees
+    // four "Load failed: TypeError: Failed to fetch" toasts on a fresh
+    // visit, which reads as broken-app rather than offline.
+    private async Task<List<T>?> SafeCall<T>(string kind, Func<Task<List<T>>> call)
     {
         try { return await call(); }
         catch (Exception ex)
         {
-            Toasts.Error($"Load failed: {ex.Message}");
+            if (SignalkClient.IsConnected)
+                Toasts.Error($"Couldn't load {kind}: {ex.Message}");
             return null;
         }
     }
+
+    // Empty-state copy switches based on whether the load actually failed:
+    // a successful empty list says "No routes on the server"; a fetch
+    // failure says "Couldn't reach the server" so the helm doesn't see
+    // a misleading "your data is gone" message during a connection blip.
+    private static string EmptyMessageFor(string kind, bool loadFailed) =>
+        loadFailed
+            ? $"Couldn't reach the server -- {kind} couldn't be loaded. Check the SignalK connection."
+            : $"No {kind} on the server.";
 
     private void SetTab(string key)
     {
