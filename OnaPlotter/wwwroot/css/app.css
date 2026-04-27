@@ -3271,20 +3271,37 @@ html.night-mode-global body {
 }
 
 /* Chart picker panel */
-/* Map attribution bar: OSM / OpenSeaMap credits must stay visible per
-   their licences, but the default white block shouts. Dim + shrink to a
-   subtle caption so it's readable but not fighting the chart. */
+/* Map attribution bar: OSM / OpenSeaMap credits must stay visible by
+   default per ODbL, but should be as unobtrusive as the licence
+   tolerates. Approach: tiny font, very low opacity background and
+   text, hover-to-full so the helm can read it on demand without it
+   competing with the chart at rest. The "contributors" word was
+   dropped from the visible text in JS (the canonical copyright link
+   carries that detail) so the chip is short and one-line. */
 .leaflet-control-attribution {
-    background: rgba(10, 12, 18, 0.55) !important;
-    color: rgba(255, 255, 255, 0.55) !important;
-    font-size: 10px !important;
-    padding: 1px 6px !important;
+    background: rgba(10, 12, 18, 0.4) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
+    font-size: 9px !important;
+    padding: 1px 5px !important;
+    line-height: 1.2 !important;
+    border-radius: 3px 0 0 0 !important;
+    transition: opacity 180ms ease, color 180ms ease, background-color 180ms ease;
+    pointer-events: auto;
+}
+.leaflet-control-attribution:hover,
+.leaflet-control-attribution:focus-within {
+    background: rgba(10, 12, 18, 0.75) !important;
+    color: rgba(255, 255, 255, 0.85) !important;
 }
 .leaflet-control-attribution a {
-    color: rgba(255, 255, 255, 0.75) !important;
+    color: rgba(255, 255, 255, 0.65) !important;
+}
+.leaflet-control-attribution:hover a,
+.leaflet-control-attribution:focus-within a {
+    color: rgba(255, 255, 255, 0.95) !important;
 }
 @media (max-width: 600px) {
-    .leaflet-control-attribution { font-size: 9px !important; }
+    .leaflet-control-attribution { font-size: 8px !important; padding: 1px 4px !important; }
 }
 
 /* Scale bars -- Leaflet's default km/m line plus our nautical-miles
@@ -3308,11 +3325,19 @@ html.night-mode-global body {
 }
 
 /* Scale bars + zoom badge in a horizontal row, bottom-left corner of
-   the map. Leaflet's default bottom-left stack is vertical via floats;
-   we flip it to flex-row so "N m / N nm / z N" reads in one glance.
-   Don't touch `bottom` / `left` -- let Leaflet own its placement so we
-   don't accidentally hide the stack or fight iOS safe-area insets. */
+   the map but lifted ABOVE the depth-HUD card so the two don't
+   collide. Leaflet's default bottom-left stack is vertical via
+   floats; we flip it to flex-row so "N m / N nm / z N" reads as
+   one strip in one glance.
+
+   The bottom offset clears a typical depth card (~80 px tall when
+   expanded) plus the HUD edge token. Hand-tuned -- a CSS-variable-
+   based version would need an exact depth-card height which depends
+   on density mode + content; the magic number is fine for the cases
+   we render today and obvious in this comment if it ever drifts. */
 .leaflet-bottom.leaflet-left {
+    bottom: calc(var(--hud-edge) + 96px) !important;
+    left: var(--hud-edge) !important;
     display: flex !important;
     flex-direction: row !important;
     align-items: flex-end !important;
@@ -3324,18 +3349,13 @@ html.night-mode-global body {
     margin: 0 !important;
     flex: 0 0 auto;
 }
-/* Leaflet's scale bar + zoom badge live in the bottom-left of the
-   map at offsets we don't own. Clearance is now provided by the
-   .hud-stack-bl rule's padding-bottom (above), not by overriding
-   the bottom inset on the cards. */
 
-/* Zoom-level badge sits in Leaflet's bottom-left control stack which
-   .leaflet-bottom.leaflet-left repositions to bottom-right (alongside
-   the metric + nautical scale bars). Reads "z 14" so the helm can
-   tell at a glance whether they're at z14 or z16 without poking the
-   +/- buttons until tile detail changes. Same dark-on-dim treatment
-   as the scale bars + attribution chip so all chrome reads as one
-   muted strip at the foot of the chart. */
+/* Zoom-level badge sits in Leaflet's bottom-left control stack
+   alongside the metric + nautical scale bars (see .leaflet-bottom.
+   leaflet-left above). Reads "z 14" so the helm can tell at a
+   glance whether they're at z14 or z16 without poking the +/-
+   buttons until tile detail changes. Same dark-on-dim treatment as
+   the scale bars so all bottom-left chrome reads as one muted strip. */
 .ona-zoom-badge {
     background: rgba(10, 12, 18, 0.55);
     color: rgba(255, 255, 255, 0.85);
@@ -3347,15 +3367,14 @@ html.night-mode-global body {
     pointer-events: none;
 }
 
-/* Move the leaflet bottom-left controls (scale bars) into the
-   leaflet bottom-right corner so the depth card has a clean inset
-   on the bottom-left. Attribution and scale now cluster on the same
-   side, reading as a single chrome row at the foot of the map. */
-.leaflet-bottom.leaflet-left {
-    left: auto !important;
-    right: 0 !important;
-    flex-direction: row-reverse !important;
-}
+/* (Earlier iteration moved the bottom-left controls to the bottom-
+   right corner so the depth card had a clean bottom-left inset; the
+   helm asked for the original layout back, so the override is gone
+   and zoom + scale now sit on the bottom-left lifted above the
+   depth card via the bottom offset on .leaflet-bottom.leaflet-left
+   above. Attribution stays on the bottom-right -- Leaflet's default
+   for attributionControl -- so the two chrome strips read on
+   opposite sides of the chart.) */
 
 /* Invisible full-area catcher that dismisses the Layers panel on a
    click outside it. Sits one layer below the panel; the panel itself
