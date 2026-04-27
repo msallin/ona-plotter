@@ -615,7 +615,13 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         keepBuffer: 10,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
-        attribution: '&copy; OpenStreetMap contributors',
+        // Minimum acceptable ODbL attribution: short visible text
+        // ("© OpenStreetMap") linking to the canonical copyright page
+        // (which lists contributors). The conventional "contributors"
+        // word is dropped from the visible text so the chip stays
+        // small at the edge of the chart -- the link still satisfies
+        // the licence's "credit and link" requirement.
+        attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">&copy; OpenStreetMap</a>',
         referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
 
@@ -625,7 +631,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         keepBuffer: 10,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
-        attribution: '&copy; OpenSeaMap',
+        attribution: '<a href="https://www.openseamap.org/" target="_blank" rel="noreferrer">&copy; OpenSeaMap</a>',
         opacity: 0.8,
         referrerPolicy: 'strict-origin-when-cross-origin'
     }).addTo(map);
