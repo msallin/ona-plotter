@@ -29,6 +29,68 @@
         @if (MoreMenuOpen)
         {
             <div class="ctrl-more-menu" @onclick:stopPropagation>
+                @* === Phone overflow items ===
+                   On viewports <= 600 px the bar hides Centre / Orient / Add
+                   to keep the row from wrapping; the same actions land here
+                   instead. CSS-only visibility split: bigger viewports show
+                   them in the bar and hide them here, phones do the reverse. *@
+                <button class="ctrl-more-item ctrl-more-overflow"
+                        @onclick="() => Select(OnCentreOnBoat)"
+                        title="Centre on boat">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Centre)</span>
+                    <span>Centre</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow"
+                        @onclick="() => Select(OnCycleOrientation)"
+                        title="Map orientation">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Compass)</span>
+                    <span>Orient (@OrientationLabel)</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow"
+                        @onclick="() => Select(OnFabCreateWaypoint)"
+                        title="Add waypoint at map centre">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Plus)</span>
+                    <span>Add Waypoint</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow"
+                        @onclick="() => Select(OnFabCreateNote)"
+                        title="Add note at map centre">
+                    <span class="ctrl-more-ico">&#9783;</span>
+                    <span>Add Note</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow"
+                        @onclick="() => Select(OnFabCreateRegion)"
+                        title="Add region at map centre">
+                    <span class="ctrl-more-ico">&#9711;</span>
+                    <span>Add Region</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow @(RouteEditMode ? "active" : "")"
+                        @onclick="() => Select(OnStartRouteEdit)"
+                        disabled="@RouteEditMode"
+                        title="@(RouteEditMode ? "Already editing a route" : "Start a new route")">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Route)</span>
+                    <span>Add Route</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow"
+                        @onclick="() => Select(OnZoomToTrack)"
+                        title="Fit track">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Fit)</span>
+                    <span>Fit Track</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow @(AnchorActive ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnAnchorClicked)"
+                        title="@(AnchorActive ? "Raise anchor" : "Drop anchor")">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Anchor)</span>
+                    <span>@(AnchorActive ? "Raise Anchor" : "Drop Anchor")</span>
+                </button>
+                <button class="ctrl-more-item ctrl-more-overflow @(MobActive ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnMobClicked)"
+                        title="@(MobActive ? "Clear MOB" : "Man overboard")">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Mob)</span>
+                    <span>@(MobActive ? "Clear MOB" : "MOB")</span>
+                </button>
+                <div class="ctrl-more-sep ctrl-more-overflow"></div>
+
                 <button class="ctrl-more-item @(LegendOpen ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleLegend)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
@@ -64,11 +126,11 @@
         <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
         <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
     </button>
-    <button class="ctrl-btn" @onclick="OnCycleOrientation" title="Map orientation (O)">
+    <button class="ctrl-btn ctrl-btn-overflow" @onclick="OnCycleOrientation" title="Map orientation (O)">
         <span class="ctrl-ico">@((MarkupString)Icons.Compass)</span>
         <span class="ctrl-lbl">@OrientationLabel</span>
     </button>
-    <button class="ctrl-btn" @onclick="OnCentreOnBoat"
+    <button class="ctrl-btn ctrl-btn-overflow" @onclick="OnCentreOnBoat"
             title="Centre on boat (one-shot; doesn't engage Follow)">
         <span class="ctrl-ico">@((MarkupString)Icons.Centre)</span>
         <span class="ctrl-lbl">Centre</span>
@@ -79,7 +141,7 @@
     @* Anchor: one-tap drop; two-tap raise (same confirm pattern as
        MOB clear and Stop Navigation so the three safety-critical
        red-path controls in the bar feel identical under stress). *@
-    <button class="ctrl-btn @(AnchorActive ? "active" : "") @(anchorClearConfirming ? "ctrl-btn-confirming" : "")"
+    <button class="ctrl-btn ctrl-btn-overflow @(AnchorActive ? "active" : "") @(anchorClearConfirming ? "ctrl-btn-confirming" : "")"
             @onclick="OnAnchorClicked"
             title="@(anchorClearConfirming ? "Tap again to raise anchor" : AnchorActive ? "Raise anchor (A)" : "Drop anchor (A)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
@@ -109,7 +171,7 @@
        MOB event), two-tap CLEAR when already active. Matches the Stop
        button's confirm pattern so the two safety-critical red buttons
        feel the same under stress. *@
-    <button class="ctrl-btn ctrl-btn-danger @(MobActive ? "active" : "") @(mobClearConfirming ? "ctrl-btn-confirming" : "")"
+    <button class="ctrl-btn ctrl-btn-overflow ctrl-btn-danger @(MobActive ? "active" : "") @(mobClearConfirming ? "ctrl-btn-confirming" : "")"
             @onclick="OnMobClicked"
             title="@(mobClearConfirming ? "Tap again to clear MOB" : MobActive ? "Clear MOB (M)" : "Man overboard (M)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Mob)</span>
@@ -118,7 +180,7 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn" @onclick="OnZoomToTrack" title="Fit track (T)">
+    <button class="ctrl-btn ctrl-btn-overflow" @onclick="OnZoomToTrack" title="Fit track (T)">
         <span class="ctrl-ico">@((MarkupString)Icons.Fit)</span>
         <span class="ctrl-lbl">Fit</span>
     </button>
@@ -136,7 +198,7 @@
        the map" is the shared conceptual bucket. The route icon on the
        Add button gets an `.active` modifier during edit so the user
        sees the in-progress state without opening the menu. *@
-    <div class="ctrl-more-wrap">
+    <div class="ctrl-more-wrap ctrl-btn-overflow">
         <button class="ctrl-btn @(FabMenuOpen || RouteEditMode ? "active" : "")" @onclick="OnToggleFab"
                 title="@(RouteEditMode ? "Editing a route -- see the panel above" : "Add waypoint / note / region / route at map centre")">
             <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
@@ -366,6 +428,18 @@
         // so the parent flips MoreMenuOpen off before the action runs.
         if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
         await cb.InvokeAsync();
+    }
+
+    /// <summary>
+    /// Same Select() pattern but for local methods that aren't EventCallback
+    /// parameters (Anchor / MOB live here because they own the two-step
+    /// confirm state). Lets More-menu items reuse the close-then-invoke
+    /// flow without duplicating the closing logic per call site.
+    /// </summary>
+    private async Task Select(Func<Task> action)
+    {
+        if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
+        await action();
     }
 
     // Close the Add flyout then invoke the picked action. The owner toggles

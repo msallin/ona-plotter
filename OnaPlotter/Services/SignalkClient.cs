@@ -727,7 +727,7 @@ public sealed class SignalkClient : IAsyncDisposable
 
         foreach (var update in delta.Updates!)
         {
-            _data.SetTimestamp(update.Timestamp);
+            _data.MarkDataReceived();
 
             if (update.Values is null)
                 continue;

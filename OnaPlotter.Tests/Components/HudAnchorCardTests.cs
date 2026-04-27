@@ -26,7 +26,7 @@ public class HudAnchorCardTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap(visible: false)));
-        await Assert.That(cut.FindAll(".hud-anchor").Count).IsEqualTo(0);
+        await Assert.That(cut.FindAll(".anchor-panel").Count).IsEqualTo(0);
     }
 
     [Test]

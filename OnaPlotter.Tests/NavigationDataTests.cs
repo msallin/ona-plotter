@@ -283,11 +283,12 @@ public class NavigationDataTests
     // --- Timestamp ---
 
     [Test]
-    public async Task SetTimestamp_SetsProperty()
+    public async Task MarkDataReceived_SetsLastReceivedUtcFromInjectedClock()
     {
-        var nav = new NavigationData();
-        nav.SetTimestamp("2025-01-01T00:00:00Z");
-        await Assert.That(nav.LastTimestamp).IsEqualTo("2025-01-01T00:00:00Z");
+        var fixedNow = new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var nav = new NavigationData(() => fixedNow);
+        nav.MarkDataReceived();
+        await Assert.That(nav.LastReceivedUtc).IsEqualTo(fixedNow);
     }
 
     // --- Tide (from signalk-tides-api / mxtide / similar) ---

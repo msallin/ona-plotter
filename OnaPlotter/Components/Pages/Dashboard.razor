@@ -9,7 +9,7 @@
 
 <PageTitle>Dashboard</PageTitle>
 
-@if (Data.LastTimestamp is null)
+@if (Data.LastReceivedUtc is null)
 {
     <div class="text-muted mb-4" style="opacity: 0.6;">Waiting for data...</div>
 }
@@ -335,9 +335,9 @@ else if (Polar.HasPolar)
     </div>
 }
 
-@if (Data.LastTimestamp is not null)
+@if (Data.LastReceivedUtc is DateTime lastRx)
 {
-    <p class="text-muted" style="font-size: 0.7rem; opacity: 0.5;">Last update: @Data.LastTimestamp</p>
+    <p class="text-muted" style="font-size: 0.7rem; opacity: 0.5;">Last update: @lastRx.ToLocalTime().ToString("HH:mm:ss")</p>
 }
 
 @code {

@@ -10,6 +10,25 @@
    behaviour; migrating those carries regression risk without clear benefit,
    so leave in place and use the canonical set for new rules. */
 
+/* ===== Inter Variable -- self-hosted for offline use =====
+   One file covers weight 100..900. font-display: swap so the page
+   renders immediately with the platform fallback while the font
+   loads (matters on iPad over LTE / first boot at the dock). */
+@font-face {
+    font-family: 'Inter Variable';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/InterVariable.woff2') format('woff2-variations');
+}
+@font-face {
+    font-family: 'Inter Variable';
+    font-style: italic;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/fonts/InterVariable-Italic.woff2') format('woff2-variations');
+}
+
 :root {
     /* Color palette */
     --sk-bg: #0f1117;
@@ -139,6 +158,83 @@
     --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
     --panel-gap: 10px;        /* Gap between the bar and panels above it. */
     --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
+
+    /* ===== HUD design system =====
+       Token namespace for the HUD overlay layer. Cards consume only
+       these (no literal padding / radius / colour values inside HUD
+       rules). Density classes below remap a subset; container queries
+       handle in-between. Single source of truth: change a token here,
+       every card follows. */
+
+    /* Edge & rhythm */
+    --hud-edge: 12px;
+    --hud-gap: 8px;
+    --hud-stack-max-w: 280px;
+
+    /* Card shell -- identical for every HUD card.
+       Two-stroke instrument edge: a 1 px inner highlight (white at 6 %)
+       sits under a 1 px outer stroke (black at 50 %) so the card reads
+       crisply over both bright satellite tiles and dark night charts.
+       The 16 px feathered halo replaces the old backdrop-filter blur:
+       the blur cost real GPU on iPad in sun and read as 2014 glass. */
+    --hud-card-bg:         rgba(14, 17, 23, 0.92);
+    --hud-card-stroke-in:  rgba(255, 255, 255, 0.06);
+    --hud-card-stroke-out: rgba(0, 0, 0, 0.5);
+    --hud-card-radius: 8px;
+    --hud-card-pad-x: 14px;
+    --hud-card-pad-y: 8px;
+    --hud-card-halo: 0 0 16px rgba(0, 0, 0, 0.4);
+
+    /* Typography */
+    --hud-font: 'Inter Variable', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --hud-font-label:   clamp(0.65rem, 1.5dvh, 0.75rem);
+    --hud-font-value:   clamp(1.2rem,  3.6dvh, 1.6rem);
+    --hud-font-primary: clamp(1.6rem,  4.8dvh, 2.5rem);
+    --hud-tnum: tabular-nums slashed-zero;
+
+    /* Colour encoding -- monochrome by default, colour IS alarm. */
+    --hud-ink:       #E8ECF2;
+    --hud-ink-dim:   rgba(232, 236, 242, 0.55);
+    --hud-ink-stale: rgba(232, 236, 242, 0.40);
+    --hud-pulse:     #7CC4FF;
+    --hud-warn:      #F5B544;
+    --hud-alarm:     #FF5A4E;
+
+    /* Touch & motion */
+    --hud-touch-min: 44px;
+    --hud-ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+    --hud-dur-short: 180ms;
+    --hud-dur-med:   240ms;
+}
+
+/* ===== Density modes =====
+   Three intent-based densities the user picks (Settings). Container
+   queries adapt WITHIN a density to stack-width changes; the density
+   class controls the BASE values. comfortable is the default; compact
+   is for phones / tight tablet portrait; helm-console is the 21" multi-
+   touch where viewing distance is ~1.5 m and CSS can't infer that. */
+.density-comfortable {
+    /* defaults inherited from :root */
+}
+.density-compact {
+    --hud-edge: 8px;
+    --hud-gap: 6px;
+    --hud-card-pad-x: 10px;
+    --hud-card-pad-y: 6px;
+    --hud-stack-max-w: 220px;
+    --hud-font-label:   clamp(0.6rem, 1.3dvh, 0.7rem);
+    --hud-font-value:   clamp(0.9rem, 2.6dvh, 1.2rem);
+    --hud-font-primary: clamp(1.2rem, 3.6dvh, 1.8rem);
+}
+.density-helm-console {
+    --hud-edge: 16px;
+    --hud-gap: 12px;
+    --hud-card-pad-x: 22px;
+    --hud-card-pad-y: 14px;
+    --hud-stack-max-w: 360px;
+    --hud-font-label:   clamp(0.85rem, 1.6vw, 1rem);
+    --hud-font-value:   clamp(1.6rem,  3vw,   2.4rem);
+    --hud-font-primary: clamp(2.4rem,  4.5vw, 4rem);
 }
 
 /* === Night mode token overrides ===
@@ -795,59 +891,61 @@ article.content:has(.map-container) {
     width: 100%;
 }
 
-/* HUD panels: translucent overlays on the map */
+/* HUD overlay base. Each .hud is positioned absolutely inside the
+   .map-container; pointer-events stay off the wrapper so Leaflet pan
+   keeps working under the cards (re-enabled per-card by the corner
+   selectors below). z-index is the --z-hud token tier. */
 .hud {
     position: absolute;
-    z-index: 800;
+    z-index: var(--z-hud);
     pointer-events: none;
-    font-family: 'Helvetica Neue', Helvetica, sans-serif;
+    font-family: var(--hud-font);
 }
 
-.hud-panel {
-    background: rgba(10, 12, 18, 0.9);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    border-radius: 10px;
-    padding: 8px 14px;
-    color: #fff;
+/* Unified card shell. .hud-panel is the legacy class still used inside
+   the corner razor markup; .hud-card is the new alias for new code
+   paths and child components. Both render the same instrument shell --
+   no blur (GPU + sun-glare cost wasn't worth it), two-stroke edge,
+   16 px feathered halo, all driven by tokens. */
+.hud-panel,
+.hud-card {
+    background: var(--hud-card-bg);
+    border: 1px solid var(--hud-card-stroke-in);
+    box-shadow:
+        0 0 0 1px var(--hud-card-stroke-out),
+        var(--hud-card-halo);
+    border-radius: var(--hud-card-radius);
+    padding: var(--hud-card-pad-y) var(--hud-card-pad-x);
+    color: var(--hud-ink);
+    font-family: var(--hud-font);
+    font-variant-numeric: var(--hud-tnum);
     pointer-events: none;
     user-select: none;
-    border: 1px solid rgba(255,255,255,0.06);
-    transition: padding 0.12s ease, max-width 0.12s ease;
+    transition: padding var(--hud-dur-short) var(--hud-ease-spring);
 }
-/* Only the four corner HUD panels are clickable-to-expand. Enabling
-   pointer-events here (not on the base .hud-panel) keeps Leaflet map
-   panning working under the other HUDs -- route / anchor / autopilot
-   --, which have their own buttons for the clickable bits. */
-.hud-top-left .hud-panel,
-.hud-top-right .hud-panel,
-.hud-bottom-left .hud-panel,
-.hud-bottom-right .hud-panel {
-    pointer-events: auto;
+/* Click-to-expand cards (the four corner cards) get a pointer cursor.
+   pointer-events: auto is already on every .hud-stack > .hud-card
+   above, so all that remains is the affordance. */
+.hud-card[role="button"] {
     cursor: pointer;
 }
 
-/* Interactive buttons inside the non-corner HUDs (route prev/next,
-   autopilot heading nudge / mode) need pointer-events: auto explicitly.
-   The base .hud + .hud-panel carry pointer-events: none so non-button
-   chrome doesn't intercept Leaflet pan/zoom; without this rule the
-   buttons inherit the same none state and tap a no-op. The anchor
-   panel's radius chips are already covered separately
-   (.anchor-radius-chips .map-btn). */
+/* Interactive buttons inside cards. The .hud-stack > .hud-card rule
+   above re-enables pointer-events on cards; nested buttons inherit.
+   These extra selectors stay as a belt-and-suspenders for legacy
+   markup paths that don't yet use the .hud-card alias. */
 .route-wp-step-btn,
 .ap-btn,
 .ap-mode-btn {
     pointer-events: auto;
 }
 /* Expanded state: extra rows render below the compact view; width
-   grows modestly so the detail fits without crowding the map. */
+   grows modestly so the detail fits without crowding the map.
+   Width is driven by content; min-width is gone because the stack
+   container queries adapt density at narrow stack widths. The deeper
+   black border reads as "expanded chrome" without pulling focus. */
 .hud-panel-expanded {
-    padding-bottom: 12px;
-    min-width: 180px;
-    /* Keep the expanded state visually quiet -- the amber accent the
-       panel used to gain on expand fought the map underneath and the
-       alarm colour palette. Plain black border reads as "expanded
-       chrome" without pulling focus. */
+    padding-bottom: calc(var(--hud-card-pad-y) + 4px);
     border-color: rgba(0, 0, 0, 0.85);
 }
 
@@ -882,64 +980,231 @@ article.content:has(.map-container) {
     white-space: nowrap;
 }
 
-/* All four corner HUD panels share the same 12 px edge inset. The
-   control bar is centered so the bottom corners stay clear. The
-   earlier top-right panel had a 56 px inset to dodge Leaflet's
-   native zoom control; the zoom buttons now live in the app topbar
-   (MainLayout), so hud-top-right lines up vertically with
-   hud-bottom-right at the same right edge -- the AWA/AWS and HDG
-   panels read as a single vertical column. */
-.hud-top-left    { top: 12px; left: 12px; }
-.hud-top-right   { top: 12px; right: 12px; }
+/* === HUD stack containers ===
+   Each corner is a flex column anchored to its corner. Cards become
+   children -- they stack with --hud-gap automatically and shift when
+   one expands. NO per-card top/left/bottom/right anywhere; positioning
+   lives ONLY on the stack.
 
-/* Zoom buttons moved to the app-level topbar (MainLayout.razor)
-   alongside the Night + Fullscreen cluster; see .topbar-icon-btn
-   in MainLayout.razor.css. The previous .map-zoom-btns overlay +
-   backdrop-filter rules were removed with that relocation. */
-.hud-bottom-left { bottom: 12px; left: 12px; }
-.hud-bottom-right{ bottom: 12px; right: 12px; }
+   container-type + container-name on every stack establishes a query
+   context so density can adapt to the stack's actual width (e.g. iPad
+   portrait + landscape reach the same compact rules when the right-
+   column ends up the same width, regardless of viewport orientation).
 
-/* Fullscreen breathing room: when the whole app is in doc-level
-   fullscreen, give HUD cards extra safe-area padding so they clear
-   iOS notches / home indicators without looking cramped. */
-html:fullscreen .hud-top-left,
-html:fullscreen .hud-top-right {
+   Bottom corners: cards are written bottom-up in the markup so the
+   corner-most card is the LAST DOM child. Visual reading order top-
+   to-bottom matches DOM order, which matches keyboard tab order. No
+   flex-direction: column-reverse anywhere -- that fork breaks a11y.
+
+   Pointer-events stay off the stack so Leaflet pan works underneath;
+   each card re-enables pointer-events for its interactive bits. */
+.hud-stack {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: var(--hud-gap);
+    pointer-events: none;
+    container-type: inline-size;
+    container-name: hud;
+    z-index: var(--z-hud);
+    max-width: var(--hud-stack-max-w);
+}
+.hud-stack-tl {
+    top: var(--hud-edge);
+    left: var(--hud-edge);
+    align-items: flex-start;
+}
+.hud-stack-tr {
+    top: var(--hud-edge);
+    right: var(--hud-edge);
+    align-items: flex-end;
+}
+.hud-stack-bl {
+    bottom: var(--hud-edge);
+    left: var(--hud-edge);
+    align-items: flex-start;
+}
+.hud-stack-br {
+    bottom: var(--hud-edge);
+    right: var(--hud-edge);
+    align-items: flex-end;
+}
+/* Bottom-center: route + anchor (and future expanded autopilot) live
+   here when active. Sits ABOVE the .map-controls bar via --panel-bottom
+   (already calculated in :root). align-items: stretch lets a wide route
+   card span the full available width on phone. */
+.hud-stack-bc {
+    bottom: var(--panel-bottom);
+    left: 50%;
+    transform: translateX(-50%);
+    align-items: stretch;
+    width: min(560px, calc(100% - 2 * var(--hud-edge)));
+    max-width: none;
+}
+
+/* Fullscreen safe-area: when the app is fullscreen the stacks need
+   extra padding to clear iOS notches / home-indicator / Dynamic Island.
+   Mirrors the legacy html:fullscreen rules above but on the stacks. */
+html:fullscreen .hud-stack-tl,
+html:fullscreen .hud-stack-tr {
     top: max(24px, env(safe-area-inset-top));
 }
-html:fullscreen .hud-top-left {
-    left: max(24px, env(safe-area-inset-left));
-}
-html:fullscreen .hud-top-right {
-    right: max(24px, env(safe-area-inset-right));
-}
-html:fullscreen .hud-bottom-left {
+html:fullscreen .hud-stack-tl { left: max(24px, env(safe-area-inset-left)); }
+html:fullscreen .hud-stack-tr { right: max(24px, env(safe-area-inset-right)); }
+html:fullscreen .hud-stack-bl {
     bottom: max(24px, env(safe-area-inset-bottom));
     left: max(24px, env(safe-area-inset-left));
 }
-html:fullscreen .hud-bottom-right {
+html:fullscreen .hud-stack-br {
     bottom: max(24px, env(safe-area-inset-bottom));
     right: max(24px, env(safe-area-inset-right));
 }
 
+/* HUD card -- direct children of .hud-stack. Inherits the unified shell
+   from .hud-panel,.hud-card above; this rule just locks pointer-events
+   on (the stack is none, the card opts in) and the click-to-expand
+   affordances. Cards inside corner stacks (TL/TR/BL/BR) are clickable;
+   cards inside top-center / bottom-center / Race / autopilot manage
+   their own buttons. */
+.hud-stack > .hud-card {
+    pointer-events: auto;
+    /* Each card stacks at its own width (content-driven). align-items
+       on the stack handles which edge it hugs. */
+    flex: 0 0 auto;
+}
+/* Touch-target floor on every interactive child of a card. Density
+   classes never override this -- ergonomic floor for one-handed use
+   in a seaway. */
+.hud-card button,
+.hud-card [role="button"] {
+    min-height: var(--hud-touch-min);
+    min-width: var(--hud-touch-min);
+}
+
+/* Per-card mobile-visibility token. Cards opt into being hidden on
+   small viewports by adding data-mobile-hide to their root element.
+   Default visible; new heavy cards (radar, expanded autopilot) ship
+   with this attribute set. The breakpoint matches phone-portrait. */
+@media (max-width: 600px) {
+    .hud-card[data-mobile-hide],
+    .hud-stack[data-mobile-hide] { display: none; }
+}
+
+/* === Container queries on the HUD stacks ===
+   When a stack ends up narrow (iPad portrait squeezing the right
+   column, or a long card wrapping), step the density down. These
+   compose with the user-selected .density-* class: the density sets
+   the BASE token values; the container query trims them further when
+   the actual stack width says we have less room.
+
+   Why container queries and not @media: iPad portrait + landscape
+   often produce SIMILAR right-column widths. Targeting the stack's
+   width directly means both orientations reach the same density
+   automatically -- no per-orientation tuning. */
+@container hud (max-width: 220px) {
+    .hud-card {
+        padding: 6px 10px;
+    }
+    .hud-card .hud-value { font-size: clamp(0.95rem, 2.6dvh, 1.2rem); }
+    .hud-card .hud-value.hud-primary { font-size: clamp(1.3rem, 3.6dvh, 1.8rem); }
+    .hud-card .hud-label { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); }
+}
+@container hud (max-width: 160px) {
+    /* Very narrow stack -- floor density. Keep text legible; assume
+       this is a tight phone portrait or a heavily-zoomed viewport. */
+    .hud-card {
+        padding: 5px 8px;
+    }
+    .hud-card .hud-extra { font-size: 0.7rem; }
+}
+
+/* === Stale + null state language ===
+   stale: data hasn't refreshed in a while but is still on the wire.
+          Desaturate the value so it reads as muted -- no badge, no
+          competing colour. The freshness IS the colour channel.
+   dead:  sensor silent. Stronger desaturation + the existing badge
+          stays on (a missing reading is too dangerous to be subtle).
+   null:  no data ever received. Render dotted baseline glyphs in the
+          digit slots; reads as "the instrument is here, the signal
+          isn't yet" rather than the curt -- placeholder. */
+.hud-value.is-stale,
+.hud-value.is-stale .hud-unit {
+    color: var(--hud-ink-stale);
+    transition: color var(--hud-dur-med) var(--hud-ease-spring);
+}
+.hud-value.is-dead {
+    color: var(--hud-ink-stale);
+    filter: grayscale(0.5);
+}
+/* === XTE deviation bar (route card) ===
+   Centerline = on-track. Filled marker drifts left/right proportional
+   to the cross-track-error magnitude (clamped to the bar range).
+   Same idea as an aviation ILS localizer -- the bar IS the data, the
+   number is confirmation. Range: clamp -100 m .. +100 m. */
+.xte-bar {
+    position: relative;
+    width: 100%;
+    height: 12px;
+    margin: 4px 0;
+}
+.xte-bar-track {
+    position: absolute;
+    inset: 5px 0;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 1px;
+}
+.xte-bar-center {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.4);
+    transform: translateX(-0.5px);
+}
+.xte-bar-marker {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--hud-pulse);
+    transform: translate(-50%, -50%);
+    transition: left var(--hud-dur-med) var(--hud-ease-spring),
+                background-color var(--hud-dur-short) var(--hud-ease-spring);
+}
+.xte-bar.is-warn  .xte-bar-marker { background: var(--hud-warn); }
+.xte-bar.is-alarm .xte-bar-marker { background: var(--hud-alarm); }
+
+/* Three type sizes only -- label, value, primary -- driven by tokens
+   so a single density change cascades to every card. Locked-grid digits
+   (tabular-nums slashed-zero) so the layout doesn't twitch when 9.8
+   becomes 10.1. */
 .hud-value {
-    font-size: 1.6rem;
-    font-weight: 500; /* higher weight reads better in sunlight on the helm */
-    font-variant-numeric: tabular-nums;
+    font-size: var(--hud-font-value);
+    font-weight: 500; /* reads better in sunlight on the helm */
+    font-variant-numeric: var(--hud-tnum);
     line-height: 1.1;
 }
 
-/* SOG is the single most important value at the helm - make it dominant. */
+/* SOG, depth, primary wind speed -- the hero number on its card. */
 .hud-value.hud-primary {
-    font-size: 2.4rem;
+    font-size: var(--hud-font-primary);
     font-weight: 600;
 }
 
 .hud-label {
-    font-size: 0.6rem;
+    font-size: var(--hud-font-label);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(255,255,255,0.5);
-    display: inline-flex;
+    color: var(--hud-ink-dim);
+    /* flex (not inline-flex) so a card title sits on its own line above
+       the SVG/value below it. With inline-flex, on a wide card the HDG
+       label could share a line with the inline compass <svg>, putting
+       the title beside the dial instead of above it. The wind-label-row
+       still sits two .hud-label children side-by-side because the row
+       is flex with space-between -- block-level children cooperate. */
+    display: flex;
     align-items: center;
     gap: 4px;
 }
@@ -1007,15 +1272,6 @@ html:fullscreen .hud-bottom-right {
     border-top: 1px solid rgba(255,255,255,0.08);
     letter-spacing: 0.02em;
 }
-/* Compact HUD: lat/lon stacked so the top-left panel doesn't stretch
-   to fit "052 45.123'N  010 12.456'E" on one line. Expanded HUD
-   keeps the single-line form (it reads faster in the wider panel). */
-.hud-position-stacked {
-    line-height: 1.2;
-}
-.hud-position-stacked > div + div {
-    margin-top: 1px;
-}
 .night-mode .hud-position { color: rgba(255,130,130,0.4); }
 
 /* Depth color states */
@@ -1041,6 +1297,70 @@ html:fullscreen .hud-bottom-right {
 /* Wind arrow in HUD */
 .wind-arrow {
     transition: transform 0.3s ease-out;
+}
+
+/* === Wind dial =============================================
+   Both apparent (blue) and true (green) arrows live on the SAME
+   circle, rotated to their own angles. The angular delta between
+   the two arrows IS the lift/header you're sailing in -- pre-
+   attentive without reading any numbers. The combined "AW/TW kn"
+   reading sits under the dial; colour-coding lives only on the
+   arrows so the rest of the card matches every other HUD. */
+.wind-dial g {
+    transform-origin: 0 0;
+    transform-box: view-box;
+    transition: transform 0.3s ease-out;
+}
+.wind-sep {
+    color: var(--hud-ink-dim);
+    margin: 0 1px;
+}
+
+/* Wind value lives on a single horizontal line ("17.5 / 14.6 kn").
+   Without nowrap the card's content width is set by the 84px dial
+   above and the bigger helm-console type wraps the value across
+   two lines ("17.5 /" / "14.6 kn"). nowrap lets the card grow
+   horizontally to fit the value cleanly. */
+.hud-stack-tr .hud-value {
+    white-space: nowrap;
+}
+
+/* === Right-side card alignment ===
+   BR (compass) right-aligns everything against the right edge -- the
+   card is content-sized around the 52 px dial so it visually anchors
+   to the corner cleanly.
+   TR (wind) centres everything because its dial is also centred. With
+   right-aligned text + a centred dial the eye reads the dial as
+   off-centre relative to the right-anchored text; centring all three
+   (label, dial, value) keeps the visual rhythm consistent. */
+.hud-stack-br .hud-card {
+    text-align: right;
+}
+.hud-stack-br .hud-label {
+    justify-content: flex-end;
+}
+.hud-stack-tr .hud-card {
+    text-align: center;
+}
+.hud-stack-tr .hud-label {
+    justify-content: center;
+}
+/* Compass on the BR card sits flush right -- no centring override.
+   The card is content-sized (52 px wide compass + label + value),
+   so the SVG ends up at the right edge naturally. Margin keeps the
+   4 px gap above + below matching the wind dial below. */
+.hud-stack-br .hud-card svg {
+    display: block;
+    margin: 4px 0 4px auto;
+}
+/* Wind dial on the TR card sits CENTRED inside the card (the label
+   and value can drift right with text-align). Higher specificity
+   selector below overrides the BR rule above (which doesn't match
+   anyway because .wind-dial isn't in BR), and beats any svg-element
+   selector that would reset margin-right to 0. */
+.hud-stack-tr .hud-card .wind-dial {
+    display: block;
+    margin: 4px auto;
 }
 
 /* Night mode: red tint on HUD, high opacity for readability */
@@ -1085,11 +1405,16 @@ html:fullscreen .hud-bottom-right {
     border: none;
     border-radius: 10px;
     color: rgba(255,255,255,0.65);
-    padding: 6px 10px;
-    min-width: 54px;
+    padding: 6px 6px;
+    min-width: 46px;
     font-size: 0.65rem;
     font-weight: 500;
-    letter-spacing: 0.02em;
+    /* letter-spacing was 0.02em which adds extra trailing space after
+       the last glyph in each label. Centred labels then visually leaned
+       LEFT in their box, making the icon look shifted relative to the
+       label. Drop it (the labels are short and tight already). */
+    letter-spacing: 0;
+    text-align: center;
     cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease;
     white-space: nowrap;
@@ -1912,30 +2237,56 @@ html, body {
    mobile-native "alert bar" UX. On wide helm displays (>= 900px) the
    stack compresses to a centred 680px column so three alarms don't
    swallow the top ~180px of the map viewport on a 1920px screen. */
+/* Sidebar width tokens read by the alarm banner below. Must live
+   in the global stylesheet (not MainLayout.razor.css) so the
+   var inheritance flows cleanly to .alarm-banner-stack regardless
+   of Blazor CSS isolation scope attributes. */
+.page                      { --page-sidebar-width: 10rem; }
+.page.sidebar-collapsed    { --page-sidebar-width: 4rem; }
+
+/* Collapsed-rail icon centring. Bootstrap's px-3 on .nav-item leaves
+   16 px of padding on each side, but the rail is only 64 px wide; the
+   .nav-link auto-sized to its 19 px icon + 8 px padding inside that
+   leftover 32 px window, ending up 25 px from the rail's left edge
+   but only 20 px from the right -- visibly off-centre. Zero out the
+   horizontal padding on .nav-item and stretch .nav-link to 100 %, so
+   justify-content: center actually centres the icon in the full
+   rail width. Lives in the global stylesheet because Blazor CSS
+   isolation in NavMenu.razor.css scopes its rules to the NavMenu
+   host attribute, which .page doesn't carry. */
+.page.sidebar-collapsed .nav-item {
+    padding-left: 0;
+    padding-right: 0;
+}
+.page.sidebar-collapsed .nav-link {
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: center;
+    padding: 0.5rem;
+}
+
+/* Alarm banner stack: always centered on the CONTENT area, never on
+   the raw viewport. We offset by half the sidebar width so the
+   banner sits visually above the map's centre, not at viewport
+   centre (which would be left-of-map because the sidebar eats the
+   leftmost slice). */
 .alarm-banner-stack {
     position: fixed;
     top: 3rem; /* below the sticky top bar */
-    left: 0;
-    right: 0;
+    left: calc(50% + var(--page-sidebar-width, 0px) / 2);
+    transform: translateX(-50%);
+    max-width: min(680px, calc(100vw - var(--page-sidebar-width, 0px) - 24px));
+    width: max-content;
     z-index: var(--z-modal);
     display: flex;
     flex-direction: column;
     align-items: stretch;
 }
-@media (min-width: 900px) {
-    .alarm-banner-stack {
-        left: 50%;
-        right: auto;
-        transform: translateX(-50%);
-        max-width: 680px;
-        width: max-content;
-    }
-    .alarm-banner-stack > .alarm-banner {
-        border-radius: 0 0 8px 8px;
-    }
-    .alarm-banner-stack > .alarm-banner:first-child {
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-    }
+.alarm-banner-stack > .alarm-banner {
+    border-radius: 0 0 8px 8px;
+}
+.alarm-banner-stack > .alarm-banner:first-child {
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
 }
 .alarm-banner {
     padding: 10px 16px;
@@ -2255,7 +2606,7 @@ html, body {
    behaviour snapped 44 px in a single frame, which users reported as
    the HUD "jumping for reasons". 180 ms is fast enough not to feel
    laggy on a helm interaction and slow enough to read as intentional. */
-.hud-top-left, .hud-top-right, .chart-quick-bar {
+.hud-stack-tl, .hud-stack-tr, .chart-quick-bar {
     transition: top 180ms ease;
 }
 
@@ -2787,54 +3138,80 @@ html.night-mode-global body {
     color: var(--sk-text);
 }
 
-/* Mobile responsive: stack HUD and controls for small screens */
+/* Mobile responsive: control-bar tweaks. HUD card density is handled
+   by the .density-compact class + container queries on the stacks --
+   no per-breakpoint padding/font overrides on .hud-panel anymore.
+
+   Bar overflow strategy: secondary buttons (Centre / Orient / Add /
+   Fit / Anchor / MOB) marked with .ctrl-btn-overflow disappear from
+   the bar and surface in the More menu instead (those More items
+   carry .ctrl-more-overflow and are hidden at >= 601 px). Keeps the
+   bar to the essentials -- Follow, Stop (when active), Layers -- so
+   it fits one row even on a phone.
+
+   HUD layout strategy on phone: collapse all four corner cards into
+   a single top-left rail of compact text-only readings (no dials, no
+   primary type). A phone is a reference device, not an active helm;
+   the dials add real estate without adding info you can't read off
+   the digit. */
 @media (max-width: 600px) {
-    .hud-bottom-left { bottom: 80px; left: 8px; }
-    .hud-bottom-right { bottom: 80px; right: 8px; }
-    .hud-top-left { top: 40px; left: 8px; }
-    .hud-top-right { top: 8px; right: 8px; }
     .map-controls {
         max-width: 95%;
         flex-wrap: wrap;
         justify-content: center;
         gap: 2px;
     }
-    .ctrl-btn { min-width: 48px; padding: 4px 6px; font-size: 0.6rem; }
+    .ctrl-btn { padding: 4px 6px; font-size: 0.6rem; }
     .ctrl-sep { display: none; }
-    .hud-value { font-size: 1.2rem; }
-    .hud-label { font-size: 0.55rem; }
-    .hud-panel { padding: 6px 10px; border-radius: 8px; }
-    .hud-route { max-width: 280px; }
-    .hud-anchor { max-width: 200px; }
-    .hud-autopilot { right: 8px; }
-    /* Tighter control bar on mobile -> recompute panel-bottom. */
+    .ctrl-btn-overflow { display: none !important; }
+    /* Tighter control bar on mobile -> recompute --panel-bottom so the
+       bottom-center stack still sits one --panel-gap above the bar. */
     :root { --ctrl-bar-height: 56px; }
-}
 
-/* Portrait tablet (iPad held upright). hud-route and hud-anchor share
-   the bottom-center slot (they're mutually exclusive in the code) so
-   only the wrap width / max-width varies per viewport -- the stacking
-   rules here are legacy from when they lived on opposite ends of the
-   screen and can be simpler now. */
-@media (orientation: portrait) and (min-width: 601px) and (max-width: 1024px) {
-    .hud-route { max-width: 280px; }
-}
-
-/* Narrow portrait phones: tighten the route card so the waypoint
-   grid stays readable above the control bar. */
-@media (orientation: portrait) and (max-width: 600px) {
-    .hud-route {
-        left: 8px;
-        right: 8px;
-        transform: none;
-        max-width: none;
+    /* === Phone HUD compact ===
+       Cards stay anchored to their corners (same positions as desktop /
+       tablet); only the CONTENT is trimmed:
+       - dials hidden (wind + compass) -- text only
+       - .hud-primary downgraded to .hud-value so SOG/depth match COG
+       - wind: AW value only, TW + separator hidden
+       - depth: just DEPTH + value -- alarm threshold, tide row, warning
+         glyph, depth trend all hidden
+       - TL position (lat/lon) hidden -- intentionally minimal */
+    .hud-stack-tr .wind-dial,
+    .hud-stack-br .hud-card svg {
+        display: none !important;
+    }
+    .hud-stack-tl .hud-value.hud-primary,
+    .hud-stack-bl .hud-value.hud-primary {
+        font-size: var(--hud-font-value);
+        font-weight: 500;
+    }
+    .hud-stack-tr .wind-tws,
+    .hud-stack-tr .wind-sep,
+    .hud-stack-tr .wind-label-tws,
+    .hud-stack-tr .wind-label-sep {
+        display: none;
+    }
+    .hud-stack-bl .hud-threshold,
+    .hud-stack-bl .depth-tide-row,
+    .hud-stack-bl .depth-warn-glyph,
+    .hud-stack-bl .depth-trend,
+    .hud-stack-bl .hud-extra {
+        display: none;
+    }
+    .hud-stack-tl .hud-position {
+        display: none;
     }
 }
-
-/* Tablet landscape: slightly tighter HUD */
-@media (min-width: 601px) and (max-width: 1024px) {
-    .hud-panel { padding: 8px 12px; }
-    .hud-value { font-size: 1.4rem; }
+/* On viewports the bar can fit comfortably, the overflow items live
+   in the bar -- hide their duplicates inside the More menu. */
+@media (min-width: 601px) {
+    .ctrl-more-overflow { display: none !important; }
+}
+.ctrl-more-sep {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 4px 0;
 }
 
 /* Chart picker panel */
@@ -2891,33 +3268,27 @@ html.night-mode-global body {
     margin: 0 !important;
     flex: 0 0 auto;
 }
-/* Lift the depth HUD above the scale/zoom row. After the zoom badge
-   was compacted to `z12` (was `z N (native K)`) the row is only one
-   line tall, so 32 px clears it. The bottom-right compass HUD sits
-   at 12 px; the residual gap is unavoidable as long as the scale
-   bars live in the bottom-left corner. Alternatives (moving them
-   elsewhere) are a UX call, not a bug fix. */
-.hud-bottom-left {
-    bottom: 34px !important;
-}
-@media (max-width: 600px) {
-    .hud-bottom-left {
-        bottom: 38px !important;
-    }
+/* Leaflet's scale bar + zoom badge live in the bottom-left of the
+   map at offsets we don't own. Clearance is now provided by the
+   .hud-stack-bl rule's padding-bottom (above), not by overriding
+   the bottom inset on the cards. */
+
+/* Zoom-level badge: hidden -- the topbar exposes zoom controls and
+   the badge competed with the bottom-left depth card for the same
+   corner. Removing it lets .hud-stack-bl sit at the same --hud-edge
+   inset as .hud-stack-br for symmetric bottom padding. */
+.ona-zoom-badge {
+    display: none !important;
 }
 
-/* Zoom-level badge (bottom-right). Plain zoom indicator; the
-   overzoom-aware amber variant was dropped with the feature. */
-.ona-zoom-badge {
-    background: rgba(10, 12, 18, 0.6);
-    color: rgba(255, 255, 255, 0.75);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
-    pointer-events: none;
-    user-select: none;
+/* Move the leaflet bottom-left controls (scale bars) into the
+   leaflet bottom-right corner so the depth card has a clean inset
+   on the bottom-left. Attribution and scale now cluster on the same
+   side, reading as a single chrome row at the foot of the map. */
+.leaflet-bottom.leaflet-left {
+    left: auto !important;
+    right: 0 !important;
+    flex-direction: row-reverse !important;
 }
 
 /* Invisible full-area catcher that dismisses the Layers panel on a
@@ -3520,21 +3891,9 @@ html.night-mode-global body {
 
 /* Active route panel: previously top:12 / left:50%, but that collided
    with the chart-quick-bar (same slot) and blanketed it while under way.
-   Relocated to bottom:var(--panel-bottom) / left:50%, the same slot
-   the anchor panel lives in. Route and anchor are mutually exclusive
-   (activating one clears the other in the code), so the slot is never
-   double-booked. */
-.hud-route {
-    bottom: var(--panel-bottom);
-    left: 50%;
-    transform: translateX(-50%);
-    /* Wide enough for the horizontal DTW / BRG / VMG / TTG / ETA /
-       XTE row to fit on one line on landscape displays. Narrower
-       viewports override below via @media breakpoints; flex-wrap
-       inside .route-info-row then breaks the metrics to a second
-       row rather than truncating them. */
-    max-width: min(560px, calc(100vw - 24px));
-}
+   The route + anchor cards now live in .hud-stack-bc which provides
+   bottom anchoring + width clamp once -- the per-card .hud-route /
+   .hud-anchor rules used to set those individually but are gone now. */
 
 .route-panel {
     min-width: 140px;
@@ -3739,86 +4098,15 @@ html.night-mode-global body {
     100% { transform: scale(3.2); opacity: 0; }
 }
 
-/* ===== Floating Action Button =====
-   Top-left of the map, opposite the Leaflet zoom controls. On click
-   expands into a vertical menu of the create actions that the
-   long-press context menu also offers -- keyboard / mouse-only
-   users now have a discoverable entry point that doesn't require
-   right-click sensitivity or a long-press affordance. The menu
-   targets the current map centre, telegraphed by the 'target: map
-   center' hint at the bottom. */
-/* Backdrop swallows outside-clicks for the Add-menu popover. The
-   standalone top-left FAB was replaced by an "Add" button in the
-   bottom control bar (too loud as a floating orange disc). */
+/* ===== Add menu (popover from the bottom-bar Add button) =====
+   The flyout itself reuses .ctrl-more-menu / .ctrl-more-item styling;
+   what's specific to the Add menu is just the outside-click backdrop
+   below and the small "target: map centre" caption at the bottom. */
 .map-fab-backdrop {
     position: fixed;
     inset: 0;
     z-index: calc(var(--z-controls) - 1);
     background: transparent;
-}
-.map-fab-menu {
-    position: absolute;
-    top: 52px;
-    left: 0;
-    min-width: 200px;
-    padding: 6px;
-    background: rgba(20, 26, 38, 0.96);
-    /* Blue border / hover / icon to match the More menu. The earlier
-       amber palette made Add feel like a distinct "warning" surface; it
-       is just another overflow menu so it should read the same. */
-    border: 1px solid rgba(96, 165, 250, 0.35);
-    border-radius: 8px;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-    animation: fab-pop 0.16s ease-out;
-    z-index: var(--z-controls);
-}
-/* Variant anchored to the bottom control bar instead of the top-left
-   FAB. Pops UP (not down) just above the control bar and sits left-of-
-   centre so it never covers the Layers / Legend / Race buttons on the
-   right. */
-.map-fab-menu-bar {
-    position: fixed;
-    top: auto;
-    bottom: calc(var(--panel-bottom) + 6px);
-    left: 12px;
-    animation: fab-pop-up 0.16s ease-out;
-}
-@keyframes fab-pop {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes fab-pop-up {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-}
-.map-fab-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 12px;
-    background: transparent;
-    color: #e2e8f0;
-    border: none;
-    border-radius: 5px;
-    font-size: 0.9rem;
-    text-align: left;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-.map-fab-item:hover:not(:disabled) {
-    background: rgba(96, 165, 250, 0.18);
-    color: #93c5fd;
-}
-.map-fab-item:disabled { opacity: 0.4; cursor: not-allowed; }
-.map-fab-ico {
-    font-size: 1rem;
-    width: 20px;
-    text-align: center;
-    color: #93c5fd;
 }
 .map-fab-hint {
     display: block;
@@ -3874,7 +4162,11 @@ html.night-mode-global body {
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     z-index: var(--z-controls);
-    animation: fab-pop-up 0.16s ease-out;
+    animation: ctrl-menu-pop 0.16s ease-out;
+}
+@keyframes ctrl-menu-pop {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 .ctrl-more-item {
     display: flex;
@@ -4165,17 +4457,12 @@ html.night-mode-global body {
 }
 
 /* ===== Race HUD =====
-   Compact performance card in the top-right, below the wind panel.
-   Only visible in Race mode with a polar loaded. Shows target vs
-   actual boat speed (colour-coded to performance %), the optimal
-   TWA for the current tack, and how far off optimal we are. */
-.hud-race {
-    top: 196px;
-    right: 12px;
-}
-@media (max-width: 600px) {
-    .hud-race { top: 240px; right: 8px; }
-}
+   Compact performance card. Lives in .hud-stack-br alongside the
+   heading compass + autopilot. Only visible in Race mode with a polar
+   loaded. Shows target vs actual boat speed (colour-coded to perfor-
+   mance %), the optimal TWA for the current tack, and how far off
+   optimal we are. Positioning is handled by the stack; .race-panel
+   is just inner-content style. */
 .race-panel { min-width: 150px; font-size: 0.8rem; }
 .race-row {
     display: flex;
@@ -4218,30 +4505,9 @@ html.night-mode-global body {
 .race-opt-far  { color: var(--sev-danger); }
 
 /* ===== Autopilot Panel =====
-   Stacks above the HDG compass (.hud-bottom-right, bottom:12px, height ~110px).
-   Needs ~130 px of clear air below it for a small gap. */
-
-.hud-autopilot {
-    bottom: 140px;
-    right: 12px;
-}
-
-@media (max-width: 600px) {
-    .hud-autopilot { bottom: 160px; right: 8px; }
-}
-
-/* iPhone / small phone in landscape: viewport ~ 844x390. The bottom
-   control bar + HUD-bottom-right (compass) + AP card need to stack
-   cleanly without overlap. Bump AP upward more aggressively when
-   height is tight, matching the fatter mobile control bar. */
-@media (max-height: 500px) and (orientation: landscape) {
-    .hud-autopilot { bottom: 180px; right: 8px; font-size: 0.8rem; }
-}
-
-@media (max-width: 820px) {
-    .hud-route { max-width: 260px; font-size: 0.85rem; }
-}
-
+   Lives in .hud-stack-br between race and the heading compass. Stack
+   gap + flex column handle vertical positioning automatically -- no
+   sibling pixel offsets to keep in sync any more. */
 .autopilot-panel { min-width: 140px; text-align: center; }
 
 .ap-engaged { border: 1px solid rgba(34, 197, 94, 0.5); }
@@ -4336,12 +4602,7 @@ html.night-mode-global body {
    Intentionally aggressive -- if you want a subtler declutter, use
    Fullscreen + Night mode instead. */
 .map-container.dark-ops .map-controls,
-.map-container.dark-ops .hud-top-left,
-.map-container.dark-ops .hud-top-right,
-.map-container.dark-ops .hud-bottom-left,
-.map-container.dark-ops .hud-bottom-right,
-.map-container.dark-ops .hud-race,
-.map-container.dark-ops .hud-autopilot,
+.map-container.dark-ops .hud-stack,
 .map-container.dark-ops .chart-panel,
 .map-container.dark-ops .chart-quick-bar,
 .map-container.dark-ops .route-edit-bar,
@@ -4419,11 +4680,6 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     min-width: 40px;
     font-size: 1.1rem;
 }
-main:has(.map-container.big-type) .map-fab-item {
-    min-height: 52px;
-    font-size: 1rem;
-}
-
 /* Tiny exit chip, top-right. Big enough to tap in a swell but small
    enough not to compete with the chart. env(safe-area-inset-*) keeps
    the chip clear of the iPad notch / rounded corners when the map is
@@ -5682,20 +5938,10 @@ main:has(.map-container.big-type) .map-fab-item {
 .cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
 .cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
 
-/* ===== Anchor Alarm HUD Panel ===== */
-
-.hud-anchor {
-    bottom: var(--panel-bottom);
-    left: 50%;
-    transform: translateX(-50%);
-    /* Same stacking level as every other chrome overlay -- the
-       earlier `+1` bump was meant as a "safety-critical on top" belt-
-       and-braces but in practice the anchor HUD ended up covering the
-       Layers panel and the route-edit list. Mutual exclusion with
-       the route HUD is enforced in C# (NavigateRouteInternal /
-       ToggleAnchor), so they can't both render at the same time. */
-}
-
+/* ===== Anchor Alarm HUD Panel =====
+   Shares the .hud-stack-bc slot with the route card. They are
+   mutually exclusive in the code (NavigateRouteInternal /
+   ToggleAnchor) so the slot is never double-booked. */
 .anchor-panel {
     min-width: 120px;
 }

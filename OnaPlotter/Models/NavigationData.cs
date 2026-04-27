@@ -108,7 +108,12 @@ public sealed class NavigationData
     public double? WindAngleTrue { get; private set; }       // TWA (radians, -PI to PI relative to bow)
     public double? WindSpeedTrue { get; private set; }       // TWS (m/s)
     public double? WindDirectionTrue { get; private set; }   // TWD (radians, 0 to 2PI from north)
-    public string? LastTimestamp { get; private set; }
+    /// <summary>UTC timestamp of the most recent SignalK delta the
+    /// client received. Updated regardless of which path(s) the delta
+    /// carried, so it answers "when did we last hear from the server?"
+    /// rather than "when was this specific value sampled?". Display
+    /// callers should convert to local time for the helm.</summary>
+    public DateTime? LastReceivedUtc { get; private set; }
 
     // Anchor alarm data (from signalk-anchoralarm-plugin)
     public double? AnchorLatitude { get; private set; }
@@ -375,11 +380,17 @@ public sealed class NavigationData
         }
     }
 
-    public void SetTimestamp(string? timestamp)
+    /// <summary>Marks the moment we just received any SignalK delta.
+    /// Used by the dashboard to show "last update" in local time. The
+    /// server's own timestamp on the delta is intentionally ignored --
+    /// in practice it can be hours out of sync (boats with bad GPS,
+    /// clients on a different timezone) and the helm cares about
+    /// connection health, not the wire-format timestamp.</summary>
+    public void MarkDataReceived()
     {
         lock (_lock)
         {
-            LastTimestamp = timestamp;
+            LastReceivedUtc = _now();
         }
     }
 

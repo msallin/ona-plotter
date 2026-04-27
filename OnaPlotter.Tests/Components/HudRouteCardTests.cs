@@ -34,7 +34,7 @@ public class HudRouteCardTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(visible: false)));
-        await Assert.That(cut.FindAll(".hud-route").Count).IsEqualTo(0);
+        await Assert.That(cut.FindAll(".route-panel").Count).IsEqualTo(0);
     }
 
     [Test]
