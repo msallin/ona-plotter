@@ -2616,15 +2616,21 @@ html, body {
     transition: top 180ms ease;
 }
 
+/* Alarm fills are mostly opaque (80 %) -- the helm is expected to act
+   on them, so they should read clearly over a busy chart instead of
+   leaving the chart bleeding through. The earlier 15-20 % alpha was
+   too subtle and missed against satellite imagery / shallow-water
+   tints. Solid-ish ink + bold text colour + the existing flash
+   keep them obviously alarm-state without being a wall of red. */
 .alarm-danger {
-    background: rgba(239, 68, 68, 0.2);
-    color: #ef4444;
+    background: rgba(239, 68, 68, 0.8);
+    color: #fff;
     border-bottom: 2px solid #ef4444;
 }
 
 .alarm-warn {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.8);
+    color: #1a1a1a;
     border-bottom: 2px solid #f59e0b;
 }
 
