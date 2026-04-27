@@ -1561,20 +1561,66 @@
         }
     }
 
-    // Cached HUD values for change detection. Only re-render when these actually change.
-    private string lastHudKey = "";
+    // Cached HUD values for change detection. Only re-render when these
+    // actually change. The previous implementation built an interpolated
+    // string with 22 fields each tick; on a 1 Hz feed (well-instrumented
+    // boats burst higher) that allocated ~200 bytes plus the double
+    // formatting cost on every delta. The struct holds the same fields
+    // in their native form, gets value-equality for free, and is a stack-
+    // local on the comparison path -- zero per-tick heap traffic.
+    //
+    // Quantisation matches the original key's :Fn suffixes so the render
+    // gate fires at the same granularity as before (e.g. SOG only
+    // triggers a render when it moves by >=0.01 m/s).
+    private HudSnapshot _lastHudSnapshot;
 
-    private string BuildHudKey() =>
-        $"{Data.SpeedOverGround:F2}|{Data.CourseOverGround:F3}|{Data.Heading:F3}|{Data.Depth:F1}|{Data.WindAngleApparent:F3}|{Data.WindSpeedApparent:F2}|{Data.WindAngleTrue:F3}|{Data.WindSpeedTrue:F2}|{Data.WindDirectionTrue:F3}" +
-        $"|{Data.CourseNextPointDistance:F0}|{Data.CourseNextPointBearing:F2}|{Data.CourseNextPointVmg:F2}|{Data.CourseNextPointTimeToGo:F0}" +
-        $"|{Data.AnchorCurrentRadius:F1}|{Data.AnchorMaxRadius:F1}|{Data.AnchorLatitude:F6}" +
-        $"|{Data.CrossTrackError:F1}|{Data.ActiveRouteHref}" +
+    private readonly record struct HudSnapshot(
+        long Sog, long Cog, long Hdg, long Depth,
+        long Awa, long Aws, long Twa, long Tws, long Twd,
+        long NextDist, long NextBrg, long NextVmg, long NextTtg,
+        long AnchorCur, long AnchorMax, long AnchorLat,
+        long Xte, string? RouteHref,
+        int? RoutePtIdx, int? RoutePtTotal,
+        long RouteDistRem, long RouteTtg);
+
+    // Quantises a nullable double so equality comparison fires at the
+    // same granularity as the old string key's :Fn formatting, without
+    // allocating a string. long.MinValue stands in for null so the
+    // record's value-equality stays correct. Inlined hot path: this
+    // runs ~22 times per HandleDataChanged tick.
+    private static long Q(double? v, int decimals)
+    {
+        if (v is null) return long.MinValue;
+        return (long)Math.Round(v.Value * Math.Pow(10, decimals));
+    }
+
+    private HudSnapshot BuildHudSnapshot() => new(
+        Q(Data.SpeedOverGround, 2),
+        Q(Data.CourseOverGround, 3),
+        Q(Data.Heading, 3),
+        Q(Data.Depth, 1),
+        Q(Data.WindAngleApparent, 3),
+        Q(Data.WindSpeedApparent, 2),
+        Q(Data.WindAngleTrue, 3),
+        Q(Data.WindSpeedTrue, 2),
+        Q(Data.WindDirectionTrue, 3),
+        Q(Data.CourseNextPointDistance, 0),
+        Q(Data.CourseNextPointBearing, 2),
+        Q(Data.CourseNextPointVmg, 2),
+        Q(Data.CourseNextPointTimeToGo, 0),
+        Q(Data.AnchorCurrentRadius, 1),
+        Q(Data.AnchorMaxRadius, 1),
+        Q(Data.AnchorLatitude, 6),
+        Q(Data.CrossTrackError, 1),
+        Data.ActiveRouteHref,
         // Route-level fields: progress chip + route-total row on the
-        // active-route card. Without them in the key, a waypoint
+        // active-route card. Without them in the snapshot, a waypoint
         // advance would show new leg numbers but the "WP 3 of 7" chip
         // would lag until another field changed.
-        $"|{Data.ActiveRoutePointIndex}|{Data.ActiveRoutePointTotal}" +
-        $"|{Data.ActiveRouteDistanceRemaining:F0}|{Data.ActiveRouteTimeToGo:F0}";
+        Data.ActiveRoutePointIndex,
+        Data.ActiveRoutePointTotal,
+        Q(Data.ActiveRouteDistanceRemaining, 0),
+        Q(Data.ActiveRouteTimeToGo, 0));
 
     // One-time flag so we only push the own MMSI to JS once per
     // session. Self context resolves asynchronously via the hello
@@ -1646,10 +1692,12 @@
             await SyncActiveRouteAsync();
 
             // Only re-render Blazor component if HUD values actually changed.
-            var hudKey = BuildHudKey();
-            if (hudKey != lastHudKey)
+            // The snapshot is a record struct -- equality is by value, no
+            // string allocation per tick.
+            var hudSnap = BuildHudSnapshot();
+            if (!hudSnap.Equals(_lastHudSnapshot))
             {
-                lastHudKey = hudKey;
+                _lastHudSnapshot = hudSnap;
                 await InvokeAsync(StateHasChanged);
             }
         }
