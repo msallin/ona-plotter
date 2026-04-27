@@ -1360,20 +1360,11 @@ html:fullscreen .hud-stack-br {
 .hud-stack-tr .hud-label {
     justify-content: center;
 }
-/* Compass on the BR card sits flush right -- no centring override.
-   The card is content-sized (52 px wide compass + label + value),
-   so the SVG ends up at the right edge naturally. Margin keeps the
-   4 px gap above + below matching the wind dial below. */
+/* Both the wind dial (TR) and the compass (BR) sit centred inside
+   their card. 4 px top + bottom margin matches the dial-to-value
+   rhythm so both right-column cards have the same vertical cadence. */
+.hud-stack-tr .hud-card .wind-dial,
 .hud-stack-br .hud-card svg {
-    display: block;
-    margin: 4px 0 4px auto;
-}
-/* Wind dial on the TR card sits CENTRED inside the card (the label
-   and value can drift right with text-align). Higher specificity
-   selector below overrides the BR rule above (which doesn't match
-   anyway because .wind-dial isn't in BR), and beats any svg-element
-   selector that would reset margin-right to 0. */
-.hud-stack-tr .hud-card .wind-dial {
     display: block;
     margin: 4px auto;
 }

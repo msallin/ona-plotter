@@ -136,11 +136,25 @@
                         <span class="hud-extra-v">@awa</span>
                     </div>
                 }
+                @if (Data.WindSpeedApparent is not null)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">AWS</span>
+                        <span class="hud-extra-v">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></span>
+                    </div>
+                }
                 @if (SignedTwa is string twa)
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k">TWA</span>
                         <span class="hud-extra-v">@twa</span>
+                    </div>
+                }
+                @if (Data.WindSpeedTrue is not null)
+                {
+                    <div class="hud-extra-row">
+                        <span class="hud-extra-k">TWS</span>
+                        <span class="hud-extra-v">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></span>
                     </div>
                 }
                 @if (Data.WindDirectionTrue is not null)
@@ -189,13 +203,7 @@
                 <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s -- do not rely on this reading">dead</span>
             }
         </div>
-        <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsBelowDepthThreshold)
-            {
-                @* Non-colour signal: below-threshold depth gets a warning
-                   glyph that colour-blind sailors can read. Paired with the
-                   traffic-light colouring so both channels carry the signal. *@
-                <span class="depth-warn-glyph" aria-label="depth below alarm threshold">&#9888;</span>
-            }@if (IsExpanded("bl") && FormatDepthTrend() is string trendLabel)
+        <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsExpanded("bl") && FormatDepthTrend() is string trendLabel)
             {
                 @* Trend arrow is only meaningful when the user has room
                    to parse it -- compact card stays to just "depth &
