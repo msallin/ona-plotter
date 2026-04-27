@@ -1273,20 +1273,7 @@
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
-
-        // Seed-vs-subscribe race: SignalkClient.SeedSelfCourseFromRestAsync
-        // fires its OnDataChanged right after the WebSocket connects,
-        // long before this method has finished its REST seeds + chart /
-        // route restores and reaches the subscription line above. Without
-        // a kick, NavigationData holds the active-route href but the map
-        // is still oblivious -- and on a moored vessel with no live
-        // position deltas, nothing ever triggers a follow-up sync, so
-        // the helm sees their active route silently disappear on every
-        // page reload. Fire one HandleDataChanged() now to catch up; the
-        // diff-based logic in SyncActiveRouteAsync makes it a no-op when
-        // the seed hasn't landed yet, and the seed's own OnDataChanged
-        // (now subscribed) handles the late case.
-        HandleDataChanged();
+        KickInitialDataSyncAfterSubscribe();
 
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
         // AtoNs are static enough not to need a timer -- push on
@@ -1594,6 +1581,24 @@
     // message; HandleDataChanged is the reliable cadence where
     // OwnMmsi becomes non-null.
     private bool _ownMmsiPushed;
+
+    /// <summary>
+    /// Closes the seed-vs-subscribe race in <c>OnAfterRenderAsync</c>:
+    /// <see cref="SignalkClient.SeedSelfCourseFromRestAsync"/> fires its
+    /// <c>OnDataChanged</c> right after the WebSocket connects, long
+    /// before <c>OnAfterRenderAsync</c> has finished its REST seeds +
+    /// chart / route restores and reaches the subscription line. Without
+    /// a kick, <see cref="NavigationData"/> holds the active-route href
+    /// but the map is oblivious -- and on a moored vessel with no live
+    /// position deltas, nothing ever triggers a follow-up sync, so the
+    /// helm sees their active route silently disappear on every page
+    /// reload. Calling <see cref="HandleDataChanged"/> once after the
+    /// subscription lands catches up; the diff-based logic in
+    /// <c>SyncActiveRouteAsync</c> keeps it a no-op when the seed
+    /// hasn't landed yet, and the seed's own <c>OnDataChanged</c> (now
+    /// subscribed) handles the late case.
+    /// </summary>
+    private void KickInitialDataSyncAfterSubscribe() => HandleDataChanged();
 
     private async void HandleDataChanged()
     {
@@ -2226,30 +2231,33 @@
     {
         contextMenuVisible = false;
 
-        // In-flight guard: a previous Stop tap is still awaiting the
-        // SK delta. A second tap during that window would fire another
-        // ClearAsync (idempotent on the server, but produces a
-        // misleading "stopping..." re-toast and a duplicate audit log
-        // entry on the SK side). The route HUD card is dimmed via
-        // route-stopping CSS during this window so the helm gets
-        // clear feedback that their first tap is in progress.
-        if (_courseStopPendingUtc is not null) return;
-
-        // Capture where we were heading before clearing so the Undo toast
-        // can restore it. `position` via the SignalK course API works for
-        // both waypoint- and route-based destinations.
+        // Capture destination BEFORE the API call so the Undo toast
+        // can restore it after a successful stop. position via the
+        // SignalK course API covers both waypoint- and route-based
+        // destinations.
         var savedLat = Data.CourseNextPointLatitude;
         var savedLon = Data.CourseNextPointLongitude;
 
-        try { await CourseApi.ClearAsync(); }
-        catch (Exception ex) { Toasts.Error($"Stop navigation failed: {ex.Message}"); return; }
+        // Pure-helper path: the in-flight guard + ClearAsync call live
+        // in StopNavigationFlow so the contract is unit-testable
+        // without bUnit / JS interop. Map.razor still owns the visual
+        // side-effects (route-stopping CSS, undo toast,
+        // _courseStopPendingUtc stamp).
+        var result = await OnaPlotter.Utilities.StopNavigationFlow.RequestStopAsync(
+            CourseApi, _courseStopPendingUtc);
+        if (result.Outcome == OnaPlotter.Utilities.StopNavigationOutcome.AlreadyPending) return;
+        if (result.Outcome == OnaPlotter.Utilities.StopNavigationOutcome.Failed)
+        {
+            Toasts.Error($"Stop navigation failed: {result.ErrorMessage ?? "unknown"}");
+            return;
+        }
 
         // Visual "stopping in progress" feedback until the SK delta
         // confirms (Data.ActiveRouteHref clears). Same pattern as the
         // anchor-raise feedback in NavigateRouteInternal / ToggleAnchor:
-        // we don't optimistically mutate Data here -- that would mask
-        // a server-side failure (PUT 200 but the plugin didn't actually
-        // clear) AND race the next delta tick which would re-establish
+        // don't optimistically mutate Data here -- that would mask a
+        // server-side failure (PUT 200 but the plugin didn't actually
+        // clear) AND race the next delta tick that would re-establish
         // the cleared course from the server's still-stale state. Let
         // SyncActiveRouteAsync drive the truth; dim the on-map elements
         // so the helm sees their tap landed.

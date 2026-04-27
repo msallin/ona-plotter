@@ -2549,7 +2549,18 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     // overlay and the suppression flag landing) would otherwise
     // re-establish the active polyline on top of the edit polyline,
     // exactly the visual mess this whole flag was added to prevent.
-    if (activeOverlayHidden) return;
+    //
+    // Defensive log: if the flag stays "true" because a JS-side error
+    // tore the C# disposal path apart (setActiveOverlayHidden(false)
+    // rejected with JSDisconnectedException, swallowed silently),
+    // every subsequent setActiveRoute is a quiet no-op and the helm
+    // stares at a chart that won't redraw the active leg. The warning
+    // makes that state visible in the console without spamming -- it
+    // only fires when a setActiveRoute call was actually attempted.
+    if (activeOverlayHidden) {
+        console.warn('[setActiveRoute] activeOverlayHidden is still true; route render suppressed.');
+        return;
+    }
     if (!map || !coords || coords.length < 2) return;
 
     activeRouteCoords = coords;

@@ -118,4 +118,41 @@ test.describe('Route popups', () => {
         expect(result.meta).toContain('active');
         expect(result.buttons).toEqual(['Deactivate', 'Edit', 'Delete']);
     });
+
+    test('Deactivate click closes popup and is single-tap (no two-step confirm)', async ({ page }) => {
+        // Stop-the-active-course is non-destructive (the route resource
+        // stays; only the SignalK course is cleared), so a two-step
+        // confirm would be friction. Mirror behaviour pinned: click
+        // closes the popup immediately, no "Really?" intermediate.
+        // A regression that copy-pasted the delete two-step onto
+        // Deactivate would surface here as the popup still being open
+        // after the first click.
+        const result = await page.evaluate(async (coords) => {
+            const mod = await import('/_content/OnaPlotter/js/leafletInterop.js')
+                .catch(() => import('/js/leafletInterop.js'));
+            mod.fitBounds(47.5, 7.5, 49.5, 8.5);
+            mod.setActiveRoute(coords, 1, 'active-route-id', 'Active Test');
+            await new Promise(r => setTimeout(r, 50));
+            const paths = document.querySelectorAll('.leaflet-overlay-pane path');
+            const hit = Array.from(paths).find(p => p.getAttribute('stroke-width') === '36');
+            hit?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            await new Promise(r => setTimeout(r, 50));
+            const btn = document.querySelector('.route-popup .route-deactivate-btn');
+            if (!btn) return { foundBtn: false };
+            const labelBeforeClick = btn.textContent;
+            btn.click();
+            // Tick for popup teardown.
+            await new Promise(r => setTimeout(r, 80));
+            return {
+                foundBtn: true,
+                labelBeforeClick,
+                popupGoneAfterClick: !document.querySelector('.route-popup'),
+            };
+        }, COORDS);
+
+        expect(result.foundBtn).toBe(true);
+        // Single-tap label -- not "Really?" or any confirming variant.
+        expect(result.labelBeforeClick).toBe('Deactivate');
+        expect(result.popupGoneAfterClick).toBe(true);
+    });
 });

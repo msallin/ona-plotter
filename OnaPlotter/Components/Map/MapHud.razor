@@ -14,12 +14,12 @@
    in its corner; only its height grows, which avoids shoving the map
    controls around. *@
 <div class="hud-stack hud-stack-tl">
-    <div class="hud-panel hud-card @(IsExpanded("tl") ? "hud-panel-expanded" : "")"
+    <div class="hud-panel hud-card @(IsExpanded(CornerTopLeft) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
-         aria-expanded="@(IsExpanded("tl") ? "true" : "false")"
+         aria-expanded="@(IsExpanded(CornerTopLeft) ? "true" : "false")"
          aria-label="Speed, course, position -- click for more detail"
-         @onclick='() => ToggleExpanded("tl")' @onclick:stopPropagation
-         @onkeydown='e => OnHudKeyDown(e, "tl")'
+         @onclick='() => ToggleExpanded(CornerTopLeft)' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, CornerTopLeft)'
          title="Click for more detail">
         <div class="hud-label">SOG</div>
         <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
@@ -30,7 +30,7 @@
            wider single-line position lets the hero numbers above breathe.
            Expanded view adds the DMS-formatted row underneath. *@
         <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
-        @if (IsExpanded("tl"))
+        @if (IsExpanded(CornerTopLeft))
         {
             <div class="hud-extra">
                 @if (PositionDms is not null)
@@ -70,12 +70,12 @@
    Expanded: port/starboard-labelled angles, TWD absolute from north,
    Beaufort labels for the speeds. *@
 <div class="hud-stack hud-stack-tr">
-    <div class="hud-panel hud-card @(IsExpanded("tr") ? "hud-panel-expanded" : "")"
+    <div class="hud-panel hud-card @(IsExpanded(CornerTopRight) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
-         aria-expanded="@(IsExpanded("tr") ? "true" : "false")"
+         aria-expanded="@(IsExpanded(CornerTopRight) ? "true" : "false")"
          aria-label="Wind -- click for more detail"
-         @onclick='() => ToggleExpanded("tr")' @onclick:stopPropagation
-         @onkeydown='e => OnHudKeyDown(e, "tr")'
+         @onclick='() => ToggleExpanded(CornerTopRight)' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, CornerTopRight)'
          title="Click for more detail">
         @* Single dial -- both apparent (blue) and true (green) arrows
            share the same circle, rotated to their own angles. Reads as
@@ -125,7 +125,7 @@
         {
             <div class="hud-value">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
         }
-        @if (IsExpanded("tr"))
+        @if (IsExpanded(CornerTopRight))
         {
             <div class="hud-extra">
                 @if (SignedAwa is string awa)
@@ -181,12 +181,12 @@
    boat NOW (depth) and where it's heading (tide). Depth alarm threshold
    still lives here; a tide row appears only when the plugin publishes. *@
 <div class="hud-stack hud-stack-bl">
-    <div class="hud-panel hud-card @(IsExpanded("bl") ? "hud-panel-expanded" : "")"
+    <div class="hud-panel hud-card @(IsExpanded(CornerBottomLeft) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
-         aria-expanded="@(IsExpanded("bl") ? "true" : "false")"
+         aria-expanded="@(IsExpanded(CornerBottomLeft) ? "true" : "false")"
          aria-label="Depth and tide -- click for more detail"
-         @onclick='() => ToggleExpanded("bl")' @onclick:stopPropagation
-         @onkeydown='e => OnHudKeyDown(e, "bl")'
+         @onclick='() => ToggleExpanded(CornerBottomLeft)' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, CornerBottomLeft)'
          title="Click for more detail">
         <div class="hud-label">
             Depth
@@ -202,7 +202,7 @@
                 <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s -- do not rely on this reading">dead</span>
             }
         </div>
-        <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsExpanded("bl") && FormatDepthTrend() is string trendLabel)
+        <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsExpanded(CornerBottomLeft) && FormatDepthTrend() is string trendLabel)
             {
                 @* Trend arrow is only meaningful when the user has room
                    to parse it -- compact card stays to just "depth &
@@ -232,7 +232,7 @@
                 </span>
             </div>
         }
-        @if (IsExpanded("bl"))
+        @if (IsExpanded(CornerBottomLeft))
         {
             <div class="hud-extra">
                 @if (Data.TideHeightNow is double th)
@@ -408,12 +408,12 @@
    Expanded: COG next to HDG and their signed delta (boat's apparent
    leeway/drift angle), plus the autopilot target heading when the
    autopilot is engaged. *@
-    <div class="hud-panel hud-card @(IsExpanded("br") ? "hud-panel-expanded" : "")"
+    <div class="hud-panel hud-card @(IsExpanded(CornerBottomRight) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
-         aria-expanded="@(IsExpanded("br") ? "true" : "false")"
+         aria-expanded="@(IsExpanded(CornerBottomRight) ? "true" : "false")"
          aria-label="Heading compass -- click for more detail"
-         @onclick='() => ToggleExpanded("br")' @onclick:stopPropagation
-         @onkeydown='e => OnHudKeyDown(e, "br")'
+         @onclick='() => ToggleExpanded(CornerBottomRight)' @onclick:stopPropagation
+         @onkeydown='e => OnHudKeyDown(e, CornerBottomRight)'
          title="Click for more detail">
         <div class="hud-label">HDG</div>
         <svg width="52" height="52" viewBox="-26 -26 52 52">
@@ -448,7 +448,7 @@
            Derived from PreferMagneticHeading so the label always
            matches the value actually being displayed. *@
         <div class="hud-value">@Format.Degrees(Data.Heading)<span class="hud-unit">&deg;@(Data.Heading is null ? "" : (Data.PreferMagneticHeading ? "M" : "T"))</span></div>
-        @if (IsExpanded("br"))
+        @if (IsExpanded(CornerBottomRight))
         {
             <div class="hud-extra">
                 @* COG already lives on the TL card -- duplicating it here
@@ -674,10 +674,22 @@
     }
 
     // --- HUD click-to-expand ----------------------------------------
-    // Track at most one expanded panel at a time ("tl" / "tr" / "bl" /
-    // "br"); clicking the same corner toggles it closed. Keeps the
-    // decision point in one place so future expanded panels inherit
-    // the "only one open" behaviour without extra wiring.
+    // Track at most one expanded panel at a time; clicking the same
+    // corner toggles it closed. Single decision point so future
+    // expanded panels inherit the "only one open" behaviour without
+    // extra wiring.
+    //
+    // Constants for the corner identifiers so a typo ("br" -> "rb")
+    // becomes a compile error instead of "panel never expands".
+    // Stays as raw strings (rather than an enum) because the same
+    // values flow through dozens of @onclick lambda call sites + an
+    // aria-expanded attribute -- enum boxing each call would cost
+    // more than it saves. The const block below is the single source.
+    private const string CornerTopLeft     = "tl";
+    private const string CornerTopRight    = "tr";
+    private const string CornerBottomLeft  = "bl";
+    private const string CornerBottomRight = "br";
+
     private string? expandedHud;
 
     /// <summary>When true, every corner renders in its expanded state
