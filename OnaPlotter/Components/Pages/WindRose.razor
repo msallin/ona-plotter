@@ -35,9 +35,21 @@
    and a polar overlay. A subtitle that paraphrases one widget while
    ignoring the rest is noise.
 *@
-<div class="app-page wind-page">
-    <header class="app-page-header">
+<div class="app-page wind-page @(compactMode ? "wind-compact" : "")">
+    <header class="app-page-header wind-page-header">
         <h1>Wind</h1>
+        @* Compact toggle: drops .wind-card chrome (background, border,
+           padding) and tightens grid gaps. Targeted at tacticians on
+           big helm screens (Tom in the field study) who want every
+           pixel for data, not breathing room. Persisted via
+           IAppSettings so the helm's pick survives a reload. *@
+        <button type="button"
+                class="wind-density-toggle @(compactMode ? "is-on" : "")"
+                aria-pressed="@compactMode"
+                title="@(compactMode ? "Switch to relaxed view" : "Switch to compact / tactical view")"
+                @onclick="ToggleCompact">
+            @(compactMode ? "Relaxed" : "Compact")
+        </button>
     </header>
 
     <div class="wind-grid">
@@ -137,8 +149,10 @@
                     double py = Cy - Math.Cos(angleRad) * r;
                     sb.Append($" {px:F1},{py:F1}");
                 }
-                <polyline fill="none" stroke="#22d3ee" stroke-width="2" opacity="0.7"
-                          stroke-dasharray="4,3" points="@sb.ToString()" />
+                <polyline fill="none" style="stroke: var(--sk-cyan);" stroke-width="2" opacity="0.7"
+                          stroke-dasharray="4,3" points="@sb.ToString()">
+                    <title>Boat polar: target boat speed at each TWA for the current TWS (@twsKn.ToString("F1") kn)</title>
+                </polyline>
             }
         }
 
@@ -162,7 +176,14 @@
                    a stale cached gradient would otherwise paint the second
                    instance's rect grey. *@
                 <div class="wind-legend">
-                    <span class="wind-legend-label">Speed (kn)</span>
+                    <span class="wind-legend-label">Wind (kn)</span>
+                    @* "Wind" not "Speed" -- the rose's radial axis is wind
+                       speed, not boat speed. The optional polar overlay
+                       uses the same radial axis but encodes BOAT speed
+                       (target BSP at given TWA / TWS), which is the dual-
+                       axis confusion Tom (the tactician persona) flagged
+                       in the field study. The .wind-polar-key chip below
+                       the rose names the polar curve explicitly. *@
                     <svg width="30" height="180" aria-hidden="true">
                         <defs>
                             @* Viridis stops -- match SpeedColor() in the
@@ -184,6 +205,26 @@
                     </svg>
                 </div>
             </div>
+
+            @* Polar key. Renders only when the polar service has data
+               AND TWS is published, i.e. exactly the conditions that
+               make the dashed cyan curve visible on the rose. Names
+               the curve as a BOAT-SPEED target (radial axis here is
+               wind speed for the dots; same line shows boat speed at
+               TWA for current TWS) so the helm doesn't mis-read it
+               as "wind shape". The "more in SailSteer" hint points to
+               the dedicated tactical polar view; both pages share the
+               same PolarService, no duplication. *@
+            @if (Polar.HasPolar && SignalkClient.Data.WindSpeedTrue is not null)
+            {
+                <div class="wind-polar-key">
+                    <span class="wind-polar-key-swatch" aria-hidden="true"></span>
+                    <span class="wind-polar-key-text">
+                        Boat polar &middot; target BSP at each TWA for current TWS
+                    </span>
+                    <a class="wind-polar-key-link" href="/sailsteer">SailSteer &rarr;</a>
+                </div>
+            }
         </section>
 
         @* === Right column: live readouts + TWD history.
@@ -231,37 +272,40 @@
                    headline above the history chart, where it belongs
                    tactically (Marius and Tom both blocked without it
                    per the field study). *@
+                @* AWS variability chips + window selector. The window
+                   used to be hard-coded at 2 min -- great for racers
+                   spotting a recent gust but useless for cruisers
+                   asking "is this anchorage going to be gusty all
+                   night?" (Ulrike, field study). Selector applies to
+                   all four chips at once and snaps to a tight set:
+                   1m / 2m / 10m / 1h covers race tactical -> overnight
+                   anchoring without forcing a free numeric input. *@
                 @if (AwsStats is (double gust, double lull, double mean, double sigma))
                 {
                     <div class="wind-badges">
                         <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                              title="Peak AWS minus mean over the last @GustLullWindowMin min">
+                              title="Peak AWS minus mean over the last @chipWindowMinutes min">
                             <span class="instrument-badge-label">Gust</span>
                             +@gust.ToString("F1") kn
                         </span>
                         <span class="instrument-badge"
-                              title="Lowest AWS minus mean over the last @GustLullWindowMin min">
+                              title="Lowest AWS minus mean over the last @chipWindowMinutes min">
                             <span class="instrument-badge-label">Lull</span>
                             -@lull.ToString("F1") kn
                         </span>
                         <span class="instrument-badge"
-                              title="Mean AWS over the last @GustLullWindowMin min">
+                              title="Mean AWS over the last @chipWindowMinutes min">
                             <span class="instrument-badge-label">Mean</span>
                             @mean.ToString("F1") kn
                         </span>
-                        @* Sigma (standard deviation) of AWS over the same
-                           window. Tactical "how variable is the wind?"
-                           number that gust+lull individually don't
-                           summarise -- sigma > 4 kn means visible wave-by-
-                           wave gusting where reefing or extra trim
-                           anticipation pays. The "&#963;" entity is the
-                           Greek lower-case sigma so the chip reads as a
-                           statistician would expect. *@
                         <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
-                              title="Standard deviation of AWS over the last @GustLullWindowMin min -- higher = gustier / more variable">
+                              title="Standard deviation of AWS over the last @chipWindowMinutes min -- higher = gustier / more variable">
                             <span class="instrument-badge-label">&#963;</span>
                             @sigma.ToString("F1") kn
                         </span>
+                        <TimeWindowSelector @bind-Value="chipWindowMinutes"
+                                            Choices="ChipWindowChoices"
+                                            AriaLabel="Variability window" />
                     </div>
                 }
             </section>
@@ -447,6 +491,10 @@
     // diagnostic check, not a stable preference.
     private string historyView = "direction";
 
+    // Compact density: drops .wind-card chrome and tightens gaps.
+    // Persisted via IAppSettings.WindPageCompact.
+    private bool compactMode;
+
     private async Task SetHeroMode(string mode)
     {
         if (heroMode == mode) return;
@@ -455,6 +503,12 @@
     }
 
     private void SetHistoryView(string view) => historyView = view;
+
+    private async Task ToggleCompact()
+    {
+        compactMode = !compactMode;
+        await Settings.SetWindPageCompactAsync(compactMode);
+    }
 
     // Windplot: TWD + TWS over time. Buffer is sized for the longest
     // window offered; the user picks a trailing slice via WindowChoices.
@@ -481,11 +535,29 @@
         (180, "3h"),
     ];
 
-    // Badge windows. Gust / lull wants a short window (a minute or two)
-    // so a recent gust still reads as "recent". Shift-rate wants long
-    // enough to smooth jitter, short enough to flag a genuine veer
-    // (~5 min on typical wind systems).
-    private const int GustLullWindowMin = 2;
+    // AWS variability window for the gust / lull / mean / sigma chips.
+    // 2 min is a sensible default for racers (recent-gust feel); cruisers
+    // anchoring overnight pick 1 h. Selector exposed inline with the
+    // chips so the helm can swap windows without leaving the page.
+    private int chipWindowMinutes = 2;
+
+    // Choices match Race / Cruise / Long / Overnight expectations:
+    //   1m  -- "right now" / Marius mid-leg gust check
+    //   2m  -- default; balance of recency and statistical settle
+    //  10m  -- last leg / pre-tack assessment
+    //   1h  -- evening anchorage decision (Ulrike's ask)
+    private static readonly (int minutes, string label)[] ChipWindowChoices =
+    [
+        (1,  "1m"),
+        (2,  "2m"),
+        (10, "10m"),
+        (60, "1h"),
+    ];
+
+    // Shift rate has its own optimal window (~5 min: long enough to
+    // smooth GPS / sensor jitter, short enough to flag a genuine veer
+    // on typical mesoscale wind systems). Kept const, not user-tunable
+    // -- one less knob to fiddle with under sail.
     private const int ShiftRateWindowMin = 5;
 
     // True when at least one live or historical wind reading exists.
@@ -508,8 +580,9 @@
         {
             // Pull AWS samples from the track buffer's window rather
             // than keeping a separate ring; TrackBuffer.GetSnapshot
-            // already carries WindSpeedApparent.
-            var cutoff = DateTime.UtcNow.AddMinutes(-GustLullWindowMin);
+            // already carries WindSpeedApparent. Window length is the
+            // user-picked chipWindowMinutes (1 / 2 / 10 / 60 min).
+            var cutoff = DateTime.UtcNow.AddMinutes(-chipWindowMinutes);
             var samples = TrackBuffer.GetSnapshot()
                 .Where(p => p.Timestamp >= cutoff && p.WindSpeedApparent is not null)
                 .Select(p => p.WindSpeedApparent!.Value * MsToKnots)
@@ -625,6 +698,7 @@
         // flip to the persisted value once settings landed).
         await Settings.InitializeAsync();
         heroMode = Settings.WindHeroMode;
+        compactMode = Settings.WindPageCompact;
 
         RefreshData(fullRebuild: true);
         TrackBuffer.OnTrackUpdated += HandleTrackUpdated;

@@ -5737,6 +5737,93 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     padding: 1rem 1.25rem;
 }
 
+/* Compact / tactical density: drops card chrome (background, border,
+   padding) and tightens grid gaps so every pixel goes to data. The
+   right column gets slightly wider too since there's no card padding
+   eating it. Targeted at tacticians on big helm screens (Tom in the
+   field study); cruisers / casual racers stay on the relaxed default. */
+.wind-page.wind-compact .wind-card {
+    background: transparent;
+    border-color: transparent;
+    padding: 0;
+}
+.wind-page.wind-compact .wind-grid {
+    gap: 1rem;
+}
+.wind-page.wind-compact .wind-aside {
+    gap: 0.65rem;
+}
+
+/* Page header for the Wind page: h1 + density toggle on one row.
+   The toggle uses the chip vocabulary (rounded pill, border, muted
+   text) but a button affordance so the helm reads it as clickable. */
+.wind-page-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+.wind-density-toggle {
+    appearance: none;
+    border: 1px solid var(--sk-border);
+    background: transparent;
+    color: var(--sk-text-muted);
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.wind-density-toggle:hover {
+    background: rgba(var(--sk-accent-rgb), 0.08);
+    color: var(--sk-text);
+}
+.wind-density-toggle.is-on {
+    background: var(--sk-accent);
+    border-color: var(--sk-accent);
+    color: var(--sk-bg);
+}
+
+/* Polar-curve key chip. Sits just below the rose canvas, identifies
+   the dashed cyan curve (when polar data is loaded) as a target
+   boat-speed polar -- not a wind shape -- so the helm doesn't
+   conflate the wind dots' radial axis (kn of wind) with the curve's
+   radial encoding (kn of boat). Also hyperlinks to /sailsteer for
+   the dedicated tactical view of the same data. */
+.wind-polar-key {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--sk-text-muted);
+    flex-wrap: wrap;
+}
+.wind-polar-key-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 0;
+    border-top: 2px dashed var(--sk-cyan);
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+.wind-polar-key-text {
+    flex: 1 1 auto;
+}
+.wind-polar-key-link {
+    color: var(--sk-accent);
+    text-decoration: none;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.wind-polar-key-link:hover {
+    text-decoration: underline;
+}
+
 /* SVG canvases inherit the page font (Inter Variable) instead of
    falling back to whatever the browser default is. ONE rule fixes
    the "mixed fonts" complaint everywhere the page renders text in
