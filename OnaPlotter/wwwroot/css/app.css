@@ -5342,16 +5342,31 @@ main:has(.map-container.big-type) .map-fab-item {
 
 /* Sections own framing on light theme (subtle card); on dark theme
    the page background is dark enough that no card chrome reads as
-   "this is a section" cleanly. We rely on spacing alone there. */
+   "this is a section" cleanly. We rely on spacing alone there.
+   Driven via CSS variables so the card switches with the theme
+   tokens themselves: the variables default to transparent + 0px
+   padding (dark), and the light-theme blocks promote them. The
+   .theme-system case has to gate on the OS preference because
+   .theme-system stays in the same DOM class regardless of OS dark /
+   light; without the @media wrapper the card would render in dark
+   mode too (which is what we're explicitly trying to avoid). */
 .wind-section {
-    /* default: no framing -- dark theme */
-}
-.page.theme-light .wind-section,
-.page.theme-system .wind-section {
-    background: var(--sk-surface);
-    border: 1px solid var(--sk-border);
+    background: var(--wind-section-bg, transparent);
+    border: 1px solid var(--wind-section-border, transparent);
     border-radius: 8px;
-    padding: 1rem;
+    padding: var(--wind-section-padding, 0);
+}
+.page.theme-light {
+    --wind-section-bg: var(--sk-surface);
+    --wind-section-border: var(--sk-border);
+    --wind-section-padding: 1rem;
+}
+@media (prefers-color-scheme: light) {
+    .page.theme-system {
+        --wind-section-bg: var(--sk-surface);
+        --wind-section-border: var(--sk-border);
+        --wind-section-padding: 1rem;
+    }
 }
 
 /* Rose canvas: SVG + colour legend side-by-side, with the SVG taking
