@@ -2708,13 +2708,16 @@ html, body {
 }
 
 @keyframes alarm-flash {
-    /* 2.5 s pulse with a deeper dim at the trough -- slow enough to
-       read the alarm text comfortably, deep enough to still register
-       as "this is moving / pay attention". The previous 1s / 0.6
-       pulse was hard for the helm to read at a glance because the
-       text never sat still long enough. */
+    /* 2.5 s pulse with a moderate dim at the trough -- slow enough
+       that the helm can read the alarm text comfortably, just deep
+       enough to register as "this is moving / pay attention".
+       0.55 is a deliberate step up from a previous 0.4: at 60 %
+       transparent the alarm text was visibly fading mid-glance
+       on a tablet in sun, and the helm asked for less swing in
+       the see-through. 0.55 keeps the motion cue without making
+       the text disappear. */
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+    50% { opacity: 0.55; }
 }
 
 /* ===== First-run welcome card =====
@@ -3968,8 +3971,12 @@ html.night-mode-global body {
 }
 
 @keyframes stale-pulse {
+    /* 50% trough dim at 0.5 (was 0.3): going 70% transparent made
+       the stale-data label hard to read on a tablet in sun. Helm
+       asked for less swing; same 1.5 s cadence retained so the
+       motion cue still says "this is stale". */
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+    50% { opacity: 0.5; }
 }
 
 /* ===== Route Info HUD Panel ===== */
