@@ -407,6 +407,17 @@ public partial class Map
         RebuildFilteredLayers();
     }
 
+    /// <summary>
+    /// Stops the currently-active SignalK course. Called from the
+    /// "Deactivate" button on the active-route popup (tap the polyline
+    /// while a route is active). Mirrors the bottom-bar Stop Navigation
+    /// button so the helm has two paths to the same action -- the bar
+    /// for "fast access while overlooking the chart", the popup for
+    /// "I'm already pointing at the route I want to dismiss".
+    /// </summary>
+    [JSInvokable]
+    public Task DeactivateActiveRoute() => StopNavigation();
+
     // Thin wrapper around the private NavigateRoute logic so JSInvokable
     // activation can reuse it without duplicating the try/catch.
     //
