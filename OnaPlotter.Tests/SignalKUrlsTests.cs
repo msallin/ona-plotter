@@ -59,6 +59,54 @@ public class SignalKUrlsTests
     }
 
     [Test]
+    public async Task ExtractRouteId_StripsTrailingSlash()
+    {
+        // Some SK servers emit a trailing slash on the resource href.
+        // Without canonicalisation, id-equality compares fail
+        // ("uuid" != "uuid/") so JumpToRouteWaypoint silently no-ops.
+        var id = SignalKUrls.ExtractRouteId("/resources/routes/uuid/");
+        await Assert.That(id).IsEqualTo("uuid");
+    }
+
+    [Test]
+    public async Task ExtractRouteId_StripsQueryString()
+    {
+        // Custom plugins occasionally append "?context=vessels.self"
+        // or "?expand=metadata"; the id is everything before the "?".
+        var id = SignalKUrls.ExtractRouteId("/resources/routes/uuid?expand=metadata");
+        await Assert.That(id).IsEqualTo("uuid");
+    }
+
+    [Test]
+    public async Task ExtractRouteId_StripsFragment()
+    {
+        // Fragments from a URL the helm pasted into a config file or
+        // the address bar shouldn't break id matching.
+        var id = SignalKUrls.ExtractRouteId("/resources/routes/uuid#wp-3");
+        await Assert.That(id).IsEqualTo("uuid");
+    }
+
+    [Test]
+    public async Task ExtractRouteId_StripsAllSuffixesCombined()
+    {
+        // Stress: fragment + query + trailing slash. Fragment takes
+        // precedence over query (URL grammar), so "?" inside the
+        // fragment must not be re-interpreted as a query.
+        var id = SignalKUrls.ExtractRouteId("/resources/routes/uuid/?a=1#frag?why=q");
+        await Assert.That(id).IsEqualTo("uuid");
+    }
+
+    [Test]
+    public async Task ExtractRouteId_EmptyString_Unchanged()
+    {
+        // Defensive: don't crash on an empty href (caller fed null /
+        // empty due to a stale state -- the routing layer fails
+        // gracefully on a missing id).
+        var id = SignalKUrls.ExtractRouteId("");
+        await Assert.That(id).IsEqualTo("");
+    }
+
+    [Test]
     public async Task RadarSpokeWs_Http_ToWs_PreservesPort()
     {
         // The /spokes -> /stream path bug is the whole reason this

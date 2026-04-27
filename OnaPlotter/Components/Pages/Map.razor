@@ -1670,6 +1670,16 @@
     // moored, harbour filter doesn't" debugging.
     [Inject] private OnaPlotter.Services.IMooredVesselTracker MooredVessels { get; set; } = default!;
 
+    // TimeProvider for hot-path UtcNow reads (harbor filter, ageSec
+    // staleness on AIS markers). The provider is the same one
+    // SignalkClient already takes; injecting here lets the harbor
+    // filter helper be tested deterministically. Only the two AIS-
+    // payload sites use it for now -- the various pending / debounce
+    // timestamps elsewhere (course-stop, anchor-raise, race timer)
+    // are left on DateTime.UtcNow because they're behaviour-tested
+    // through Playwright, not C# unit tests.
+    [Inject] private TimeProvider Time { get; set; } = default!;
+
     private async Task PushAisTargets()
     {
         if (!mapInitialized || module is null) return;
@@ -1687,22 +1697,17 @@
             double? ownCog = Data.CourseOverGround;
             double? ownSog = Data.SpeedOverGround;
 
-            // Harbor mode: drop moored vessels from the JS payload entirely.
-            // The MooredVesselTracker classifies a vessel as moored once SOG
-            // has held under ~1 kn for 60 s; outside the hold window the
-            // vessel renders normally so a slow-moving target doesn't blink
-            // away unexpectedly. Tracker also gets a Cleanup() call so its
-            // dict doesn't grow without bound on long sessions.
+            // Harbor-mode + position filter delegated to HarborAisFilter
+            // so the moored-classification and Cleanup-on-vanished-context
+            // contract is unit-testable in isolation (HarborAisFilterTests).
+            // The tracker's nav.state + SOG-dwell rules decide what counts
+            // as moored; this caller just trusts the answer.
             bool harbor = Settings.HarborMode;
-            var now = DateTime.UtcNow;
-            if (harbor)
-            {
-                MooredVessels.Cleanup(vessels.Select(v => v.Context).ToHashSet());
-            }
+            var now = Time.GetUtcNow().UtcDateTime;
+            var visible = OnaPlotter.Utilities.HarborAisFilter.Apply(
+                vessels, MooredVessels, harbor, now);
 
-            var jsVessels = vessels
-                .Where(v => v.Latitude is not null && v.Longitude is not null)
-                .Where(v => !harbor || !MooredVessels.IsMoored(v, now))
+            var jsVessels = visible
                 .Select(v =>
                 {
                     // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs
@@ -1795,8 +1800,10 @@
                         // Seconds since we last heard from this target. JS
                         // uses it to fade stale markers (>30 s) so the
                         // chart visually distinguishes a live target from
-                        // a ghost that hasn't updated in minutes.
-                        ageSec = (int)(DateTime.UtcNow - v.LastSeen).TotalSeconds
+                        // a ghost that hasn't updated in minutes. Same
+                        // Time provider as the harbor filter above so
+                        // tests can pin both deterministically.
+                        ageSec = (int)(now - v.LastSeen).TotalSeconds
                     };
                 }).ToArray();
             await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);

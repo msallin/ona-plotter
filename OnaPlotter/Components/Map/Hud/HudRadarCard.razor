@@ -60,6 +60,12 @@
         var rangeOptions = GetRangeOptions(radar);
         int currentIdx = rangeOptions.FindIndex(v => v == (radar.Range ?? -1));
     }
+    @* Disabled rules: "-" at the first valid value, "+" at the last.
+       An off-list current range can't actually arise here because
+       GetRangeOptions splices the radar's Range into the options
+       array if it isn't already in validValues -- so currentIdx is
+       always in [0, options.Count). The "currentIdx < 0" guard on
+       "+" stays for defensive belt-and-braces but is unreachable. *@
     <div class="radar-hud-range-row">
         <button class="ap-btn radar-hud-range-step"
                 disabled="@(currentIdx <= 0)"
@@ -142,10 +148,16 @@
     private async Task StepRange(RadarInfo radar, List<int> options, int direction)
     {
         if (options.Count == 0) return;
+        // GetRangeOptions splices radar.Range into the list if it isn't
+        // already in validValues, so an off-list current range is
+        // impossible by construction -- FindIndex always returns >= 0
+        // here. The "next < 0 || >= Count" guard below catches the
+        // edge case where StepRange is called from the last (or first)
+        // valid value with the matching button still enabled (race on
+        // a re-render mid-tap), which is the only realistic way to
+        // exit the valid range without first hitting a disabled button.
         int idx = options.FindIndex(v => v == (radar.Range ?? -1));
-        // Current range absent from the option list (mid-step / custom
-        // firmware): seed from the nearest end so a step still moves.
-        if (idx < 0) idx = direction > 0 ? -1 : options.Count;
+        if (idx < 0) return;                              // defensive: shouldn't happen
         int next = idx + direction;
         if (next < 0 || next >= options.Count) return;
         await OnSetRange.InvokeAsync((radar.Id, options[next]));

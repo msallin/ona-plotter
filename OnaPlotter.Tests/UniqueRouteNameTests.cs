@@ -85,4 +85,21 @@ public class UniqueRouteNameTests
             "Crossing (2)", ["Crossing (2)"]);
         await Assert.That(result).IsEqualTo("Crossing (2) (2)");
     }
+
+    [Test]
+    public async Task Suggest_When10000Collisions_FallsBackToBaseName()
+    {
+        // Pathological / corrupted data: every candidate from base+(2)
+        // through base+(9999) is taken. The bounded loop falls back to
+        // the base name unchanged rather than spinning forever or
+        // throwing. Pinned so a refactor of the loop bound (e.g.
+        // i < 100) silently changes the fallback behaviour and a future
+        // ill-shaped existingNames input would surface differently.
+        var taken = new HashSet<string> { "Base" };
+        for (int i = 2; i < 10000; i++) taken.Add($"Base ({i})");
+
+        var result = UniqueRouteName.Suggest("Base", taken);
+
+        await Assert.That(result).IsEqualTo("Base");
+    }
 }

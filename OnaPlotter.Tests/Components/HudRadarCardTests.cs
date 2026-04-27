@@ -143,6 +143,65 @@ public class HudRadarCardTests
     }
 
     [Test]
+    public async Task RangeStepper_OffListRange_SplicesIntoOptionsAndStepsToNeighbour()
+    {
+        // When radar.Range isn't in validValues (mid-step from custom
+        // firmware, or a stale server-side state), GetRangeOptions
+        // splices it into the sorted options. Stepping then moves to
+        // the IMMEDIATE neighbour rather than to the first or last
+        // valid value -- which is the right UX (one tap, one step).
+        // Pinning so a future "drop the splice" refactor surfaces
+        // the regression: the off-list value would no longer be
+        // selectable and StepRange would no-op.
+        using var ctx = new Bunit.TestContext();
+        (string Id, int M)? captured = null;
+        var caps = new Dictionary<string, RadarCapabilities?>
+        {
+            ["r1"] = new RadarCapabilities
+            {
+                Controls = new()
+                {
+                    ["range"] = new ControlDefinition { ValidValues = [463, 926, 1852] },
+                },
+            },
+        };
+        // 999 is BETWEEN 926 and 1852 -- not in validValues.
+        // GetRangeOptions splices it in -> sorted = [463, 926, 999, 1852].
+        // Click + steps to 1852 (next neighbour up).
+        var cut = Render(ctx, [Radar("r1", range: 999)], caps,
+            onRange: t => captured = t);
+
+        cut.FindAll(".radar-hud-range-step")[1].Click();   // + button
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.Value.M).IsEqualTo(1852);
+    }
+
+    [Test]
+    public async Task RangeStepper_OffListRange_StepsDownToImmediateNeighbour()
+    {
+        // Mirror of the above for the down direction: spliced 999 in
+        // [463, 926, 999, 1852] steps DOWN to 926.
+        using var ctx = new Bunit.TestContext();
+        (string Id, int M)? captured = null;
+        var caps = new Dictionary<string, RadarCapabilities?>
+        {
+            ["r1"] = new RadarCapabilities
+            {
+                Controls = new()
+                {
+                    ["range"] = new ControlDefinition { ValidValues = [463, 926, 1852] },
+                },
+            },
+        };
+        var cut = Render(ctx, [Radar("r1", range: 999)], caps,
+            onRange: t => captured = t);
+
+        cut.FindAll(".radar-hud-range-step")[0].Click();   // - button
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.Value.M).IsEqualTo(926);
+    }
+
+    [Test]
     public async Task StandbyButton_FiresStandby()
     {
         // Stby is the safety direction; instant tap (no hold). Clicking

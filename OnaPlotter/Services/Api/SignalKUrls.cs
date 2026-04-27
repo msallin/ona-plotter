@@ -142,12 +142,32 @@ public static class SignalKUrls
 
     /// <summary>
     /// Extracts a resource UUID from a SignalK href. Accepts:
-    ///   "/resources/routes/{id}", "/signalk/v2/api/resources/routes/{id}", or "{id}".
+    ///   <c>"/resources/routes/{id}"</c>,
+    ///   <c>"/signalk/v2/api/resources/routes/{id}"</c>,
+    ///   or a bare <c>"{id}"</c>.
+    /// <para>
+    /// Canonicalises the result so a server emitting a query string,
+    /// fragment, or trailing slash on the href doesn't break id-equality
+    /// downstream. Without this, helm-tap-to-skip on the active route
+    /// silently did nothing if the SK href ever grew a query suffix
+    /// (server change or custom plugin) because <c>JumpToRouteWaypoint</c>
+    /// compares against the bare-id form.
+    /// </para>
     /// </summary>
     public static string ExtractRouteId(string href)
     {
+        if (string.IsNullOrEmpty(href)) return href;
         const string marker = "/resources/routes/";
         int idx = href.LastIndexOf(marker, StringComparison.Ordinal);
-        return idx >= 0 ? href[(idx + marker.Length)..] : href;
+        var raw = idx >= 0 ? href[(idx + marker.Length)..] : href;
+        // Strip fragment first (leftmost on the URL grammar), then query,
+        // then trailing slash. Order matters because '?' can appear inside
+        // a fragment but '#' before '?' takes precedence.
+        int hash = raw.IndexOf('#');
+        if (hash >= 0) raw = raw[..hash];
+        int q = raw.IndexOf('?');
+        if (q >= 0) raw = raw[..q];
+        if (raw.EndsWith('/')) raw = raw[..^1];
+        return raw;
     }
 }
