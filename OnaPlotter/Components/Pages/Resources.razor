@@ -21,126 +21,147 @@
 
 <PageTitle>Resources</PageTitle>
 
-<h2>SignalK resources</h2>
-<p class="text-muted" style="max-width:820px;">
-    Everything stored on this SignalK server that OnaPlotter can render:
-    routes, waypoints, notes, regions. Useful for house-keeping when the
-    Layers panel is full or when a past plotter left orphans behind.
-</p>
+@*
+    Page chrome (header, subtitle, max-width gutter) uses the shared
+    .app-page-* classes so this page renders with the same heading
+    scale and spacing as Wind / Settings / etc. Action buttons are
+    grouped with .resource-actions so the View / Edit / Delete cluster
+    reads as a single affordance per row instead of three loose chips.
+    Truncated descriptions carry a title attribute so the helm can
+    hover to see the full text without an extra click.
+*@
+<div class="app-page resources-page">
+    <header class="app-page-header">
+        <h1>Resources</h1>
+        <p class="app-page-subtitle">
+            Everything stored on this SignalK server that OnaPlotter can render:
+            routes, waypoints, notes, regions. Useful for house-keeping when the
+            Layers panel is full or when a past plotter left orphans behind.
+        </p>
+    </header>
 
-<ul class="nav nav-tabs" role="tablist">
-    @foreach (var t in _tabs)
-    {
-        <li class="nav-item" role="presentation">
-            <button type="button"
-                    class="nav-link @(activeTab == t.Key ? "active" : "")"
-                    role="tab"
-                    aria-selected="@(activeTab == t.Key)"
-                    @onclick="() => SetTab(t.Key)">
-                @t.Label <span class="badge bg-secondary">@t.Count()</span>
-            </button>
-        </li>
-    }
-</ul>
+    <ul class="nav nav-tabs resources-tabs" role="tablist">
+        @foreach (var t in _tabs)
+        {
+            <li class="nav-item" role="presentation">
+                <button type="button"
+                        class="nav-link @(activeTab == t.Key ? "active" : "")"
+                        role="tab"
+                        aria-selected="@(activeTab == t.Key)"
+                        @onclick="() => SetTab(t.Key)">
+                    @t.Label <span class="resources-tab-count">@t.Count()</span>
+                </button>
+            </li>
+        }
+    </ul>
 
-<div class="mt-3">
-    @if (loading)
-    {
-        <LoadingState Label="Loading resources..." />
-    }
-    else if (activeTab == "routes")
-    {
-        <ResourceTable Columns="RouteColumns"
-                       IsEmpty="routes.Count == 0"
-                       EmptyMessage="No routes on the server.">
-            @foreach (var r in routes)
-            {
-                <tr>
-                    <td>@NameOrId(r.Name, r.Id)</td>
-                    <td>@CountRouteWaypoints(r)</td>
-                    <td>@(r.Distance is double d ? $"{d / Format.MetersPerNm:F2} nm" : "-")</td>
-                    <td class="text-end resource-row-actions">
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: false)">View</button>
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: true)">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger"
-                                @onclick="() => DeleteRoute(r.Id, r.Name)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </ResourceTable>
-    }
-    else if (activeTab == "waypoints")
-    {
-        <ResourceTable Columns="WaypointColumns"
-                       IsEmpty="waypoints.Count == 0"
-                       EmptyMessage="No waypoints on the server.">
-            @foreach (var w in waypoints)
-            {
-                <tr>
-                    <td>@NameOrId(w.Name, w.Id)</td>
-                    <td>@FormatLatLon(w.Latitude, w.Longitude)</td>
-                    <td class="text-end resource-row-actions">
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => OpenOnMap(TypeWaypoint, w.Id, edit: false)">View</button>
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => EditWaypointName(w)">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger"
-                                @onclick="() => DeleteWaypoint(w.Id, w.Name)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </ResourceTable>
-    }
-    else if (activeTab == "notes")
-    {
-        <ResourceTable Columns="NoteColumns"
-                       IsEmpty="notes.Count == 0"
-                       EmptyMessage="No notes on the server.">
-            @foreach (var n in notes)
-            {
-                <tr>
-                    <td>@NameOrId(n.Title, n.Id)</td>
-                    <td>@FormatLatLon(n.Position?.Latitude, n.Position?.Longitude)</td>
-                    <td class="text-muted" style="max-width:360px; overflow:hidden; text-overflow:ellipsis;">
-                        @(n.Description ?? "")
-                    </td>
-                    <td class="text-end resource-row-actions">
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => OpenOnMap(TypeNote, n.Id, edit: false)">View</button>
-                        <button class="btn btn-sm btn-outline-danger"
-                                @onclick="() => DeleteNote(n.Id, n.Title)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </ResourceTable>
-    }
-    else if (activeTab == "regions")
-    {
-        <ResourceTable Columns="RegionColumns"
-                       IsEmpty="regions.Count == 0"
-                       EmptyMessage="No regions on the server.">
-            @foreach (var r in regions)
-            {
-                <tr>
-                    <td>@NameOrId(r.Name, r.Id)</td>
-                    <td>@CountRegionVertices(r)</td>
-                    <td class="text-muted" style="max-width:360px; overflow:hidden; text-overflow:ellipsis;">
-                        @(r.Description ?? "")
-                    </td>
-                    <td class="text-end resource-row-actions">
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: false)">View</button>
-                        <button class="btn btn-sm btn-outline-secondary"
-                                @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: true)">Edit</button>
-                        <button class="btn btn-sm btn-outline-danger"
-                                @onclick="() => DeleteRegion(r.Id, r.Name)">Delete</button>
-                    </td>
-                </tr>
-            }
-        </ResourceTable>
-    }
+    <div class="resources-body">
+        @if (loading)
+        {
+            <LoadingState Label="Loading resources..." />
+        }
+        else if (activeTab == "routes")
+        {
+            <ResourceTable Columns="RouteColumns"
+                           IsEmpty="routes.Count == 0"
+                           EmptyMessage="No routes on the server.">
+                @foreach (var r in routes)
+                {
+                    <tr>
+                        <td>@NameOrId(r.Name, r.Id)</td>
+                        <td>@CountRouteWaypoints(r)</td>
+                        <td>@(r.Distance is double d ? $"{d / Format.MetersPerNm:F2} nm" : "-")</td>
+                        <td class="text-end">
+                            <div class="resource-actions" role="group" aria-label="Route actions">
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: false)">View</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: true)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => DeleteRoute(r.Id, r.Name)">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </ResourceTable>
+        }
+        else if (activeTab == "waypoints")
+        {
+            <ResourceTable Columns="WaypointColumns"
+                           IsEmpty="waypoints.Count == 0"
+                           EmptyMessage="No waypoints on the server.">
+                @foreach (var w in waypoints)
+                {
+                    <tr>
+                        <td>@NameOrId(w.Name, w.Id)</td>
+                        <td>@FormatLatLon(w.Latitude, w.Longitude)</td>
+                        <td class="text-end">
+                            <div class="resource-actions" role="group" aria-label="Waypoint actions">
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenOnMap(TypeWaypoint, w.Id, edit: false)">View</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => EditWaypointName(w)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => DeleteWaypoint(w.Id, w.Name)">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </ResourceTable>
+        }
+        else if (activeTab == "notes")
+        {
+            <ResourceTable Columns="NoteColumns"
+                           IsEmpty="notes.Count == 0"
+                           EmptyMessage="No notes on the server.">
+                @foreach (var n in notes)
+                {
+                    <tr>
+                        <td>@NameOrId(n.Title, n.Id)</td>
+                        <td>@FormatLatLon(n.Position?.Latitude, n.Position?.Longitude)</td>
+                        <td class="text-muted resource-text-cell" title="@(n.Description ?? "")">
+                            @(n.Description ?? "")
+                        </td>
+                        <td class="text-end">
+                            <div class="resource-actions" role="group" aria-label="Note actions">
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenOnMap(TypeNote, n.Id, edit: false)">View</button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => DeleteNote(n.Id, n.Title)">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </ResourceTable>
+        }
+        else if (activeTab == "regions")
+        {
+            <ResourceTable Columns="RegionColumns"
+                           IsEmpty="regions.Count == 0"
+                           EmptyMessage="No regions on the server.">
+                @foreach (var r in regions)
+                {
+                    <tr>
+                        <td>@NameOrId(r.Name, r.Id)</td>
+                        <td>@CountRegionVertices(r)</td>
+                        <td class="text-muted resource-text-cell" title="@(r.Description ?? "")">
+                            @(r.Description ?? "")
+                        </td>
+                        <td class="text-end">
+                            <div class="resource-actions" role="group" aria-label="Region actions">
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: false)">View</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: true)">Edit</button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        @onclick="() => DeleteRegion(r.Id, r.Name)">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </ResourceTable>
+        }
+    </div>
 </div>
 
 @code {

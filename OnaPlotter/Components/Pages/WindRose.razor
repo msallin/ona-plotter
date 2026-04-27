@@ -8,70 +8,51 @@
 @inject TrackBuffer TrackBuffer
 @inject IPolarService Polar
 
-<PageTitle>Wind Rose</PageTitle>
+<PageTitle>Wind</PageTitle>
 
 @* Back-to-chart chip removed -- the sidebar + topbar already surface
    navigation back to the map, and the chip duplicated that affordance
    without earning its screen real estate. *@
 
-<h2>Wind Rose</h2>
-<p class="text-muted">Apparent wind angle vs. speed. Color indicates wind speed.</p>
+@*
+   Layout: a two-column grid on screens >= 960px (covers iPad landscape
+   and any normal helm display), single column below. Left column owns
+   the polar rose; right column owns the live readouts and the TWD
+   history strip. Stacking the windplot below the rose -- the previous
+   layout -- wasted half the screen on big displays and pushed the
+   "current wind" reading below the fold.
 
-@* === Tactical badges row ===
-   Gust / lull over the last 2 min and shift-rate over the last 5 min.
-   Inline chips at the top so the helm sees the trend without reading
-   the plots carefully. Both render nothing when the underlying sample
-   count is insufficient (keeps "this badge is silent" meaningful). *@
-@if (GustLull is { } gl || ShiftRate is not null)
-{
-    <div class="d-flex gap-2 flex-wrap mb-2">
-        @if (GustLull is (double gust, double lull, double mean))
-        {
-            <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
-                  title="Peak AWS minus mean over the last @GustLullWindowMin min">
-                <span class="instrument-badge-label">Gust</span>
-                +@gust.ToString("F1") kn
-            </span>
-            <span class="instrument-badge"
-                  title="Lowest AWS minus mean over the last @GustLullWindowMin min">
-                <span class="instrument-badge-label">Lull</span>
-                -@lull.ToString("F1") kn
-            </span>
-            <span class="instrument-badge"
-                  title="Mean AWS over the last @GustLullWindowMin min">
-                <span class="instrument-badge-label">Mean</span>
-                @mean.ToString("F1") kn
-            </span>
-        }
-        @if (ShiftRate is double rate)
-        {
-            string cls = Math.Abs(rate) >= 3 ? "instrument-badge-warn"
-                       : Math.Abs(rate) >= 1 ? "instrument-badge"
-                       : "instrument-badge-good";
-            string sign = rate >= 0 ? "+" : "";
-            <span class="instrument-badge @cls"
-                  title="TWD slope over the last @ShiftRateWindowMin min -- positive = veering, negative = backing">
-                <span class="instrument-badge-label">Shift</span>
-                @sign@rate.ToString("F1") &deg;/min
-            </span>
-        }
-    </div>
-}
+   Typography is consolidated to one scale (page title, section header,
+   meta, hero values) instead of the prior h2 / h4 / h6 / <p> mix that
+   read as "different widget per row".
 
-<div class="d-flex flex-wrap gap-4 align-items-start">
-    <div style="position: relative;">
-    @if (!HasAnyWind)
-    {
-        @* Empty state on top of the compass grid so the chrome is
-           visible but the user sees "no sensor data yet". *@
-        <div class="instrument-empty-state" role="status">
-            <strong>Waiting for wind data</strong>
-            WindRose needs <em>environment.wind.angleApparent</em> +
-            <em>speedApparent</em>. Connect a wind sensor or check the
-            SignalK server.
-        </div>
-    }
-    <svg viewBox="0 0 @Size @Size" style="max-width:@(Size)px; width:100%; height:auto; background: var(--sk-surface); border-radius: 6px;">
+   Surface fills on the SVGs are dropped: on dark theme the
+   (--sk-surface) tint barely registers and just adds visual noise; on
+   light theme each section sits in a card via .wind-section so the
+   framing is delivered by the wrapper, not the SVG itself.
+*@
+<div class="app-page wind-page">
+    <header class="app-page-header">
+        <h1>Wind</h1>
+        <p class="app-page-subtitle">Apparent wind angle vs. speed; color indicates wind speed.</p>
+    </header>
+
+    <div class="wind-grid">
+        @* === Left column: the polar rose + colour legend === *@
+        <section class="wind-section wind-rose-section" aria-label="Wind rose">
+            <div class="wind-rose-canvas">
+                @if (!HasAnyWind)
+                {
+                    @* Empty state on top of the compass grid so the chrome is
+                       visible but the user sees "no sensor data yet". *@
+                    <div class="instrument-empty-state" role="status">
+                        <strong>Waiting for wind data</strong>
+                        WindRose needs <em>environment.wind.angleApparent</em> +
+                        <em>speedApparent</em>. Connect a wind sensor or check the
+                        SignalK server.
+                    </div>
+                }
+                <svg class="wind-rose-svg" viewBox="0 0 @Size @Size">
         @* Background circles *@
         @for (int i = 1; i <= RingCount; i++)
         {
@@ -98,7 +79,7 @@
         {
             double r = i * ringSpacing;
             double kn = i * speedPerRing;
-            @SvgText(Cx + 2, Cy - r - 2, $"{kn:F0} kn", "#666", 9, anchor: "start")
+            @SvgText(Cx + 2, Cy - r - 2, $"{kn:F0} kn", "#666", 10, anchor: "start")
         }
 
         @* Historical wind data points *@
@@ -153,68 +134,119 @@
                   style="stroke: currentColor;" stroke-width="2.5" stroke-linecap="round" />
             <circle cx="@tipX" cy="@tipY" r="4" style="fill: currentColor;" />
         }
-    </svg>
-    </div>
+                </svg>
 
-    @* Legend. Gradient id is per-component so if two WindRose
-       instances co-exist on a page, their SVG defs don't collide --
-       a stale cached gradient would otherwise paint the second
-       instance's rect grey. *@
-    <div>
-        <h6 class="text-muted">Speed (kn)</h6>
-        <svg width="30" height="180">
-            <defs>
-                <linearGradient id="@GradientId" x1="0" y1="1" x2="0" y2="0">
-                    <stop offset="0%" stop-color="#2196F3" />
-                    <stop offset="50%" stop-color="#FFEB3B" />
-                    <stop offset="100%" stop-color="#F44336" />
-                </linearGradient>
-            </defs>
-            <rect x="0" y="0" width="16" height="180" fill="url(#@GradientId)" rx="2" />
-            @SvgText(20, 12, $"{MaxSpeedKn:F0}", "currentColor", 10, anchor: "start")
-            @SvgText(20, 95, $"{MaxSpeedKn / 2:F0}", "currentColor", 10, anchor: "start")
-            @SvgText(20, 178, "0", "currentColor", 10, anchor: "start")
-        </svg>
-    </div>
-</div>
+                @* Legend. Gradient id is per-component so if two WindRose
+                   instances co-exist on a page, their SVG defs don't collide --
+                   a stale cached gradient would otherwise paint the second
+                   instance's rect grey. *@
+                <div class="wind-legend">
+                    <span class="wind-legend-label">Speed (kn)</span>
+                    <svg width="30" height="180" aria-hidden="true">
+                        <defs>
+                            <linearGradient id="@GradientId" x1="0" y1="1" x2="0" y2="0">
+                                <stop offset="0%" stop-color="#2196F3" />
+                                <stop offset="50%" stop-color="#FFEB3B" />
+                                <stop offset="100%" stop-color="#F44336" />
+                            </linearGradient>
+                        </defs>
+                        <rect x="0" y="0" width="16" height="180" fill="url(#@GradientId)" rx="2" />
+                        @SvgText(20, 12, $"{MaxSpeedKn:F0}", "currentColor", 10, anchor: "start")
+                        @SvgText(20, 95, $"{MaxSpeedKn / 2:F0}", "currentColor", 10, anchor: "start")
+                        @SvgText(20, 178, "0", "currentColor", 10, anchor: "start")
+                    </svg>
+                </div>
+            </div>
+        </section>
 
-@if (currentWind is not null)
-{
-    <p class="mt-3">
-        Current: <strong>@currentWind.Value.SpeedKn.ToString("F1") kn</strong>
-        at <strong>@((currentWind.Value.Angle * 180 / Math.PI).ToString("F0"))&deg;</strong> apparent
-    </p>
-}
+        @* === Right column: live readouts + TWD history === *@
+        <aside class="wind-aside">
+            @* Hero card. The previous "Current: 12.3 kn at 45° apparent"
+               sentence sat below the rose, well below the fold on tall
+               displays. The hero pulls the live reading up to where the
+               eye lands first. Speed dominates (it's what determines
+               sail trim); angle is secondary. Empty dashes ("--")
+               keep the layout stable when the sensor isn't reporting. *@
+            <div class="wind-hero">
+                <div class="wind-hero-primary">
+                    <span class="wind-hero-value">@(currentWind?.SpeedKn.ToString("F1") ?? "--")</span>
+                    <span class="wind-hero-unit">kn</span>
+                </div>
+                <div class="wind-hero-secondary">
+                    <span class="wind-hero-angle">
+                        @(currentWind is null ? "--" : ((currentWind.Value.Angle * 180 / Math.PI + 360) % 360).ToString("F0") + "°")
+                    </span>
+                    <span class="wind-hero-label">apparent</span>
+                </div>
+            </div>
 
-@* === Windplot: TWD over time to identify wind shifts === *@
-@{
-    // Sliding window view of the TWD history. The buffer itself always
-    // holds MaxWindowMinutes worth of samples; what the user sees is a
-    // trailing slice selected by the segmented control. Short windows
-    // (15m) are great for spotting a pending shift mid-race; long
-    // windows (3h) are useful for a sunset wind-clocking pattern on a
-    // cruise.
-    var cutoff = DateTime.UtcNow.AddMinutes(-windowMinutes);
-    var visible = twdHistory.Where(s => s.Time >= cutoff).ToList();
-}
+            @* === Tactical badges row ===
+               Gust / lull over the last 2 min and shift-rate over the last 5 min.
+               Each renders nothing when its underlying sample count is
+               insufficient, so "this badge is silent" stays meaningful. *@
+            @if (GustLull is not null || ShiftRate is not null)
+            {
+                <div class="wind-badges">
+                    @if (GustLull is (double gust, double lull, double mean))
+                    {
+                        <span class="instrument-badge @(gust > 3 ? "instrument-badge-warn" : "")"
+                              title="Peak AWS minus mean over the last @GustLullWindowMin min">
+                            <span class="instrument-badge-label">Gust</span>
+                            +@gust.ToString("F1") kn
+                        </span>
+                        <span class="instrument-badge"
+                              title="Lowest AWS minus mean over the last @GustLullWindowMin min">
+                            <span class="instrument-badge-label">Lull</span>
+                            -@lull.ToString("F1") kn
+                        </span>
+                        <span class="instrument-badge"
+                              title="Mean AWS over the last @GustLullWindowMin min">
+                            <span class="instrument-badge-label">Mean</span>
+                            @mean.ToString("F1") kn
+                        </span>
+                    }
+                    @if (ShiftRate is double rate)
+                    {
+                        string cls = Math.Abs(rate) >= 3 ? "instrument-badge-warn"
+                                   : Math.Abs(rate) >= 1 ? "instrument-badge"
+                                   : "instrument-badge-good";
+                        string sign = rate >= 0 ? "+" : "";
+                        <span class="instrument-badge @cls"
+                              title="TWD slope over the last @ShiftRateWindowMin min -- positive = veering, negative = backing">
+                            <span class="instrument-badge-label">Shift</span>
+                            @sign@rate.ToString("F1") &deg;/min
+                        </span>
+                    }
+                </div>
+            }
 
-@if (twdHistory.Count > 1)
-{
-    <div class="mt-4 d-flex align-items-baseline gap-3 flex-wrap">
-        <h4 style="margin:0;">Wind Direction (TWD) History</h4>
-        <TimeWindowSelector @bind-Value="windowMinutes"
-                            Choices="WindowChoices"
-                            AriaLabel="TWD history window" />
-    </div>
-    <p class="text-muted" style="font-size:0.8rem;">
-        Last @windowMinutes min (@visible.Count samples). Green line = mean TWD.
-    </p>
-}
+            @* === TWD history strip === *@
+            @{
+                // Sliding window view of the TWD history. The buffer itself always
+                // holds MaxWindowMinutes worth of samples; what the user sees is a
+                // trailing slice selected by the segmented control. Short windows
+                // (15m) are great for spotting a pending shift mid-race; long
+                // windows (3h) are useful for a sunset wind-clocking pattern on a
+                // cruise.
+                var cutoff = DateTime.UtcNow.AddMinutes(-windowMinutes);
+                var visible = twdHistory.Where(s => s.Time >= cutoff).ToList();
+            }
 
-@if (visible.Count > 1)
-{
-    <svg viewBox="0 0 @WpWidth @WpHeight"
-         style="max-width:@(WpWidth)px; width:100%; height:auto; background: var(--sk-surface); border-radius: 6px;">
+            @if (twdHistory.Count > 1)
+            {
+                <section class="wind-section wind-history-section" aria-label="Wind direction history">
+                    <header class="wind-section-header">
+                        <h2 class="wind-section-title">TWD history</h2>
+                        <TimeWindowSelector @bind-Value="windowMinutes"
+                                            Choices="WindowChoices"
+                                            AriaLabel="TWD history window" />
+                    </header>
+                    <p class="wind-section-meta">
+                        Last @windowMinutes min &middot; @visible.Count samples &middot; green = mean
+                    </p>
+                    @if (visible.Count > 1)
+                    {
+                        <svg class="wind-history-svg" viewBox="0 0 @WpWidth @WpHeight">
         @* Y-axis labels (degrees) *@
         @{
             double twdMin = visible.Min(t => t.Deg);
@@ -235,7 +267,7 @@
             double y = WpPad + (WpPlotH * i / 4.0);
             double deg = twdMax - (twdMax - twdMin) * i / 4.0;
             <line x1="@WpPad" y1="@F(y)" x2="@(WpWidth - 10)" y2="@F(y)" stroke="#333" stroke-width="0.5" />
-            @SvgText(WpPad - 4, y, $"{deg:F0}", "#666", 9, anchor: "end")
+            @SvgText(WpPad - 4, y, $"{deg:F0}", "#666", 10, anchor: "end")
         }
 
         @* Mean TWD line *@
@@ -255,10 +287,15 @@
             double x = WpPad + (WpPlotW * i / 3.0);
             double secs = timeSpan * i / 3.0;
             string label = $"-{(int)((timeSpan - secs) / 60)}m";
-            @SvgText(x, WpHeight - 4, label, "#666", 9)
+            @SvgText(x, WpHeight - 4, label, "#666", 10)
         }
-    </svg>
-}
+                        </svg>
+                    }
+                </section>
+            }
+        </aside>
+    </div>
+</div>
 
 @code {
     // Per-instance gradient id so the <linearGradient> in the legend
