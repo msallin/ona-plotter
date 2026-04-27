@@ -36,6 +36,12 @@ public sealed class AppSettingsService : IAppSettings
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
     public bool AtonsVisible { get; private set; } = true;
+    /// <summary>In-memory only -- never persisted, never restored.
+    /// See IAppSettings.HarborMode for the rationale (a forgotten
+    /// Harbor mode silently riding into open water is the worst-case
+    /// scenario, so every fresh visit starts with collision alarms
+    /// armed).</summary>
+    public bool HarborMode { get; private set; }
     public bool SidebarCollapsed { get; private set; }
     public double DepthAlarmThreshold { get; private set; } = 3.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
@@ -251,6 +257,19 @@ public sealed class AppSettingsService : IAppSettings
         AtonsVisible = value;
         await Save("atonsVisible.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
+    }
+
+    public Task SetHarborModeAsync(bool value)
+    {
+        // No persistence: Harbor mode is in-memory only. See
+        // IAppSettings.HarborMode docstring -- a forgotten Harbor
+        // mode silently riding into open water is the worst-case
+        // scenario, so every fresh visit starts with collision
+        // alarms armed.
+        if (HarborMode == value) return Task.CompletedTask;
+        HarborMode = value;
+        OnSettingsChanged?.Invoke();
+        return Task.CompletedTask;
     }
 
     public async Task SetSidebarCollapsedAsync(bool value)

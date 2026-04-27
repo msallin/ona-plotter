@@ -1343,9 +1343,10 @@ export function updateAisTargets(vessels) {
         // Name label visible at zoom >= 12. Resolution (name -> mmsi,
         // with buddy star prefix) happens C#-side -- Map.razor.PushAisTargets
         // stamps v.displayName so this label and any other label-rendering
-        // surface share one fallback chain.
+        // surface share one fallback chain. Suppressed in harbor mode
+        // to keep the chart legible when entering a busy port.
         const displayName = v.displayName || null;
-        if (displayName) {
+        if (displayName && !harborMode) {
             if (!aisLabels[v.context]) {
                 aisLabels[v.context] = L.tooltip({
                     permanent: true, direction: 'right', offset: [12, 0],
@@ -1413,9 +1414,11 @@ export function updateAisTargets(vessels) {
         // We only push when the position actually changes to avoid empty ticks.
         updateAisTrail(v.context, v.lat, v.lon);
 
-        // Course vector.
+        // Course vector. Suppressed in harbor mode -- with dozens of
+        // AIS targets in port every vector sweeps across every other
+        // marker and the chart turns into a hatch of dashed lines.
         const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs);
-        if (end) {
+        if (end && !harborMode) {
             let vec = aisVectors[v.context];
             if (!vec) {
                 vec = L.polyline([[v.lat, v.lon], end], {
@@ -1432,8 +1435,12 @@ export function updateAisTargets(vessels) {
         // to its predicted CPA point, plus a label with CPA / TCPA at the
         // target's CPA dot. Rendered for danger (red) and warning (yellow).
         // Buddies never render these - they're exempt from the alarm pipeline
-        // and the red lines would be misleading.
-        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
+        // and the red lines would be misleading. Suppressed in harbor
+        // mode where every other vessel is technically a "near miss" --
+        // the audio CPA alarm is suppressed in C# (CpaAlarmRule short-
+        // circuits on Settings.HarborMode) and the on-chart overlay
+        // would just add noise to a chart the helm needs to read.
+        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0 && !harborMode) {
             const tcpaSec = cpaInfo.tcpa * 60;
             const ownCpa = destPoint(selfLat, selfLon, selfCogRad, selfSogMs * tcpaSec);
             const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
@@ -1628,8 +1635,56 @@ export function setGuardZone(radiusNm, lookaheadMin, warningFactor) {
     drawGuardZone();
 }
 
+// Harbor-mode flag. When true the AIS render path skips name labels,
+// COG vectors, and CPA overlays, the guard-zone ring is not drawn,
+// and moored vessels are filtered upstream in C#. setHarborMode also
+// tears down any in-flight overlays so the helm sees the declutter
+// take effect immediately, not after the next AIS push tick.
+let harborMode = false;
+export function setHarborMode(enabled) {
+    harborMode = !!enabled;
+    if (!map) return;
+    if (harborMode) {
+        for (const ctx of Object.keys(aisLabels)) {
+            try { aisMarkers[ctx]?.unbindTooltip(); } catch (_) { /* marker gone */ }
+            delete aisLabels[ctx];
+        }
+        for (const ctx of Object.keys(aisVectors)) {
+            map.removeLayer(aisVectors[ctx]);
+            delete aisVectors[ctx];
+        }
+        for (const ctx of Object.keys(aisCpaOwnLines)) {
+            map.removeLayer(aisCpaOwnLines[ctx]);
+            delete aisCpaOwnLines[ctx];
+        }
+        for (const ctx of Object.keys(aisCpaTgtLines)) {
+            map.removeLayer(aisCpaTgtLines[ctx]);
+            delete aisCpaTgtLines[ctx];
+        }
+        for (const ctx of Object.keys(aisCpaLabels)) {
+            map.removeLayer(aisCpaLabels[ctx]);
+            delete aisCpaLabels[ctx];
+        }
+        if (guardZoneRing) {
+            map.removeLayer(guardZoneRing);
+            guardZoneRing = null;
+        }
+    } else {
+        // Coming out of harbor mode: redraw the guard ring at the
+        // current radius. AIS labels / vectors / CPA overlays will
+        // be re-established by the next updateAisTargets tick.
+        drawGuardZone();
+    }
+}
+
 function drawGuardZone() {
     if (!map) return;
+    // Harbor mode hides the ring entirely. The radius itself is not
+    // touched (so leaving harbor mode restores the previous setting).
+    if (harborMode) {
+        if (guardZoneRing) { map.removeLayer(guardZoneRing); guardZoneRing = null; }
+        return;
+    }
     // Disabled (radius <= 0) - remove the ring entirely instead of shrinking
     // it to a zero-radius invisible point we would still reposition every tick.
     if (guardZoneRadiusNm <= 0) {

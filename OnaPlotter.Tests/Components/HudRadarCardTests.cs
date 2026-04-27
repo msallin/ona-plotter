@@ -164,42 +164,38 @@ public class HudRadarCardTests
     }
 
     [Test]
-    public async Task TransmitButton_HasNoClickHandler_OnlyPointerHandlers()
+    public async Task TransmitButton_FiresTransmit_OnPlainClick()
     {
-        // Hold-to-engage safety: the Transmit button must NOT have an
-        // onclick handler. A bare tap is deliberately impossible; the
-        // only way to fire Transmit is the 600 ms pointer-hold path
-        // (validated end-to-end via the autopilot card's identical
-        // pattern). Pinning the structural shape here catches a
-        // refactor that re-adds @onclick "for parity with Stby". With
-        // the power row now a state-dependent toggle, a standby radar
-        // shows exactly one button -- "Transmit".
+        // Helm dropped the 600 ms hold-to-engage gate (the SK radar
+        // plugin owns the warmup state machine, so the gate was
+        // redundant safety theatre). Both Standby and Transmit are
+        // now plain clicks; a tap on the button fires the
+        // corresponding RadarPower value.
         using var ctx = new Bunit.TestContext();
-        var cut = Render(ctx, [Radar("r1", status: "standby")]);
+        (string Id, RadarPower P)? captured = null;
+        var cut = Render(ctx, [Radar("r1", status: "standby")], onPower: t => captured = t);
         var btns = cut.FindAll(".radar-hud-power .ap-mode-btn");
         await Assert.That(btns.Count).IsEqualTo(1);
-        var transmit = btns[0];
-
-        // Blazor renders @onclick / @onpointerdown / etc. as Blazor-
-        // internal handlers (no DOM attribute), so we can't test by
-        // attribute presence. Instead: try to dispatch an onclick and
-        // verify bUnit throws the "no handler" exception. If the
-        // dispatch succeeds, the structural contract is broken.
-        var ex = Assert.Throws<Bunit.MissingEventHandlerException>(() => transmit.Click());
-        await Assert.That(ex).IsNotNull();
+        btns[0].Click();
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.Value.Id).IsEqualTo("r1");
+        await Assert.That(captured!.Value.P).IsEqualTo(RadarPower.Transmit);
     }
 
     [Test]
     public async Task PowerToggle_RendersExactlyOneButton()
     {
-        // Single-button toggle contract: helm asked for one decision
-        // surface on power, not two side-by-side. Whether the radar is
-        // transmitting, on standby, or any other state, the row shows
-        // exactly one button (label + behaviour switches by state).
+        // Single-button toggle: one decision surface, label + click
+        // behaviour switch by state. Transmitting -> "Standby"
+        // (instant tap clicks straight back to standby); standby ->
+        // "Transmit" (also instant tap now -- helm dropped the
+        // hold-to-engage gate). Helm also asked for the full word
+        // "Standby" instead of "Stby" so the button reads at a
+        // glance without abbreviation guesswork.
         using var ctx = new Bunit.TestContext();
         var transmitting = Render(ctx, [Radar("r1", status: "transmit")]);
         await Assert.That(transmitting.FindAll(".radar-hud-power .ap-mode-btn").Count).IsEqualTo(1);
-        await Assert.That(transmitting.Find(".radar-hud-power .ap-mode-btn").TextContent.Trim()).IsEqualTo("Stby");
+        await Assert.That(transmitting.Find(".radar-hud-power .ap-mode-btn").TextContent.Trim()).IsEqualTo("Standby");
 
         using var ctx2 = new Bunit.TestContext();
         var standby = Render(ctx2, [Radar("r2", status: "standby")]);

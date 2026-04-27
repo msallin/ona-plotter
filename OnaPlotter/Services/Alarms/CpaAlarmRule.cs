@@ -20,6 +20,16 @@ public sealed class CpaAlarmRule : IAlarmRule
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
+        // Harbor mode bundle: while the helm is entering / leaving a
+        // busy harbour, every other vessel is a "near miss" so the
+        // klaxon would fire continuously and the helm would silence
+        // it -- defeating the alarm. Suppressing the rule entirely
+        // (paired with hiding the CPA arcs JS-side) lets the helm
+        // focus on the chart + immediate obstacles. Reset to false
+        // on every page reload so a forgotten Harbor mode never
+        // silently rides into open water.
+        if (ctx.Settings.HarborMode) return null;
+
         var data = ctx.Data;
         if (data.Latitude is null || data.Longitude is null
             || data.CourseOverGround is null || data.SpeedOverGround is null)
