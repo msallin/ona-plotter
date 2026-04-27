@@ -822,7 +822,11 @@
             // course state for this leg; we'd be guessing the target.
             // Fail loud rather than fall back to the relative call
             // and reintroduce the multi-plotter race.
-            Toasts.Error("Auto-advance skipped: unknown route position");
+            // Tell the helm what to do, not just that something failed.
+            // pointIndex is missing when the server hasn't published v2
+            // course state for the current leg; the manual "Next WP"
+            // button on the APPROACH alarm banner is the workaround.
+            Toasts.Error("Auto-advance unavailable -- tap Next WP on the alarm banner to advance manually.");
             return;
         }
         bool isLastLeg = data.ActiveRoutePointTotal is int total && currentIdx + 1 >= total;

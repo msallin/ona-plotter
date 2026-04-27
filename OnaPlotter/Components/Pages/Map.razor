@@ -912,18 +912,25 @@
     /// failures so a missing plugin or unreachable server does not take the
     /// whole page down. Returns null on failure; callers coalesce to an
     /// empty list. A Toast surfaces the error so the captain knows.
+    /// While SignalK is offline we suppress these per-resource toasts:
+    /// the connection chip (top-left) and the first-run "server unreachable"
+    /// toast already convey the situation, and stacking five "Couldn't load
+    /// X: TypeError: Failed to fetch" toasts on a fresh-device first paint
+    /// reads as "broken app" rather than "server isn't reachable".
     /// </summary>
     private async Task<T?> SafeLoad<T>(Func<Task<T>> loader, string what) where T : class
     {
         try { return await loader(); }
         catch (HttpRequestException ex)
         {
-            Toasts.Error($"Couldn't load {what}: {ex.Message}");
+            if (SignalkClient.IsConnected)
+                Toasts.Error($"Couldn't load {what}: {ex.Message}");
             return null;
         }
         catch (TaskCanceledException)
         {
-            Toasts.Error($"Timed out loading {what}");
+            if (SignalkClient.IsConnected)
+                Toasts.Error($"Timed out loading {what}");
             return null;
         }
     }
@@ -2173,7 +2180,12 @@
         }
         else
         {
-            Toasts.Error($"Buddy update failed: {r.Error ?? "plugin installed & auth?"}");
+            // Default reason matters: r.Error is null when the API returned
+            // a non-success status with no body, which is almost always
+            // "the buddy-list plugin isn't installed or the request wasn't
+            // authorised" rather than a transient error. Tell the helm what
+            // to check instead of leaving them with developer shorthand.
+            Toasts.Error($"Buddy update failed: {r.Error ?? "the SignalK buddy-list plugin may not be installed or authorised."}");
         }
     }
 

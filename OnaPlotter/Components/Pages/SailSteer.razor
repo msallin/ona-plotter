@@ -16,13 +16,15 @@
 <div class="sailsteer-container">
     @if (!HasAnyInstrument)
     {
-        @* Empty state overlays the (otherwise bare) compass so the
-           user sees "the app is alive, sensors aren't reporting"
-           rather than a silent ring of dashes. *@
+        @* State-aware empty state: mirrors WindRose's NoFeed / Stale /
+           Cold dispatch so the helm sees the right next step. Without
+           the dispatch the page used to suggest "connect a wind sensor"
+           even when SignalK was simply offline -- wrong layer to
+           troubleshoot. *@
+        var emptyState = ResolveEmptyState();
         <div class="instrument-empty-state" role="status">
-            <strong>Waiting for wind data</strong>
-            SailSteer needs <em>environment.wind.*</em> + <em>navigation.headingTrue</em>.
-            Connect a wind sensor or check the SignalK server.
+            <strong>@emptyState.Title</strong>
+            @emptyState.Detail
         </div>
     }
     <svg viewBox="0 0 500 500" style="max-width:500px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg">
@@ -225,6 +227,28 @@
         || Data.WindAngleTrue is not null
         || Data.WindAngleApparent is not null
         || Data.WindSpeedTrue is not null;
+
+    /// <summary>
+    /// Picks a state-aware empty-state message for the SailSteer overlay.
+    /// Three diagnoses parallel to WindRose:
+    ///   * NoFeed: SignalK websocket is not connected -- check server.
+    ///   * Stale: connected but no message in &gt; 5 s.
+    ///   * Cold: connected and live but no wind / heading sample yet.
+    /// Without this dispatch the page used to suggest "connect a wind
+    /// sensor" even when SignalK was offline, sending the helm to fix
+    /// the wrong layer.
+    /// </summary>
+    private (string Title, string Detail) ResolveEmptyState()
+    {
+        if (!SignalkClient.IsConnected)
+            return ("No SignalK feed",
+                    "Check the server URL or wait while the client reconnects.");
+        if (SignalkClient.IsDataStale)
+            return ("SignalK feed stale",
+                    "Connected, but no message has arrived for several seconds.");
+        return ("Awaiting wind / heading",
+                "Connected. SailSteer needs environment.wind.* and navigation.headingTrue from the server.");
+    }
 
     /// <summary>
     /// Polar-optimum layline angles (absolute degrees, compass-clockwise
