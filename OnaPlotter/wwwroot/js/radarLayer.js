@@ -417,6 +417,20 @@ class RadarOverlay {
 
     setRange(range) {
         if (!range || range === this.range) return;
+        // Clear before the bounds recalc that follows. The painted
+        // pixels are at the OLD scale: spoke cell N maps to a fixed
+        // canvas pixel via the range-independent LUT, but the canvas
+        // is about to be repositioned to cover a new geographic
+        // square. Without the clear, an echo painted at "1 nm" pixel
+        // position is shown at the new range's "1 nm" geographic
+        // position, which is a different physical place. The wire-
+        // driven branch in _onFrame already does this clear when the
+        // radar's per-spoke range field changes; mirror that here so
+        // the helm-driven path doesn't depend on the radar reporting
+        // a range value (Mayara's protobuf zero-defaults the field
+        // when the radar omits it). Empty-and-honest beats stale-
+        // and-misplaced for a navigation overlay.
+        this._clearCanvas();
         this.range = range;
         this._scheduleReposition();
     }
