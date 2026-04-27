@@ -4,9 +4,9 @@
 @* Bottom control bar.
 
    Layout: More (overflow) is leftmost, then navigation grouping
-   (Follow / Orient / Centre), safety (Anchor / MOB), view (Fit), create
-   (Add / Route / Race), and finally Layers. "Less-essential" toggles
-   (Legend / Night / Laylines / Measure) live inside the More menu; the
+   (Follow / Centre), safety (Anchor / MOB), view (Fit), create
+   (Add / Measure / Race), and finally Layers. "Less-essential" toggles
+   (Legend / Night / Laylines / Orient) live inside the More menu; the
    More button shows a dot when any of its contents are active so an
    "on" state doesn't hide behind a closed menu. *@
 
@@ -83,12 +83,6 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Mob)</span>
                     <span>@(MobActive ? "Clear MOB" : "MOB")</span>
                 </button>
-                <button class="ctrl-more-item ctrl-more-overflow @(MeasureActive ? "ctrl-more-active" : "")"
-                        @onclick="() => Select(OnToggleMeasure)"
-                        title="Measure distance + bearing">
-                    <span class="ctrl-more-ico">@((MarkupString)Icons.Measure)</span>
-                    <span>Measure@(MeasureActive ? " (on)" : "")</span>
-                </button>
                 <div class="ctrl-more-sep ctrl-more-overflow"></div>
 
                 <button class="ctrl-more-item @(LegendOpen ? "ctrl-more-active" : "")"
@@ -130,15 +124,6 @@
     <button class="ctrl-btn @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
         <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
         <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
-    </button>
-    @* Measure swapped in here from the More menu -- it's a primary
-       interaction for route planning and frequent enough to deserve a
-       direct bar slot (was a tap-then-tap-Measure two-step). *@
-    <button class="ctrl-btn ctrl-btn-overflow @(MeasureActive ? "active" : "")"
-            @onclick="OnToggleMeasure"
-            title="Measure distance + bearing (D)">
-        <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
-        <span class="ctrl-lbl">Measure</span>
     </button>
     <button class="ctrl-btn ctrl-btn-overflow" @onclick="OnCentreOnBoat"
             title="Centre on boat (one-shot; doesn't engage Follow)">
@@ -240,6 +225,18 @@
             </div>
         }
     </div>
+    @* Measure sits immediately right of Add: helm asked for it next to
+       the create-bucket since both are "shape work I'm doing on the
+       chart". Was previously between Follow and Centre, where it
+       interrupted the navigation grouping. No `ctrl-btn-overflow` --
+       Measure earns a permanent bar slot on every viewport (the More
+       menu's phone-overflow Measure entry is gone too). *@
+    <button class="ctrl-btn @(MeasureActive ? "active" : "")"
+            @onclick="OnToggleMeasure"
+            title="Measure distance + bearing (D)">
+        <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
+        <span class="ctrl-lbl">Measure</span>
+    </button>
     @if (SailingMode == "race" || RaceTimerActive)
     {
         <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
@@ -399,9 +396,11 @@
     }
 
     // Dot indicator on the More button when any of its contents is on,
-    // so Night / Laylines / Measure being active is visible without
-    // opening the menu.
-    private bool AnyMoreItemActive => NightMode || LaylinesVisible || MeasureActive;
+    // so Night / Laylines being active is visible without opening the
+    // menu. Measure used to be in this list, but it now lives on the
+    // bar (right of Add) on every viewport size; the bar button itself
+    // shows the active state, so the More dot would be misleading.
+    private bool AnyMoreItemActive => NightMode || LaylinesVisible;
 
     // Dynamic tooltip: when items are active it reads "More (on: Night,
     // Laylines)" so the dot badge's meaning is discoverable on hover /
@@ -410,12 +409,11 @@
     {
         get
         {
-            var on = new List<string>(3);
+            var on = new List<string>(2);
             if (NightMode) on.Add("Night");
             if (LaylinesVisible) on.Add("Laylines");
-            if (MeasureActive) on.Add("Measure");
             return on.Count == 0
-                ? "More: Legend, Night, Laylines, Measure"
+                ? "More: Legend, Night, Laylines, Orient"
                 : "More (on: " + string.Join(", ", on) + ")";
         }
     }

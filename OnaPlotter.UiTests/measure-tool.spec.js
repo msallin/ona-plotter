@@ -64,22 +64,30 @@ test.describe('Measure tool', () => {
     });
 
     test('measure points are white, not cyan/amber', async ({ page }) => {
-        const colors = await page.evaluate(async () => {
+        const result = await page.evaluate(async () => {
             const mod = await import('/_content/OnaPlotter/js/leafletInterop.js')
                 .catch(() => import('/js/leafletInterop.js'));
             mod.updatePosition(48.0, 7.85, 0, 0, 0);
             mod.measureFromVesselTo(48.01, 7.86);
-            const dots = Array.from(document.querySelectorAll('.ona-measure-dot'));
-            const lines = Array.from(document.querySelectorAll('.ona-measure-line'));
-            return [...dots, ...lines].map(p => p.getAttribute('stroke'));
+            // The fixed measure dot is rendered as a DIV via L.divIcon
+            // (so it can be draggable); read its CSS background.
+            const fixedDot = document.querySelector('.ona-measure-dot:not(.ona-measure-dot-vessel)');
+            const vesselDot = document.querySelector('.ona-measure-dot-vessel');
+            const line = document.querySelector('.ona-measure-line');
+            return {
+                fixedBg: fixedDot ? getComputedStyle(fixedDot).backgroundColor : null,
+                vesselBorder: vesselDot ? getComputedStyle(vesselDot).borderColor : null,
+                lineStroke: line ? line.getAttribute('stroke') : null,
+            };
         });
         // The unified colour is #e2e8f0 (slate-200, the same hue the old
-        // vessel-to-point bearing line used). Both the dots and the
-        // segment line should report this exact stroke.
-        expect(colors.length).toBeGreaterThan(0);
-        for (const c of colors) {
-            expect((c || '').toLowerCase()).toBe('#e2e8f0');
-        }
+        // vessel-to-point bearing line used). The browser normalises
+        // hex to rgb() in computed style, so check both the fixed dot's
+        // background, the vessel-anchored dot's border, and the SVG
+        // segment line's stroke (which keeps the literal hex).
+        expect(result.fixedBg).toBe('rgb(226, 232, 240)');
+        expect(result.vesselBorder).toBe('rgb(226, 232, 240)');
+        expect((result.lineStroke || '').toLowerCase()).toBe('#e2e8f0');
     });
 
     test('vessel-anchored segment redraws when own-boat moves', async ({ page }) => {
@@ -114,6 +122,55 @@ test.describe('Measure tool', () => {
         expect(result.after).toMatch(/^M[^L]*L/);
         // And the redraw must have produced a different geometry.
         expect(result.after).not.toBe(result.before);
+    });
+
+    test('right-click in measure mode clears the ruler without exiting', async ({ page }) => {
+        // The reset gesture: while in measure mode, a right-click /
+        // long-press wipes the current measurement and stays in measure
+        // mode (cursor stays as crosshair). Find the map in the
+        // Leaflet-managed Maps registry rather than wiring a test-only
+        // export -- L.DomUtil keeps every map reachable via its DOM
+        // container and that's stable across versions.
+        const result = await page.evaluate(async () => {
+            const mod = await import('/_content/OnaPlotter/js/leafletInterop.js')
+                .catch(() => import('/js/leafletInterop.js'));
+            mod.updatePosition(48.0, 7.85, 0, 0, 0);
+            mod.measureFromVesselTo(48.01, 7.86);
+            const dotsBefore = document.querySelectorAll('.ona-measure-dot').length;
+            // Leaflet stores the map instance on the container as
+            // _leaflet_id; the Map object itself is reachable via
+            // L.DomUtil.get + .__lmap__ on some builds. Easiest is to
+            // walk every DOMnode whose _leaflet is set and pick the
+            // one that is an L.Map. This avoids exposing the module's
+            // private `map` variable just for tests.
+            let mapObj = null;
+            for (const el of document.querySelectorAll('.leaflet-container')) {
+                // Each map registers itself as the _leaflet_id holder.
+                // Iterate Leaflet's internal map cache (window L.Util has
+                // _lastId; map instances keep a back-reference).
+                if (el._leaflet_id != null && el._leaflet_map) { mapObj = el._leaflet_map; break; }
+            }
+            // Fallback: Leaflet's own L.Map.fire is what the real
+            // handler invokes from the contextmenu listener. We just
+            // need ANY route to that handler. The live document
+            // already has a contextmenu listener attached by initMap;
+            // dispatch a synthetic event to its container.
+            const container = document.querySelector('.leaflet-container');
+            if (container) {
+                const ev = new MouseEvent('contextmenu', {
+                    bubbles: true, cancelable: true,
+                    clientX: 100, clientY: 100,
+                });
+                container.dispatchEvent(ev);
+            }
+            const dotsAfter = document.querySelectorAll('.ona-measure-dot').length;
+            const cursor = getComputedStyle(document.querySelector('.leaflet-container')).cursor;
+            return { dotsBefore, dotsAfter, cursor };
+        });
+        expect(result.dotsBefore).toBe(2);
+        expect(result.dotsAfter).toBe(0);
+        // Still in measure mode after the reset.
+        expect(result.cursor).toBe('crosshair');
     });
 
     test('clearMeasure removes all measure layers', async ({ page }) => {

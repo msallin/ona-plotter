@@ -1038,6 +1038,15 @@ article.content:has(.map-container) {
     color: rgba(255, 255, 255, 0.95);
     font-weight: 500;
     white-space: nowrap;
+    /* Tide / depth station names from SignalK can be arbitrarily long
+       ("ZH-Wollishofen Tiefenmesser am Steg 4" and similar). Without
+       these the text overflows the card width and pushes the right-edge
+       glyph (or the next card on a tight viewport) off-screen. The
+       parent .hud-card has its own width budget; clamp here so the
+       station label gracefully ellipsises instead of breaking layout. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 /* === HUD stack containers ===
@@ -4985,6 +4994,52 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     border: 2px solid #fff;
     box-shadow: 0 0 4px rgba(0,0,0,0.4);
 }
+
+/* Measurement points are rendered as draggable L.markers with a divIcon
+   so the helm can move a misplaced point or insert a new one between
+   two existing ones (Route Edit gestures, applied to the ruler). The
+   default leaflet-div-icon styling adds a white background + black
+   border that fight the small white dot; neuter it here. */
+.ona-measure-marker {
+    background: none !important;
+    border: none !important;
+}
+.ona-measure-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    /* Subtle outline so the dot remains visible on white tiles
+       (OpenSeaMap, base maps with high-luminance areas). */
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+    cursor: grab;
+}
+/* Vessel-anchored point: hollow ring rather than solid disk, so the
+   helm can tell at a glance which leg follows own-boat (and that this
+   one isn't draggable). */
+.ona-measure-dot-vessel {
+    background: transparent;
+    border: 3px solid #e2e8f0;
+    box-sizing: border-box;
+    cursor: default;
+}
+/* Ghost shown at the pre-drag position while a measure point is being
+   moved -- mirrors the route-edit pattern (.edit-wp-ghost-circle) but
+   in white to match the ruler's own colour family. */
+.ona-measure-ghost {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: transparent;
+    border: 2px dashed #e2e8f0;
+    opacity: 0.7;
+    box-sizing: border-box;
+}
+/* Wide invisible polyline behind each measure segment so a fingertip
+   tap anywhere near the line splits it. The visible segment is 2 px
+   wide; this one is 24 px and fully transparent. crosshair cursor
+   advertises that the segment is interactive. */
+.ona-measure-hit-line { cursor: crosshair; }
 
 /* Hollow ghost circle shown while a waypoint is being dragged, anchored
    at the original (pre-drag) position. Reads as "what it was" while the
