@@ -46,12 +46,15 @@ public partial class Map
         fabMenuOpen = false;
         routeEditMode = true;
         routeEditId = null;                     // fresh route, not an in-place edit
-        // Prefill with the same date-stamped default that Save falls back
-        // to when the field is blank. Prefilled (instead of placeholder)
-        // so iPad helms can see the name before tapping Save and edit it
-        // in place, while the keyboard-shortcut "just save" path still
+        // Prefill with the date-stamped default plus a numeric suffix
+        // when the helm has already created a route with that name
+        // earlier today. Prefilled (instead of placeholder) so iPad
+        // helms can see the name before tapping Save and edit it in
+        // place, while the keyboard-shortcut "just save" path still
         // gets a sensible name without extra typing.
-        routeEditName = $"Route {DateTime.Now:yyyyMMdd}";
+        routeEditName = OnaPlotter.Utilities.UniqueRouteName.Suggest(
+            $"Route {DateTime.Now:yyyyMMdd}",
+            availableRoutes.Select(r => r.Name ?? string.Empty));
         routeEditStats = "0 WP / 0 nm";
         InstallEditNavGuard();
         if (module is not null)
@@ -319,9 +322,14 @@ public partial class Map
             // Empty name -> date-stamped default. yyyyMMdd is monotonically
             // sortable in the routes list, which matters more than time-of-day
             // (most users create a few routes per day; "Route 14:30" starts
-            // to look identical after a week).
+            // to look identical after a week). The Suggest helper appends a
+            // " (N)" suffix if a route with that name already exists -- self
+            // is excluded by id so an in-place edit isn't disambiguated
+            // against its own pre-edit name.
             string name = string.IsNullOrWhiteSpace(routeEditName)
-                ? $"Route {DateTime.Now:yyyyMMdd}"
+                ? OnaPlotter.Utilities.UniqueRouteName.Suggest(
+                    $"Route {DateTime.Now:yyyyMMdd}",
+                    availableRoutes.Where(r => r.Id != routeEditId).Select(r => r.Name ?? string.Empty))
                 : routeEditName;
             string? existingId = routeEditId;
             // newRouteId captures the id either way:
