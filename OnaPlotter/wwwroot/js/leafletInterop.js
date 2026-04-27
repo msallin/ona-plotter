@@ -3274,28 +3274,9 @@ export function stopPolygonEdit() {
 
 export function getPolygonEditCoords() { return polygonEditCoords; }
 
-// Returns [vertexCount, areaSquareMeters]. Area is 0 below 3 vertices.
-// Uses the shoelace formula on the flat projection (close enough at the
-// lat scales we care about; a proper geodesic area would be overkill
-// for the anchorage / no-go zones sailors draw).
-export function getPolygonEditStats() {
-    const n = polygonEditCoords.length;
-    if (n < 3) return [n, 0];
-    // Equirectangular approximation anchored at the first vertex.
-    const lat0 = polygonEditCoords[0][0] * Math.PI / 180;
-    const cosLat = Math.cos(lat0);
-    const METERS_PER_DEG_LAT = 111_320.0;
-    const metersPerDegLon = METERS_PER_DEG_LAT * cosLat;
-    let area2 = 0;
-    for (let i = 0; i < n; i++) {
-        const [lat1, lon1] = polygonEditCoords[i];
-        const [lat2, lon2] = polygonEditCoords[(i + 1) % n];
-        const x1 = lon1 * metersPerDegLon, y1 = lat1 * METERS_PER_DEG_LAT;
-        const x2 = lon2 * metersPerDegLon, y2 = lat2 * METERS_PER_DEG_LAT;
-        area2 += (x1 * y2) - (x2 * y1);
-    }
-    return [n, Math.abs(area2) / 2];
-}
+// Vertex count + polygon area are derived in C# (see
+// OnaPlotter.Utilities.PolygonGeometry) from the coords returned above
+// so the formula stays unit-tested without a browser.
 
 export function undoLastPolygonVertex() {
     if (polygonEditCoords.length === 0) return;

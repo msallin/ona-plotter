@@ -1,8 +1,8 @@
 @* Freeform-polygon drawing overlay. Mirrors RouteEditPanel: hint banner
    at the top, numbered vertex list anchored top-right, name input + save
-   bar above the bottom controls. Parent polls getPolygonEditCoords +
-   getPolygonEditStats on a timer so the list + stats stay in sync with
-   drag operations on the JS side. *@
+   bar above the bottom controls. Parent polls getPolygonEditCoords on
+   a timer; vertex count and area are derived in C# via
+   PolygonGeometry so the formula is unit-tested without a browser. *@
 
 <div class="route-edit-hint">
     Tap map to add polygon vertices. Drag to reposition. Needs at least 3.

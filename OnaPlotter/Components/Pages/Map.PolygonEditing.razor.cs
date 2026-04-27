@@ -135,22 +135,25 @@ public partial class Map
         if (module is null) return;
         try
         {
-            var stats = await module.InvokeAsync<double[]>("getPolygonEditStats");
             var coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords");
             bool dirty = false;
-            if (stats is not null && stats.Length == 2)
+            if (coords is not null)
             {
-                int n = (int)stats[0];
-                double area = stats[1];
+                int n = coords.Length;
+                // Vertex count + area both derive from the coords we
+                // just fetched, so the C# side computes them directly
+                // instead of round-tripping a second JS interop call.
+                // PolygonGeometry returns 0 below 3 vertices.
+                double area = OnaPlotter.Utilities.PolygonGeometry.AreaSquareMeters(coords);
                 var s = n < 3
                     ? $"{n} vertices"
                     : $"{n} vertices / {FormatArea(area)}";
                 if (s != polygonEditStats) { polygonEditStats = s; dirty = true; }
-            }
-            if (coords is not null && !CoordsEqual(coords, polygonEditCoords))
-            {
-                polygonEditCoords = coords;
-                dirty = true;
+                if (!CoordsEqual(coords, polygonEditCoords))
+                {
+                    polygonEditCoords = coords;
+                    dirty = true;
+                }
             }
             if (dirty) await InvokeAsync(StateHasChanged);
         }
