@@ -1372,12 +1372,7 @@ html:fullscreen .hud-stack-br {
     transform-box: view-box;
     transition: transform 0.3s ease-out;
 }
-.wind-sep {
-    color: var(--hud-ink-dim);
-    margin: 0 1px;
-}
-
-/* Wind value lives on a single horizontal line ("17.5 / 14.6 kn").
+/* Wind value lives on a single horizontal line.
    Without nowrap the card's content width is set by the 84px dial
    above and the bigger helm-console type wraps the value across
    two lines ("17.5 /" / "14.6 kn"). nowrap lets the card grow
@@ -3243,12 +3238,6 @@ html.night-mode-global body {
     .hud-stack-bl .hud-value.hud-primary {
         font-size: var(--hud-font-value);
         font-weight: 500;
-    }
-    .hud-stack-tr .wind-tws,
-    .hud-stack-tr .wind-sep,
-    .hud-stack-tr .wind-label-tws,
-    .hud-stack-tr .wind-label-sep {
-        display: none;
     }
     .hud-stack-bl .hud-threshold,
     .hud-stack-bl .depth-tide-row,
