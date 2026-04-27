@@ -74,30 +74,25 @@
                 title="Range up">+</button>
     </div>
 
-    @* Power toggle. One button rather than separate Stby + Transmit
-       so the helm has a single decision surface for "is the radar
-       radiating right now?". Behaviour:
-        * Transmitting -> button reads "Stby"; instant tap (the safe
-          direction never asks for confirmation).
-        * Standby / off -> button reads "Transmit"; 600 ms hold to
-          confirm so an accidental tap can't put the array under
-          power. Same .ap-engage-btn / .holding visual language as
-          the autopilot engage modes so the helm reads "this is a
-          hold-to-confirm" with no extra learning. *@
+    @* Power toggle. One button per radar, label flips with state:
+        * Transmitting -> "Standby" (instant tap)
+        * Standby / off -> "Transmit" (also instant tap; helm asked
+          for the hold-to-engage gate to come off because the radar
+          power request goes through the SK plugin which has its
+          own warmup state, so a stray tap doesn't put the array
+          on the air immediately) *@
     <div class="ap-modes radar-hud-power">
         @if (IsTransmitting(radar))
         {
-            <button class="ap-mode-btn active"
+            <button class="ap-mode-btn radar-hud-power-btn active"
                     @onclick="() => OnSetPower.InvokeAsync((radar.Id, RadarPower.Standby))"
-                    title="Standby (instant)">Stby</button>
+                    title="Standby">Standby</button>
         }
         else
         {
-            <button class="ap-mode-btn ap-engage-btn @(holding == radar.Id ? "holding" : "")"
-                    @onpointerdown='@(() => HoldStart(radar.Id))'
-                    @onpointerup="HoldEnd" @onpointerleave="HoldEnd"
-                    @onpointercancel="HoldEnd"
-                    title="Hold to transmit">Transmit</button>
+            <button class="ap-mode-btn radar-hud-power-btn"
+                    @onclick="() => OnSetPower.InvokeAsync((radar.Id, RadarPower.Transmit))"
+                    title="Transmit">Transmit</button>
         }
     </div>
 </div>
@@ -108,9 +103,11 @@
     [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> Capabilities { get; set; } =
         new Dictionary<string, RadarCapabilities?>();
 
-    /// <summary>Fires when the user taps Stby or completes the
-    /// hold-to-engage on Transmit. Map.razor handles by calling
-    /// <c>RadarApi.SetControlAsync(radarId, "power", ...)</c>.</summary>
+    /// <summary>Fires when the helm taps Standby or Transmit. Map.razor
+    /// handles by calling <c>RadarApi.SetControlAsync(radarId, "power", ...)</c>.
+    /// Both buttons are now plain clicks -- the SK radar plugin owns
+    /// the warmup state machine, so the previous 600 ms hold-to-engage
+    /// gate on Transmit was redundant safety theatre.</summary>
     [Parameter] public EventCallback<(string radarId, RadarPower power)> OnSetPower { get; set; }
 
     /// <summary>Fires when the user steps range up or down. Map.razor
@@ -118,15 +115,7 @@
     /// "range", ControlValue.ForRange(metres))</c>.</summary>
     [Parameter] public EventCallback<(string radarId, int rangeMeters)> OnSetRange { get; set; }
 
-    /// <summary>Hold threshold for the Transmit button. Mirrors the
-    /// autopilot engage-mode hold so a helm gets a single muscle-memory
-    /// pattern across all "this could be dangerous if accidental"
-    /// controls. CSS animation duration must match.</summary>
-    private const int TransmitHoldMs = 600;
-
     private string? _selectedRadarId;
-    private string? holding;
-    private CancellationTokenSource? _holdCts;
 
     /// <summary>Picks the radar the card displays. Honours an explicit
     /// user selection when still valid; otherwise prefers the
@@ -160,44 +149,6 @@
         int next = idx + direction;
         if (next < 0 || next >= options.Count) return;
         await OnSetRange.InvokeAsync((radar.Id, options[next]));
-    }
-
-    // Hold-to-engage state machine. Identical pattern to MapHud's
-    // autopilot engage; kept local rather than shared because the
-    // duplication is ~20 lines and the two cards may diverge (e.g.
-    // a future "long-press for transmit-with-half-power" variant
-    // belongs only here). Tracks the radar id so a multi-radar
-    // helm can't have two transmit-presses overlapping their state.
-    private void HoldStart(string radarId)
-    {
-        _holdCts?.Cancel();
-        _holdCts = new CancellationTokenSource();
-        holding = radarId;
-        _ = RunHoldAsync(radarId, _holdCts.Token);
-    }
-
-    private async Task RunHoldAsync(string radarId, CancellationToken ct)
-    {
-        try
-        {
-            await Task.Delay(TransmitHoldMs, ct);
-            if (ct.IsCancellationRequested) return;
-            holding = null;
-            await OnSetPower.InvokeAsync((radarId, RadarPower.Transmit));
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (OperationCanceledException) { /* released before threshold */ }
-    }
-
-    private void HoldEnd()
-    {
-        _holdCts?.Cancel();
-        _holdCts = null;
-        if (holding is not null)
-        {
-            holding = null;
-            _ = InvokeAsync(StateHasChanged);
-        }
     }
 
     private static bool IsTransmitting(RadarInfo r) =>

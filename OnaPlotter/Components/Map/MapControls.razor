@@ -105,6 +105,18 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Laylines)</span>
                     <span>Laylines@(LaylinesVisible ? " (on)" : "")@(ShowKeyboardHints ? " (L)" : "")</span>
                 </button>
+                @* Harbor mode: a single switch that bundles AIS / collision
+                   suppressions for entering a busy port -- moored vessels
+                   hidden, name labels off, COG vectors off, CPA arcs off,
+                   CPA audio alarm muted, guard ring hidden. Resets to OFF
+                   on every page reload (in-memory only) so a forgotten
+                   Harbor mode never silently rides into open water. *@
+                <button class="ctrl-more-item @(HarborMode ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnToggleHarborMode)"
+                        title="Harbor mode -- hide moored vessels, names, COG, CPA, guard ring (resets on reload)">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Harbor)</span>
+                    <span>Harbor@(HarborMode ? " (on)" : "")</span>
+                </button>
                 @* Orient lives in the More menu now (was in the bar). It's a
                    set-and-forget choice -- helms cycle North-up / Course-up /
                    Heading-up at most a few times per passage, so it doesn't
@@ -275,6 +287,7 @@
     /// <c>SignalkClient.Data.HasActiveCourse</c>.</summary>
     [Parameter] public bool RouteNavigating { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
+    [Parameter] public bool HarborMode { get; set; }
     [Parameter] public bool MeasureActive { get; set; }
     [Parameter] public bool RouteEditMode { get; set; }
     [Parameter] public bool RaceTimerActive { get; set; }
@@ -293,6 +306,7 @@
     [Parameter] public EventCallback OnZoomToTrack { get; set; }
     [Parameter] public EventCallback OnCentreOnBoat { get; set; }
     [Parameter] public EventCallback OnToggleLaylines { get; set; }
+    [Parameter] public EventCallback OnToggleHarborMode { get; set; }
     [Parameter] public EventCallback OnToggleMeasure { get; set; }
     [Parameter] public EventCallback OnStartRouteEdit { get; set; }
     [Parameter] public EventCallback OnToggleRaceTimer { get; set; }
@@ -396,11 +410,14 @@
     }
 
     // Dot indicator on the More button when any of its contents is on,
-    // so Night / Laylines being active is visible without opening the
-    // menu. Measure used to be in this list, but it now lives on the
-    // bar (right of Add) on every viewport size; the bar button itself
-    // shows the active state, so the More dot would be misleading.
-    private bool AnyMoreItemActive => NightMode || LaylinesVisible;
+    // so Night / Laylines / Harbor being active is visible without
+    // opening the menu. Measure used to be in this list, but it now
+    // lives on the bar (right of Add) on every viewport size; the bar
+    // button itself shows the active state, so the More dot would be
+    // misleading. Harbor mode IS in the list -- the helm needs to see
+    // at a glance "alarms are suppressed" so a forgotten Harbor mode
+    // doesn't ride into open water.
+    private bool AnyMoreItemActive => NightMode || LaylinesVisible || HarborMode;
 
     // Dynamic tooltip: when items are active it reads "More (on: Night,
     // Laylines)" so the dot badge's meaning is discoverable on hover /
@@ -409,11 +426,12 @@
     {
         get
         {
-            var on = new List<string>(2);
+            var on = new List<string>(3);
             if (NightMode) on.Add("Night");
             if (LaylinesVisible) on.Add("Laylines");
+            if (HarborMode) on.Add("Harbor");
             return on.Count == 0
-                ? "More: Legend, Night, Laylines, Orient"
+                ? "More: Legend, Night, Laylines, Harbor, Orient"
                 : "More (on: " + string.Join(", ", on) + ")";
         }
     }

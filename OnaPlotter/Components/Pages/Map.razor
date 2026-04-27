@@ -88,6 +88,7 @@
                  OnStopNavigation="StopNavigation"
                  MobActive="mobActive"
                  LaylinesVisible="laylinesVisible"
+                 HarborMode="@Settings.HarborMode"
                  MeasureActive="measureActive"
                  RouteEditMode="routeEditMode"
                  RaceTimerActive="raceTimerActive"
@@ -103,6 +104,7 @@
                  OnZoomToTrack="ZoomToTrack"
                  OnCentreOnBoat="CentreOnBoat"
                  OnToggleLaylines="ToggleLaylines"
+                 OnToggleHarborMode="ToggleHarborMode"
                  OnToggleMeasure="ToggleMeasure"
                  OnStartRouteEdit="StartRouteEdit"
                  OnToggleRaceTimer="ToggleRaceTimer"
@@ -1654,6 +1656,14 @@
         }
     }
 
+    // Single MooredVesselTracker shared with CpaAlarmRule's classifier
+    // would be ideal but the rule owns its own instance; we instantiate
+    // a parallel tracker here (pure C#, no allocations on the hot path)
+    // so harbor mode can hide moored vessels without depending on the
+    // alarm pipeline's tick. Both trackers converge on the same
+    // moored-state for any vessel that's been observed long enough.
+    private readonly OnaPlotter.Services.MooredVesselTracker _harborMooredTracker = new();
+
     private async Task PushAisTargets()
     {
         if (!mapInitialized || module is null) return;
@@ -1671,8 +1681,22 @@
             double? ownCog = Data.CourseOverGround;
             double? ownSog = Data.SpeedOverGround;
 
+            // Harbor mode: drop moored vessels from the JS payload entirely.
+            // The MooredVesselTracker classifies a vessel as moored once SOG
+            // has held under ~1 kn for 60 s; outside the hold window the
+            // vessel renders normally so a slow-moving target doesn't blink
+            // away unexpectedly. Tracker also gets a Cleanup() call so its
+            // dict doesn't grow without bound on long sessions.
+            bool harbor = Settings.HarborMode;
+            var now = DateTime.UtcNow;
+            if (harbor)
+            {
+                _harborMooredTracker.Cleanup(vessels.Select(v => v.Context).ToHashSet());
+            }
+
             var jsVessels = vessels
                 .Where(v => v.Latitude is not null && v.Longitude is not null)
+                .Where(v => !harbor || !_harborMooredTracker.IsMoored(v, now))
                 .Select(v =>
                 {
                     // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs
@@ -1884,6 +1908,32 @@
         await Settings.SetLaylinesVisibleAsync(laylinesVisible);
         if (!laylinesVisible && module is not null)
             await module.InvokeVoidAsync("clearLaylines");
+    }
+
+    /// <summary>
+    /// Harbor mode is the helm's "I'm entering / leaving a busy port"
+    /// switch. C# side flips the IAppSettings flag (which gates
+    /// CpaAlarmRule + the moored-vessel filter in PushAisTargets);
+    /// JS side gets the same flag pushed via setHarborMode so name
+    /// labels, COG vectors, CPA arcs, and the guard-zone ring vanish
+    /// in lock-step. Resets to false on every page reload (in-memory
+    /// only) so a forgotten Harbor mode never silently rides into
+    /// open water with the alarms still off.
+    /// </summary>
+    private async Task ToggleHarborMode()
+    {
+        await Settings.SetHarborModeAsync(!Settings.HarborMode);
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("setHarborMode", Settings.HarborMode); }
+            catch (JSDisconnectedException) { }
+            catch (ObjectDisposedException) { }
+        }
+        // Force an immediate AIS push so the moored-vessel filter takes
+        // effect now rather than at the next 3 s tick. Without this
+        // the visual change lags the button tap by enough to feel
+        // unresponsive.
+        _ = PushAisTargets();
     }
 
     private async Task ToggleMeasure()

@@ -17,6 +17,12 @@ public static class Icons
     // Anchor.
     public const string Anchor = Wrap + "<circle cx=\"12\" cy=\"5\" r=\"2\"/><line x1=\"12\" y1=\"7\" x2=\"12\" y2=\"22\"/><line x1=\"8\" y1=\"11\" x2=\"16\" y2=\"11\"/><path d=\"M5 14a7 7 0 0 0 14 0\"/>" + End;
 
+    // Harbor: simplified pier-with-crane silhouette. Pier deck on
+    // the waterline, two pilings at the ends, and a small lift hut
+    // with a vertical mast on top. Reads as "in port" without
+    // depending on a full skyline.
+    public const string Harbor = Wrap + "<path d=\"M3 21h18\"/><path d=\"M5 21V11\"/><path d=\"M19 21V11\"/><path d=\"M5 11h14\"/><path d=\"M9 11V5h6v6\"/><path d=\"M12 5V3\"/>" + End;
+
     // MOB: person in distress / life ring.
     public const string Mob = Wrap + "<circle cx=\"12\" cy=\"12\" r=\"9\"/><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 3v3M12 18v3M3 12h3M18 12h3\"/>" + End;
 

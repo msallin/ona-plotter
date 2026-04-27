@@ -92,7 +92,7 @@ public class MapControlsTests
 
         var off = Render(ctx);
         await Assert.That(off.Find(".ctrl-more-wrap > button").GetAttribute("title"))
-            .IsEqualTo("More: Legend, Night, Laylines, Orient");
+            .IsEqualTo("More: Legend, Night, Laylines, Harbor, Orient");
 
         var some = Render(ctx, p => p
             .Add(x => x.NightMode, true)
@@ -104,7 +104,21 @@ public class MapControlsTests
         // default catalogue, not surface "(on: Measure)".
         var measOn = Render(ctx, p => p.Add(x => x.MeasureActive, true));
         await Assert.That(measOn.Find(".ctrl-more-wrap > button").GetAttribute("title"))
-            .IsEqualTo("More: Legend, Night, Laylines, Orient");
+            .IsEqualTo("More: Legend, Night, Laylines, Harbor, Orient");
+    }
+
+    [Test]
+    public async Task More_Button_Dot_Lights_For_HarborMode()
+    {
+        // Harbor mode is in AnyMoreItemActive specifically because a
+        // forgotten Harbor mode is the worst-case (alarms suppressed
+        // riding into open water). The More dot must signal it from
+        // the bar without opening the menu.
+        using var ctx = new Bunit.TestContext();
+        var harbor = Render(ctx, p => p.Add(x => x.HarborMode, true));
+        await Assert.That(harbor.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
+        await Assert.That(harbor.Find(".ctrl-more-wrap > button").GetAttribute("title"))
+            .IsEqualTo("More (on: Harbor)");
     }
 
     [Test]

@@ -1127,7 +1127,12 @@ article.content:has(.map-container) {
     left: 50%;
     transform: translateX(-50%);
     align-items: center;
-    max-width: min(560px, calc(100% - 2 * var(--hud-edge)));
+    /* Wider budget so the route card's six fields (DTW / BRG / VMG /
+       TTG / ETA / XTE) all sit on a single line. The card is the
+       widest content in this stack; bumping from 560 -> 760 covers
+       the helm's "ETA + XTE wrapped to two lines" report without
+       sacrificing centering. */
+    max-width: min(760px, calc(100% - 2 * var(--hud-edge)));
 }
 
 /* Fullscreen safe-area: when the app is fullscreen the stacks need
@@ -4107,13 +4112,23 @@ html.night-mode-global body {
        above value), which the helm read as "two rows of fields"
        even though it was one row of items. flex-direction: row
        collapses each pair to a single line; the gap keeps "DTW"
-       and "1.5 nm" visually distinct. */
+       and "1.5 nm" visually distinct.
+
+       white-space: nowrap stops a value (e.g. "30m P") from
+       wrapping inside its own item when the row is tight; the row
+       container is nowrap, so the only way to wrap was within an
+       item -- pinning the contents nowrap closes that loophole. */
     display: flex;
     flex-direction: row;
     align-items: baseline;
     gap: 4px;
     min-width: 0;
-    flex-shrink: 1;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.route-info-item .hud-value,
+.route-info-item .hud-label {
+    white-space: nowrap;
 }
 
 /* Route-total row: single-line summary of distance / TTG / ETA for
@@ -4755,10 +4770,13 @@ html.night-mode-global body {
     margin: 6px 0 4px;
 }
 .radar-hud-range-step {
-    min-width: 32px;
-    padding: 4px 8px;
-    font-weight: 700;
-    font-size: 1rem;
+    /* Smaller buttons -- helm asked for the row height to come down
+       so the radar card doesn't dominate the bottom-right HUD stack.
+       Still wide enough to tap cleanly through gloves. */
+    min-width: 24px;
+    padding: 2px 6px;
+    font-weight: 600;
+    font-size: 0.85rem;
     line-height: 1;
 }
 .radar-hud-range-step:disabled {
@@ -4767,8 +4785,12 @@ html.night-mode-global body {
 }
 .radar-hud-range-value {
     flex: 1 1 auto;
-    font-size: 0.95rem;
-    font-weight: 600;
+    /* Match the picker dropdown's font (.radar-hud-picker is
+       0.75rem) so the range chip and the picker read as the same
+       family. Helm explicitly asked for the value not bold and at
+       dropdown size. */
+    font-size: 0.75rem;
+    font-weight: 400;
     font-variant-numeric: tabular-nums;
     color: var(--sk-text);
     min-width: 60px;
@@ -4778,6 +4800,12 @@ html.night-mode-global body {
    autopilot card; .radar-hud-power is just a hook for future tweaks
    without touching the AP rules. */
 .radar-hud-power { margin-top: 2px; }
+.radar-hud-power-btn {
+    /* Smaller power button to match the trimmed range row. */
+    padding: 4px 10px;
+    font-size: 0.8rem;
+    min-height: 28px;
+}
 
 /* ===== Dark Ops =====
    Chrome-off mode for long offshore watches. The map + the alarm

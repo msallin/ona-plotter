@@ -93,6 +93,37 @@ public class CpaAlarmRuleTests
     }
 
     [Test]
+    public async Task Silent_WhenHarborModeActive()
+    {
+        // Harbor mode bundle: helm entering / leaving a busy port
+        // suppresses every CPA alarm at the rule level. The
+        // collision-warning overlays are also gated JS-side, but the
+        // audio alarm comes through here -- pinning that the rule
+        // short-circuits when Settings.HarborMode is true so a
+        // dismissed visual overlay can't keep the klaxon chirping.
+        var rule = new CpaAlarmRule();
+        var nav = OwnShipUnderway();
+        var threat = ThreatNorthOf(200, speedMs: 5, name: "MV Close");
+        var settings = new FakeSettings { HarborMode = true };
+        await Assert.That(rule.Check(Ctx(nav, [threat], settings))).IsNull();
+    }
+
+    [Test]
+    public async Task FiresAgain_AfterHarborModeReleased()
+    {
+        // Toggling Harbor mode off restores the alarm. Same threat
+        // geometry that fires in Fires_WhenVesselInsideCpaAndTcpaLimits;
+        // pin the symmetry so a future regression that gates Harbor
+        // mode by other means (e.g. a settings cache) can't leave the
+        // alarms silenced after the helm releases the toggle.
+        var rule = new CpaAlarmRule();
+        var nav = OwnShipUnderway();
+        var threat = ThreatNorthOf(200, speedMs: 5);
+        var settings = new FakeSettings { HarborMode = false };
+        await Assert.That(rule.Check(Ctx(nav, [threat], settings))).IsNotNull();
+    }
+
+    [Test]
     public async Task Silent_WhenOwnShipNotUnderway()
     {
         // If own SOG is null the rule can't project -- must return null

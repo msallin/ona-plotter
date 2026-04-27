@@ -65,6 +65,26 @@ public interface IAppSettings
     /// declutter -- this is the toggle.</summary>
     bool AtonsVisible { get; }
 
+    /// <summary>
+    /// Harbor mode: a single switch that bundles four AIS / collision
+    /// suppressions for entering a busy harbour, where the helm cares
+    /// about the chart and immediate obstacles, not every CPA arc on
+    /// every moored vessel. When true:
+    ///   * Moored AIS targets (per <c>MooredVesselTracker</c>) are
+    ///     hidden entirely from the map.
+    ///   * Vessel-name labels are suppressed on remaining markers.
+    ///   * CPA arcs / lines / labels are not drawn.
+    ///   * The CPA alarm rule short-circuits to null so the audio
+    ///     alarm doesn't keep firing on dismissed overlays.
+    ///   * The guard-zone ring around own-ship is hidden.
+    ///
+    /// NOT persisted across page reloads -- a forgotten Harbor mode
+    /// would otherwise silently ride into open water with the
+    /// collision alarms still off, which is the worst possible time.
+    /// Defaults to false on every <c>InitializeAsync</c>.
+    /// </summary>
+    bool HarborMode { get; }
+
     double DepthAlarmThreshold { get; }
 
     /// <summary>When true, the sidebar collapses to the icon-only rail
@@ -289,6 +309,10 @@ public interface IAppSettings
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
+
+    /// <summary>Toggle <see cref="HarborMode"/>. In-memory only --
+    /// resets to false on the next page load.</summary>
+    Task SetHarborModeAsync(bool value);
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetGuardZoneLookaheadMinutesAsync(double value);
