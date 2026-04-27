@@ -7,9 +7,18 @@
    this component renders the buttons and fires ValueChanged on
    pick. Blazor's two-way bind shorthand (`@bind-Value`) works. *@
 
+@*
+   Renders a single-select pill track with cells inside, sharing the
+   typographic vocabulary of the page's status chips
+   (.instrument-badge) but a different *track* shape so the helm
+   reads "this is a control" vs "this is status" at a glance. The
+   prior Bootstrap btn-group / btn-outline-secondary styling sat
+   alongside the chips with mismatched border-radius / padding /
+   weight, which the helm flagged as "different button types".
+*@
 @if (Choices is not null && Choices.Length > 0)
 {
-    <div class="btn-group" role="group" aria-label="@(AriaLabel ?? "Time window")">
+    <div class="segmented" role="group" aria-label="@(AriaLabel ?? "Time window")">
         @foreach (var (mins, label) in Choices)
         {
             string id = $"twsel-{_instanceId}-{mins}";
@@ -17,7 +26,7 @@
                    id="@id" autocomplete="off"
                    checked="@(Value == mins)"
                    @onchange="() => Select(mins)" />
-            <label class="btn btn-outline-secondary btn-sm" for="@id">@label</label>
+            <label class="btn" for="@id">@label</label>
         }
     </div>
 }
