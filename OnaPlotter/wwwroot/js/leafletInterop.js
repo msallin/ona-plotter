@@ -2454,6 +2454,43 @@ function wireRouteEdit(popup, id) {
     });
 }
 
+// Active-route popup: same shape as the regular-route popup but the
+// primary action is "Deactivate" (clear the SignalK course) rather
+// than "Activate". Edit + Delete keep working on the route resource
+// via the same JSInvokables the regular-route popup wires up.
+function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
+    const safeName = esc(name || `Route ${id.substring(0, 6)}`);
+    return `
+        <div class="route-popup-body">
+            <div class="route-popup-title">${safeName}</div>
+            <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm &middot; active</div>
+            <div class="route-popup-actions">
+                <button class="route-deactivate-btn" type="button">Deactivate</button>
+                <button class="route-edit-btn" type="button">Edit</button>
+                <button class="route-delete-btn" type="button">Delete</button>
+            </div>
+        </div>`;
+}
+
+// Single-tap Deactivate -- non-destructive (the route resource stays;
+// only the active SignalK course is cleared), so no two-step confirm.
+// Mirrors the bottom-bar Stop Navigation button via the
+// DeactivateActiveRoute [JSInvokable] on Map.razor.cs.
+function wireRouteDeactivate(popup) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector('.route-deactivate-btn');
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', async () => {
+        popup._source?.closePopup();
+        if (dotNetRef) {
+            try { await dotNetRef.invokeMethodAsync('DeactivateActiveRoute'); }
+            catch (_) { /* disposed or navigation in flight */ }
+        }
+    });
+}
+
 export function removeRoute(id) { routeLayers.remove(id); }
 
 // --- Server Track ---
@@ -2495,7 +2532,12 @@ const activeWpIcon = L.divIcon({
 // the new next-WP via the JumpToRouteWaypoint JSInvokable on the C#
 // side). Pass an empty string to disable taps -- e.g. when the active
 // "course" is a single waypoint destination, not a multi-WP route.
-export function setActiveRoute(coords, wpIdx, routeId) {
+//
+// routeName is shown as the title of the tap-the-line popup
+// (Deactivate / Edit / Delete) so the helm doesn't have to read a
+// uuid prefix on a moving boat. Pass an empty string for unnamed
+// routes -- the popup falls back to "Route <first 6 chars of id>".
+export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     clearActiveRoute();
     // Suppress redraw while the helm is editing the active route --
     // any in-flight SyncActiveRouteAsync that races the edit (e.g.
@@ -2536,6 +2578,43 @@ export function setActiveRoute(coords, wpIdx, routeId) {
         L.polyline(coords.slice(futureStart), {
             color: MapColors.bearing, weight: 3, opacity: 0.8
         }).addTo(activeRouteLayer);
+    }
+
+    // Tap-target hit polyline covering the whole route. Same trick as
+    // addRoute: the visible polylines (2-3 px) are a miserable touch
+    // target, so a 36 px transparent sibling carries the popup.
+    // Bound only when we have a routeId AND a dotNetRef -- a single-
+    // waypoint course (no route resource on the server) has nothing
+    // for Deactivate / Edit / Delete to act on, so the popup would
+    // open onto dead buttons. The Stop button in the bottom bar still
+    // works in that case.
+    if (tappable) {
+        const hitLine = L.polyline(coords, {
+            color: MapColors.bearing, weight: 36, opacity: 0, interactive: true,
+        }).addTo(activeRouteLayer);
+        const nmTotal = routeTotalNauticalMiles(coords);
+        const popupOptions = { className: 'route-popup', maxWidth: 260, autoClose: true };
+        hitLine.bindPopup(buildActiveRoutePopupHtml(routeId, routeName, coords.length, nmTotal), popupOptions);
+        hitLine.on('popupopen', (ev) => {
+            wireRouteDeactivate(ev.popup);
+            wireRouteEdit(ev.popup, routeId);
+            wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', routeId);
+        });
+        // Same edit-mode override as the regular-route popup: while
+        // the helm is in route-edit / polygon-edit / measure mode, a
+        // tap should drop a vertex / measure point rather than open
+        // the Deactivate popup.
+        hitLine.on('click', (ev) => {
+            if (routeEditMode || polygonEditMode || measureActive) {
+                L.DomEvent.stopPropagation(ev);
+                const ll = ev.latlng;
+                if (!ll) return;
+                if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
+                else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+                else                       addMeasurePoint(ll.lat, ll.lng);
+                hitLine.closePopup();
+            }
+        });
     }
 
     // Waypoint markers (skip the next WP -- it gets the pulsing marker
@@ -3398,12 +3477,14 @@ export function addNoteMarker(id, lat, lon, title, description) {
 }
 
 // Two-step confirm wiring for a popup's delete button. First click
-// swaps the label to "Really delete?" and adds a `.confirming` class
-// for the red-warning styling; second click within 3 seconds triggers
-// the actual server delete via the C# [JSInvokable] method. A passing
-// tap in rough weather is the nightmare case; the confirm-and-timeout
-// pattern matches how native iOS/Android apps guard destructive
-// actions without pulling up a full confirm dialog.
+// swaps the label to "Really?" (intentionally short so the button's
+// pixel width stays close to the original "Delete" label and the
+// surrounding popup layout doesn't reflow under the helm's finger);
+// second click within 3 seconds triggers the actual server delete
+// via the C# [JSInvokable] method. A passing tap in rough weather
+// is the nightmare case; the confirm-and-timeout pattern matches
+// how native iOS/Android apps guard destructive actions without
+// pulling up a full confirm dialog.
 function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
     const el = popup.getElement();
     if (!el) return;
@@ -3420,7 +3501,7 @@ function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
     btn.addEventListener('click', () => {
         if (!btn.classList.contains('confirming')) {
             btn.classList.add('confirming');
-            btn.textContent = 'Really delete?';
+            btn.textContent = 'Really?';
             confirmTimer = setTimeout(reset, 3000);
             return;
         }

@@ -3020,10 +3020,20 @@
                 string routeId = string.IsNullOrEmpty(currentHref)
                     ? string.Empty
                     : SignalKUrls.ExtractRouteId(currentHref);
+                // Pass the route name through too so the active-route
+                // popup (Deactivate / Edit / Delete) can show it as a
+                // title. Falls back to Data.ActiveRouteName which the
+                // SK delta sets, then to availableRoutes if the name
+                // hasn't propagated yet, so the popup never reads
+                // "Route abc-12" for a route the helm has named.
+                string routeName = Data.ActiveRouteName
+                    ?? availableRoutes.FirstOrDefault(r => r.Id == routeId)?.Name
+                    ?? string.Empty;
                 await module.InvokeVoidAsync("setActiveRoute",
                     (object)activeRouteCoords,
                     idx,
-                    routeId);
+                    routeId,
+                    routeName);
             }
         }
 
