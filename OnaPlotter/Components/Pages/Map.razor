@@ -2792,20 +2792,19 @@
                     await module.InvokeVoidAsync("clearAnchor");
                     anchorManualActive = false;
                 }
-                // A boat that just dropped anchor is unambiguously not
-                // under way -- clear any active course so XTE /
-                // APPROACH alarms don't chatter against a static boat
-                // and the route HUD doesn't stack with the anchor HUD.
-                // Note: we do NOT do the reverse (auto-raise anchor
-                // when a route is activated) -- the helm may be
-                // planning the next leg while still on the hook, and
-                // auto-raising surprised users. Anchor is the more
-                // decisive intent so it wins this asymmetry.
-                if (Data.HasActiveCourse)
-                {
-                    try { await CourseApi.ClearAsync(); }
-                    catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
-                }
+                // No auto-clear of an active course here. The
+                // `serverAnchorDrawn` gate is per-Map-instance and
+                // resets on every page mount, so a session with both
+                // states already active on the SK server would have
+                // every navigate-back interpret the rehydration as a
+                // fresh anchor drop and DELETE the course -- visible
+                // to other plotters too. The manual Anchor button in
+                // the bar (ToggleManualAnchor below) still clears the
+                // course on tap, which is the single legit edge for
+                // the auto-resolve. Server-driven anchor drops (e.g.
+                // signalk-anchoralarm-plugin) just render; the helm
+                // can hit Stop Navigation explicitly if they want the
+                // course cleared too.
                 if (!mapInitialized) return;
                 await module.InvokeVoidAsync("setAnchor",
                     Data.AnchorLatitude, Data.AnchorLongitude, radius);
