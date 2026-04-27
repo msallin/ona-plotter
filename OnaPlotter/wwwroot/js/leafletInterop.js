@@ -1978,6 +1978,17 @@ export function setNightMode(enabled) {
 // backlog to revisit.
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     if (!map || chartLayers.has(id)) return false;
+    // First chart enabled -> drop the OSM + OpenSeaMap base layers.
+    // The user has explicitly chosen a SignalK chart-tiles base; keeping
+    // OSM attached underneath leaks the "OpenStreetMap contributors"
+    // attribution into the bottom-right control even when no OSM tiles
+    // are visible. ODbL only requires attribution while the data is
+    // being USED -- when SignalK charts cover the basemap, they aren't.
+    // The pair gets re-added when the last chart layer is removed.
+    if (chartLayers.size === 0) {
+        if (osmBaseLayer && map.hasLayer(osmBaseLayer)) map.removeLayer(osmBaseLayer);
+        if (seaBaseLayer && map.hasLayer(seaBaseLayer)) map.removeLayer(seaBaseLayer);
+    }
     const native = maxZoom || 18;
     const opts = {
         minZoom: minZoom || 1,
@@ -2018,6 +2029,13 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
 
 export function removeChartLayer(id) {
     chartLayers.remove(id);
+    // Last chart layer gone -> bring the OSM + OpenSeaMap base back so
+    // the helm has a fallback basemap. Without this the map would be
+    // empty after the user disables their last SignalK chart.
+    if (chartLayers.size === 0 && map) {
+        if (osmBaseLayer && !map.hasLayer(osmBaseLayer)) osmBaseLayer.addTo(map);
+        if (seaBaseLayer && !map.hasLayer(seaBaseLayer)) seaBaseLayer.addTo(map);
+    }
     restackChartOpacities();
 }
 
