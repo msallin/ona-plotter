@@ -3943,7 +3943,10 @@ html.night-mode-global body {
    .hud-anchor rules used to set those individually but are gone now. */
 
 .route-panel {
-    min-width: 140px;
+    /* Sizes to its content. Earlier had min-width:140 to keep the
+       waypoint progress chip from collapsing on a short route name,
+       but the chip's own intrinsic width is enough now that the BC
+       stack no longer fixes a card width. */
 }
 
 /* Title row: route name on the left, "WP 3 of 7" progress on the right.
@@ -5990,7 +5993,10 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    mutually exclusive in the code (NavigateRouteInternal /
    ToggleAnchor) so the slot is never double-booked. */
 .anchor-panel {
-    min-width: 120px;
+    /* Sizes to its content -- the anchor card has much shorter content
+       than the active-route card, and forcing a 120 px floor made it
+       look as wide as the route when the two stacked together. The
+       parent .hud-stack-bc centres each child at its own width. */
 }
 
 /* Mirror .route-info-row's geometry exactly so the two HUD cards
