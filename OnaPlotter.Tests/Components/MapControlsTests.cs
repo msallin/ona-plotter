@@ -57,9 +57,12 @@ public class MapControlsTests
     [Test]
     public async Task More_Button_Shows_Dot_When_Contained_Toggle_Is_On()
     {
-        // Dot badge class = .ctrl-btn-dot. Test each of the three
-        // contained toggles individually because a regression could
-        // easily drop one from AnyMoreItemActive.
+        // Dot badge class = .ctrl-btn-dot. Tests each of the contained
+        // toggles individually because a regression could easily drop
+        // one from AnyMoreItemActive. Measure is intentionally NOT in
+        // this list any more -- it's a permanent bar button on every
+        // viewport, and its bar slot already shows the active state, so
+        // a More dot for Measure would be redundant + misleading.
         using var ctx = new Bunit.TestContext();
 
         var night = Render(ctx, p => p.Add(x => x.NightMode, true));
@@ -68,8 +71,10 @@ public class MapControlsTests
         var lay = Render(ctx, p => p.Add(x => x.LaylinesVisible, true));
         await Assert.That(lay.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
 
+        // Measure on by itself must NOT light the dot (its bar button
+        // shows the state directly now).
         var meas = Render(ctx, p => p.Add(x => x.MeasureActive, true));
-        await Assert.That(meas.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
+        await Assert.That(meas.Find(".ctrl-more-wrap > button").ClassList.Contains("ctrl-btn-dot")).IsFalse();
 
         var none = Render(ctx);
         await Assert.That(none.Find(".ctrl-more-wrap > button").ClassList.Contains("ctrl-btn-dot")).IsFalse();
@@ -79,19 +84,27 @@ public class MapControlsTests
     public async Task More_Button_Title_Lists_Active_Items()
     {
         // The dynamic title makes the dot discoverable on hover without
-        // opening the menu. Three toggles -> "More (on: Night, Laylines,
-        // Measure)". None -> the default catalogue string.
+        // opening the menu. The default catalogue lists what's actually
+        // inside the menu (Legend / Night / Laylines / Orient).
+        // Active toggles get summarised in parens; Measure is excluded
+        // because it lives on the bar permanently.
         using var ctx = new Bunit.TestContext();
 
         var off = Render(ctx);
         await Assert.That(off.Find(".ctrl-more-wrap > button").GetAttribute("title"))
-            .IsEqualTo("More: Legend, Night, Laylines, Measure");
+            .IsEqualTo("More: Legend, Night, Laylines, Orient");
 
         var some = Render(ctx, p => p
             .Add(x => x.NightMode, true)
             .Add(x => x.LaylinesVisible, true));
         await Assert.That(some.Find(".ctrl-more-wrap > button").GetAttribute("title"))
             .IsEqualTo("More (on: Night, Laylines)");
+
+        // Measure being on by itself should leave the title at the
+        // default catalogue, not surface "(on: Measure)".
+        var measOn = Render(ctx, p => p.Add(x => x.MeasureActive, true));
+        await Assert.That(measOn.Find(".ctrl-more-wrap > button").GetAttribute("title"))
+            .IsEqualTo("More: Legend, Night, Laylines, Orient");
     }
 
     [Test]

@@ -185,8 +185,12 @@ else if (Polar.HasPolar)
                    cards' single display-6 line rather than inheriting
                    Bootstrap's default paragraph bottom-margin on the
                    first line. *@
-                <p class="card-text metric-lg mb-0">@NauticalFormat.FormatLat(Data.Latitude)</p>
-                <p class="card-text metric-lg mb-0">@NauticalFormat.FormatLon(Data.Longitude)</p>
+                @* display-6 (300) matches every other dashboard metric;
+                   metric-lg (600) used to render the lat / lon noticeably
+                   bolder than the rest of the grid -- helm wanted it to
+                   look the same as SOG / depth / etc. *@
+                <p class="card-text display-6 mb-0">@NauticalFormat.FormatLat(Data.Latitude)</p>
+                <p class="card-text display-6 mb-0">@NauticalFormat.FormatLon(Data.Longitude)</p>
             </div>
         </div>
     </div>
@@ -325,7 +329,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">TTG</h6>
-                        <p class="card-text metric-lg">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text display-6">@Format.TimeToGo(Data.CourseNextPointTimeToGo)</p>
                     </div>
                 </div>
             </div>
@@ -333,7 +337,7 @@ else if (Polar.HasPolar)
                 <div class="card">
                     <div class="card-body text-center">
                         <h6 class="card-subtitle mb-1 text-muted">ETA</h6>
-                        <p class="card-text metric-lg">@Format.Eta(Data.CourseNextPointTimeToGo)</p>
+                        <p class="card-text display-6">@Format.Eta(Data.CourseNextPointTimeToGo)</p>
                     </div>
                 </div>
             </div>
