@@ -118,4 +118,69 @@ public class AnchorDragAlarmRuleTests
         await Assert.That(rule.Priority).IsEqualTo(140);
         await Assert.That(rule.AutoClear).IsTrue();
     }
+
+    // --- staleness gate: dying anchor sensor must not fire false positives ---
+
+    [Test]
+    public async Task StaleRadiusData_DoesNotFire()
+    {
+        // When the anchor-alarm plugin stops publishing (server crash,
+        // network blip, GPS dead), the last currentRadius sticks on the
+        // model forever. Raising a drag alarm off that frozen value
+        // would be a false positive -- the boat may not actually be
+        // dragging. The rule's staleness gate (FreshnessOf == Dead at
+        // ~30s) silences the alarm; the HUD's separate freshness pill
+        // is what flags the dropout to the helm.
+        var nowProvider = new MutableNow { Value = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc) };
+        var nav = new NavigationData(() => nowProvider.Value);
+        nav.ApplyAnchorPosition(47.4, 8.5);
+        nav.Apply("navigation.anchor.maxRadius", 30.0);
+        // Apply a "dragging" current radius now, then advance the clock
+        // past the Dead threshold (>30s) without applying a fresh value.
+        nav.Apply("navigation.anchor.currentRadius", 40.0);
+        nowProvider.Value = nowProvider.Value.AddSeconds(45);
+
+        var rule = new AnchorDragAlarmRule();
+        var ctx = new AlarmEvaluationContext(nav, [], new FakeSettings(), nowProvider.Value, _ => false);
+        await Assert.That(rule.Check(ctx)).IsNull();
+    }
+
+    [Test]
+    public async Task StaleRadiusData_WhilePreviouslyAlarmed_PreservesLatch()
+    {
+        // The rule documents an explicit choice: when the data goes
+        // stale mid-alarm, we don't clear the internal _alarmed latch.
+        // That way, once a fresh delta lands again with cur > upper,
+        // the existing alarm continues uninterrupted rather than
+        // re-counting the hysteresis dead-band as if from scratch.
+        // Pinning it so a refactor that "tidied up" the latch reset
+        // doesn't silently change the post-recovery behaviour.
+        var nowProvider = new MutableNow { Value = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc) };
+        var nav = new NavigationData(() => nowProvider.Value);
+        nav.ApplyAnchorPosition(47.4, 8.5);
+        nav.Apply("navigation.anchor.maxRadius", 30.0);
+        nav.Apply("navigation.anchor.currentRadius", 40.0);
+
+        var rule = new AnchorDragAlarmRule();
+        // First pass: fresh data, alarm trips.
+        var first = rule.Check(new AlarmEvaluationContext(
+            nav, [], new FakeSettings(), nowProvider.Value, _ => false));
+        await Assert.That(first).IsNotNull();
+
+        // Sensor goes stale.
+        nowProvider.Value = nowProvider.Value.AddSeconds(45);
+        var stale = rule.Check(new AlarmEvaluationContext(
+            nav, [], new FakeSettings(), nowProvider.Value, _ => false));
+        await Assert.That(stale).IsNull();
+
+        // A fresh delta on the same dragging value: the alarm continues
+        // (no need to punch through the upper band again).
+        nav.Apply("navigation.anchor.currentRadius", 31.0);  // inside upper band
+        var resumed = rule.Check(new AlarmEvaluationContext(
+            nav, [], new FakeSettings(), nowProvider.Value, _ => false));
+        await Assert.That(resumed).IsNotNull();
+        await Assert.That(resumed!.Title).IsEqualTo("ANCHOR DRAG");
+    }
+
+    private sealed class MutableNow { public DateTime Value { get; set; } }
 }

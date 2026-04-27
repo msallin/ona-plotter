@@ -429,4 +429,262 @@ public class NavigationDataTests
         nav.ApplyString("environment.tide.stationName", "Lerwick");
         await Assert.That(nav.TideStationName).IsEqualTo("Lerwick");
     }
+
+    // --- Previous course point + HasPreviousPoint ---
+
+    [Test]
+    public async Task HasPreviousPoint_FalseByDefault()
+    {
+        // Boundary: a fresh model must report no previous point so the
+        // route renderer doesn't try to draw a passed-leg segment from
+        // garbage state on first paint.
+        var nav = new NavigationData();
+        await Assert.That(nav.HasPreviousPoint).IsFalse();
+    }
+
+    [Test]
+    public async Task ApplyCoursePreviousPointPosition_SetsHasPreviousPointTrue()
+    {
+        // The course-provider plugin publishes the previous waypoint
+        // during multi-leg routing; the renderer needs it to draw the
+        // active-leg line FROM the previous WP TO the next WP. Without
+        // this pair the line would either be missing or drawn from the
+        // boat (wrong -- that's the boat-to-WP heading, not the leg).
+        var nav = new NavigationData();
+        nav.ApplyCoursePreviousPointPosition(47.0, 8.5);
+        await Assert.That(nav.HasPreviousPoint).IsTrue();
+        await Assert.That(nav.CoursePreviousPointLatitude).IsEqualTo(47.0);
+        await Assert.That(nav.CoursePreviousPointLongitude).IsEqualTo(8.5);
+    }
+
+    [Test]
+    public async Task ClearCourse_ClearsPreviousPoint()
+    {
+        // After a route deactivation, every course-related field has to
+        // reset together. A leftover previous point would render an
+        // active-leg artifact when no route is active.
+        var nav = new NavigationData();
+        nav.ApplyCoursePreviousPointPosition(47.0, 8.5);
+        nav.ClearCourse();
+        await Assert.That(nav.HasPreviousPoint).IsFalse();
+        await Assert.That(nav.CoursePreviousPointLatitude).IsNull();
+        await Assert.That(nav.CoursePreviousPointLongitude).IsNull();
+    }
+
+    // --- Autopilot, rudder, current ---
+
+    [Test]
+    public async Task ApplyString_AutopilotState_SetsProperty()
+    {
+        // Autopilot state strings ("standby", "auto", "route", "wind")
+        // drive HUD chip rendering; the value goes through verbatim.
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyString("steering.autopilot.state", "auto")).IsTrue();
+        await Assert.That(nav.AutopilotState).IsEqualTo("auto");
+    }
+
+    [Test]
+    public async Task Apply_AutopilotTargetWindAngle_SetsProperty()
+    {
+        // Wind-mode AP target. Used by the HDG HUD to display "tracking
+        // wind at ~Xdeg" so the helm can see the AP's intended hold
+        // alongside the current AWA.
+        var nav = new NavigationData();
+        nav.Apply("steering.autopilot.target.windAngleApparent", 0.78);
+        await Assert.That(nav.AutopilotTargetWindAngle).IsEqualTo(0.78);
+    }
+
+    [Test]
+    public async Task Apply_RudderAngle_PreferredOverAutopilotFallback()
+    {
+        // SignalK spec path is steering.rudderAngle. Some AP plugins
+        // also publish steering.autopilot.rudderAngle; the spec path
+        // wins when both are present so a server publishing both
+        // doesn't flap between them. Pin both orderings.
+        var nav1 = new NavigationData();
+        nav1.Apply("steering.autopilot.rudderAngle", 0.05);
+        nav1.Apply("steering.rudderAngle", 0.10);
+        await Assert.That(nav1.RudderAngle).IsEqualTo(0.10);
+
+        var nav2 = new NavigationData();
+        nav2.Apply("steering.rudderAngle", 0.10);
+        nav2.Apply("steering.autopilot.rudderAngle", 0.05);
+        await Assert.That(nav2.RudderAngle).IsEqualTo(0.10);
+    }
+
+    [Test]
+    public async Task Apply_AutopilotRudderAngle_UsedAsFallback_WhenPrimaryAbsent()
+    {
+        // Some AP plugins only publish under steering.autopilot.rudderAngle.
+        // Without the fallback, the HDG HUD's "AP rudder" line would
+        // stay blank and the helm couldn't see how hard the AP is
+        // working to hold course.
+        var nav = new NavigationData();
+        nav.Apply("steering.autopilot.rudderAngle", -0.12);
+        await Assert.That(nav.RudderAngle).IsEqualTo(-0.12);
+    }
+
+    [Test]
+    public async Task Apply_CurrentSetAndDrift_SetsProperties()
+    {
+        // Tidal current data drives leeway / set arrows on the chart.
+        // Both fields must round-trip independently.
+        var nav = new NavigationData();
+        nav.Apply("environment.current.setTrue", 1.57);   // east
+        nav.Apply("environment.current.drift", 0.5);      // m/s
+        await Assert.That(nav.CurrentSet).IsEqualTo(1.57);
+        await Assert.That(nav.CurrentDrift).IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task Apply_CrossTrackError_SetsProperty()
+    {
+        // XTE drives the route deviation chip; pin the path so a SignalK
+        // schema rename (calcValues vs courseGreatCircle vs ...) shows up
+        // here as a failure rather than a silent dashboard regression.
+        var nav = new NavigationData();
+        nav.Apply("navigation.course.calcValues.crossTrackError", -25.5);
+        await Assert.That(nav.CrossTrackError).IsEqualTo(-25.5);
+    }
+
+    [Test]
+    public async Task Apply_RoutePointIndexTotal_RoundTripsThroughInt()
+    {
+        // SignalK delivers pointIndex / pointTotal as numbers. The model
+        // casts to int at the boundary so NaN / fractional payloads from
+        // a misbehaving server can't poison the HUD's "WP 3 of 7" line.
+        // Pin the int conversion explicitly.
+        var nav = new NavigationData();
+        nav.Apply("navigation.course.activeRoute.pointIndex", 2.0);
+        nav.Apply("navigation.course.activeRoute.pointTotal", 7.0);
+        await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(2);
+        await Assert.That(nav.ActiveRoutePointTotal).IsEqualTo(7);
+    }
+
+    [Test]
+    public async Task Apply_RouteTimeToGo_SetsProperty()
+    {
+        // Per-route ETA chip on the HUD. Distinct from CourseNextPointTimeToGo.
+        var nav = new NavigationData();
+        nav.Apply("navigation.course.calcValues.route.timeToGo", 7200.0);
+        await Assert.That(nav.ActiveRouteTimeToGo).IsEqualTo(7200.0);
+    }
+
+    // --- ApplyBool: arrival circle / perpendicular passed flags ---
+
+    [Test]
+    [Arguments("notifications.navigation.course.perpendicularPassed")]
+    [Arguments("navigation.course.perpendicularPassed")]
+    [Arguments("navigation.course.calcValues.perpendicularPassed")]
+    public async Task ApplyBool_PerpendicularPassed_AcceptsAllThreePaths(string path)
+    {
+        // Three flavours seen in the wild across plugin versions. All
+        // three must land on PerpendicularPassed so an upstream plugin
+        // upgrade that switches paths doesn't silently break the
+        // auto-advance trigger.
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyBool(path, true)).IsTrue();
+        await Assert.That(nav.PerpendicularPassed).IsTrue();
+    }
+
+    [Test]
+    [Arguments("notifications.navigation.course.arrivalCircleEntered")]
+    [Arguments("navigation.course.arrivalCircleEntered")]
+    [Arguments("navigation.course.calcValues.arrivalCircleEntered")]
+    public async Task ApplyBool_ArrivalCircleEntered_AcceptsAllThreePaths(string path)
+    {
+        // Same three-way path acceptance as perpendicularPassed; same
+        // rationale (compatibility with course-provider plugin variants).
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyBool(path, true)).IsTrue();
+        await Assert.That(nav.ArrivalCircleEntered).IsTrue();
+    }
+
+    [Test]
+    public async Task ApplyBool_UnknownPath_ReturnsFalse()
+    {
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyBool("some.unknown.bool.path", true)).IsFalse();
+    }
+
+    [Test]
+    public async Task ClearCourse_ResetsPerpendicularAndArrivalFlags()
+    {
+        // Stale auto-advance flags surviving across route changes would
+        // cause a one-tick spurious advance the moment a new route
+        // activates -- the same bug that the original auto-advance fix
+        // had to fight. Pin the reset.
+        var nav = new NavigationData();
+        nav.ApplyBool("navigation.course.calcValues.perpendicularPassed", true);
+        nav.ApplyBool("navigation.course.calcValues.arrivalCircleEntered", true);
+        nav.ClearCourse();
+        await Assert.That(nav.PerpendicularPassed).IsNull();
+        await Assert.That(nav.ArrivalCircleEntered).IsNull();
+    }
+
+    // --- ApplyString: solar state ---
+
+    [Test]
+    [Arguments("day", "day")]
+    [Arguments("DAY", "day")]                   // case normalised
+    [Arguments("  Night  ", "night")]           // trim + lower
+    [Arguments("dawn", "dawn")]
+    [Arguments("dusk", "dusk")]
+    public async Task ApplyString_SunState_NormalisesToLowerInvariant(string raw, string expected)
+    {
+        // Some solar plugins emit "Day", others "DAY", others "  day ".
+        // Lower-cased + trimmed normalisation lets downstream
+        // string-equality checks (auto-night detection) work without
+        // care for case drift between plugin builds.
+        var nav = new NavigationData();
+        await Assert.That(nav.ApplyString("environment.sun", raw)).IsTrue();
+        await Assert.That(nav.SunState).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments("   ")]
+    [Arguments(null)]
+    public async Task ApplyString_SunState_BlankBecomesNull(string? raw)
+    {
+        // Blank / whitespace-only values shouldn't pollute SunState
+        // with empty string, which would make downstream "is it night?"
+        // checks falsely match against "". null is the canonical
+        // "not published" marker.
+        var nav = new NavigationData();
+        nav.ApplyString("environment.sun", raw);
+        await Assert.That(nav.SunState).IsNull();
+    }
+
+    // --- ConvertToDouble: float + long ingest paths ---
+
+    [Test]
+    public async Task Apply_LongValue_AcceptedAsDouble()
+    {
+        // Some servers serialise integers as JSON longs (large radar
+        // ranges, MMSI-style numbers). The model's ConvertToDouble
+        // helper must accept long without falling through to "unknown".
+        var nav = new NavigationData();
+        await Assert.That(nav.Apply("navigation.speedOverGround", 5L)).IsTrue();
+        await Assert.That(nav.SpeedOverGround).IsEqualTo(5.0);
+    }
+
+    [Test]
+    public async Task Apply_FloatValue_AcceptedAsDouble()
+    {
+        // Float ingest matters for embedded NMEA gateways that send
+        // single-precision numbers; the boxing path through Apply
+        // must not silently drop them.
+        var nav = new NavigationData();
+        await Assert.That(nav.Apply("navigation.speedOverGround", 5.25f)).IsTrue();
+        await Assert.That(nav.SpeedOverGround).IsEqualTo(5.25);
+    }
+
+    [Test]
+    public async Task Apply_IntValue_AcceptedAsDouble()
+    {
+        var nav = new NavigationData();
+        await Assert.That(nav.Apply("navigation.speedOverGround", 5)).IsTrue();
+        await Assert.That(nav.SpeedOverGround).IsEqualTo(5.0);
+    }
 }

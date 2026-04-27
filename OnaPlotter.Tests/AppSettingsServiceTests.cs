@@ -654,4 +654,576 @@ public class AppSettingsServiceTests
 
         await Assert.That(svc.SidebarCollapsed).IsFalse();
     }
+
+    // --- QuickBarChartIds: seeded on first load, persisted thereafter ---
+
+    [Test]
+    public async Task QuickBarChartIds_AbsentKey_SeededFromEnabledCharts()
+    {
+        // First-load-after-upgrade migration: the quickBarChartIds.v1
+        // key didn't exist in older builds. The loader must seed it
+        // from EnabledChartIds so existing users keep their chart
+        // shortcuts in the quick bar; without the seed every helm
+        // would land on an empty quick bar after the upgrade.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap");
+        // Note: no quickBarChartIds.v1 key.
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.QuickBarChartIds.Count).IsEqualTo(2);
+        await Assert.That(svc.QuickBarChartIds.Contains("OSM")).IsTrue();
+        await Assert.That(svc.QuickBarChartIds.Contains("OpenSeaMap")).IsTrue();
+        // The seed should also be persisted so a subsequent load
+        // doesn't re-seed (which would silently un-do user removals).
+        await Assert.That(await kv.GetAsync("quickBarChartIds.v1")).IsNotNull();
+    }
+
+    [Test]
+    public async Task QuickBarChartIds_PresentKey_LoadsAsIs_EvenIfDifferentFromEnabled()
+    {
+        // After the migration has run, the quick bar is independent.
+        // A user who removed a chart from the quick bar but kept it
+        // enabled overall must see that choice respected on next load.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap\nNavionics");
+        await kv.SetAsync("quickBarChartIds.v1", "OSM");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.QuickBarChartIds.Count).IsEqualTo(1);
+        await Assert.That(svc.QuickBarChartIds.Contains("OSM")).IsTrue();
+    }
+
+    [Test]
+    public async Task QuickBarChartIds_PresentEmptyKey_StaysEmpty()
+    {
+        // Boundary: a user who explicitly cleared the quick bar
+        // persists an empty value. The loader must not "helpfully"
+        // re-seed from EnabledChartIds and undo the clear.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap");
+        await kv.SetAsync("quickBarChartIds.v1", "");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.QuickBarChartIds.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task SetQuickBarChartsAsync_RoundTrip_AndFiresOnSettingsChanged()
+    {
+        // The quick-bar setter is on the OnSettingsChanged hot path
+        // because the toolbar live-updates when the helm toggles a
+        // chart's quick-bar membership. Pin both the persistence and
+        // the event so a later refactor doesn't silently remove the
+        // event hook (which is what made the toolbar stop updating
+        // when the quick-bar set changes).
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetQuickBarChartsAsync(["A", "B", "C"]);
+
+        await Assert.That(svc.QuickBarChartIds.Count).IsEqualTo(3);
+        await Assert.That(fires).IsEqualTo(1);
+
+        // Reload: persisted set comes back unchanged.
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.QuickBarChartIds.Count).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task SetQuickBarChartsAsync_Append_DoesNotWipeExisting()
+    {
+        // Same aliasing footgun as ChartOrder / EnabledCharts: the
+        // setter must materialise the input before clearing the
+        // backing collection. A caller passing
+        //   svc.SetQuickBarChartsAsync(svc.QuickBarChartIds.Append("x"))
+        // must end up with the existing entries plus x, not just x.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await svc.SetQuickBarChartsAsync(["a"]);
+        await svc.SetQuickBarChartsAsync(svc.QuickBarChartIds.Append("b"));
+        await Assert.That(svc.QuickBarChartIds.Count).IsEqualTo(2);
+    }
+
+    // --- Round-trip + persistence: the rest of the boolean / scalar setters ---
+    // These are individually tiny but each touches a setter+reload
+    // pair that wasn't exercised before. Grouping them keeps the
+    // file readable. The use case being protected: a future setter
+    // that forgets to call Save() or OnSettingsChanged would surface
+    // here (no persistence) or fail the per-test event count.
+
+    [Test]
+    public async Task SetWindHeroMode_RoundTripsAndFires()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetWindHeroModeAsync("true");
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.WindHeroMode).IsEqualTo("true");
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetWindHeroMode_RejectsUnknownAndFallsBackToApparent()
+    {
+        // The normaliser allows only "apparent" | "true". A garbage
+        // input must collapse to the safe default rather than poison
+        // localStorage with a value the renderer can't draw against.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetWindHeroModeAsync("relative");
+        await Assert.That(svc.WindHeroMode).IsEqualTo("apparent");
+    }
+
+    [Test]
+    public async Task SetWindPageCompact_RoundTrips()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetWindPageCompactAsync(true);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.WindPageCompact).IsTrue();
+    }
+
+    [Test]
+    [Arguments("soft")]
+    [Arguments("amber")]
+    [Arguments("red")]
+    public async Task NightModePreset_RoundTripsKnownValues(string preset)
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetNightModePresetAsync(preset);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.NightModePreset).IsEqualTo(preset);
+    }
+
+    [Test]
+    public async Task NightModePreset_RejectsUnknownAndFallsBackToSoft()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetNightModePresetAsync("neon");
+        await Assert.That(svc.NightModePreset).IsEqualTo("soft");
+    }
+
+    [Test]
+    public async Task SetMapOrientation_RoundTrips_AndFires()
+    {
+        // MapOrientation steers the rotation of the chart canvas; the
+        // event fire matters because the renderer subscribes and
+        // re-projects on every change.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetMapOrientationAsync("course");
+
+        await Assert.That(svc.MapOrientation).IsEqualTo("course");
+        await Assert.That(await kv.GetAsync("mapOrientation")).IsEqualTo("course");
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetFollowBoat_AndLaylinesVisible_RoundTrip()
+    {
+        // Pair test for two persistence-only setters (no event fire by
+        // design -- both are observed via @bind in their consuming
+        // pages, not via OnSettingsChanged).
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetFollowBoatAsync(false);
+        await svc.SetLaylinesVisibleAsync(true);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.FollowBoat).IsFalse();
+        await Assert.That(svc2.LaylinesVisible).IsTrue();
+    }
+
+    [Test]
+    public async Task SetAtonsVisible_RoundTrips_AndFires()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetAtonsVisibleAsync(false);
+
+        await Assert.That(svc.AtonsVisible).IsFalse();
+        await Assert.That(fires).IsEqualTo(1);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.AtonsVisible).IsFalse();
+    }
+
+    [Test]
+    public async Task SetHarborMode_NotPersisted_FreshLoadResets()
+    {
+        // Documented invariant: Harbor mode is in-memory only because
+        // a forgotten Harbor mode silently riding into open water
+        // would silence collision alarms on the next session. Pin it
+        // so a "make Harbor mode persistent like everything else"
+        // refactor breaks here loudly, prompting the auditor to
+        // re-justify the change.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetHarborModeAsync(true);
+        await Assert.That(svc.HarborMode).IsTrue();
+        await Assert.That(await kv.GetAsync("harborMode")).IsNull();
+        await Assert.That(await kv.GetAsync("harborMode.v1")).IsNull();
+
+        // Fresh load -> back to default false.
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.HarborMode).IsFalse();
+    }
+
+    [Test]
+    public async Task SetHarborMode_Unchanged_DoesNotFire()
+    {
+        // Idempotency on the no-op path: setting Harbor mode to its
+        // current value must not fire OnSettingsChanged. Without the
+        // early-return guard, every NoOp tap would cascade through
+        // every settings subscriber for nothing.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetHarborModeAsync(false);   // already default
+        await Assert.That(fires).IsEqualTo(0);
+
+        await svc.SetHarborModeAsync(true);
+        await Assert.That(fires).IsEqualTo(1);
+
+        // Setting again to the same value -- no second fire.
+        await svc.SetHarborModeAsync(true);
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetSnoozeDurationMinutes_ClampsInputs()
+    {
+        // The setter clamps to [1, 120]. Zero would snooze forever;
+        // a runaway high value (negative cosmic-ray flip on a wire)
+        // would silence an alarm for days after a reload.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        // Below floor.
+        await svc.SetSnoozeDurationMinutesAsync(0);
+        await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(1);
+        await svc.SetSnoozeDurationMinutesAsync(-5);
+        await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(1);
+
+        // Above ceiling.
+        await svc.SetSnoozeDurationMinutesAsync(9999);
+        await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(120);
+
+        // Inside the band -- accepted as-is.
+        await svc.SetSnoozeDurationMinutesAsync(15);
+        await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(15);
+    }
+
+    [Test]
+    public async Task SetManualAnchorRadiusMeters_RoundTrips_InvariantCulture()
+    {
+        // Persisted doubles always use '.' regardless of OS locale.
+        // Belt-and-braces companion to the existing CPA/Wind tests --
+        // anchor radius matters at sea, where a parse-failure default
+        // could double the alarm radius.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetManualAnchorRadiusMetersAsync(45.5);
+
+        var stored = await kv.GetAsync("manualAnchorRadiusMeters.v1");
+        await Assert.That(stored).IsEqualTo("45.5");
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.ManualAnchorRadiusMeters).IsEqualTo(45.5);
+    }
+
+    [Test]
+    public async Task SetDeadmanTimeoutAndNight_RoundTrip()
+    {
+        // Both deadman knobs are persisted independently. Day-only and
+        // night-only configurations need to come back unchanged so a
+        // helm who set "0 day, 15 night" doesn't see one of them flip
+        // to a default after a reload.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetDeadmanTimeoutMinutesAsync(0);
+        await svc.SetDeadmanNightMinutesAsync(20);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.DeadmanTimeoutMinutes).IsEqualTo(0);
+        await Assert.That(svc2.DeadmanNightMinutes).IsEqualTo(20);
+    }
+
+    [Test]
+    public async Task SetWaypointArrivalRadius_RoundTrips()
+    {
+        // The arrival-radius drives the APPROACH alarm; persistence
+        // must round-trip so a single helm-tweaked value stays put.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetWaypointArrivalRadiusMetersAsync(75);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.WaypointArrivalRadiusMeters).IsEqualTo(75);
+    }
+
+    [Test]
+    public async Task PreferMagneticHeadingAndCourse_RoundTrip()
+    {
+        // Compass / GPS preferences feed back into NavigationData.
+        // Two independent toggles to round-trip, both starting false.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetPreferMagneticHeadingAsync(true);
+        await svc.SetPreferMagneticCourseAsync(true);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.PreferMagneticHeading).IsTrue();
+        await Assert.That(svc2.PreferMagneticCourse).IsTrue();
+    }
+
+    [Test]
+    public async Task AutoAdvanceWaypoints_DefaultsTrue_RoundTrips()
+    {
+        // Auto-advance default ON: the documented chartplotter UX is
+        // "on a leg crossing, jump to the next waypoint". A regression
+        // that flipped the default would silently remove the helm's
+        // expected behaviour.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.AutoAdvanceWaypoints).IsTrue();
+
+        var kv = new InMemoryKv();
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await svc2.SetAutoAdvanceWaypointsAsync(false);
+
+        var svc3 = new AppSettingsService(kv);
+        await svc3.InitializeAsync();
+        await Assert.That(svc3.AutoAdvanceWaypoints).IsFalse();
+    }
+
+    [Test]
+    public async Task BigType_ExpandAllHud_ShowKeyboardHints_RoundTrip()
+    {
+        // Cluster of accessibility / power-user toggles. Each is its
+        // own setter; bundle them so a later wire-up regression
+        // (e.g. a copy-paste setter using the wrong key string)
+        // surfaces as a single test failure.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetBigTypeAsync(true);
+        await svc.SetExpandAllHudAsync(true);
+        await svc.SetShowKeyboardHintsAsync(true);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.BigType).IsTrue();
+        await Assert.That(svc2.ExpandAllHud).IsTrue();
+        await Assert.That(svc2.ShowKeyboardHints).IsTrue();
+    }
+
+    [Test]
+    public async Task ShowAutopilotHud_ShowRadarHud_RoundTrip()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetShowAutopilotHudAsync(true);
+        await svc.SetShowRadarHudAsync(true);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.ShowAutopilotHud).IsTrue();
+        await Assert.That(svc2.ShowRadarHud).IsTrue();
+    }
+
+    [Test]
+    public async Task SetGuardZoneWarningFactor_RoundTrips()
+    {
+        // The guard-zone warning factor drives the warn-vs-danger CPA
+        // boundary. Persisted as F2 -- pin both the format and the
+        // round-trip so a refactor that swaps to G3 (introducing
+        // exponential notation) doesn't quietly invalidate every
+        // helm's existing setting.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetGuardZoneWarningFactorAsync(1.75);
+
+        var stored = await kv.GetAsync("guardZoneWarningFactor");
+        await Assert.That(stored).IsEqualTo("1.75");
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.GuardZoneWarningFactor).IsEqualTo(1.75);
+    }
+
+    [Test]
+    public async Task SetWindShiftAlarmThreshold_RoundTrips()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetWindShiftAlarmThresholdAsync(20);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.WindShiftAlarmThreshold).IsEqualTo(20);
+    }
+
+    [Test]
+    public async Task SetAnchorTideSafetyMargin_RoundTrips()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetAnchorTideSafetyMarginAsync(0.75);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.AnchorTideSafetyMargin).IsEqualTo(0.75);
+    }
+
+    // --- Storage error handling (LoadString swallow + Save swallow) ---
+
+    [Test]
+    public async Task Initialize_StorageThrows_FallsBackToDefaults()
+    {
+        // The store throws JSException when localStorage is disabled
+        // (private browsing). Reads must swallow that and use defaults
+        // so the app doesn't crash on first paint -- "missing key"
+        // and "storage disabled" are the same outcome from the
+        // service's perspective.
+        var kv = new ThrowingKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();   // must not throw
+        await Assert.That(svc.NightMode).IsFalse();
+        await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(3.0);
+    }
+
+    [Test]
+    public async Task Save_StorageThrows_DoesNotCrash()
+    {
+        // Symmetric: writes must swallow JSException too (see Save()
+        // catch block). The user sees nothing persisted, but the app
+        // keeps running. Pin so the catch isn't accidentally narrowed.
+        var kv = new ThrowingKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        // Should not throw -- the in-memory state still updates even
+        // though the persisted value is lost.
+        await svc.SetNightModeAsync(true);
+        await Assert.That(svc.NightMode).IsTrue();
+    }
+
+    [Test]
+    public async Task LoadDateTimeUtc_GarbageString_FallsBackToNull()
+    {
+        // Hand-edited / corrupted localStorage values shouldn't crash
+        // boot. Pin the parse-failure path explicitly (the existing
+        // tests cover happy + degenerate-year + far-future; this
+        // covers "not a date at all").
+        var kv = new InMemoryKv();
+        await kv.SetAsync("lastManualNightToggle.v1", "not-a-date");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.LastManualNightToggleUtc).IsNull();
+    }
+
+    [Test]
+    public async Task MarkManualNightToggleAsync_PersistsRoundTrippableTimestamp()
+    {
+        // The mark method writes the timestamp via "o" round-trip
+        // format, then a fresh service must load it back. Pin both
+        // halves so a setter+loader pair drift can't break the
+        // 12-hour manual-override window silently.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.MarkManualNightToggleAsync();
+        await Assert.That(svc.LastManualNightToggleUtc).IsNotNull();
+
+        var stored = await kv.GetAsync("lastManualNightToggle.v1");
+        await Assert.That(stored).IsNotNull();
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.LastManualNightToggleUtc).IsNotNull();
+    }
+
+    [Test]
+    public async Task MarkChartsSeededAsync_PersistsAndReflects()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartsSeeded).IsFalse();
+
+        await svc.MarkChartsSeededAsync();
+        await Assert.That(svc.ChartsSeeded).IsTrue();
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.ChartsSeeded).IsTrue();
+    }
+
+    private sealed class ThrowingKv : IKeyValueStore
+    {
+        public Task<string?> GetAsync(string key, CancellationToken ct = default)
+            => throw new Microsoft.JSInterop.JSException("storage disabled (test)");
+        public Task SetAsync(string key, string value, CancellationToken ct = default)
+            => throw new Microsoft.JSInterop.JSException("storage disabled (test)");
+        public Task RemoveAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+    }
 }

@@ -272,4 +272,117 @@ public class RouteProgressTests
             nextLon: Route[1][1]);
         await Assert.That(idx).IsEqualTo(1);
     }
+
+    // --- TotalDistanceMeters: route total drives the "passed / total NM" chip ---
+
+    [Test]
+    public async Task TotalDistanceMeters_EmptyRoute_ReturnsZero()
+    {
+        // Boundary: caller fetches before the route loads. Return 0
+        // so the HUD's "passed / total NM" formula doesn't divide by
+        // a phantom value.
+        await Assert.That(RouteProgress.TotalDistanceMeters(Array.Empty<double[]>())).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TotalDistanceMeters_NullRoute_ReturnsZero()
+    {
+        // Defensive: same as the index lookup, this must not throw on
+        // a null fetch.
+        await Assert.That(RouteProgress.TotalDistanceMeters(null!)).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TotalDistanceMeters_SingleWaypoint_ReturnsZero()
+    {
+        // A one-WP route has no legs, hence no length. Pin so an
+        // off-by-one (loop starting at 0 instead of 1) wouldn't try
+        // to read a non-existent prior point.
+        await Assert.That(RouteProgress.TotalDistanceMeters([[47.0, 8.0]])).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TotalDistanceMeters_TwoWaypoints_MatchesHaversineLeg()
+    {
+        // Equivalence: with exactly two WPs, the total length must
+        // equal the single-leg haversine, byte-for-byte (same R, same
+        // formula). Catches a refactor that drops to a fast equirect
+        // approximation here while leaving HaversineMeters alone.
+        var coords = new double[][] { [47.00, 8.00], [47.10, 8.10] };
+        var total = RouteProgress.TotalDistanceMeters(coords);
+        var leg = RouteProgress.HaversineMeters(47.00, 8.00, 47.10, 8.10);
+        await Assert.That(total).IsEqualTo(leg);
+    }
+
+    [Test]
+    public async Task TotalDistanceMeters_FourWaypoints_SumsConsecutiveLegs()
+    {
+        // Realistic four-WP route: the sum must equal the three legs.
+        // This is what the HUD actually uses to draw "passed / total NM".
+        double[][] route =
+        [
+            [47.00, 8.00],
+            [47.10, 8.10],
+            [47.20, 8.20],
+            [47.30, 8.30],
+        ];
+        double expected =
+            RouteProgress.HaversineMeters(47.00, 8.00, 47.10, 8.10)
+          + RouteProgress.HaversineMeters(47.10, 8.10, 47.20, 8.20)
+          + RouteProgress.HaversineMeters(47.20, 8.20, 47.30, 8.30);
+        var total = RouteProgress.TotalDistanceMeters(route);
+
+        // Allow a tiny tolerance for floating-point drift across the
+        // intermediate Haversine calls -- equality between the sum-
+        // of-three and the in-loop sum is exact today, but a refactor
+        // to a Kahan-summation form would shift the LSBs.
+        await Assert.That(Math.Abs(total - expected)).IsLessThan(1e-9);
+    }
+
+    [Test]
+    public async Task TotalDistanceMeters_MalformedRows_AreSkipped()
+    {
+        // Defensive: same robustness as FindClosestWaypointIndex --
+        // null rows / sparse arrays must be skipped without crashing
+        // a flaky-wifi route fetch. A sparse row should NOT contribute
+        // to the total (current contract: the leg using the bad row is
+        // dropped entirely, not stitched across).
+        double[][] route =
+        [
+            [47.00, 8.00],
+            null!,
+            [47.20, 8.20],
+            [],                  // empty inner array
+            [47.30, 8.30],
+        ];
+        var total = RouteProgress.TotalDistanceMeters(route);
+        // Surviving legs: 47.00 -> null skipped, null -> 47.20 skipped,
+        // 47.20 -> [] skipped, [] -> 47.30 skipped. Only one viable leg
+        // remains: 47.00 -> 47.20 is also skipped because the row in
+        // between is null. The current implementation skips legs whose
+        // EITHER endpoint is null/sparse; net total is 0 in this
+        // pathological case. Pin so a refactor that "stitches" across
+        // bad rows shows up as a deliberate behaviour change.
+        await Assert.That(total).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task TotalDistanceMeters_TypicalRouteHasReasonableMagnitude()
+    {
+        // Sanity: a 0.1 deg lat step at mid-latitudes is roughly
+        // 11.1 km. Three of those plus diagonal lon steps -> tens
+        // of kilometres. Pin a band rather than an exact value so
+        // the test stays meaningful even if Earth radius constants
+        // get nudged by 0.01%.
+        double[][] route =
+        [
+            [47.00, 8.00],
+            [47.10, 8.10],
+            [47.20, 8.20],
+            [47.30, 8.30],
+        ];
+        var total = RouteProgress.TotalDistanceMeters(route);
+        await Assert.That(total).IsGreaterThan(40_000);   // > 40 km
+        await Assert.That(total).IsLessThan(60_000);      // < 60 km
+    }
 }
