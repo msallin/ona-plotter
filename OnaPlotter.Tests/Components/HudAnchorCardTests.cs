@@ -17,8 +17,9 @@ public class HudAnchorCardTests
         double manualRadius = 30,
         double? currentRadius = 12,
         double? maxRadius = 30,
-        string? dormantReason = null) =>
-        new(visible, dragging, manual, manualRadius, currentRadius, maxRadius, dormantReason);
+        string? dormantReason = null,
+        double? peakRadius = null) =>
+        new(visible, dragging, manual, manualRadius, currentRadius, maxRadius, dormantReason, peakRadius);
 
     [Test]
     public async Task NotVisible_RendersNothing()
@@ -96,6 +97,40 @@ public class HudAnchorCardTests
     {
         var a = Snap(maxRadius: 30);
         var b = Snap(maxRadius: 50);
+        await Assert.That(a).IsNotEqualTo(b);
+    }
+
+    [Test]
+    public async Task PeakRadius_Renders_WhenSet()
+    {
+        // Helm sees the peak observed distance during this anchor
+        // watch alongside the live "Dist" value -- "we drifted to N m
+        // at the worst" without watching the live value tick.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(peakRadius: 24.5)));
+        await Assert.That(cut.Markup).Contains("Peak");
+    }
+
+    [Test]
+    public async Task PeakRadius_HiddenWhenNull()
+    {
+        // Manual anchors don't track peak (no plugin, no
+        // currentRadius). The card should omit the row entirely
+        // rather than render an empty placeholder.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(peakRadius: null)));
+        await Assert.That(cut.Markup).DoesNotContain("Peak");
+    }
+
+    [Test]
+    public async Task Snapshot_PeakRadiusChange_NotEqual()
+    {
+        // Snapshot equality drives Blazor's render-skip optimisation;
+        // a drift to a new peak must trigger a re-render.
+        var a = Snap(peakRadius: 18);
+        var b = Snap(peakRadius: 22);
         await Assert.That(a).IsNotEqualTo(b);
     }
 
