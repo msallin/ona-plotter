@@ -16,6 +16,13 @@
 
 <PageTitle>Settings</PageTitle>
 
+@* Settings page wraps every section in .app-page so the content
+   centres at the same 1400px max-width gutter the Resources page
+   already uses. Helm reported the page looked "strange" on a wide
+   helm screen because the form widgets stretched edge-to-edge
+   while every other page centred. *@
+<div class="app-page">
+
 @* Settings header: title on the left, build-stamp chip on the right.
    The chip (git short-hash + UTC build time) is pinned here rather
    than in the topbar because it's only useful when the helm is
@@ -23,7 +30,7 @@
    it inside the Settings page keeps it out of the operational UI
    while staying one tap away. Values come from the generated
    BuildInfo.g.cs (see StampBuildInfo target in OnaPlotter.csproj). *@
-<div class="d-flex align-items-start justify-content-between" style="max-width: 1200px;">
+<div class="d-flex align-items-start justify-content-between">
     <h2 class="mb-0">Settings</h2>
     <span class="build-stamp" title="Build identifier; useful when checking whether the browser loaded the latest bundle">
         build <code>@OnaPlotter.BuildInfo.CommitHash</code>
@@ -756,6 +763,8 @@
         </div>
     </div>
 </div>
+
+</div> @* /.app-page *@
 
 @code {
     private string settingsFilter = "";
