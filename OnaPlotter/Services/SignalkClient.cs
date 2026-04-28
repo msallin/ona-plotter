@@ -393,6 +393,16 @@ public sealed class SignalkClient : IAsyncDisposable
         return true;
     }
 
+    /// <summary>Demo of the ARCH-006 extraction pattern: this seeder
+    /// owns the <c>design.draft</c> REST round-trip. The remaining
+    /// three seed methods (vessel names, course, self context) plus
+    /// the helpers they share will follow in subsequent iterations
+    /// using the same shape. Constructed inline from the same
+    /// dependencies SignalkClient already holds so the public ctor
+    /// signature doesn't grow another DI parameter (which would have
+    /// rippled through every test that builds a SignalkClient).</summary>
+    private readonly OnaPlotter.Services.Signalk.SignalkDraftSeeder _draftSeeder;
+
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
         OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs,
@@ -411,6 +421,17 @@ public sealed class SignalkClient : IAsyncDisposable
         _settings = settings;
         _serverNotifs = serverNotifs;
         _time = time;
+
+        // The draft seeder reuses the SignalkClient logger via the
+        // ILogger contravariance trick (an ILogger<SignalkClient>
+        // can be wrapped in a SignalkDraftSeeder-typed adapter). For
+        // simplicity in this iteration we use NullLogger; the per-
+        // category logger can be threaded through DI when the
+        // remaining seed methods follow.
+        _draftSeeder = new OnaPlotter.Services.Signalk.SignalkDraftSeeder(
+            http, baseUrl, _data,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkDraftSeeder>.Instance,
+            onDataChanged: () => OnDataChanged?.Invoke());
 
         // Heading / COG preference: settings drive which SignalK path
         // wins when both true + magnetic are published. Sync now and on
@@ -512,12 +533,10 @@ public sealed class SignalkClient : IAsyncDisposable
                 // cover for the initial state; fetch it once on connect.
                 _ = SeedSelfCourseFromRestAsync(ct);
 
-                // design.draft is declared statically in vessel.json on
-                // most boats, so it never appears in deltas. There is
-                // no v2 design endpoint -- v1 is the only source --
-                // so this stays on the v1 REST surface. Narrow fetch:
-                // /vessels/self/design/draft only, not the whole tree.
-                _ = SeedSelfDesignDraftFromRestAsync(ct);
+                // design.draft seed delegated to SignalkDraftSeeder
+                // (ARCH-006 extraction). Narrow fetch:
+                // /vessels/self/design/draft only.
+                _ = _draftSeeder.SeedAsync(ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
                 var messageBuffer = new StringBuilder();
@@ -1417,101 +1436,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// moves, so they trickle in normally.
     /// </para>
     /// </summary>
-    /// <summary>
-    /// One-shot REST fetch of <c>design.draft</c> for the self vessel.
-    /// Draft is declared statically in vessel.json on almost every
-    /// install, so the delta stream never replays it after subscribe.
-    /// No v2 equivalent exists yet -- the v2 API surface covers
-    /// course, anchor (proposed), and resources, but not design.
-    /// Response shape on signalk-server:
-    /// <code>{"current": {"value": 1.5, "timestamp": "..."},
-    ///         "maximum": {"value": 2.0, "timestamp": "..."}}</code>
-    /// Feeds back through NavigationData.Apply so the result lands
-    /// in <see cref="NavigationData.DraftFromSignalK"/>, which drives
-    /// the Settings "SignalK reports X m" hint and the AnchorTide
-    /// alarm's draft input. On 404 (no design data on server) or
-    /// parse failure we stay silent at Debug level so an empty
-    /// vessel.json doesn't spam the log.
-    /// </summary>
-    private async Task SeedSelfDesignDraftFromRestAsync(CancellationToken ct)
-    {
-        JsonDocument? doc = null;
-        try
-        {
-            var url = _baseUrl.Combine("/signalk/v1/api/vessels/self/design/draft");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                _logger.LogDebug("design.draft endpoint {Url} returned {Status}", url, (int)res.StatusCode);
-                return;
-            }
-
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
-
-            // signalk-server returns design.draft as a single leaf
-            // (not as sibling leaves per child) so the canonical shape
-            // is:
-            //   { "meta": {...}, "value": {"maximum": 1.25, "current": 1.0},
-            //     "$source": "...", "timestamp": "..." }
-            // The {current, maximum} numbers live INSIDE the value
-            // envelope. Earlier this method looked at the root, found
-            // no current/maximum keys, and silently seeded nothing.
-            // Two fallbacks stay wired so the method still works on
-            // older or alternate server builds that emit sibling
-            // leaves or bare numbers.
-            JsonElement source = doc.RootElement;
-            if (doc.RootElement.TryGetProperty("value", out var valueEnvelope)
-                && valueEnvelope.ValueKind == JsonValueKind.Object
-                && (valueEnvelope.TryGetProperty("current", out _)
-                    || valueEnvelope.TryGetProperty("maximum", out _)))
-            {
-                source = valueEnvelope;
-            }
-
-            // Prefer current over maximum to match
-            // NavigationData.Apply's delta-path precedence. Unwrap
-            // inner {value, timestamp} envelopes too so the
-            // per-sibling-leaf shape still parses.
-            bool seeded = false;
-            if (source.TryGetProperty("current", out var cur))
-            {
-                var val = UnwrapValue(cur);
-                if (val.ValueKind == JsonValueKind.Number)
-                {
-                    _data.Apply("design.draft.current", val);
-                    seeded = true;
-                }
-            }
-            if (!seeded && source.TryGetProperty("maximum", out var max))
-            {
-                var val = UnwrapValue(max);
-                if (val.ValueKind == JsonValueKind.Number)
-                {
-                    _data.Apply("design.draft.maximum", val);
-                    seeded = true;
-                }
-            }
-
-            if (seeded)
-            {
-                OnDataChanged?.Invoke();
-                _logger.LogInformation("Seeded design.draft from v1 REST (DraftFromSignalK = {Draft} m)",
-                    _data.DraftFromSignalK);
-            }
-            else
-            {
-                _logger.LogDebug("design.draft REST response had no current/maximum leaf to seed");
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "design.draft REST seed failed (falls back to Settings manual override)");
-        }
-        finally { doc?.Dispose(); }
-    }
+    // (design.draft REST seed extracted to SignalkDraftSeeder per ARCH-006.)
 
     // internal (not private) so SignalkClientCourseTests can drive the
     // seed directly with a mock HttpClient. The full ReceiveLoopAsync
