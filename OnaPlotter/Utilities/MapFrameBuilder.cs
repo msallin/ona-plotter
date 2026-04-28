@@ -38,6 +38,17 @@ public sealed class MapFrameBuilder
     // on weak clients. 5 matches Map.razor's original cadence.
     public int LaylinePushEveryNFixes { get; init; } = 5;
 
+    // Track-segment emission cadence. Matches SignalkClient's 5 s
+    // TrackBuffer sample interval so the JS-side trackLayer (capped
+    // at 1000 polyline segments) gets the same ~83 min visible
+    // history as the persisted C# buffer. Without this gate the JS
+    // side received a segment per applyFrame tick (multi-Hz under
+    // bursty SignalK feeds), so 1000 segments could be exhausted
+    // in 1-2 minutes and the helm saw only the last 10-20 s of
+    // trail. Helm-reported regression; root cause is cadence drift
+    // between the C# buffer (gated) and the JS frame emitter (not).
+    public int TrackEmitIntervalMs { get; init; } = 5_000;
+
     // User-toggle: laylines overlay visible on the map. When false
     // the layline field never populates (no work to do).
     public bool LaylinesVisible { get; set; }
@@ -52,6 +63,16 @@ public sealed class MapFrameBuilder
     public double? PrevLon { get; set; }
     public bool CourseLineDrawn { get; set; }
     public int LaylinesSkip { get; private set; }
+    /// <summary>UTC ticks of the last emitted track segment. 0 means
+    /// no segment has been emitted yet. Internal-set so tests can
+    /// pin the gate; production callers don't touch this.</summary>
+    public long LastTrackEmitTicks { get; set; }
+
+    /// <summary>Clock seam for the track-emit gate. Defaults to
+    /// <see cref="TimeProvider.System"/> so callers don't have to
+    /// thread a time source through; tests that care about the
+    /// 5-second cadence inject a <c>FakeTimeProvider</c>.</summary>
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
     /// <summary>
     /// Emits a frame payload reflecting the current NavigationData
@@ -70,11 +91,22 @@ public sealed class MapFrameBuilder
             : null;
 
         // Track segment: [lat, lon, sog, prevLat, prevLon]. Emitted
-        // only when BOTH endpoints are known; first tick after boot
-        // produces no segment.
+        // only when BOTH endpoints are known AND the configured
+        // cadence has elapsed since the last emit. Without the
+        // cadence gate the JS-side trackLayer (1000-segment cap)
+        // burned through its budget in 1-2 minutes on bursty feeds;
+        // helm saw only the last ~20 s of trail. PrevLat/PrevLon
+        // advance on EMIT, not on every fix, so the next emitted
+        // segment connects end-to-end with the previous one (no
+        // gaps and no zigzag from intermediate skipped fixes).
         double[]? track = null;
+        long nowTicks = TimeProvider.GetUtcNow().UtcTicks;
+        long intervalTicks = (long)TrackEmitIntervalMs * TimeSpan.TicksPerMillisecond;
+        bool gatePassed = LastTrackEmitTicks == 0
+            || (nowTicks - LastTrackEmitTicks) >= intervalTicks;
         if (bLat is not null && bLon is not null
-            && PrevLat is not null && PrevLon is not null)
+            && PrevLat is not null && PrevLon is not null
+            && gatePassed)
         {
             track = new[]
             {
@@ -82,9 +114,16 @@ public sealed class MapFrameBuilder
                 data.SpeedOverGround ?? 0,
                 PrevLat.Value, PrevLon.Value
             };
+            PrevLat = bLat;
+            PrevLon = bLon;
+            LastTrackEmitTicks = nowTicks;
         }
-        if (bLat is not null && bLon is not null)
+        else if (PrevLat is null && PrevLon is null
+                 && bLat is not null && bLon is not null)
         {
+            // First fix after boot: seed Prev so the next gate-passed
+            // tick has an endpoint to draw from. No segment emitted
+            // (one point isn't a line).
             PrevLat = bLat;
             PrevLon = bLon;
         }
