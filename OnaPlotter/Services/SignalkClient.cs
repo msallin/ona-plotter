@@ -1614,10 +1614,20 @@ public sealed class SignalkClient : IAsyncDisposable
         // present object treats as "alarm" (most plugins emit only
         // object-when-armed, omit-state-when-they-mean-it; safer to
         // surface than to drop).
+        //
+        // SignalK v2 (≥ 2.21) enriches every notification value with
+        // `id` (stable UUID) and `status` (silenced / acknowledged /
+        // canSilence / canAcknowledge / canClear). Both are optional;
+        // we read them when present and store them on the
+        // ServerNotification so the alarm pipeline can drive
+        // server-side ack and the banner can hide the Acknowledge
+        // button when the server's PGN-derived flags say "no".
         if (el.ValueKind == JsonValueKind.Object)
         {
             string? state = null;
             string? message = null;
+            string? id = null;
+            OnaPlotter.Services.ServerNotifications.NotificationStatus? status = null;
             if (el.TryGetProperty("state", out var stateEl)
                 && stateEl.ValueKind == JsonValueKind.String)
             {
@@ -1628,11 +1638,21 @@ public sealed class SignalkClient : IAsyncDisposable
             {
                 message = msgEl.GetString();
             }
+            if (el.TryGetProperty("id", out var idEl)
+                && idEl.ValueKind == JsonValueKind.String)
+            {
+                id = idEl.GetString();
+            }
+            if (el.TryGetProperty("status", out var statusEl)
+                && statusEl.ValueKind == JsonValueKind.Object)
+            {
+                status = ParseNotificationStatus(statusEl);
+            }
             // Missing-state-on-an-object: assume armed at "alarm"
             // severity. Clears require an explicit normal/cleared
             // string OR a JSON null payload.
             state ??= "alarm";
-            return _serverNotifs.Apply(path, state, message);
+            return _serverNotifs.Apply(path, state, message, id, status);
         }
 
         // Bare bool true: rare legacy form ("we have a notification");
@@ -1643,6 +1663,32 @@ public sealed class SignalkClient : IAsyncDisposable
             return _serverNotifs.Apply(path, "alarm", null);
         }
         return _serverNotifs.Clear(path);
+    }
+
+    /// <summary>Parses a SignalK v2 notification <c>status</c> object.
+    /// Every field defaults to false on a missing / non-bool entry --
+    /// fail-safe semantics ("if I can't tell, assume the action is
+    /// unsupported"). The block is optional in the wire shape; the
+    /// caller only invokes us when an Object kind is actually present.</summary>
+    private static OnaPlotter.Services.ServerNotifications.NotificationStatus ParseNotificationStatus(JsonElement el)
+    {
+        return new OnaPlotter.Services.ServerNotifications.NotificationStatus(
+            Silenced: ReadBool(el, "silenced"),
+            Acknowledged: ReadBool(el, "acknowledged"),
+            CanSilence: ReadBool(el, "canSilence"),
+            CanAcknowledge: ReadBool(el, "canAcknowledge"),
+            CanClear: ReadBool(el, "canClear"));
+
+        static bool ReadBool(JsonElement obj, string name)
+        {
+            if (!obj.TryGetProperty(name, out var v)) return false;
+            return v.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => false,
+            };
+        }
     }
 
     // Returns the wrapped .value if this is a SignalK leaf, otherwise the

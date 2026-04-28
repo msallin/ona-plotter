@@ -21,8 +21,18 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// <param name="Severity">Mapped from State: emergency/alarm = Danger,
 /// warn/alert = Warn. Unrecognised states fail safe to Danger so a
 /// genuine alarm with a typo'd state still surfaces.</param>
+/// <param name="Id">SignalK v2 server-assigned UUID -- stable for the
+/// lifetime of this notification across re-emits. Null on
+/// pre-2.21 servers; the alarm pipeline falls back to the path-based
+/// dedup key in that case.</param>
+/// <param name="Status">Server-side ack / silence flags. Null on
+/// pre-2.21 servers. When present, drives the Acknowledge / Silence
+/// banner buttons and lets <see cref="ServerNotificationsAlarmRule"/>
+/// suppress already-acknowledged notifications.</param>
 public sealed record ServerNotification(
     string Path,
     string State,
     string? Message,
-    AlarmSeverity Severity);
+    AlarmSeverity Severity,
+    string? Id = null,
+    NotificationStatus? Status = null);

@@ -76,6 +76,36 @@ public static class SignalKUrls
     public static string RadarControl(string id, string controlId) =>
         $"{RadarControls(id)}/{Uri.EscapeDataString(controlId)}";
 
+    /// <summary>SignalK v2 notifications API root. Available on
+    /// signalk-server ≥ 2.21.0. Lists every active notification (id +
+    /// state + status) and supports POST raise / DELETE clear / per-id
+    /// silence + acknowledge actions. We use it for cross-plotter
+    /// alarm sync: one helm acknowledges, every plotter sees the ack
+    /// via the next delta echo.</summary>
+    public const string NotificationsPath = "/signalk/v2/api/notifications";
+
+    /// <summary>POST /{id}/acknowledge -- mark a server notification
+    /// acknowledged. Server re-emits the delta with
+    /// <c>status.acknowledged = true</c> so every connected plotter
+    /// drops its banner in lock-step.</summary>
+    public static string NotificationAcknowledge(string id) =>
+        $"{NotificationsPath}/{Uri.EscapeDataString(id)}/acknowledge";
+
+    /// <summary>POST /{id}/silence -- hide the audible portion of a
+    /// notification while leaving its visual state intact. Useful for
+    /// "I see it, stop the klaxon" without clearing the underlying
+    /// condition.</summary>
+    public static string NotificationSilence(string id) =>
+        $"{NotificationsPath}/{Uri.EscapeDataString(id)}/silence";
+
+    /// <summary>DELETE /{id} -- clear a server notification (state
+    /// transitions to <c>normal</c> and the entry is GC'd from the
+    /// server's in-memory map after 60 s). Used by the "publish
+    /// plotter alarms" flow when the underlying client-side rule
+    /// stops firing.</summary>
+    public static string NotificationById(string id) =>
+        $"{NotificationsPath}/{Uri.EscapeDataString(id)}";
+
     /// <summary>REST API exposed by sbender9/signalk-buddylist-plugin.
     /// A 200 means the plugin is installed and running; 404 means it isn't.</summary>
     public const string BuddiesPath = "/signalk/v2/api/resources/buddies";

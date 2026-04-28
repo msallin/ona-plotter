@@ -43,11 +43,40 @@ public sealed class ServerNotificationStore
     /// arm; pass null OR "normal"/"cleared" to clear. Re-arming an
     /// already-active path with a different message updates the entry
     /// in-place. Returns true when the active set changed (caller can
-    /// fire an OnChanged event).</summary>
-    public bool Apply(string path, string? state, string? message)
+    /// fire an OnChanged event).
+    /// <para>
+    /// On a SignalK v2 server (≥ 2.21), the value carries an <paramref
+    /// name="id"/> (stable UUID per notification) and a <paramref
+    /// name="status"/> block (ack / silence flags). Both are null on
+    /// older servers; the store still works -- only the v2 banner
+    /// affordances (Acknowledge button, server-side ack-clears) are
+    /// inert in that case.
+    /// </para>
+    /// <para>
+    /// A v2 notification with <c>status.acknowledged = true</c> is
+    /// treated as cleared from the active set. Server-shared ack means
+    /// "some plotter has handled this"; once it lands the helm doesn't
+    /// need to keep seeing the banner. The actual server state stays
+    /// armed; if the same notification re-fires later (e.g. the
+    /// underlying condition flips back on after the server's 60 s GC
+    /// window) we'll see a fresh delta with <c>acknowledged = false</c>
+    /// and rearm the entry.
+    /// </para>
+    /// </summary>
+    public bool Apply(string path, string? state, string? message,
+        string? id = null, NotificationStatus? status = null)
     {
         var severity = MapSeverity(state);
         if (severity is null)
+        {
+            return _byPath.Remove(path);
+        }
+        // V2 server-side ack: drop from the active set so the alarm
+        // pipeline auto-clears. Without this the banner would persist
+        // until the underlying condition itself resolves, which
+        // defeats the cross-plotter ack flow ("plotter A acks, plotter
+        // B's banner stays up").
+        if (status is { Acknowledged: true })
         {
             return _byPath.Remove(path);
         }
@@ -55,7 +84,7 @@ public sealed class ServerNotificationStore
         // can render "emergency" vs "alarm" if they care; severity is
         // pre-mapped to the AlarmSeverity coarse bucket the banner
         // actually uses.
-        var notif = new ServerNotification(path, state!, message, severity.Value);
+        var notif = new ServerNotification(path, state!, message, severity.Value, id, status);
         if (_byPath.TryGetValue(path, out var existing) && existing == notif)
         {
             // Idempotent: same exact notification re-applied. No state

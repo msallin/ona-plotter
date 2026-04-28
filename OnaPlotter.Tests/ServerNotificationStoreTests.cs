@@ -154,4 +154,101 @@ public class ServerNotificationStoreTests
 
         await Assert.That(s.Count).IsEqualTo(3);
     }
+
+    // --- v2 id + status -----------------------------------------------
+    //
+    // signalk-server >= 2.21 enriches every notifications.* delta with
+    // a stable UUID id and a status block (silenced / acknowledged /
+    // canSilence / canAcknowledge / canClear). The store must preserve
+    // both so the alarm pipeline can drive cross-plotter ack via
+    // INotificationsApi.AcknowledgeAsync(id) and the banner can hide
+    // the Acknowledge button when canAcknowledge is false (life-safety
+    // notifications the spec forbids silencing).
+
+    [Test]
+    public async Task Apply_V2WithIdAndStatus_StoresBoth()
+    {
+        var s = new ServerNotificationStore();
+        var status = new NotificationStatus(
+            Silenced: false, Acknowledged: false,
+            CanSilence: true, CanAcknowledge: true, CanClear: true);
+
+        s.Apply("notifications.navigation.anchor.position", "alarm",
+            "dragging", id: "anchor-uuid-1", status: status);
+
+        var n = s.Active.Single();
+        await Assert.That(n.Id).IsEqualTo("anchor-uuid-1");
+        await Assert.That(n.Status).IsNotNull();
+        await Assert.That(n.Status!.CanAcknowledge).IsTrue();
+        await Assert.That(n.Status.Acknowledged).IsFalse();
+    }
+
+    [Test]
+    public async Task Apply_V1WithoutIdOrStatus_StoresNulls()
+    {
+        // Pre-2.21 server (or non-v2-aware plugin): id and status are
+        // null. The entry still lands; the alarm pipeline degrades to
+        // local-only dismiss (no server ack POST).
+        var s = new ServerNotificationStore();
+        s.Apply("notifications.foo", "alarm", "msg");
+
+        var n = s.Active.Single();
+        await Assert.That(n.Id).IsNull();
+        await Assert.That(n.Status).IsNull();
+    }
+
+    [Test]
+    public async Task Apply_StatusAcknowledgedTrue_ClearsEntry()
+    {
+        // Cross-plotter ack flow: helm acks on plotter A -> server marks
+        // status.acknowledged=true -> server re-emits delta -> every
+        // plotter (including A) sees the ack and drops the banner.
+        var s = new ServerNotificationStore();
+        var armed = new NotificationStatus(false, false, true, true, true);
+        s.Apply("notifications.navigation.anchor.position", "alarm",
+            "dragging", id: "anchor-uuid-1", status: armed);
+        await Assert.That(s.Count).IsEqualTo(1);
+
+        var acked = new NotificationStatus(
+            Silenced: false, Acknowledged: true,
+            CanSilence: true, CanAcknowledge: true, CanClear: true);
+        bool changed = s.Apply("notifications.navigation.anchor.position",
+            "alarm", "dragging", id: "anchor-uuid-1", status: acked);
+
+        await Assert.That(changed).IsTrue();
+        await Assert.That(s.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Apply_IdempotentWithStatus_NoChangeOnRepeat()
+    {
+        // Same path + state + message + id + status => no change. The
+        // record-equality on ServerNotification covers Status because
+        // NotificationStatus is itself a record. Without this the store
+        // would fire a "changed" event on every wire echo of the same
+        // notification, which would re-render the banner needlessly.
+        var s = new ServerNotificationStore();
+        var status = new NotificationStatus(false, false, true, true, true);
+        s.Apply("notifications.foo", "alarm", "msg", "id-1", status);
+
+        bool secondChanged = s.Apply("notifications.foo", "alarm", "msg", "id-1", status);
+
+        await Assert.That(secondChanged).IsFalse();
+    }
+
+    [Test]
+    public async Task Apply_DifferentStatus_Updates()
+    {
+        // status.silenced flips on a server-side silence call; the store
+        // should pick that up so a re-render reflects the new state.
+        var s = new ServerNotificationStore();
+        var unsilenced = new NotificationStatus(false, false, true, true, true);
+        s.Apply("notifications.foo", "alarm", "msg", "id-1", unsilenced);
+
+        var silenced = new NotificationStatus(true, false, true, true, true);
+        bool changed = s.Apply("notifications.foo", "alarm", "msg", "id-1", silenced);
+
+        await Assert.That(changed).IsTrue();
+        await Assert.That(s.Active.Single().Status!.Silenced).IsTrue();
+    }
 }

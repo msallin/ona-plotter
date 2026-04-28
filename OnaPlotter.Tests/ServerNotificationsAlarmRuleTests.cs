@@ -197,6 +197,111 @@ public class ServerNotificationsAlarmRuleTests
         await Assert.That(rule.AutoClear).IsTrue();
     }
 
+    // --- v2 NotificationId + CanAcknowledge propagation ---------------
+
+    [Test]
+    public async Task BuildAlarmInfo_V2_PropagatesIdAndCanAcknowledge()
+    {
+        // Server >= 2.21 path: id + status.canAcknowledge=true. Both
+        // must reach AlarmInfo so AlarmManager.DismissAsync can fire
+        // INotificationsApi.AcknowledgeAsync(id) and the banner can
+        // display the Acknowledge button.
+        var status = new NotificationStatus(
+            Silenced: false, Acknowledged: false,
+            CanSilence: true, CanAcknowledge: true, CanClear: true);
+        var n = new ServerNotification(
+            "notifications.navigation.anchor.position",
+            "alarm", "Dragging anchor", AlarmSeverity.Danger,
+            Id: "anchor-uuid-1", Status: status);
+
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+
+        await Assert.That(info.NotificationId).IsEqualTo("anchor-uuid-1");
+        await Assert.That(info.CanAcknowledge).IsTrue();
+    }
+
+    [Test]
+    public async Task BuildAlarmInfo_PreV2_LeavesIdAndCanAcknowledgeUnset()
+    {
+        // No id, no status: pre-v2 server or non-v2-aware plugin.
+        // CanAcknowledge defaults to false because we have no endpoint
+        // to call; the dismiss path falls back to local-only.
+        var n = new ServerNotification(
+            "notifications.environment.depth.belowTransducer",
+            "alarm", "shallow", AlarmSeverity.Danger);
+
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+
+        await Assert.That(info.NotificationId).IsNull();
+        await Assert.That(info.CanAcknowledge).IsFalse();
+    }
+
+    [Test]
+    public async Task BuildAlarmInfo_ServerForbidsAcknowledge_CanAcknowledgeFalse()
+    {
+        // Spec: emergency-state notifications cannot be acknowledged
+        // (silenced) by the helm. Server signals this via
+        // status.canAcknowledge=false; the bridge rule must respect it
+        // so the banner doesn't expose an Acknowledge button that would
+        // 403 anyway.
+        var status = new NotificationStatus(
+            Silenced: false, Acknowledged: false,
+            CanSilence: false, CanAcknowledge: false, CanClear: false);
+        var n = new ServerNotification(
+            "notifications.mob", "emergency", "Man overboard",
+            AlarmSeverity.Danger,
+            Id: "mob-1", Status: status);
+
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+
+        await Assert.That(info.NotificationId).IsEqualTo("mob-1");
+        await Assert.That(info.CanAcknowledge).IsFalse();
+    }
+
+    [Test]
+    public async Task CheckMany_SnoozedPath_Skipped()
+    {
+        // The store stays armed (server side hasn't cleared) but the
+        // rule must not surface the alarm while the helm's snooze
+        // window is active. Without this the snooze is a no-op for
+        // server-emitted notifications because the rule re-asserts
+        // the alarm on every Evaluate tick.
+        var store = new ServerNotificationStore();
+        store.Apply("notifications.environment.depth.belowSurface",
+            "warn", "shallow");
+        store.Apply("notifications.navigation.anchor.position",
+            "alarm", "dragging");
+        var rule = new ServerNotificationsAlarmRule(store);
+        var snoozed = new HashSet<string> { "notifications.environment.depth.belowSurface" };
+        var ctx = new AlarmEvaluationContext(
+            new NavigationData(), [], new FakeSettings(),
+            DateTime.UtcNow, key => snoozed.Contains(key));
+
+        var hits = rule.CheckMany(ctx).ToArray();
+
+        // Anchor surfaces, depth is silenced.
+        await Assert.That(hits.Length).IsEqualTo(1);
+        await Assert.That(hits[0].Title).IsEqualTo("ANCHOR");
+    }
+
+    [Test]
+    public async Task BuildAlarmInfo_IdWithoutStatus_CanAcknowledgeFalse()
+    {
+        // Defensive: a malformed delta with id but no status block
+        // should not enable the Acknowledge button. Without the status
+        // we can't verify the server actually supports the action; better
+        // to omit the affordance than to send a POST that 404s or grants
+        // the helm a false sense that they've handled the alarm.
+        var n = new ServerNotification(
+            "notifications.foo", "alarm", "msg", AlarmSeverity.Warn,
+            Id: "id-1", Status: null);
+
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+
+        await Assert.That(info.NotificationId).IsEqualTo("id-1");
+        await Assert.That(info.CanAcknowledge).IsFalse();
+    }
+
     private static AlarmEvaluationContext MakeContext()
     {
         var data = new NavigationData();

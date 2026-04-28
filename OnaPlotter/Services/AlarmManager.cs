@@ -56,6 +56,12 @@ public sealed class AlarmManager : IAlarmManager
     private readonly Func<DateTime> _now;
     private readonly IKeyValueStore? _kv;
     private readonly IAppSettings? _settings;
+    /// <summary>SignalK v2 notifications client. Null on the test
+    /// constructors that don't care about server-side ack -- the
+    /// dismiss path falls through to local-only behaviour. Wired to
+    /// concrete <see cref="OnaPlotter.Services.Api.NotificationsApi"/>
+    /// in production via DI.</summary>
+    private readonly OnaPlotter.Services.Api.INotificationsApi? _notifications;
     private bool _initialized;
 
     // Active alarms keyed by (Title, TargetKey) so the same rule firing on
@@ -143,30 +149,40 @@ public sealed class AlarmManager : IAlarmManager
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
-    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings)
-        : this(rules, () => DateTime.UtcNow, kv, settings) { }
+    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings,
+        OnaPlotter.Services.Api.INotificationsApi notifications)
+        : this(rules, () => DateTime.UtcNow, kv, settings, notifications) { }
 
     // Two-arg overload for tests that don't care about persistence.
     // Keeps the `args: [rules, now]` Activator.CreateInstance pattern
     // working.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now)
-        : this(rules, now, null, null) { }
+        : this(rules, now, null, null, null) { }
 
     // Three-arg overload kept so existing tests invoking Activator with
     // `(rules, now, kv)` still resolve. Defaults settings to null -> the
     // SnoozeDurationMinutes fallback applies.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
         IKeyValueStore? kv)
-        : this(rules, now, kv, null) { }
+        : this(rules, now, kv, null, null) { }
+
+    // Four-arg overload kept so existing tests invoking Activator with
+    // `(rules, now, kv, settings)` still resolve. Defaults notifications
+    // to null -> dismiss is local-only (no server-side ack POST).
+    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
+        IKeyValueStore? kv, IAppSettings? settings)
+        : this(rules, now, kv, settings, null) { }
 
     // Full-arg internal ctor.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
-        IKeyValueStore? kv, IAppSettings? settings)
+        IKeyValueStore? kv, IAppSettings? settings,
+        OnaPlotter.Services.Api.INotificationsApi? notifications)
     {
         _rules = rules.OrderBy(r => r.Priority).ToList();
         _now = now;
         _kv = kv;
         _settings = settings;
+        _notifications = notifications;
     }
 
     public async Task InitializeAsync()
@@ -286,6 +302,7 @@ public sealed class AlarmManager : IAlarmManager
     {
         if (_active.Count == 0) return Task.CompletedTask;
         var now = _now();
+        var pendingAcks = new List<string>();
         foreach (var (key, e) in _active)
         {
             LogHistory(e.Info, now, DismissReason.UserDismissed);
@@ -293,10 +310,17 @@ public sealed class AlarmManager : IAlarmManager
             // Notify the owning rule so rule-specific rearm policies (e.g.
             // SHALLOW's 5 min non-shallow gate) can capture the dismissal.
             e.Rule.OnDismissed(e.Info, now);
+            // Server-side ack for any v2-aware notification in the
+            // batch. Collected here, fired below once we've cleared
+            // the local state (so the delta echo from the server can't
+            // race re-rendering an entry we're already dismissing).
+            if (e.Info.NotificationId is string id && e.Info.CanAcknowledge)
+                pendingAcks.Add(id);
         }
         _active.Clear();
         InvalidateActiveCache();
         FireAlarmsChanged();
+        FireAcknowledge(pendingAcks);
         return Task.CompletedTask;
     }
 
@@ -310,7 +334,30 @@ public sealed class AlarmManager : IAlarmManager
         RecordDismissCooldown(key, removed.Info.Severity, now);
         removed.Rule.OnDismissed(removed.Info, now);
         FireAlarmsChanged();
+        // Cross-plotter sync: when a v2 server emitted this alarm and
+        // declared canAcknowledge, dismiss-locally also POSTs the
+        // acknowledge so other plotters see the ack via the next
+        // delta echo.
+        if (removed.Info.NotificationId is string id && removed.Info.CanAcknowledge)
+            FireAcknowledge(new[] { id });
         return Task.CompletedTask;
+    }
+
+    /// <summary>Fire-and-forget POST to the v2 notifications API.
+    /// Failures are silent: the local dismiss already happened, and a
+    /// network blip on the ack POST shouldn't roll the UI back. The
+    /// next delta tick reconciles state if the server didn't see our
+    /// POST (ack just doesn't propagate; helm dismisses again).</summary>
+    private void FireAcknowledge(IReadOnlyList<string> ids)
+    {
+        if (_notifications is null || ids.Count == 0) return;
+        foreach (var id in ids)
+        {
+            // Discard the task; HttpClient handles retries / timeouts
+            // at its own layer. NotificationsApi catches
+            // HttpRequestException internally.
+            _ = _notifications.AcknowledgeAsync(id);
+        }
     }
 
     public Task SnoozeActiveAsync()

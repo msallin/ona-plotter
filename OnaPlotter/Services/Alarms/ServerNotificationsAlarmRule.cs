@@ -59,6 +59,14 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     {
         foreach (var n in _store.Active)
         {
+            // Honour the helm's snooze. The TargetKey is the path
+            // (see BuildAlarmInfo), so snoozing
+            // notifications.environment.depth.belowSurface silences
+            // that one path while leaving sibling depth notifications
+            // visible. Without this skip the rule re-asserts the
+            // alarm on every Evaluate tick and the snooze is a no-op
+            // for server-emitted alarms.
+            if (ctx.IsSnoozed(n.Path)) continue;
             yield return BuildAlarmInfo(n);
         }
     }
@@ -66,7 +74,12 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// <summary>Builds the banner-facing AlarmInfo. The path becomes
     /// the <see cref="AlarmInfo.TargetKey"/> so two notifications under
     /// the same Title (DEPTH at belowTransducer + DEPTH at belowSurface)
-    /// dedup as separate entries rather than overwriting each other.</summary>
+    /// dedup as separate entries rather than overwriting each other.
+    /// V2 server-side ack flows through here too: the notification's
+    /// <c>id</c> is forwarded as <see cref="AlarmInfo.NotificationId"/>
+    /// and the <c>status.canAcknowledge</c> flag drives whether the
+    /// banner shows the Acknowledge button. Both default to "off" on
+    /// pre-v2.21 servers (no id, status null).</summary>
     internal static AlarmInfo BuildAlarmInfo(ServerNotification n)
     {
         var (title, defaultMsg) = DeriveTitleAndDefault(n.Path);
@@ -82,7 +95,15 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             // the server (we just stop surfacing). Useful when a noisy
             // plugin is firing on a path the helm has already
             // acknowledged via VHF / radio.
-            Snoozeable: true);
+            Snoozeable: true,
+            NotificationId: n.Id,
+            // Only expose the Acknowledge button when (a) the server
+            // supplied an id (no id = no REST endpoint to call) and
+            // (b) the server's PGN-derived flags say acknowledgement
+            // is supported. SignalK's spec forbids silencing
+            // emergency-state notifications; the server's status block
+            // is the authority and we trust it.
+            CanAcknowledge: n.Id is not null && (n.Status?.CanAcknowledge ?? false));
     }
 
     /// <summary>Maps a SignalK notification path to a short banner
