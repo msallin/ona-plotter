@@ -259,6 +259,37 @@ public class ServerNotificationsAlarmRuleTests
     }
 
     [Test]
+    public async Task CheckMany_OwnedPath_Skipped()
+    {
+        // Phase B: when our own AlarmPublisher raised a notification,
+        // the bridge rule must skip the echo. Otherwise the same
+        // alarm would render twice -- once from the originating
+        // client-side rule, once from the publish echo via the
+        // bridge.
+        var store = new ServerNotificationStore();
+        store.Apply("notifications.environment.depth.belowSurface",
+            "alarm", "shallow");
+        store.Apply("notifications.environment.wind.shift",
+            "warn", "30 deg");
+        var owned = new HashSet<string> { "notifications.environment.depth.belowSurface" };
+        var tracker = new StubPublishedAlarmTracker(owned);
+        var rule = new ServerNotificationsAlarmRule(store, tracker);
+
+        var hits = rule.CheckMany(MakeContext()).ToArray();
+
+        // depth was suppressed (we own it); wind shift surfaces.
+        await Assert.That(hits.Length).IsEqualTo(1);
+        await Assert.That(hits[0].TargetKey).IsEqualTo("notifications.environment.wind.shift");
+    }
+
+    private sealed class StubPublishedAlarmTracker : IPublishedAlarmTracker
+    {
+        private readonly HashSet<string> _paths;
+        public StubPublishedAlarmTracker(HashSet<string> paths) { _paths = paths; }
+        public bool IsOwnedPath(string path) => _paths.Contains(path);
+    }
+
+    [Test]
     public async Task CheckMany_SnoozedPath_Skipped()
     {
         // The store stays armed (server side hasn't cleared) but the

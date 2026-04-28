@@ -38,8 +38,19 @@ public class MultiInstancePlotterTests
     /// <summary>
     /// One plotter instance. Holds the alarm-stack pipeline (store ->
     /// rule -> manager) plus the AlarmManager-injected
-    /// <see cref="INotificationsApi"/> -- the latter routes acks through
-    /// the shared <see cref="FakeServer"/>.
+    /// <see cref="INotificationsApi"/> -- the latter routes acks +
+    /// publish + clear through the shared <see cref="FakeServer"/>.
+    /// <para>
+    /// Phase B additions: <see cref="PublishedAlarmTracker"/> +
+    /// <see cref="AlarmPublisher"/> are wired automatically. The bridge
+    /// rule consults the tracker so this plotter's own publication
+    /// echoes don't double-banner. The publisher subscribes to
+    /// OnAlarmsChanged and POSTs to FakeServer.RaiseFromPlotter when
+    /// a local rule emits an alarm. Locally-evaluated alarms are
+    /// surfaced via optional client-side rules passed to the
+    /// constructor; tests use <see cref="LocalStubRule"/> to script
+    /// when those fire.
+    /// </para>
     /// </summary>
     private sealed class Plotter
     {
@@ -47,30 +58,41 @@ public class MultiInstancePlotterTests
         public ServerNotificationStore Store { get; }
         public AlarmManager Manager { get; }
         public MutableClock Clock { get; }
+        public PublishedAlarmTracker Tracker { get; }
+        public AlarmPublisher Publisher { get; }
 
-        public Plotter(string name, FakeServer server)
+        public Plotter(string name, FakeServer server,
+            params IAlarmRule[] localRules)
         {
             Name = name;
             Store = new ServerNotificationStore();
             Clock = new MutableClock();
-            var rule = new ServerNotificationsAlarmRule(Store);
+            Tracker = new PublishedAlarmTracker();
+            // Bridge rule with the tracker injected so it can suppress
+            // echoes of our own publications.
+            var bridgeRule = new ServerNotificationsAlarmRule(Store, Tracker);
             // Per-plotter API stub that delegates to the shared server.
             // Each plotter has its own instance so the server can tell
             // which plotter originated a call (for the "concurrent acks"
             // test) without inferring it from caller stack.
             var api = new ServerBackedApi(server, this);
+            // Compose: client-side local rules + bridge rule. The bridge
+            // is last so its emissions overlay if a (Title, TargetKey)
+            // collides -- matches the production rule order.
+            var allRules = new List<IAlarmRule>(localRules) { bridgeRule };
             Manager = (AlarmManager)Activator.CreateInstance(
                 typeof(AlarmManager),
                 bindingAttr: System.Reflection.BindingFlags.Instance
                            | System.Reflection.BindingFlags.NonPublic
                            | System.Reflection.BindingFlags.Public,
                 binder: null,
-                args: [(IEnumerable<IAlarmRule>)new IAlarmRule[] { rule },
+                args: [(IEnumerable<IAlarmRule>)allRules,
                        (Func<DateTime>)(() => Clock.Now),
                        (IKeyValueStore?)null,
                        (IAppSettings?)null,
                        (INotificationsApi?)api],
                 culture: null)!;
+            Publisher = new AlarmPublisher(Manager, api, Tracker);
         }
 
         /// <summary>Bumps the clock past AlarmManager.EvaluationIntervalMs
@@ -81,6 +103,35 @@ public class MultiInstancePlotterTests
             Clock.Now = Clock.Now.AddSeconds(2);
             Manager.Evaluate(new NavigationData(), [], new FakeSettings());
         }
+    }
+
+    /// <summary>Trivial client-side rule used by the Phase B tests to
+    /// script when local alarms fire. Mirrors the test stub in
+    /// AlarmManagerTests but keeps the multi-instance fixture self-
+    /// contained so the file can be read top-to-bottom.</summary>
+    private sealed class LocalStubRule : IAlarmRule
+    {
+        public string Title { get; }
+        public int Priority { get; }
+        public bool AutoClear => true;
+        public bool ShouldFire { get; set; } = true;
+        public string Message { get; set; } = "msg";
+        public AlarmSeverity Severity { get; set; }
+        public string? TargetKey { get; set; }
+
+        public LocalStubRule(string title, int priority,
+            AlarmSeverity sev, string? targetKey = null)
+        {
+            Title = title;
+            Priority = priority;
+            Severity = sev;
+            TargetKey = targetKey;
+        }
+
+        public AlarmInfo? Check(AlarmEvaluationContext ctx)
+            => ShouldFire
+                ? new AlarmInfo(Title, Message, Severity, TargetKey, TargetKey)
+                : null;
     }
 
     /// <summary>
@@ -94,8 +145,17 @@ public class MultiInstancePlotterTests
     private sealed class FakeServer
     {
         private readonly Dictionary<string, ServerNotification> _byPath = new(StringComparer.Ordinal);
+        // path -> server-assigned id. Real signalk-server derives the
+        // id from (context, path, $source) so a re-raise on the same
+        // path overlays the existing entry. Modelled here by reusing
+        // the same id when a path already exists.
+        private readonly Dictionary<string, string> _idByPath = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _pathById = new(StringComparer.Ordinal);
         private readonly List<Plotter> _plotters = new();
+        private int _idSeq;
         public int AcknowledgeCallCount { get; private set; }
+        public int RaiseCallCount { get; private set; }
+        public int ClearCallCount { get; private set; }
 
         public void Connect(Plotter p)
         {
@@ -115,7 +175,41 @@ public class MultiInstancePlotterTests
             var sev = ServerNotificationStore.MapSeverity(state)
                 ?? throw new InvalidOperationException($"unmappable state {state}");
             _byPath[path] = new ServerNotification(path, state, message, sev, id, status);
+            _idByPath[path] = id;
+            _pathById[id] = path;
             FanOut(path, state, message, id, status);
+        }
+
+        /// <summary>Plotter-side raise: AlarmPublisher posted a
+        /// notification via INotificationsApi.RaiseAsync. Server
+        /// derives a stable id per path (overlay semantics) and fans
+        /// the resulting delta to every connected plotter, including
+        /// the publishing plotter itself.</summary>
+        public string RaiseFromPlotter(string path, NotificationPayload payload)
+        {
+            RaiseCallCount++;
+            // Reuse the existing id for an overlay; mint a new one for
+            // a fresh path. Mirrors signalk-server's deterministic-id
+            // behaviour.
+            if (!_idByPath.TryGetValue(path, out var id))
+            {
+                id = $"server-{++_idSeq}";
+                _idByPath[path] = id;
+                _pathById[id] = path;
+            }
+            // Default status: full permissions. Real server derives
+            // canSilence/canAcknowledge from the PGN translation map;
+            // synthetic v2 alarms default to permissive so cross-
+            // plotter ack works as expected.
+            var status = new NotificationStatus(
+                Silenced: false, Acknowledged: false,
+                CanSilence: true, CanAcknowledge: true, CanClear: true);
+            var sev = ServerNotificationStore.MapSeverity(payload.State)
+                ?? AlarmSeverity.Danger;
+            _byPath[path] = new ServerNotification(
+                path, payload.State, payload.Message, sev, id, status);
+            FanOut(path, payload.State, payload.Message, id, status);
+            return id;
         }
 
         /// <summary>Server-side ack handler. Sets status.acknowledged=true
@@ -135,6 +229,22 @@ public class MultiInstancePlotterTests
             FanOut(entry.Path, entry.State, entry.Message, id, ackedStatus);
         }
 
+        /// <summary>Server-side clear: DELETE /notifications/{id}. The
+        /// canonical state transitions to "normal" and a delta with
+        /// state=normal is fanned out so every plotter's store drops
+        /// the entry.</summary>
+        public void ClearById(string id)
+        {
+            ClearCallCount++;
+            if (!_pathById.TryGetValue(id, out var path)) return;
+            _byPath.Remove(path);
+            _idByPath.Remove(path);
+            _pathById.Remove(id);
+            // state="normal" tells every store's Apply to drop the path.
+            foreach (var p in _plotters)
+                p.Store.Apply(path, "normal", null);
+        }
+
         private void FanOut(string path, string state, string? message,
             string id, NotificationStatus status)
         {
@@ -144,9 +254,9 @@ public class MultiInstancePlotterTests
     }
 
     /// <summary>Routes per-plotter API calls back to the shared
-    /// <see cref="FakeServer"/>. Only Acknowledge is meaningful for the
-    /// current Phase A coverage; the rest are stubbed to satisfy the
-    /// interface.</summary>
+    /// <see cref="FakeServer"/>. Phase A wired Acknowledge; Phase B
+    /// wires Raise + Clear so AlarmPublisher's POSTs become real
+    /// state changes on the canonical server view.</summary>
     private sealed class ServerBackedApi : INotificationsApi
     {
         private readonly FakeServer _server;
@@ -168,10 +278,16 @@ public class MultiInstancePlotterTests
             => Task.FromResult(ApiResult.Ok);
 
         public Task<ApiResult<string>> RaiseAsync(string path, NotificationPayload body, CancellationToken ct = default)
-            => Task.FromResult(ApiResult<string>.Ok("phase-b-not-yet"));
+        {
+            var id = _server.RaiseFromPlotter(path, body);
+            return Task.FromResult(ApiResult<string>.Ok(id));
+        }
 
         public Task<ApiResult> ClearAsync(string id, CancellationToken ct = default)
-            => Task.FromResult(ApiResult.Ok);
+        {
+            _server.ClearById(id);
+            return Task.FromResult(ApiResult.Ok);
+        }
     }
 
     private static NotificationStatus FullPermissions =>
@@ -505,5 +621,299 @@ public class MultiInstancePlotterTests
         await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(a.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("anchor-2");
         await Assert.That(b.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("anchor-2");
+    }
+
+    // -----------------------------------------------------------------
+    // Phase B: AlarmPublisher cross-plotter publish flow.
+    // PlotterA evaluates a local rule (CPA/SHALLOW/...) -> publishes to
+    // server -> server fans delta -> PlotterB sees a banner via the
+    // bridge rule.
+    // -----------------------------------------------------------------
+
+    /// <summary>Yields control so fire-and-forget RaiseAsync /
+    /// ClearAsync continuations queued by AlarmPublisher have a chance
+    /// to run before assertions. Three yields covers the worst case:
+    /// reserve-slot -> await api -> finalize-or-late-clear.</summary>
+    private static async Task SettleAsync()
+    {
+        await Task.Yield();
+        await Task.Yield();
+        await Task.Yield();
+    }
+
+    [Test]
+    public async Task LocalAlarmOnA_AppearsAsBannerOnB()
+    {
+        // Headline Phase B test: a SHALLOW alarm fires on PlotterA's
+        // local rule. AlarmPublisher posts /notifications. Server fans
+        // the delta. PlotterB's bridge rule emits an AlarmInfo. PlotterB's
+        // banner shows the alarm without B's helm needing to do anything.
+        var server = new FakeServer();
+        var localShallow = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger)
+        {
+            Message = "Depth 1.8m < 3.0m",
+        };
+        var a = new Plotter("PlotterA", server, localShallow);
+        var b = new Plotter("PlotterB", server);
+        server.Connect(a); server.Connect(b);
+
+        // Tick A -> local rule fires SHALLOW -> publisher raises ->
+        // server fans delta -> B's store has the entry on next Tick.
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+
+        // PlotterA: shows the original "SHALLOW" banner from the local
+        // rule. The bridge's echo on the same path is suppressed by the
+        // PublishedAlarmTracker.
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(a.Manager.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
+        // PlotterB: bridge rule renders the path under its derived
+        // title ("DEPTH" from the environment.depth.* prefix mapping).
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(b.Manager.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
+        await Assert.That(b.Manager.ActiveAlarms[0].Message).IsEqualTo("Depth 1.8m < 3.0m");
+        // B's banner also carries the server's id + ack permissions so
+        // B's helm can ack-clear cross-plotter via the existing Phase A
+        // dismiss path.
+        await Assert.That(b.Manager.ActiveAlarms[0].NotificationId).IsNotNull();
+        await Assert.That(b.Manager.ActiveAlarms[0].CanAcknowledge).IsTrue();
+    }
+
+    [Test]
+    public async Task OriginPlotter_DoesNotDoubleBanner_WithLocalAndBridge()
+    {
+        // Critical correctness property: PlotterA must not show TWO
+        // banners (one from the local rule, one from its own publish
+        // echo). The PublishedAlarmTracker drives the suppression.
+        var server = new FakeServer();
+        var localShallow = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var a = new Plotter("PlotterA", server, localShallow);
+        server.Connect(a);
+
+        a.Tick();
+        await SettleAsync();
+        a.Tick();    // second tick to let the echo arrive at the store
+
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(a.Manager.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
+        // Tracker remembers the path while the alarm is active.
+        await Assert.That(a.Tracker.IsOwnedPath(
+            "notifications.environment.depth.belowSurface")).IsTrue();
+    }
+
+    [Test]
+    public async Task LocalAlarmClearsOnA_BannerClearsOnB()
+    {
+        // PlotterA's local rule stops firing (depth recovers) ->
+        // alarm leaves A's active stack -> publisher fires DELETE ->
+        // server emits state=normal -> B's store drops the entry,
+        // bridge rule stops emitting, B's banner clears.
+        var server = new FakeServer();
+        var rule = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var a = new Plotter("PlotterA", server, rule);
+        var b = new Plotter("PlotterB", server);
+        server.Connect(a); server.Connect(b);
+
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
+
+        // Local rule stops firing.
+        rule.ShouldFire = false;
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(server.ClearCallCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task LateJoiner_SeesAlreadyPublishedAlarmOnConnect()
+    {
+        // PlotterA already published a SHALLOW. PlotterC connects mid-
+        // watch (e.g. helm picks up a phone). The "hello" replay of
+        // active server notifications brings the alarm into C's store
+        // immediately so C's helm doesn't miss it.
+        var server = new FakeServer();
+        var rule = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var a = new Plotter("PlotterA", server, rule);
+        server.Connect(a);
+        a.Tick();
+        await SettleAsync();
+        await Assert.That(server.RaiseCallCount).IsEqualTo(1);
+
+        var c = new Plotter("PlotterC", server);
+        server.Connect(c);
+        c.Tick();
+
+        await Assert.That(c.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(c.Manager.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
+    }
+
+    [Test]
+    public async Task PublishedAlarm_AckOnB_ClearsBridgeViewOnAButLocalRulePersists()
+    {
+        // PlotterB's helm acks A's published alarm. Server emits ack
+        // delta. B's store drops, B's banner clears. A's store also
+        // drops (bridge rule was suppressed anyway). A's LOCAL rule
+        // keeps firing because the underlying threat hasn't gone away
+        // -- A's banner stays. The publisher tracker still holds the
+        // path because A's local alarm is still active.
+        //
+        // This semantics is intentional: ack from B is "I see this on
+        // my station", not "the threat is resolved". The threat-source
+        // helm (A) still needs to clear when the condition resolves
+        // or they decide to dismiss.
+        var server = new FakeServer();
+        var localShallow = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var a = new Plotter("PlotterA", server, localShallow);
+        var b = new Plotter("PlotterB", server);
+        server.Connect(a); server.Connect(b);
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
+
+        // B's helm acks. AlarmManager.DismissAsync fires Acknowledge.
+        await b.Manager.DismissAsync(b.Manager.ActiveAlarms[0]);
+
+        a.Tick(); b.Tick();
+        await SettleAsync();
+        // B cleared.
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(0);
+        // A's local SHALLOW banner still up.
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(a.Manager.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
+    }
+
+    [Test]
+    public async Task CpaPerTarget_TwoVesselsTwoBanners()
+    {
+        // CPA's per-target path scheme means two simultaneous threats
+        // produce two distinct server notifications, two banners on B,
+        // independent ack semantics.
+        var server = new FakeServer();
+        var aurora = new LocalStubRule("CPA", 200, AlarmSeverity.Danger,
+            targetKey: "vessels.urn:mrn:imo:mmsi:111")
+        { Message = "Aurora: CPA 0.20nm in 4min" };
+        var beluga = new LocalStubRule("CPA", 200, AlarmSeverity.Danger,
+            targetKey: "vessels.urn:mrn:imo:mmsi:222")
+        { Message = "Beluga: CPA 0.10nm in 2min" };
+        var a = new Plotter("PlotterA", server, aurora, beluga);
+        var b = new Plotter("PlotterB", server);
+        server.Connect(a); server.Connect(b);
+
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+
+        // B sees two distinct COLLISION banners (one per target path).
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(2);
+        await Assert.That(b.Manager.ActiveAlarms.All(x => x.Title == "COLLISION")).IsTrue();
+        var paths = b.Manager.ActiveAlarms.Select(x => x.TargetKey).ToList();
+        await Assert.That(paths).Contains(
+            "notifications.security.collision.urn_mrn_imo_mmsi_111");
+        await Assert.That(paths).Contains(
+            "notifications.security.collision.urn_mrn_imo_mmsi_222");
+    }
+
+    [Test]
+    public async Task BothPlottersFireSameLocalAlarm_ServerOverlaysViaSamePath()
+    {
+        // Both A and B's local SHALLOW rules fire (both boats at the
+        // same anchorage seeing 1.8m). Both publishers POST to the
+        // same path. The server's path-based id derivation overlays
+        // (returns the same id), so each plotter ends up tracking the
+        // same id and the system stays in steady state.
+        //
+        // This is what protects the cross-plotter sync from a thunder-
+        // herd -- N plotters with the same threat don't create N
+        // distinct server notifications.
+        var server = new FakeServer();
+        var ruleA = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var ruleB = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var a = new Plotter("PlotterA", server, ruleA);
+        var b = new Plotter("PlotterB", server, ruleB);
+        server.Connect(a); server.Connect(b);
+
+        a.Tick(); b.Tick();
+        await SettleAsync();
+        a.Tick(); b.Tick();
+
+        // Server saw two raise calls but only one canonical record.
+        await Assert.That(server.RaiseCallCount).IsEqualTo(2);
+        // Each plotter's local rule is the source of truth for its own
+        // banner; the bridge echo is suppressed via tracker.
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(a.Manager.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
+        await Assert.That(b.Manager.ActiveAlarms[0].Title).IsEqualTo("SHALLOW");
+    }
+
+    [Test]
+    public async Task ServerEmittedAlarm_NotRepublishedByOriginPlotter()
+    {
+        // Phase A's bridge rule emits AlarmInfo with NotificationId
+        // for server-emitted alarms. The publisher must NOT republish
+        // those (loop hazard). Verify by raising a server notification
+        // directly and counting RaiseCallCount: it should remain at 0.
+        var server = new FakeServer();
+        var a = new Plotter("PlotterA", server);
+        server.Connect(a);
+        // Raise from server -> A's bridge rule emits with NotificationId.
+        server.Raise("notifications.navigation.anchor.position", "alarm",
+            "dragging", "external-anchor-1", FullPermissions);
+        a.Tick();
+        await SettleAsync();
+
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(a.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("external-anchor-1");
+        // Publisher saw a NotificationId-bearing alarm and skipped it.
+        await Assert.That(server.RaiseCallCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task DismissOnA_WithLocalRuleStillFiring_RaisesAgainOnNextTick()
+    {
+        // PlotterA dismisses a local SHALLOW alarm. AlarmManager's
+        // 30s cooldown silences A's rule re-emit briefly, so the
+        // alarm leaves the active set and the publisher fires DELETE.
+        // Once the cooldown expires, the local rule re-fires (depth
+        // is still shallow), publisher RAISEs again, B sees the
+        // banner come back. End-state: A is showing again, B is
+        // showing again, server has a single canonical record.
+        var server = new FakeServer();
+        var rule = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);
+        var a = new Plotter("PlotterA", server, rule);
+        var b = new Plotter("PlotterB", server);
+        server.Connect(a); server.Connect(b);
+
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+        await Assert.That(server.RaiseCallCount).IsEqualTo(1);
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
+
+        // A dismisses.
+        await a.Manager.DismissAsync(a.Manager.ActiveAlarms[0]);
+        await SettleAsync();
+        b.Tick();
+        // Cleared on A locally, cleared on server, cleared on B.
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(server.ClearCallCount).IsEqualTo(1);
+
+        // Step past A's cooldown; A's rule re-fires.
+        a.Clock.Now = a.Clock.Now.AddSeconds(AlarmManager.DismissCooldownSeconds + 5);
+        a.Tick();
+        await SettleAsync();
+        b.Tick();
+        await Assert.That(server.RaiseCallCount).IsEqualTo(2);
+        await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
+        await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
     }
 }
