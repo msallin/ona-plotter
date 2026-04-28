@@ -95,14 +95,17 @@
            so the two dials read as a matched pair across the right column. *@
         <svg width="52" height="52" viewBox="-26 -26 52 52" class="wind-dial"
              role="img" aria-label="Wind: apparent and true">
+            @* Rim + cardinals route through CSS classes so the colour
+               flips with the HUD card theme. Hard-coded
+               rgba(255,255,255,...) values used to vanish on the white
+               light-theme card -- the helm saw the arrows but no rim
+               or tick marks. *@
             <circle cx="0" cy="0" r="24" fill="none"
-                    stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-            @* Cardinal tick marks (N, E, S, W). Subtle -- the arrow IS
-               the data; the rim is reference. *@
-            <line x1="0" y1="-24" x2="0" y2="-20" stroke="rgba(255,255,255,0.4)" stroke-width="1"/>
-            <line x1="0" y1="20"  x2="0" y2="24"  stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
-            <line x1="-24" y1="0" x2="-20" y2="0" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
-            <line x1="20" y1="0"  x2="24" y2="0"  stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+                    class="hud-dial-rim" stroke-width="1"/>
+            <line x1="0" y1="-24" x2="0" y2="-20" class="hud-dial-tick-major" stroke-width="1"/>
+            <line x1="0" y1="20"  x2="0" y2="24"  class="hud-dial-tick-minor" stroke-width="1"/>
+            <line x1="-24" y1="0" x2="-20" y2="0" class="hud-dial-tick-minor" stroke-width="1"/>
+            <line x1="20" y1="0"  x2="24" y2="0"  class="hud-dial-tick-minor" stroke-width="1"/>
             @* True wind first so apparent overlays it. Both arrows scaled
                to match the HDG needle proportions. *@
             @if (Data.WindSpeedTrue is not null)
@@ -117,7 +120,7 @@
                     <polygon points="0,-20 5,-6 0,-10 -5,-6" fill="#3b82f6"/>
                 </g>
             }
-            <circle cx="0" cy="0" r="2" fill="rgba(255,255,255,0.5)"/>
+            <circle cx="0" cy="0" r="2" class="hud-dial-center"/>
         </svg>
         @* Just the apparent wind speed. The true-wind speed is in the
            expanded extras below as a labelled "TWS" row. *@
@@ -417,11 +420,11 @@
          title="Click for more detail">
         <div class="hud-label">HDG</div>
         <svg width="52" height="52" viewBox="-26 -26 52 52">
-            <circle cx="0" cy="0" r="24" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>
-            @SvgText(0, -18, "N", "rgba(255,255,255,0.5)", 7)
-            @SvgText(18, 0, "E", "rgba(255,255,255,0.3)", 7)
-            @SvgText(0, 19, "S", "rgba(255,255,255,0.3)", 7)
-            @SvgText(-18, 0, "W", "rgba(255,255,255,0.3)", 7)
+            <circle cx="0" cy="0" r="24" fill="none" class="hud-dial-rim" stroke-width="1"/>
+            @SvgTextCls(0, -18, "N", "hud-dial-cardinal-major", 7)
+            @SvgTextCls(18, 0, "E", "hud-dial-cardinal-minor", 7)
+            @SvgTextCls(0, 19, "S", "hud-dial-cardinal-minor", 7)
+            @SvgTextCls(-18, 0, "W", "hud-dial-cardinal-minor", 7)
             @* Needle shape: wide arrowhead forward, short tail. Rotated as a
                whole so the pointer always tracks heading. *@
             <g class="compass-rose" style="transform: rotate(@HeadingDegStr);">
@@ -441,6 +444,9 @@
                 </g>
             }
             <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
+            @* The compass-rose center dot keeps its accent blue --
+               it carries semantic meaning (matches the heading
+               needle), so it doesn't theme-flip with the rim. *@
         </svg>
         @* Suffix T or M so the helm knows which reference the number
            is in. With 15° magnetic variation in some cruising grounds
@@ -1003,6 +1009,16 @@
     {
         return new MarkupString(
             $"<text x=\"{x}\" y=\"{y}\" fill=\"{fill}\" font-size=\"{fontSize}\" " +
+            $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
+    }
+
+    // Class-routed variant. Used by the HDG compass cardinals so the
+    // colour follows --hud-ink-dim / --hud-ink-stale and flips with
+    // theme. Hard-coded fill="" was invisible on the white light card.
+    private static MarkupString SvgTextCls(double x, double y, string content, string cls, int fontSize)
+    {
+        return new MarkupString(
+            $"<text x=\"{x}\" y=\"{y}\" class=\"{cls}\" font-size=\"{fontSize}\" " +
             $"text-anchor=\"middle\" dominant-baseline=\"central\">{System.Net.WebUtility.HtmlEncode(content)}</text>");
     }
 

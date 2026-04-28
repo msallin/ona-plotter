@@ -27,6 +27,33 @@
             <div class="chart-desc">RainViewer nowcast (precipitation, not wind)</div>
         </div>
     </label>
+    @* Opacity slider only when the radar is on -- a slider for an
+       overlay that isn't drawing reads as broken, and the row of
+       chrome adds noise to the panel for no value. Range 5%-95% so
+       the helm can never accidentally land on "fully transparent"
+       (looks identical to OFF and confuses a "is it on?" check).
+       Step 5% trades fine-grain for stable thumb position on iPad. *@
+    @if (WeatherVisible)
+    {
+        @* @oninput drives the live preview (cheap JS push to the
+           Leaflet layer) so the helm sees the chart respond as they
+           drag. @onchange (fires on slider release) drives the
+           localStorage write + the global OnSettingsChanged
+           broadcast. Without this split the slider was persisting
+           every intermediate value during a 1-second drag,
+           triggering ~20 disk writes + as many StateHasChanged
+           cascades on every helm tweak. *@
+        <div class="weather-opacity-row">
+            <span class="weather-opacity-label">Opacity</span>
+            <input type="range" class="weather-opacity-slider"
+                   min="5" max="95" step="5"
+                   value="@WeatherOpacityPercent"
+                   @oninput="OnOpacityInput"
+                   @onchange="OnOpacityCommit"
+                   aria-label="Rain radar opacity" />
+            <span class="weather-opacity-value">@WeatherOpacityPercent%</span>
+        </div>
+    }
 
     @* AtoNs: AIS Type-21 broadcasts (cardinal / lateral / isolated
        danger / safe water / special), plus virtual AtoNs. Fills in
@@ -45,8 +72,36 @@
 @code {
     [Parameter] public bool WeatherVisible { get; set; }
     [Parameter] public bool AtonsVisible { get; set; }
+    /// <summary>0-100 integer matching the slider input value. The
+    /// underlying setting / leaflet API uses 0.0-1.0; conversion
+    /// happens in OnOpacityInput so the slider stays in pleasant
+    /// integer ticks the helm can read at a glance.</summary>
+    [Parameter] public int WeatherOpacityPercent { get; set; } = 50;
     [Parameter] public EventCallback<bool> OnToggleWeather { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtons { get; set; }
+    /// <summary>Fires per slider tick during a drag. Drives the
+    /// live preview only -- helm wants instant feedback on the
+    /// chart, not 20 localStorage writes per drag.</summary>
+    [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
+    /// <summary>Fires once on slider release. Persists the final
+    /// value via the SettingsService.</summary>
+    [Parameter] public EventCallback<int> OnWeatherOpacityCommit { get; set; }
 
     private bool expanded = false;
+
+    private async Task OnOpacityInput(ChangeEventArgs e)
+    {
+        // Slider value comes in as a string "5".."95"; defensive
+        // parse so a malformed event doesn't NaN downstream.
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
+        WeatherOpacityPercent = Math.Clamp(pct, 5, 95);
+        await OnWeatherOpacityPreview.InvokeAsync(WeatherOpacityPercent);
+    }
+
+    private async Task OnOpacityCommit(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
+        WeatherOpacityPercent = Math.Clamp(pct, 5, 95);
+        await OnWeatherOpacityCommit.InvokeAsync(WeatherOpacityPercent);
+    }
 }

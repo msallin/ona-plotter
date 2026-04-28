@@ -65,6 +65,13 @@ public interface IAppSettings
     /// declutter -- this is the toggle.</summary>
     bool AtonsVisible { get; }
 
+    /// <summary>RainViewer weather-overlay opacity as a 0.05..0.95
+    /// fraction. Default 0.5 matches the previous baked-in value.
+    /// Range floor of 0.05 keeps "fully transparent = looks identical
+    /// to OFF" out of the reachable range so the helm never sees the
+    /// overlay disappear without realising the toggle is still on.</summary>
+    double WeatherOverlayOpacity { get; }
+
     /// <summary>
     /// Harbor mode: a single switch that bundles four AIS / collision
     /// suppressions for entering a busy harbour, where the helm cares
@@ -309,6 +316,7 @@ public interface IAppSettings
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
+    Task SetWeatherOverlayOpacityAsync(double value);
 
     /// <summary>Toggle <see cref="HarborMode"/>. In-memory only --
     /// resets to false on the next page load.</summary>

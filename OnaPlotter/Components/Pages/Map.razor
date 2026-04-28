@@ -416,6 +416,7 @@
                      ServerTrackDuration="@serverTrackDuration"
                      ServerTrackWithinBounds="serverTrackWithinBounds"
                      WeatherOverlayVisible="weatherOverlayVisible"
+                     WeatherOverlayOpacityPercent="@((int)Math.Round(Settings.WeatherOverlayOpacity * 100))"
                      AtonsVisible="Settings.AtonsVisible"
                      LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
@@ -436,6 +437,8 @@
                      OnServerTrackDurationChanged="OnServerTrackDurationChanged"
                      OnServerTrackWithinBoundsChanged="OnServerTrackWithinBoundsChanged"
                      OnToggleWeatherOverlay="ToggleWeatherOverlay"
+                     OnWeatherOpacityPreview="OnWeatherOpacityPreview"
+                     OnWeatherOpacityCommit="OnWeatherOpacityCommit"
                      OnToggleAtonsVisible="ToggleAtonsVisible" />
     }
 </div>
@@ -2421,12 +2424,38 @@
             // IAppSettings and a dropdown picker for the layer (wind / temp /
             // pressure / precip). Not worth the plumbing until someone asks.
             await module.InvokeVoidAsync("setWeatherOverlay",
-                "https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png");
+                "https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png",
+                Settings.WeatherOverlayOpacity);
         }
         else
         {
             await module.InvokeVoidAsync("clearWeatherOverlay");
         }
+    }
+
+    /// <summary>Slider drag tick. Push the new opacity to the live
+    /// Leaflet layer immediately so the helm sees the chart respond,
+    /// but DON'T persist -- writing localStorage on every drag tick
+    /// fires up to ~20 disk writes plus as many StateHasChanged
+    /// cascades for a one-second drag. The helm only cares about the
+    /// final value; that lands via OnWeatherOpacityCommit on slider
+    /// release.</summary>
+    private async Task OnWeatherOpacityPreview(int percent)
+    {
+        if (module is null || !weatherOverlayVisible) return;
+        double frac = Math.Clamp(percent, 5, 95) / 100.0;
+        await module.InvokeVoidAsync("setWeatherOverlayOpacity", frac);
+    }
+
+    /// <summary>Slider released. Persist the final value via
+    /// Settings (round-trips to localStorage). Mirrors the slider's
+    /// own clamp [5..95]; SetWeatherOverlayOpacityAsync re-clamps to
+    /// [0.05..0.95] as belt-and-suspenders against future callers
+    /// that don't go through the slider.</summary>
+    private async Task OnWeatherOpacityCommit(int percent)
+    {
+        double frac = Math.Clamp(percent, 5, 95) / 100.0;
+        await Settings.SetWeatherOverlayOpacityAsync(frac);
     }
 
     private async Task ToggleAtonsVisible(bool enabled)
@@ -3206,6 +3235,17 @@
                     routeId,
                     routeName);
             }
+        }
+
+        // Push the live route ETA to JS so the active-route popup
+        // shows a fresh "ETA HH:MM (in Xh Ym)" each time the helm
+        // taps the polyline. Sent every sync tick (cheap one-arg
+        // call) so the cached value never lags more than the
+        // NavigationData refresh cadence. Null clears the row.
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("setActiveRouteTtgSeconds",
+                Data.ActiveRouteTimeToGo);
         }
 
         lastNextWpLat = nextLat;

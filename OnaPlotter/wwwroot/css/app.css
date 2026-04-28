@@ -91,7 +91,7 @@
     --map-buddy:        #e9c46a;     /* buddy vessel; also snooze / star glyph */
     --map-danger:       #c4453e;     /* CPA alarm colour on AIS targets */
     --map-radar:        #b08d5a;     /* Mayara radar ARPA markers */
-    --map-current:      #a78bfa;     /* tidal-current arrow + active-WP pulse */
+    --map-current:      #a78bfa;     /* tidal-current arrow + route-edit preview */
     --map-current-rgb:  167, 139, 250;
     --map-bearing:      #06b6d4;     /* cyan bearing-to-WP line */
     --map-course-leg:   #e2e8f0;     /* white-ish active-leg line */
@@ -201,6 +201,15 @@
        cards. Replaces hand-rolled rgba(255,255,255,...) borders that vanish
        on a white card. */
     --hud-divider:   rgba(255, 255, 255, 0.10);
+    /* Buttons inside HUD cards (radar +/-, Transmit, autopilot mode pills).
+       Theme-aware so the affordance shape stays visible on both dark and
+       white cards. Original hard-coded white-alpha background+border
+       vanished on the light-theme white card -- helm saw labels without
+       button outlines. */
+    --hud-btn-bg:           rgba(255, 255, 255, 0.05);
+    --hud-btn-bg-hover:     rgba(255, 255, 255, 0.12);
+    --hud-btn-border:       rgba(255, 255, 255, 0.12);
+    --hud-btn-border-hover: rgba(255, 255, 255, 0.25);
     /* Map overlay accents that need to flip with the page theme so they
        hold contrast against pastel light tiles. Anchor watch ring is
        the most visible -- green-500 reads fine on a dark chart but
@@ -409,6 +418,12 @@
     --hud-ink-dim:         rgba(15, 23, 42, 0.55);
     --hud-ink-stale:       rgba(15, 23, 42, 0.40);
     --hud-divider:         rgba(15, 23, 42, 0.10);
+    /* HUD button tokens flipped to slate-on-white so radar +/-,
+       Transmit, mode pills read as buttons on the light HUD card. */
+    --hud-btn-bg:           rgba(15, 23, 42, 0.04);
+    --hud-btn-bg-hover:     rgba(15, 23, 42, 0.10);
+    --hud-btn-border:       rgba(15, 23, 42, 0.20);
+    --hud-btn-border-hover: rgba(15, 23, 42, 0.40);
     /* Slightly darker green for sun: green-500 (#22c55e) washes into
        the pastel water on the light basemap; green-600 holds. */
     --map-anchor-ok:       #16a34a;
@@ -461,6 +476,10 @@
         --hud-ink-dim:         rgba(232, 236, 242, 0.55);
         --hud-ink-stale:       rgba(232, 236, 242, 0.40);
         --hud-divider:         rgba(255, 255, 255, 0.10);
+        --hud-btn-bg:           rgba(255, 255, 255, 0.05);
+        --hud-btn-bg-hover:     rgba(255, 255, 255, 0.12);
+        --hud-btn-border:       rgba(255, 255, 255, 0.12);
+        --hud-btn-border-hover: rgba(255, 255, 255, 0.25);
         --map-anchor-ok:       #22c55e;
         /* OS-dark fallthrough on system theme: rail blends with chart, no shadow needed. */
         --sidebar-shadow:      none;
@@ -521,6 +540,10 @@
     --hud-ink:             #000000;
     --hud-ink-dim:         rgba(0, 0, 0, 0.65);
     --hud-divider:         rgba(0, 0, 0, 0.20);
+    --hud-btn-bg:           rgba(0, 0, 0, 0.05);
+    --hud-btn-bg-hover:     rgba(0, 0, 0, 0.12);
+    --hud-btn-border:       rgba(0, 0, 0, 0.45);
+    --hud-btn-border-hover: rgba(0, 0, 0, 0.75);
     --map-anchor-ok:       #15803d;
     /* High-contrast: deeper shadow for sun-glare visibility. */
     --sidebar-shadow:      4px 0 18px rgba(0, 0, 0, 0.18);
@@ -1607,6 +1630,18 @@ html:fullscreen .hud-stack-br {
    attentive without reading any numbers. The combined "AW/TW kn"
    reading sits under the dial; colour-coding lives only on the
    arrows so the rest of the card matches every other HUD. */
+/* HUD-card dial scaffolding (wind dial + HDG compass). Theme-aware
+   strokes / fills so the rim + cardinals + centre dot stay visible
+   on white cards. Replaces hard-coded rgba(255,255,255,0.x) attrs
+   that vanished in light theme -- helm saw the wind / compass
+   arrows but no rim or tick marks underneath. */
+.hud-dial-rim         { stroke: var(--hud-ink); opacity: 0.18; }
+.hud-dial-tick-major  { stroke: var(--hud-ink); opacity: 0.55; }
+.hud-dial-tick-minor  { stroke: var(--hud-ink); opacity: 0.30; }
+.hud-dial-cardinal-major { fill: var(--hud-ink-dim); }
+.hud-dial-cardinal-minor { fill: var(--hud-ink-stale); }
+.hud-dial-center      { fill:   var(--hud-ink); opacity: 0.55; }
+
 .wind-dial g {
     transform-origin: 0 0;
     transform-box: view-box;
@@ -1870,6 +1905,55 @@ html:fullscreen .hud-stack-br {
     border-color: rgba(255,255,255,0.1);
 }
 
+/* Light + high-contrast: .map-btn inverts so it reads as a button
+   sitting on a white panel (History controls, Settings forms). The
+   dark-chrome default is tuned for the always-dark map context; on
+   a light panel it looked like a black blob with white text. */
+.theme-light .map-btn,
+.theme-high-contrast .map-btn {
+    background: var(--sk-surface);
+    border-color: var(--sk-border);
+    color: var(--sk-text);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+.theme-light .map-btn:hover,
+.theme-high-contrast .map-btn:hover {
+    background: var(--sk-surface-hover);
+    border-color: var(--sk-text-muted);
+}
+.theme-light .map-btn.active,
+.theme-high-contrast .map-btn.active {
+    background: rgba(var(--sk-accent-rgb), 0.20);
+    border-color: var(--sk-accent);
+    color: var(--sk-text);
+}
+.theme-light .map-btn:disabled:hover,
+.theme-light .map-btn[disabled]:hover,
+.theme-high-contrast .map-btn:disabled:hover,
+.theme-high-contrast .map-btn[disabled]:hover {
+    background: var(--sk-surface);
+    border-color: var(--sk-border);
+}
+@media (prefers-color-scheme: light) {
+    .theme-system .map-btn {
+        background: var(--sk-surface);
+        border-color: var(--sk-border);
+        color: var(--sk-text);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+    .theme-system .map-btn:hover {
+        background: var(--sk-surface-hover);
+        border-color: var(--sk-text-muted);
+    }
+    .theme-system .map-btn.active {
+        background: rgba(var(--sk-accent-rgb), 0.20);
+        border-color: var(--sk-accent);
+        color: var(--sk-text);
+    }
+}
+
 /* MOB pulsing marker */
 .mob-icon .mob-pulse {
     width: 20px;
@@ -1976,17 +2060,21 @@ html:fullscreen .hud-stack-br {
     color: #fff;
 }
 
-/* Leaflet popup overrides for dark theme */
+/* Leaflet popup overrides for dark theme. The note / region / route
+   popups override these per-popup-class to carry their own warm
+   accent (preserved further down in the file). The base popup
+   (vessel + waypoint) routes through panel tokens so it flips on
+   light theme; the warm-accent ones get their own flips below. */
 .leaflet-popup-content-wrapper {
-    background: rgba(15, 18, 25, 0.95) !important;
-    color: #e2e8f0 !important;
+    background: var(--panel-bg-strong) !important;
+    color: var(--panel-text) !important;
     border-radius: 10px !important;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+    box-shadow: var(--panel-shadow) !important;
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
 }
 .leaflet-popup-tip {
-    background: rgba(15, 18, 25, 0.95) !important;
+    background: var(--panel-bg-strong) !important;
 }
 .leaflet-popup-content {
     margin: 12px 16px !important;
@@ -1999,7 +2087,7 @@ html:fullscreen .hud-stack-br {
 .ais-popup-title {
     font-size: 14px;
     font-weight: 600;
-    color: #fff;
+    color: var(--panel-text);
     margin-bottom: 2px;
 }
 /* Country flag served by the signalk-flags plugin. Small, inline with
@@ -3603,6 +3691,95 @@ html.night-mode-global body {
     display: none !important;
 }
 
+/* Range-scale chip (bottom-left rail). HUD-card chrome so it reads
+   as the same instrument family as the SOG / Depth corner cards.
+   Two children: a label ("1 nm") and a horizontal bar drawn at the
+   pixel width that matches that label on the live chart. The bar
+   acts like a ruler -- helm eyeballs distance by comparing chart
+   features to the bar length. Position pulled by the parent
+   .leaflet-bottom.leaflet-left transform; this rule shapes the
+   inner chip only. */
+.ona-range-scale {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 4px 8px;
+    background: var(--hud-card-bg);
+    border: 1px solid var(--hud-card-stroke-in);
+    box-shadow:
+        0 0 0 1px var(--hud-card-stroke-out),
+        var(--hud-card-halo);
+    border-radius: var(--hud-card-radius);
+    color: var(--hud-ink);
+    font-family: var(--hud-font);
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    user-select: none;
+}
+.ona-range-scale-label {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.ona-range-scale-bar {
+    /* Two-stroke horizontal ruler: the inner line is the data
+       (--hud-ink), the bookend ticks at left/right are box-shadow
+       pseudo-strokes anchored to the same colour token so theme
+       flips carry both. height: 6 px gives the eye enough vertical
+       presence to read at arm's length without crowding the label. */
+    display: inline-block;
+    height: 6px;
+    background: linear-gradient(currentColor, currentColor) center / 100% 1.5px no-repeat;
+    color: var(--hud-ink);
+    border-left:  1.5px solid currentColor;
+    border-right: 1.5px solid currentColor;
+}
+
+/* Pinch-zoom scale preview: large chip centred on the chart that
+   appears during a pinch / zoom gesture and fades out shortly after
+   release. Reuses the range-scale chip language but at a bigger
+   font size so it's glanceable mid-gesture without squinting at the
+   permanent corner chip. Initially opacity 0; .visible adds the
+   400 ms fade pattern; tear-down sets opacity 0 again. */
+.ona-zoom-preview {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: var(--z-controls);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 8px 14px;
+    background: var(--hud-card-bg);
+    border: 1px solid var(--hud-card-stroke-in);
+    box-shadow:
+        0 0 0 1px var(--hud-card-stroke-out),
+        var(--hud-card-halo);
+    border-radius: var(--hud-card-radius);
+    color: var(--hud-ink);
+    font-family: var(--hud-font);
+    font-size: 1rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0;
+    transition: opacity 0.4s ease-out;
+}
+.ona-zoom-preview.visible {
+    opacity: 0.95;
+    transition: opacity 0.12s ease-in;
+}
+.ona-zoom-preview-bar {
+    display: inline-block;
+    height: 8px;
+    background: linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+    color: var(--hud-ink);
+    border-left:  2px solid currentColor;
+    border-right: 2px solid currentColor;
+}
+
 /* (Earlier iteration moved the bottom-left controls to the bottom-
    right corner so the depth card had a clean bottom-left inset; the
    helm asked for the original layout back, so the override is gone
@@ -3659,7 +3836,11 @@ html.night-mode-global body {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: rgba(255,255,255,0.5);
+    /* Theme-aware muted -- previous rgba(255,255,255,0.5) read fine
+       on the dark panel but rendered at near-zero contrast on the
+       white light-theme panel, so the title + chevron only became
+       visible on hover (which forces var(--sk-text)). */
+    color: var(--panel-text-muted);
     margin-bottom: 8px;
 }
 
@@ -3696,13 +3877,18 @@ html.night-mode-global body {
    and made the Layers panel look busier than it needed to be.
    The green .chart-rendering-dot next to the chart name carries
    the "this chart is on the map" signal now. */
+/* Reorder arrows used to be amber (the "route" colour family), which
+   read as a status colour rather than a button. Helm asked for a
+   neutral button shape that follows panel-text / panel-border so
+   they read like the "Transmit" radar HUD button -- ordinary
+   chrome, not a coloured affordance. */
 .chart-reorder-btn {
     width: 22px;
     height: 22px;
     padding: 0;
     background: transparent;
-    color: #f0d49c;
-    border: 1px solid rgba(224, 159, 62, 0.25);
+    color: var(--panel-text);
+    border: 1px solid var(--panel-border);
     border-radius: 3px;
     font-size: 0.65rem;
     line-height: 1;
@@ -3710,8 +3896,8 @@ html.night-mode-global body {
     -webkit-tap-highlight-color: transparent;
 }
 .chart-reorder-btn:hover:not(:disabled) {
-    background: rgba(224, 159, 62, 0.22);
-    border-color: rgba(224, 159, 62, 0.6);
+    background: var(--sk-surface-hover);
+    border-color: var(--sk-text-muted);
 }
 .chart-reorder-btn:disabled {
     opacity: 0.3;
@@ -3943,6 +4129,35 @@ html.night-mode-global body {
 .chart-item-body {
     min-width: 0;
     flex: 1;
+}
+
+/* Weather (rain radar) opacity slider sitting under the radar
+   checkbox in the Misc section. Hidden until the radar checkbox
+   is on -- a slider for an inactive overlay reads as broken. Inset
+   alignment matches the existing chart-item lefthand padding so
+   the row reads as a child control of the checkbox above. */
+.weather-opacity-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.25rem 0 0.25rem 1.85rem;
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+}
+.weather-opacity-label {
+    flex: 0 0 auto;
+}
+.weather-opacity-slider {
+    flex: 1 1 auto;
+    min-width: 80px;
+    accent-color: var(--sk-accent);
+}
+.weather-opacity-value {
+    flex: 0 0 auto;
+    min-width: 2.6rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--sk-text);
 }
 
 /* AIS name labels on map.
@@ -4719,21 +4934,25 @@ html.night-mode-global body {
     height: 4px;
     border-radius: 0;
 }
-/* Active-WP pulse: violet filled circle like the pulse marker.
-   Halo uses the --map-current-rgb triplet so a palette tweak
-   cascades through the ring. */
+/* Active-WP pulse: cyan filled circle matching .active-wp-pulse on the
+   chart (the pulse uses --map-bearing, not --map-current any more --
+   the violet was switched to cyan to read as the same "active
+   navigation" family as the bearing line + numbered waypoint dots). */
 .legend-active-wp {
-    background: var(--map-current);
+    background: var(--map-bearing);
     border: 2px solid #fff;
     border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(var(--map-current-rgb), 0.35);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.35);
 }
-/* Anchor: pinned marker + alarm-radius circle ghost. Swatch uses the
-   same gold stroke as the ring; fill reads from --ann-route-rgb so
-   alpha blend tracks the token palette. */
+/* Anchor: pinned marker + alarm-radius circle ghost. Reads --map-anchor-ok
+   so the swatch tracks whatever colour the actual circle on the map is
+   drawn in (green-500 dark / green-600 light / green-700 high-contrast).
+   Was previously --ann-route (amber) which didn't match the green ring
+   the helm sees on the chart -- exact kind of legend drift the palette
+   tokens exist to prevent. */
 .legend-anchor {
-    background: rgba(var(--ann-route-rgb), 0.08);
-    border: 1.5px solid var(--ann-route);
+    background: rgba(34, 197, 94, 0.08);
+    border: 1.5px solid var(--map-anchor-ok);
     border-radius: 50%;
 }
 /* MOB marker: red pin with white center. */
@@ -4898,21 +5117,29 @@ html.night-mode-global body {
     margin: 6px 0 4px;
 }
 
+/* Autopilot + radar HUD buttons (range stepper, Transmit, mode pills).
+   --hud-btn-* tokens flip with the HUD card so the buttons stay
+   visible whether the card is dark or white. The original
+   rgba(255,255,255,0.05) background + 0.12-alpha border vanished
+   on a white card -- helm saw a label without a button shape. */
 .ap-btn {
     padding: 6px 10px;
     font-size: 0.78rem;
     font-weight: 600;
     min-width: 36px;
     border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.12);
-    background: rgba(255,255,255,0.05);
-    color: var(--sk-text);
+    border: 1px solid var(--hud-btn-border, rgba(255,255,255,0.12));
+    background: var(--hud-btn-bg, rgba(255,255,255,0.05));
+    color: var(--hud-ink);
     cursor: pointer;
     transition: all 0.12s ease;
     font-variant-numeric: tabular-nums;
     -webkit-tap-highlight-color: transparent;
 }
-.ap-btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); }
+.ap-btn:hover {
+    background: var(--hud-btn-bg-hover, rgba(255,255,255,0.12));
+    border-color: var(--hud-btn-border-hover, rgba(255,255,255,0.25));
+}
 .ap-btn:active { transform: scale(0.94); }
 
 .ap-modes {
@@ -4927,9 +5154,9 @@ html.night-mode-global body {
     font-weight: 500;
     min-width: 44px;
     border-radius: 6px;
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--hud-btn-border, rgba(255,255,255,0.08));
     background: transparent;
-    color: var(--sk-text-muted);
+    color: var(--hud-ink-dim);
     cursor: pointer;
     transition: all 0.12s ease;
     -webkit-tap-highlight-color: transparent;
@@ -4974,16 +5201,21 @@ html.night-mode-global body {
 
 /* Picker shown only when more than one radar is detected. Sized like
    the existing radar-range-select dropdown so the row height stays
-   stable when the picker swaps in/out. */
+   stable when the picker swaps in/out. Border + bg routed through
+   the shared --hud-btn-* tokens so the picker visually matches the
+   ap-btn range stepper + Transmit button on the same card -- all
+   three controls read as one button family inside the HUD card,
+   instead of three competing border colours that the helm flagged
+   as "the radar HUD has a different border than the others". */
 .radar-hud-picker {
     width: 100%;
     font-size: 0.75rem;
     padding: 2px 6px;
     min-height: 26px;
     margin: 4px 0;
-    background: var(--panel-bg);
-    color: var(--panel-text);
-    border: 1px solid var(--panel-border);
+    background: var(--hud-btn-bg);
+    color: var(--hud-ink);
+    border: 1px solid var(--hud-btn-border);
     border-radius: 4px;
 }
 
@@ -5186,14 +5418,16 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     left: 50%;
     transform: translateX(-50%);
     z-index: 800;
-    background: rgba(10, 12, 18, 0.92);
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     border-radius: 10px;
     padding: 12px 16px;
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid var(--panel-border);
     min-width: 320px;
     max-width: 90%;
+    box-shadow: var(--panel-shadow);
 }
 
 .history-controls .form-range {
@@ -5267,6 +5501,35 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .chart-quick-chip:hover {
     border-color: rgba(255,255,255,0.35);
     color: var(--sk-text);
+}
+
+/* Light + high-contrast: chips invert to a white-pill with slate
+   ink so the cluster reads as paper-on-chart, not as dark-blue
+   blobs floating over the pastel basemap. Active state still uses
+   --sk-accent so the on/off difference stays loud. */
+.theme-light .chart-quick-chip,
+.theme-high-contrast .chart-quick-chip {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(15, 23, 42, 0.20);
+    color: rgba(15, 23, 42, 0.65);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+.theme-light .chart-quick-chip:hover,
+.theme-high-contrast .chart-quick-chip:hover {
+    border-color: rgba(15, 23, 42, 0.45);
+    color: var(--sk-text);
+}
+@media (prefers-color-scheme: light) {
+    .theme-system .chart-quick-chip {
+        background: rgba(255, 255, 255, 0.85);
+        border-color: rgba(15, 23, 42, 0.20);
+        color: rgba(15, 23, 42, 0.65);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+    }
+    .theme-system .chart-quick-chip:hover {
+        border-color: rgba(15, 23, 42, 0.45);
+        color: var(--sk-text);
+    }
 }
 
 /* Active chip: solid accent fill + bold text. The leading-dot
@@ -5580,14 +5843,15 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .map-context-menu {
     position: absolute;
     z-index: 900;
-    background: rgba(15, 17, 22, 0.95);
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
     border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid var(--panel-border);
     padding: 4px 0;
     min-width: 160px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    box-shadow: var(--panel-shadow);
     /* Suppress iOS long-press text selection + Copy / Look Up
        balloon. Without this, the user long-presses the map, our
        custom menu opens under the finger, and iOS's own long-press
@@ -5615,7 +5879,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     user-select: none;
     -webkit-touch-callout: none;
 }
-.ctx-menu-item:hover { background: rgba(255,255,255,0.08); }
+.ctx-menu-item:hover { background: var(--sk-surface-hover); }
 .ctx-menu-danger { color: var(--sk-red); }
 
 /* ===== Waypoint Dialog ===== */
@@ -5877,10 +6141,11 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     .region-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
 }
 
-/* Route popup: matches the note/region pattern. Amber background
-   aligned with the polyline colour so it reads as "from this route".
-   Activate is the primary action (accent tint); Delete carries the
-   destructive colour and the two-step confirm (wireDeleteConfirm). */
+/* Route popup: amber-tinted variant aligned with the route polyline
+   colour so the popup reads as "from this route". Default tokens
+   are the dark-theme warm chrome; light + high-contrast overrides
+   below switch to a cream-tinted card with dark text for the same
+   "warm route" tonality on the white panel. */
 .route-popup .leaflet-popup-content-wrapper {
     background: rgba(34, 24, 14, 0.96);
     color: #e2e8f0;
@@ -5891,8 +6156,45 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .route-popup-body { padding: 2px 4px; min-width: 180px; }
 .route-popup-title { font-weight: 600; color: #f1c47c; margin-bottom: 2px; }
 .route-popup-meta {
-    color: #94a3b8;
+    color: var(--panel-text-muted);
     font-size: 0.75rem;
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+}
+/* Light + high-contrast variant: warm-cream card with dark text
+   instead of the dark-amber default, so the popup reads on a
+   bright basemap without losing the "route accent" identity. */
+.theme-light .route-popup .leaflet-popup-content-wrapper,
+.theme-high-contrast .route-popup .leaflet-popup-content-wrapper {
+    background: #fef6e7 !important;
+    color: #4a3211 !important;
+    border-color: #c8862e !important;
+}
+.theme-light .route-popup .leaflet-popup-tip,
+.theme-high-contrast .route-popup .leaflet-popup-tip {
+    background: #fef6e7 !important;
+}
+.theme-light .route-popup-title,
+.theme-high-contrast .route-popup-title { color: #8a5a14; }
+@media (prefers-color-scheme: light) {
+    .theme-system .route-popup .leaflet-popup-content-wrapper {
+        background: #fef6e7 !important;
+        color: #4a3211 !important;
+        border-color: #c8862e !important;
+    }
+    .theme-system .route-popup .leaflet-popup-tip {
+        background: #fef6e7 !important;
+    }
+    .theme-system .route-popup-title { color: #8a5a14; }
+}
+/* Active-route popup only: ETA + remaining-time pair on its own line.
+   Slightly larger + accent-coloured because ETA is the value the helm
+   reads first ("when do we get there?"), and a smaller meta line for
+   waypoints + distance sits above it as static reference. */
+.route-popup-eta {
+    color: var(--sk-accent);
+    font-size: 0.85rem;
+    font-weight: 600;
     margin-bottom: 8px;
     font-variant-numeric: tabular-nums;
 }

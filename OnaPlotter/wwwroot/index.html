@@ -12,7 +12,17 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- maximum-scale=1.0 + user-scalable=no: disable iOS Safari's
+         document-level pinch-to-zoom and double-tap zoom. The chart
+         has its own pinch-to-zoom on the Leaflet container, and
+         document-level pinch zooms the HUD chrome OUT of position
+         (the cards float on absolute coordinates relative to the
+         viewport, not the page). Helms double-tap on AIS targets
+         and route lines constantly; without this, every other tap
+         triggers an iOS zoom. Trade-off: disables browser-level
+         zoom for vision-impaired users -- mitigated by the high-
+         contrast theme + the Big-Type setting on the Map page. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="OnaPlotter" />

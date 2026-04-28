@@ -132,6 +132,58 @@ let seaBaseLayer = null;
 // Zoom-level badge (bottom-right). Assigned in initMap so the control
 // exists before the first zoomend fires.
 let zoomBadge = null;
+// Range-scale chip in the bottom-left rail. Same lifetime as zoomBadge.
+let rangeScale = null;
+
+// "Nice round" nautical-mile values for the corner range scale chip
+// AND the pinch-zoom preview. Single source of truth so the bar in
+// the corner and the chip floating mid-gesture pick the same step --
+// previously this lived as a duplicated literal in both places. Same
+// ladder every commercial plotter uses (Garmin / B&G / Raymarine).
+const RANGE_SCALE_NM_LADDER = [
+    0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500
+];
+
+// How long the pinch-zoom preview chip lingers AFTER zoomend before
+// fading out. The 0.4s opacity transition on `.ona-zoom-preview` runs
+// AFTER this timer expires, so total visible time is LINGER + 400ms.
+const PINCH_PREVIEW_LINGER_MS = 700;
+
+/**
+ * Pure helper: pick a nice-round nautical-mile value at or below the
+ * sample length and the matching pixel width to render. Used by the
+ * permanent range-scale chip and the pinch-zoom preview. Caps the
+ * pixel width at the sample size so a sub-ladder zoom (tighter than
+ * 0.02 nm visible per 200 px sample) doesn't render a bar wider than
+ * the sample it represents.
+ *
+ * @param map Leaflet map
+ * @param sampleHalfPx pixels each side of centre to measure
+ * @param minPx       floor for the visible bar so it stays scannable
+ * @returns {{label: string, widthPx: number}}
+ */
+function computeNiceScale(map, sampleHalfPx, minPx) {
+    const c = map.getCenter();
+    const cp = map.latLngToContainerPoint(c);
+    const lhs = map.containerPointToLatLng([cp.x - sampleHalfPx, cp.y]);
+    const rhs = map.containerPointToLatLng([cp.x + sampleHalfPx, cp.y]);
+    const meters = lhs.distanceTo(rhs);
+    const totalNm = meters / 1852;
+    let nice = RANGE_SCALE_NM_LADDER[0];
+    for (const v of RANGE_SCALE_NM_LADDER) { if (v <= totalNm) nice = v; }
+    // Width clamp: bar can't exceed the sample width (would be a lie),
+    // and floors at minPx so it stays visible at very wide zooms.
+    const sampleWidthPx = 2 * sampleHalfPx;
+    const rawWidth = Math.round(sampleWidthPx * (nice / totalNm));
+    const widthPx = Math.min(sampleWidthPx, Math.max(minPx, rawWidth));
+    // Trim trailing zeros and the orphan dot for sub-1 nm values
+    // ("0.50 nm" reads as fake precision; "0.5 nm" is what a
+    // chartplotter shows). >= 1 stays integer.
+    const label = nice >= 1
+        ? `${nice} nm`
+        : `${nice.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} nm`;
+    return { label, widthPx };
+}
 
 // Wake-lock code used to live here; moved to wakeLock.js so it can
 // be held across every page, not just the Map. MainLayout manages it
@@ -155,6 +207,29 @@ const ZoomBadge = L.Control.extend({
         // now a plain zoom-level indicator.
         this._el.textContent = `z${z}`;
         this._el.title = `Zoom ${z}`;
+    }
+});
+
+// Range-scale chip. Draws a horizontal tick at a "nice round"
+// nautical-mile value (..., 0.1, 0.2, 0.5, 1, 2, 5, 10, ...) so the
+// helm can eyeball distance on the chart at a glance, the same way
+// every commercial plotter does. Renders via cached child spans so
+// the per-update path doesn't re-parse innerHTML on each pan.
+const RangeScale = L.Control.extend({
+    options: { position: 'bottomleft' },
+    onAdd() {
+        this._el = L.DomUtil.create('div', 'ona-range-scale');
+        this._labelEl = L.DomUtil.create('span', 'ona-range-scale-label', this._el);
+        this._barEl   = L.DomUtil.create('span', 'ona-range-scale-bar',   this._el);
+        L.DomEvent.disableClickPropagation(this._el);
+        return this._el;
+    },
+    update() {
+        if (!this._el || !this._map) return;
+        const { label, widthPx } = computeNiceScale(this._map, 100, 8);
+        this._labelEl.textContent = label;
+        this._barEl.style.width = `${widthPx}px`;
+        this._el.title = `Range: ${label}`;
     }
 });
 
@@ -505,6 +580,55 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     zoomBadge.addTo(map);
     map.on('zoomend', () => zoomBadge.update());
     zoomBadge.update();
+
+    // Range scale: instrument-styled tick + label so the helm can
+    // gauge distance on the chart without poking the +/- buttons.
+    // Bottom-left corner -- same Leaflet control rail as the zoom
+    // badge so the two chips stack predictably even when the depth
+    // HUD card moves on viewport changes.
+    rangeScale = new RangeScale({ position: 'bottomleft' });
+    rangeScale.addTo(map);
+    // moveend fires for both pan AND zoom and updates the sample
+    // when the helm pans across latitudes (1 nm spans more pixels
+    // near the poles than the equator, even at the same zoom level).
+    map.on('zoomend moveend', () => rangeScale.update());
+    rangeScale.update();
+
+    // Pinch-zoom preview: a centred chip with the live range scale
+    // appears at zoomstart, updates per zoom frame, then lingers
+    // PINCH_PREVIEW_LINGER_MS after zoomend before fading out over
+    // the 0.4s opacity transition on .ona-zoom-preview. The
+    // mid-gesture chip frees the helm from squinting at the
+    // bottom-left chip during a one-handed pinch.
+    //
+    // Per-frame path: only `textContent` + `style.width` mutate, so
+    // the browser doesn't re-parse innerHTML at 60 Hz during a pinch
+    // (the original implementation rebuilt two <span>s per zoom event,
+    // which is the precise hot path the gesture lands on).
+    const previewEl = L.DomUtil.create('div', 'ona-zoom-preview', map.getContainer());
+    const previewLabelEl = L.DomUtil.create('span', '', previewEl);
+    const previewBarEl = L.DomUtil.create('span', 'ona-zoom-preview-bar', previewEl);
+    let previewHideTimer = null;
+    const updatePreview = () => {
+        if (!map) return;
+        const { label, widthPx } = computeNiceScale(map, 100, 12);
+        previewLabelEl.textContent = label;
+        previewBarEl.style.width = `${widthPx}px`;
+    };
+    map.on('zoomstart', () => {
+        if (previewHideTimer) { clearTimeout(previewHideTimer); previewHideTimer = null; }
+        updatePreview();
+        previewEl.classList.add('visible');
+    });
+    map.on('zoom', () => updatePreview());
+    map.on('zoomend', () => {
+        updatePreview();
+        // Linger after release so the helm reads the final value.
+        if (previewHideTimer) clearTimeout(previewHideTimer);
+        previewHideTimer = setTimeout(
+            () => previewEl.classList.remove('visible'),
+            PINCH_PREVIEW_LINGER_MS);
+    });
 
     // isSlowClient was set at the top of initMap; the same flag drives
     // tile updateWhenIdle here so all perf gates decide together.
@@ -2458,16 +2582,79 @@ function wireRouteEdit(popup, id) {
     });
 }
 
+// Live ETA cache pushed from C# whenever ActiveRouteTimeToGo changes.
+// We store BOTH the value and the wall-clock at push time so the
+// popup can recompute the live remaining time from elapsed clock
+// regardless of whether C# has pushed an update recently. Without
+// the timestamp the helm sees a frozen "in 60m" 30 minutes into a
+// 60-minute leg, because C#-side SyncActiveRouteAsync only pushes
+// when the leg / waypoint / pointIndex actually changes.
+let _activeRouteTtgSeconds = null;
+let _activeRouteTtgPushedAtMs = 0;
+export function setActiveRouteTtgSeconds(seconds) {
+    if (typeof seconds === 'number' && seconds > 0) {
+        _activeRouteTtgSeconds = seconds;
+        _activeRouteTtgPushedAtMs = Date.now();
+    } else {
+        _activeRouteTtgSeconds = null;
+        _activeRouteTtgPushedAtMs = 0;
+    }
+}
+
+// Format seconds into a wall-clock ETA + "in Xh Ym" / "in Xm" pair.
+// Returns null when ttg is null / non-positive so the popup can drop
+// the row entirely instead of showing "ETA --". For >99h the
+// parenthetical collapses to "(in >99h)" rather than lying with a
+// truncated "(in 99h 59m)" -- that ambiguity surfaced in code
+// review. Realistically the helm doesn't sit on a >4-day leg
+// without an intermediate waypoint, but the contract holds.
+function formatRouteEta(ttgSeconds) {
+    if (ttgSeconds == null || !isFinite(ttgSeconds) || ttgSeconds <= 0) return null;
+    const arrivalMs = Date.now() + ttgSeconds * 1000;
+    const arrival = new Date(arrivalMs);
+    const hh = arrival.getHours().toString().padStart(2, '0');
+    const mm = arrival.getMinutes().toString().padStart(2, '0');
+    const totalMin = Math.max(1, Math.round(ttgSeconds / 60));
+    const totalH = Math.floor(totalMin / 60);
+    let inText;
+    if (totalH > 99) {
+        inText = '>99h';
+    } else if (totalH > 0) {
+        inText = `${totalH}h ${totalMin % 60}m`;
+    } else {
+        inText = `${totalMin}m`;
+    }
+    return `ETA ${hh}:${mm} (in ${inText})`;
+}
+
+// Read the live TTG, decremented by the elapsed wall-clock since
+// the last C# push. This is what the popup actually wants -- a
+// stale-from-30-minutes-ago cache returns the right answer because
+// we subtract the elapsed time. Returns null when no value has
+// ever been pushed or the decrement crossed zero (boat arrived).
+function liveActiveRouteTtgSeconds() {
+    if (_activeRouteTtgSeconds == null) return null;
+    const elapsed = (Date.now() - _activeRouteTtgPushedAtMs) / 1000;
+    const remaining = _activeRouteTtgSeconds - elapsed;
+    return remaining > 0 ? remaining : null;
+}
+
 // Active-route popup: same shape as the regular-route popup but the
 // primary action is "Deactivate" (clear the SignalK course) rather
 // than "Activate". Edit + Delete keep working on the route resource
 // via the same JSInvokables the regular-route popup wires up.
+// ETA line is rendered when the cached _activeRouteTtgSeconds is
+// non-null; computed at popup-open time so the helm sees a fresh
+// arrival estimate without paying for a re-render on every tick.
 function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
     const safeName = esc(name || `Route ${id.substring(0, 6)}`);
+    const etaText = formatRouteEta(liveActiveRouteTtgSeconds());
+    const etaRow = etaText ? `<div class="route-popup-eta">${etaText}</div>` : '';
     return `
         <div class="route-popup-body">
             <div class="route-popup-title">${safeName}</div>
             <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm &middot; active</div>
+            ${etaRow}
             <div class="route-popup-actions">
                 <button class="route-deactivate-btn" type="button">Deactivate</button>
                 <button class="route-edit-btn" type="button">Edit</button>
@@ -2668,7 +2855,11 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
         }).addTo(activeRouteLayer);
         const nmTotal = routeTotalNauticalMiles(coords);
         const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
-        hitLine.bindPopup(buildActiveRoutePopupHtml(routeId, routeName, coords.length, nmTotal), popupOptions);
+        // Function-form bindPopup: Leaflet calls this each time the
+        // popup opens, so the ETA picks up the latest TTG cached from
+        // the C# data-tick. Static HTML would have frozen the ETA at
+        // route-activation time.
+        hitLine.bindPopup(() => buildActiveRoutePopupHtml(routeId, routeName, coords.length, nmTotal), popupOptions);
         hitLine.on('popupopen', (ev) => {
             wireRouteDeactivate(ev.popup);
             wireRouteEdit(ev.popup, routeId);
@@ -3789,17 +3980,35 @@ let weatherLayer = null;
 // the map) so pinching further in just blurs the nowcast instead of
 // erroring out with "zoom level not supported" from the upstream CDN.
 // (OpenWeatherMap would need an API key -- not threaded through yet.)
-export function setWeatherOverlay(tileUrl) {
+// Default opacity matches the previous baked-in 0.5 so an existing
+// install without a Settings value keeps the same look. Helm can dial
+// from 10% (so faint it's just a hint) to 90% (chart underneath
+// barely visible) via the Misc-section slider.
+const WEATHER_OPACITY_DEFAULT = 0.5;
+let _weatherOpacity = WEATHER_OPACITY_DEFAULT;
+export function setWeatherOverlay(tileUrl, opacity) {
     clearWeatherOverlay();
     if (!map || !tileUrl) return;
+    if (typeof opacity === 'number' && isFinite(opacity)) {
+        _weatherOpacity = Math.min(0.95, Math.max(0.05, opacity));
+    }
     weatherLayer = L.tileLayer(tileUrl, {
         maxNativeZoom: 12,
         maxZoom: 22,
-        opacity: 0.5,
+        opacity: _weatherOpacity,
         errorTileUrl: '',
         attribution: '&copy; RainViewer'
     }).addTo(map);
     weatherLayer.setZIndex(40); // Below chart layers (50) but above base map.
+}
+
+// Live opacity update without re-fetching tiles. Helm dragging the
+// slider gets immediate feedback; cached value persists across the
+// next setWeatherOverlay call so a cycle off+on keeps the setting.
+export function setWeatherOverlayOpacity(opacity) {
+    if (typeof opacity !== 'number' || !isFinite(opacity)) return;
+    _weatherOpacity = Math.min(0.95, Math.max(0.05, opacity));
+    if (weatherLayer) weatherLayer.setOpacity(_weatherOpacity);
 }
 
 export function clearWeatherOverlay() {

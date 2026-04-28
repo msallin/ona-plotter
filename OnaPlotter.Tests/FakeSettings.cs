@@ -24,6 +24,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool FollowBoat { get; set; } = true;
     public bool LaylinesVisible { get; set; }
     public bool AtonsVisible { get; set; } = true;
+    public double WeatherOverlayOpacity { get; set; } = 0.5;
     public bool HarborMode { get; set; }
     public bool SidebarCollapsed { get; set; }
     public double DepthAlarmThreshold { get; set; } = 3.0;
@@ -76,6 +77,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }
+    public Task SetWeatherOverlayOpacityAsync(double v) { WeatherOverlayOpacity = v; return Task.CompletedTask; }
     public Task SetHarborModeAsync(bool v) { HarborMode = v; return Task.CompletedTask; }
     public Task ApplyMobileFirstRunDefaultsAsync(bool isMobile)
     {

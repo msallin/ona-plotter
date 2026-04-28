@@ -7,6 +7,16 @@
 main {
     flex: 1;
     min-width: 0;
+    /* iPad Safari rubber-bands the page even when the dashboard /
+       wind / sailsteer page content fits in one viewport. Containing
+       the scroll on <main> stops the bounce; pages that DO need to
+       scroll (Settings, Resources at >20 rows) still scroll within
+       <main>, just without the rubber-band visual. height:100dvh
+       caps the scroll surface to the visible viewport so the OS
+       chrome (URL bar showing/hiding) doesn't trigger rubber-band. */
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .sidebar {

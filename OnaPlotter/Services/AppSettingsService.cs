@@ -36,6 +36,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
     public bool AtonsVisible { get; private set; } = true;
+    public double WeatherOverlayOpacity { get; private set; } = 0.5;
     /// <summary>In-memory only -- never persisted, never restored.
     /// See IAppSettings.HarborMode for the rationale (a forgotten
     /// Harbor mode silently riding into open water is the worst-case
@@ -115,6 +116,7 @@ public sealed class AppSettingsService : IAppSettings
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
+            WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1", 0.5);
             // Read raw to detect whether the key was ever stored. A
             // missing value triggers ApplyMobileFirstRunDefaultsAsync's
             // viewport-aware default; a stored "false" is respected.
@@ -267,6 +269,17 @@ public sealed class AppSettingsService : IAppSettings
     {
         AtonsVisible = value;
         await Save("atonsVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetWeatherOverlayOpacityAsync(double value)
+    {
+        // Same 0.05..0.95 floor / ceiling the slider enforces; clamp
+        // here as a belt-and-suspenders so a bad caller / future API
+        // path can't store an out-of-range value into localStorage.
+        WeatherOverlayOpacity = Math.Clamp(value, 0.05, 0.95);
+        await Save("weatherOverlayOpacity.v1",
+            WeatherOverlayOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 
