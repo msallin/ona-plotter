@@ -787,6 +787,45 @@ h2 {
     background-color: var(--sk-surface-hover);
 }
 
+/* Light + high-contrast: subtle two-layer lift so white-on-slate-50
+   cards read as elevated without looking smudgy in sun. The dark
+   theme keeps no shadow because the slate-400 border on slate-900
+   bg already silhouettes well; adding a shadow there would only
+   eat GPU on every scroll for an invisible effect. The shadow is
+   tuned at ~5 px total reach (cap on the outer layer) -- enough for
+   depth, short enough that polarised sunglasses don't read it as a
+   blur. */
+:root.theme-light .card,
+:root.theme-high-contrast .card {
+    box-shadow:
+        0 1px 2px rgba(15, 23, 42, 0.06),
+        0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+/* .btn-outline-secondary in Bootstrap 5.3 still hard-codes #6c757d
+   for color + border (no --bs-secondary indirection in the rule body),
+   so the segmented controls (Sailing Mode, Heading source, Course
+   source on the Settings page) render in Bootstrap's gray instead of
+   our slate palette even after data-bs-theme flips. Rebind the
+   per-component --bs-btn-* tokens to our theme tokens for the two
+   palettes that actually drift; dark stays on Bootstrap defaults
+   which are already close to slate. Active state goes to our accent
+   so a checked radio reads as "you picked this" not "Bootstrap
+   default secondary". */
+:root.theme-light .btn-outline-secondary,
+:root.theme-high-contrast .btn-outline-secondary {
+    --bs-btn-color: var(--sk-text-muted);
+    --bs-btn-border-color: var(--sk-border);
+    --bs-btn-hover-color: var(--sk-text);
+    --bs-btn-hover-bg: var(--sk-surface-hover);
+    --bs-btn-hover-border-color: var(--sk-accent);
+    --bs-btn-active-color: #ffffff;
+    --bs-btn-active-bg: var(--sk-accent);
+    --bs-btn-active-border-color: var(--sk-accent);
+    --bs-btn-disabled-color: var(--sk-text-muted);
+    --bs-btn-disabled-border-color: var(--sk-border);
+}
+
 /* Bootstrap's default display-6 is weight 300 (Light cut). On Inter
    Variable, weight 300 reads as wispy at iPad arm's length under
    sun -- the secondary tier of the Dashboard (AWA / AWS / TWA / TWS /

@@ -1,9 +1,13 @@
 <!DOCTYPE html>
-<!-- data-bs-theme="dark" so Bootstrap's .card / .form-* / .btn /
-     .text-muted etc. pick their dark-theme tokens automatically. Without
-     this, .card's default color cascades to #212529 (near-black) against
-     our own dark .card background override -- the helm sees unclassified
-     text as black-on-black. -->
+<!-- data-bs-theme starts at "dark" so Bootstrap's .card / .form-* /
+     .btn / .text-muted etc. pick their dark-theme tokens before the
+     Blazor runtime mounts (avoids a flash of unstyled content where
+     unclassified text would briefly read as black-on-black against our
+     dark .card override). themeApply.js::setBootstrapTheme rewrites
+     the attribute as soon as Settings.Theme is known so the Sailing
+     Mode + Heading source segmented controls in Settings actually
+     follow the active theme instead of staying in Bootstrap's dark
+     palette while the rest of the app is on light. -->
 <html lang="en" data-bs-theme="dark">
 
 <head>

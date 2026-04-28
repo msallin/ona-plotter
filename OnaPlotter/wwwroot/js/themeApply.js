@@ -34,4 +34,20 @@ export function setTheme(theme) {
     for (const t of known) html.classList.remove('theme-' + t);
     const safe = known.includes(theme) ? theme : 'system';
     html.classList.add('theme-' + safe);
+    // Keep Bootstrap's data-bs-theme in lockstep so .form-check / .btn /
+    // .form-control pick the right token set instead of staying in the
+    // index.html bootstrap value while our --sk-* palette flipped. We
+    // collapse high-contrast to "light" because Bootstrap only ships
+    // two palettes; our high-contrast is a light variant with thicker
+    // chrome, not a third Bootstrap palette. System resolves through
+    // prefers-color-scheme so iOS dark-at-night flows match.
+    let bs;
+    if (safe === 'dark') bs = 'dark';
+    else if (safe === 'system') {
+        bs = (typeof window !== 'undefined'
+            && window.matchMedia
+            && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    else bs = 'light';   // light + high-contrast
+    html.setAttribute('data-bs-theme', bs);
 }
