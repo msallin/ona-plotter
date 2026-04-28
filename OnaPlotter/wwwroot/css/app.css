@@ -403,7 +403,12 @@
     --sk-sidebar-text-active: #ffffff;
     --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.10);
     --sk-sidebar-active-bg: rgba(255, 255, 255, 0.18);
-    --sk-top-row-bg: #ffffff;
+    /* Top bar is one notch darker than the slate-50 page body so it
+       reads as a distinct surface, not "the page with a thin line at
+       the top". Pure white blended into slate-50 under a 1px border --
+       the helm reported the top row "looked transparent". slate-100 +
+       a slate-400 divider lifts it cleanly. */
+    --sk-top-row-bg: #f1f5f9;          /* slate-100 -- distinct from the slate-50 body */
     --sk-top-row-text: #334155;        /* slate-700 -- darker so menu hits AAA */
     --sk-top-row-border: #94a3b8;      /* slate-400 -- visible separator under sun */
 
