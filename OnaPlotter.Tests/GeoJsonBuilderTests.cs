@@ -72,7 +72,8 @@ public class GeoJsonBuilderTests
         var body = GeoJsonBuilder.RouteFeatureBody(
             "My Passage",
             GeoJsonBuilder.LineString(new[] { new[] { 0.0, 0.0 }, new[] { 1.0, 1.0 }, new[] { 2.0, 2.0 } }),
-            waypointCount: 3);
+            waypointCount: 3,
+            distanceMeters: null);
         var json = Serialize(body);
 
         await Assert.That(json).Contains("\"coordinatesMeta\":");
@@ -80,6 +81,24 @@ public class GeoJsonBuilderTests
         // index into this by waypoint index.
         var occurrences = json.Split("{\"name\":\"\"}").Length - 1;
         await Assert.That(occurrences).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task RouteFeatureBody_EmitsTopLevelDistance_WhenSupplied()
+    {
+        // Routes saved by OnaPlotter used to drop the top-level
+        // distance field, so SignalkRoute.Distance round-tripped as
+        // null and the Layers panel + Resources page rendered "-"
+        // for any OnaPlotter-saved route. Freeboard always sends
+        // distance; this test pins the parity.
+        var body = GeoJsonBuilder.RouteFeatureBody(
+            "With distance",
+            GeoJsonBuilder.LineString(new[] { new[] { 0.0, 0.0 }, new[] { 0.5, 0.5 } }),
+            waypointCount: 2,
+            distanceMeters: 12345.6);
+        var json = Serialize(body);
+
+        await Assert.That(json).Contains("\"distance\":12345.6");
     }
 
     [Test]

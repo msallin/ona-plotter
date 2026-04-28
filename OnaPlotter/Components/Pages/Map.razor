@@ -413,6 +413,8 @@
                      EnabledRadars="RadarOverlay.EnabledRadarIds"
                      RadarCapabilities="RadarOverlay.Capabilities"
                      ServerTrackVisible="serverTrackVisible"
+                     ServerTrackDuration="@serverTrackDuration"
+                     ServerTrackWithinBounds="serverTrackWithinBounds"
                      WeatherOverlayVisible="weatherOverlayVisible"
                      AtonsVisible="Settings.AtonsVisible"
                      LayerFilter="@layerFilter"
@@ -431,10 +433,10 @@
                      OnDeleteWaypoint="DeleteWaypointFromLayers"
                      OnFocusVessel="FocusVessel"
                      OnToggleServerTrack="ToggleServerTrack"
+                     OnServerTrackDurationChanged="OnServerTrackDurationChanged"
+                     OnServerTrackWithinBoundsChanged="OnServerTrackWithinBoundsChanged"
                      OnToggleWeatherOverlay="ToggleWeatherOverlay"
-                     OnToggleAtonsVisible="ToggleAtonsVisible"
-                     OnGpxImport="HandleGpxImport"
-                     OnGpxExport="ExportGpx" />
+                     OnToggleAtonsVisible="ToggleAtonsVisible" />
     }
 </div>
 
@@ -453,8 +455,6 @@
     private const int ResourcePollIntervalMs = 60_000;
     /// <summary>Below this drift (m/s) the tidal current arrow is suppressed (~0.1 kn).</summary>
     private const double MinCurrentDriftMs = 0.05;
-    /// <summary>GPX import size cap to prevent OOM on pathological input.</summary>
-    private const long MaxGpxImportBytes = 10L * 1024 * 1024;
 
     private IJSObjectReference? module;
     private DotNetObjectReference<Map>? dotNetRef;
@@ -2472,50 +2472,10 @@
         return $"{(int)remaining.TotalMinutes}:{remaining.Seconds:D2}";
     }
 
-    // --- GPX Import/Export ---
-
-    private async Task HandleGpxImport(InputFileChangeEventArgs e)
-    {
-        try
-        {
-            using var reader = new System.IO.StreamReader(e.File.OpenReadStream(maxAllowedSize: MaxGpxImportBytes));
-            string xml = await reader.ReadToEndAsync();
-            var data = GpxService.Parse(xml);
-
-            foreach (var route in data.Routes)
-                await RouteApi.SaveAsync(route.Name, route.Coords);
-
-            foreach (var wp in data.Waypoints)
-                await WaypointApi.CreateAsync(wp.Name, wp.Lat, wp.Lon);
-
-            // Refresh lists.
-            availableRoutes = await RouteApi.GetAllAsync();
-            loadedWaypoints = await WaypointApi.GetAllAsync();
-            PrecomputeRouteBounds();
-            RebuildFilteredLayers();
-            StateHasChanged();
-            Toasts.Success($"Imported {data.Routes.Count} routes, {data.Waypoints.Count} waypoints");
-        }
-        catch (Exception ex)
-        {
-            Toasts.Error($"GPX import failed: {ex.Message}");
-        }
-    }
-
-    private async Task ExportGpx()
-    {
-        if (module is null) return;
-        try
-        {
-            string gpx = GpxService.Export(availableRoutes, loadedWaypoints);
-            await module.InvokeVoidAsync("triggerFileDownload", $"export-{DateTime.Now:yyyyMMdd-HHmm}.gpx", gpx);
-            Toasts.Success($"Exported {availableRoutes.Count} routes, {loadedWaypoints.Count} waypoints");
-        }
-        catch (Exception ex)
-        {
-            Toasts.Error($"GPX export failed: {ex.Message}");
-        }
-    }
+    // GPX Import / Export handlers moved to the Settings page (Backup
+    // section). Map.razor used to host them because the trigger UI
+    // lived in the Layers panel; with the UI gone the handlers belong
+    // wherever the helm reaches them, which is Settings.
 
     private async Task ToggleChart(SignalkChart chart, bool enabled)
     {
@@ -2700,22 +2660,77 @@
         await module.InvokeVoidAsync("addRoute", route.Id, route.Name, coords.ToArray());
     }
 
+    // Server track state. Was a single bool; now also carries the
+    // helm-picked duration (1h..7d, "all" for the long-term archive)
+    // and a "within current view" client-side filter that re-clips on
+    // pan / zoom without re-fetching. Defaults to 1d so the layer feels
+    // unchanged from the helm's prior experience.
+    // NB: serverTrackVisible itself is declared higher in the file --
+    // these are the new companions.
+    private string serverTrackDuration = "1d";
+    private bool serverTrackWithinBounds;
+
     private async Task ToggleServerTrack(bool enabled)
     {
         serverTrackVisible = enabled;
         if (module is null) return;
-
         if (serverTrackVisible)
         {
-            var points = await TrackApi.GetServerTrackAsync("1d", "1m");
-            if (points is not null && points.Length > 0)
-                await module.InvokeVoidAsync("setServerTrack", (object)points);
-            else
-                serverTrackVisible = false;
+            await ReloadServerTrackAsync();
         }
         else
         {
             await module.InvokeVoidAsync("clearServerTrack");
+        }
+    }
+
+    private async Task OnServerTrackDurationChanged(string duration)
+    {
+        if (string.Equals(duration, serverTrackDuration, StringComparison.Ordinal)) return;
+        serverTrackDuration = duration;
+        if (serverTrackVisible) await ReloadServerTrackAsync();
+    }
+
+    private async Task OnServerTrackWithinBoundsChanged(bool within)
+    {
+        serverTrackWithinBounds = within;
+        if (module is null) return;
+        // No re-fetch: the JS module owns the cached coord array and
+        // re-clips client-side on this toggle and on subsequent pan /
+        // zoom events. "w/o loading anything" per helm phrasing.
+        try { await module.InvokeVoidAsync("setServerTrackClipToBounds", within); }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>
+    /// Fetches the server track for the current duration and pushes it
+    /// to the JS layer. "all" maps to a 100-year ISO duration (P36500D)
+    /// since the SignalK History API doesn't define an "everything"
+    /// shape -- a span larger than any plausible cruise is the
+    /// pragmatic stand-in. The within-bounds flag rides along so the
+    /// initial render respects the toggle if it was on before the
+    /// duration change.
+    /// </summary>
+    private async Task ReloadServerTrackAsync()
+    {
+        if (module is null) return;
+        string apiSpan = serverTrackDuration == "all" ? "P36500D" : serverTrackDuration;
+        var points = await TrackApi.GetServerTrackAsync(apiSpan, "1m");
+        if (points is not null && points.Length > 0)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("setServerTrack",
+                    (object)points, serverTrackWithinBounds);
+            }
+            catch (JSDisconnectedException) { }
+        }
+        else
+        {
+            serverTrackVisible = false;
+            try { await module.InvokeVoidAsync("clearServerTrack"); }
+            catch (JSDisconnectedException) { }
+            Toasts.Info("No history points returned for the selected duration.");
         }
     }
 

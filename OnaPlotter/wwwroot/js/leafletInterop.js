@@ -2498,18 +2498,77 @@ function wireRouteDeactivate(popup) {
 export function removeRoute(id) { routeLayers.remove(id); }
 
 // --- Server Track ---
+//
+// Shows the server-side historical track. Two modes:
+//   * full set         (clipToBounds = false): draws every coord in
+//     one polyline, regardless of where the map is panned. Default.
+//   * within bounds    (clipToBounds = true): draws only coords inside
+//     the current map.getBounds() at the moment of render. A moveend
+//     listener re-clips on pan / zoom so the helm sees only the
+//     subset of the track that's "on screen now". The full coord set
+//     stays cached on _serverTrackCoords so the re-clip doesn't have
+//     to re-fetch.
+//
+// "w/o loading anything" (helm phrasing): the bounds-mode filter
+// works on the already-loaded coord array; switching it on / off
+// or panning the map never triggers a new HTTP request.
+let _serverTrackCoords = null;
+let _serverTrackClipToBounds = false;
+let _serverTrackMoveHandler = null;
 
-// Show the server-side historical track. coords is [[lat, lon], ...].
-export function setServerTrack(coords) {
+export function setServerTrack(coords, clipToBounds) {
     clearServerTrack();
-    if (!map || !coords || coords.length === 0) return;
+    _serverTrackCoords = (coords && coords.length > 0) ? coords : null;
+    _serverTrackClipToBounds = !!clipToBounds;
+    if (!map || !_serverTrackCoords) return;
+    _renderServerTrack();
+    _ensureServerTrackMoveHandler();
+}
+
+// Toggle the within-bounds filter without re-loading coords. Helm
+// flips the checkbox in the Layers panel; the cached coord array is
+// re-used and the polyline is redrawn with / without the bounds clip.
+export function setServerTrackClipToBounds(enabled) {
+    _serverTrackClipToBounds = !!enabled;
+    if (!map) return;
+    _renderServerTrack();
+    _ensureServerTrackMoveHandler();
+}
+
+function _renderServerTrack() {
+    if (serverTrackLayer && map) { map.removeLayer(serverTrackLayer); serverTrackLayer = null; }
+    if (!map || !_serverTrackCoords) return;
+    let coords = _serverTrackCoords;
+    if (_serverTrackClipToBounds) {
+        const b = map.getBounds();
+        coords = coords.filter(c => b.contains(c));
+        if (coords.length === 0) return;
+    }
     serverTrackLayer = L.polyline(coords, {
         color: '#94a3b8', weight: 2, opacity: 0.5
     }).addTo(map);
 }
 
+function _ensureServerTrackMoveHandler() {
+    if (!map) return;
+    // Always-on moveend listener while a track is loaded; it's a no-op
+    // when clipToBounds is false. Lighter than re-binding on every
+    // toggle (which would race a moveend mid-frame).
+    if (_serverTrackMoveHandler || !_serverTrackCoords) return;
+    _serverTrackMoveHandler = () => {
+        if (_serverTrackClipToBounds && _serverTrackCoords) _renderServerTrack();
+    };
+    map.on('moveend', _serverTrackMoveHandler);
+}
+
 export function clearServerTrack() {
     if (serverTrackLayer && map) { map.removeLayer(serverTrackLayer); serverTrackLayer = null; }
+    if (_serverTrackMoveHandler && map) {
+        map.off('moveend', _serverTrackMoveHandler);
+        _serverTrackMoveHandler = null;
+    }
+    _serverTrackCoords = null;
+    _serverTrackClipToBounds = false;
 }
 
 // --- Active Route Navigation ---

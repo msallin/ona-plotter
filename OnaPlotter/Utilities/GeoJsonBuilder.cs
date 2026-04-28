@@ -46,9 +46,15 @@ internal static class GeoJsonBuilder
     /// Variant used for routes: the <c>properties</c> block gets an
     /// extra <c>coordinatesMeta</c> array (one entry per waypoint,
     /// empty-name placeholders so downstream editors have slots to
-    /// fill in). Too route-specific for the general helper.
+    /// fill in), and a top-level <c>distance</c> in metres so the
+    /// Layers panel + Resources page can show "12.4 nm" without
+    /// having to recompute the haversine sum on every render.
+    /// Without the field the sk-resource record had no distance, the
+    /// SignalkRoute DTO saw <c>null</c>, and the Routes layer showed
+    /// "-" while a Freeboard-saved route on the same server
+    /// (Freeboard sends distance) showed the correct value.
     /// </summary>
-    public static object RouteFeatureBody(string name, object geometry, int waypointCount, string? description = null)
+    public static object RouteFeatureBody(string name, object geometry, int waypointCount, double? distanceMeters, string? description = null)
     {
         var coordinatesMeta = new object[waypointCount];
         for (int i = 0; i < waypointCount; i++) coordinatesMeta[i] = new { name = "" };
@@ -56,6 +62,7 @@ internal static class GeoJsonBuilder
         return new
         {
             name,
+            distance = distanceMeters,
             feature = new
             {
                 type = "Feature",

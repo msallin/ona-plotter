@@ -1,0 +1,52 @@
+@* Combined "Misc" section for the small toggles that don't merit
+   their own section -- currently Weather radar + AIS Aids to
+   Navigation. Was previously two consecutive single-checkbox
+   sections in the Layers panel; the helm flagged that as wasted
+   vertical space ("two headers, two checkboxes, same shape"). One
+   header, both toggles inside.
+
+   New toggles fit here as long as they stay one-checkbox features.
+   When a feature grows its own controls (AIS staleness filters,
+   weather time-slider) it should leave Misc and become its own
+   section again. *@
+
+<SectionHeader Title="Misc"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    @* Weather: RainViewer precipitation. Label says "Rain radar"
+       not "Weather" because that's exactly what's rendered today;
+       OpenWeatherMap wind is on the wishlist but not shipped, and
+       a "Weather" label that only shows rain is misleading. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@WeatherVisible"
+               @onchange="(e) => OnToggleWeather.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Rain radar</div>
+            <div class="chart-desc">RainViewer nowcast (precipitation, not wind)</div>
+        </div>
+    </label>
+
+    @* AtoNs: AIS Type-21 broadcasts (cardinal / lateral / isolated
+       danger / safe water / special), plus virtual AtoNs. Fills in
+       over the first few minutes after connect; AIS receivers
+       broadcast each buoy roughly every 3 min. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@AtonsVisible"
+               @onchange="(e) => OnToggleAtons.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">AtoNs (AIS)</div>
+            <div class="chart-desc">Buoys, beacons, lighthouses, racons. Virtual AtoNs render dashed.</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool WeatherVisible { get; set; }
+    [Parameter] public bool AtonsVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleWeather { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleAtons { get; set; }
+
+    private bool expanded = false;
+}

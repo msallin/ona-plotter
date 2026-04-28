@@ -1,6 +1,10 @@
-@* Toggle for the 24h server track overlay. *@
+@* Toggle + duration + within-bounds picker for the server-side
+   position history overlay. Was a fixed 24h checkbox; now matches the
+   History page's duration ladder (1h / 6h / 24h / 3d / 7d / all) plus
+   a "within current view" filter that re-clips client-side as the
+   helm pans, without re-fetching. *@
 
-<SectionHeader Title="Track History"
+<SectionHeader Title="History"
                Expanded="@expanded"
                OnToggle="() => expanded = !expanded" />
 @if (expanded)
@@ -9,15 +13,56 @@
         <input type="checkbox" checked="@Visible"
                @onchange="(e) => OnToggle.InvokeAsync((bool)(e.Value ?? false))" />
         <div class="chart-item-body">
-            <div class="chart-name">Server Track (24h)</div>
+            <div class="chart-name">Show server track</div>
             <div class="chart-desc">Position history from SignalK</div>
         </div>
     </label>
+
+    @if (Visible)
+    {
+        @* Indented options sit under the visibility toggle so the
+           helm reads "track on / track off, here's how" rather than
+           "three choices, which one's the master?". *@
+        <div class="track-history-controls">
+            <label class="chart-item track-history-row">
+                <span class="chart-item-label">Duration</span>
+                <select class="form-select form-select-sm track-history-select"
+                        value="@Duration"
+                        @onchange="OnDurationChange"
+                        aria-label="Server track duration">
+                    <option value="1h">Last 1 hour</option>
+                    <option value="6h">Last 6 hours</option>
+                    <option value="1d">Last 24 hours</option>
+                    <option value="3d">Last 3 days</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="all">All time</option>
+                </select>
+            </label>
+            <label class="chart-item">
+                <input type="checkbox" checked="@WithinBounds"
+                       @onchange="(e) => OnWithinBoundsChanged.InvokeAsync((bool)(e.Value ?? false))" />
+                <div class="chart-item-body">
+                    <div class="chart-name">Within current view</div>
+                    <div class="chart-desc">Filter to the chart area on screen now (no re-fetch)</div>
+                </div>
+            </label>
+        </div>
+    }
 }
 
 @code {
     [Parameter] public bool Visible { get; set; }
+    [Parameter] public string Duration { get; set; } = "1d";
+    [Parameter] public bool WithinBounds { get; set; }
     [Parameter] public EventCallback<bool> OnToggle { get; set; }
+    [Parameter] public EventCallback<string> OnDurationChanged { get; set; }
+    [Parameter] public EventCallback<bool> OnWithinBoundsChanged { get; set; }
 
     private bool expanded = false;
+
+    private async Task OnDurationChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? "1d";
+        await OnDurationChanged.InvokeAsync(v);
+    }
 }

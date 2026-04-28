@@ -83,5 +83,14 @@ public sealed class RouteApi : IRouteApi
         GeoJsonBuilder.RouteFeatureBody(
             name,
             GeoJsonBuilder.LineString(coordsLatLon),
-            waypointCount: coordsLatLon.Length);
+            waypointCount: coordsLatLon.Length,
+            // Total leg-by-leg distance in metres along the route's
+            // LineString. Without this field SignalkRoute.Distance
+            // round-trips as null and the Layers panel + Resources
+            // page show "-" for OnaPlotter-created routes (a Freeboard-
+            // created route on the same server shows the value because
+            // Freeboard always emits this property).
+            distanceMeters: coordsLatLon.Length >= 2
+                ? OnaPlotter.Utilities.RouteProgress.TotalDistanceMeters(coordsLatLon)
+                : (double?)null);
 }
