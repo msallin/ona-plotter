@@ -12,6 +12,12 @@ main {
 .sidebar {
     background: var(--sk-sidebar-bg);
     border-right: 1px solid var(--sk-sidebar-border);
+    /* Always-dark navigation rail (Pattern 1: VSCode / Linear / Slack).
+       The rail is "frame", not content -- keeping it constant gives the
+       eye a stable anchor regardless of theme. Drop-shadow below floats
+       it above the chart in light theme so the dark rail reads as a
+       deliberate frame instead of an unflipped island. */
+    box-shadow: var(--sidebar-shadow, none);
     /* Default expanded width (icons + labels). iPad touch target
        floor is 44 px; 10 rem leaves comfortable room for every
        label without wrapping. Collapses to 4 rem in fullscreen

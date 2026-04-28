@@ -56,6 +56,20 @@
         }
     </ul>
 
+    @* Filter input. Surfaces above the table only when the active tab
+       has more than 6 rows -- below that, scanning the list is faster
+       than typing. Same threshold as the Layers panel filter on the
+       Map page. Filter matches the name (case-insensitive substring)
+       so "260" finds every "260322" / "260407" / "260409" route in
+       one keystroke. *@
+    @if (!loading && ShouldShowFilter())
+    {
+        <input type="text" class="resources-filter"
+               placeholder="@($"Filter {activeTab}...")"
+               aria-label="Filter resources"
+               value="@filter" @oninput="OnFilterInput" />
+    }
+
     <div class="resources-body">
         @if (loading)
         {
@@ -64,9 +78,9 @@
         else if (activeTab == "routes")
         {
             <ResourceTable Columns="RouteColumns"
-                           IsEmpty="routes.Count == 0"
+                           IsEmpty="FilteredRoutes().Count == 0"
                            EmptyMessage="@EmptyMessageFor("routes", routesLoadFailed)">
-                @foreach (var r in routes)
+                @foreach (var r in FilteredRoutes())
                 {
                     <tr>
                         <td>@NameOrId(r.Name, r.Id)</td>
@@ -89,9 +103,9 @@
         else if (activeTab == "waypoints")
         {
             <ResourceTable Columns="WaypointColumns"
-                           IsEmpty="waypoints.Count == 0"
+                           IsEmpty="FilteredWaypoints().Count == 0"
                            EmptyMessage="@EmptyMessageFor("waypoints", waypointsLoadFailed)">
-                @foreach (var w in waypoints)
+                @foreach (var w in FilteredWaypoints())
                 {
                     <tr>
                         <td>@NameOrId(w.Name, w.Id)</td>
@@ -113,9 +127,9 @@
         else if (activeTab == "notes")
         {
             <ResourceTable Columns="NoteColumns"
-                           IsEmpty="notes.Count == 0"
+                           IsEmpty="FilteredNotes().Count == 0"
                            EmptyMessage="@EmptyMessageFor("notes", notesLoadFailed)">
-                @foreach (var n in notes)
+                @foreach (var n in FilteredNotes())
                 {
                     <tr>
                         <td>@NameOrId(n.Title, n.Id)</td>
@@ -138,9 +152,9 @@
         else if (activeTab == "regions")
         {
             <ResourceTable Columns="RegionColumns"
-                           IsEmpty="regions.Count == 0"
+                           IsEmpty="FilteredRegions().Count == 0"
                            EmptyMessage="@EmptyMessageFor("regions", regionsLoadFailed)">
-                @foreach (var r in regions)
+                @foreach (var r in FilteredRegions())
                 {
                     <tr>
                         <td>@NameOrId(r.Name, r.Id)</td>
@@ -185,6 +199,31 @@
 
     private string activeTab = "routes";
     private bool loading = true;
+
+    // Filter input shown above the table once the active tab has more
+    // rows than scan-by-eye works for. Case-insensitive substring match
+    // on the user-visible name; matches against r.Name (or n.Title for
+    // notes), not r.Id, since the helm names routes in human terms.
+    private string filter = "";
+    private const int FilterShowThreshold = 6;
+    private bool ShouldShowFilter() => activeTab switch
+    {
+        "routes"    => routes.Count    > FilterShowThreshold,
+        "waypoints" => waypoints.Count > FilterShowThreshold,
+        "notes"     => notes.Count     > FilterShowThreshold,
+        "regions"   => regions.Count   > FilterShowThreshold,
+        _           => false,
+    };
+    private void OnFilterInput(ChangeEventArgs e) => filter = e.Value?.ToString() ?? "";
+    private bool MatchesFilter(string? hay)
+    {
+        if (string.IsNullOrEmpty(filter)) return true;
+        return (hay ?? "").Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+    private List<SignalkRoute>    FilteredRoutes()    => routes   .Where(r => MatchesFilter(r.Name)).ToList();
+    private List<SignalkWaypoint> FilteredWaypoints() => waypoints.Where(w => MatchesFilter(w.Name)).ToList();
+    private List<SignalkNote>     FilteredNotes()     => notes    .Where(n => MatchesFilter(n.Title)).ToList();
+    private List<SignalkRegion>   FilteredRegions()   => regions  .Where(r => MatchesFilter(r.Name)).ToList();
 
     // Column header lists declared once in code so the Razor attribute
     // binding doesn't have to inline a string[] literal (attribute
@@ -283,6 +322,10 @@
     private void SetTab(string key)
     {
         activeTab = key;
+        // Filter is per-tab semantically: switching tabs should not
+        // carry "joy" over to a regions tab where the helm doesn't
+        // remember why all rows are filtered out.
+        filter = "";
     }
 
     private async Task DeleteRoute(string id, string? name)

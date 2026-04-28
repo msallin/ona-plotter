@@ -212,7 +212,18 @@
                     if (!m) return;
                     if (window._historyTrack) m.removeLayer(window._historyTrack);
                     var coords = {System.Text.Json.JsonSerializer.Serialize(trackPoints)};
-                    window._historyTrack = L.polyline(coords, {{ color: '#94a3b8', weight: 2, opacity: 0.6 }}).addTo(m);
+                    // Pull the magenta own-vessel colour from the live
+                    // CSS variable so the track matches the boat marker
+                    // on the Map page. Slate-grey at weight 2 / opacity
+                    // 0.6 was nearly invisible against the pastel light
+                    // basemap; bumped weight + saturated colour fixes it
+                    // on both themes.
+                    var trackColor = getComputedStyle(document.documentElement)
+                        .getPropertyValue('--map-own').trim() || '#ec4899';
+                    window._historyTrack = L.polyline(coords, {{
+                        color: trackColor, weight: 3.5, opacity: 0.85,
+                        lineJoin: 'round', lineCap: 'round'
+                    }}).addTo(m);
                     m.fitBounds(window._historyTrack.getBounds(), {{ padding: [40, 40] }});
                     if (window._historyMarker) m.removeLayer(window._historyMarker);
                     window._historyMarker = L.circleMarker(coords[0], {{

@@ -300,8 +300,11 @@
                         </span>
                         <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
                               title="Standard deviation of AWS over the last @chipWindowMinutes min -- higher = gustier / more variable">
-                            <span class="instrument-badge-label">&#963;</span>
-                            @sigma.ToString("F1") kn
+                            @* Helm feedback: "Σ" was math notation, not a
+                               sailor word. "Var" (variability) parses
+                               immediately and matches the tooltip copy. *@
+                            <span class="instrument-badge-label">Var</span>
+                            ±@sigma.ToString("F1") kn
                         </span>
                         <TimeWindowSelector @bind-Value="chipWindowMinutes"
                                             Choices="ChipWindowChoices"
