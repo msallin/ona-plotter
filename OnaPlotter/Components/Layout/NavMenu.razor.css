@@ -91,9 +91,31 @@
     height: 100dvh;
     overflow-y: auto;
     scrollbar-width: none;                  /* Firefox */
+    /* iOS Safari rubber-bands an overflow:auto container even when the
+       inner content fits -- the helm could swipe the nav up/down on
+       any page where the page itself fit without scrolling. Containing
+       the overscroll stops the bounce; horizontally, we don't scroll
+       at all so contain on x is also safe. */
+    overscroll-behavior: contain;
+    touch-action: pan-y;
 }
 .nav-scrollable::-webkit-scrollbar {
     display: none;                          /* Chrome / Safari / Edge */
+}
+
+/* Suppress the WebKit / iOS link-drag preview ("drag-and-drop" of
+   the icon glyph) on nav links. Without this the helm could grab
+   any nav icon on iPad and drag it sideways, leaving a ghost glyph
+   floating across the rail until they let go. */
+::deep .nav-link {
+    -webkit-user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+::deep .nav-link img,
+::deep .nav-link svg {
+    -webkit-user-drag: none;
+    pointer-events: none;
 }
 
 /* Collapse labels + shrink nav-link padding when the sidebar is in

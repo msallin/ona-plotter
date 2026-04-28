@@ -381,6 +381,23 @@
     --panel-text-muted: #475569;       /* slate-600 -- AAA */
     --panel-border:     rgba(15, 23, 42, 0.22);   /* was 0.14 */
     --panel-shadow:     0 12px 28px rgba(15, 23, 42, 0.28);
+
+    /* HUD card overrides. Helm-flagged: in light theme the HUD cards
+       stayed near-black (rgba(14,17,23,0.92)) and read as a row of
+       "dark stickers stuck on a white app". Flip the card surface,
+       strokes, halo and ink to a white-on-dark mirror so they look
+       like the rest of the chrome. The cards still sit OVER chart
+       tiles so the white surface keeps a translucent alpha for
+       legibility on a busy chart, and the outer stroke flips from
+       black-50% to slate-900-40% so the silhouette holds against
+       both white land and blue water. */
+    --hud-card-bg:         rgba(255, 255, 255, 0.92);
+    --hud-card-stroke-in:  rgba(15, 23, 42, 0.06);
+    --hud-card-stroke-out: rgba(15, 23, 42, 0.40);
+    --hud-card-halo:       0 0 16px rgba(15, 23, 42, 0.18);
+    --hud-ink:             #0f172a;
+    --hud-ink-dim:         rgba(15, 23, 42, 0.55);
+    --hud-ink-stale:       rgba(15, 23, 42, 0.40);
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the
@@ -413,6 +430,17 @@
         --panel-text-muted: #94a3b8;
         --panel-border:     rgba(255, 255, 255, 0.12);
         --panel-shadow:     0 12px 24px rgba(0, 0, 0, 0.4);
+
+        /* Snap HUD card tokens back to the dark defaults too --
+           the system-mode-OS-dark branch must mirror the original
+           :root values, not the light-flipped ones from above. */
+        --hud-card-bg:         rgba(14, 17, 23, 0.92);
+        --hud-card-stroke-in:  rgba(255, 255, 255, 0.06);
+        --hud-card-stroke-out: rgba(0, 0, 0, 0.5);
+        --hud-card-halo:       0 0 16px rgba(0, 0, 0, 0.4);
+        --hud-ink:             #E8ECF2;
+        --hud-ink-dim:         rgba(232, 236, 242, 0.55);
+        --hud-ink-stale:       rgba(232, 236, 242, 0.40);
     }
 }
 
@@ -458,6 +486,18 @@
     --panel-text-muted: #1f2937;
     --panel-border:     #000000;
     --panel-shadow:     0 12px 24px rgba(0, 0, 0, 0.35);
+
+    /* HUD card flip for high-contrast: white surface, jet-black ink,
+       black outer stroke (the high-contrast theme uses #000 borders
+       throughout for sun-glare resilience). Same shape as the light-
+       theme HUD flip above but with the contrast cranked to AAA. */
+    --hud-card-bg:         #ffffff;
+    --hud-card-stroke-in:  rgba(0, 0, 0, 0.06);
+    --hud-card-stroke-out: rgba(0, 0, 0, 0.65);
+    --hud-card-halo:       0 0 16px rgba(0, 0, 0, 0.30);
+    --hud-ink:             #000000;
+    --hud-ink-dim:         rgba(0, 0, 0, 0.65);
+    --hud-ink-stale:       rgba(0, 0, 0, 0.45);
 }
 
 html, body {
@@ -2993,11 +3033,16 @@ main:has(.alarm-banner-stack) .snooze-chips {
     .snooze-chip { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
 }
 
-/* ===== Alarm log button + dropdown panel ===== */
+/* ===== Alarm log button + dropdown panel =====
+   The button reads as a chip on the topbar. Originally hardcoded
+   white-on-rgba styling, which vanished on the white topbar in light
+   theme. Tokens drive both palettes now: --sk-text-muted for the label,
+   --sk-border for the outline, transparent fill so the chip blends
+   with whichever topbar bg the theme picks. */
 .alarm-log-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #cbd5e1;
+    background: transparent;
+    border: 1px solid var(--sk-border);
+    color: var(--sk-text-muted);
     padding: 2px 10px;
     font-size: 0.72rem;
     border-radius: 4px;
@@ -3005,7 +3050,11 @@ main:has(.alarm-banner-stack) .snooze-chips {
     -webkit-tap-highlight-color: transparent;
     margin-left: 12px;
 }
-.alarm-log-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.alarm-log-btn:hover {
+    background: rgba(var(--sk-accent-rgb), 0.10);
+    color: var(--sk-text);
+    border-color: var(--sk-accent);
+}
 @media (pointer: coarse) {
     .alarm-log-btn { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
 }
@@ -4920,6 +4969,18 @@ html.night-mode-global body {
    coding stays intact. */
 .map-container.dark-ops .leaflet-tile-pane {
     filter: grayscale(1) brightness(0.35) contrast(1.1) sepia(0.4) hue-rotate(-30deg);
+}
+
+/* Light theme: ensure the leaflet-container background follows the
+   theme so any tile gap shows the page bg rather than Leaflet's
+   default #ddd grey. Tile imagery itself stays unfiltered -- helm
+   correction "HUDs are black, not the chart" supersedes the earlier
+   tile-filter attempt. The HUD card token flips below carry the
+   real fix. */
+.page.theme-light .leaflet-container,
+.page.theme-system .leaflet-container,
+.page.theme-high-contrast .leaflet-container {
+    background: var(--sk-bg);
 }
 /* Night mode also needs to red-shift the chart tile rasters -- the
    rest of the UI flips to warm red via token overrides, but Leaflet's
