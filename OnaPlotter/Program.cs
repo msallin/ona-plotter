@@ -57,6 +57,10 @@ builder.Services.AddSingleton<IWaypointApi, WaypointApi>();
 builder.Services.AddSingleton<INoteApi, NoteApi>();
 builder.Services.AddSingleton<IRegionApi, RegionApi>();
 builder.Services.AddSingleton<ICourseApi, CourseApi>();
+// SignalK v2 notifications client. Drives cross-plotter alarm sync
+// via Acknowledge / Silence and (Phase B) lets client-side rules
+// publish their alarms back to SK so other plotters can see them.
+builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
 // isn't installed; the map surfaces that as a toast rather than failing

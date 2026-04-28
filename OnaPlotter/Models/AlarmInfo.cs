@@ -19,6 +19,22 @@ namespace OnaPlotter.Models;
 /// its TCPA. ANCHOR TIDE uses hours-to-LW. Null means time-irrelevant
 /// (latched wind-shift notification). Used by the manager to order
 /// same-severity alarms so the most time-critical one surfaces first.</param>
+/// <param name="NotificationId">SignalK v2 server-assigned UUID for the
+/// notification that produced this alarm, when the source is a
+/// server-emitted notification (anchoralarm plugin, depth, course flags
+/// etc. -- bridged via <c>ServerNotificationsAlarmRule</c>). Null on
+/// client-side rules whose alarms haven't been published to SK yet
+/// (Phase B), and on every alarm when the server is pre-2.21. Drives
+/// the banner's Acknowledge button: when present and
+/// <see cref="CanAcknowledge"/> is true, dismissing locally also
+/// POSTs <c>/notifications/{id}/acknowledge</c> so other plotters see
+/// the ack via the next delta.</param>
+/// <param name="CanAcknowledge">Mirrors the server's
+/// <c>status.canAcknowledge</c> on the originating notification. False
+/// for life-safety alarms the spec forbids silencing (emergency
+/// state) and for any alarm without a server id. The banner hides
+/// the Acknowledge button when this is false; the helm can still
+/// dismiss locally.</param>
 public sealed record AlarmInfo(
     string Title,
     string Message,
@@ -26,7 +42,9 @@ public sealed record AlarmInfo(
     string? TargetKey = null,
     string? TargetLabel = null,
     bool Snoozeable = true,
-    double? TimeToEventMinutes = null);
+    double? TimeToEventMinutes = null,
+    string? NotificationId = null,
+    bool CanAcknowledge = false);
 
 public enum AlarmSeverity
 {

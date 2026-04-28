@@ -440,4 +440,138 @@ public class SignalkClientNotificationTests
         await Assert.That(c.Data.PerpendicularPassed).IsTrue();
         await Assert.That(store.Count).IsEqualTo(0);
     }
+
+    // --- v2 id + status parsing ----------------------------------------
+    //
+    // The wire shape on signalk-server >= 2.21 (verified against the
+    // openplotter-2min.jsonl fixture from openplotter.local 2.26.0) is:
+    //   { state, method, message, id: "<uuid>",
+    //     status: { silenced, acknowledged, canSilence, canAcknowledge, canClear } }
+    // ParseNotificationStatus reads each flag with a fail-safe default
+    // of false for missing / non-bool entries, so a server / plugin
+    // emitting a partial block doesn't grant the helm an action the
+    // server didn't actually authorise.
+
+    private static string V2Delta(string path, string state, string id,
+        bool acknowledged = false, bool canAcknowledge = true)
+    {
+        string ackJson = acknowledged ? "true" : "false";
+        string canAckJson = canAcknowledge ? "true" : "false";
+        return $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""{path}"", ""value"":{{
+              ""state"":""{state}"",
+              ""method"":[""visual""],
+              ""message"":""synthetic"",
+              ""id"":""{id}"",
+              ""status"":{{
+                ""silenced"":false,
+                ""acknowledged"":{ackJson},
+                ""canSilence"":true,
+                ""canAcknowledge"":{canAckJson},
+                ""canClear"":true
+              }}
+            }} }}]
+          }}]
+        }}";
+    }
+
+    [Test]
+    public async Task ServerNotification_V2Id_LandsInStore()
+    {
+        var (c, store) = NewClientWithStore();
+
+        c.ProcessMessage(V2Delta(
+            "notifications.navigation.anchor.position", "alarm",
+            id: "550e8400-e29b-41d4-a716-446655440000"));
+
+        var n = store.Active.Single();
+        await Assert.That(n.Id).IsEqualTo("550e8400-e29b-41d4-a716-446655440000");
+    }
+
+    [Test]
+    public async Task ServerNotification_V2Status_LandsInStore()
+    {
+        var (c, store) = NewClientWithStore();
+
+        c.ProcessMessage(V2Delta(
+            "notifications.environment.depth.belowSurface", "warn",
+            id: "depth-1", canAcknowledge: true));
+
+        var n = store.Active.Single();
+        await Assert.That(n.Status).IsNotNull();
+        await Assert.That(n.Status!.CanAcknowledge).IsTrue();
+        await Assert.That(n.Status.CanSilence).IsTrue();
+        await Assert.That(n.Status.CanClear).IsTrue();
+        await Assert.That(n.Status.Silenced).IsFalse();
+        await Assert.That(n.Status.Acknowledged).IsFalse();
+    }
+
+    [Test]
+    public async Task ServerNotification_V2AckedDelta_ClearsExisting()
+    {
+        // Cross-plotter sync: when another plotter acks, our SignalkClient
+        // sees a delta with status.acknowledged=true. The store's Apply
+        // treats that as a clear so the local banner drops.
+        var (c, store) = NewClientWithStore();
+        c.ProcessMessage(V2Delta(
+            "notifications.navigation.anchor.position", "alarm",
+            id: "uuid-1", acknowledged: false));
+        await Assert.That(store.Count).IsEqualTo(1);
+
+        c.ProcessMessage(V2Delta(
+            "notifications.navigation.anchor.position", "alarm",
+            id: "uuid-1", acknowledged: true));
+
+        await Assert.That(store.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ServerNotification_PreV2Server_StoresNullIdAndStatus()
+    {
+        // Pre-2.21 server (or non-v2-aware plugin): no id, no status.
+        // The store still gets the entry; the Acknowledge button just
+        // stays hidden because CanAcknowledge defaults to false.
+        var (c, store) = NewClientWithStore();
+        c.ProcessMessage(GenericNotificationDelta(
+            "notifications.environment.depth.belowTransducer", "alarm", "shallow"));
+
+        var n = store.Active.Single();
+        await Assert.That(n.Id).IsNull();
+        await Assert.That(n.Status).IsNull();
+    }
+
+    [Test]
+    public async Task ServerNotification_PartialStatusBlock_FailsSafeFalse()
+    {
+        // Plugin that emits status but only fills in some fields. The
+        // missing ones default to false (fail-safe: don't authorise an
+        // action the server didn't say is supported). Otherwise a buggy
+        // plugin could surface an Acknowledge button on an emergency
+        // notification the spec forbids silencing.
+        var (c, store) = NewClientWithStore();
+        string payload = $@"{{
+          ""context"":""vessels.urn:mrn:imo:mmsi:261006533"",
+          ""updates"":[{{
+            ""timestamp"":""2026-04-22T22:00:00.000Z"",
+            ""values"":[{{ ""path"":""notifications.mob"",
+              ""value"":{{
+                ""state"":""emergency"",
+                ""method"":[""visual"",""sound""],
+                ""message"":""Man overboard"",
+                ""id"":""mob-1"",
+                ""status"":{{ ""silenced"":false }}
+              }} }}]
+          }}]
+        }}";
+        c.ProcessMessage(payload);
+
+        var n = store.Active.Single();
+        await Assert.That(n.Status).IsNotNull();
+        await Assert.That(n.Status!.CanAcknowledge).IsFalse();
+        await Assert.That(n.Status.CanSilence).IsFalse();
+        await Assert.That(n.Status.CanClear).IsFalse();
+    }
 }
