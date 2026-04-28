@@ -95,9 +95,15 @@
     --map-current-rgb:  167, 139, 250;
     --map-bearing:      #06b6d4;     /* cyan bearing-to-WP line */
     --map-course-leg:   #e2e8f0;     /* white-ish active-leg line */
-    --map-mob:          #ef4444;     /* MOB pin (= --sev-danger) */
+    /* MOB pin + anchor-drag share the severity-danger hue. Both
+       alias --sev-danger so a future palette tweak in one place
+       cascades across the chart. Drift caught by ARCH-007 in the
+       2026-04-28 architecture review -- two tokens for one colour
+       had already led to night-mode having to redefine both at
+       line 303-305 below. */
+    --map-mob:          var(--sev-danger);     /* MOB pin */
     --map-anchor-ok:    #22c55e;     /* anchor circle inside radius */
-    --map-anchor-drag:  #ef4444;     /* anchor circle outside radius */
+    --map-anchor-drag:  var(--sev-danger);     /* anchor circle outside radius */
     --map-measure:      #e2e8f0;     /* measure-tool dashed line + dots */
 
     /* AIS palette mirrors OnaPlotter.Utilities.AisPalette on the C#
@@ -300,9 +306,17 @@
     --map-current:      #ffa07d;
     --map-buddy:        #ffb06a;
     --map-course-leg:   #ffe0e0;
-    --map-mob:          #ff6060;
+    /* Night-mode --map-mob redefinition was needed when --map-mob was
+       a hard hex; since the default block now aliases --sev-danger,
+       the night-mode override of --sev-danger (above) cascades and
+       this redefinition is no longer needed. Kept the line removed
+       deliberately; an alias-only token doesn't need re-declaring
+       per theme. */
     --map-anchor-ok:    #ff9a9a;
-    --map-anchor-drag:  #ff6060;
+    /* --map-anchor-drag aliases --sev-danger in the default block;
+       the night-mode override of --sev-danger above cascades, so
+       this re-declaration is dropped (alias-only tokens shouldn't
+       fork per theme). */
     --map-own:          #ff6f6f;
     --map-cog-vector:   #ffa0a0;
 }
