@@ -2443,19 +2443,16 @@
     private async Task OnWeatherOpacityPreview(int percent)
     {
         if (module is null || !weatherOverlayVisible) return;
-        double frac = Math.Clamp(percent, 5, 95) / 100.0;
-        await module.InvokeVoidAsync("setWeatherOverlayOpacity", frac);
+        await module.InvokeVoidAsync("setWeatherOverlayOpacity",
+            OnaPlotter.Utilities.WeatherOpacity.PercentToFraction(percent));
     }
 
     /// <summary>Slider released. Persist the final value via
-    /// Settings (round-trips to localStorage). Mirrors the slider's
-    /// own clamp [5..95]; SetWeatherOverlayOpacityAsync re-clamps to
-    /// [0.05..0.95] as belt-and-suspenders against future callers
-    /// that don't go through the slider.</summary>
+    /// Settings (round-trips to localStorage).</summary>
     private async Task OnWeatherOpacityCommit(int percent)
     {
-        double frac = Math.Clamp(percent, 5, 95) / 100.0;
-        await Settings.SetWeatherOverlayOpacityAsync(frac);
+        await Settings.SetWeatherOverlayOpacityAsync(
+            OnaPlotter.Utilities.WeatherOpacity.PercentToFraction(percent));
     }
 
     private async Task ToggleAtonsVisible(bool enabled)

@@ -360,6 +360,11 @@ const MapColors = {
     anchorDrag: '#ef4444',
     route: '#e09f3e',         // --ann-route
     guardWarn: '#f59e0b',     // --sev-warn
+    waypoint: '#c76f51',      // --ann-waypoint
+    note:     '#c8892e',      // --ann-note
+    region:   '#d4a850',      // --ann-region
+    regionFill:'rgba(212, 168, 80, 0.18)', // --ann-region-fill
+    measure:  '#e2e8f0',      // --map-measure
 };
 
 function readMapColors() {
@@ -382,6 +387,11 @@ function readMapColors() {
     MapColors.anchorDrag = pick('--map-anchor-drag', MapColors.anchorDrag);
     MapColors.route      = pick('--ann-route',      MapColors.route);
     MapColors.guardWarn  = pick('--sev-warn',       MapColors.guardWarn);
+    MapColors.waypoint   = pick('--ann-waypoint',   MapColors.waypoint);
+    MapColors.note       = pick('--ann-note',       MapColors.note);
+    MapColors.region     = pick('--ann-region',     MapColors.region);
+    MapColors.regionFill = pick('--ann-region-fill', MapColors.regionFill);
+    MapColors.measure    = pick('--map-measure',    MapColors.measure);
 }
 
 // selfIcon is rebuilt on each initMap() call so a fresh palette read
@@ -1140,11 +1150,19 @@ export function setColoredTrack(points) {
 }
 
 export function addColoredTrackPoint(lat, lon, sogMs, prevLat, prevLon) {
-    // Buffer points and flush as a batch every N points to reduce interop calls.
+    // C# rate-limits track-segment emission to once per 5 s
+    // (MapFrameBuilder.TrackEmitIntervalMs), so the JS batch buffer
+    // is no longer protecting against interop overhead. Flush
+    // immediately so the helm sees the trail extend on each emit
+    // rather than waiting for 10 segments (~50 s) to accumulate.
     pendingTrackPoints.push([lat, lon, sogMs, prevLat, prevLon]);
-    if (pendingTrackPoints.length >= 10) flushTrackPoints();
+    flushTrackPoints();
 }
 
+// 1000 segments × 5 s emit cadence = ~83 min of visible history,
+// matching the C# TrackBuffer capacity. Sized to cover a typical
+// day-sail without the trail wraparound the helm previously saw on
+// bursty multi-Hz feeds (when the cap was hit in 1-2 min).
 const MAX_TRACK_SEGMENTS = 1000;
 
 export function flushTrackPoints() {
@@ -1815,7 +1833,6 @@ function drawGuardZone() {
 //   * Tap a segment to insert a new point at the click location.
 //   * Right-click / long-press anywhere clears the ruler without
 //     leaving Measure mode.
-const MEASURE_COLOR = '#e2e8f0';
 let measureActive = false;
 let measurePoints = [];          // [{ lat, lon, vessel: bool }, ...]
 let measureMarkers = [];         // L.marker[]   parallel to measurePoints
@@ -1914,7 +1931,7 @@ function bindMeasureMarker(marker, idx) {
             interactive: false, keyboard: false, zIndexOffset: 500
         }).addTo(map);
         ghostLine = L.polyline([origLL, origLL], {
-            color: MEASURE_COLOR, weight: 1.5, opacity: 0.7, dashArray: '3,4',
+            color: MapColors.measure, weight: 1.5, opacity: 0.7, dashArray: '3,4',
             interactive: false
         }).addTo(map);
         ghostLine.bindTooltip('Δ 0 m', {
@@ -2045,7 +2062,7 @@ function redrawMeasure() {
 
             // Visible dashed segment.
             const seg = L.polyline([a, b], {
-                color: MEASURE_COLOR, weight: 2, dashArray: '6,4', opacity: 0.85,
+                color: MapColors.measure, weight: 2, dashArray: '6,4', opacity: 0.85,
                 className: 'ona-measure-line',
             }).addTo(map);
             seg.on('click', (e) => {
@@ -2059,7 +2076,7 @@ function redrawMeasure() {
             // route edit uses (40 px there; measure is more transient
             // so a tighter band keeps accidental inserts down).
             const hit = L.polyline([a, b], {
-                color: MEASURE_COLOR, weight: 24, opacity: 0,
+                color: MapColors.measure, weight: 24, opacity: 0,
                 interactive: true, className: 'ona-measure-hit-line',
             }).addTo(map);
             hit.on('click', (e) => {
@@ -3562,9 +3579,10 @@ export function removePolygonEditVertex(index) {
 
 const waypointMarkers = new MarkerLayer();
 
-// Waypoint marker colour. Terracotta is a step warmer/redder than the
-// route amber so a bare waypoint reads distinct from a route dot.
-const WAYPOINT_COLOR = '#c76f51';
+// Waypoint marker colour reads from MapColors.waypoint via
+// readMapColors(); the literal here in the MapColors fallback is
+// terracotta (a step warmer/redder than the route amber so a bare
+// waypoint reads distinct from a route dot).
 
 // Formats the hover-tooltip content for a waypoint marker: name (or
 // short id if unnamed) above a compact coordinate pair. Returned as
@@ -3583,7 +3601,7 @@ function formatWaypointTooltip(name, id, lat, lon) {
 export function addWaypointMarker(id, lat, lon, name) {
     if (!map || waypointMarkers.has(id)) return;
     const marker = L.circleMarker([lat, lon], {
-        radius: 6, color: WAYPOINT_COLOR, fillColor: WAYPOINT_COLOR, fillOpacity: 1, weight: 2,
+        radius: 6, color: MapColors.waypoint, fillColor: MapColors.waypoint, fillOpacity: 1, weight: 2,
         interactive: false,
     });
     // Wider invisible hit-buffer so a finger-wide tap registers.
@@ -3653,9 +3671,10 @@ const noteMarkers = new MarkerLayer();
 // previous slate-blue -- blue-on-blue-water tested poorly, and one
 // hue family across all user-placed objects is visually coherent.
 // Shape (folded-page vs circle vs line) carries the "this is a note"
-// signal, not hue.
-const NOTE_COLOR = '#c8892e';
-const NOTE_COLOR_STROKE = '#7a5418';
+// signal, not hue. Note hue reads from MapColors.note via
+// readMapColors() so a CSS palette tweak cascades; the dark stroke
+// stays a literal because the legend doesn't reference it.
+const NOTE_STROKE = '#7a5418';
 
 function makeNoteIcon() {
     // Modern sticky-note pin, 22x28. Rounded-corner card (no skeuomorphic
@@ -3668,7 +3687,7 @@ function makeNoteIcon() {
         <svg width="22" height="28" viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg"
              style="filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.35));">
             <rect x="2" y="2" width="18" height="18" rx="4" ry="4"
-                  fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2"/>
+                  fill="${MapColors.note}" stroke="${NOTE_STROKE}" stroke-width="1.2"/>
             <line x1="6"  y1="8"  x2="16" y2="8"
                   stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
             <line x1="6"  y1="12" x2="16" y2="12"
@@ -3676,7 +3695,7 @@ function makeNoteIcon() {
             <line x1="6"  y1="16" x2="12" y2="16"
                   stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
             <path d="M8 20 Q11 20 11 26 Q11 20 14 20 Z"
-                  fill="${NOTE_COLOR}" stroke="${NOTE_COLOR_STROKE}" stroke-width="1.2"
+                  fill="${MapColors.note}" stroke="${NOTE_STROKE}" stroke-width="1.2"
                   stroke-linejoin="round"/>
         </svg>`;
     return L.divIcon({
@@ -3831,12 +3850,12 @@ export function openNotePopup(id) {
 // via a polygon-approximation.
 
 const regionLayers = new MarkerLayer();
-// Region stroke: amber-gold in the user-annotation family. Same
-// rationale as notes: one hue family for every user-placed object,
-// shape carries the meaning. Lighter than the note pin so a pin
-// over a region doesn't read as "same colour blob".
-const REGION_STROKE = '#d4a850';
-const REGION_FILL = 'rgba(212, 168, 80, 0.18)';
+// Region colours read from MapColors.region (stroke) and
+// MapColors.regionFill via readMapColors(); literals here in the
+// MapColors fallback are amber-gold in the user-annotation family.
+// One hue family for every user-placed object, shape carries the
+// meaning. Lighter than the note pin so a pin over a region
+// doesn't read as "same colour blob".
 
 // rings: [[[lat, lon], ...], ...]  -- one or more outer rings.
 // A MultiPolygon region passes multiple rings; most regions are a
@@ -3848,8 +3867,8 @@ export function addRegion(id, rings, title, description) {
     const popupHtml = buildRegionPopupHtml(id, title, description);
     for (const ring of rings) {
         const poly = L.polygon(ring, {
-            color: REGION_STROKE,
-            fillColor: REGION_STROKE,
+            color: MapColors.region,
+            fillColor: MapColors.region,
             fillOpacity: 0.18,
             weight: 1.8,
             opacity: 0.85,
@@ -3940,8 +3959,8 @@ export function setCirclePreview(lat, lon, radiusMeters) {
     }
     circlePreviewLayer = L.circle([lat, lon], {
         radius: radiusMeters,
-        color: REGION_STROKE,
-        fillColor: REGION_STROKE,
+        color: MapColors.region,
+        fillColor: MapColors.region,
         fillOpacity: 0.12,
         weight: 1.6,
         dashArray: '4,4',
