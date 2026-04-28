@@ -163,7 +163,10 @@
        --panel-bottom so they stack predictably. Update in one place. */
     --ctrl-bar-height: 64px;  /* Approx height of .map-controls (icon + label + padding). */
     --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
-    --panel-gap: 10px;        /* Gap between the bar and panels above it. */
+    /* 18 px gap between the bottom action bar and the bc-stack
+       cards (anchor watch + active route). Was 10 px and the helm
+       reported the cards looked cramped against the bar. */
+    --panel-gap: 18px;
     --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 
     /* ===== HUD design system =====
@@ -3741,16 +3744,18 @@ html.night-mode-global body {
     display: none !important;
 }
 
-/* Range-scale chip (bottom-left rail). HUD-card chrome so it reads
-   as the same instrument family as the SOG / Depth corner cards.
-   Two children: a label ("1 nm") and a horizontal bar drawn at the
-   pixel width that matches that label on the live chart. The bar
-   acts like a ruler -- helm eyeballs distance by comparing chart
-   features to the bar length. Position pulled by the parent
-   .leaflet-bottom.leaflet-left transform; this rule shapes the
-   inner chip only. */
+/* Range-scale chip: hidden for now while we work out the right
+   placement (helm reported the corner location reads as "just
+   somewhere"). The control still instantiates and computes on
+   pan / zoom (cheap), but the chip itself stays invisible. The
+   pinch-zoom preview overlay (centred, gesture-only) keeps
+   working since it's a separate element. See the Obsidian
+   "Range scale chip placement" todo for the rework -- styling
+   below preserved so flipping the display rule un-hides a fully
+   themed chip. */
 .ona-range-scale {
-    display: inline-flex;
+    display: none !important;       /* TEMP: hide until placement is decided */
+    /* visual styling kept intact for when the chip is re-enabled: */
     align-items: center;
     gap: 0.5rem;
     padding: 4px 8px;
