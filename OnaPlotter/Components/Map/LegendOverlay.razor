@@ -91,11 +91,12 @@
                 <span class="legend-name">Tidal current</span>
                 <span class="legend-desc">Violet arrow from own-boat; direction shows set, label shows drift in knots.</span>
             </li>
-            <li>
-                <span class="legend-swatch legend-course-leg"></span>
-                <span class="legend-name">Course leg</span>
-                <span class="legend-desc">White dashed line between previous and next waypoint of the active route.</span>
-            </li>
+            @* The "previous WP -> next WP" white dashed leg line was
+               removed (helm reported it as noise -- no actionable info
+               beyond "where I was when the course started"). The
+               bearing line + active-route polyline below cover the
+               live navigational picture, so the legend doesn't list a
+               separate "Course leg" entry any more. *@
             <li>
                 <span class="legend-swatch legend-bearing"></span>
                 <span class="legend-name">Bearing to waypoint</span>

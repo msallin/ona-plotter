@@ -49,6 +49,85 @@ public class AppSettingsServiceTests
         await Assert.That(await kv.GetAsync("depthAlarmThreshold")).IsEqualTo("4.2");
     }
 
+    // === Weather overlay opacity ===
+    // Pinned because the JS-side leaflet layer + the C# slider both
+    // clamp to [0.05, 0.95]. If the C# floor/ceiling drifts here, the
+    // UI slider could allow a value the JS layer rejects. Ladder of
+    // boundary cases follows the same shape every other "double with
+    // clamp + invariant culture persistence" setting on this service
+    // covers (CpaAlarmThreshold, ManualAnchorRadiusMeters, etc).
+
+    [Test]
+    public async Task WeatherOverlayOpacity_DefaultsTo0_5()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.WeatherOverlayOpacity).IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task SetWeatherOverlayOpacity_BelowFloor_ClampsTo0_05()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetWeatherOverlayOpacityAsync(0.0);
+        await Assert.That(svc.WeatherOverlayOpacity).IsEqualTo(0.05);
+        await Assert.That(await kv.GetAsync("weatherOverlayOpacity.v1")).IsEqualTo("0.05");
+    }
+
+    [Test]
+    public async Task SetWeatherOverlayOpacity_AboveCeiling_ClampsTo0_95()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetWeatherOverlayOpacityAsync(1.5);
+        await Assert.That(svc.WeatherOverlayOpacity).IsEqualTo(0.95);
+        await Assert.That(await kv.GetAsync("weatherOverlayOpacity.v1")).IsEqualTo("0.95");
+    }
+
+    [Test]
+    public async Task SetWeatherOverlayOpacity_InRange_KeepsValue_AndFires()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetWeatherOverlayOpacityAsync(0.7);
+        await Assert.That(svc.WeatherOverlayOpacity).IsEqualTo(0.7);
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task SetWeatherOverlayOpacity_PersistsInvariantCulture()
+    {
+        // Same invariant-culture pin every other double setter on this
+        // service has -- a de-CH / fr-FR helm flipping the slider must
+        // store "0.7", not "0,7".
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetWeatherOverlayOpacityAsync(0.7);
+        await Assert.That(await kv.GetAsync("weatherOverlayOpacity.v1")).IsEqualTo("0.7");
+    }
+
+    [Test]
+    public async Task WeatherOverlayOpacity_GarbageStored_FallsBackToDefault()
+    {
+        var kv = new InMemoryKv();
+        await kv.SetAsync("weatherOverlayOpacity.v1", "banana");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.WeatherOverlayOpacity).IsEqualTo(0.5);
+    }
+
     [Test]
     public async Task InvariantCultureOnDoubles()
     {

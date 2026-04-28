@@ -81,8 +81,11 @@
        single-checkbox sections; consolidating them removes a header
        row of dead chrome without losing either toggle. *@
     <MiscSection WeatherVisible="WeatherOverlayVisible"
+                 WeatherOpacityPercent="WeatherOverlayOpacityPercent"
                  AtonsVisible="AtonsVisible"
                  OnToggleWeather="OnToggleWeatherOverlay"
+                 OnWeatherOpacityPreview="OnWeatherOpacityPreview"
+                 OnWeatherOpacityCommit="OnWeatherOpacityCommit"
                  OnToggleAtons="OnToggleAtonsVisible" />
 
     @* Import / Export GPX moved to the Settings page (Backup section).
@@ -110,6 +113,7 @@
         new Dictionary<string, RadarCapabilities?>();
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
+    [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;
     [Parameter] public bool NotesVisible { get; set; } = true;
     [Parameter] public bool RegionsVisible { get; set; } = true;
     [Parameter] public bool AtonsVisible { get; set; } = true;
@@ -142,6 +146,8 @@
     [Parameter] public EventCallback<string> OnServerTrackDurationChanged { get; set; }
     [Parameter] public EventCallback<bool> OnServerTrackWithinBoundsChanged { get; set; }
     [Parameter] public EventCallback<bool> OnToggleWeatherOverlay { get; set; }
+    [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
+    [Parameter] public EventCallback<int> OnWeatherOpacityCommit { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtonsVisible { get; set; }
 
     private async Task OnFilterInput(ChangeEventArgs e)
