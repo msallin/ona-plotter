@@ -56,12 +56,6 @@ public sealed class AlarmManager : IAlarmManager
     private readonly Func<DateTime> _now;
     private readonly IKeyValueStore? _kv;
     private readonly IAppSettings? _settings;
-    /// <summary>SignalK v2 notifications client. Null on the test
-    /// constructors that don't care about server-side ack -- the
-    /// dismiss path falls through to local-only behaviour. Wired to
-    /// concrete <see cref="OnaPlotter.Services.Api.NotificationsApi"/>
-    /// in production via DI.</summary>
-    private readonly OnaPlotter.Services.Api.INotificationsApi? _notifications;
     private bool _initialized;
 
     // Active alarms keyed by (Title, TargetKey) so the same rule firing on
@@ -76,6 +70,16 @@ public sealed class AlarmManager : IAlarmManager
     // without this cache the 5-iterator LINQ chain allocates 6-7
     // objects per read at 10+ Hz.
     private IReadOnlyList<AlarmInfo>? _activeAlarmsCache;
+    // Cached uncapped variant for cross-plotter publishers and any other
+    // downstream that needs the FULL active set (not capped at
+    // MaxActiveAlarms like the UI banner). Same invalidation contract as
+    // _activeAlarmsCache; populated from the same sorted projection minus
+    // the Take().
+    private IReadOnlyList<AlarmInfo>? _allActiveAlarmsCache;
+    // Paired (info, rule) view of the same uncapped set so publishers
+    // can ask each rule for its IAlarmRule.GetPublishPath mapping
+    // without reverse-engineering it from the title. Same invalidation.
+    private IReadOnlyList<(AlarmInfo Info, IAlarmRule Rule)>? _allActiveEntriesCache;
     private readonly List<DismissedAlarm> _history = [];
     // Per-key cooldown window after a dismiss. Keyed the same as _active
     // so a CPA dismiss on "vessels.a" doesn't silence CPA on "vessels.b".
@@ -113,9 +117,46 @@ public sealed class AlarmManager : IAlarmManager
         }
     }
 
-    /// <summary>Invalidate the sorted cache on every _active mutation.
+    /// <inheritdoc/>
+    public IReadOnlyList<AlarmInfo> AllActiveAlarms
+    {
+        get
+        {
+            if (_allActiveAlarmsCache is not null) return _allActiveAlarmsCache;
+            _allActiveAlarmsCache = _active.Values
+                .OrderByDescending(e => e.Info.Severity)
+                .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
+                .ThenBy(e => e.Rule.Priority)
+                .Select(e => e.Info)
+                .ToList();
+            return _allActiveAlarmsCache;
+        }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<(AlarmInfo Info, IAlarmRule Rule)> AllActiveEntries
+    {
+        get
+        {
+            if (_allActiveEntriesCache is not null) return _allActiveEntriesCache;
+            _allActiveEntriesCache = _active.Values
+                .OrderByDescending(e => e.Info.Severity)
+                .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
+                .ThenBy(e => e.Rule.Priority)
+                .Select(e => (e.Info, e.Rule))
+                .ToList();
+            return _allActiveEntriesCache;
+        }
+    }
+
+    /// <summary>Invalidate the sorted caches on every _active mutation.
     /// Called from Add/Remove/Clear call-sites below.</summary>
-    private void InvalidateActiveCache() => _activeAlarmsCache = null;
+    private void InvalidateActiveCache()
+    {
+        _activeAlarmsCache = null;
+        _allActiveAlarmsCache = null;
+        _allActiveEntriesCache = null;
+    }
 
     public int HiddenAlarmsCount => Math.Max(0, _active.Count - MaxActiveAlarms);
 
@@ -149,40 +190,35 @@ public sealed class AlarmManager : IAlarmManager
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
-    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings,
-        OnaPlotter.Services.Api.INotificationsApi notifications)
-        : this(rules, () => DateTime.UtcNow, kv, settings, notifications) { }
+    public AlarmManager(IEnumerable<IAlarmRule> rules, IKeyValueStore kv, IAppSettings settings)
+        : this(rules, () => DateTime.UtcNow, kv, settings) { }
 
     // Two-arg overload for tests that don't care about persistence.
     // Keeps the `args: [rules, now]` Activator.CreateInstance pattern
     // working.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now)
-        : this(rules, now, null, null, null) { }
+        : this(rules, now, null, null) { }
 
     // Three-arg overload kept so existing tests invoking Activator with
-    // `(rules, now, kv)` still resolve. Defaults settings to null -> the
-    // SnoozeDurationMinutes fallback applies.
+    // `(rules, now, kv)` still resolve.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
         IKeyValueStore? kv)
-        : this(rules, now, kv, null, null) { }
+        : this(rules, now, kv, null) { }
 
-    // Four-arg overload kept so existing tests invoking Activator with
-    // `(rules, now, kv, settings)` still resolve. Defaults notifications
-    // to null -> dismiss is local-only (no server-side ack POST).
+    // Full-arg internal ctor. Cross-plotter ack used to inject an
+    // INotificationsApi here; that responsibility now lives on the
+    // per-alarm IAlarmAcknowledger handle that the bridge rule attaches
+    // to AlarmInfo, so the manager no longer depends on the SignalK
+    // REST surface at all. Removing the API param simplifies the
+    // construction story (one less field, one less ctor overload) and
+    // matches ARCH-001's goal of keeping the manager transport-neutral.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
         IKeyValueStore? kv, IAppSettings? settings)
-        : this(rules, now, kv, settings, null) { }
-
-    // Full-arg internal ctor.
-    internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
-        IKeyValueStore? kv, IAppSettings? settings,
-        OnaPlotter.Services.Api.INotificationsApi? notifications)
     {
         _rules = rules.OrderBy(r => r.Priority).ToList();
         _now = now;
         _kv = kv;
         _settings = settings;
-        _notifications = notifications;
     }
 
     public async Task InitializeAsync()
@@ -302,7 +338,7 @@ public sealed class AlarmManager : IAlarmManager
     {
         if (_active.Count == 0) return Task.CompletedTask;
         var now = _now();
-        var pendingAcks = new List<string>();
+        var pendingAcks = new List<IAlarmAcknowledger>();
         foreach (var (key, e) in _active)
         {
             LogHistory(e.Info, now, DismissReason.UserDismissed);
@@ -310,12 +346,13 @@ public sealed class AlarmManager : IAlarmManager
             // Notify the owning rule so rule-specific rearm policies (e.g.
             // SHALLOW's 5 min non-shallow gate) can capture the dismissal.
             e.Rule.OnDismissed(e.Info, now);
-            // Server-side ack for any v2-aware notification in the
-            // batch. Collected here, fired below once we've cleared
-            // the local state (so the delta echo from the server can't
-            // race re-rendering an entry we're already dismissing).
-            if (e.Info.NotificationId is string id && e.Info.CanAcknowledge)
-                pendingAcks.Add(id);
+            // Cross-plotter ack: the source-specific Acknowledger handle
+            // owns the dispatch (SignalK v2 -> POST /notifications/{id}/
+            // acknowledge today; future transports add their own impl).
+            // Collected here, fired below once local state is clear so
+            // the server's delta echo can't race re-rendering.
+            if (e.Info.Acknowledger is { CanAcknowledge: true } ack)
+                pendingAcks.Add(ack);
         }
         _active.Clear();
         InvalidateActiveCache();
@@ -334,29 +371,30 @@ public sealed class AlarmManager : IAlarmManager
         RecordDismissCooldown(key, removed.Info.Severity, now);
         removed.Rule.OnDismissed(removed.Info, now);
         FireAlarmsChanged();
-        // Cross-plotter sync: when a v2 server emitted this alarm and
-        // declared canAcknowledge, dismiss-locally also POSTs the
-        // acknowledge so other plotters see the ack via the next
-        // delta echo.
-        if (removed.Info.NotificationId is string id && removed.Info.CanAcknowledge)
-            FireAcknowledge(new[] { id });
+        // Cross-plotter ack via the per-alarm acknowledger handle.
+        // Pre-Phase A this directly inspected NotificationId+CanAcknowledge
+        // on the alarm; the abstraction now keeps the manager transport-
+        // neutral (ARCH-001).
+        if (removed.Info.Acknowledger is { CanAcknowledge: true } ack)
+            FireAcknowledge(new[] { ack });
         return Task.CompletedTask;
     }
 
-    /// <summary>Fire-and-forget POST to the v2 notifications API.
-    /// Failures are silent: the local dismiss already happened, and a
-    /// network blip on the ack POST shouldn't roll the UI back. The
-    /// next delta tick reconciles state if the server didn't see our
-    /// POST (ack just doesn't propagate; helm dismisses again).</summary>
-    private void FireAcknowledge(IReadOnlyList<string> ids)
+    /// <summary>Fire-and-forget invoke of each acknowledger handle.
+    /// Failures are silent at this layer: the local dismiss already
+    /// happened, and a network blip on the ack shouldn't roll the UI
+    /// back. The acknowledger implementation owns its own logging /
+    /// retry policy (e.g. SignalKNotificationAcknowledger forwards to
+    /// the per-call-timeout NotificationsApi). The next delta tick
+    /// reconciles state if the ack didn't propagate.</summary>
+    private static void FireAcknowledge(IReadOnlyList<IAlarmAcknowledger> acks)
     {
-        if (_notifications is null || ids.Count == 0) return;
-        foreach (var id in ids)
+        if (acks.Count == 0) return;
+        foreach (var ack in acks)
         {
-            // Discard the task; HttpClient handles retries / timeouts
-            // at its own layer. NotificationsApi catches
-            // HttpRequestException internally.
-            _ = _notifications.AcknowledgeAsync(id);
+            // Discard the task; transport-specific failure handling
+            // belongs to the acknowledger.
+            _ = ack.AcknowledgeAsync();
         }
     }
 

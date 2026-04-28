@@ -6,9 +6,24 @@ namespace OnaPlotter.Services.Api;
 /// delta the server emits in response (every active subscriber sees
 /// the new <c>status.acknowledged</c> within a tick, and that's what
 /// drives the banner state).
+/// <para>
+/// Every call applies a per-call 5 s timeout via a linked
+/// <see cref="CancellationTokenSource"/>. HttpClient's default 100 s
+/// is far too long for an alarm-attention path -- a half-baked TLS
+/// handshake or RST on a flaky helm Wi-Fi would otherwise stall the
+/// single-threaded WASM dispatcher up to 100 s, queueing every
+/// subsequent OnAlarmsChanged behind the dead socket. 5 s is the
+/// engineering judgement: tight enough that helm gestures still feel
+/// fluid, generous enough to absorb a normal LAN round-trip plus a
+/// retry on a marginal connection.
+/// </para>
 /// </summary>
 public sealed class NotificationsApi : INotificationsApi
 {
+    /// <summary>Per-call timeout applied to every SignalK v2
+    /// notification REST call. See class summary for sizing rationale.</summary>
+    public static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
+
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
 
@@ -19,23 +34,31 @@ public sealed class NotificationsApi : INotificationsApi
     }
 
     /// <inheritdoc/>
-    public Task<ApiResult> AcknowledgeAsync(string notificationId, CancellationToken ct = default) =>
+    public async Task<ApiResult> AcknowledgeAsync(string notificationId, CancellationToken ct = default)
+    {
         // Server expects a body even for a no-arg action; an empty
         // object is the documented shape and is what every other v2
         // POST endpoint accepts. ResourceHttp.PostAsync sends it as
         // application/json so the server's content-type check passes.
-        ResourceHttp.PostAsync(_http,
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
+        return await ResourceHttp.PostAsync(_http,
             _baseUrl.Combine(SignalKUrls.NotificationAcknowledge(notificationId)),
-            new { }, ct);
+            new { }, cts.Token).ConfigureAwait(false);
+    }
 
     /// <inheritdoc/>
-    public Task<ApiResult> SilenceAsync(string notificationId, CancellationToken ct = default) =>
-        ResourceHttp.PostAsync(_http,
+    public async Task<ApiResult> SilenceAsync(string notificationId, CancellationToken ct = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
+        return await ResourceHttp.PostAsync(_http,
             _baseUrl.Combine(SignalKUrls.NotificationSilence(notificationId)),
-            new { }, ct);
+            new { }, cts.Token).ConfigureAwait(false);
+    }
 
     /// <inheritdoc/>
-    public Task<ApiResult<string>> RaiseAsync(string path, NotificationPayload body, CancellationToken ct = default)
+    public async Task<ApiResult<string>> RaiseAsync(string path, NotificationPayload body, CancellationToken ct = default)
     {
         // SignalK v2 raise: POST /notifications with { path, value }.
         // Server derives the id from (context, path, $source) so
@@ -44,15 +67,21 @@ public sealed class NotificationsApi : INotificationsApi
         // PostCreateAsync handles the {id} response shape; if a
         // future server change drops the id from the response we get
         // a clean Fail rather than a half-applied state.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
         var envelope = new { path, value = body };
-        return ResourceHttp.PostCreateAsync(_http,
+        return await ResourceHttp.PostCreateAsync(_http,
             _baseUrl.Combine(SignalKUrls.NotificationsPath),
-            envelope, ct);
+            envelope, cts.Token).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
-    public Task<ApiResult> ClearAsync(string notificationId, CancellationToken ct = default) =>
-        ResourceHttp.DeleteAsync(_http,
+    public async Task<ApiResult> ClearAsync(string notificationId, CancellationToken ct = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
+        return await ResourceHttp.DeleteAsync(_http,
             _baseUrl.Combine(SignalKUrls.NotificationById(notificationId)),
-            ct);
+            cts.Token).ConfigureAwait(false);
+    }
 }

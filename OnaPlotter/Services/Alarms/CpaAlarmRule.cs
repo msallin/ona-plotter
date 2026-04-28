@@ -16,6 +16,40 @@ public sealed class CpaAlarmRule : IAlarmRule
     public int Priority => 200;    // between grounding and wind shift
     public bool AutoClear => true;
 
+    /// <summary>Per-target collision path. The bridge rule on every
+    /// other plotter derives Title="COLLISION" from the
+    /// <c>security.collision.*</c> prefix mapping. The vessel-context
+    /// suffix is sanitised so an AIS-supplied URN can't smuggle path
+    /// hierarchy past the <c>notifications.security.collision.</c>
+    /// namespace (PARA-002).</summary>
+    public string? GetPublishPath(AlarmInfo alarm)
+    {
+        if (string.IsNullOrEmpty(alarm.TargetKey)) return null;
+        return SanitisePerTargetPath(
+            "notifications.security.collision", alarm.TargetKey);
+    }
+
+    /// <summary>Mirrors the publisher's previous private helper. Strips
+    /// the <c>vessels.</c> prefix from a SK context and replaces every
+    /// non-path-safe character with '_' so the resulting suffix can't
+    /// extend the path hierarchy (an AIS URN with a stray '.' would
+    /// otherwise let an attacker collide with another notification).</summary>
+    private static string SanitisePerTargetPath(string prefix, string targetKey)
+    {
+        var suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
+            ? targetKey["vessels.".Length..]
+            : targetKey;
+        var sb = new System.Text.StringBuilder(suffix.Length);
+        foreach (var c in suffix)
+        {
+            if (char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-')
+                sb.Append(c);
+            else
+                sb.Append('_');
+        }
+        return $"{prefix}.{sb.ToString()}";
+    }
+
     // Shared moored-vessel tracker. Was previously instantiated locally
     // here AND in Map.razor's PushAisTargets, so the two paths kept
     // separate dwell counters and could disagree on whether a given

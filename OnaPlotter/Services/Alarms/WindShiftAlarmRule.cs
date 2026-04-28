@@ -12,6 +12,12 @@ public sealed class WindShiftAlarmRule : IAlarmRule
     public int Priority => 300;    // below collision / grounding
     public bool AutoClear => false;
 
+    /// <summary>Cross-plotter publish path. Receivers derive
+    /// Title="WIND" from the <c>environment.wind.*</c> prefix
+    /// mapping.</summary>
+    public string? GetPublishPath(AlarmInfo alarm) =>
+        "notifications.environment.wind.shift";
+
     private double? _anchorDeg;
     private DateTime _anchorAt = DateTime.MinValue;
 

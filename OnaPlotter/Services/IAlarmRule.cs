@@ -76,6 +76,27 @@ public interface IAlarmRule
     /// </para>
     /// </summary>
     AlarmRearmInfo? GetRearmStatus(DateTime now) => null;
+
+    /// <summary>
+    /// SignalK notification path this rule would publish under, given a
+    /// concrete <see cref="AlarmInfo"/> the rule emitted. Returned to
+    /// <c>AlarmPublisher</c> so it knows where to POST the cross-plotter
+    /// notification. Returns null when the rule does not participate in
+    /// cross-plotter publish (e.g. server-emitted bridge rule, or
+    /// AIS-fed SART/MOB rule whose path is already published by the
+    /// SK server itself).
+    /// <para>
+    /// Default returns null. Each rule that wants its alarms
+    /// synchronised across plotters overrides this with its own
+    /// <c>notifications.*</c> path. Putting the mapping ON THE RULE
+    /// (rather than in a switch on the publisher) means a new rule
+    /// can declare its own publish path without editing the publisher
+    /// -- the compiler enforces the contract via the override and a
+    /// rule rename can't silently de-sync the publisher because the
+    /// rule no longer dispatches off the Title string.
+    /// </para>
+    /// </summary>
+    string? GetPublishPath(AlarmInfo alarm) => null;
 }
 
 /// <summary>

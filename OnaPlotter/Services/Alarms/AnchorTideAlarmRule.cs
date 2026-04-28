@@ -35,6 +35,12 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
     // or the plugin stops publishing. No latching.
     public bool AutoClear => true;
 
+    /// <summary>Cross-plotter publish path. Sibling of
+    /// <c>anchor.dragging</c> -- both render under Title="ANCHOR"
+    /// on receivers but the leaf differs so they clear independently.</summary>
+    public string? GetPublishPath(AlarmInfo alarm) =>
+        "notifications.navigation.anchor.tide";
+
     /// <summary>Only look this far ahead. A LW that's 14 hours away
     /// isn't an actionable alarm -- sleep first, re-evaluate later.
     /// Six hours covers one full tidal half-cycle with some slack.</summary>

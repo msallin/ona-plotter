@@ -44,7 +44,16 @@ builder.Services.AddSingleton<OnaPlotter.Services.IMooredVesselTracker, OnaPlott
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
-builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule>();
+// Bridge rule needs the v2 notifications API (to attach an
+// IAlarmAcknowledger to each AlarmInfo it emits) and the published-
+// alarms tracker (to skip our own publication echoes). Both are
+// optional on the rule's ctor for backward compat with legacy test
+// constructors that don't wire them; production DI threads them in.
+builder.Services.AddSingleton<IAlarmRule>(sp =>
+    new OnaPlotter.Services.Alarms.ServerNotificationsAlarmRule(
+        sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
+        sp.GetRequiredService<OnaPlotter.Services.Api.INotificationsApi>(),
+        sp.GetRequiredService<OnaPlotter.Services.Alarms.IPublishedAlarmTracker>()));
 builder.Services.AddSingleton<DeadmanTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.DeadmanAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();

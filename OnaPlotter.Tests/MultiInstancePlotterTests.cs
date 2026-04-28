@@ -33,7 +33,14 @@ namespace OnaPlotter.Tests;
 /// </summary>
 public class MultiInstancePlotterTests
 {
-    private sealed class MutableClock { public DateTime Now { get; set; } = DateTime.UtcNow; }
+    /// <summary>Test clock seeded at a fixed UTC instant. Hidden
+    /// dependence on DateTime.UtcNow at construction would let a future
+    /// cross-plotter timing assertion go wall-clock-flaky; the fixed
+    /// seed keeps tests deterministic regardless of when they run.</summary>
+    private sealed class MutableClock
+    {
+        public DateTime Now { get; set; } = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    }
 
     /// <summary>
     /// One plotter instance. Holds the alarm-stack pipeline (store ->
@@ -68,14 +75,18 @@ public class MultiInstancePlotterTests
             Store = new ServerNotificationStore();
             Clock = new MutableClock();
             Tracker = new PublishedAlarmTracker();
-            // Bridge rule with the tracker injected so it can suppress
-            // echoes of our own publications.
-            var bridgeRule = new ServerNotificationsAlarmRule(Store, Tracker);
             // Per-plotter API stub that delegates to the shared server.
             // Each plotter has its own instance so the server can tell
             // which plotter originated a call (for the "concurrent acks"
             // test) without inferring it from caller stack.
             var api = new ServerBackedApi(server, this);
+            // Bridge rule wires the API (so each emitted AlarmInfo carries
+            // an IAlarmAcknowledger that points back at the FakeServer)
+            // and the tracker (so it can suppress echoes of our own
+            // publications). Both are optional in production tests; the
+            // multi-instance fixture wants them both for the full
+            // round-trip.
+            var bridgeRule = new ServerNotificationsAlarmRule(Store, api, Tracker);
             // Compose: client-side local rules + bridge rule. The bridge
             // is last so its emissions overlay if a (Title, TargetKey)
             // collides -- matches the production rule order.
@@ -89,8 +100,7 @@ public class MultiInstancePlotterTests
                 args: [(IEnumerable<IAlarmRule>)allRules,
                        (Func<DateTime>)(() => Clock.Now),
                        (IKeyValueStore?)null,
-                       (IAppSettings?)null,
-                       (INotificationsApi?)api],
+                       (IAppSettings?)null],
                 culture: null)!;
             Publisher = new AlarmPublisher(Manager, api, Tracker);
         }
@@ -118,20 +128,58 @@ public class MultiInstancePlotterTests
         public string Message { get; set; } = "msg";
         public AlarmSeverity Severity { get; set; }
         public string? TargetKey { get; set; }
+        /// <summary>Optional cross-plotter publish path. Mirrors the
+        /// per-rule GetPublishPath override on production rules. The
+        /// multi-instance fixture passes the matching path so the
+        /// publisher actually emits a notification for the alarms the
+        /// test arranges.</summary>
+        public string? PublishPath { get; set; }
 
         public LocalStubRule(string title, int priority,
-            AlarmSeverity sev, string? targetKey = null)
+            AlarmSeverity sev, string? targetKey = null,
+            string? publishPath = null)
         {
             Title = title;
             Priority = priority;
             Severity = sev;
             TargetKey = targetKey;
+            PublishPath = publishPath;
         }
 
         public AlarmInfo? Check(AlarmEvaluationContext ctx)
             => ShouldFire
                 ? new AlarmInfo(Title, Message, Severity, TargetKey, TargetKey)
                 : null;
+
+        public string? GetPublishPath(AlarmInfo alarm)
+        {
+            // Prefer the explicitly-set path; fall back to a title-
+            // based default that mirrors the production rules so older
+            // tests (which only set Title) continue to drive the
+            // publisher down a real raise path.
+            if (!string.IsNullOrEmpty(PublishPath)) return PublishPath;
+            return Title switch
+            {
+                "SHALLOW" => "notifications.environment.depth.belowSurface",
+                "CPA" when !string.IsNullOrEmpty(alarm.TargetKey)
+                    => $"notifications.security.collision.{Sanitise(alarm.TargetKey!)}",
+                "WIND SHIFT" => "notifications.environment.wind.shift",
+                "ANCHOR DRAG" => "notifications.navigation.anchor.dragging",
+                "ANCHOR TIDE" => "notifications.navigation.anchor.tide",
+                "DEADMAN" => "notifications.helm.deadman",
+                _ => null,
+            };
+
+            static string Sanitise(string targetKey)
+            {
+                var suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
+                    ? targetKey["vessels.".Length..] : targetKey;
+                var sb = new System.Text.StringBuilder(suffix.Length);
+                foreach (var c in suffix)
+                    sb.Append(char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
+                return sb.ToString();
+            }
+        }
     }
 
     /// <summary>
@@ -349,10 +397,13 @@ public class MultiInstancePlotterTests
 
         await Assert.That(c.Manager.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(c.Manager.ActiveAlarms[0].Title).IsEqualTo("ANCHOR");
-        // The replay carries the v2 fields too, so the late joiner can
-        // also ack across plotters from its banner.
-        await Assert.That(c.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("anchor-1");
-        await Assert.That(c.Manager.ActiveAlarms[0].CanAcknowledge).IsTrue();
+        // The replay carries the v2 acknowledger too, so the late
+        // joiner can also ack across plotters from its banner.
+        var ack = c.Manager.ActiveAlarms[0].Acknowledger
+            as SignalKNotificationAcknowledger;
+        await Assert.That(ack).IsNotNull();
+        await Assert.That(ack!.Id).IsEqualTo("anchor-1");
+        await Assert.That(ack.CanAcknowledge).IsTrue();
     }
 
     [Test]
@@ -619,8 +670,12 @@ public class MultiInstancePlotterTests
 
         await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
-        await Assert.That(a.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("anchor-2");
-        await Assert.That(b.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("anchor-2");
+        var ackA = a.Manager.ActiveAlarms[0].Acknowledger
+            as SignalKNotificationAcknowledger;
+        var ackB = b.Manager.ActiveAlarms[0].Acknowledger
+            as SignalKNotificationAcknowledger;
+        await Assert.That(ackA?.Id).IsEqualTo("anchor-2");
+        await Assert.That(ackB?.Id).IsEqualTo("anchor-2");
     }
 
     // -----------------------------------------------------------------
@@ -673,11 +728,13 @@ public class MultiInstancePlotterTests
         await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(b.Manager.ActiveAlarms[0].Title).IsEqualTo("DEPTH");
         await Assert.That(b.Manager.ActiveAlarms[0].Message).IsEqualTo("Depth 1.8m < 3.0m");
-        // B's banner also carries the server's id + ack permissions so
-        // B's helm can ack-clear cross-plotter via the existing Phase A
+        // B's banner also carries the server's acknowledger so B's
+        // helm can ack-clear cross-plotter via the existing Phase A
         // dismiss path.
-        await Assert.That(b.Manager.ActiveAlarms[0].NotificationId).IsNotNull();
-        await Assert.That(b.Manager.ActiveAlarms[0].CanAcknowledge).IsTrue();
+        var bAck = b.Manager.ActiveAlarms[0].Acknowledger
+            as SignalKNotificationAcknowledger;
+        await Assert.That(bAck).IsNotNull();
+        await Assert.That(bAck!.CanAcknowledge).IsTrue();
     }
 
     [Test]
@@ -871,8 +928,10 @@ public class MultiInstancePlotterTests
         await SettleAsync();
 
         await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(1);
-        await Assert.That(a.Manager.ActiveAlarms[0].NotificationId).IsEqualTo("external-anchor-1");
-        // Publisher saw a NotificationId-bearing alarm and skipped it.
+        var ack = a.Manager.ActiveAlarms[0].Acknowledger
+            as SignalKNotificationAcknowledger;
+        await Assert.That(ack?.Id).IsEqualTo("external-anchor-1");
+        // Publisher saw an acknowledger-bearing alarm and skipped it.
         await Assert.That(server.RaiseCallCount).IsEqualTo(0);
     }
 
