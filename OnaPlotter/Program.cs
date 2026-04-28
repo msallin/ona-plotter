@@ -48,6 +48,15 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.ServerNotif
 builder.Services.AddSingleton<DeadmanTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.DeadmanAlarmRule>();
 builder.Services.AddSingleton<IAlarmManager, AlarmManager>();
+// Phase B: cross-plotter publish. Tracker is the read-side that the
+// bridge rule queries to avoid echoing our own publications back into
+// the banner; AlarmPublisher is the writer that POSTs raises/clears
+// to the SK server when the local alarm stack changes. Resolved
+// post-build so subscription wiring happens once at startup.
+builder.Services.AddSingleton<OnaPlotter.Services.Alarms.PublishedAlarmTracker>();
+builder.Services.AddSingleton<OnaPlotter.Services.Alarms.IPublishedAlarmTracker>(
+    sp => sp.GetRequiredService<OnaPlotter.Services.Alarms.PublishedAlarmTracker>());
+builder.Services.AddSingleton<OnaPlotter.Services.Alarms.AlarmPublisher>();
 
 // SignalK REST API clients (one per concern).
 builder.Services.AddSingleton<ISignalKBaseUrl, SignalKBaseUrl>();
@@ -104,5 +113,13 @@ var host = builder.Build();
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).
 var signalkClient = host.Services.GetRequiredService<SignalkClient>();
 _ = signalkClient.StartAsync();
+
+// Activate the cross-plotter alarm publisher. Resolving the singleton
+// runs the constructor which subscribes to IAlarmManager.OnAlarmsChanged;
+// without this line the type would never be instantiated (no other
+// component injects it -- the bridge rule injects the tracker, not
+// the publisher) and locally-emitted alarms would never reach other
+// plotters. Stashed in a discard so the GC keeps the subscription alive.
+_ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmPublisher>();
 
 await host.RunAsync();

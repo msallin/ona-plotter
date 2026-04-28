@@ -26,10 +26,13 @@ namespace OnaPlotter.Services.Alarms;
 public sealed class ServerNotificationsAlarmRule : IAlarmRule
 {
     private readonly ServerNotificationStore _store;
+    private readonly IPublishedAlarmTracker? _publishedTracker;
 
-    public ServerNotificationsAlarmRule(ServerNotificationStore store)
+    public ServerNotificationsAlarmRule(ServerNotificationStore store,
+        IPublishedAlarmTracker? publishedTracker = null)
     {
         _store = store;
+        _publishedTracker = publishedTracker;
     }
 
     /// <summary>Display title placeholder. Never used as the banner
@@ -67,6 +70,13 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             // alarm on every Evaluate tick and the snooze is a no-op
             // for server-emitted alarms.
             if (ctx.IsSnoozed(n.Path)) continue;
+            // Skip our own publication echoes. AlarmPublisher (Phase B)
+            // POSTs locally-emitted alarms to the SK server so other
+            // plotters see them; the same delta loops back to us via
+            // the WS feed and lands here. Surfacing it would render
+            // the same alarm twice in the banner stack -- once from
+            // the originating client rule, once from the bridge.
+            if (_publishedTracker?.IsOwnedPath(n.Path) == true) continue;
             yield return BuildAlarmInfo(n);
         }
     }
