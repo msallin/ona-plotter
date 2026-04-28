@@ -196,6 +196,16 @@
     --hud-ink:       #E8ECF2;
     --hud-ink-dim:   rgba(232, 236, 242, 0.55);
     --hud-ink-stale: rgba(232, 236, 242, 0.40);
+    /* Hairline separator inside HUD cards (between value and extras / position).
+       Theme-aware so the line keeps a faint contrast on both white and dark
+       cards. Replaces hand-rolled rgba(255,255,255,...) borders that vanish
+       on a white card. */
+    --hud-divider:   rgba(255, 255, 255, 0.10);
+    /* Map overlay accents that need to flip with the page theme so they
+       hold contrast against pastel light tiles. Anchor watch ring is
+       the most visible -- green-500 reads fine on a dark chart but
+       washes into the cyan water on the light Mapbox-style basemap. */
+    --map-anchor-ok: #22c55e;
     --hud-pulse:     #7CC4FF;
     --hud-warn:      #F5B544;
     --hud-alarm:     #FF5A4E;
@@ -398,6 +408,15 @@
     --hud-ink:             #0f172a;
     --hud-ink-dim:         rgba(15, 23, 42, 0.55);
     --hud-ink-stale:       rgba(15, 23, 42, 0.40);
+    --hud-divider:         rgba(15, 23, 42, 0.10);
+    /* Slightly darker green for sun: green-500 (#22c55e) washes into
+       the pastel water on the light basemap; green-600 holds. */
+    --map-anchor-ok:       #16a34a;
+    /* Soft drop-shadow into the chart for the always-dark sidebar +
+       bottom action bar in light theme. Without this the dark chrome
+       reads as "didn't flip"; with it, it reads as a deliberate frame
+       floating above the bright chart. */
+    --sidebar-shadow:      4px 0 16px rgba(15, 23, 42, 0.10);
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the
@@ -441,6 +460,10 @@
         --hud-ink:             #E8ECF2;
         --hud-ink-dim:         rgba(232, 236, 242, 0.55);
         --hud-ink-stale:       rgba(232, 236, 242, 0.40);
+        --hud-divider:         rgba(255, 255, 255, 0.10);
+        --map-anchor-ok:       #22c55e;
+        /* OS-dark fallthrough on system theme: rail blends with chart, no shadow needed. */
+        --sidebar-shadow:      none;
     }
 }
 
@@ -497,6 +520,10 @@
     --hud-card-halo:       0 0 16px rgba(0, 0, 0, 0.30);
     --hud-ink:             #000000;
     --hud-ink-dim:         rgba(0, 0, 0, 0.65);
+    --hud-divider:         rgba(0, 0, 0, 0.20);
+    --map-anchor-ok:       #15803d;
+    /* High-contrast: deeper shadow for sun-glare visibility. */
+    --sidebar-shadow:      4px 0 18px rgba(0, 0, 0, 0.18);
     --hud-ink-stale:       rgba(0, 0, 0, 0.45);
 }
 
@@ -990,6 +1017,41 @@ h2 {
     color: var(--sk-text);
     background: rgba(var(--sk-accent-rgb), 0.20);
 }
+/* Nav-tab labels: Bootstrap's default uses --bs-link-color which the
+   dark theme remaps but the light theme leaves as a saturated blue,
+   making inactive tabs (Waypoints / Notes / Regions) shout while the
+   active one whispers. Force inactive tabs to muted slate; let the
+   active one pick up regular text colour and the bottom-border accent
+   carries the active state. */
+.resources-tabs .nav-link {
+    color: var(--sk-text-muted);
+}
+.resources-tabs .nav-link:hover {
+    color: var(--sk-text);
+}
+.resources-tabs .nav-link.active {
+    color: var(--sk-text);
+}
+
+/* Resources page filter input: shows above the table when the
+   active tab has more rows than fit comfortably without scrolling.
+   Re-uses the .layer-search CSS family (Map page Layers panel). */
+.resources-filter {
+    margin: 0.75rem 0 0.5rem;
+    width: 100%;
+    max-width: 320px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.9rem;
+    background: var(--sk-surface);
+    border: 1px solid var(--sk-border);
+    border-radius: 6px;
+    color: var(--sk-text);
+}
+.resources-filter:focus {
+    outline: none;
+    border-color: var(--sk-accent);
+    box-shadow: 0 0 0 2px rgba(var(--sk-accent-rgb), 0.2);
+}
 
 .resources-body {
     margin-top: 1rem;
@@ -1146,7 +1208,7 @@ article.content:has(.map-container) {
 .hud-extra {
     margin-top: 8px;
     padding-top: 6px;
-    border-top: 1px solid rgba(255,255,255,0.1);
+    border-top: 1px solid var(--hud-divider);
     display: flex;
     flex-direction: column;
     gap: 3px;
@@ -1173,7 +1235,7 @@ article.content:has(.map-container) {
     text-align: right;
 }
 .hud-extra-k {
-    color: rgba(255, 255, 255, 0.55);
+    color: var(--hud-ink-dim);
     font-size: 0.65rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -1181,7 +1243,7 @@ article.content:has(.map-container) {
     white-space: nowrap;
 }
 .hud-extra-v {
-    color: rgba(255, 255, 255, 0.95);
+    color: var(--hud-ink);
     font-weight: 500;
     white-space: nowrap;
     /* Tide / depth station names from SignalK can be arbitrarily long
@@ -1466,7 +1528,11 @@ html:fullscreen .hud-stack-br {
 
 .hud-unit {
     font-size: 0.75rem;
-    color: rgba(255,255,255,0.4);
+    /* Theme-aware via --hud-ink-stale: dimmer than label, holds AA on
+       both white and dark cards. The previous hard-coded white alpha
+       was invisible on a flipped light card -- "0.0 kn" on white
+       displayed as "0.0" with the unit suffix gone. */
+    color: var(--hud-ink-stale);
     margin-left: 3px;
 }
 
@@ -1504,7 +1570,7 @@ html:fullscreen .hud-stack-br {
     color: var(--hud-ink-dim);
     margin-top: 6px;
     padding-top: 5px;
-    border-top: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid var(--hud-divider);
     letter-spacing: 0.02em;
 }
 .night-mode .hud-position { color: rgba(255,130,130,0.4); }
@@ -1613,6 +1679,22 @@ html:fullscreen .hud-stack-br {
     border-radius: 14px;
     padding: 4px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+/* Light theme: keep the bar dark (always-dark chrome doctrine -- the
+   action bar is "frame", not "content"; matching VSCode / Linear) but
+   give it a deeper drop-shadow so it floats above the bright chart
+   instead of butting into it. The default 0.4-alpha shadow disappears
+   against white tiles. */
+.theme-light .map-controls,
+.theme-high-contrast .map-controls {
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28),
+                0 2px 4px rgba(15, 23, 42, 0.12);
+}
+@media (prefers-color-scheme: light) {
+    .theme-system .map-controls {
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28),
+                    0 2px 4px rgba(15, 23, 42, 0.12);
+    }
 }
 
 /* Icon + label button with clean hover/active states. */
@@ -3863,7 +3945,12 @@ html.night-mode-global body {
     flex: 1;
 }
 
-/* AIS name labels on map */
+/* AIS name labels on map.
+   Default = dark theme styling (white pill on a sunlit chart looks like
+   visual debris; the slate-on-dark pill blends with the dark-chrome
+   doctrine elsewhere in the app). Light + high-contrast themes get a
+   variant: white card, slate ink, soft shadow so dozens of labels read
+   as paper labels stuck on a paper chart instead of dark blobs. */
 .ais-label {
     background: rgba(15, 18, 25, 0.8) !important;
     border: none !important;
@@ -3875,6 +3962,20 @@ html.night-mode-global body {
     white-space: nowrap !important;
 }
 .ais-label::before { display: none !important; }
+.theme-light .ais-label,
+.theme-system .ais-label,
+.theme-high-contrast .ais-label {
+    background: rgba(255, 255, 255, 0.88) !important;
+    color: #1e293b !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18) !important;
+}
+@media (prefers-color-scheme: dark) {
+    .theme-system .ais-label {
+        background: rgba(15, 18, 25, 0.8) !important;
+        color: #cbd5e1 !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
+    }
+}
 
 /* Hide AIS labels at low zoom to avoid clutter */
 .leaflet-zoom-anim .ais-label { transition: opacity 0.2s; }
@@ -4677,7 +4778,7 @@ html.night-mode-global body {
     margin-left: 8px;
     font-size: 0.55em;
     font-weight: 500;
-    color: rgba(255, 255, 255, 0.65);
+    color: var(--hud-ink-dim);
     vertical-align: middle;
     font-variant-numeric: tabular-nums;
 }
@@ -4696,33 +4797,33 @@ html.night-mode-global body {
 .depth-tide-row {
     margin-top: 6px;
     padding-top: 5px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid var(--hud-divider);
     display: flex;
     align-items: baseline;
     gap: 6px;
     font-size: 0.7rem;
     font-variant-numeric: tabular-nums;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--hud-ink);
     white-space: nowrap;
 }
 .depth-tide-arrow {
     font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.55);
+    color: var(--hud-ink-dim);
     line-height: 1;
 }
 .depth-tide-label {
     font-size: 0.6rem;
     font-weight: 700;
     letter-spacing: 0.06em;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--hud-ink-dim);
     text-transform: uppercase;
 }
 .depth-tide-time {
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--hud-ink);
 }
 .depth-tide-height {
     margin-left: auto;
-    color: rgba(255, 255, 255, 0.55);
+    color: var(--hud-ink-dim);
 }
 
 /* ===== Race HUD =====
@@ -4744,20 +4845,20 @@ html.night-mode-global body {
     font-size: 0.62rem;
     font-weight: 700;
     letter-spacing: 0.06em;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--hud-ink-dim);
     text-transform: uppercase;
 }
-.race-v { color: rgba(255, 255, 255, 0.95); font-weight: 600; }
+.race-v { color: var(--hud-ink); font-weight: 600; }
 .race-perf {
     margin-left: 6px;
     font-size: 0.68rem;
-    color: rgba(255, 255, 255, 0.65);
+    color: var(--hud-ink-dim);
     font-weight: 500;
 }
 .race-opt {
     margin-top: 4px;
     padding-top: 4px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid var(--hud-divider);
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -6429,7 +6530,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     display: flex;
     justify-content: space-between;
     font-size: 9px;
-    color: rgba(255, 255, 255, 0.45);
+    color: var(--sk-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin-bottom: 2px;
@@ -6438,6 +6539,20 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .sailsteer-compass {
     transition: transform 0.3s ease-out;
 }
+
+/* Compass-ring scaffolding strokes + fills. Dedicated classes so the
+   tokens flip per theme; previously the SVG hard-coded rgba(255,255,255)
+   alphas which vanished on the white card in light theme (the helm
+   saw the lubber line + readouts but no compass ring under them). */
+.sailsteer-ring-outer { stroke: var(--sk-border); }
+.sailsteer-ring-inner { stroke: var(--sk-border); opacity: 0.35; }
+.sailsteer-tick       { stroke: var(--sk-text); opacity: 0.55; }
+.sailsteer-tick-minor { stroke: var(--sk-text); opacity: 0.18; }
+.sailsteer-cardinal       { fill: var(--sk-text); }
+.sailsteer-cardinal-minor { fill: var(--sk-text-muted); }
+.sailsteer-cardinal-north { fill: var(--sev-danger); }
+.sailsteer-boat-fill  { fill:   var(--sk-text); opacity: 0.85; }
+.sailsteer-boat-stroke { stroke: var(--sk-text); }
 
 /* Reads from token (--sk-text-muted) so night-mode + theme switches
    propagate without per-rule overrides. Hard-coded rgba(255,255,255)
@@ -6577,7 +6692,11 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .colregs-giveway { color: #fca5a5; }   /* we must keep clear */
 .colregs-standon { color: #86efac; }   /* we hold course */
 
-/* CPA / crossing-situation labels on the map */
+/* CPA / crossing-situation labels on the map.
+   Same theme-flip strategy as .ais-label: dark pill by default, white
+   pill in light + high-contrast so the label reads as paper-on-chart
+   instead of a dark blob. The danger / warn class colours stay -- they
+   carry safety meaning, theme should never change them. */
 .cpa-label {
     background: rgba(10, 12, 18, 0.88) !important;
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
@@ -6603,6 +6722,39 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .cpa-label::before { display: none !important; }
 .cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
 .cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
+.theme-light .cpa-label,
+.theme-system .cpa-label,
+.theme-high-contrast .cpa-label {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border-color: rgba(15, 23, 42, 0.22) !important;
+    color: #0f172a !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.20) !important;
+}
+.theme-light .cpa-label.cpa-danger,
+.theme-system .cpa-label.cpa-danger,
+.theme-high-contrast .cpa-label.cpa-danger {
+    /* Keep the red border (carries safety meaning); shift the text to
+       a darker red that AA-passes on white instead of the pale tint
+       that's tuned for a dark card. */
+    border-color: #b91c1c !important;
+    color: #991b1b !important;
+}
+.theme-light .cpa-label.cpa-warn,
+.theme-system .cpa-label.cpa-warn,
+.theme-high-contrast .cpa-label.cpa-warn {
+    border-color: #b45309 !important;
+    color: #92400e !important;
+}
+@media (prefers-color-scheme: dark) {
+    .theme-system .cpa-label {
+        background: rgba(10, 12, 18, 0.88) !important;
+        border-color: rgba(255, 255, 255, 0.2) !important;
+        color: #fff !important;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+    }
+    .theme-system .cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
+    .theme-system .cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
+}
 
 /* ===== Anchor Alarm HUD Panel =====
    Shares the .hud-stack-bc slot with the route card. They are

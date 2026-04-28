@@ -86,11 +86,15 @@
         <g class="sailsteer-compass" transform="rotate(@CompassRotation, 250, 250)">
 
             <circle cx="250" cy="250" r="@R" fill="none"
-                    style="stroke: var(--sk-border);" stroke-width="2" />
+                    class="sailsteer-ring-outer" stroke-width="2" />
             <circle cx="250" cy="250" r="@((int)(R - 20))" fill="none"
-                    style="stroke: rgba(255,255,255,0.05);" stroke-width="1" />
+                    class="sailsteer-ring-inner" stroke-width="1" />
 
-            @* Tick marks every 10 degrees, labels every 30 *@
+            @* Tick marks every 10 degrees, labels every 30. Tick + label
+               colours route through CSS classes (.sailsteer-tick* /
+               .sailsteer-cardinal*) so they flip per theme; hard-coded
+               rgba(255,255,255) values used to vanish on the light-theme
+               white background. *@
             @for (int deg = 0; deg < 360; deg += 10)
             {
                 double rad = deg * Math.PI / 180.0;
@@ -101,21 +105,22 @@
                 double lx2 = Cx + Math.Sin(rad) * R;
                 double ly2 = Cy - Math.Cos(rad) * R;
                 <line x1="@F(lx1)" y1="@F(ly1)" x2="@F(lx2)" y2="@F(ly2)"
-                      stroke="@(major ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.2)")"
+                      class="@(major ? "sailsteer-tick" : "sailsteer-tick-minor")"
                       stroke-width="@(major ? "1.5" : "1")" />
                 @if (major)
                 {
                     double tx = Cx + Math.Sin(rad) * (R + 16);
                     double ty = Cy - Math.Cos(rad) * (R + 16);
                     string label = deg switch { 0 => "N", 90 => "E", 180 => "S", 270 => "W", _ => deg.ToString() };
-                    string fill = deg switch {
-                        0 => "var(--sev-danger)",
-                        90 or 180 or 270 => "rgba(255,255,255,0.7)",
-                        _ => "rgba(255,255,255,0.4)"
-                    };
+                    // North stays red (lubber-line companion / heading
+                    // reference); cardinals + diagonals route through
+                    // theme tokens. fill="" lets the class take over.
+                    string cls = deg == 0
+                        ? "sailsteer-cardinal-north"
+                        : (deg % 90 == 0 ? "sailsteer-cardinal" : "sailsteer-cardinal-minor");
                     int fs = deg % 90 == 0 ? 13 : 10;
                     string fw = deg % 90 == 0 ? "700" : "400";
-                    @SvgTxt(tx, ty, label, fill, fs, fw)
+                    @SvgTxtCls(tx, ty, label, cls, fs, fw)
                 }
             }
 
@@ -203,9 +208,14 @@
 
         </g>
 
-        @* === Boat icon at center (fixed, always points up) === *@
+        @* === Boat icon at center (fixed, always points up) ===
+           Fill / stroke routed through CSS classes so the icon flips
+           with theme. The hardcoded white fill rendered as an
+           invisible boat on the white-card light theme. *@
         <g transform="translate(250, 250)">
-            <polygon points="0,-20 6,14 0,8 -6,14" fill="rgba(255,255,255,0.8)" stroke="#fff" stroke-width="0.8" />
+            <polygon points="0,-20 6,14 0,8 -6,14"
+                     class="sailsteer-boat-fill sailsteer-boat-stroke"
+                     stroke-width="0.8" />
         </g>
 
     </svg>
@@ -328,6 +338,13 @@
 
     private static MarkupString SvgTxt(double x, double y, string content, string fill, int fontSize, string fontWeight) =>
         new($"<text x=\"{x:F1}\" y=\"{y:F1}\" style=\"fill: {fill};\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
+            $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
+
+    // Class-based variant used by the rotating compass cardinals so
+    // the fill colour follows the theme (--sk-text / --sk-text-muted /
+    // --sev-danger for North) instead of being baked into the markup.
+    private static MarkupString SvgTxtCls(double x, double y, string content, string cls, int fontSize, string fontWeight) =>
+        new($"<text x=\"{x:F1}\" y=\"{y:F1}\" class=\"{cls}\" font-size=\"{fontSize}\" font-weight=\"{fontWeight}\" " +
             $"text-anchor=\"middle\" dominant-baseline=\"central\">{Esc(content)}</text>");
 
     private static string Esc(string s) => System.Net.WebUtility.HtmlEncode(s);
