@@ -25,8 +25,52 @@ public class AlarmPublisherTests
     private sealed class StubAlarmManager : IAlarmManager
     {
         private List<AlarmInfo> _active = [];
+        // Optional rule pairing for AllActiveEntries. Defaults to a
+        // title-based mapping that mirrors the production rules'
+        // GetPublishPath overrides so existing publisher tests assert
+        // the same paths they did pre-ARCH-002. Tests that need
+        // null-path or different paths can override via RuleFor.
+        private Func<AlarmInfo, IAlarmRule> _ruleFor = DefaultRuleFor;
+
+        private static IAlarmRule DefaultRuleFor(AlarmInfo a)
+        {
+            // Mirror the production rules' published paths. Mapping
+            // matches each rule's IAlarmRule.GetPublishPath override
+            // so the publisher tests assert the same paths the live
+            // rules emit.
+            string? path = a.Title switch
+            {
+                "SHALLOW" => "notifications.environment.depth.belowSurface",
+                "CPA" when !string.IsNullOrEmpty(a.TargetKey)
+                    => $"notifications.security.collision.{Sanitise(a.TargetKey!)}",
+                "WIND SHIFT" => "notifications.environment.wind.shift",
+                "ANCHOR DRAG" => "notifications.navigation.anchor.dragging",
+                "ANCHOR TIDE" => "notifications.navigation.anchor.tide",
+                "DEADMAN" => "notifications.helm.deadman",
+                _ => null,
+            };
+            return new PassThroughRule(path);
+
+            static string Sanitise(string targetKey)
+            {
+                var suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
+                    ? targetKey["vessels.".Length..] : targetKey;
+                var sb = new System.Text.StringBuilder(suffix.Length);
+                foreach (var c in suffix)
+                    sb.Append(char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-' ? c : '_');
+                return sb.ToString();
+            }
+        }
+
         public AlarmInfo? ActiveAlarm => _active.Count > 0 ? _active[0] : null;
         public IReadOnlyList<AlarmInfo> ActiveAlarms => _active;
+        // Stub uses the same list for both: pile-up beyond
+        // MaxActiveAlarms is exercised by the OPS-003 regression test
+        // which inserts 4+ alarms and asserts the publisher reads from
+        // the uncapped collection.
+        public IReadOnlyList<AlarmInfo> AllActiveAlarms => _active;
+        public IReadOnlyList<(AlarmInfo Info, IAlarmRule Rule)> AllActiveEntries =>
+            _active.Select(a => (a, _ruleFor(a))).ToList();
         public int HiddenAlarmsCount => 0;
         public IReadOnlyList<SnoozedTarget> SnoozedTargets => [];
         public IReadOnlyList<DismissedAlarm> DismissedHistory => [];
@@ -34,6 +78,13 @@ public class AlarmPublisherTests
         public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now) => [];
         public event Action<AlarmInfo?>? OnAlarmChanged;
         public event Action? OnAlarmsChanged;
+
+        /// <summary>Override the rule pairing -- e.g. to return null
+        /// from GetPublishPath for some alarms.</summary>
+        public void RuleFor(Func<AlarmInfo, IAlarmRule> selector)
+        {
+            _ruleFor = selector;
+        }
 
         public void Set(params AlarmInfo[] alarms)
         {
@@ -54,6 +105,20 @@ public class AlarmPublisherTests
         public Task SnoozeAsync(AlarmInfo a) => Task.CompletedTask;
         public Task UnsnoozeAsync(string targetKey) => Task.CompletedTask;
         public Task InitializeAsync() => Task.CompletedTask;
+    }
+
+    /// <summary>Stub rule used by StubAlarmManager.AllActiveEntries.
+    /// Has a configurable PublishPath so tests can drive the publisher
+    /// down both branches of the GetPublishPath check.</summary>
+    private sealed class PassThroughRule : IAlarmRule
+    {
+        private readonly string? _publishPath;
+        public PassThroughRule(string? publishPath = null) { _publishPath = publishPath; }
+        public string Title => "_STUB_";
+        public int Priority => 999;
+        public bool AutoClear => true;
+        public AlarmInfo? Check(AlarmEvaluationContext ctx) => null;
+        public string? GetPublishPath(AlarmInfo alarm) => _publishPath;
     }
 
     private sealed class FakeApi : INotificationsApi
@@ -86,114 +151,37 @@ public class AlarmPublisherTests
         }
     }
 
+    /// <summary>Stub acknowledger used to mark an AlarmInfo as
+    /// "originated from a remote source" (the publisher checks
+    /// Acknowledger != null to skip publishing). Counts invocations
+    /// so tests can assert no-op when no dismiss happens.</summary>
+    private sealed class StubAcknowledger : IAlarmAcknowledger
+    {
+        public StubAcknowledger(bool canAcknowledge = true)
+        {
+            CanAcknowledge = canAcknowledge;
+        }
+        public bool CanAcknowledge { get; }
+        public int AcknowledgeCount { get; private set; }
+        public Task AcknowledgeAsync()
+        {
+            AcknowledgeCount++;
+            return Task.CompletedTask;
+        }
+    }
+
     // -----------------------------------------------------------------
     // Title -> Path mapping. Pin every supported title so a refactor
     // that drops a case fails the build instead of silently making the
     // alarm un-publishable.
     // -----------------------------------------------------------------
 
-    [Test]
-    public async Task TryMapToPath_Shallow_BelowSurface()
-    {
-        var info = new AlarmInfo("SHALLOW", "Depth 1.8m < 3.0m", AlarmSeverity.Danger);
-        AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(path).IsEqualTo("notifications.environment.depth.belowSurface");
-    }
-
-    [Test]
-    public async Task TryMapToPath_Cpa_PerTargetSuffix()
-    {
-        // SK MMSI URN format: vessels.urn:mrn:imo:mmsi:261006533
-        // Path must be stable per target; sanitise ':' -> '_' so the
-        // result tokenises as a clean SK path. Server-derived id will
-        // overlay a re-raise for the same target.
-        var info = new AlarmInfo("CPA", "MV Aurora: CPA 0.20nm in 4min",
-            AlarmSeverity.Danger, TargetKey: "vessels.urn:mrn:imo:mmsi:261006533");
-        AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(path).IsEqualTo(
-            "notifications.security.collision.urn_mrn_imo_mmsi_261006533");
-    }
-
-    [Test]
-    public async Task TryMapToPath_Cpa_NoTargetKey_Skipped()
-    {
-        // Defensive: a CPA without a TargetKey shouldn't synthesize a
-        // bogus shared path. SanitisePerTargetPath returns empty,
-        // TryMapToPath returns false -- the publisher will skip.
-        var info = new AlarmInfo("CPA", "missing target",
-            AlarmSeverity.Danger, TargetKey: null);
-        var ok = AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(ok).IsFalse();
-        await Assert.That(path).IsEqualTo(string.Empty);
-    }
-
-    [Test]
-    public async Task TryMapToPath_AnchorDrag_DraggingLeaf()
-    {
-        var info = new AlarmInfo("ANCHOR DRAG", "Dragging: 50m / 30m radius",
-            AlarmSeverity.Danger);
-        AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(path).IsEqualTo("notifications.navigation.anchor.dragging");
-    }
-
-    [Test]
-    public async Task TryMapToPath_AnchorTide_TideLeaf()
-    {
-        var info = new AlarmInfo("ANCHOR TIDE", "Keel touches bottom at LW in 2h",
-            AlarmSeverity.Warn);
-        AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(path).IsEqualTo("notifications.navigation.anchor.tide");
-    }
-
-    [Test]
-    public async Task TryMapToPath_WindShift()
-    {
-        var info = new AlarmInfo("WIND SHIFT", "TWD shifted 30 deg in 5 min",
-            AlarmSeverity.Warn);
-        AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(path).IsEqualTo("notifications.environment.wind.shift");
-    }
-
-    [Test]
-    public async Task TryMapToPath_Deadman()
-    {
-        var info = new AlarmInfo("DEADMAN", "No interaction for 12 min",
-            AlarmSeverity.Danger);
-        AlarmPublisher.TryMapToPath(info, out var path);
-        await Assert.That(path).IsEqualTo("notifications.helm.deadman");
-    }
-
-    [Test]
-    public async Task TryMapToPath_Sart_NotPublished()
-    {
-        // Server-side: AIS feed produces SART/MOB/EPIRB notifications
-        // directly. Republishing would clash with the server's own
-        // path. Skip.
-        var info = new AlarmInfo("SART", "Beacon", AlarmSeverity.Danger);
-        var ok = AlarmPublisher.TryMapToPath(info, out _);
-        await Assert.That(ok).IsFalse();
-    }
-
-    [Test]
-    public async Task TryMapToPath_Approach_NotPublished()
-    {
-        // signalk-server's course-provider plugin already publishes
-        // notifications.navigation.course.* . Republishing would race
-        // its own deltas.
-        var info = new AlarmInfo("APPROACH", "100m to WP", AlarmSeverity.Warn);
-        var ok = AlarmPublisher.TryMapToPath(info, out _);
-        await Assert.That(ok).IsFalse();
-    }
-
-    [Test]
-    public async Task TryMapToPath_UnknownTitle_NotPublished()
-    {
-        // New rule added without registering a path mapping: skip
-        // rather than crash. Add the case here when the rule arrives.
-        var info = new AlarmInfo("FUTURE_RULE", "msg", AlarmSeverity.Warn);
-        var ok = AlarmPublisher.TryMapToPath(info, out _);
-        await Assert.That(ok).IsFalse();
-    }
+    // Path-mapping was previously a centralised switch on
+    // AlarmPublisher.TryMapToPath. After ARCH-002 each rule owns its
+    // own GetPublishPath; the per-rule unit coverage moved to
+    // AlarmRulePublishPathTests.cs. These tests stay focused on the
+    // publisher's diff/raise/clear behaviour given a rule that returns
+    // some path.
 
     // -----------------------------------------------------------------
     // Diff-based reaction to OnAlarmsChanged.
@@ -267,22 +255,25 @@ public class AlarmPublisherTests
     [Test]
     public async Task ServerEmittedAlarm_NotRepublished()
     {
-        // ServerNotificationsAlarmRule emits AlarmInfo with
-        // NotificationId set. Republishing would loop -- we'd POST
+        // ServerNotificationsAlarmRule emits AlarmInfo with an
+        // Acknowledger set. Republishing would loop -- we'd POST
         // /notifications, server emits delta, our store applies,
         // bridge rule emits, we'd POST again. The publisher must
         // recognise these as "already from the server" via the
-        // NotificationId and skip.
+        // presence of the Acknowledger handle and skip.
         var mgr = new StubAlarmManager();
         var api = new FakeApi();
         var tracker = new PublishedAlarmTracker();
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
+        // Synthetic acknowledger marks the alarm as server-sourced;
+        // the actual ack call is irrelevant here -- we're testing
+        // the publisher's skip logic.
+        var serverAck = new StubAcknowledger(canAcknowledge: true);
         var serverAlarm = new AlarmInfo("ANCHOR", "dragging",
             AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor.position",
-            NotificationId: "server-uuid-1",
-            CanAcknowledge: true);
+            Acknowledger: serverAck);
         mgr.Set(serverAlarm);
         await Task.Yield();
 

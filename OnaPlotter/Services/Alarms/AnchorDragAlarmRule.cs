@@ -35,6 +35,13 @@ public sealed class AnchorDragAlarmRule : IAlarmRule
 
     public bool AutoClear => true;
 
+    /// <summary>Cross-plotter publish path. Receivers derive
+    /// Title="ANCHOR" from the <c>navigation.anchor</c> prefix
+    /// mapping; the <c>.dragging</c> leaf distinguishes from sibling
+    /// anchor.tide so the two can clear independently.</summary>
+    public string? GetPublishPath(AlarmInfo alarm) =>
+        "notifications.navigation.anchor.dragging";
+
     /// <summary>Dead-band in metres. The alarm trips when currentRadius
     /// &gt; maxRadius + this, and clears when currentRadius &lt;
     /// maxRadius - this. 2 m is wider than typical GPS jitter on a

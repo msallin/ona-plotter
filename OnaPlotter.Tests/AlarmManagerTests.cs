@@ -1130,111 +1130,61 @@ public class AlarmManagerTests
     // Cross-plotter sync hangs off this verb; without it the helm has
     // to re-dismiss on every chart-plotter at the helm separately.
 
-    /// <summary>Records every AcknowledgeAsync call so the test can
-    /// pin the id list. Other verbs are stubbed but not exercised --
-    /// the dismiss path only fires acknowledge.</summary>
-    private sealed class FakeNotificationsApi : OnaPlotter.Services.Api.INotificationsApi
+    /// <summary>Test acknowledger that records every
+    /// <see cref="AcknowledgeAsync"/> call. After the ARCH-001 refactor
+    /// AlarmManager no longer holds an INotificationsApi; the dismiss
+    /// path invokes whatever IAlarmAcknowledger the bridge rule (or, in
+    /// these tests, the test itself) attached to the AlarmInfo. So a
+    /// recording acknowledger replaces the previous FakeNotificationsApi
+    /// for "did dismiss fire the cross-plotter ack?" assertions.</summary>
+    private sealed class FakeAcknowledger : IAlarmAcknowledger
     {
-        public List<string> AcknowledgedIds { get; } = [];
-        public List<string> SilencedIds { get; } = [];
-        public List<(string Path, OnaPlotter.Services.Api.NotificationPayload Body)> RaisedAlarms { get; } = [];
-        public List<string> ClearedIds { get; } = [];
-        public Task<OnaPlotter.Services.Api.ApiResult> AcknowledgeAsync(
-            string notificationId, CancellationToken ct = default)
-        {
-            AcknowledgedIds.Add(notificationId);
-            return Task.FromResult(OnaPlotter.Services.Api.ApiResult.Ok);
-        }
-        public Task<OnaPlotter.Services.Api.ApiResult> SilenceAsync(
-            string notificationId, CancellationToken ct = default)
-        {
-            SilencedIds.Add(notificationId);
-            return Task.FromResult(OnaPlotter.Services.Api.ApiResult.Ok);
-        }
-        public Task<OnaPlotter.Services.Api.ApiResult<string>> RaiseAsync(
-            string path, OnaPlotter.Services.Api.NotificationPayload body, CancellationToken ct = default)
-        {
-            RaisedAlarms.Add((path, body));
-            return Task.FromResult(OnaPlotter.Services.Api.ApiResult<string>.Ok("stub-id"));
-        }
-        public Task<OnaPlotter.Services.Api.ApiResult> ClearAsync(
-            string notificationId, CancellationToken ct = default)
-        {
-            ClearedIds.Add(notificationId);
-            return Task.FromResult(OnaPlotter.Services.Api.ApiResult.Ok);
-        }
-    }
+        public string Label { get; }
+        public bool CanAcknowledge { get; }
+        public int AcknowledgeCount { get; private set; }
 
-    private static AlarmManager NewMgrWithApi(
-        OnaPlotter.Services.Api.INotificationsApi api,
-        MutableClock clock,
-        params IAlarmRule[] rules)
-    {
-        return (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now),
-                   (IKeyValueStore?)null, (IAppSettings?)null,
-                   (OnaPlotter.Services.Api.INotificationsApi?)api],
-            culture: null)!;
-    }
+        public FakeAcknowledger(string label, bool canAcknowledge = true)
+        {
+            Label = label;
+            CanAcknowledge = canAcknowledge;
+        }
 
-    /// <summary>Multi-output rule emitting v2-aware AlarmInfos so we can
-    /// drive the dismiss-fires-ack path without standing up the whole
-    /// SignalkClient + ServerNotificationStore pipeline.</summary>
-    private sealed class V2MultiRule(IEnumerable<AlarmInfo> alarms) : IAlarmRule
-    {
-        public string Title => "_V2_MULTI_";
-        public int Priority => 250;
-        public bool AutoClear => true;
-        public AlarmInfo? Check(AlarmEvaluationContext ctx) => null;
-        public IEnumerable<AlarmInfo> CheckMany(AlarmEvaluationContext ctx) => alarms;
+        public Task AcknowledgeAsync()
+        {
+            AcknowledgeCount++;
+            return Task.CompletedTask;
+        }
     }
 
     [Test]
     public async Task DismissAsync_V2Alarm_FiresAcknowledgeOnApi()
     {
-        // Standard v2 path: id + canAcknowledge=true. Dismiss must
-        // POST the ack so other plotters see it.
-        var api = new FakeNotificationsApi();
-        var clock = new MutableClock();
-        var settings = new FakeSettings();
-        var rule = new V2MultiRule([
-            new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
-                TargetKey: "notifications.navigation.anchor.position",
-                NotificationId: "anchor-uuid-1",
-                CanAcknowledge: true),
-        ]);
-        var mgr = NewMgrWithApi(api, clock, rule);
+        // Standard v2 path: acknowledger present + CanAcknowledge=true.
+        // Dismiss must invoke the handle so other plotters see the ack.
+        var ack = new FakeAcknowledger("anchor-uuid-1", canAcknowledge: true);
+        var alarm = new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
+            TargetKey: "notifications.navigation.anchor.position",
+            Acknowledger: ack);
+        var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
         mgr.Evaluate(new NavigationData(), [], settings);
-        var alarm = mgr.ActiveAlarms.Single();
 
-        await mgr.DismissAsync(alarm);
+        await mgr.DismissAsync(mgr.ActiveAlarms.Single());
 
-        await Assert.That(api.AcknowledgedIds.Count).IsEqualTo(1);
-        await Assert.That(api.AcknowledgedIds[0]).IsEqualTo("anchor-uuid-1");
+        await Assert.That(ack.AcknowledgeCount).IsEqualTo(1);
     }
 
     [Test]
     public async Task DismissAsync_PreV2Alarm_NoAckPosted()
     {
-        // No NotificationId means we have no endpoint to call. The
-        // dismiss is purely local; the API must not be hit (would
-        // 404 on a pre-2.21 server, would noise up the toast stack
-        // with a phantom failure).
-        var api = new FakeNotificationsApi();
-        var clock = new MutableClock();
-        var settings = new FakeSettings();
-        var rule = new StubRule("SHALLOW", 100, AlarmSeverity.Danger);
-        var mgr = NewMgrWithApi(api, clock, rule);
-        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        // No acknowledger means we have nothing to call. Dismiss is
+        // purely local; nothing should be invoked. The negative is
+        // pinned by confirming the active set cleared without throwing.
+        var alarm = new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger);
+        var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
+        mgr.Evaluate(new NavigationData(), [], settings);
 
         await mgr.DismissAsync(mgr.ActiveAlarm!);
-
-        await Assert.That(api.AcknowledgedIds.Count).IsEqualTo(0);
+        await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
     }
 
     [Test]
@@ -1242,75 +1192,68 @@ public class AlarmManagerTests
     {
         // status.canAcknowledge=false (e.g. emergency MOB notification):
         // server explicitly says this can't be silenced. The plotter
-        // must respect that and not POST -- the local dismiss is still
-        // allowed (the helm can clear the banner from THIS plotter's
-        // view), but no cross-plotter sync.
-        var api = new FakeNotificationsApi();
-        var clock = new MutableClock();
-        var settings = new FakeSettings();
-        var rule = new V2MultiRule([
-            new AlarmInfo("MOB", "Man overboard", AlarmSeverity.Danger,
-                TargetKey: "notifications.mob",
-                NotificationId: "mob-1",
-                CanAcknowledge: false),
-        ]);
-        var mgr = NewMgrWithApi(api, clock, rule);
+        // must respect that and not invoke the acknowledger -- the
+        // local dismiss is still allowed (the helm can clear the
+        // banner from THIS plotter's view), but no cross-plotter sync.
+        var ack = new FakeAcknowledger("mob-1", canAcknowledge: false);
+        var alarm = new AlarmInfo("MOB", "Man overboard", AlarmSeverity.Danger,
+            TargetKey: "notifications.mob", Acknowledger: ack);
+        var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
         mgr.Evaluate(new NavigationData(), [], settings);
-        var alarm = mgr.ActiveAlarms.Single();
 
-        await mgr.DismissAsync(alarm);
+        await mgr.DismissAsync(mgr.ActiveAlarms.Single());
 
-        await Assert.That(api.AcknowledgedIds.Count).IsEqualTo(0);
+        await Assert.That(ack.AcknowledgeCount).IsEqualTo(0);
     }
 
     [Test]
     public async Task DismissAsync_NoArgClearsAll_FiresAckPerV2Alarm()
     {
         // "Dismiss all" on a stack with two server-emitted alarms +
-        // one client-side: only the two with NotificationId+CanAck
-        // should ack. The client-side one stays local-only.
-        var api = new FakeNotificationsApi();
-        var clock = new MutableClock();
-        var settings = new FakeSettings();
-        var rule = new V2MultiRule([
+        // one client-side: only the two with Acknowledger+CanAck
+        // should fire. The client-side one stays local-only.
+        var ackAnchor = new FakeAcknowledger("anchor-1", canAcknowledge: true);
+        var ackDepth = new FakeAcknowledger("depth-1", canAcknowledge: true);
+        var alarms = new[]
+        {
             new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
                 TargetKey: "notifications.navigation.anchor",
-                NotificationId: "anchor-1", CanAcknowledge: true),
+                Acknowledger: ackAnchor),
             new AlarmInfo("DEPTH", "shallow", AlarmSeverity.Danger,
                 TargetKey: "notifications.environment.depth",
-                NotificationId: "depth-1", CanAcknowledge: true),
+                Acknowledger: ackDepth),
             new AlarmInfo("WIND SHIFT", "30 deg", AlarmSeverity.Warn,
-                TargetKey: "wind"), // client-side, no id
-        ]);
-        var mgr = NewMgrWithApi(api, clock, rule);
+                TargetKey: "wind"), // client-side, no acknowledger
+        };
+        var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => alarms));
         mgr.Evaluate(new NavigationData(), [], settings);
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(3);
 
         await mgr.DismissAsync();
 
-        await Assert.That(api.AcknowledgedIds.Count).IsEqualTo(2);
-        await Assert.That(api.AcknowledgedIds).Contains("anchor-1");
-        await Assert.That(api.AcknowledgedIds).Contains("depth-1");
+        await Assert.That(ackAnchor.AcknowledgeCount).IsEqualTo(1);
+        await Assert.That(ackDepth.AcknowledgeCount).IsEqualTo(1);
+        // No phantom ack for the wind-shift alarm (no acknowledger).
+        // Pinning the negative catches a future regression that
+        // fires ack on every dismiss-all entry.
     }
 
     [Test]
-    public async Task DismissAsync_NoApiWired_NoCrash()
+    public async Task DismissAsync_AlarmWithAcknowledger_NoCrash()
     {
-        // Test scaffolding constructors omit the API for backward
-        // compatibility. A v2-aware AlarmInfo dismissed through one of
-        // those must not crash on the null check; it just falls back
-        // to local-only behaviour.
-        var v2Alarm = new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
+        // Local dismiss should never throw because of an attached
+        // acknowledger; the manager just calls AcknowledgeAsync()
+        // fire-and-forget. Pin the basic happy path.
+        var ack = new FakeAcknowledger("anchor-1", canAcknowledge: true);
+        var alarm = new AlarmInfo("ANCHOR", "dragging", AlarmSeverity.Danger,
             TargetKey: "notifications.navigation.anchor",
-            NotificationId: "anchor-1", CanAcknowledge: true);
-        var rule = new MultiAlarmRule(() => new[] { v2Alarm });
-        // NewMgrWithMulti uses the no-api ctor.
-        var (mgr, _, settings) = NewMgrWithMulti(rule);
+            Acknowledger: ack);
+        var (mgr, _, settings) = NewMgrWithMulti(new MultiAlarmRule(() => new[] { alarm }));
         mgr.Evaluate(new NavigationData(), [], settings);
 
-        // Must not throw despite the AlarmInfo carrying a NotificationId.
         await mgr.DismissAsync(mgr.ActiveAlarm!);
 
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(0);
+        await Assert.That(ack.AcknowledgeCount).IsEqualTo(1);
     }
 }

@@ -1,12 +1,39 @@
+using System.Net;
 using OnaPlotter.Models;
 using OnaPlotter.Services;
 using OnaPlotter.Services.Alarms;
+using OnaPlotter.Services.Api;
 using OnaPlotter.Services.ServerNotifications;
 
 namespace OnaPlotter.Tests;
 
 public class ServerNotificationsAlarmRuleTests
 {
+    /// <summary>Convenience: build a no-op INotificationsApi for tests
+    /// that only care about the acknowledger's CanAcknowledge / Id
+    /// projection from a ServerNotification, not the actual ack call.
+    /// Returns success on every verb so the bridge rule treats it as
+    /// "yes, I have somewhere to dispatch acks".</summary>
+    private static INotificationsApi NoopApi()
+    {
+        var http = new HttpClient(new NoopHandler());
+        return new NotificationsApi(http, new TestBaseUrl());
+    }
+
+    private sealed class NoopHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent("\"noop-id\"") });
+    }
+
+    private sealed class TestBaseUrl : ISignalKBaseUrl
+    {
+        public string BaseUrl => "http://test.local";
+        public Uri StreamUri(string subscribe = "none") => new("ws://test.local");
+        public string Combine(string path) => BaseUrl + path;
+    }
     [Test]
     public async Task DeriveTitleAndDefault_Depth()
     {
@@ -100,7 +127,7 @@ public class ServerNotificationsAlarmRuleTests
             "alarm",
             "shallow",
             AlarmSeverity.Danger);
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
 
         await Assert.That(info.Title).IsEqualTo("DEPTH");
         await Assert.That(info.Message).IsEqualTo("shallow");
@@ -120,7 +147,7 @@ public class ServerNotificationsAlarmRuleTests
             "alarm",
             null,
             AlarmSeverity.Danger);
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
 
         await Assert.That(info.Message).IsEqualTo("environment.depth.belowTransducer");
     }
@@ -197,15 +224,15 @@ public class ServerNotificationsAlarmRuleTests
         await Assert.That(rule.AutoClear).IsTrue();
     }
 
-    // --- v2 NotificationId + CanAcknowledge propagation ---------------
+    // --- v2 acknowledger propagation ---------------------------------
 
     [Test]
-    public async Task BuildAlarmInfo_V2_PropagatesIdAndCanAcknowledge()
+    public async Task BuildAlarmInfo_V2_AttachesAcknowledgerWithIdAndCanAcknowledge()
     {
-        // Server >= 2.21 path: id + status.canAcknowledge=true. Both
-        // must reach AlarmInfo so AlarmManager.DismissAsync can fire
-        // INotificationsApi.AcknowledgeAsync(id) and the banner can
-        // display the Acknowledge button.
+        // Server >= 2.21 path: id + status.canAcknowledge=true. The
+        // bridge rule must construct a SignalKNotificationAcknowledger
+        // pointing at that id so AlarmManager.DismissAsync can invoke
+        // it (and the banner can display the Acknowledge button).
         var status = new NotificationStatus(
             Silenced: false, Acknowledged: false,
             CanSilence: true, CanAcknowledge: true, CanClear: true);
@@ -214,26 +241,28 @@ public class ServerNotificationsAlarmRuleTests
             "alarm", "Dragging anchor", AlarmSeverity.Danger,
             Id: "anchor-uuid-1", Status: status);
 
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, NoopApi());
+        var ack = info.Acknowledger as SignalKNotificationAcknowledger;
 
-        await Assert.That(info.NotificationId).IsEqualTo("anchor-uuid-1");
-        await Assert.That(info.CanAcknowledge).IsTrue();
+        await Assert.That(ack).IsNotNull();
+        await Assert.That(ack!.Id).IsEqualTo("anchor-uuid-1");
+        await Assert.That(ack.CanAcknowledge).IsTrue();
     }
 
     [Test]
-    public async Task BuildAlarmInfo_PreV2_LeavesIdAndCanAcknowledgeUnset()
+    public async Task BuildAlarmInfo_PreV2_AcknowledgerStaysNull()
     {
-        // No id, no status: pre-v2 server or non-v2-aware plugin.
-        // CanAcknowledge defaults to false because we have no endpoint
-        // to call; the dismiss path falls back to local-only.
+        // No id, no status: pre-v2 server or non-v2-aware plugin. With
+        // no id to address there's nothing to ack remotely; the
+        // acknowledger field stays null and the dismiss path falls
+        // back to local-only.
         var n = new ServerNotification(
             "notifications.environment.depth.belowTransducer",
             "alarm", "shallow", AlarmSeverity.Danger);
 
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, NoopApi());
 
-        await Assert.That(info.NotificationId).IsNull();
-        await Assert.That(info.CanAcknowledge).IsFalse();
+        await Assert.That(info.Acknowledger).IsNull();
     }
 
     [Test]
@@ -241,9 +270,10 @@ public class ServerNotificationsAlarmRuleTests
     {
         // Spec: emergency-state notifications cannot be acknowledged
         // (silenced) by the helm. Server signals this via
-        // status.canAcknowledge=false; the bridge rule must respect it
-        // so the banner doesn't expose an Acknowledge button that would
-        // 403 anyway.
+        // status.canAcknowledge=false; the bridge rule attaches an
+        // acknowledger that mirrors that flag so the banner can hide
+        // the Acknowledge button (the dismiss path also short-circuits
+        // when CanAcknowledge=false).
         var status = new NotificationStatus(
             Silenced: false, Acknowledged: false,
             CanSilence: false, CanAcknowledge: false, CanClear: false);
@@ -252,10 +282,33 @@ public class ServerNotificationsAlarmRuleTests
             AlarmSeverity.Danger,
             Id: "mob-1", Status: status);
 
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, NoopApi());
+        var ack = info.Acknowledger as SignalKNotificationAcknowledger;
 
-        await Assert.That(info.NotificationId).IsEqualTo("mob-1");
-        await Assert.That(info.CanAcknowledge).IsFalse();
+        await Assert.That(ack).IsNotNull();
+        await Assert.That(ack!.Id).IsEqualTo("mob-1");
+        await Assert.That(ack.CanAcknowledge).IsFalse();
+    }
+
+    [Test]
+    public async Task BuildAlarmInfo_NoApiWired_AcknowledgerStaysNull()
+    {
+        // Production wires the API via DI; legacy test ctors don't.
+        // When api is null the bridge rule cannot build the
+        // acknowledger (no endpoint to dispatch to) so the field
+        // stays null. Pin this so the dismiss path's null-guard
+        // remains the documented contract.
+        var status = new NotificationStatus(
+            Silenced: false, Acknowledged: false,
+            CanSilence: true, CanAcknowledge: true, CanClear: true);
+        var n = new ServerNotification(
+            "notifications.navigation.anchor.position",
+            "alarm", "Dragging anchor", AlarmSeverity.Danger,
+            Id: "anchor-uuid-1", Status: status);
+
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
+
+        await Assert.That(info.Acknowledger).IsNull();
     }
 
     [Test]
@@ -273,7 +326,9 @@ public class ServerNotificationsAlarmRuleTests
             "warn", "30 deg");
         var owned = new HashSet<string> { "notifications.environment.depth.belowSurface" };
         var tracker = new StubPublishedAlarmTracker(owned);
-        var rule = new ServerNotificationsAlarmRule(store, tracker);
+        // api=null -> bridge rule won't build acknowledgers but
+        // the tracker-based skip still runs.
+        var rule = new ServerNotificationsAlarmRule(store, api: null, publishedTracker: tracker);
 
         var hits = rule.CheckMany(MakeContext()).ToArray();
 
@@ -316,7 +371,7 @@ public class ServerNotificationsAlarmRuleTests
     }
 
     [Test]
-    public async Task BuildAlarmInfo_IdWithoutStatus_CanAcknowledgeFalse()
+    public async Task BuildAlarmInfo_IdWithoutStatus_AcknowledgerCanAckFalse()
     {
         // Defensive: a malformed delta with id but no status block
         // should not enable the Acknowledge button. Without the status
@@ -327,10 +382,12 @@ public class ServerNotificationsAlarmRuleTests
             "notifications.foo", "alarm", "msg", AlarmSeverity.Warn,
             Id: "id-1", Status: null);
 
-        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n);
+        var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, NoopApi());
+        var ack = info.Acknowledger as SignalKNotificationAcknowledger;
 
-        await Assert.That(info.NotificationId).IsEqualTo("id-1");
-        await Assert.That(info.CanAcknowledge).IsFalse();
+        await Assert.That(ack).IsNotNull();
+        await Assert.That(ack!.Id).IsEqualTo("id-1");
+        await Assert.That(ack.CanAcknowledge).IsFalse();
     }
 
     private static AlarmEvaluationContext MakeContext()

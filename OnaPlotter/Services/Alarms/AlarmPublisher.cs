@@ -14,7 +14,7 @@ namespace OnaPlotter.Services.Alarms;
 /// way.
 /// <para>
 /// Wired by subscribing to <see cref="IAlarmManager.OnAlarmsChanged"/>.
-/// On each event we diff the live <see cref="IAlarmManager.ActiveAlarms"/>
+/// On each event we diff the live <see cref="IAlarmManager.AllActiveAlarms"/>
 /// against our own <see cref="_raised"/> map of "we raised this id":
 /// </para>
 /// <list type="bullet">
@@ -24,34 +24,71 @@ namespace OnaPlotter.Services.Alarms;
 /// server side: a re-raise overlays).</item>
 /// </list>
 /// <para>
+/// The publisher reads <see cref="IAlarmManager.AllActiveAlarms"/>
+/// (uncapped) rather than <see cref="IAlarmManager.ActiveAlarms"/>
+/// (capped at <c>MaxActiveAlarms</c> for the banner). The cap is a
+/// UI affordance to keep the viewport readable; cross-plotter sync
+/// must NOT silently drop the 4th simultaneous alarm just because
+/// the local banner can't show it.
+/// </para>
+/// <para>
 /// Fail-soft: every API call is fire-and-forget, with failure
 /// removing the path from <see cref="PublishedAlarmTracker"/> so a
 /// retry can fire on the next OnAlarmsChanged event. A flaky link
 /// to the server doesn't break the local banner -- it just delays
-/// cross-plotter sync until the link recovers.
+/// cross-plotter sync until the link recovers. Failures route
+/// through <see cref="ClientErrorRelay"/> so they surface in the
+/// SignalK server log for SSH-from-helm debugging at 3 am.
 /// </para>
 /// <para>
-/// Server-emitted alarms (those carrying a non-null
-/// <see cref="AlarmInfo.NotificationId"/>) are skipped: re-publishing
+/// Server-emitted alarms (those carrying a non-null acknowledger
+/// returned by the bridge rule) are skipped here: re-publishing
 /// would create a feedback loop. The bridge rule on every connected
 /// plotter (including this one) remains the source of truth for those.
 /// </para>
 /// </summary>
 public sealed class AlarmPublisher : IAsyncDisposable
 {
+    /// <summary>Wall-clock budget for DisposeAsync cleanup. Each
+    /// pending Clear gets its own per-call timeout (see
+    /// <see cref="NotificationsApi.CallTimeout"/>); this outer cap
+    /// stops a stuck server from blocking page navigation
+    /// indefinitely. Two seconds is enough for a healthy LAN to
+    /// finish three or four DELETEs in parallel; beyond that the
+    /// server's 60 s GC is the safety net.</summary>
+    public static readonly TimeSpan DisposeBudget = TimeSpan.FromSeconds(2);
+
     private readonly IAlarmManager _manager;
     private readonly INotificationsApi _api;
     private readonly PublishedAlarmTracker _tracker;
+    private readonly ClientErrorRelay? _relay;
+    private readonly SignalkClient? _signalk;
     private readonly Dictionary<AlarmKey, RaisedEntry> _raised = [];
     private bool _disposed;
 
     public AlarmPublisher(IAlarmManager manager, INotificationsApi api,
-        PublishedAlarmTracker tracker)
+        PublishedAlarmTracker tracker,
+        ClientErrorRelay? relay = null,
+        SignalkClient? signalk = null)
     {
         _manager = manager;
         _api = api;
         _tracker = tracker;
+        _relay = relay;
+        _signalk = signalk;
         _manager.OnAlarmsChanged += HandleAlarmsChanged;
+        // Reset our owned-paths view on WebSocket disconnect. After a
+        // reconnect, ServerNotificationStore.Reset() has already dropped
+        // the consume side; if we held onto _raised, the bridge rule
+        // would suppress the re-replay of our own paths and a subsequent
+        // local-rule clear could DELETE a stale id while leaving the
+        // live one (sticky banner across plotters). Letting the next
+        // OnAlarmsChanged tick republish anything still locally active
+        // is the cheap correct path.
+        if (_signalk is not null)
+        {
+            _signalk.OnConnectionChanged += HandleConnectionChanged;
+        }
     }
 
     /// <summary>Async-aware reaction to the alarm-manager's change
@@ -61,16 +98,28 @@ public sealed class AlarmPublisher : IAsyncDisposable
     private void HandleAlarmsChanged()
     {
         if (_disposed) return;
-        var active = _manager.ActiveAlarms;
-        var activeKeys = new HashSet<AlarmKey>(active.Count);
+        // AllActiveEntries is the UNCAPPED (info, rule) view --
+        // ActiveAlarms is the banner stack (capped at MaxActiveAlarms).
+        // Cross-plotter sync must not silently drop pile-up alarms,
+        // and the rule pairing lets each rule declare its own publish
+        // path via IAlarmRule.GetPublishPath rather than the publisher
+        // reverse-engineering one from the title.
+        var entries = _manager.AllActiveEntries;
+        var activeKeys = new HashSet<AlarmKey>(entries.Count);
 
-        // Pass 1: raise newcomers. Skip alarms that already carry a
-        // NotificationId (those came from the server already; re-
-        // raising would cause a publish loop).
-        foreach (var a in active)
+        // Pass 1: raise newcomers. Skip alarms that are already
+        // server-emitted (they round-trip through this plotter via the
+        // bridge rule -- republishing would loop). The acknowledger
+        // handle is the marker: only bridge-rule output sets it.
+        foreach (var (a, rule) in entries)
         {
-            if (a.NotificationId is not null) continue;
-            if (!TryMapToPath(a, out var path)) continue;
+            if (a.Acknowledger is not null) continue;
+            // Ask the rule itself for the path. Rules that don't
+            // participate in cross-plotter publish (e.g. SART -- AIS
+            // feed already publishes; bridge rule -- already came
+            // from the server) return null and we skip.
+            var path = rule.GetPublishPath(a);
+            if (string.IsNullOrEmpty(path)) continue;
             var key = new AlarmKey(a.Title, a.TargetKey);
             activeKeys.Add(key);
             if (_raised.ContainsKey(key)) continue;
@@ -91,14 +140,35 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
     }
 
+    private void HandleConnectionChanged()
+    {
+        if (_disposed) return;
+        // Only act on disconnect; reconnect lets the next OnAlarmsChanged
+        // tick re-establish state from scratch via the same Pass 1 logic.
+        if (_signalk is null || _signalk.IsConnected) return;
+        // Drop everything we thought we owned. The corresponding server
+        // entries either survived (60 s GC) or didn't; either way our
+        // local tracking was stale, and a fresh diff cycle is safer
+        // than reconciling with a half-known server view.
+        if (_raised.Count > 0)
+        {
+            foreach (var entry in _raised.Values)
+                _tracker.Remove(entry.Path);
+            _raised.Clear();
+            _ = LogInfoAsync("alarm.publisher reset on WS disconnect");
+        }
+    }
+
     private async Task TryRaiseAsync(AlarmInfo a, string path, AlarmKey key)
     {
         // Reserve the slot synchronously so a second event before the
-        // POST resolves doesn't double-fire. The placeholder id is
-        // overwritten below when the server's response arrives. We
-        // also tag the path as ours immediately so the bridge rule
-        // suppresses the echo even before the id is finalised.
-        _raised[key] = new RaisedEntry(path, RaisedEntry.PendingId);
+        // POST resolves doesn't double-fire. Id stays null while the
+        // raise is in flight; HandleAlarmsChanged uses presence-in-dict
+        // to decide "raised vs not", and the late-clear path below
+        // checks the id for null to know the response hasn't arrived
+        // yet. We also tag the path as ours immediately so the bridge
+        // rule suppresses the echo even before the id is finalised.
+        _raised[key] = new RaisedEntry(path, Id: null);
         _tracker.Add(path);
 
         var payload = new NotificationPayload(
@@ -115,24 +185,44 @@ public sealed class AlarmPublisher : IAsyncDisposable
         {
             r = await _api.RaiseAsync(path, payload);
         }
-        catch
+        catch (HttpRequestException ex)
         {
-            // ResourceHttp swallows HttpRequestException internally; a
-            // throw here is an unexpected client-side error (e.g. JSON
-            // serialiser issue). Drop the optimistic state so the next
-            // change retries.
+            // ResourceHttp normally swallows HttpRequestException, but
+            // the per-call timeout CTS surfaces TaskCanceledException
+            // (a subclass of HttpRequestException-adjacent path) and
+            // some socket-level errors propagate directly. Drop the
+            // optimistic state so the next change retries; surface
+            // through the relay so a stuck publish flow is visible.
             _raised.Remove(key);
             _tracker.Remove(path);
+            _ = LogErrorAsync($"alarm.publish raise failed for {path}", ex);
+            return;
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException
+                                 || ex is TaskCanceledException
+                                 || ex is OperationCanceledException
+                                 || ex is ObjectDisposedException)
+        {
+            // Narrow catch set: serializer hiccup, per-call timeout, or
+            // disposed HttpClient on shutdown. None of these should
+            // propagate up the fire-and-forget continuation; all of
+            // them deserve a log so the failure is fixable post-hoc.
+            _raised.Remove(key);
+            _tracker.Remove(path);
+            _ = LogErrorAsync($"alarm.publish raise failed for {path}", ex);
             return;
         }
 
         if (!r.Success || r.Value is null)
         {
             // Server rejected (404 on a pre-2.21 server, 5xx on a busy
-            // one). Release the slot so the next OnAlarmsChanged can
-            // try again; meanwhile the local banner still works.
+            // one) or 2xx with no parseable id. Release the slot so
+            // the next OnAlarmsChanged can try again; meanwhile the
+            // local banner still works. Logged so a sustained failure
+            // is visible.
             _raised.Remove(key);
             _tracker.Remove(path);
+            _ = LogWarnAsync($"alarm.publish raise non-success for {path}: {r.Error ?? "(no body)"}");
             return;
         }
 
@@ -148,11 +238,12 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
 
         _raised[key] = new RaisedEntry(path, r.Value);
+        _ = LogInfoAsync($"alarm.publish ok title={a.Title} path={path} id={r.Value}");
     }
 
-    private async Task TryClearAsync(string id)
+    private async Task TryClearAsync(string? id)
     {
-        if (id == RaisedEntry.PendingId)
+        if (id is null)
         {
             // Race: a clear arrived before the raise resolved. The
             // raise-completion path will issue the clear when it sees
@@ -161,68 +252,23 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
         try
         {
-            await _api.ClearAsync(id);
+            var r = await _api.ClearAsync(id);
+            if (!r.Success)
+            {
+                _ = LogWarnAsync($"alarm.publish clear non-success for id={id}: {r.Error ?? "(no body)"}");
+            }
         }
-        catch
+        catch (HttpRequestException ex)
         {
-            // Best-effort. The server's 60s GC will clean up if we
-            // never succeed; cross-plotter sync just degrades gracefully.
+            _ = LogErrorAsync($"alarm.publish clear failed for id={id}", ex);
         }
-    }
-
-    /// <summary>Maps a client-side alarm to a SignalK notification path.
-    /// Paths follow the SignalK convention so the consume-side bridge
-    /// rule on other plotters can derive a sensible banner title via
-    /// <see cref="ServerNotificationsAlarmRule.DeriveTitleAndDefault"/>.
-    /// Returns false for alarm titles we don't republish (server-
-    /// emitted SART/MOB, server-driven APPROACH).</summary>
-    internal static bool TryMapToPath(AlarmInfo a, out string path)
-    {
-        path = a.Title switch
+        catch (Exception ex) when (ex is System.Text.Json.JsonException
+                                 || ex is TaskCanceledException
+                                 || ex is OperationCanceledException
+                                 || ex is ObjectDisposedException)
         {
-            // Below-surface depth is the most common SK depth alarm
-            // path; the bridge rule's "environment.depth.*" prefix
-            // mapping derives Title="DEPTH" on receivers.
-            "SHALLOW" => "notifications.environment.depth.belowSurface",
-            // Per-target collision path; sanitise the target context so
-            // the URL-segment is path-safe (replace ':' from MMSI URNs
-            // with '_'; that yields a stable, derivable id per vessel).
-            "CPA" => SanitisePerTargetPath("notifications.security.collision", a.TargetKey),
-            // Wind shift latches; receiver bridge derives Title="WIND".
-            "WIND SHIFT" => "notifications.environment.wind.shift",
-            // Anchor drag + tide are siblings; both render under
-            // Title="ANCHOR" on the receiver via the navigation.anchor
-            // prefix mapping. The leaf (dragging vs tide) lets us
-            // clear them independently.
-            "ANCHOR DRAG" => "notifications.navigation.anchor.dragging",
-            "ANCHOR TIDE" => "notifications.navigation.anchor.tide",
-            // Deadman is a helm-attention sensor; "helm.deadman" falls
-            // through to the bridge rule's leaf-segment fallback so
-            // receivers see Title="DEADMAN".
-            "DEADMAN" => "notifications.helm.deadman",
-            _ => string.Empty,
-        };
-        // Skip publishing for titles we don't republish:
-        //  - SART / MOB: server already feeds these directly from AIS.
-        //  - APPROACH: signalk-server's course provider already emits
-        //    notifications.navigation.course.* deltas; republishing
-        //    would clash with the server's own.
-        return !string.IsNullOrEmpty(path);
-    }
-
-    private static string SanitisePerTargetPath(string prefix, string? targetKey)
-    {
-        if (string.IsNullOrEmpty(targetKey)) return string.Empty;
-        // Strip the SK "vessels." prefix so the path is rooted at the
-        // notification namespace, not nested under the vessel context.
-        var suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
-            ? targetKey["vessels.".Length..]
-            : targetKey;
-        // SK paths use '.' as a separator; URN MMSI segments contain
-        // ':' which is illegal. Replace with '_' so the path tokenises
-        // cleanly server-side. '.' in the suffix is fine (extends the
-        // hierarchy).
-        return $"{prefix}.{suffix.Replace(':', '_')}";
+            _ = LogErrorAsync($"alarm.publish clear failed for id={id}", ex);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -230,27 +276,65 @@ public sealed class AlarmPublisher : IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
         _manager.OnAlarmsChanged -= HandleAlarmsChanged;
+        if (_signalk is not null)
+        {
+            _signalk.OnConnectionChanged -= HandleConnectionChanged;
+        }
         // Best-effort cleanup so a soft refresh / nav-away doesn't
-        // leave stale entries on the server. The 60s GC would catch
+        // leave stale entries on the server. The 60 s GC would catch
         // them anyway, but ack flows on other plotters work better
-        // when stale notifications don't linger.
+        // when stale notifications don't linger. Run the clears in
+        // PARALLEL with an outer budget so a stuck server doesn't
+        // serialise N awaits and stall page navigation.
         var snapshot = _raised.Values.ToList();
         _raised.Clear();
         foreach (var r in snapshot)
-        {
             _tracker.Remove(r.Path);
-            await TryClearAsync(r.Id);
+
+        if (snapshot.Count == 0) return;
+        using var cts = new CancellationTokenSource(DisposeBudget);
+        try
+        {
+            await Task.WhenAll(snapshot.Select(r => TryClearAsync(r.Id)))
+                .WaitAsync(cts.Token).ConfigureAwait(false);
         }
+        catch (OperationCanceledException)
+        {
+            // Budget elapsed -- the server's GC will catch any clears
+            // that didn't finish. We don't surface this through the
+            // relay because dispose-time noise just adds to whatever
+            // shutdown mess the user is already in.
+        }
+    }
+
+    private Task LogInfoAsync(string message)
+    {
+        // Relay is optional for backward-compat with the test ctors
+        // that don't wire it. In production the relay is always
+        // injected from DI; logs land in the SK server log via the
+        // /log endpoint and are reviewable via SSH at the helm.
+        if (_relay is null) return Task.CompletedTask;
+        return _relay.ReportAsync($"[INFO] {message}");
+    }
+
+    private Task LogWarnAsync(string message)
+    {
+        if (_relay is null) return Task.CompletedTask;
+        return _relay.ReportAsync($"[WARN] {message}");
+    }
+
+    private Task LogErrorAsync(string message, Exception ex)
+    {
+        if (_relay is null) return Task.CompletedTask;
+        return _relay.ReportAsync(message, ex);
     }
 
     private readonly record struct AlarmKey(string Title, string? TargetKey);
 
-    private readonly record struct RaisedEntry(string Path, string Id)
-    {
-        /// <summary>Sentinel id stored while a raise is in flight.
-        /// HandleAlarmsChanged uses presence-in-dict to decide
-        /// "raised vs not"; the late-clear path checks for this
-        /// sentinel to know the response hasn't arrived yet.</summary>
-        public const string PendingId = "_publisher_pending_";
-    }
+    /// <summary>Tracking record for a notification we've raised on the
+    /// server. <c>Id</c> is null while the raise POST is in flight;
+    /// the late-clear path checks <c>id is null</c> to know the
+    /// response hasn't arrived yet. Once the server responds with a
+    /// real id the record is replaced with the populated form.</summary>
+    private readonly record struct RaisedEntry(string Path, string? Id);
 }

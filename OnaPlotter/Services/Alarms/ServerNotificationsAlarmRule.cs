@@ -1,4 +1,5 @@
 using OnaPlotter.Models;
+using OnaPlotter.Services.Api;
 using OnaPlotter.Services.ServerNotifications;
 
 namespace OnaPlotter.Services.Alarms;
@@ -26,19 +27,26 @@ namespace OnaPlotter.Services.Alarms;
 public sealed class ServerNotificationsAlarmRule : IAlarmRule
 {
     private readonly ServerNotificationStore _store;
+    private readonly INotificationsApi? _api;
     private readonly IPublishedAlarmTracker? _publishedTracker;
 
     public ServerNotificationsAlarmRule(ServerNotificationStore store,
+        INotificationsApi? api = null,
         IPublishedAlarmTracker? publishedTracker = null)
     {
         _store = store;
+        _api = api;
         _publishedTracker = publishedTracker;
     }
 
-    /// <summary>Display title placeholder. Never used as the banner
-    /// title because <see cref="CheckMany"/> derives a per-notification
-    /// title; this just satisfies the IAlarmRule contract.</summary>
-    public string Title => "_SERVER_NOTIFICATIONS_";
+    /// <summary>Empty title -- this rule never goes through the
+    /// single-output <see cref="Check"/> path. <see cref="CheckMany"/>
+    /// builds a per-notification title via
+    /// <see cref="DeriveTitleAndDefault"/>. Empty string is safer than
+    /// a magic placeholder ("_SERVER_NOTIFICATIONS_") which a future
+    /// debugger seeing it on the banner would chase across the codebase
+    /// before noticing the doc.</summary>
+    public string Title => string.Empty;
 
     /// <summary>Sits between collision (200) and wind shift (300). The
     /// per-AlarmInfo severity is what actually orders the stack; this
@@ -77,7 +85,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             // the same alarm twice in the banner stack -- once from
             // the originating client rule, once from the bridge.
             if (_publishedTracker?.IsOwnedPath(n.Path) == true) continue;
-            yield return BuildAlarmInfo(n);
+            yield return BuildAlarmInfo(n, _api);
         }
     }
 
@@ -85,15 +93,29 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// the <see cref="AlarmInfo.TargetKey"/> so two notifications under
     /// the same Title (DEPTH at belowTransducer + DEPTH at belowSurface)
     /// dedup as separate entries rather than overwriting each other.
-    /// V2 server-side ack flows through here too: the notification's
-    /// <c>id</c> is forwarded as <see cref="AlarmInfo.NotificationId"/>
-    /// and the <c>status.canAcknowledge</c> flag drives whether the
-    /// banner shows the Acknowledge button. Both default to "off" on
-    /// pre-v2.21 servers (no id, status null).</summary>
-    internal static AlarmInfo BuildAlarmInfo(ServerNotification n)
+    /// V2 server-side ack flows through here too: when the server
+    /// supplied an id and <c>status.canAcknowledge</c> is true, an
+    /// <see cref="SignalKNotificationAcknowledger"/> is attached so
+    /// <c>AlarmManager.DismissAsync</c> can trigger the cross-plotter
+    /// ack POST. On pre-v2.21 servers (no id) or when the API client
+    /// isn't wired (legacy test ctors) the <see cref="AlarmInfo.Acknowledger"/>
+    /// field stays null and dismiss falls back to local-only.</summary>
+    internal static AlarmInfo BuildAlarmInfo(ServerNotification n, INotificationsApi? api)
     {
         var (title, defaultMsg) = DeriveTitleAndDefault(n.Path);
         var message = !string.IsNullOrEmpty(n.Message) ? n.Message : defaultMsg;
+        // Build the acknowledger only when (a) we have an API client
+        // wired (production DI; absent in some legacy test ctors) and
+        // (b) the server actually gave us an id to address. The
+        // CanAcknowledge field on the acknowledger then mirrors the
+        // server's status.canAcknowledge -- false for emergency-state
+        // notifications the spec forbids silencing.
+        IAlarmAcknowledger? ack = null;
+        if (api is not null && n.Id is string id)
+        {
+            ack = new SignalKNotificationAcknowledger(
+                api, id, canAcknowledge: n.Status?.CanAcknowledge ?? false);
+        }
         return new AlarmInfo(
             Title: title,
             Message: message,
@@ -106,14 +128,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             // plugin is firing on a path the helm has already
             // acknowledged via VHF / radio.
             Snoozeable: true,
-            NotificationId: n.Id,
-            // Only expose the Acknowledge button when (a) the server
-            // supplied an id (no id = no REST endpoint to call) and
-            // (b) the server's PGN-derived flags say acknowledgement
-            // is supported. SignalK's spec forbids silencing
-            // emergency-state notifications; the server's status block
-            // is the authority and we trust it.
-            CanAcknowledge: n.Id is not null && (n.Status?.CanAcknowledge ?? false));
+            Acknowledger: ack);
     }
 
     /// <summary>Maps a SignalK notification path to a short banner

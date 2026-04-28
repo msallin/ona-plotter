@@ -28,6 +28,13 @@ public sealed class DeadmanAlarmRule : IAlarmRule
     public int Priority => 150;
     public bool AutoClear => true;
 
+    /// <summary>Cross-plotter publish path. The bridge rule on
+    /// receivers falls through to the leaf-segment uppercase fallback
+    /// for <c>helm.deadman</c>, surfacing Title="DEADMAN" on remote
+    /// banners.</summary>
+    public string? GetPublishPath(AlarmInfo alarm) =>
+        "notifications.helm.deadman";
+
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
         // Night mode runs a tighter watch window if the user has set one

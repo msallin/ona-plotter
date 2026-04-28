@@ -24,6 +24,13 @@ public sealed class ShallowAlarmRule : IAlarmRule
     public int Priority => 100;    // highest priority - grounding risk
     public bool AutoClear => true;
 
+    /// <summary>Cross-plotter publish path. The bridge rule on every
+    /// other plotter derives Title="DEPTH" from the
+    /// <c>environment.depth.*</c> prefix mapping, which is the standard
+    /// SK convention for depth-attention notifications.</summary>
+    public string? GetPublishPath(AlarmInfo alarm) =>
+        "notifications.environment.depth.belowSurface";
+
     // Dismissal state. Null = not in a post-dismiss cooldown; the rule
     // behaves as before and fires whenever depth < threshold.
     private DateTime? _dismissedAt;

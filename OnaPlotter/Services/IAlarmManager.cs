@@ -23,6 +23,27 @@ public interface IAlarmManager
     /// exceeded.</summary>
     IReadOnlyList<AlarmInfo> ActiveAlarms { get; }
 
+    /// <summary>Uncapped active set, same ordering as
+    /// <see cref="ActiveAlarms"/>. <see cref="ActiveAlarms"/> is a UI
+    /// concern (banner stack capped at <c>MaxActiveAlarms</c> so a
+    /// stuck condition can't flood the viewport); cross-plotter
+    /// publishers and any other downstream that needs to see EVERY
+    /// firing alarm should iterate this collection instead. Without
+    /// this distinction, a 4th simultaneous alarm would never be
+    /// published to other plotters because the cap (a UI affordance)
+    /// would silently filter it out at the sync boundary.</summary>
+    IReadOnlyList<AlarmInfo> AllActiveAlarms { get; }
+
+    /// <summary>Same set as <see cref="AllActiveAlarms"/> but paired
+    /// with the originating <see cref="IAlarmRule"/>. Used by
+    /// cross-plotter publishers to ask each rule for its own
+    /// <see cref="IAlarmRule.GetPublishPath"/> mapping rather than
+    /// reverse-engineering it from the alarm title -- so a new
+    /// rule can declare its publish path on the rule itself, and
+    /// the publisher needs no knowledge of any specific rule's
+    /// title taxonomy.</summary>
+    IReadOnlyList<(AlarmInfo Info, IAlarmRule Rule)> AllActiveEntries { get; }
+
     /// <summary>How many alarms are currently hidden by the cap on
     /// <see cref="ActiveAlarms"/>. UI uses this to show a "+N more"
     /// affordance so the user knows dismissing the top alarm will

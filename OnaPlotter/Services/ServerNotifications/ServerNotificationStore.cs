@@ -16,6 +16,17 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// </summary>
 public sealed class ServerNotificationStore
 {
+    /// <summary>Hard cap on active notifications. A buggy plugin
+    /// publishing under unique paths (e.g. <c>notifications.junk.{seq}</c>
+    /// on a counter) could otherwise grow this dictionary without bound
+    /// on a long passage and OOM the WASM heap. 256 is a generous ceiling
+    /// -- a vessel with every standard plugin armed simultaneously sees
+    /// less than a dozen active paths in practice. When the cap is hit
+    /// we refuse the new entry rather than evict an existing one; the
+    /// next clean delta will overwrite the placeholder so a transient
+    /// flood doesn't permanently mask real alarms.</summary>
+    public const int MaxActiveNotifications = 256;
+
     private readonly Dictionary<string, ServerNotification> _byPath
         = new(StringComparer.Ordinal);
 
@@ -76,9 +87,28 @@ public sealed class ServerNotificationStore
         // until the underlying condition itself resolves, which
         // defeats the cross-plotter ack flow ("plotter A acks, plotter
         // B's banner stays up").
-        if (status is { Acknowledged: true })
+        //
+        // Defense-in-depth: refuse to honour status.acknowledged=true
+        // on emergency-state notifications. The SignalK v2 spec
+        // mandates canAcknowledge=false for state="emergency"; a
+        // spec-conformant server cannot produce "emergency + acked",
+        // but a buggy or compromised plugin could. Silencing an MOB
+        // / fire / collision banner because of a rogue ack flag is
+        // exactly the kind of safety failure the spec was designed to
+        // prevent. We trust the server's status block (Phase A flow)
+        // EXCEPT when state=emergency, where we keep the banner up
+        // regardless.
+        if (status is { Acknowledged: true } && !IsEmergencyState(state))
         {
             return _byPath.Remove(path);
+        }
+        // Hard cap on active set. See MaxActiveNotifications. Refuse
+        // new paths past the cap; existing paths can still update
+        // (re-arm with new severity, clear) so a real condition
+        // trapped inside the cap window can still resolve.
+        if (_byPath.Count >= MaxActiveNotifications && !_byPath.ContainsKey(path))
+        {
+            return false;
         }
         // Use the original-case state string in the record so callers
         // can render "emergency" vs "alarm" if they care; severity is
@@ -94,6 +124,9 @@ public sealed class ServerNotificationStore
         _byPath[path] = notif;
         return true;
     }
+
+    private static bool IsEmergencyState(string? state) =>
+        string.Equals(state, "emergency", StringComparison.Ordinal);
 
     /// <summary>Remove a path explicitly. Used when a delta arrives with
     /// a JSON null value (server cleared the notification). Returns
