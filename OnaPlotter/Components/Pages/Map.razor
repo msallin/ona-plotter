@@ -412,10 +412,10 @@
                      AvailableRadars="RadarOverlay.Radars"
                      EnabledRadars="RadarOverlay.EnabledRadarIds"
                      RadarCapabilities="RadarOverlay.Capabilities"
-                     ServerTrackVisible="serverTrackVisible"
-                     ServerTrackDuration="@serverTrackDuration"
-                     ServerTrackWithinBounds="serverTrackWithinBounds"
-                     WeatherOverlayVisible="weatherOverlayVisible"
+                     ServerTrackVisible="@(_serverTrack?.Visible ?? false)"
+                     ServerTrackDuration="@(_serverTrack?.Duration ?? "1d")"
+                     ServerTrackWithinBounds="@(_serverTrack?.WithinBounds ?? false)"
+                     WeatherOverlayVisible="@(_weather?.Visible ?? false)"
                      WeatherOverlayOpacityPercent="@((int)Math.Round(Settings.WeatherOverlayOpacity * 100))"
                      AtonsVisible="Settings.AtonsVisible"
                      LayerFilter="@layerFilter"
@@ -433,12 +433,12 @@
                      OnRenameWaypoint="(t) => RenameWaypointAsync(t.wp, t.newName)"
                      OnDeleteWaypoint="DeleteWaypointFromLayers"
                      OnFocusVessel="FocusVessel"
-                     OnToggleServerTrack="ToggleServerTrack"
-                     OnServerTrackDurationChanged="OnServerTrackDurationChanged"
-                     OnServerTrackWithinBoundsChanged="OnServerTrackWithinBoundsChanged"
-                     OnToggleWeatherOverlay="ToggleWeatherOverlay"
-                     OnWeatherOpacityPreview="OnWeatherOpacityPreview"
-                     OnWeatherOpacityCommit="OnWeatherOpacityCommit"
+                     OnToggleServerTrack="@(v => _serverTrack?.ToggleAsync(v) ?? Task.CompletedTask)"
+                     OnServerTrackDurationChanged="@(d => _serverTrack?.SetDurationAsync(d) ?? Task.CompletedTask)"
+                     OnServerTrackWithinBoundsChanged="@(b => _serverTrack?.SetWithinBoundsAsync(b) ?? Task.CompletedTask)"
+                     OnToggleWeatherOverlay="@(v => _weather?.ToggleAsync(v) ?? Task.CompletedTask)"
+                     OnWeatherOpacityPreview="@(p => _weather?.PreviewOpacityAsync(p) ?? Task.CompletedTask)"
+                     OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
                      OnToggleAtonsVisible="ToggleAtonsVisible" />
     }
 </div>
@@ -488,6 +488,13 @@
     private OnaPlotter.Services.Js.MapAisJs? _aisJs;
     private OnaPlotter.Services.Map.AisPushService? _aisPush;
     private OnaPlotter.Services.Map.AtonPushService? _atonPush;
+
+    // Misc-section overlay controllers (weather radar tiles, server
+    // track polyline). Each owns its slice of state + interop and the
+    // page binds the Layers panel against their public properties.
+    private OnaPlotter.Services.Js.MapOverlaysJs? _overlaysJs;
+    private OnaPlotter.Services.Map.WeatherOverlayController? _weather;
+    private OnaPlotter.Services.Map.ServerTrackController? _serverTrack;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -530,7 +537,9 @@
     private bool shortcutsVisible;
     private DateTime raceTimerTarget;
     private System.Threading.Timer? raceTimer;
-    private bool weatherOverlayVisible;
+    // Weather overlay + server track state lives in their controllers
+    // (_weather / _serverTrack); markup binds against their Visible /
+    // Duration / WithinBounds properties.
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     // Radar overlay state (device list, capabilities cache, enabled
@@ -544,7 +553,6 @@
     // quick-switch bar via Layers -> Charts. See
     // IAppSettings.QuickBarChartIds for the two-layer rationale.
     private readonly HashSet<string> quickBarCharts = [];
-    private bool serverTrackVisible;
     private string layerFilter = "";
     private double? viewWest, viewSouth, viewEast, viewNorth;
 
@@ -1114,6 +1122,10 @@
         _aisPush = new OnaPlotter.Services.Map.AisPushService(
             _aisJs, AisStore, MooredVessels, Settings, Time);
         _atonPush = new OnaPlotter.Services.Map.AtonPushService(_aisJs, Atons);
+        _overlaysJs = new OnaPlotter.Services.Js.MapOverlaysJs(module);
+        _weather = new OnaPlotter.Services.Map.WeatherOverlayController(_overlaysJs, Settings);
+        _serverTrack = new OnaPlotter.Services.Map.ServerTrackController(
+            _overlaysJs, TrackApi, msg => Toasts.Info(msg));
 
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
@@ -2255,49 +2267,6 @@
         catch (Exception ex) { Toasts.Error($"Previous waypoint failed: {ex.Message}"); }
     }
 
-    private async Task ToggleWeatherOverlay(bool enabled)
-    {
-        weatherOverlayVisible = enabled;
-        if (module is null) return;
-
-        if (weatherOverlayVisible)
-        {
-            // RainViewer precipitation-radar tiles: free, no API key, CORS-friendly.
-            // If we ever want wind / temperature overlays, OpenWeatherMap is the
-            // obvious upgrade -- would need a per-user API key threaded through
-            // IAppSettings and a dropdown picker for the layer (wind / temp /
-            // pressure / precip). Not worth the plumbing until someone asks.
-            await module.InvokeVoidAsync("setWeatherOverlay",
-                "https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png",
-                Settings.WeatherOverlayOpacity);
-        }
-        else
-        {
-            await module.InvokeVoidAsync("clearWeatherOverlay");
-        }
-    }
-
-    /// <summary>Slider drag tick. Push the new opacity to the live
-    /// Leaflet layer immediately so the helm sees the chart respond,
-    /// but DON'T persist -- writing localStorage on every drag tick
-    /// fires up to ~20 disk writes plus as many StateHasChanged
-    /// cascades for a one-second drag. The helm only cares about the
-    /// final value; that lands via OnWeatherOpacityCommit on slider
-    /// release.</summary>
-    private async Task OnWeatherOpacityPreview(int percent)
-    {
-        if (module is null || !weatherOverlayVisible) return;
-        await module.InvokeVoidAsync("setWeatherOverlayOpacity",
-            OnaPlotter.Utilities.WeatherOpacity.PercentToFraction(percent));
-    }
-
-    /// <summary>Slider released. Persist the final value via
-    /// Settings (round-trips to localStorage).</summary>
-    private async Task OnWeatherOpacityCommit(int percent)
-    {
-        await Settings.SetWeatherOverlayOpacityAsync(
-            OnaPlotter.Utilities.WeatherOpacity.PercentToFraction(percent));
-    }
 
     private async Task ToggleAtonsVisible(bool enabled)
     {
@@ -2530,79 +2499,8 @@
         await module.InvokeVoidAsync("addRoute", route.Id, route.Name, coords.ToArray());
     }
 
-    // Server track state. Was a single bool; now also carries the
-    // helm-picked duration (1h..7d, "all" for the long-term archive)
-    // and a "within current view" client-side filter that re-clips on
-    // pan / zoom without re-fetching. Defaults to 1d so the layer feels
-    // unchanged from the helm's prior experience.
-    // NB: serverTrackVisible itself is declared higher in the file --
-    // these are the new companions.
-    private string serverTrackDuration = "1d";
-    private bool serverTrackWithinBounds;
-
-    private async Task ToggleServerTrack(bool enabled)
-    {
-        serverTrackVisible = enabled;
-        if (module is null) return;
-        if (serverTrackVisible)
-        {
-            await ReloadServerTrackAsync();
-        }
-        else
-        {
-            await module.InvokeVoidAsync("clearServerTrack");
-        }
-    }
-
-    private async Task OnServerTrackDurationChanged(string duration)
-    {
-        if (string.Equals(duration, serverTrackDuration, StringComparison.Ordinal)) return;
-        serverTrackDuration = duration;
-        if (serverTrackVisible) await ReloadServerTrackAsync();
-    }
-
-    private async Task OnServerTrackWithinBoundsChanged(bool within)
-    {
-        serverTrackWithinBounds = within;
-        if (module is null) return;
-        // No re-fetch: the JS module owns the cached coord array and
-        // re-clips client-side on this toggle and on subsequent pan /
-        // zoom events. "w/o loading anything" per helm phrasing.
-        try { await module.InvokeVoidAsync("setServerTrackClipToBounds", within); }
-        catch (JSDisconnectedException) { }
-    }
-
-    /// <summary>
-    /// Fetches the server track for the current duration and pushes it
-    /// to the JS layer. "all" maps to a 100-year ISO duration (P36500D)
-    /// since the SignalK History API doesn't define an "everything"
-    /// shape -- a span larger than any plausible cruise is the
-    /// pragmatic stand-in. The within-bounds flag rides along so the
-    /// initial render respects the toggle if it was on before the
-    /// duration change.
-    /// </summary>
-    private async Task ReloadServerTrackAsync()
-    {
-        if (module is null) return;
-        string apiSpan = serverTrackDuration == "all" ? "P36500D" : serverTrackDuration;
-        var points = await TrackApi.GetServerTrackAsync(apiSpan, "1m");
-        if (points is not null && points.Length > 0)
-        {
-            try
-            {
-                await module.InvokeVoidAsync("setServerTrack",
-                    (object)points, serverTrackWithinBounds);
-            }
-            catch (JSDisconnectedException) { }
-        }
-        else
-        {
-            serverTrackVisible = false;
-            try { await module.InvokeVoidAsync("clearServerTrack"); }
-            catch (JSDisconnectedException) { }
-            Toasts.Info("No history points returned for the selected duration.");
-        }
-    }
+    // ServerTrackController owns the server-track state + interop;
+    // wired in OnAfterRenderAsync.
 
     private async Task ToggleNightMode()
     {
@@ -2905,6 +2803,7 @@
         _anchorJs?.MarkDisposed();
         _routeJs?.MarkDisposed();
         _aisJs?.MarkDisposed();
+        _overlaysJs?.MarkDisposed();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
