@@ -169,21 +169,27 @@ const ZoomBadge = L.Control.extend({
 
 // Range-scale chip. Draws a horizontal tick at a "nice round"
 // nautical-mile value (..., 0.1, 0.2, 0.5, 1, 2, 5, 10, ...) so the
-// helm can eyeball distance on the chart at a glance, the same way
-// every commercial plotter does. Renders via cached child spans so
-// the per-update path doesn't re-parse innerHTML on each pan.
+// helm can eyeball distance on the chart while zooming.
 //
 // Positioning lives in CSS (.ona-range-scale): the chip sits in the
 // bottom-centre column just above the bc-stack (anchor watch /
 // active route HUD card), NOT inside Leaflet's control rail. Helm
 // asked for it there because the bottom-left corner felt
-// disconnected from anything ("just somewhere"). The chip hides
-// itself when an active route is present so the route HUD (which
-// uses the same vertical slot) doesn't fight for space; toggled
-// from C# via setRangeScaleHidden.
+// disconnected from anything ("just somewhere").
+//
+// Visibility: only shown DURING a zoom (zoomstart -> zoomend) plus a
+// short linger so the helm reads the final value before it fades.
+// Earlier iteration kept the chip permanently visible AND a separate
+// centred chip appeared mid-pinch; the helm reported that as
+// duplicate UI. Now there's one chip, in the helm's chosen spot,
+// visible exactly when it's useful (during the zoom gesture).
+//
+// The chip is also force-hidden via setRangeScaleHidden whenever an
+// active-route HUD card occupies the same vertical slot.
 let _rangeScaleEl = null;
 let _rangeScaleLabelEl = null;
 let _rangeScaleBarEl = null;
+let _rangeScaleHideTimer = null;
 function initRangeScale(mapInstance) {
     _rangeScaleEl = L.DomUtil.create('div', 'ona-range-scale',
         mapInstance.getContainer());
@@ -192,8 +198,29 @@ function initRangeScale(mapInstance) {
     _rangeScaleBarEl = L.DomUtil.create('span', 'ona-range-scale-bar',
         _rangeScaleEl);
     L.DomEvent.disableClickPropagation(_rangeScaleEl);
+    // Compute the value once at init so the first show carries the
+    // right label even if the helm zooms before any moveend fires.
     updateRangeScale();
-    mapInstance.on('zoomend moveend', updateRangeScale);
+    mapInstance.on('zoomstart', () => {
+        if (_rangeScaleHideTimer) {
+            clearTimeout(_rangeScaleHideTimer);
+            _rangeScaleHideTimer = null;
+        }
+        updateRangeScale();
+        _rangeScaleEl.classList.add('visible');
+    });
+    mapInstance.on('zoom', updateRangeScale);
+    mapInstance.on('zoomend', () => {
+        updateRangeScale();
+        // Linger after release so the helm reads the final value.
+        // Same PINCH_PREVIEW_LINGER_MS budget the now-removed centred
+        // chip used; combined with the .visible -> opacity transition
+        // it gives ~700 ms of stable read + 400 ms fade.
+        if (_rangeScaleHideTimer) clearTimeout(_rangeScaleHideTimer);
+        _rangeScaleHideTimer = setTimeout(
+            () => _rangeScaleEl.classList.remove('visible'),
+            PINCH_PREVIEW_LINGER_MS);
+    });
 }
 function updateRangeScale() {
     if (!_rangeScaleEl || !map) return;
@@ -552,41 +579,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // HUD card moves on viewport changes.
     initRangeScale(map);
 
-    // Pinch-zoom preview: a centred chip with the live range scale
-    // appears at zoomstart, updates per zoom frame, then lingers
-    // PINCH_PREVIEW_LINGER_MS after zoomend before fading out over
-    // the 0.4s opacity transition on .ona-zoom-preview. The
-    // mid-gesture chip frees the helm from squinting at the
-    // bottom-left chip during a one-handed pinch.
-    //
-    // Per-frame path: only `textContent` + `style.width` mutate, so
-    // the browser doesn't re-parse innerHTML at 60 Hz during a pinch
-    // (the original implementation rebuilt two <span>s per zoom event,
-    // which is the precise hot path the gesture lands on).
-    const previewEl = L.DomUtil.create('div', 'ona-zoom-preview', map.getContainer());
-    const previewLabelEl = L.DomUtil.create('span', '', previewEl);
-    const previewBarEl = L.DomUtil.create('span', 'ona-zoom-preview-bar', previewEl);
-    let previewHideTimer = null;
-    const updatePreview = () => {
-        if (!map) return;
-        const { label, widthPx } = computeNiceScale(map, 100, 12);
-        previewLabelEl.textContent = label;
-        previewBarEl.style.width = `${widthPx}px`;
-    };
-    map.on('zoomstart', () => {
-        if (previewHideTimer) { clearTimeout(previewHideTimer); previewHideTimer = null; }
-        updatePreview();
-        previewEl.classList.add('visible');
-    });
-    map.on('zoom', () => updatePreview());
-    map.on('zoomend', () => {
-        updatePreview();
-        // Linger after release so the helm reads the final value.
-        if (previewHideTimer) clearTimeout(previewHideTimer);
-        previewHideTimer = setTimeout(
-            () => previewEl.classList.remove('visible'),
-            PINCH_PREVIEW_LINGER_MS);
-    });
+    // (The centred pinch-zoom preview chip used to live here; it was
+    // a duplicate of the bottom-centre range-scale chip in a different
+    // spot. The helm asked for one chip in the bottom-centre slot only,
+    // visible during the zoom gesture. initRangeScale now wires the
+    // zoomstart/zoom/zoomend listeners so the bottom-centre chip
+    // appears + updates + lingers exactly when the helm wants it.)
 
     // isSlowClient was set at the top of initMap; the same flag drives
     // tile updateWhenIdle here so all perf gates decide together.

@@ -628,12 +628,16 @@
     --sidebar-shadow:      4px 0 18px rgba(0, 0, 0, 0.18);
     --hud-ink-stale:       rgba(0, 0, 0, 0.45);
 
-    /* High-contrast route popup: same cream/dark-amber pair as light
-       theme so the popup reads on white panels. */
-    --route-popup-bg:     #fef6e7;
-    --route-popup-fg:     #4a3211;
-    --route-popup-border: #c8862e;
-    --route-popup-title:  #8a5a14;
+    /* High-contrast route popup: plain white card with slate text +
+       border, matching the light-theme treatment. The earlier amber
+       cream + dark-amber trim fought the amber route polyline on the
+       chart (helm read it as "low-contrast secondary surface"); a
+       neutral panel reads as "the route's metadata" without a second
+       accent competing with the polyline. */
+    --route-popup-bg:     #ffffff;
+    --route-popup-fg:     #0f172a;
+    --route-popup-border: #94a3b8;
+    --route-popup-title:  #0f172a;
 }
 
 html, body {
@@ -3794,6 +3798,16 @@ html.night-mode-global body {
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     user-select: none;
+    /* Hidden by default; only the .visible modifier (added during the
+       zoom gesture) makes it appear. The 0.4 s ease-out matches the
+       pattern the now-removed centred preview chip used so the fade
+       feels consistent. */
+    opacity: 0;
+    transition: opacity 0.4s ease-out;
+}
+.ona-range-scale.visible {
+    opacity: 0.95;
+    transition: opacity 0.12s ease-in;
 }
 .ona-range-scale-hidden {
     display: none !important;
@@ -3816,50 +3830,12 @@ html.night-mode-global body {
     border-right: 1.5px solid currentColor;
 }
 
-/* Pinch-zoom scale preview: large chip centred on the chart that
-   appears during a pinch / zoom gesture and fades out shortly after
-   release. Reuses the range-scale chip language but at a bigger
-   font size so it's glanceable mid-gesture without squinting at the
-   permanent corner chip. Initially opacity 0; .visible adds the
-   400 ms fade pattern; tear-down sets opacity 0 again. */
-.ona-zoom-preview {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: var(--z-controls);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 8px 14px;
-    background: var(--hud-card-bg);
-    border: 1px solid var(--hud-card-stroke-in);
-    box-shadow:
-        0 0 0 1px var(--hud-card-stroke-out),
-        var(--hud-card-halo);
-    border-radius: var(--hud-card-radius);
-    color: var(--hud-ink);
-    font-family: var(--hud-font);
-    font-size: 1rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    pointer-events: none;
-    user-select: none;
-    opacity: 0;
-    transition: opacity 0.4s ease-out;
-}
-.ona-zoom-preview.visible {
-    opacity: 0.95;
-    transition: opacity 0.12s ease-in;
-}
-.ona-zoom-preview-bar {
-    display: inline-block;
-    height: 8px;
-    background: linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
-    color: var(--hud-ink);
-    border-left:  2px solid currentColor;
-    border-right: 2px solid currentColor;
-}
+/* (Earlier iteration shipped a centred pinch-zoom preview chip
+   (.ona-zoom-preview) that duplicated the bottom-centre range-scale
+   chip in a different spot. Helm asked for one chip only, in the
+   bottom-centre slot, visible during the zoom gesture. The chip is
+   .ona-range-scale + the .visible modifier above; the centred chip
+   was removed end-to-end.) */
 
 /* (Earlier iteration moved the bottom-left controls to the bottom-
    right corner so the depth card had a clean bottom-left inset; the
