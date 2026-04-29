@@ -83,4 +83,12 @@ public interface IMapControlsJs
     /// indicator). Cleared explicitly on dispose; the per-tick draw
     /// rides on <see cref="ApplyFrameAsync"/>.</summary>
     Task ClearCurrentArrowAsync();
+
+    /// <summary>Returns the current map centre as <c>[lat, lon]</c>.
+    /// Null when the JS side has torn down or when the JS map ref
+    /// hasn't initialised yet; callers fall back to the previous
+    /// target. Used by the FAB menu's "Create at map centre" actions
+    /// to seed the same target fields the long-press context-menu
+    /// handlers already write.</summary>
+    Task<double[]?> GetMapCenterAsync();
 }

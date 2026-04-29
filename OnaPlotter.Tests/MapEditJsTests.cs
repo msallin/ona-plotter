@@ -172,4 +172,72 @@ public class MapEditJsTests
 
         await Assert.ThrowsAsync<JSException>(() => sut.StartRouteEditAsync());
     }
+
+    [Test]
+    public async Task GetEditRouteStatsAsync_ReturnsJsPayloadAsIs()
+    {
+        var fake = new RecordingJsRef();
+        fake.Returns["getEditRouteStats"] = new double[] { 5, 12.7 };
+        var sut = new MapEditJs(fake);
+
+        var stats = await sut.GetEditRouteStatsAsync();
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("getEditRouteStats");
+        await Assert.That(stats).IsNotNull();
+        await Assert.That(stats!.Length).IsEqualTo(2);
+        await Assert.That(stats[0]).IsEqualTo(5);
+        await Assert.That(stats[1]).IsEqualTo(12.7);
+    }
+
+    [Test]
+    public async Task GetEditRouteCoordsAsync_ReturnsJsPayloadAsIs()
+    {
+        var fake = new RecordingJsRef();
+        var coords = new double[][] { new[] { 54.5, 11.2 }, new[] { 54.6, 11.3 } };
+        fake.Returns["getEditRouteCoords"] = coords;
+        var sut = new MapEditJs(fake);
+
+        var result = await sut.GetEditRouteCoordsAsync();
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("getEditRouteCoords");
+        await Assert.That(result).IsSameReferenceAs(coords);
+    }
+
+    [Test]
+    public async Task GetPolygonEditCoordsAsync_ReturnsJsPayloadAsIs()
+    {
+        var fake = new RecordingJsRef();
+        var coords = new double[][] { new[] { 54.5, 11.2 }, new[] { 54.6, 11.3 }, new[] { 54.4, 11.1 } };
+        fake.Returns["getPolygonEditCoords"] = coords;
+        var sut = new MapEditJs(fake);
+
+        var result = await sut.GetPolygonEditCoordsAsync();
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("getPolygonEditCoords");
+        await Assert.That(result).IsSameReferenceAs(coords);
+    }
+
+    [Test]
+    public async Task GetEditRouteCoordsAsync_AfterDisposed_ReturnsNullWithoutCall()
+    {
+        var fake = new RecordingJsRef();
+        var sut = new MapEditJs(fake);
+        sut.MarkDisposed();
+
+        var result = await sut.GetEditRouteCoordsAsync();
+
+        await Assert.That(result).IsNull();
+        await Assert.That(fake.Calls.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetPolygonEditCoordsAsync_OnDisconnected_ReturnsNull()
+    {
+        var fake = new RecordingJsRef { ThrowDisconnectedNext = true };
+        var sut = new MapEditJs(fake);
+
+        var result = await sut.GetPolygonEditCoordsAsync();
+
+        await Assert.That(result).IsNull();
+    }
 }

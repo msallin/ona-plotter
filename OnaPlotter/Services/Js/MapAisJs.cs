@@ -44,6 +44,21 @@ public sealed class MapAisJs : IMapAisJs
     public Task SetHarborModeAsync(bool enabled)
         => InvokeSafe("setHarborMode", enabled);
 
+    /// <summary>Returns false during disposal too -- the only caller
+    /// uses the false branch to surface a "vessel no longer on the
+    /// chart" toast, which is a benign no-op when the page is unmounting
+    /// and the toast system has already torn down.</summary>
+    public async Task<bool> FocusVesselAsync(string context)
+    {
+        if (_disposed) return false;
+        try
+        {
+            return await _module.InvokeAsync<bool>("focusVessel", context);
+        }
+        catch (JSDisconnectedException) { return false; }
+        catch (ObjectDisposedException) { return false; }
+    }
+
     /// <summary>
     /// Single safe-call helper. Swallows the two "page is unmounting"
     /// exceptions that otherwise scatter try/catch blocks across every

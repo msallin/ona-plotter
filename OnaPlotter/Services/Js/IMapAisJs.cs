@@ -34,4 +34,10 @@ public interface IMapAisJs
     /// CPA arcs, and the guard-zone ring vanish in lock-step with the
     /// C# alarm-suppression flip.</summary>
     Task SetHarborModeAsync(bool enabled);
+
+    /// <summary>Pan to the AIS marker for the given vessel context and
+    /// open its popup. Returns false when the marker isn't on the map
+    /// (vessel aged out, AIS filter hid it, etc.) so the caller can
+    /// surface a "vessel no longer on the chart" toast.</summary>
+    Task<bool> FocusVesselAsync(string context);
 }

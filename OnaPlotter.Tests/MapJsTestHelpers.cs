@@ -21,6 +21,12 @@ internal sealed class RecordingJsRef : IJSObjectReference
     public bool ThrowDisposedNext { get; set; }
     public bool ThrowJsExceptionNext { get; set; }
 
+    /// <summary>Optional per-identifier return value override. Used by
+    /// the Get* wrapper tests to pin that the wrapper hands the JS-side
+    /// payload through unchanged. Keyed on the JS function id so a
+    /// single fake can serve multiple Invoke calls in a sequence.</summary>
+    public Dictionary<string, object?> Returns { get; } = new();
+
     public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args)
     {
         Calls.Add((identifier, args ?? Array.Empty<object?>()));
@@ -39,6 +45,8 @@ internal sealed class RecordingJsRef : IJSObjectReference
             ThrowJsExceptionNext = false;
             throw new JSException("test js error");
         }
+        if (Returns.TryGetValue(identifier, out var v))
+            return new ValueTask<TValue>((TValue)v!);
         return new ValueTask<TValue>(default(TValue)!);
     }
 

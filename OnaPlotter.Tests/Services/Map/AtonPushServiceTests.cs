@@ -27,6 +27,7 @@ public class AtonPushServiceTests
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
+        public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
     }
 
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;

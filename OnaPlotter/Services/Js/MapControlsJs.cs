@@ -66,6 +66,17 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task ClearCurrentArrowAsync()
         => InvokeSafe("clearCurrentArrow");
 
+    public async Task<double[]?> GetMapCenterAsync()
+    {
+        if (_disposed) return null;
+        try
+        {
+            return await _module.InvokeAsync<double[]>("getMapCenter");
+        }
+        catch (JSDisconnectedException) { return null; }
+        catch (ObjectDisposedException) { return null; }
+    }
+
     private async Task InvokeSafe(string identifier, params object?[] args)
     {
         if (_disposed) return;
