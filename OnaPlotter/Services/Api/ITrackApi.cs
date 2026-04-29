@@ -2,6 +2,11 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
 
+// TrackBbox moved to OnaPlotter.Models -- it's a domain value type
+// (geographic bounds), not an API-specific shape. Old call-sites
+// imported it from this namespace; the using above + the relocated
+// definition keeps them compiling.
+
 /// <summary>
 /// Fetches the server-stored historical track for own vessel from the
 /// SignalK History API v2 (<c>/signalk/v2/api/history/values</c>).
@@ -63,17 +68,4 @@ public interface ITrackApi
         CancellationToken ct = default);
 }
 
-/// <summary>
-/// Geographic bounding box for the optional <c>bbox</c> hint on
-/// <see cref="ITrackApi.GetServerTrackPointsAsync"/>. Decimal degrees;
-/// <c>South</c> &lt; <c>North</c>, <c>West</c> &lt; <c>East</c> for a
-/// non-anti-meridian-spanning box. Anti-meridian crossings aren't a
-/// concern for cruising in inland Europe / Mediterranean / Caribbean
-/// where this code runs; if a future passage hits 180°, the helper
-/// that builds the bbox can split into two requests.
-/// </summary>
-public readonly record struct TrackBbox(
-    double South,
-    double West,
-    double North,
-    double East);
+// TrackBbox is now in OnaPlotter.Models (see TrackBbox.cs).

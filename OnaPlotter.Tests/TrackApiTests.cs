@@ -1,4 +1,5 @@
 using System.Net;
+using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
 
 namespace OnaPlotter.Tests;
@@ -428,6 +429,98 @@ public class TrackApiTests
         await Assert.That(capturedQuery!).Contains("navigation.position");
         await Assert.That(capturedQuery).Contains("navigation.speedOverGround");
         await Assert.That(capturedQuery).Contains("environment.wind.speedTrue");
+    }
+
+    [Test]
+    public async Task RichFetch_Timestamp_PinsUtcKind_AndOffsetConvertedToUtc()
+    {
+        // Pin: TrackPoint.Timestamp is UTC (Kind=Utc), AND a server
+        // emitting the ISO timestamp with an explicit non-zero offset
+        // (e.g. "+02:00") parses to the corresponding UTC instant
+        // rather than being kept as local. AdjustToUniversal is what
+        // makes this work; the substring-based test in earlier rounds
+        // didn't catch a regression that dropped that flag.
+        string body = """
+        {
+            "values":[{"path":"navigation.position","method":"first"}],
+            "data":[["2026-04-23T16:00:00+02:00",[-76,24]]]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(1);
+        await Assert.That(pts[0].Timestamp.Kind).IsEqualTo(DateTimeKind.Utc);
+        // 16:00+02:00 = 14:00 UTC.
+        await Assert.That(pts[0].Timestamp).IsEqualTo(
+            new DateTime(2026, 4, 23, 14, 0, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task RichFetch_TransportFailure_ReturnsNull()
+    {
+        // ResourceHttp catches HttpRequestException internally on the
+        // legacy GetServerTrackAsync path; the rich path has its own
+        // try/catch. Pin both the catch and the null return so a
+        // refactor that drops the wrapper goes red.
+        var http = ApiTestHelpers.MockClient(_ => throw new HttpRequestException("dns fail"));
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var pts = await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+        await Assert.That(pts).IsNull();
+    }
+
+    [Test]
+    public async Task RichFetch_5xx_ReturnsNull()
+    {
+        // 5xx from the history provider plugin (e.g. signalk-parquet
+        // hitting a corrupt parquet file). History page falls back to
+        // the empty-state hint instead of trying to render undefined
+        // data.
+        var http = ApiTestHelpers.MockClient(_ =>
+            new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+        var pts = await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+        await Assert.That(pts).IsNull();
+    }
+
+    [Test]
+    public async Task RichFetch_EmptyData_ReturnsNull()
+    {
+        // Provider installed but no data in the window. Same fallback
+        // shape as legacy GetServerTrackAsync; pinned independently
+        // here so a regression on the rich path can't escape.
+        string body = """
+        {
+            "values":[{"path":"navigation.position","method":"first"}],
+            "data":[]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+        await Assert.That(pts).IsNull();
+    }
+
+    [Test]
+    public async Task RichFetch_BboxParam_HasExactSouthWestNorthEastOrder()
+    {
+        // Belt-and-braces over the substring assertions in
+        // RichFetch_BboxParam_Appends_SouthWestNorthEast_InvariantCulture:
+        // unescape the bbox param and pin the EXACT value. A regression
+        // that swapped to GeoJSON order (west,south,east,north) would
+        // still hit the substring matches; this catches it.
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        var bbox = new TrackBbox(South: 47.30, West: 8.40, North: 47.50, East: 8.60);
+        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h", bbox: bbox);
+
+        await Assert.That(capturedQuery).IsNotNull();
+        var match = System.Text.RegularExpressions.Regex.Match(capturedQuery!, "bbox=([^&]+)");
+        await Assert.That(match.Success).IsTrue();
+        var raw = Uri.UnescapeDataString(match.Groups[1].Value);
+        await Assert.That(raw).IsEqualTo("47.3,8.4,47.5,8.6");
     }
 
     [Test]
