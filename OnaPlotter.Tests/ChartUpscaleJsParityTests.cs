@@ -75,4 +75,42 @@ public class ChartUpscaleJsParityTests
         var src = ReadJsSource();
         await Assert.That(src).Contains("if (lv === 0)");
     }
+
+    [Test]
+    public async Task LeafletInteropMapMaxZoom_MatchesNativePlusMaxLevels()
+    {
+        // The map's maxZoom in leafletInterop.js initMap must mirror
+        // 19 (OSM native cap) + ChartUpscale.MaxLevels so the helm can
+        // actually zoom past native to see GPU-upscaled tiles. The
+        // earlier "overzoom doesn't work" report traced to this
+        // ceiling silently capping the feature before the decorator
+        // got a chance to apply.
+        //
+        // Scrape "maxZoom: 19 + 3" (with whitespace tolerance) and
+        // assert the second number matches ChartUpscale.MaxLevels.
+        // Same regex shape covers the OSM + OpenSeaMap base layers
+        // a few hundred lines below; we pin all three here.
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..",
+            "OnaPlotter", "wwwroot", "js", "leafletInterop.js");
+        var src = File.ReadAllText(path);
+
+        var matches = Regex.Matches(src,
+            @"maxZoom:\s*19\s*\+\s*(?<lv>\d+)");
+        await Assert.That(matches.Count)
+            .IsGreaterThanOrEqualTo(3)
+            .Because("expected map + OSM + OpenSeaMap to all use 19 + ChartUpscale.MaxLevels");
+
+        foreach (Match m in matches)
+        {
+            int lv = int.Parse(m.Groups["lv"].Value,
+                System.Globalization.CultureInfo.InvariantCulture);
+            await Assert.That(lv)
+                .IsEqualTo(ChartUpscale.MaxLevels)
+                .Because($"a 'maxZoom: 19 + N' literal in leafletInterop.js used N={lv} " +
+                         $"but ChartUpscale.MaxLevels is {ChartUpscale.MaxLevels}; " +
+                         "update both together");
+        }
+    }
 }

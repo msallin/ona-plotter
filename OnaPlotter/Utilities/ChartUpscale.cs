@@ -27,7 +27,13 @@ namespace OnaPlotter.Utilities;
 ///   <item>the Settings UI block in <c>Components/Pages/Settings.razor</c>
 ///     (checkbox + levels input + the two change handlers),</item>
 ///   <item>the <c>upscaleLevels</c> arg on <c>IMapOverlaysJs.AddChartLayerAsync</c>
-///     and the <c>ChartLayerController</c> call site that resolves it.</item>
+///     and the <c>ChartLayerController</c> call site that resolves it,</item>
+///   <item>the <c>maxZoom: 19 + 3</c> literal on <c>L.map(...)</c> and the
+///     two <c>L.tileLayer</c> base layers (OSM, OpenSeaMap) in
+///     <c>leafletInterop.js</c>'s <c>initMap</c>: revert these to a
+///     plain <c>maxZoom: 19</c> so the helm can't zoom past native
+///     anymore. The <c>maxNativeZoom: 19</c> on the OSM / OpenSeaMap
+///     layers can stay or go -- it's harmless when <c>maxZoom == 19</c>.</item>
 /// </list>
 /// Drop those, and the feature is gone with no leftover wiring.</para>
 /// </summary>
