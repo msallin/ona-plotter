@@ -456,12 +456,13 @@ public partial class Map
                 }
                 // Force an immediate route draw instead of waiting for
                 // the next delta tick to notice the href change. The
-                // href-diff lives in SyncActiveRouteAsync; just wipe
-                // lastActiveRouteHref so the next tick is guaranteed
-                // to refetch, and kick the sync synchronously so the
-                // user sees the polyline appear right away.
-                lastActiveRouteHref = null;
-                await SyncActiveRouteAsync();
+                // href-diff lives in ActiveRouteSync; invalidate its
+                // cached href so the next tick is guaranteed to
+                // refetch, and kick the sync synchronously so the user
+                // sees the polyline appear right away.
+                _activeRouteSync?.InvalidateActiveRouteHref();
+                if (_activeRouteSync is not null)
+                    await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes);
             }
             else Toasts.Error($"Start route failed: {r.Error ?? "server rejected"}");
         }

@@ -114,7 +114,11 @@ public partial class Map
         }
         if (Data.ActiveRouteHref is not null)
         {
-            try { await SyncActiveRouteAsync(force: true); }
+            try
+            {
+                if (_activeRouteSync is not null)
+                    await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true);
+            }
             catch (JSDisconnectedException) { }
         }
     }
@@ -424,7 +428,11 @@ public partial class Map
                     if (Data.ActiveRouteHref is string href
                         && href.EndsWith($"/{existingId}", StringComparison.Ordinal))
                     {
-                        try { await SyncActiveRouteAsync(force: true); }
+                        try
+                        {
+                            if (_activeRouteSync is not null)
+                                await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true);
+                        }
                         catch (JSDisconnectedException) { }
                     }
                 }
@@ -480,7 +488,11 @@ public partial class Map
             }
             if (Data.ActiveRouteHref is not null)
             {
-                try { await SyncActiveRouteAsync(force: true); }
+                try
+                {
+                    if (_activeRouteSync is not null)
+                        await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true);
+                }
                 catch (JSDisconnectedException) { }
             }
         }
