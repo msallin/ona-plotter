@@ -418,6 +418,11 @@
                      WeatherOverlayVisible="@(_weather?.Visible ?? false)"
                      WeatherOverlayOpacityPercent="@((int)Math.Round(Settings.WeatherOverlayOpacity * 100))"
                      AtonsVisible="Settings.AtonsVisible"
+                     GuardZoneVisible="Settings.GuardZoneVisible"
+                     ShowAutopilotHud="Settings.ShowAutopilotHud"
+                     ShowRadarHud="Settings.ShowRadarHud"
+                     BigType="Settings.BigType"
+                     ExpandAllHud="Settings.ExpandAllHud"
                      LayerFilter="@layerFilter"
                      LayerFilterChanged="OnLayerFilterChanged"
                      OnToggleChartQuickBar="OnToggleChartQuickBarCallback"
@@ -439,7 +444,12 @@
                      OnToggleWeatherOverlay="@(v => _weather?.ToggleAsync(v) ?? Task.CompletedTask)"
                      OnWeatherOpacityPreview="@(p => _weather?.PreviewOpacityAsync(p) ?? Task.CompletedTask)"
                      OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
-                     OnToggleAtonsVisible="ToggleAtonsVisible" />
+                     OnToggleAtonsVisible="ToggleAtonsVisible"
+                     OnToggleGuardZoneVisible="ToggleGuardZoneVisible"
+                     OnToggleShowAutopilotHud="@(v => Settings.SetShowAutopilotHudAsync(v))"
+                     OnToggleShowRadarHud="@(v => Settings.SetShowRadarHudAsync(v))"
+                     OnToggleBigType="@(v => Settings.SetBigTypeAsync(v))"
+                     OnToggleExpandAllHud="@(v => Settings.SetExpandAllHudAsync(v))" />
     }
 </div>
 
@@ -1094,8 +1104,14 @@
             },
         };
         _routeJs = new OnaPlotter.Services.Js.MapRouteJs(module);
+        // _controlsJs hoisted above _activeRouteSync because the
+        // route sync uses it (SetRangeScaleHiddenAsync) to hide the
+        // bottom-centre range scale while the route HUD card sits
+        // in that slot. Other wrappers stay in their current order.
+        _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
         _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteSync(
             _routeJs,
+            _controlsJs,
             RouteApi,
             isSignalKConnected: () => SignalkClient.IsConnected,
             stopTimeoutWarning: msg => Toasts.Warning(msg))
@@ -1135,7 +1151,6 @@
         };
         _resourceJs = new OnaPlotter.Services.Js.MapResourceJs(module);
         _resources = new OnaPlotter.Services.Map.MapResourceController(_resourceJs);
-        _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
         _editJs = new OnaPlotter.Services.Js.MapEditJs(module);
 
         // Prefer the persisted view so re-opening the app lands where
@@ -1313,6 +1328,7 @@
         // setting is honoured by setAtonsVisible JS-side.
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
+        await _aisJs.SetGuardZoneVisibleAsync(Settings.GuardZoneVisible);
         _ = _atonPush!.PushAsync();
         // Resource re-sync: waypoints / routes / notes / regions added
         // from another plotter are otherwise invisible until the user
@@ -2232,6 +2248,19 @@
         // setAtonsVisible JS-side. Persist via Settings so the helm's
         // choice survives reload.
         await Settings.SetAtonsVisibleAsync(enabled);
+    }
+
+    private async Task ToggleGuardZoneVisible(bool enabled)
+    {
+        // Persist + push to JS in lockstep. The setting fires
+        // OnSettingsChanged but only Settings -> JS sync paths that
+        // listen for this specific flag would react; the explicit
+        // JS push here keeps the chart in sync without waiting for a
+        // re-render cycle. CPA alarm pipeline is independent of this
+        // visibility flag (the ring is purely visual; the radius +
+        // lookahead values still drive the alarm).
+        await Settings.SetGuardZoneVisibleAsync(enabled);
+        if (_aisJs is not null) await _aisJs.SetGuardZoneVisibleAsync(enabled);
     }
 
     // --- Race Timer ---

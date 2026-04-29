@@ -91,4 +91,11 @@ public interface IMapControlsJs
     /// to seed the same target fields the long-press context-menu
     /// handlers already write.</summary>
     Task<double[]?> GetMapCenterAsync();
+
+    /// <summary>Hide / show the bottom-centre range-scale chip. The
+    /// chip occupies the same vertical column as the active-route
+    /// HUD card; we hide the chip while a route is active so they
+    /// don't overlap. Called from ActiveRouteSync on activate /
+    /// deactivate.</summary>
+    Task SetRangeScaleHiddenAsync(bool hidden);
 }

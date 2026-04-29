@@ -77,16 +77,29 @@
                          OnDurationChanged="OnServerTrackDurationChanged"
                          OnWithinBoundsChanged="OnServerTrackWithinBoundsChanged" />
 
+    @* HUD visibility toggles -- mirrors the Settings page so the
+       helm can declutter the chart without leaving the Map. *@
+    <HudsSection ShowAutopilotHud="ShowAutopilotHud"
+                 ShowRadarHud="ShowRadarHud"
+                 BigType="BigType"
+                 ExpandAllHud="ExpandAllHud"
+                 OnToggleAutopilotHud="OnToggleShowAutopilotHud"
+                 OnToggleRadarHud="OnToggleShowRadarHud"
+                 OnToggleBigType="OnToggleBigType"
+                 OnToggleExpandAllHud="OnToggleExpandAllHud" />
+
     @* Single "Misc" section bundles Weather + AtoNs. Was two adjacent
        single-checkbox sections; consolidating them removes a header
        row of dead chrome without losing either toggle. *@
     <MiscSection WeatherVisible="WeatherOverlayVisible"
                  WeatherOpacityPercent="WeatherOverlayOpacityPercent"
                  AtonsVisible="AtonsVisible"
+                 GuardZoneVisible="GuardZoneVisible"
                  OnToggleWeather="OnToggleWeatherOverlay"
                  OnWeatherOpacityPreview="OnWeatherOpacityPreview"
                  OnWeatherOpacityCommit="OnWeatherOpacityCommit"
-                 OnToggleAtons="OnToggleAtonsVisible" />
+                 OnToggleAtons="OnToggleAtonsVisible"
+                 OnToggleGuardZone="OnToggleGuardZoneVisible" />
 
     @* Import / Export GPX moved to the Settings page (Backup section).
        The map's Layers panel is for "what shows on the chart"; data
@@ -117,6 +130,11 @@
     [Parameter] public bool NotesVisible { get; set; } = true;
     [Parameter] public bool RegionsVisible { get; set; } = true;
     [Parameter] public bool AtonsVisible { get; set; } = true;
+    [Parameter] public bool GuardZoneVisible { get; set; } = true;
+    [Parameter] public bool ShowAutopilotHud { get; set; }
+    [Parameter] public bool ShowRadarHud { get; set; }
+    [Parameter] public bool BigType { get; set; }
+    [Parameter] public bool ExpandAllHud { get; set; }
 
     [Parameter] public string LayerFilter { get; set; } = "";
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
@@ -149,6 +167,11 @@
     [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
     [Parameter] public EventCallback<int> OnWeatherOpacityCommit { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtonsVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleGuardZoneVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleShowAutopilotHud { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleShowRadarHud { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleBigType { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleExpandAllHud { get; set; }
 
     private async Task OnFilterInput(ChangeEventArgs e)
     {

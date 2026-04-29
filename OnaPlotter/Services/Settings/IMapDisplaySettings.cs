@@ -24,6 +24,12 @@ public interface IMapDisplaySettings
     /// <summary>AIS Aids to Navigation visible on the map.</summary>
     bool AtonsVisible { get; }
 
+    /// <summary>Guard-zone amber ring visible on the map. Independent
+    /// of the CPA alarm pipeline -- helms can declutter the chart
+    /// without disabling the alarm. Defaults to true so existing
+    /// installs see the ring as before.</summary>
+    bool GuardZoneVisible { get; }
+
     /// <summary>RainViewer weather overlay opacity, 0.05..0.95
     /// fraction. The shared
     /// <see cref="OnaPlotter.Utilities.WeatherOpacity"/> helper holds
@@ -54,6 +60,7 @@ public interface IMapDisplaySettings
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
+    Task SetGuardZoneVisibleAsync(bool value);
     Task SetWeatherOverlayOpacityAsync(double value);
     Task SetHarborModeAsync(bool value);
     Task SetBigTypeAsync(bool value);

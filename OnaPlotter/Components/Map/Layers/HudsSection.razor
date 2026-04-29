@@ -1,0 +1,57 @@
+@* HUD visibility toggles. Mirrors the four Settings page checkboxes
+   (Autopilot card, Radar card, big-type, expand-all-HUD) so the helm
+   can declutter the chart without leaving the Map page. The settings
+   are the same property bag the Settings page binds to -- both
+   surfaces stay in sync via OnSettingsChanged. *@
+
+<SectionHeader Title="HUDs"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    <label class="chart-item">
+        <input type="checkbox" checked="@ShowAutopilotHud"
+               @onchange="(e) => OnToggleAutopilotHud.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Autopilot card</div>
+            <div class="chart-desc">Bottom-right card with engaged-state + heading nudges.</div>
+        </div>
+    </label>
+    <label class="chart-item">
+        <input type="checkbox" checked="@ShowRadarHud"
+               @onchange="(e) => OnToggleRadarHud.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Radar card</div>
+            <div class="chart-desc">Bottom-right card with range stepper + Transmit / Standby.</div>
+        </div>
+    </label>
+    <label class="chart-item">
+        <input type="checkbox" checked="@BigType"
+               @onchange="(e) => OnToggleBigType.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Big type</div>
+            <div class="chart-desc">Scale corner HUD values up for cockpit-distance reading.</div>
+        </div>
+    </label>
+    <label class="chart-item">
+        <input type="checkbox" checked="@ExpandAllHud"
+               @onchange="(e) => OnToggleExpandAllHud.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Expand all HUDs</div>
+            <div class="chart-desc">Render the corner cards expanded by default; tap-to-collapse instead of tap-to-expand.</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool ShowAutopilotHud { get; set; }
+    [Parameter] public bool ShowRadarHud { get; set; }
+    [Parameter] public bool BigType { get; set; }
+    [Parameter] public bool ExpandAllHud { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleAutopilotHud { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleRadarHud { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleBigType { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleExpandAllHud { get; set; }
+
+    private bool expanded = false;
+}

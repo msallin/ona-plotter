@@ -3736,9 +3736,29 @@ html.night-mode-global body {
    "Range scale chip placement" todo for the rework -- styling
    below preserved so flipping the display rule un-hides a fully
    themed chip. */
+/* Range-scale chip placement: bottom-centre, just above the bc-stack
+   (anchor watch / route HUD). Sits 12 px above the top of the bc-stack
+   so it groups visually with the card below it rather than floating
+   over the action bar. The chip is a static element appended to
+   .map-container by initRangeScale -- not a Leaflet control -- so
+   absolute positioning relative to the chart container is straight
+   CSS without fighting Leaflet's control rail flex layout.
+
+   The .ona-range-scale-hidden modifier is set from C# whenever the
+   active-route HUD card occupies the bc-stack; the route card and
+   the chip would overlap. Anchor watch + chip can coexist in the
+   same vertical column (the chip is narrow, the anchor card is
+   short-and-wide) so anchor doesn't trigger the hide. */
 .ona-range-scale {
-    display: none !important;       /* TEMP: hide until placement is decided */
-    /* visual styling kept intact for when the chip is re-enabled: */
+    position: absolute;
+    /* Sit above the bc-stack: --panel-bottom is the bc-stack's bottom
+       offset, plus a slot for the card itself (~64 px), plus a 12 px
+       gap so the chip reads as "above the card" not "touching it". */
+    bottom: calc(var(--panel-bottom) + 64px + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: var(--z-controls);
+    display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     padding: 4px 8px;
@@ -3754,6 +3774,9 @@ html.night-mode-global body {
     font-variant-numeric: tabular-nums;
     pointer-events: none;
     user-select: none;
+}
+.ona-range-scale-hidden {
+    display: none !important;
 }
 .ona-range-scale-label {
     font-weight: 600;

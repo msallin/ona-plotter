@@ -90,8 +90,6 @@ let seaBaseLayer = null;
 // Zoom-level badge (bottom-right). Assigned in initMap so the control
 // exists before the first zoomend fires.
 let zoomBadge = null;
-// Range-scale chip in the bottom-left rail. Same lifetime as zoomBadge.
-let rangeScale = null;
 
 // "Nice round" nautical-mile values for the corner range scale chip
 // AND the pinch-zoom preview. Single source of truth so the bar in
@@ -173,23 +171,48 @@ const ZoomBadge = L.Control.extend({
 // helm can eyeball distance on the chart at a glance, the same way
 // every commercial plotter does. Renders via cached child spans so
 // the per-update path doesn't re-parse innerHTML on each pan.
-const RangeScale = L.Control.extend({
-    options: { position: 'bottomleft' },
-    onAdd() {
-        this._el = L.DomUtil.create('div', 'ona-range-scale');
-        this._labelEl = L.DomUtil.create('span', 'ona-range-scale-label', this._el);
-        this._barEl   = L.DomUtil.create('span', 'ona-range-scale-bar',   this._el);
-        L.DomEvent.disableClickPropagation(this._el);
-        return this._el;
-    },
-    update() {
-        if (!this._el || !this._map) return;
-        const { label, widthPx } = computeNiceScale(this._map, 100, 8);
-        this._labelEl.textContent = label;
-        this._barEl.style.width = `${widthPx}px`;
-        this._el.title = `Range: ${label}`;
-    }
-});
+//
+// Positioning lives in CSS (.ona-range-scale): the chip sits in the
+// bottom-centre column just above the bc-stack (anchor watch /
+// active route HUD card), NOT inside Leaflet's control rail. Helm
+// asked for it there because the bottom-left corner felt
+// disconnected from anything ("just somewhere"). The chip hides
+// itself when an active route is present so the route HUD (which
+// uses the same vertical slot) doesn't fight for space; toggled
+// from C# via setRangeScaleHidden.
+let _rangeScaleEl = null;
+let _rangeScaleLabelEl = null;
+let _rangeScaleBarEl = null;
+function initRangeScale(mapInstance) {
+    _rangeScaleEl = L.DomUtil.create('div', 'ona-range-scale',
+        mapInstance.getContainer());
+    _rangeScaleLabelEl = L.DomUtil.create('span', 'ona-range-scale-label',
+        _rangeScaleEl);
+    _rangeScaleBarEl = L.DomUtil.create('span', 'ona-range-scale-bar',
+        _rangeScaleEl);
+    L.DomEvent.disableClickPropagation(_rangeScaleEl);
+    updateRangeScale();
+    mapInstance.on('zoomend moveend', updateRangeScale);
+}
+function updateRangeScale() {
+    if (!_rangeScaleEl || !map) return;
+    const { label, widthPx } = computeNiceScale(map, 100, 8);
+    _rangeScaleLabelEl.textContent = label;
+    _rangeScaleBarEl.style.width = `${widthPx}px`;
+    _rangeScaleEl.title = `Range: ${label}`;
+}
+
+/**
+ * Hide the range-scale chip while another HUD card occupies the
+ * bottom-centre slot (active route during navigation). Toggled from
+ * C# on setActiveRoute / clearActiveRoute. Idempotent. Safe to call
+ * before initRangeScale -- the no-op early-return covers the bootstrap
+ * window.
+ */
+export function setRangeScaleHidden(hidden) {
+    if (!_rangeScaleEl) return;
+    _rangeScaleEl.classList.toggle('ona-range-scale-hidden', !!hidden);
+}
 
 // Routes and server track.
 const routeLayers = new MarkerLayer();  // keyed by route ID
@@ -517,13 +540,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Bottom-left corner -- same Leaflet control rail as the zoom
     // badge so the two chips stack predictably even when the depth
     // HUD card moves on viewport changes.
-    rangeScale = new RangeScale({ position: 'bottomleft' });
-    rangeScale.addTo(map);
-    // moveend fires for both pan AND zoom and updates the sample
-    // when the helm pans across latitudes (1 nm spans more pixels
-    // near the poles than the equator, even at the same zoom level).
-    map.on('zoomend moveend', () => rangeScale.update());
-    rangeScale.update();
+    initRangeScale(map);
 
     // Pinch-zoom preview: a centred chip with the live range scale
     // appears at zoomstart, updates per zoom frame, then lingers
@@ -1091,6 +1108,8 @@ export const updateAisTargets = (vessels) => aisLayerMod.updateAisTargets(vessel
 export const focusVessel = (context) => aisLayerMod.focusVessel(context);
 export const setGuardZone = (radiusNm, lookaheadMin, warningFactor) =>
     aisLayerMod.setGuardZone(radiusNm, lookaheadMin, warningFactor);
+export const setGuardZoneVisible = (visible) =>
+    aisLayerMod.setGuardZoneVisible(visible);
 export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
 
 // --- Persistent measurement tool ---

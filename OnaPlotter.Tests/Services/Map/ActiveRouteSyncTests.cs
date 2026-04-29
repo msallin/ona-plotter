@@ -98,24 +98,60 @@ public class ActiveRouteSyncTests
         public DateTime Get() => Now;
     }
 
+    /// <summary>
+    /// Stub IMapControlsJs that records SetRangeScaleHiddenAsync
+    /// calls. ActiveRouteSync uses it to toggle the bottom-centre
+    /// range-scale chip when a route activates / deactivates; the
+    /// recording lets the test pin that the calls fire at the right
+    /// transitions. Other IMapControlsJs methods stay as no-ops --
+    /// the sync only touches this one.
+    /// </summary>
+    private sealed class FakeControlsJs : IMapControlsJs
+    {
+        public List<bool> RangeScaleHidden { get; } = [];
+        public Task SetRangeScaleHiddenAsync(bool hidden)
+        {
+            RangeScaleHidden.Add(hidden);
+            return Task.CompletedTask;
+        }
+        public Task SetSignalKBaseUrlAsync(string url) => Task.CompletedTask;
+        public Task SetMapOrientationAsync(string mode) => Task.CompletedTask;
+        public Task SetFollowAsync(bool follow) => Task.CompletedTask;
+        public Task ClearLaylinesAsync() => Task.CompletedTask;
+        public Task SetNightModeAsync(bool enabled) => Task.CompletedTask;
+        public Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor) => Task.CompletedTask;
+        public Task PanToAsync(double lat, double lon) => Task.CompletedTask;
+        public Task ZoomToTrackAsync() => Task.CompletedTask;
+        public Task FitBoundsAsync(double minLat, double minLon, double maxLat, double maxLon) => Task.CompletedTask;
+        public Task EnableKeyboardShortcutsAsync<T>(Microsoft.JSInterop.DotNetObjectReference<T> dotNetRef) where T : class => Task.CompletedTask;
+        public Task DisableKeyboardShortcutsAsync() => Task.CompletedTask;
+        public Task ApplyFrameAsync(object frame) => Task.CompletedTask;
+        public Task SetMobAsync(double lat, double lon) => Task.CompletedTask;
+        public Task ClearMobAsync() => Task.CompletedTask;
+        public Task ClearCurrentArrowAsync() => Task.CompletedTask;
+        public Task<double[]?> GetMapCenterAsync() => Task.FromResult<double[]?>(null);
+    }
+
     private static (
         ActiveRouteSync sync,
         FakeRouteJs js,
         FakeRouteApi api,
+        FakeControlsJs controls,
         List<string> warnings,
         TimeBox time)
     NewSync(bool connected = true)
     {
         var js = new FakeRouteJs();
         var api = new FakeRouteApi();
+        var controls = new FakeControlsJs();
         var time = new TimeBox();
         var warnings = new List<string>();
         var sync = new ActiveRouteSync(
-            js, api,
+            js, controls, api,
             isSignalKConnected: () => connected,
             stopTimeoutWarning: msg => warnings.Add(msg),
             utcNow: () => time.Get());
-        return (sync, js, api, warnings, time);
+        return (sync, js, api, controls, warnings, time);
     }
 
     private static NavigationData ActiveRoute(string href, double nextLat, double nextLon, int? pointIndex = 0)
@@ -133,7 +169,7 @@ public class ActiveRouteSyncTests
     {
         // Helm activates route; controller fetches the coords once,
         // resolves the leg index, and pushes to JS.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3], [54.7, 11.4]];
         var data = ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1);
 
@@ -152,7 +188,7 @@ public class ActiveRouteSyncTests
         // Diff state: once drawn, an unchanged tick is a full no-op.
         // The diff gate matches the byte-equivalent behaviour of the
         // pre-extraction Map.razor SyncActiveRouteAsync.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         var data = ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1);
 
@@ -168,7 +204,7 @@ public class ActiveRouteSyncTests
     {
         // Leg advance: same href, different next-WP coords. Reuses
         // cached coords (no second HTTP) but redraws with the new idx.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3], [54.7, 11.4]];
 
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
@@ -185,7 +221,7 @@ public class ActiveRouteSyncTests
         // pointIndex landing before nextPoint.position on page reload:
         // the redraw mustn't wait for nextPoint.position. A pointIndex
         // delta with the same next-WP coords should still fire.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3], [54.7, 11.4]];
 
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
@@ -199,7 +235,7 @@ public class ActiveRouteSyncTests
     {
         // Route deactivated (StopNavigation, server clears href);
         // controller clears the polyline + course line.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
 
@@ -216,7 +252,7 @@ public class ActiveRouteSyncTests
     {
         // In-place edit of the active route: href hasn't changed but
         // geometry has. force=true bypasses the gate.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), [], force: true);
@@ -230,7 +266,7 @@ public class ActiveRouteSyncTests
         // The same id as a saved-route polyline + a brand-new active
         // route: controller calls removeRoute on the regular polyline
         // so the active overlay doesn't double-stroke.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         var enabled = new HashSet<string> { "r1" };
 
@@ -245,7 +281,7 @@ public class ActiveRouteSyncTests
     {
         // Active changes from r1 to r2; r1's regular polyline gets
         // restored via the page callback so the helm sees it again.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         api.CoordsByHref["/resources/routes/r2"] = [[55.0, 12.0], [55.1, 12.1]];
         var enabled = new HashSet<string> { "r1", "r2" };
@@ -269,7 +305,7 @@ public class ActiveRouteSyncTests
     {
         // Stop tapped; SK delta hasn't cleared href within 5 s; warn +
         // un-dim the polyline.
-        var (sync, js, api, warnings, time) = NewSync();
+        var (sync, js, api, _, warnings, time) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         sync.MarkCourseStopPending();
@@ -287,7 +323,7 @@ public class ActiveRouteSyncTests
     public async Task Stop_Watchdog_Suppressed_While_Disconnected()
     {
         // Same as anchor watchdog: re-arm each tick while WS is down.
-        var (sync, js, api, warnings, time) = NewSync(connected: false);
+        var (sync, js, api, _, warnings, time) = NewSync(connected: false);
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         sync.MarkCourseStopPending();
@@ -303,7 +339,7 @@ public class ActiveRouteSyncTests
     {
         // Helm tapped Stop; SK delta clears href; pending flag follows
         // truth and the watchdog stays quiet.
-        var (sync, js, api, warnings, time) = NewSync();
+        var (sync, js, api, _, warnings, time) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         sync.MarkCourseStopPending();
@@ -321,7 +357,7 @@ public class ActiveRouteSyncTests
     {
         // Page-side "force redraw NOW" hook: invalidate cached href,
         // next sync refetches even though the SK href is unchanged.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
 
@@ -336,7 +372,7 @@ public class ActiveRouteSyncTests
     {
         // Page wires this to the frame builder's CourseLineDrawn flag
         // so the next frame draws a fresh course line. Verify the hook.
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         await sync.SyncAsync(ActiveRoute("/resources/routes/r1", 54.6, 11.3, pointIndex: 1), new HashSet<string>(), []);
         bool called = false;
@@ -353,7 +389,7 @@ public class ActiveRouteSyncTests
         // Active route name from delta is null; controller looks up
         // the human-readable name in availableRoutes so the popup
         // never reads "Route abc-12".
-        var (sync, js, api, _, _) = NewSync();
+        var (sync, js, api, _, _, _) = NewSync();
         api.CoordsByHref["/resources/routes/r1"] = [[54.5, 11.2], [54.6, 11.3]];
         var available = new List<SignalkRoute> { new() { Id = "r1", Name = "Friday Sail" } };
         var data = new NavigationData();

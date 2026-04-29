@@ -13,6 +13,7 @@
 @inject ClientErrorRelay ErrorRelay
 @inject IRouteApi RouteApi
 @inject IWaypointApi WaypointApi
+@inject INotificationsApi NotificationsApi
 
 <PageTitle>Settings</PageTitle>
 
@@ -762,6 +763,35 @@
             </div>
         </div>
     </div>
+
+    @* Notification self-test. Raises a synthetic alarm via the SK v2
+       Notifications API on a dedicated test path. The server emits
+       a notifications delta, every connected plotter (including this
+       one) sees it in their banner, and the Acknowledge button
+       round-trips through the SK v2 ack flow. Useful for verifying
+       the publish + cross-plotter sync after a deploy. *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <strong class="d-block">Send test notification</strong>
+                <small class="text-muted d-block mb-2">
+                    Raises a synthetic <em>warn</em>-level alarm at
+                    <code>notifications.onaplotter.test</code>. Watch the
+                    banner appear here AND on every other plotter
+                    connected to the same SignalK server; tap
+                    Acknowledge on either side and the chip clears
+                    everywhere. Re-press to re-raise; the path
+                    auto-clears 60 s after the last raise (server-side
+                    GC) if you forget.
+                </small>
+                <button class="btn btn-sm btn-outline-secondary"
+                        disabled="@testNotificationInFlight"
+                        @onclick="SendTestNotification">
+                    @(testNotificationInFlight ? "Sending..." : "Send test notification")
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 </div> @* /.app-page *@
@@ -778,6 +808,7 @@
     // In-flight guard for the "Send test log" button so a double-tap
     // during a slow network round-trip doesn't queue a second POST.
     private bool testLogInFlight;
+    private bool testNotificationInFlight;
 
     private async Task SendTestLog()
     {
@@ -800,6 +831,44 @@
         finally
         {
             testLogInFlight = false;
+        }
+    }
+
+    /// <summary>Raises a synthetic alarm at
+    /// <c>notifications.onaplotter.test</c> via the SK v2 Notifications
+    /// API. Verifies the publish + ack path end-to-end -- the alarm
+    /// appears on every connected plotter, and Acknowledge round-trips
+    /// through the same v2 endpoint local rules use.</summary>
+    private async Task SendTestNotification()
+    {
+        if (testNotificationInFlight) return;
+        testNotificationInFlight = true;
+        try
+        {
+            // Path scoped under "onaplotter" so it can never collide
+            // with a real SK alarm path that some rule cares about.
+            // Warn-level chosen over alarm/emergency so an accidental
+            // tap on the helm doesn't pull crew attention as hard as
+            // a real safety alarm would. visual+sound covers both
+            // banner + audio paths so the helm verifies both.
+            const string testPath = "notifications.onaplotter.test";
+            var payload = new NotificationPayload(
+                State: "warn",
+                Method: ["visual", "sound"],
+                Message: $"OnaPlotter test alarm @ build {OnaPlotter.BuildInfo.CommitHash}. Tap Acknowledge to confirm round-trip.");
+            var result = await NotificationsApi.RaiseAsync(testPath, payload);
+            if (result.Success)
+            {
+                Toasts.Success("Test notification sent. Watch the banner here + on other plotters; tap Acknowledge to round-trip.");
+            }
+            else
+            {
+                Toasts.Error($"Test notification failed: {result.Error ?? "unknown error"}");
+            }
+        }
+        finally
+        {
+            testNotificationInFlight = false;
         }
     }
 
