@@ -5532,6 +5532,48 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     color: var(--panel-text);
 }
 
+/* History table view. Sits over the map -- the map div stays
+   mounted underneath (so Leaflet keeps its tile cache + viewport
+   state across flips) but visually hidden via .history-map-hidden.
+   The overlay covers the whole map-container area so the helm sees
+   a clean trip list with no chart underneath. */
+.history-map-hidden {
+    visibility: hidden;
+}
+.history-table-view {
+    position: absolute;
+    inset: 0;
+    background: var(--sk-bg);
+    color: var(--sk-text);
+    padding: 16px 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    /* Above the controls panel (z-index 800) so the trip list isn't
+       partially obscured by the playback bar that sits at bottom. */
+    z-index: 850;
+}
+.history-table-scroll {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--sk-border);
+    border-radius: 6px;
+    background: var(--sk-surface);
+}
+.history-trip-table {
+    margin-bottom: 0;
+    font-size: 0.875rem;
+}
+.history-trip-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--sk-surface);
+    z-index: 1;
+    /* Bootstrap's table-sm thead uses inherited bg by default; on
+       the History overlay we want it explicitly opaque so a row's
+       sticky scroll doesn't bleed text under the header. */
+}
+
 /* ===== Quick Chart Switcher ===== */
 
 /* On phones the top-centre HUD (wind, route panel) already fights for
