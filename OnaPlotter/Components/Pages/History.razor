@@ -9,6 +9,8 @@
 @implements IAsyncDisposable
 @using OnaPlotter.Services.Api
 @inject ITrackApi TrackApi
+@inject IChartApi ChartApi
+@inject ISignalKBaseUrl SkBaseUrl
 @inject SignalkClient SignalkClient
 @inject IJSRuntime JS
 
@@ -67,7 +69,36 @@
                    without an inner wrapper; same visual as "Load". *@
                 @((MarkupString)Icons.Follow) Boat
             </button>
+            @* Charts toggle. Minimal version of the Map page's
+               LayersPanel: just a flat list of available charts with
+               a checkbox each. No quick-bar, no drag-reorder, no
+               persistence -- chart selection is per-session here so
+               opening History to review a passage doesn't clobber the
+               helm's chart preferences on the live Map page. *@
+            @if (availableCharts is { Count: > 0 })
+            {
+                <button class="map-btn" @onclick="ToggleChartsPanel"
+                        title="Show / hide chart layers">
+                    Charts (@enabledChartIds.Count / @availableCharts.Count)
+                </button>
+            }
         </div>
+
+        @if (chartsPanelOpen && availableCharts is { Count: > 0 })
+        {
+            <div class="history-charts-panel">
+                @foreach (var chart in availableCharts)
+                {
+                    <label class="d-flex align-items-center gap-2"
+                           style="font-size:0.85rem; padding:0.25rem 0;">
+                        <input type="checkbox"
+                               checked="@enabledChartIds.Contains(chart.Identifier)"
+                               @onchange="async e => await ToggleChartAsync(chart, e)" />
+                        <span>@(string.IsNullOrEmpty(chart.Name) ? chart.Identifier : chart.Name)</span>
+                    </label>
+                }
+            </div>
+        }
 
         @if (points is not null && points.Length > 0)
         {
@@ -148,6 +179,14 @@
     private string rangeMode = "preset";
     private DateTime customFromLocal = DateTime.Now.AddHours(-6);
     private DateTime customToLocal = DateTime.Now;
+    // Chart-layer state. Loaded once from IChartApi after the map
+    // initialises. enabledChartIds holds the per-session set; no
+    // persistence (the Map page's IChartSettings is not shared with
+    // this page on purpose, so opening History to review yesterday
+    // doesn't clobber the helm's live-Map chart preferences).
+    private List<OnaPlotter.Models.SignalkChart>? availableCharts;
+    private readonly HashSet<string> enabledChartIds = new(StringComparer.Ordinal);
+    private bool chartsPanelOpen;
 
     /// <summary>Surface the current scrub timestamp instead of the
     /// previous "Point N / total" placeholder. Helms reading the
@@ -202,6 +241,17 @@
             {
                 await DrawBoatMarker();
             }
+
+            // Pull the available charts list once. The History page's
+            // chart toggle is per-session (no persisted enabled set)
+            // so we can fetch and cache here without worrying about
+            // re-syncing across page mounts. A 404 / 5xx returns an
+            // empty list -- the Charts button just doesn't render.
+            try
+            {
+                availableCharts = await ChartApi.GetAllAsync();
+            }
+            catch (HttpRequestException) { availableCharts = []; }
 
             // Auto-load the default timespan.
             await LoadTrack();
@@ -284,6 +334,98 @@
     /// locale doesn't accidentally produce <c>05.06.2024</c>.</summary>
     private static string FormatLocalForInput(DateTime t) =>
         t.ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    private void ToggleChartsPanel() => chartsPanelOpen = !chartsPanelOpen;
+
+    private async Task ToggleChartAsync(OnaPlotter.Models.SignalkChart chart, ChangeEventArgs e)
+    {
+        bool turningOn = e.Value is bool b && b;
+        var tileUrl = chart.GetTileUrl();
+        if (string.IsNullOrEmpty(tileUrl)) return;
+        if (turningOn)
+        {
+            enabledChartIds.Add(chart.Identifier);
+            await AddHistoryChartLayerAsync(chart, tileUrl);
+        }
+        else
+        {
+            enabledChartIds.Remove(chart.Identifier);
+            await RemoveHistoryChartLayerAsync(chart.Identifier);
+        }
+    }
+
+    /// <summary>Adds a chart tile layer to <c>_historyMap</c>. We can't
+    /// reuse <c>leafletInterop.js::addChartLayer</c> because that
+    /// targets the Map page's global <c>map</c> variable; the History
+    /// page has its own map instance under <c>_historyMap</c>. The
+    /// helper below is a minimal version: bounds-clipped tile layer
+    /// with the standard 0.85 opacity. No multi-chart opacity ramp,
+    /// no z-index reordering -- the helm rarely stacks charts on
+    /// History (one passage = one chart series), so the simpler
+    /// behaviour is enough.</summary>
+    private async Task AddHistoryChartLayerAsync(
+        OnaPlotter.Models.SignalkChart chart, string tileUrl)
+    {
+        // Resolve relative tile URLs against the SK server. This
+        // matches what the Map page's interop does for the same
+        // chart resource. The SK base URL is whatever the running
+        // page was served from -- the same origin the WebSocket
+        // connects to. ISignalKBaseUrl resolves config-override or
+        // falls back to the page origin.
+        var resolved = tileUrl.StartsWith("http://") || tileUrl.StartsWith("https://")
+            ? tileUrl
+            : new Uri(new Uri(SkBaseUrl.BaseUrl + "/"), tileUrl.TrimStart('/')).ToString();
+        // Bounds shape from SignalkChart: [west, south, east, north].
+        // Leaflet wants [[s,w],[n,e]] so we reorder server-side.
+        double[]? bounds = chart.Bounds;
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m) return;
+                    if (!window._historyChartLayers) window._historyChartLayers = {{}};
+                    var id = {System.Text.Json.JsonSerializer.Serialize(chart.Identifier)};
+                    if (window._historyChartLayers[id]) return;
+                    var opts = {{
+                        minZoom: {(chart.MinZoom ?? 1).ToString(System.Globalization.CultureInfo.InvariantCulture)},
+                        maxZoom: {(chart.MaxZoom ?? 18).ToString(System.Globalization.CultureInfo.InvariantCulture)},
+                        opacity: 0.85,
+                        keepBuffer: 6,
+                        crossOrigin: 'anonymous',
+                        attribution: '',
+                        errorTileUrl: ''
+                    }};
+                    var b = {(bounds is { Length: 4 } ? System.Text.Json.JsonSerializer.Serialize(bounds) : "null")};
+                    if (b) opts.bounds = L.latLngBounds([b[1], b[0]], [b[3], b[2]]);
+                    var layer = L.tileLayer({System.Text.Json.JsonSerializer.Serialize(resolved)}, opts);
+                    layer.setZIndex(50);
+                    layer.addTo(m);
+                    window._historyChartLayers[id] = layer;
+                }})()
+            ");
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task RemoveHistoryChartLayerAsync(string id)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m) return;
+                    var bag = window._historyChartLayers;
+                    if (!bag) return;
+                    var id = {System.Text.Json.JsonSerializer.Serialize(id)};
+                    var l = bag[id];
+                    if (l) {{ m.removeLayer(l); delete bag[id]; }}
+                }})()
+            ");
+        }
+        catch (JSDisconnectedException) { }
+    }
 
     /// <summary>Pulls the current Leaflet viewport bounds from JS and
     /// returns them as a <see cref="TrackBbox"/> padded outward by
