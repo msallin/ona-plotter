@@ -24,6 +24,19 @@
 //   const msg = decodeRadarMessage(new Uint8Array(arrayBuffer));
 //   for (const spoke of msg.spokes) { ... }
 
+// Module-level scratch + sentinel hoisted to the top so ESLint's
+// no-use-before-define is satisfied. Both are referenced inside
+// function bodies that fire only at runtime, after this module has
+// finished evaluating; the previous "declare-where-it-feels-natural"
+// layout was static-analysis-noisy without buying any runtime
+// safety. _scratchReader stays null until the first decode call
+// `??=` initialises it -- the comment that used to live next to
+// the declaration explained why a let-then-init pattern was used:
+// eager `new Reader(...)` here would TDZ-trip the class declaration
+// further down in the file.
+let _scratchReader = null;
+const EMPTY_BYTES = new Uint8Array(0);
+
 /**
  * Decodes a RadarMessage from a Uint8Array. Unknown fields are
  * skipped silently (forward-compat with server versions that add
@@ -54,11 +67,6 @@ export function decodeRadarMessage(bytes) {
     }
     return { spokes };
 }
-
-// Lazy-init scratch Reader. Declared as let so the first call to
-// decodeRadarMessage can `??=` it into existence AFTER the Reader
-// class declaration has been evaluated (TDZ bites eager init).
-let _scratchReader = null;
 
 /**
  * @typedef {Object} Spoke
@@ -99,8 +107,6 @@ function decodeSpoke(r, end) {
     // cheap to read as undefined.
     return { angle, bearing, range, data, lat, lon };
 }
-
-const EMPTY_BYTES = new Uint8Array(0);
 
 // Reader walks a Uint8Array returning one wire-typed value at a
 // time. Single-file, no class hierarchy: this is the only consumer.

@@ -1124,7 +1124,7 @@ export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
 // --- Persistent measurement tool ---
 // Implementation in measureLayer.js; mux re-exports the C# entries.
 export const setMeasureMode = (active) => measureLayerMod.setMeasureMode(active);
-export const clearMeasure = () => measureLayerMod.clearMeasure();
+export function clearMeasure() { return measureLayerMod.clearMeasure(); }
 export const measureFromVesselTo = (lat, lon) => measureLayerMod.measureFromVesselTo(lat, lon);
 
 // --- MOB ---
@@ -1612,9 +1612,10 @@ export const setActiveRoute = (coords, wpIdx, routeId, routeName) =>
     activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName);
 export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
 export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
-export const setCourseLine = (boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) =>
-    courseLineLayerMod.setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity);
-export const clearCourseLine = () => courseLineLayerMod.clearCourseLine();
+export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
+    return courseLineLayerMod.setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity);
+}
+export function clearCourseLine() { return courseLineLayerMod.clearCourseLine(); }
 
 // Stopping-state visual feedback spans both modules: dim the route
 // polyline AND the course-line elements together so the helm sees
@@ -1638,7 +1639,14 @@ export const reverseEditRoute = () => routeEditLayerMod.reverseEditRoute();
 export const removeRouteEditWaypoint = (index) => routeEditLayerMod.removeRouteEditWaypoint(index);
 export const getEditRouteStats = () => routeEditLayerMod.getEditRouteStats();
 export const loadRouteForEdit = (coords) => routeEditLayerMod.loadRouteForEdit(coords);
-const addEditWaypoint = (lat, lon) => routeEditLayerMod.addEditWaypoint(lat, lon);
+// `function` declarations rather than `const` arrows so they hoist
+// to the top of the module: the call sites (line click handlers,
+// drop-on-canvas dispatchers near 498/690/1344) are inside callback
+// bodies that would still resolve at runtime, but ESLint's
+// no-use-before-define can't see through the closure -- function
+// declarations side-step the rule cleanly without disable comments
+// at every call site.
+function addEditWaypoint(lat, lon) { return routeEditLayerMod.addEditWaypoint(lat, lon); }
 
 export const startPolygonEdit = () => polygonEditLayerMod.startPolygonEdit();
 export const stopPolygonEdit = () => polygonEditLayerMod.stopPolygonEdit();
@@ -1646,7 +1654,7 @@ export const getPolygonEditCoords = () => polygonEditLayerMod.getPolygonEditCoor
 export const undoLastPolygonVertex = () => polygonEditLayerMod.undoLastPolygonVertex();
 export const removePolygonEditVertex = (index) => polygonEditLayerMod.removePolygonEditVertex(index);
 export const loadPolygonForEdit = (coords) => polygonEditLayerMod.loadPolygonForEdit(coords);
-const addPolygonVertexInternal = (lat, lon) => polygonEditLayerMod.addPolygonVertexInternal(lat, lon);
+function addPolygonVertexInternal(lat, lon) { return polygonEditLayerMod.addPolygonVertexInternal(lat, lon); }
 
 // Euclidean pixel distance from point p to segment ab. Used by
 // routeEditLayer + measureLayer for "find the closest segment to the
@@ -1791,8 +1799,9 @@ export function clearCurrentArrow() {
 
 // --- Laylines ---
 // Implementation in laylineLayer.js; mux re-exports the C# entries.
-export const setLaylines = (boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) =>
-    laylineLayerMod.setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon);
+export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
+    return laylineLayerMod.setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon);
+}
 export const clearLaylines = () => laylineLayerMod.clearLaylines();
 
 // --- Keyboard shortcuts ---

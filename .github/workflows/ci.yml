@@ -27,6 +27,23 @@ jobs:
       - name: Build
         run: dotnet build OnaPlotter.slnx --no-restore --configuration Release
 
+      # JS lint runs on the build job (not e2e) so a TDZ-class bug
+      # like the editModeDeps ReferenceError fails CI as soon as the
+      # PR opens, not 10+ minutes later when Playwright trips over a
+      # broken /map page. Setup-node happens here too because the
+      # build job didn't previously need Node; the e2e job sets up
+      # its own Node further down.
+      - name: Setup Node (for JS lint)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install JS lint deps
+        run: npm ci
+
+      - name: Lint (JS)
+        run: npm run lint
+
       # `dotnet test` on .NET 10 SDK dispatches through VSTest by default,
       # which Microsoft.Testing.Platform refuses. TUnit is MTP-native and
       # runs as an executable, so invoking the test project directly is

@@ -1,3 +1,6 @@
+## Node (repo-root ESLint, OnaPlotter.UiTests Playwright)
+node_modules/
+
 ## .NET
 bin/
 obj/

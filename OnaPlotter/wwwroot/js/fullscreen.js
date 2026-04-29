@@ -12,7 +12,14 @@
 // via styling alone. A home-screen-installed PWA is the real
 // fullscreen path on iPad -- see manifest.json display: fullscreen.
 
+// Module-level refs hoisted to the top so unsubscribe() reads them
+// without ESLint's no-use-before-define firing. _attachedBtn /
+// _nativeHandler hold the topbar button + its native click handler;
+// attachTrigger() populates them, unsubscribe() releases them on
+// page teardown.
 let dotnetRef = null;
+let _attachedBtn = null;
+let _nativeHandler = null;
 
 function isIos() {
     // iPadOS 13+ fakes "MacIntel" in platform; multi-touch is the tell.
@@ -107,9 +114,8 @@ export function toggle() {
 // Chrome: the call needs to be synchronous with the user gesture,
 // and Blazor's @onclick dispatcher crosses enough async boundaries
 // to lose that context. A vanilla addEventListener inside the button
-// keeps the gesture chain intact.
-let _attachedBtn = null;
-let _nativeHandler = null;
+// keeps the gesture chain intact. _attachedBtn / _nativeHandler are
+// declared at the top of the file (see hoisting block above).
 export function attachTrigger(btn) {
     if (!btn || btn === _attachedBtn) return;
     if (_attachedBtn && _nativeHandler) {
