@@ -123,6 +123,14 @@ public sealed class AppSettingsService : IAppSettings
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
             ChartUpscaleEnabled = await LoadBool("chartUpscaleEnabled.v1", false);
+            // chartUpscaleLevels.v1 is stored as an integer string ("2")
+            // but read via LoadDouble + cast: this matches the same
+            // pattern SnoozeDurationMinutes uses, and keeps a single
+            // double-parsing helper for the whole service. The cast
+            // truncates toward zero (so "2.7" -> 2, "-3.9" -> -3) and
+            // then ClampLevels guards the 0..3 range, so a corrupted
+            // localStorage value of any double-shaped string still
+            // resolves into the supported range.
             ChartUpscaleLevels = OnaPlotter.Utilities.ChartUpscale.ClampLevels(
                 (int)await LoadDouble("chartUpscaleLevels.v1",
                     OnaPlotter.Utilities.ChartUpscale.DefaultLevels));

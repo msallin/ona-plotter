@@ -1261,12 +1261,30 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
  * object { chartId: errorCount } so a Razor binding can render a
  * simple list. Helms see "Chart X: 47 missing tiles" and decide
  * whether to lower its upscale cap or report a server-side bug.
- * Cleared on chart-layer removal.
+ *
+ * Cumulative-since-add: each entry counts errors from when the
+ * layer was added (chartTileErrors.set(id, 0) inside addChartLayer)
+ * until removeChartLayer drops the entry. Toggling the chart off
+ * and on resets the count. There is no time window; a multi-day
+ * session reports the lifetime total. Helms reading "47" should
+ * interpret it as "since this chart was last enabled."
  */
 export function getChartTileErrors() {
     const out = {};
     for (const [id, count] of chartTileErrors) out[id] = count;
     return out;
+}
+
+/**
+ * Reset a single chart's tile-error counter without removing the
+ * layer. Used by the Settings dev section "reset" button so the
+ * helm can re-baseline a long-running session without toggling the
+ * layer (which would force a tile re-fetch and visual flicker).
+ * No-op if the id has no entry; the caller doesn't need to know
+ * whether the chart is currently enabled.
+ */
+export function resetChartTileErrors(id) {
+    if (chartTileErrors.has(id)) chartTileErrors.set(id, 0);
 }
 
 export function removeChartLayer(id) {

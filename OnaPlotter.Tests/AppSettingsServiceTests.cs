@@ -1281,6 +1281,143 @@ public class AppSettingsServiceTests
         await Assert.That(svc2.LastManualNightToggleUtc).IsNotNull();
     }
 
+    // === Chart upscale persistence ===
+    // The setter clamps in C#, the JS decorator clamps in JS, the
+    // Settings input clamps in HTML; this test covers the LOAD path
+    // -- a corrupt localStorage entry must collapse into [0, 3].
+    // Without these guards the JS decorator could see (e.g.) -1 and
+    // the chart would render with a broken maxZoom calculation.
+
+    [Test]
+    public async Task ChartUpscale_DefaultsWhenStorageEmpty()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        // Default master flag OFF: feature dormant on first run.
+        await Assert.That(svc.ChartUpscaleEnabled).IsFalse();
+        // Default levels = ChartUpscale.DefaultLevels = 2.
+        await Assert.That(svc.ChartUpscaleLevels)
+            .IsEqualTo(OnaPlotter.Utilities.ChartUpscale.DefaultLevels);
+    }
+
+    [Test]
+    public async Task ChartUpscale_RoundTrips()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetChartUpscaleEnabledAsync(true);
+        await svc.SetChartUpscaleLevelsAsync(3);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.ChartUpscaleEnabled).IsTrue();
+        await Assert.That(svc2.ChartUpscaleLevels).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task SetChartUpscaleLevels_BelowFloor_ClampsToZero()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetChartUpscaleLevelsAsync(-5);
+
+        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(0);
+        await Assert.That(await kv.GetAsync("chartUpscaleLevels.v1")).IsEqualTo("0");
+    }
+
+    [Test]
+    public async Task SetChartUpscaleLevels_AboveCeiling_ClampsToThree()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetChartUpscaleLevelsAsync(99);
+
+        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(3);
+        await Assert.That(await kv.GetAsync("chartUpscaleLevels.v1")).IsEqualTo("3");
+    }
+
+    [Test]
+    [Arguments("-5", 0)]            // below floor -> clamp 0
+    [Arguments("-1", 0)]
+    [Arguments("0", 0)]
+    [Arguments("1", 1)]
+    [Arguments("2", 2)]
+    [Arguments("3", 3)]
+    [Arguments("4", 3)]             // above ceiling -> clamp 3
+    [Arguments("99", 3)]
+    [Arguments("2.7", 2)]           // double truncates toward zero
+    [Arguments("-0.4", 0)]
+    public async Task ChartUpscaleLevels_StoredValue_LoadsClamped(
+        string stored, int expected)
+    {
+        // Feeds literal localStorage values through the InitializeAsync
+        // load path. Covers the "(int)await LoadDouble" cast plus the
+        // ClampLevels guard. A user on de-CH whose older buggy build
+        // wrote "2,7" instead of "2.7" hits the comma-rejected branch
+        // and falls back to DefaultLevels (covered by a separate test).
+        var kv = new InMemoryKv();
+        await kv.SetAsync("chartUpscaleLevels.v1", stored);
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("banana")]
+    [Arguments("")]
+    [Arguments("2,5")]              // comma locale -- LoadDouble rejects
+    public async Task ChartUpscaleLevels_GarbageStored_FallsBackToDefault(string stored)
+    {
+        // Parse failure -> LoadDouble returns its fallback (DefaultLevels),
+        // ClampLevels passes it through untouched. The helm sees the
+        // recommended "2" rather than 0 (which would silently disable
+        // overzoom for someone whose master flag is on).
+        var kv = new InMemoryKv();
+        await kv.SetAsync("chartUpscaleLevels.v1", stored);
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartUpscaleLevels)
+            .IsEqualTo(OnaPlotter.Utilities.ChartUpscale.DefaultLevels);
+    }
+
+    [Test]
+    public async Task SetChartUpscale_FiresOnSettingsChanged()
+    {
+        // Both setters are on the OnSettingsChanged hot path so the
+        // Map page re-evaluates layer options when the helm flips
+        // either knob. Without the event the chart would keep
+        // rendering with stale upscale levels until the next chart
+        // toggle.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetChartUpscaleEnabledAsync(true);
+        await svc.SetChartUpscaleLevelsAsync(3);
+
+        await Assert.That(fires).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task ChartUpscaleEnabled_GarbageStored_FallsBackToFalse()
+    {
+        // LoadBool only accepts "true"; anything else falls back to
+        // the default. Pin so a corrupted entry can't silently turn
+        // overzoom ON for a helm who never enabled it.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("chartUpscaleEnabled.v1", "yes please");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartUpscaleEnabled).IsFalse();
+    }
+
     [Test]
     public async Task MarkChartsSeededAsync_PersistsAndReflects()
     {
