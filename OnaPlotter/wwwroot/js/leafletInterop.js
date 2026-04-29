@@ -12,6 +12,7 @@ import * as anchorLayerMod from './anchorLayer.js';
 import * as mobLayerMod from './mobLayer.js';
 import * as laylineLayerMod from './laylineLayer.js';
 import * as atonLayerMod from './atonLayer.js';
+import * as measureLayerMod from './measureLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -559,6 +560,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     mobLayerMod.init(map, { colors: MapColors });
     laylineLayerMod.init(map, { colors: MapColors });
     atonLayerMod.init(map);
+    measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
 
     // Leaflet's native +/- zoom control is turned off above
     // (zoomControl: false). The replacement lives in the app topbar
@@ -706,9 +708,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         // vessel" -- the measurement starts (or continues) from the boat
         // and tracks it as it moves. Swallow the popup so the helm doesn't
         // get the data card flashed up while they're plotting a distance.
-        if (measureActive) {
+        if (measureLayerMod.isActive()) {
             boatMarker.closePopup();
-            addVesselMeasurePoint();
+            measureLayerMod.addVesselMeasurePoint();
             return;
         }
         const data = boatMarker._onaSelfData || {};
@@ -738,17 +740,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             addPolygonVertexInternal(e.latlng.lat, e.latlng.lng);
             return;
         }
-        if (measureActive) {
+        if (measureLayerMod.isActive()) {
             // Segment-click insertion (insertMeasurePointOnSegment)
             // bubbles into this handler immediately after splicing the
             // new vertex; without the suppression flag we'd then append
             // a duplicate point at the end of the ruler. Same pattern
             // as routeEditSuppressNextMapClick for route edit.
-            if (measureSuppressNextMapClick) {
-                measureSuppressNextMapClick = false;
-                return;
-            }
-            addMeasurePoint(e.latlng.lat, e.latlng.lng);
+            if (measureLayerMod.consumeSuppressNextMapClick()) return;
+            measureLayerMod.addMeasurePoint(e.latlng.lat, e.latlng.lng);
             return;
         }
         if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu').catch(() => {});
@@ -762,7 +761,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         // here menu". Wipe the points and stay in measure mode so the
         // helm can immediately start a fresh measurement; opening the
         // context menu over a half-built ruler would just be in the way.
-        if (measureActive) {
+        if (measureLayerMod.isActive()) {
             clearMeasure();
             return;
         }
@@ -1084,13 +1083,11 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
 
     // (Anchor-watch alarm-state evaluation moved into anchorLayerMod.setBoatPosition above.)
 
-    // Vessel-anchored measurement segments need their geometry + bearing
-    // / distance label re-derived from the new own-boat position. Skip
-    // the rebuild when no measurement leg references the boat to avoid
-    // wasting work on every NMEA tick.
-    if (measureActive && measurePoints.length > 0 && hasVesselMeasurePoint()) {
-        redrawMeasure();
-    }
+    // Push the new boat fix into measureLayer.js so vessel-anchored
+    // segments redraw against fresh own-boat coords. Internally it
+    // skips when no measurement is active or none of the points is
+    // vessel-anchored.
+    measureLayerMod.setBoatPosition(lat, lon);
 }
 
 // Pending points buffer for batched track updates.
@@ -1352,13 +1349,13 @@ export function updateAisTargets(vessels) {
             // attach the guard on FIRST CREATE so the once-per-marker
             // cost is trivial even in 200-vessel harbours.
             marker.on('click', (ev) => {
-                if (routeEditMode || polygonEditMode || measureActive) {
+                if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
                     L.DomEvent.stopPropagation(ev);
                     L.DomEvent.preventDefault(ev);
                     const ll = ev.latlng || marker.getLatLng();
                     if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
                     else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-                    else                       addMeasurePoint(ll.lat, ll.lng);
+                    else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
                     marker.closePopup();
                 }
             });
@@ -1794,298 +1791,10 @@ function drawGuardZone() {
 }
 
 // --- Persistent measurement tool ---
-// Multi-segment ruler: clicks drop measurement points, each segment is
-// labelled with bearing + distance and the last point shows a running
-// total. A point can be vessel-anchored (tracks own-boat as it moves)
-// or fixed on the chart, which lets the helm answer both "how far is
-// that island from where I am?" and "how long is this planned leg?"
-// with the same tool. The colour matches what used to be the
-// double-click "bearing line" so the two overlays read as one feature.
-//
-// Editing model mirrors Route Edit so the helm doesn't have to learn a
-// new gesture vocabulary:
-//   * Drag a fixed point to move it (vessel-anchored points are
-//     non-draggable since they track own-boat live).
-//   * Tap a segment to insert a new point at the click location.
-//   * Right-click / long-press anywhere clears the ruler without
-//     leaving Measure mode.
-let measureActive = false;
-let measurePoints = [];          // [{ lat, lon, vessel: bool }, ...]
-let measureMarkers = [];         // L.marker[]   parallel to measurePoints
-let measureSegments = [];        // L.polyline[] one per segment between points
-let measureHitLines = [];        // L.polyline[] thick invisible per-segment hitbox
-let measureTooltips = [];        // L.tooltip[]  one per segment, anchored at end
-let measureSuppressNextMapClick = false;
-
-export function setMeasureMode(active) {
-    measureActive = !!active;
-    if (!measureActive) clearMeasure();
-    if (map) {
-        // Visual hint: crosshair cursor when in measurement mode.
-        map.getContainer().style.cursor = measureActive ? 'crosshair' : '';
-    }
-}
-
-function removeMeasureLayers() {
-    if (!map) {
-        measureMarkers = []; measureSegments = []; measureHitLines = []; measureTooltips = [];
-        return;
-    }
-    for (const m of measureMarkers) map.removeLayer(m);
-    for (const s of measureSegments) map.removeLayer(s);
-    for (const h of measureHitLines) map.removeLayer(h);
-    for (const t of measureTooltips) map.removeLayer(t);
-    measureMarkers = [];
-    measureSegments = [];
-    measureHitLines = [];
-    measureTooltips = [];
-}
-
-export function clearMeasure() {
-    removeMeasureLayers();
-    measurePoints = [];
-}
-
-// Returns the current chart position for a measurement point. Vessel-
-// anchored points read live own-boat coords so the segment they
-// participate in updates as the boat moves.
-function measurePointLatLng(p) {
-    return p.vessel ? [selfLat, selfLon] : [p.lat, p.lon];
-}
-
-function hasVesselMeasurePoint() {
-    for (const p of measurePoints) if (p.vessel) return true;
-    return false;
-}
-
-function addMeasurePoint(lat, lon) {
-    if (!map) return;
-    measurePoints.push({ lat, lon, vessel: false });
-    redrawMeasure();
-}
-
-// Adds a vessel-anchored measurement point. Used by the boat-marker
-// click handler in measure mode and by measureFromVesselTo() below.
-function addVesselMeasurePoint() {
-    if (!map) return;
-    measurePoints.push({ lat: selfLat, lon: selfLon, vessel: true });
-    redrawMeasure();
-}
-
-function makeMeasureDotIcon(vessel) {
-    return L.divIcon({
-        // The default leaflet-div-icon styling adds a white background +
-        // black border; .ona-measure-marker neuters both so the inner
-        // span fully owns the visual.
-        className: 'ona-measure-marker',
-        html: vessel
-            ? '<div class="ona-measure-dot ona-measure-dot-vessel"></div>'
-            : '<div class="ona-measure-dot"></div>',
-        iconSize: [14, 14],
-        iconAnchor: [7, 7]
-    });
-}
-
-// Drag handlers that mirror bindEditMarker for routes: an original-
-// position ghost + dashed delta line + tooltip showing how far the
-// point has moved. Reuses .measure-tooltip styling so the look stays
-// consistent with the running-total label on each segment.
-function bindMeasureMarker(marker, idx) {
-    let ghostLine = null;
-    let ghostMarker = null;
-    let origLL = null;
-
-    marker.on('dragstart', (e) => {
-        origLL = e.target.getLatLng();
-        ghostMarker = L.marker(origLL, {
-            icon: L.divIcon({
-                className: 'ona-measure-marker',
-                html: '<div class="ona-measure-ghost"></div>',
-                iconSize: [14, 14],
-                iconAnchor: [7, 7]
-            }),
-            interactive: false, keyboard: false, zIndexOffset: 500
-        }).addTo(map);
-        ghostLine = L.polyline([origLL, origLL], {
-            color: MapColors.measure, weight: 1.5, opacity: 0.7, dashArray: '3,4',
-            interactive: false
-        }).addTo(map);
-        ghostLine.bindTooltip('Δ 0 m', {
-            permanent: true, direction: 'center', className: 'measure-tooltip'
-        }).openTooltip(origLL);
-    });
-
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        if (idx < 0 || idx >= measurePoints.length) return;
-        measurePoints[idx].lat = ll.lat;
-        measurePoints[idx].lon = ll.lng;
-        // Live update of just the segments adjacent to this marker --
-        // a full redraw would tear down the marker mid-drag and break
-        // Leaflet's drag tracking.
-        updateMeasureSegmentsAround(idx);
-        if (ghostLine && origLL) {
-            ghostLine.setLatLngs([origLL, ll]);
-            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
-            const label = dm < 1000 ? `Δ ${dm.toFixed(0)} m`
-                                    : `Δ ${(dm * NM_PER_METER).toFixed(2)} nm`;
-            ghostLine.setTooltipContent(label);
-            const tt = ghostLine.getTooltip();
-            if (tt) tt.setLatLng(ll);
-        }
-    });
-
-    marker.on('dragend', () => {
-        if (ghostMarker && map) map.removeLayer(ghostMarker);
-        if (ghostLine && map) map.removeLayer(ghostLine);
-        ghostMarker = null; ghostLine = null; origLL = null;
-        // Final canonical redraw so running totals on every tooltip
-        // reflect the new geometry.
-        redrawMeasure();
-    });
-}
-
-// Update the geometry + tooltips of segments that touch point `idx`,
-// plus refresh every later tooltip's running total. Used during drag
-// where a full tear-down would interrupt Leaflet's drag tracking.
-function updateMeasureSegmentsAround(idx) {
-    if (!map || measurePoints.length < 2) return;
-    const positions = measurePoints.map(measurePointLatLng);
-
-    // Recompute the running total once and walk segments updating
-    // both the visible polyline geometry and each tooltip's content
-    // (only the affected ones strictly need geometry, but content
-    // depends on the running total which shifts when any earlier
-    // segment changed length).
-    let runningNm = 0;
-    for (let i = 1; i < positions.length; i++) {
-        const a = positions[i - 1];
-        const b = positions[i];
-        const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
-        const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
-        runningNm += segDist;
-
-        const segLayer = measureSegments[i - 1];
-        const hitLayer = measureHitLines[i - 1];
-        const tipLayer = measureTooltips[i - 1];
-        if (segLayer) segLayer.setLatLngs([a, b]);
-        if (hitLayer) hitLayer.setLatLngs([a, b]);
-        if (tipLayer) {
-            tipLayer.setLatLng(b);
-            tipLayer.setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${runningNm.toFixed(2)} nm`);
-        }
-    }
-}
-
-// Find the segment closest to `ll` and splice a new fixed point in at
-// that position. Mirrors insertEditVertexOnSegment for routes; the
-// suppress flag stops the trailing map-click from appending a phantom
-// duplicate point at the end of the ruler.
-function insertMeasurePointOnSegment(ll) {
-    if (!map || measurePoints.length < 2) return;
-    const positions = measurePoints.map(measurePointLatLng);
-    const p = map.latLngToLayerPoint(ll);
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < positions.length - 1; i++) {
-        const a = map.latLngToLayerPoint(L.latLng(positions[i][0], positions[i][1]));
-        const b = map.latLngToLayerPoint(L.latLng(positions[i + 1][0], positions[i + 1][1]));
-        const d = pointToSegmentPixels(p, a, b);
-        if (d < bestDist) { bestDist = d; bestIdx = i; }
-    }
-    const insertAt = bestIdx + 1;
-    measurePoints.splice(insertAt, 0, { lat: ll.lat, lon: ll.lng, vessel: false });
-    measureSuppressNextMapClick = true;
-    redrawMeasure();
-}
-
-// Tear down and rebuild every measure layer from the points array.
-// A redraw is simpler than tracking per-segment layer references and
-// avoids drift when points are added or cleared mid-update; the
-// updateMeasureSegmentsAround() helper above is the partial-redraw
-// path we take during a drag where we MUST keep the marker alive.
-function redrawMeasure() {
-    if (!map) return;
-    removeMeasureLayers();
-    if (measurePoints.length === 0) return;
-
-    const positions = measurePoints.map(measurePointLatLng);
-
-    // Pre-compute running totals so the last-point tooltip can show
-    // the cumulative distance without re-walking the array each tick.
-    let runningTotalNm = 0;
-    for (let i = 0; i < positions.length; i++) {
-        const [lat, lon] = positions[i];
-        const point = measurePoints[i];
-
-        const marker = L.marker([lat, lon], {
-            icon: makeMeasureDotIcon(point.vessel),
-            // Vessel-anchored points track own-boat live; allowing a
-            // drag here would silently fight the next position update.
-            // Only fixed points are draggable.
-            draggable: !point.vessel,
-            zIndexOffset: 800,
-        }).addTo(map);
-        if (!point.vessel) bindMeasureMarker(marker, i);
-        measureMarkers.push(marker);
-
-        if (i >= 1) {
-            const a = positions[i - 1];
-            const b = positions[i];
-            const segDist = haversineMeters(a[0], a[1], b[0], b[1]) * NM_PER_METER;
-            const segBrg = bearingDeg(a[0], a[1], b[0], b[1]);
-            runningTotalNm += segDist;
-
-            // Visible dashed segment.
-            const seg = L.polyline([a, b], {
-                color: MapColors.measure, weight: 2, dashArray: '6,4', opacity: 0.85,
-                className: 'ona-measure-line',
-            }).addTo(map);
-            seg.on('click', (e) => {
-                L.DomEvent.stopPropagation(e);
-                insertMeasurePointOnSegment(e.latlng);
-            });
-            measureSegments.push(seg);
-
-            // Wider invisible hit line so a fingertip-width tap
-            // anywhere near the segment splits it. 24 px matches what
-            // route edit uses (40 px there; measure is more transient
-            // so a tighter band keeps accidental inserts down).
-            const hit = L.polyline([a, b], {
-                color: MapColors.measure, weight: 24, opacity: 0,
-                interactive: true, className: 'ona-measure-hit-line',
-            }).addTo(map);
-            hit.on('click', (e) => {
-                L.DomEvent.stopPropagation(e);
-                insertMeasurePointOnSegment(e.latlng);
-            });
-            measureHitLines.push(hit);
-
-            const tooltip = L.tooltip({
-                permanent: true, direction: 'right', offset: [8, 0],
-                className: 'measure-tooltip'
-            })
-                .setLatLng(b)
-                .setContent(`${segBrg.toFixed(0)}&deg; / ${segDist.toFixed(2)} nm<br/>total ${runningTotalNm.toFixed(2)} nm`)
-                .addTo(map);
-            measureTooltips.push(tooltip);
-        }
-    }
-}
-
-// Public entry point for "Measure Here" in the map context menu.
-// Drops a fresh two-point measurement: vessel as the moving anchor,
-// the clicked spot as the fixed endpoint. Activates measure mode so
-// the helm can keep tapping to extend the ruler if they want a
-// multi-leg distance.
-export function measureFromVesselTo(lat, lon) {
-    if (!map) return;
-    clearMeasure();
-    measureActive = true;
-    map.getContainer().style.cursor = 'crosshair';
-    addVesselMeasurePoint();
-    addMeasurePoint(lat, lon);
-}
+// Implementation in measureLayer.js; mux re-exports the C# entries.
+export const setMeasureMode = (active) => measureLayerMod.setMeasureMode(active);
+export const clearMeasure = () => measureLayerMod.clearMeasure();
+export const measureFromVesselTo = (lat, lon) => measureLayerMod.measureFromVesselTo(lat, lon);
 
 // --- MOB ---
 
@@ -2297,13 +2006,13 @@ export function addRoute(id, name, coords) {
     hitLine.bindPopup(popupHtml(), popupOptions);
 
     const onLineClick = (ev, sourceLine) => {
-        if (routeEditMode || polygonEditMode || measureActive) {
+        if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng;
             if (!ll) return;
             if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
             else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-            else                       addMeasurePoint(ll.lat, ll.lng);
+            else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             sourceLine.closePopup();
         }
     };
@@ -2677,13 +2386,13 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
         // tap should drop a vertex / measure point rather than open
         // the Deactivate popup.
         hitLine.on('click', (ev) => {
-            if (routeEditMode || polygonEditMode || measureActive) {
+            if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
                 L.DomEvent.stopPropagation(ev);
                 const ll = ev.latlng;
                 if (!ll) return;
                 if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
                 else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-                else                       addMeasurePoint(ll.lat, ll.lng);
+                else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
                 hitLine.closePopup();
             }
         });
@@ -3427,12 +3136,12 @@ export function addWaypointMarker(id, lat, lon, name) {
         // During edit modes, swallow the click and forward the waypoint's
         // location to whatever the user is plotting -- matches the note
         // marker's edit-mode behaviour.
-        if (routeEditMode || polygonEditMode || measureActive) {
+        if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
             if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
             else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-            else                       addMeasurePoint(ll.lat, ll.lng);
+            else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             hit.closePopup();
         }
     });
@@ -3514,12 +3223,12 @@ export function addNoteMarker(id, lat, lon, title, description) {
     // During edit modes, swallow the click and append to whatever the
     // user is building. Same guard as AIS markers.
     marker.on('click', (ev) => {
-        if (routeEditMode || polygonEditMode || measureActive) {
+        if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
             if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
             else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-            else                       addMeasurePoint(ll.lat, ll.lng);
+            else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             marker.closePopup();
         }
     });
@@ -3667,13 +3376,13 @@ export function addRegion(id, rings, title, description) {
         // Route / polygon / measure edit: clicks on regions append to
         // the in-progress shape instead of opening the region popup.
         poly.on('click', (ev) => {
-            if (routeEditMode || polygonEditMode || measureActive) {
+            if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
                 L.DomEvent.stopPropagation(ev);
                 const ll = ev.latlng;
                 if (!ll) return;
                 if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
                 else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-                else                       addMeasurePoint(ll.lat, ll.lng);
+                else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
                 poly.closePopup();
             }
         });
@@ -3981,6 +3690,7 @@ export function dispose() {
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];
     mobLayerMod.dispose();
     anchorLayerMod.dispose();
+    measureLayerMod.dispose();
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
     laylineLayerMod.dispose();
