@@ -152,25 +152,8 @@ public partial class Map
     private async Task ToggleNotesVisible(bool visible)
     {
         notesVisible = visible;
-        if (module is null) return;
-        try
-        {
-            if (visible)
-            {
-                foreach (var n in loadedNotes)
-                {
-                    if (n.Position is null) continue;
-                    await module.InvokeVoidAsync("addNoteMarker",
-                        n.Id, n.Position.Latitude, n.Position.Longitude, n.Title, n.Description);
-                }
-            }
-            else
-            {
-                await module.InvokeVoidAsync("clearNotes");
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (_resources is null) return;
+        await _resources.SetNotesVisibleAsync(visible, loadedNotes);
     }
 
     // ---- Region (create, save, delete, focus, show/hide) -------------
@@ -511,22 +494,8 @@ public partial class Map
     private async Task ToggleRegionsVisible(bool visible)
     {
         regionsVisible = visible;
-        if (module is null) return;
-        try
-        {
-            if (visible)
-            {
-                foreach (var r in loadedRegions)
-                    await module.InvokeVoidAsync("addRegion",
-                        r.Id, r.OuterRings, r.Name, r.Description);
-            }
-            else
-            {
-                await module.InvokeVoidAsync("clearRegions");
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (_resources is null) return;
+        await _resources.SetRegionsVisibleAsync(visible, loadedRegions);
     }
 
 }
