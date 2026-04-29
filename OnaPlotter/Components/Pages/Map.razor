@@ -504,6 +504,12 @@
     // toggles.
     private OnaPlotter.Services.Js.MapResourceJs? _resourceJs;
     private OnaPlotter.Services.Map.MapResourceController? _resources;
+
+    // Imperative-map-state + edit-mode wrappers. The page-lifecycle
+    // / UI-handler / [JSInvokable] callbacks that ARCH-001 left on
+    // Map.razor consume them directly; no controller in between.
+    private OnaPlotter.Services.Js.MapControlsJs? _controlsJs;
+    private OnaPlotter.Services.Js.MapEditJs? _editJs;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -673,11 +679,8 @@
         catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
 
-        if (module is not null)
-        {
-            try { await module.InvokeVoidAsync("removeWaypointMarker", wp.Id); }
-            catch (JSDisconnectedException) { }
-        }
+        if (_resourceJs is not null)
+            await _resourceJs.RemoveWaypointMarkerAsync(wp.Id);
         loadedWaypoints = loadedWaypoints.Where(w => w.Id != wp.Id).ToList();
         Toasts.Info("Waypoint deleted");
     }
@@ -927,7 +930,7 @@
 
     private async Task FocusVessel(string context)
     {
-        if (module is null) return;
+        if (_aisJs is null || _controlsJs is null) return;
         chartPanelOpen = false;
         // Follow-boat mode re-centres on own boat on every position
         // update (roughly once per second), so focusVessel's panTo was
@@ -938,26 +941,21 @@
         // Centre-on-boat button are the explicit way back.
         bool wasFollowing = follow;
         await DisableFollowAsync();
-        try
+        bool found = await _aisJs.FocusVesselAsync(context);
+        if (!found)
         {
-            bool found = await module.InvokeAsync<bool>("focusVessel", context);
-            if (!found)
+            // The JS side couldn't find the marker -- vessel aged
+            // out, AIS filter hid it, or the list was stale.
+            // Toast + put follow back where it was so the helm
+            // doesn't lose their view for a no-op tap.
+            Toasts.Info("Vessel no longer on the chart");
+            if (wasFollowing)
             {
-                // The JS side couldn't find the marker -- vessel aged
-                // out, AIS filter hid it, or the list was stale.
-                // Toast + put follow back where it was so the helm
-                // doesn't lose their view for a no-op tap.
-                Toasts.Info("Vessel no longer on the chart");
-                if (wasFollowing)
-                {
-                    follow = true;
-                    await Settings.SetFollowBoatAsync(true);
-                    await module.InvokeVoidAsync("setFollow", true);
-                }
+                follow = true;
+                await Settings.SetFollowBoatAsync(true);
+                await _controlsJs.SetFollowAsync(true);
             }
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
     }
 
     private static double HaversineNm(double lat1, double lon1, double lat2, double lon2)
@@ -1137,6 +1135,8 @@
         };
         _resourceJs = new OnaPlotter.Services.Js.MapResourceJs(module);
         _resources = new OnaPlotter.Services.Map.MapResourceController(_resourceJs);
+        _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
+        _editJs = new OnaPlotter.Services.Js.MapEditJs(module);
 
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
@@ -1162,6 +1162,10 @@
             lat = 0; lon = 0; zoom = 3;
         }
 
+        // Bare interop: page-load bootstrap that mounts Leaflet and
+        // hooks the JS side into the .NET dotNetRef. None of the
+        // feature wrappers cover this primitive; it's the call that
+        // makes them all subsequently work.
         await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef);
         mapInitialized = true;
 
@@ -1170,14 +1174,14 @@
         // tomorrow) target the configured server rather than the
         // page origin. With the default same-origin setup this
         // pushes "" and existing relative URLs keep working.
-        await module.InvokeVoidAsync("setSignalKBaseUrl", SkBaseUrl.BaseUrl);
+        await _controlsJs.SetSignalKBaseUrlAsync(SkBaseUrl.BaseUrl);
 
         // Load existing track as speed-colored segments.
         var points = TrackBuffer.GetSnapshot();
         if (points.Length > 0)
         {
             var jsPoints = points.Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 }).ToArray();
-            await module.InvokeVoidAsync("setColoredTrack", (object)jsPoints);
+            await _overlaysJs.SetColoredTrackAsync(jsPoints);
             _frameBuilder.PrevLat = points[^1].Latitude;
             _frameBuilder.PrevLon = points[^1].Longitude;
         }
@@ -1292,9 +1296,9 @@
         mapOrientation = Settings.MapOrientation;
         mapOrientationLabel = mapOrientation switch { "course" => "C\u2191", "head" => "H\u2191", _ => "N\u2191" };
 
-        await module.InvokeVoidAsync("setFollow", follow);
-        if (nightMode) await module.InvokeVoidAsync("setNightMode", true);
-        if (mapOrientation != "north") await module.InvokeVoidAsync("setMapOrientation", mapOrientation);
+        await _controlsJs.SetFollowAsync(follow);
+        if (nightMode) await _controlsJs.SetNightModeAsync(true);
+        if (mapOrientation != "north") await _controlsJs.SetMapOrientationAsync(mapOrientation);
 
         await PushGuardZoneAsync();
         Settings.OnSettingsChanged += HandleSettingsChanged;
@@ -1308,7 +1312,7 @@
         // store-change events plus once after init. AtonsVisible
         // setting is honoured by setAtonsVisible JS-side.
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
-        await module.InvokeVoidAsync("setAtonsVisible", Settings.AtonsVisible);
+        await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
         _ = _atonPush!.PushAsync();
         // Resource re-sync: waypoints / routes / notes / regions added
         // from another plotter are otherwise invisible until the user
@@ -1320,7 +1324,7 @@
             _ => _ = RefreshServerResourcesAsync(),
             null, ResourcePollIntervalMs, ResourcePollIntervalMs);
 
-        await module.InvokeVoidAsync("enableKeyboardShortcuts", dotNetRef);
+        await _controlsJs.EnableKeyboardShortcutsAsync(dotNetRef);
 
         // Welcome card takes precedence over the touch coachmark on
         // first-ever visit since it covers long-press explicitly.
@@ -1377,11 +1381,10 @@
                 var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
                 if (wp is null) { Toasts.Warning("Waypoint not found"); break; }
                 if (wp.Latitude is double lat && wp.Longitude is double lon
-                    && module is not null)
+                    && _controlsJs is not null)
                 {
                     await DisableFollowAsync();
-                    try { await module.InvokeVoidAsync("panTo", lat, lon); }
-                    catch (JSDisconnectedException) { }
+                    await _controlsJs.PanToAsync(lat, lon);
                 }
                 break;
             case "note":
@@ -1411,16 +1414,11 @@
 
     private async Task PushGuardZoneAsync()
     {
-        if (module is null) return;
-        try
-        {
-            await module.InvokeVoidAsync("setGuardZone",
-                Settings.CpaAlarmThreshold,
-                Settings.GuardZoneLookaheadMinutes,
-                Settings.GuardZoneWarningFactor);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (_controlsJs is null) return;
+        await _controlsJs.SetGuardZoneAsync(
+            Settings.CpaAlarmThreshold,
+            Settings.GuardZoneLookaheadMinutes,
+            Settings.GuardZoneWarningFactor);
     }
 
     // Fire-and-forget on the settings-changed event. PushGuardZoneAsync swallows
@@ -1438,31 +1436,15 @@
         if (Settings.NightMode != nightMode)
         {
             nightMode = Settings.NightMode;
-            if (module is not null)
-                _ = InvokeVoidSafeAsync("setNightMode", (object)nightMode);
+            if (_controlsJs is not null)
+                _ = _controlsJs.SetNightModeAsync(nightMode);
             _ = InvokeAsync(StateHasChanged);
         }
 
         // AtoN visibility toggle. The marker layer state survives the
         // hide/show cycle so flipping back doesn't have to re-fetch.
-        if (module is not null)
-            _ = InvokeVoidSafeAsync("setAtonsVisible", (object)Settings.AtonsVisible);
-    }
-
-    // Minimal swallower for fire-and-forget module calls from sync
-    // event handlers. Matches the JSDisconnected / ObjectDisposed
-    // defence we apply at every other interop site; also catches
-    // JSException so a buggy JS call can't take down the render pass.
-    private async Task InvokeVoidSafeAsync(string identifier, params object?[] args)
-    {
-        if (module is null) return;
-        try { await module.InvokeVoidAsync(identifier, args); }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
-        catch (JSException ex)
-        {
-            Console.Error.WriteLine($"[interop] {identifier}: {ex.Message}");
-        }
+        if (_aisJs is not null)
+            _ = _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
     }
 
     [JSInvokable]
@@ -1684,11 +1666,13 @@
         // Push own MMSI to JS once the SignalK hello resolves it so
         // buildSelfPopupHtml can fetch the country flag from the
         // signalk-flags plugin (same endpoint as AIS markers).
-        if (!_ownMmsiPushed && SignalkClient.OwnMmsi is string mmsi)
+        if (!_ownMmsiPushed && SignalkClient.OwnMmsi is string mmsi && _aisJs is not null)
         {
+            // Once-per-page push: the wrapper silently no-ops after
+            // dispose / disconnect, and the page won't get another
+            // tick after that anyway, so the latch never needs reset.
             _ownMmsiPushed = true;
-            try { await module.InvokeVoidAsync("setOwnMmsi", mmsi); }
-            catch (JSDisconnectedException) { _ownMmsiPushed = false; }
+            await _aisJs.SetOwnMmsiAsync(mmsi);
         }
 
         // Auto-flip Night mode near / past civil twilight if enabled.
@@ -1708,7 +1692,7 @@
             // which is exactly what applyFrame expects.
             _frameBuilder.LaylinesVisible = laylinesVisible;
             var frame = _frameBuilder.Build(Data);
-            await module.InvokeVoidAsync("applyFrame", frame);
+            if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
 
             // Sync server-side anchor alarm to map visualization. Kept
             // out of applyFrame because it has its own diff-before-push
@@ -1787,8 +1771,8 @@
     {
         follow = !follow;
         await Settings.SetFollowBoatAsync(follow);
-        if (module is not null)
-            await module.InvokeVoidAsync("setFollow", follow);
+        if (_controlsJs is not null)
+            await _controlsJs.SetFollowAsync(follow);
     }
 
     /// <summary>Called from JS when a user interaction (arrow-key pan,
@@ -1819,16 +1803,16 @@
             _ => "N\u2191"
         };
         await Settings.SetMapOrientationAsync(mapOrientation);
-        if (module is not null)
-            await module.InvokeVoidAsync("setMapOrientation", mapOrientation);
+        if (_controlsJs is not null)
+            await _controlsJs.SetMapOrientationAsync(mapOrientation);
     }
 
     private async Task ToggleLaylines()
     {
         laylinesVisible = !laylinesVisible;
         await Settings.SetLaylinesVisibleAsync(laylinesVisible);
-        if (!laylinesVisible && module is not null)
-            await module.InvokeVoidAsync("clearLaylines");
+        if (!laylinesVisible && _controlsJs is not null)
+            await _controlsJs.ClearLaylinesAsync();
     }
 
     /// <summary>
@@ -1855,14 +1839,14 @@
         bool requested = !Settings.HarborMode;
         await Settings.SetHarborModeAsync(requested);
         bool jsOk = true;
-        if (module is not null)
+        if (_aisJs is not null)
         {
-            try
-            {
-                await module.InvokeVoidAsync("setHarborMode", Settings.HarborMode);
-            }
-            catch (JSDisconnectedException) { }
-            catch (ObjectDisposedException) { }
+            // JSDisconnected / ObjectDisposed are absorbed inside the
+            // wrapper (page is unmounting; rollback would be pointless).
+            // A real JS-side regression bubbles through as a JSException
+            // and trips the rollback so the alarm-armed invariant
+            // doesn't drift away from the user's flag.
+            try { await _aisJs.SetHarborModeAsync(Settings.HarborMode); }
             catch (Exception ex)
             {
                 jsOk = false;
@@ -1885,13 +1869,8 @@
     private async Task ToggleMeasure()
     {
         measureActive = !measureActive;
-        if (module is null) return;
-        try
-        {
-            await module.InvokeVoidAsync("setMeasureMode", measureActive);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (_editJs is null) return;
+        await _editJs.SetMeasureModeAsync(measureActive);
     }
 
     // --- FAB (floating action button) --------------------------------
@@ -1916,17 +1895,12 @@
 
     private async Task<bool> SetTargetToMapCenterAsync()
     {
-        if (module is null) return false;
-        try
-        {
-            var center = await module.InvokeAsync<double[]>("getMapCenter");
-            if (center is null || center.Length < 2) return false;
-            contextMenuLat = center[0];
-            contextMenuLon = center[1];
-            return true;
-        }
-        catch (JSDisconnectedException) { return false; }
-        catch (ObjectDisposedException) { return false; }
+        if (_controlsJs is null) return false;
+        var center = await _controlsJs.GetMapCenterAsync();
+        if (center is null || center.Length < 2) return false;
+        contextMenuLat = center[0];
+        contextMenuLon = center[1];
+        return true;
     }
 
     private async Task FabCreateWaypoint()
@@ -2125,14 +2099,8 @@
     {
         contextMenuVisible = false;
         measureActive = true;
-        if (module is null) return;
-        try
-        {
-            await module.InvokeVoidAsync("measureFromVesselTo",
-                contextMenuLat, contextMenuLon);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (_editJs is null) return;
+        await _editJs.MeasureFromVesselToAsync(contextMenuLat, contextMenuLon);
     }
 
     private async Task StopNavigation()
@@ -2173,11 +2141,8 @@
         // ActiveRouteSync drive the truth; dim the on-map elements
         // so the helm sees their tap landed.
         _activeRouteSync?.MarkCourseStopPending();
-        if (module is not null)
-        {
-            try { await module.InvokeVoidAsync("setActiveRouteStopping", true); }
-            catch (JSDisconnectedException) { }
-        }
+        if (_routeJs is not null)
+            await _routeJs.SetActiveRouteStoppingAsync(true);
         await InvokeAsync(StateHasChanged);
 
         if (savedLat is not null && savedLon is not null)
@@ -2328,7 +2293,7 @@
 
     private async Task ToggleRoute(SignalkRoute route, bool enabled)
     {
-        if (module is null || route.Feature?.Geometry is null) return;
+        if (_routeJs is null || route.Feature?.Geometry is null) return;
 
         if (enabled)
         {
@@ -2344,7 +2309,7 @@
         }
         else
         {
-            await module.InvokeVoidAsync("removeRoute", route.Id);
+            await _routeJs.RemoveRouteAsync(route.Id);
             enabledRoutes.Remove(route.Id);
         }
         await Settings.SetEnabledRoutesAsync(enabledRoutes);
@@ -2355,7 +2320,7 @@
     /// (which otherwise only updated state but forgot to draw).</summary>
     private async Task AddRouteToMap(SignalkRoute route)
     {
-        if (module is null || route.Feature?.Geometry is null) return;
+        if (_routeJs is null || route.Feature?.Geometry is null) return;
 
         // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
         var coords = new List<double[]>();
@@ -2370,7 +2335,7 @@
             coords.Add([arr[1], arr[0]]); // [lat, lon]
         }
 
-        await module.InvokeVoidAsync("addRoute", route.Id, route.Name, coords.ToArray());
+        await _routeJs.AddRouteAsync(route.Id, route.Name, coords.ToArray());
     }
 
     // ServerTrackController owns the server-track state + interop;
@@ -2385,8 +2350,8 @@
         await Settings.MarkManualNightToggleAsync();
         nightMode = !nightMode;
         await Settings.SetNightModeAsync(nightMode);
-        if (module is not null)
-            await module.InvokeVoidAsync("setNightMode", nightMode);
+        if (_controlsJs is not null)
+            await _controlsJs.SetNightModeAsync(nightMode);
     }
 
     // Deadman refresh. Wired to pointerdown + keydown at the map-container
@@ -2437,11 +2402,8 @@
 
         nightMode = wantNight;
         await Settings.SetNightModeAsync(nightMode);
-        if (module is not null)
-        {
-            try { await module.InvokeVoidAsync("setNightMode", nightMode); }
-            catch (JSDisconnectedException) { return; }
-        }
+        if (_controlsJs is not null)
+            await _controlsJs.SetNightModeAsync(nightMode);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -2464,7 +2426,7 @@
 
     private async Task ToggleMob()
     {
-        if (module is null) return;
+        if (_controlsJs is null) return;
 
         if (!mobActive)
         {
@@ -2478,7 +2440,7 @@
                 Toasts.Error("MOB: no GPS position -- use VHF and handheld");
                 return;
             }
-            await module.InvokeVoidAsync("setMob", lat, lon);
+            await _controlsJs.SetMobAsync(lat, lon);
             mobActive = true;
             // setMob also plays a two-tone chime so the helm has
             // audio confirmation even if they were looking overboard
@@ -2499,14 +2461,14 @@
             // Navigation). By the time ToggleMob fires for a clear,
             // the user has already armed + confirmed. No second prompt
             // needed here.
-            await module.InvokeVoidAsync("clearMob");
+            await _controlsJs.ClearMobAsync();
             mobActive = false;
         }
     }
 
     private async Task ToggleAnchor()
     {
-        if (module is null) return;
+        if (_anchorJs is null) return;
 
         // Confirmation for raising the watch now lives on the Anchor
         // button itself as a two-tap arm-then-confirm pattern (parallel
@@ -2535,12 +2497,11 @@
             // confirms (Data.AnchorActive flips false). Same pattern as
             // the route-activate auto-raise path.
             _anchorSync?.MarkRaisePending();
-            try { await module.InvokeVoidAsync("setAnchorRaising", true); }
-            catch (JSDisconnectedException) { }
+            await _anchorJs.SetAnchorRaisingAsync(true);
             return;
         }
 
-        if (!anchorManualActive && Data.Latitude is not null && Data.Longitude is not null)
+        if (!anchorManualActive && Data.Latitude is double lat && Data.Longitude is double lon)
         {
             // Route + anchor share the bottom-center HUD slot and represent
             // contradictory modes: "I'm going there" vs "I'm staying here".
@@ -2553,17 +2514,16 @@
 
             // Use the user's last-chosen radius. Default 30 m on first
             // use; persists across sessions via IAppSettings.
-            await module.InvokeVoidAsync("setAnchor",
-                Data.Latitude, Data.Longitude, Settings.ManualAnchorRadiusMeters);
-            anchorManualLat = Data.Latitude.Value;
-            anchorManualLon = Data.Longitude.Value;
+            await _anchorJs.SetAnchorAsync(lat, lon, Settings.ManualAnchorRadiusMeters);
+            anchorManualLat = lat;
+            anchorManualLon = lon;
             anchorManualActive = true;
         }
         else if (anchorManualActive)
         {
             // Manual-anchor clear. Arm + confirm already handled on the
             // button (same as the server-anchor raise above).
-            await module.InvokeVoidAsync("clearAnchor");
+            await _anchorJs.ClearAnchorAsync();
             anchorManualActive = false;
         }
     }
@@ -2580,20 +2540,15 @@
     /// </summary>
     private async Task SetManualAnchorRadius(double radiusMeters)
     {
-        if (!anchorManualActive || module is null) return;
+        if (!anchorManualActive || _anchorJs is null) return;
         await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
-        try
-        {
-            await module.InvokeVoidAsync("setAnchor",
-                anchorManualLat, anchorManualLon, radiusMeters);
-        }
-        catch (JSDisconnectedException) { }
+        await _anchorJs.SetAnchorAsync(anchorManualLat, anchorManualLon, radiusMeters);
     }
 
     private async Task ZoomToTrack()
     {
-        if (module is not null)
-            await module.InvokeVoidAsync("zoomToTrack");
+        if (_controlsJs is not null)
+            await _controlsJs.ZoomToTrackAsync();
     }
 
     // Zoom the map to the bounding box of the given route. Called from
@@ -2602,7 +2557,7 @@
     // actually visible after the fit.
     private async Task FocusRoute(SignalkRoute route)
     {
-        if (module is null) return;
+        if (_controlsJs is null) return;
         chartPanelOpen = false;
         if (!enabledRoutes.Contains(route.Id))
         {
@@ -2614,13 +2569,9 @@
             return;
         }
         await DisableFollowAsync();
-        try
-        {
-            await module.InvokeVoidAsync("fitBounds",
-                bbox.Value.MinLat, bbox.Value.MinLon,
-                bbox.Value.MaxLat, bbox.Value.MaxLon);
-        }
-        catch (JSDisconnectedException) { }
+        await _controlsJs.FitBoundsAsync(
+            bbox.Value.MinLat, bbox.Value.MinLon,
+            bbox.Value.MaxLat, bbox.Value.MaxLon);
     }
 
     // Zoom +/- handlers used to live here for an in-map overlay
@@ -2637,7 +2588,7 @@
     /// </summary>
     private async Task CentreOnBoat()
     {
-        if (module is null) return;
+        if (_controlsJs is null) return;
         if (Data.Latitude is not double lat || Data.Longitude is not double lon)
         {
             // Silent no-op would look like a dead button at the helm;
@@ -2645,8 +2596,7 @@
             Toasts.Show("No GPS fix yet");
             return;
         }
-        try { await module.InvokeVoidAsync("panTo", lat, lon); }
-        catch (JSDisconnectedException) { }
+        await _controlsJs.PanToAsync(lat, lon);
     }
 
     // unsaved-changes guard (editNavGuard / InstallEditNavGuard /
@@ -2679,6 +2629,8 @@
         _aisJs?.MarkDisposed();
         _overlaysJs?.MarkDisposed();
         _resourceJs?.MarkDisposed();
+        _controlsJs?.MarkDisposed();
+        _editJs?.MarkDisposed();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
@@ -2687,6 +2639,10 @@
         if (touchCoachmarkTimer is not null) await touchCoachmarkTimer.DisposeAsync();
         if (module is not null)
         {
+            // Bare interop: MarkDisposed above already gates the typed
+            // wrappers, so calling them here would be silent no-ops.
+            // The teardown sequence has to drive the module reference
+            // directly, then dispose it.
             try
             {
                 await module.InvokeVoidAsync("clearActiveRoute");

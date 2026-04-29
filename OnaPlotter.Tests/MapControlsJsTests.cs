@@ -77,12 +77,12 @@ public class MapControlsJsTests
         var fake = new RecordingJsRef();
         var sut = new MapControlsJs(fake);
 
-        await sut.SetGuardZoneAsync(0.5, 6, 0.7);
+        await sut.SetGuardZoneAsync(0.5, 6.0, 0.7);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setGuardZone");
         await Assert.That(fake.Calls[0].args.Length).IsEqualTo(3);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo(0.5);
-        await Assert.That(fake.Calls[0].args[1]).IsEqualTo(6);
+        await Assert.That(fake.Calls[0].args[1]).IsEqualTo(6.0);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(0.7);
     }
 

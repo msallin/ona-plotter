@@ -42,7 +42,7 @@ public interface IMapControlsJs
     /// Radius is in nautical miles, lookahead in minutes; warning
     /// factor is the ratio at which the inner amber ring sits relative
     /// to the outer red ring.</summary>
-    Task SetGuardZoneAsync(double radiusNm, int lookaheadMin, double warningFactor);
+    Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor);
 
     /// <summary>One-shot pan to the given lat/lon at the current zoom
     /// level. Distinct from <see cref="SetFollowAsync"/>, which
