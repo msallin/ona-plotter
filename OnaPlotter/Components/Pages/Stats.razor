@@ -1,0 +1,394 @@
+@* Stats: voyage-aggregate page. Helm picks a from/to window (or a
+   relative shorthand), the page fetches the same rich
+   TrackPoint stream the History page uses, runs it through the
+   shared TrackSegmenter, and feeds the segments to StatsAggregator
+   for the totals grid. No map, no playback -- just the numbers the
+   helm wants for "how was the season / week / day?".
+
+   Why this lives next to History rather than inside it: the helm-
+   facing question is different. History is "show me where I went";
+   Stats is "give me the totals". Squeezing both into one page would
+   demand a viewMode flip with completely different chrome on each
+   side. Two routes keeps each page's affordances tight and lets the
+   sidebar surface the use-cases independently. *@
+
+@page "/stats"
+@using OnaPlotter.Services
+@using OnaPlotter.Services.Api
+@using OnaPlotter.Models
+@using OnaPlotter.Utilities
+@using System.Globalization
+@inject ITrackApi TrackApi
+
+<PageTitle>Stats</PageTitle>
+
+<div class="app-page">
+    <header class="app-page-header">
+        <h1>Stats</h1>
+        <p class="app-page-subtitle">
+            Voyage totals over a date range. Trip count, time underway,
+            time at anchor / berth, distance, fastest stretch. Powered
+            by the same SignalK History feed the
+            <a href="history">History</a> page uses; the segmenter
+            classifies each run as moving or stationary so the totals
+            don't double-count time spent on the hook.
+        </p>
+    </header>
+
+    @* Range picker. Mirrors the History page's preset/custom split so
+       the helm's muscle memory carries: dropdown for "this week / today"
+       glances, datetime-local inputs for "show me April 2024". The
+       helm's tablet timezone drives the inputs; we convert to UTC at
+       fetch time. *@
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <select class="form-select form-select-sm" style="width:auto;"
+                        title="Window mode"
+                        @onchange="OnModeChanged">
+                    <option value="preset" selected="@(rangeMode == "preset")">Preset</option>
+                    <option value="custom" selected="@(rangeMode == "custom")">Custom</option>
+                </select>
+                @if (rangeMode == "preset")
+                {
+                    <select class="form-select form-select-sm" style="width:auto;"
+                            @onchange="OnTimespanChanged">
+                        <option value="1d" selected="@(selectedTimespan == "1d")">Today (24 h)</option>
+                        <option value="3d" selected="@(selectedTimespan == "3d")">Last 3 days</option>
+                        <option value="7d" selected="@(selectedTimespan == "7d")">Last 7 days</option>
+                        <option value="30d" selected="@(selectedTimespan == "30d")">Last 30 days</option>
+                        <option value="90d" selected="@(selectedTimespan == "90d")">Last 90 days</option>
+                        <option value="365d" selected="@(selectedTimespan == "365d")">Last year</option>
+                    </select>
+                }
+                else
+                {
+                    <input type="datetime-local" class="form-control form-control-sm"
+                           style="width:auto;"
+                           title="Start of window (local time)"
+                           value="@FormatLocalForInput(customFromLocal)"
+                           @onchange="OnCustomFromChanged" />
+                    <span style="font-size:0.85rem; color:var(--sk-text-muted);">to</span>
+                    <input type="datetime-local" class="form-control form-control-sm"
+                           style="width:auto;"
+                           title="End of window (local time)"
+                           value="@FormatLocalForInput(customToLocal)"
+                           @onchange="OnCustomToChanged" />
+                }
+                <button class="btn btn-primary btn-sm" @onclick="Compute" disabled="@loading">
+                    @if (loading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        <span>Loading...</span>
+                    }
+                    else
+                    {
+                        <span>Compute</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @* Coarser resolutions for long windows. Sampling at 30 s over a
+       year is silly (millions of rows); the helm only wants totals.
+       The dropdown surfaces the choice so they can dial it for a
+       specific question (e.g. "what's my season nm?" → 5 m is fine;
+       "what was today's actual time underway?" → 30 s). *@
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <label class="form-label mb-1" style="font-size:0.85rem;">Sampling resolution</label>
+            <select class="form-select form-select-sm" style="width:auto;"
+                    @onchange="OnResolutionChanged">
+                <option value="30s" selected="@(resolution == "30s")">30 s (high detail)</option>
+                <option value="1m"  selected="@(resolution == "1m")">1 minute</option>
+                <option value="5m"  selected="@(resolution == "5m")">5 minutes (fast)</option>
+                <option value="15m" selected="@(resolution == "15m")">15 minutes (long windows)</option>
+            </select>
+            <small class="d-block mt-1" style="color:var(--sk-text-muted); font-size:0.8rem;">
+                Coarser resolution = faster fetch + lighter on the server.
+                For year-long totals 5-15 minutes is plenty; for "what
+                exactly happened today?" pick 30 s.
+            </small>
+        </div>
+    </div>
+
+    @if (errorMessage is not null)
+    {
+        <div class="alert alert-warning" role="alert">@errorMessage</div>
+    }
+
+    @if (totals is { } t)
+    {
+        @* Totals grid. Headline numbers as big readouts so a glance
+           reads them; supplementary numbers inline. Two rows: the
+           "voyage" totals (trips, distance, peak speed) and the
+           "time" totals (underway / anchored / window). Cards rather
+           than a flat list because each metric is a self-contained
+           answer to a different question -- visual separation helps
+           the helm scan to the one they wanted. *@
+        @* Reusing the project-wide .page-section-header (small
+           uppercase eyebrow) + .metric-lg (1.6rem big number with
+           tabular nums) + .dash-unit (small inline unit) so this
+           page sits at the same typographic weight as the Dashboard
+           and the WindRose readouts. New CSS classes here would have
+           drifted the system. *@
+        <div class="row g-3 mb-3">
+            <div class="col-sm-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Trips</h6>
+                        <div class="metric-lg">@t.TripCount</div>
+                        <small class="text-muted">moving segments</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Distance</h6>
+                        <div class="metric-lg">
+                            @Format.Nm(t.TotalDistanceMetres)<span class="dash-unit">nm</span>
+                        </div>
+                        <small class="text-muted">underway only (stationary excluded)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Longest trip</h6>
+                        <div class="metric-lg">
+                            @(t.MaxTripDistanceMetres is null
+                                ? "--"
+                                : Format.Nm(t.MaxTripDistanceMetres))<span class="dash-unit">nm</span>
+                        </div>
+                        <small class="text-muted">single longest moving segment</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Peak speed</h6>
+                        <div class="metric-lg">
+                            @(t.MaxSogMs is null ? "--" : Format.Speed(t.MaxSogMs))<span class="dash-unit">kn</span>
+                        </div>
+                        <small class="text-muted">max SOG observed</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-sm-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Time underway</h6>
+                        <div class="metric-lg">@FormatHours(t.MovingDurationSeconds)</div>
+                        <small class="text-muted">@Format.TimeToGo(t.MovingDurationSeconds)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Time at anchor / berth</h6>
+                        <div class="metric-lg">@FormatHours(t.StationaryDurationSeconds)</div>
+                        <small class="text-muted">@Format.TimeToGo(t.StationaryDurationSeconds)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Window length</h6>
+                        <div class="metric-lg">@FormatHours(t.TotalDurationSeconds)</div>
+                        <small class="text-muted">
+                            @t.From.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                            → @t.To.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* Coverage hint. The helm asked for X hours, the segments
+           covered Y. The gap is unaccounted-for time (no fix, server
+           gap, plotter offline). Surfacing the coverage % keeps the
+           helm honest about totals -- "12 nm in 7 days at 30 % coverage"
+           reads very differently from "12 nm at 95 % coverage". *@
+        <div class="text-muted" style="font-size:0.85rem;">
+            Data coverage: @CoveragePct(t).ToString("F0", CultureInfo.InvariantCulture) %
+            (@FormatHours(t.MovingDurationSeconds + t.StationaryDurationSeconds)
+            of @FormatHours(t.TotalDurationSeconds) had position fixes).
+            Lower coverage means gaps -- plotter offline, server didn't log,
+            or the resolution is finer than the feed cadence.
+        </div>
+    }
+    else if (computeAttempted)
+    {
+        <EmptyState Compact="true"
+                    Title="No track data for this window"
+                    Message="The SignalK History API returned no points. If you expected data, check that the History provider plugin (signalk-parquet, signalk-to-influxdb2) is active and storing the navigation.position path." />
+    }
+    else
+    {
+        <EmptyState Compact="true"
+                    Title="Pick a window and tap Compute"
+                    Message="Stats over the chosen date range will appear here." />
+    }
+</div>
+
+@code {
+    // Window state. Mirrors History.razor's split: presets for the
+    // common glance ("this week", "this year") + custom for the
+    // deliberate analysis ("April only"). Defaults to last 7 days
+    // -- the sweet spot for "what did this week look like?" without
+    // pulling a season's worth of points.
+    private string rangeMode = "preset";
+    private string selectedTimespan = "7d";
+    private DateTime customFromLocal = DateTime.Now.Date.AddDays(-7);
+    private DateTime customToLocal = DateTime.Now;
+    private string resolution = "5m";
+
+    private bool loading;
+    private bool computeAttempted;
+    private string? errorMessage;
+    private StatsTotals? totals;
+
+    private void OnModeChanged(ChangeEventArgs e)
+        => rangeMode = e.Value?.ToString() == "custom" ? "custom" : "preset";
+
+    private void OnTimespanChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(v)) selectedTimespan = v;
+    }
+
+    private void OnResolutionChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(v)) resolution = v;
+    }
+
+    private void OnCustomFromChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+            customFromLocal = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+    }
+
+    private void OnCustomToChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+            customToLocal = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+    }
+
+    /// <summary>Render <c>DateTime</c> in the format <c>datetime-local</c>
+    /// expects: <c>yyyy-MM-ddTHH:mm</c>. Invariant culture so the helm's
+    /// locale doesn't accidentally produce <c>05.06.2024</c>. Same helper
+    /// as History.razor; duplicated rather than extracted because the
+    /// History page is being refactored separately and lifting this
+    /// would have to wait for that refactor.</summary>
+    private static string FormatLocalForInput(DateTime t) =>
+        t.ToString("yyyy-MM-ddTHH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>Coverage = (moving + stationary) / total window. Pulled
+    /// out of markup because Razor doesn't allow <c>@{ }</c> blocks
+    /// inside an already-open code-then-markup region without going
+    /// back into code mode -- a helper keeps the markup linear.</summary>
+    private static double CoveragePct(StatsTotals t) =>
+        t.TotalDurationSeconds > 0
+            ? 100.0 * (t.MovingDurationSeconds + t.StationaryDurationSeconds) / t.TotalDurationSeconds
+            : 0;
+
+    /// <summary>Format seconds as "Nh" for the headline number. Helm
+    /// reads "12 h" faster than "12h00m" or "43200 s". Uses
+    /// non-breaking space so the unit doesn't wrap to its own line in
+    /// a narrow card.</summary>
+    private static string FormatHours(double seconds)
+    {
+        double h = seconds / 3600.0;
+        return $"{h.ToString("F1", CultureInfo.InvariantCulture)} h";
+    }
+
+    private async Task Compute()
+    {
+        computeAttempted = true;
+        errorMessage = null;
+        totals = null;
+        loading = true;
+        StateHasChanged();
+        try
+        {
+            // Resolve window. Custom mode swaps inverted ranges
+            // silently -- helms occasionally edit the inputs in
+            // the wrong order; a swap is friendlier than an error.
+            DateTimeOffset? fromUtc = null, toUtc = null;
+            string? span = selectedTimespan;
+            DateTime windowFrom, windowTo;
+            if (rangeMode == "custom")
+            {
+                var (lo, hi) = customFromLocal <= customToLocal
+                    ? (customFromLocal, customToLocal)
+                    : (customToLocal, customFromLocal);
+                fromUtc = new DateTimeOffset(lo.ToUniversalTime(), TimeSpan.Zero);
+                toUtc = new DateTimeOffset(hi.ToUniversalTime(), TimeSpan.Zero);
+                windowFrom = lo.ToUniversalTime();
+                windowTo = hi.ToUniversalTime();
+                span = null;
+            }
+            else
+            {
+                // Preset: derive the absolute window from "now" so
+                // the totals page can echo back a concrete from/to
+                // even though the API call uses the relative shorthand.
+                windowTo = DateTime.UtcNow;
+                windowFrom = ResolveSpanStart(windowTo, selectedTimespan);
+            }
+
+            // Stats page does NOT pass a bbox: we want every fix in the
+            // window, not just the ones inside the current viewport.
+            // The map page's bbox optimisation is about polyline density;
+            // here a missed segment outside the box would silently
+            // under-count the helm's nautical miles.
+            var points = await TrackApi.GetServerTrackPointsAsync(
+                from: fromUtc, to: toUtc, timespan: span,
+                resolution: resolution, bbox: null);
+
+            if (points is null || points.Length < 2)
+            {
+                totals = null;
+                return;
+            }
+
+            var segments = TrackSegmenter.Segment(points);
+            totals = StatsAggregator.Aggregate(windowFrom, windowTo, segments);
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = $"Failed to fetch track from server: {ex.Message}";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    /// <summary>Map a relative shorthand back to an absolute start time
+    /// anchored at <paramref name="now"/>. Mirrors the History page's
+    /// dropdown values so a helm switching between the two pages sees
+    /// identical windows for identical labels.</summary>
+    private static DateTime ResolveSpanStart(DateTime now, string span) => span switch
+    {
+        "1h"   => now.AddHours(-1),
+        "6h"   => now.AddHours(-6),
+        "1d"   => now.AddDays(-1),
+        "3d"   => now.AddDays(-3),
+        "7d"   => now.AddDays(-7),
+        "30d"  => now.AddDays(-30),
+        "90d"  => now.AddDays(-90),
+        "365d" => now.AddDays(-365),
+        _      => now.AddDays(-7),
+    };
+}
