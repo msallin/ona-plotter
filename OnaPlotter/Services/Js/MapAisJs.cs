@@ -44,6 +44,9 @@ public sealed class MapAisJs : IMapAisJs
     public Task SetHarborModeAsync(bool enabled)
         => InvokeSafe("setHarborMode", enabled);
 
+    public Task SetGuardZoneVisibleAsync(bool visible)
+        => InvokeSafe("setGuardZoneVisible", visible);
+
     /// <summary>Returns false during disposal too -- the only caller
     /// uses the false branch to surface a "vessel no longer on the
     /// chart" toast, which is a benign no-op when the page is unmounting

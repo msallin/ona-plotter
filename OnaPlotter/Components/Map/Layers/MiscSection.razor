@@ -67,11 +67,25 @@
             <div class="chart-desc">Buoys, beacons, lighthouses, racons. Virtual AtoNs render dashed.</div>
         </div>
     </label>
+    @* Guard zone: amber CPA-radius ring around own boat. Independent
+       of the alarm pipeline -- this only toggles the visible ring,
+       the CPA-alarm thresholds in Settings still drive the alarm
+       regardless. Helms hide this when they trust the alarm to do
+       its job and want a clean chart. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@GuardZoneVisible"
+               @onchange="(e) => OnToggleGuardZone.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Guard zone ring</div>
+            <div class="chart-desc">Amber CPA-radius circle around own boat. Alarm fires regardless.</div>
+        </div>
+    </label>
 }
 
 @code {
     [Parameter] public bool WeatherVisible { get; set; }
     [Parameter] public bool AtonsVisible { get; set; }
+    [Parameter] public bool GuardZoneVisible { get; set; } = true;
     /// <summary>0-100 integer matching the slider input value. The
     /// underlying setting / leaflet API uses 0.0-1.0; conversion
     /// happens in OnOpacityInput so the slider stays in pleasant
@@ -79,6 +93,7 @@
     [Parameter] public int WeatherOpacityPercent { get; set; } = 50;
     [Parameter] public EventCallback<bool> OnToggleWeather { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtons { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleGuardZone { get; set; }
     /// <summary>Fires per slider tick during a drag. Drives the
     /// live preview only -- helm wants instant feedback on the
     /// chart, not 20 localStorage writes per drag.</summary>

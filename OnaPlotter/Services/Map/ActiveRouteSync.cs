@@ -35,6 +35,7 @@ namespace OnaPlotter.Services.Map;
 public sealed class ActiveRouteSync
 {
     private readonly IMapRouteJs _routeJs;
+    private readonly IMapControlsJs _controlsJs;
     private readonly IRouteApi _routeApi;
     private readonly Func<bool> _isSignalKConnected;
     private readonly Action<string> _stopTimeoutWarning;
@@ -92,12 +93,14 @@ public sealed class ActiveRouteSync
 
     public ActiveRouteSync(
         IMapRouteJs routeJs,
+        IMapControlsJs controlsJs,
         IRouteApi routeApi,
         Func<bool> isSignalKConnected,
         Action<string> stopTimeoutWarning,
         Func<DateTime>? utcNow = null)
     {
         _routeJs = routeJs ?? throw new ArgumentNullException(nameof(routeJs));
+        _controlsJs = controlsJs ?? throw new ArgumentNullException(nameof(controlsJs));
         _routeApi = routeApi ?? throw new ArgumentNullException(nameof(routeApi));
         _isSignalKConnected = isSignalKConnected ?? throw new ArgumentNullException(nameof(isSignalKConnected));
         _stopTimeoutWarning = stopTimeoutWarning ?? throw new ArgumentNullException(nameof(stopTimeoutWarning));
@@ -199,6 +202,12 @@ public sealed class ActiveRouteSync
             }
 
             _lastActiveRouteHref = currentHref;
+
+            // Hide the bottom-centre range-scale chip while a route
+            // is active; the route HUD card occupies the same vertical
+            // slot. Restored when the route deactivates (currentHref
+            // empty / null).
+            await _controlsJs.SetRangeScaleHiddenAsync(!string.IsNullOrEmpty(currentHref));
 
             // The active overlay drawn by setActiveRoute would
             // otherwise sit on top of the regular polyline (drawn by

@@ -36,6 +36,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
     public bool AtonsVisible { get; private set; } = true;
+    public bool GuardZoneVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
     /// <summary>In-memory only -- never persisted, never restored.
     /// See IAppSettings.HarborMode for the rationale (a forgotten
@@ -116,6 +117,7 @@ public sealed class AppSettingsService : IAppSettings
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
+            GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
             // Read raw to detect whether the key was ever stored. A
@@ -270,6 +272,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         AtonsVisible = value;
         await Save("atonsVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetGuardZoneVisibleAsync(bool value)
+    {
+        GuardZoneVisible = value;
+        await Save("guardZoneVisible.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

@@ -77,6 +77,9 @@ public sealed class MapControlsJs : IMapControlsJs
         catch (ObjectDisposedException) { return null; }
     }
 
+    public Task SetRangeScaleHiddenAsync(bool hidden)
+        => InvokeSafe("setRangeScaleHidden", hidden);
+
     private async Task InvokeSafe(string identifier, params object?[] args)
     {
         if (_disposed) return;

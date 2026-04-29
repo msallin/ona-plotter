@@ -73,6 +73,11 @@ let guardZoneRing = null;
 let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThreshold
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
 let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
+// Visibility toggle from the Misc layers section. The ring still
+// drives the CPA / TCPA alarm pipeline regardless -- this is a pure
+// rendering flag. Default true preserves the previous always-visible
+// behaviour for installs that haven't explicitly hidden it.
+let guardZoneVisible = true;
 
 // Harbor-mode flag. When true the AIS render path skips name labels,
 // COG vectors, and CPA overlays, the guard-zone ring is not drawn,
@@ -771,6 +776,17 @@ export function setGuardZone(radiusNm, lookaheadMin, warningFactor) {
     drawGuardZone();
 }
 
+/**
+ * Toggle the on-map guard ring without touching the alarm pipeline.
+ * Helm uses this from the Misc layers section to declutter the chart
+ * when they trust the alarm to do its job and don't want the visible
+ * amber circle following them around.
+ */
+export function setGuardZoneVisible(visible) {
+    guardZoneVisible = !!visible;
+    drawGuardZone();
+}
+
 // Best-effort layer removal that never throws. Some entries in the
 // per-context dicts can be null / undefined under tear-down races
 // (a concurrent updateAisTargets that just deleted the key, or a
@@ -825,7 +841,10 @@ function drawGuardZone() {
     if (!mapRef) return;
     // Harbor mode hides the ring entirely. The radius itself is not
     // touched (so leaving harbor mode restores the previous setting).
-    if (harborMode) {
+    // Same teardown for the Misc-section visibility toggle: helms can
+    // hide the ring without disabling the CPA alarm pipeline (the
+    // alarm still fires off the radius / lookahead values).
+    if (harborMode || !guardZoneVisible) {
         if (guardZoneRing) { mapRef.removeLayer(guardZoneRing); guardZoneRing = null; }
         return;
     }
