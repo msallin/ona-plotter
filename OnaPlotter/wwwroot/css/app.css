@@ -127,6 +127,15 @@
     --sk-top-row-bg: #1a1d23;
     --sk-top-row-text: #8a919c;
     --sk-top-row-border: #363b44;
+    /* Dark-theme baseline: sidebar gradient blends into the dark page
+       body, so no drop-shadow is needed to lift it. The light-theme
+       block redefines this with a soft slate shadow because the dark
+       sidebar against a slate-50 chart benefits from a visible edge.
+       Declared here so every theme block has an explicit value rather
+       than falling through to MainLayout.razor.css's `var(...,none)`
+       fallback (architectural symmetry; same as the other --sk-sidebar
+       tokens above). */
+    --sidebar-shadow: none;
 
     /* Panel / modal palette. Two tiers:
        - `--panel-bg`: floating panels docked in page chrome (Layers list,
@@ -6460,7 +6469,15 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    same heading scale, the same subtitle treatment, and the same
    centred max-width gutter, without each page redefining it. */
 .app-page {
-    max-width: 1400px;
+    /* 1200px keeps long-form pages readable -- text starts to feel like
+       it's trailing the helm's eye past about 80-90 ch. 1400px (the
+       previous value) was wide enough that on a 1920 px helm screen
+       the centring was barely visible -- only ~250 px of total margin
+       split across both sides, which reads as "edge-to-edge" at a
+       glance. 1200 leaves ~360 px of margin per side at 1920 px and
+       still fits the WindRose two-column grid (480 + 32 + 520 =
+       1032 px) with a comfortable gutter. */
+    max-width: 1200px;
     margin: 0 auto;
     padding: 0.5rem 0;
 }
