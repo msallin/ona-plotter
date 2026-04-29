@@ -474,14 +474,20 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     routeEditLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     polygonEditLayerMod.init(map);
-    waypointLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
-    noteLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
-    regionLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
     // Edit-mode flags + the mode-specific "add point" dispatcher are
-    // shared by aisLayer + activeRouteLayer (both have per-line click
-    // handlers that fall back into route / polygon / measure flows
-    // when the helm is in those modes). Built once here and passed
-    // into both inits so each module gets the same fresh-read shape.
+    // shared by waypoint / note / region / aisLayer / activeRouteLayer
+    // (per-line click handlers fall back into route / polygon / measure
+    // flows when the helm is in those modes). Built once here and
+    // passed into every init so each module gets the same fresh-read
+    // shape.
+    //
+    // Declared BEFORE the waypoint / note / region inits below: those
+    // three spread `...editModeDeps` into their options bag, and `const`
+    // is in the temporal dead zone until its line executes. The
+    // previous order ("declare after the spreads, hoping function-scope
+    // hoisting saves us") threw ReferenceError at runtime -- `var`
+    // would have hoisted, but `const` does not, and a freshly-loaded
+    // page crashed the whole map render.
     const editModeDeps = {
         getEditModeFlags: () => ({
             routeEdit: routeEditLayerMod.isActive(),
@@ -494,6 +500,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             else measureLayerMod.addMeasurePoint(lat, lon);
         },
     };
+    waypointLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
+    noteLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
+    regionLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
     aisLayerMod.init(map, {
         colors: MapColors,
         isSlowClient,
