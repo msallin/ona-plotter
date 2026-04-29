@@ -94,6 +94,7 @@
     --map-current:      #a78bfa;     /* tidal-current arrow + route-edit preview */
     --map-current-rgb:  167, 139, 250;
     --map-bearing:      #06b6d4;     /* cyan bearing-to-WP line */
+    --map-bearing-rgb:  6, 182, 212;
     --map-course-leg:   #e2e8f0;     /* white-ish active-leg line */
     /* MOB pin + anchor-drag share the severity-danger hue. Both
        alias --sev-danger so a future palette tweak in one place
@@ -158,6 +159,18 @@
     /* Map overlays keep the dark tier regardless of theme. */
     --panel-bg-map:      rgba(15, 17, 22, 0.92);
     --panel-bg-map-text: #e2e8f0;
+
+    /* Route popup tokens (Leaflet popup wrapper with amber-route accent).
+       Dark-theme defaults below; light + high-contrast theme blocks
+       override with a cream-tinted card so the popup reads on a bright
+       basemap without losing the "warm route" identity. Tokenising
+       keeps the three light-theme override blocks (.theme-light,
+       .theme-high-contrast, @media prefers-light .theme-system) free
+       of duplicated literals. */
+    --route-popup-bg:     rgba(34, 24, 14, 0.96);
+    --route-popup-fg:     #e2e8f0;
+    --route-popup-border: rgba(224, 159, 62, 0.55);
+    --route-popup-title:  #f1c47c;
 
     /* Z-index stack. Use these consistently to avoid layering conflicts. */
     --z-map-layer: 10;
@@ -464,6 +477,14 @@
        reads as "didn't flip"; with it, it reads as a deliberate frame
        floating above the bright chart. */
     --sidebar-shadow:      4px 0 16px rgba(15, 23, 42, 0.10);
+
+    /* Route popup flips to a cream card with dark amber text + border
+       so it reads on a bright basemap without losing the "warm route"
+       identity. Tokens consumed by .route-popup .leaflet-popup-* below. */
+    --route-popup-bg:     #fef6e7;
+    --route-popup-fg:     #4a3211;
+    --route-popup-border: #c8862e;
+    --route-popup-title:  #8a5a14;
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the
@@ -515,6 +536,12 @@
         --map-anchor-ok:       #22c55e;
         /* OS-dark fallthrough on system theme: rail blends with chart, no shadow needed. */
         --sidebar-shadow:      none;
+
+        /* Snap route-popup tokens back to the dark default amber. */
+        --route-popup-bg:     rgba(34, 24, 14, 0.96);
+        --route-popup-fg:     #e2e8f0;
+        --route-popup-border: rgba(224, 159, 62, 0.55);
+        --route-popup-title:  #f1c47c;
     }
 }
 
@@ -580,6 +607,13 @@
     /* High-contrast: deeper shadow for sun-glare visibility. */
     --sidebar-shadow:      4px 0 18px rgba(0, 0, 0, 0.18);
     --hud-ink-stale:       rgba(0, 0, 0, 0.45);
+
+    /* High-contrast route popup: same cream/dark-amber pair as light
+       theme so the popup reads on white panels. */
+    --route-popup-bg:     #fef6e7;
+    --route-popup-fg:     #4a3211;
+    --route-popup-border: #c8862e;
+    --route-popup-title:  #8a5a14;
 }
 
 html, body {
@@ -883,7 +917,14 @@ a, .btn-link {
     padding-top: 1.1rem;
 }
 
-h1:focus {
+/* Suppress the route-change focus ring Blazor's <FocusOnNavigate
+   Selector="h1"/> would otherwise paint -- the H1 is focused
+   programmatically on route change for screen-reader orientation,
+   not by user keyboard input, so the visible ring confused helmsmen
+   into thinking the heading was an interactive control.
+   :focus-visible (not :focus) lets us keep an outline if a user
+   actually tabs to a tabindex'd H1 with the keyboard. */
+h1:focus:not(:focus-visible) {
     outline: none;
 }
 
@@ -1635,9 +1676,9 @@ html:fullscreen .hud-stack-br {
 .depth-warn { color: var(--sk-orange); }
 .depth-danger { color: var(--sk-red); font-weight: 700; animation: value-pulse 0.8s ease-in-out infinite; }
 
-.xte-ok { color: var(--sk-green); }
-.xte-warn { color: var(--sk-orange); }
-.xte-danger { color: var(--sk-red); font-weight: 700; }
+/* .xte-* rules live further down with the active route HUD section
+   so the route card's XTE marker + textual XTE class share one
+   declaration site. */
 
 /* Subtle pulse for critical values */
 @keyframes value-pulse {
@@ -2526,7 +2567,10 @@ html, body {
     background: var(--sk-surface-hover);
     border-color: var(--sk-accent);
     color: var(--sk-text);
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2);
+    /* Halo tracks --sk-accent-rgb so the focus ring matches the
+       theme accent (sky-800 navy in light theme; bright cyan-blue
+       in dark) without a per-theme override. */
+    box-shadow: 0 0 0 2px rgba(var(--sk-accent-rgb), 0.2);
 }
 .form-label {
     color: var(--sk-text);
@@ -3014,7 +3058,7 @@ html, body {
     position: relative;
 }
 @keyframes settings-flash {
-    0%   { background: rgba(224, 159, 62, 0.35); }
+    0%   { background: rgba(var(--ann-route-rgb), 0.35); }
     100% { background: transparent; }
 }
 
@@ -3124,7 +3168,7 @@ html, body {
     width: min(92vw, 440px);
     background: var(--panel-bg-strong);
     color: var(--panel-text);
-    border: 1px solid rgba(224, 159, 62, 0.5);
+    border: 1px solid rgba(var(--ann-route-rgb), 0.5);
     border-radius: 10px;
     padding: 22px 26px;
     box-shadow: var(--panel-shadow);
@@ -3148,8 +3192,8 @@ html, body {
 .welcome-kbd {
     display: inline-block;
     padding: 1px 6px;
-    background: rgba(224, 159, 62, 0.18);
-    border: 1px solid rgba(224, 159, 62, 0.5);
+    background: rgba(var(--ann-route-rgb), 0.18);
+    border: 1px solid rgba(var(--ann-route-rgb), 0.5);
     border-radius: 3px;
     color: #f0d49c;
     font-family: var(--bs-font-monospace, monospace);
@@ -3470,9 +3514,13 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .alarm-log-title { color: var(--panel-text); font-weight: 600; }
 .alarm-log-reason { color: var(--panel-text-muted); font-size: 0.72rem; }
 .alarm-log-msg { color: var(--panel-text-muted); }
-.alarm-log-userdismissed .alarm-log-title { color: #f87171; }
-.alarm-log-usersnoozed .alarm-log-title { color: #fbbf24; }
-.alarm-log-autocleared .alarm-log-title { color: #4ade80; }
+/* Disposition colours track --sev-* so the alarm-log title hue stays
+   AA-legible on both the dark panel and the white light-theme drawer.
+   user-dismissed = danger (red), user-snoozed = warn (amber),
+   auto-cleared = ok (green). */
+.alarm-log-userdismissed .alarm-log-title { color: var(--sev-danger); }
+.alarm-log-usersnoozed .alarm-log-title { color: var(--sev-warn); }
+.alarm-log-autocleared .alarm-log-title { color: var(--sev-ok); }
 
 /* ===== Global Night Mode ===== */
 /* Red-shifted dark mode for all pages (preserves night vision). The base
@@ -4392,7 +4440,7 @@ html.night-mode-global body {
     border-bottom: 1px solid var(--sk-border);
 }
 .rawstream-entry:hover { background: rgba(255,255,255,0.03); }
-.rawstream-entry.expanded { background: rgba(96,165,250,0.05); }
+.rawstream-entry.expanded { background: rgba(var(--sk-accent-rgb), 0.05); }
 .rawstream-row {
     display: grid;
     /* time · chev · context · source · path · value.
@@ -5012,7 +5060,7 @@ html.night-mode-global body {
     background: var(--map-bearing);
     border: 2px solid #fff;
     border-radius: 50%;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.35);
+    box-shadow: 0 0 0 2px rgba(var(--map-bearing-rgb), 0.35);
 }
 /* Anchor: pinned marker + alarm-radius circle ghost. Reads --map-anchor-ok
    so the swatch tracks whatever colour the actual circle on the map is
@@ -5233,10 +5281,13 @@ html.night-mode-global body {
 }
 .ap-mode-btn:hover { border-color: var(--sk-accent); color: var(--sk-text); }
 .ap-mode-btn.active {
-    background: rgba(96, 165, 250, 0.25);
+    /* Active fill + inset border drive off --sk-accent-rgb so the
+       autopilot mode pill matches the theme accent on light / high-
+       contrast cards as well as the dark default. */
+    background: rgba(var(--sk-accent-rgb), 0.25);
     border-color: var(--sk-accent);
     color: #fff;
-    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(var(--sk-accent-rgb), 0.3);
 }
 
 /* Hold-to-engage: Auto / Wind / Route require a 600 ms press. The
@@ -5253,7 +5304,7 @@ html.night-mode-global body {
     bottom: 0;
     height: 100%;
     width: 0;
-    background: rgba(96, 165, 250, 0.30);
+    background: rgba(var(--sk-accent-rgb), 0.30);
     animation: ap-hold-fill 600ms linear forwards;
     pointer-events: none;
 }
@@ -6241,50 +6292,27 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 
 /* Route popup: amber-tinted variant aligned with the route polyline
-   colour so the popup reads as "from this route". Default tokens
-   are the dark-theme warm chrome; light + high-contrast overrides
-   below switch to a cream-tinted card with dark text for the same
-   "warm route" tonality on the white panel. */
+   colour so the popup reads as "from this route". All four colour
+   surfaces drive off --route-popup-* tokens that flip per theme:
+   dark default = warm-amber chrome; light / high-contrast / system+
+   prefers-light = cream-tinted card with dark amber text + border,
+   so the popup reads on a bright basemap without losing the "warm
+   route" identity. !important is required to beat Leaflet's own
+   inline popup-wrapper background; var() through it works. */
 .route-popup .leaflet-popup-content-wrapper {
-    background: rgba(34, 24, 14, 0.96);
-    color: #e2e8f0;
+    background: var(--route-popup-bg) !important;
+    color: var(--route-popup-fg) !important;
     border-radius: 6px;
-    border: 1px solid rgba(224, 159, 62, 0.55);    /* ROUTE_COLOR accent */
+    border: 1px solid var(--route-popup-border) !important;
 }
-.route-popup .leaflet-popup-tip { background: rgba(34, 24, 14, 0.96); }
+.route-popup .leaflet-popup-tip { background: var(--route-popup-bg) !important; }
 .route-popup-body { padding: 2px 4px; min-width: 180px; }
-.route-popup-title { font-weight: 600; color: #f1c47c; margin-bottom: 2px; }
+.route-popup-title { font-weight: 600; color: var(--route-popup-title); margin-bottom: 2px; }
 .route-popup-meta {
     color: var(--panel-text-muted);
     font-size: 0.75rem;
     margin-bottom: 8px;
     font-variant-numeric: tabular-nums;
-}
-/* Light + high-contrast variant: warm-cream card with dark text
-   instead of the dark-amber default, so the popup reads on a
-   bright basemap without losing the "route accent" identity. */
-.theme-light .route-popup .leaflet-popup-content-wrapper,
-.theme-high-contrast .route-popup .leaflet-popup-content-wrapper {
-    background: #fef6e7 !important;
-    color: #4a3211 !important;
-    border-color: #c8862e !important;
-}
-.theme-light .route-popup .leaflet-popup-tip,
-.theme-high-contrast .route-popup .leaflet-popup-tip {
-    background: #fef6e7 !important;
-}
-.theme-light .route-popup-title,
-.theme-high-contrast .route-popup-title { color: #8a5a14; }
-@media (prefers-color-scheme: light) {
-    .theme-system .route-popup .leaflet-popup-content-wrapper {
-        background: #fef6e7 !important;
-        color: #4a3211 !important;
-        border-color: #c8862e !important;
-    }
-    .theme-system .route-popup .leaflet-popup-tip {
-        background: #fef6e7 !important;
-    }
-    .theme-system .route-popup-title { color: #8a5a14; }
 }
 /* Active-route popup only: ETA + remaining-time pair on its own line.
    Slightly larger + accent-coloured because ETA is the value the helm
@@ -6320,13 +6348,13 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .route-activate-btn,
 .route-deactivate-btn {
     color: #f1c47c;
-    border-color: rgba(224, 159, 62, 0.55);
+    border-color: rgba(var(--ann-route-rgb), 0.55);
 }
 .route-activate-btn:hover,
 .route-deactivate-btn:hover {
-    background: rgba(224, 159, 62, 0.18);
+    background: rgba(var(--ann-route-rgb), 0.18);
     color: #fde0a8;
-    border-color: #e09f3e;
+    border-color: var(--ann-route);
 }
 .route-edit-btn { border-color: rgba(var(--sk-accent-rgb), 0.45); color: rgba(var(--sk-accent-rgb), 0.95); }
 .route-edit-btn:hover {
@@ -7035,14 +7063,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     background: var(--map-bearing);
     border: 2px solid #fff;
     /* Static glow -- the animation is handled by ::before now. */
-    box-shadow: 0 0 8px rgba(6, 182, 212, 0.65);
+    box-shadow: 0 0 8px rgba(var(--map-bearing-rgb), 0.65);
 }
 .active-wp-pulse::before {
     content: "";
     position: absolute;
     inset: -2px;
     border-radius: 50%;
-    border: 2px solid rgba(6, 182, 212, 0.9);
+    border: 2px solid rgba(var(--map-bearing-rgb), 0.9);
     animation: wp-ping 1.5s ease-out infinite;
     pointer-events: none;
     will-change: transform, opacity;
@@ -7061,7 +7089,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    route RESOURCE colour (routes in the Layers panel) but fought
    with the cyan route LINE we actually draw for an active course. */
 .route-wp-tooltip {
-    background: rgba(6, 182, 212, 0.92) !important;
+    background: rgba(var(--map-bearing-rgb), 0.92) !important;
     border: none !important;
     color: #fff !important;
     font-size: 11px !important;
@@ -7072,16 +7100,21 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .route-wp-tooltip::before { display: none !important; }
 
-/* XTE severity colors in HUD */
-.xte-ok { color: #22c55e; }
-.xte-warn { color: #f59e0b; }
-.xte-danger { color: #ef4444; }
+/* XTE severity colors in HUD. --sev-* tokens auto-flip per theme so
+   the route XTE label keeps AA contrast on both dark and light cards
+   without per-theme overrides. Used by Format.XteClass(). */
+.xte-ok { color: var(--sev-ok); }
+.xte-warn { color: var(--sev-warn); }
+.xte-danger { color: var(--sev-danger); }
 
-/* Layers-panel vessel rows */
+/* Layers-panel vessel rows. --sev-* tokens flip per theme so the
+   left-edge severity bar stays at AA contrast on both dark and light
+   panels. The buddy hue (#facc15 amber-400 / #fde68a amber-200) is
+   user-annotation, stays constant across themes. */
 .vessel-row { cursor: pointer; }
 .vessel-row:hover { background: var(--sk-surface-hover); }
-.vessel-row.vessel-danger { border-left: 3px solid #ef4444; padding-left: 5px; }
-.vessel-row.vessel-warn   { border-left: 3px solid #f59e0b; padding-left: 5px; }
+.vessel-row.vessel-danger { border-left: 3px solid var(--sev-danger); padding-left: 5px; }
+.vessel-row.vessel-warn   { border-left: 3px solid var(--sev-warn); padding-left: 5px; }
 .vessel-row.vessel-buddy  { border-left: 3px solid #facc15; padding-left: 5px; }
 .vessel-row.vessel-buddy .chart-name { color: #fde68a; }
 .buddy-offline { opacity: 0.6; font-style: italic; }
