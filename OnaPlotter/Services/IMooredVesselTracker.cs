@@ -19,4 +19,12 @@ public interface IMooredVesselTracker
     /// context set so a long session doesn't leak memory on every AIS
     /// target that ever appeared.</summary>
     void Cleanup(IReadOnlyCollection<string> activeContexts);
+
+    /// <summary>Vessel-collection overload for hot paths. Internal short-
+    /// circuit returns when nothing is tracked, so the caller doesn't pay
+    /// for a HashSet build in the common no-moored-targets case (which is
+    /// almost every CPA / harbour-filter tick on open water). The vessels
+    /// arg is enumerated only when there's at least one tracked entry to
+    /// consider for removal.</summary>
+    void Cleanup(IEnumerable<AisVessel> activeVessels);
 }
