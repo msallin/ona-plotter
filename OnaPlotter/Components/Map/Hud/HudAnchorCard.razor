@@ -19,14 +19,10 @@
                    when it's out of sight at night ("which way is it from
                    here?"). Sits inline with the title so it doesn't add
                    another row when bearing data is absent. *@
-                @if (Snapshot.BearingTrue is double bearingRad)
+                @if (NormaliseBearingDeg(Snapshot.BearingTrue) is int deg)
                 {
-                    var deg = (int)Math.Round(bearingRad * 180.0 / Math.PI);
-                    @* Normalise to [0,360) for display + transform.
-                       SVG transform rotation is clockwise from up,
+                    @* SVG transform rotation is clockwise from up,
                        which matches a true-north bearing reading. *@
-                    while (deg < 0) deg += 360;
-                    while (deg >= 360) deg -= 360;
                     <span class="anchor-bearing" title="@($"Bearing back to anchor: {deg}° true")">
                         <svg width="20" height="20" viewBox="-12 -12 24 24" aria-hidden="true">
                             <circle cx="0" cy="0" r="10" fill="none"
@@ -107,6 +103,25 @@
 
     private static readonly double[] AnchorRadiusPresets = [20, 30, 50, 75, 100, 150];
 
+    /// <summary>Normalise a bearing in radians to whole degrees on
+    /// [0, 360). Returns null when the input is null, NaN, or
+    /// infinite -- a malformed delta would otherwise produce a
+    /// non-finite degree value that the previous while-loop
+    /// implementation looped on for millions of iterations per
+    /// render. Single modulo idiom is bounded constant-time.</summary>
+    private static int? NormaliseBearingDeg(double? bearingRad)
+    {
+        if (bearingRad is not double rad) return null;
+        if (double.IsNaN(rad) || double.IsInfinity(rad)) return null;
+        // Convert to degrees as a double first so the modulo math
+        // happens before the int cast; with a valid (or even very
+        // large) finite radian input the modulo always lands in
+        // (-360, 360), which the int cast can represent exactly.
+        double deg = rad * 180.0 / Math.PI;
+        deg = ((deg % 360.0) + 360.0) % 360.0;
+        return (int)Math.Round(deg) % 360;
+    }
+
     /// <summary>
     /// Immutable snapshot of every field the anchor card reads. See
     /// HudRouteCard for the rendering-skip rationale.
@@ -121,8 +136,10 @@
         string? DormantReason,
         double? PeakRadius = null,
         // True-north bearing back to the anchor (radians, 0..2pi).
-        // Plugin-published; null when the JS-only manual flow is in
-        // effect. Default null keeps existing call sites compatible
-        // without an exhaustive ctor update.
+        // Computed client-side via Utilities.GeoBearing in the parent
+        // (MapHud.BuildAnchorSnapshot) from anchor + own-ship lat/lon
+        // so it works on both the plugin and the JS-only manual flow.
+        // Null when either endpoint is missing (no GPS, no anchor)
+        // -- the card uses that as the hide signal.
         double? BearingTrue = null);
 }

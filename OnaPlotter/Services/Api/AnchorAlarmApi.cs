@@ -14,7 +14,6 @@ public sealed class AnchorAlarmApi : IAnchorAlarmApi
     // prefix we'd need to make this configurable, but no other SK
     // plugin the plotter talks to has done that in practice.
     private const string DropAnchorPath = "/plugins/anchoralarm/dropAnchor";
-    private const string SetRadiusPath = "/plugins/anchoralarm/setRadius";
     private const string RaiseAnchorPath = "/plugins/anchoralarm/raiseAnchor";
 
     public AnchorAlarmApi(HttpClient http, ISignalKBaseUrl baseUrl)
@@ -27,10 +26,6 @@ public sealed class AnchorAlarmApi : IAnchorAlarmApi
         // Plugin expects { "radius": <number> } in metres. Plugin reads
         // own-ship position from SignalK itself; we don't ship lat/lon.
         ResourceHttp.PostAsync(_http, _baseUrl.Combine(DropAnchorPath),
-            new { radius = radiusMeters }, ct);
-
-    public Task<ApiResult> SetRadiusAsync(int radiusMeters, CancellationToken ct = default) =>
-        ResourceHttp.PostAsync(_http, _baseUrl.Combine(SetRadiusPath),
             new { radius = radiusMeters }, ct);
 
     public Task<ApiResult> RaiseAsync(CancellationToken ct = default) =>
