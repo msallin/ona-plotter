@@ -1041,22 +1041,12 @@
     private double? depthTrendMpm =>
         TrackBuffer.GetDepthTrendMetersPerMinute(TimeSpan.FromMinutes(1));
 
-    // Track whether we've already drawn the server anchor on the map.
-    private bool serverAnchorDrawn;
-    private double lastPushedAnchorRadius;
-
-    // "Raising in progress" state: set when AnchorAlarmApi.RaiseAsync
-    // returns success, cleared when SyncServerAnchorAsync sees the
-    // anchor delta arrive (Data.AnchorActive flips false). While set,
-    // the on-map anchor marker / watch circle / radius line dim via
-    // setAnchorRaising so the helm sees their tap took effect without
-    // us masking a possible server-side failure (we never hide the
-    // marker; we only style it). A wallclock watchdog of
-    // AnchorRaiseTimeoutSec surfaces a warning toast if the delta
-    // never arrives -- pointing at a real server-side issue rather
-    // than a transient delta gap.
-    private DateTime? _anchorRaisePendingUtc;
-    private const int AnchorRaiseTimeoutSec = 5;
+    // Server anchor visualisation + raise-confirmation watchdog live in
+    // ServerAnchorSync; the page hands the controller per-tick deltas
+    // and the manual-clear callback. Created in OnAfterRenderAsync once
+    // the JS module is loaded.
+    private OnaPlotter.Services.Js.MapAnchorJs? _anchorJs;
+    private OnaPlotter.Services.Map.ServerAnchorSync? _anchorSync;
 
     // "Stopping navigation in progress" state: set when StopNavigation's
     // CourseApi.ClearAsync returns success, cleared when
@@ -1100,6 +1090,31 @@
         // through here on overlay-start failures.
         RadarOverlayHost.SetModule(module);
         RadarOverlay.OnError = msg => Toasts.Error(msg);
+
+        // Per-tick / per-event sync controllers. Each owns a slice of
+        // Map.razor's old "diff state + interop pipeline" and the page
+        // becomes a thin wiring layer that forwards data + UI events.
+        // Constructed once the JS module is available; disposed
+        // implicitly on page unload via the JS wrappers' MarkDisposed
+        // hooks that the page calls in DisposeAsync.
+        _anchorJs = new OnaPlotter.Services.Js.MapAnchorJs(module);
+        _anchorSync = new OnaPlotter.Services.Map.ServerAnchorSync(
+            _anchorJs,
+            isSignalKConnected: () => SignalkClient.IsConnected,
+            raiseTimeoutWarning: msg => Toasts.Warning(msg))
+        {
+            // Server anchor takes priority over manual: when the SK
+            // server's anchor delta arrives, the manual drop has to
+            // clear so the helm doesn't see two overlapping rings.
+            OnServerAnchorAppeared = async () =>
+            {
+                if (anchorManualActive)
+                {
+                    await _anchorJs.ClearAnchorAsync();
+                    anchorManualActive = false;
+                }
+            },
+        };
 
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
@@ -1696,7 +1711,7 @@
             // out of applyFrame because it has its own diff-before-push
             // logic (href / radii) that doesn't map to a plain per-tick
             // snapshot.
-            await SyncServerAnchorAsync();
+            if (_anchorSync is not null) await _anchorSync.SyncAsync(Data);
 
             // Sync active route visualization (href-diff -> fetch + draw).
             await SyncActiveRouteAsync();
@@ -2918,7 +2933,7 @@
             // Visual "raising in progress" feedback until the SK delta
             // confirms (Data.AnchorActive flips false). Same pattern as
             // the route-activate auto-raise path.
-            _anchorRaisePendingUtc = DateTime.UtcNow;
+            _anchorSync?.MarkRaisePending();
             try { await module.InvokeVoidAsync("setAnchorRaising", true); }
             catch (JSDisconnectedException) { }
             return;
@@ -2972,94 +2987,6 @@
                 anchorManualLat, anchorManualLon, radiusMeters);
         }
         catch (JSDisconnectedException) { }
-    }
-
-    /// <summary>
-    /// Syncs anchor alarm state from SignalK server to the map.
-    /// When the server provides anchor data, it overrides the manual anchor watch.
-    /// </summary>
-    private async Task SyncServerAnchorAsync()
-    {
-        if (!mapInitialized || module is null) return;
-
-        if (Data.AnchorActive)
-        {
-            double radius = Data.AnchorMaxRadius ?? 30;
-            if (!serverAnchorDrawn)
-            {
-                // Server anchor just appeared — draw it and disable manual.
-                if (anchorManualActive)
-                {
-                    if (!mapInitialized) return;
-                    await module.InvokeVoidAsync("clearAnchor");
-                    anchorManualActive = false;
-                }
-                // No auto-clear of an active course here. The
-                // `serverAnchorDrawn` gate is per-Map-instance and
-                // resets on every page mount, so a session with both
-                // states already active on the SK server would have
-                // every navigate-back interpret the rehydration as a
-                // fresh anchor drop and DELETE the course -- visible
-                // to other plotters too. The manual Anchor button in
-                // the bar (ToggleManualAnchor below) still clears the
-                // course on tap, which is the single legit edge for
-                // the auto-resolve. Server-driven anchor drops (e.g.
-                // signalk-anchoralarm-plugin) just render; the helm
-                // can hit Stop Navigation explicitly if they want the
-                // course cleared too.
-                if (!mapInitialized) return;
-                await module.InvokeVoidAsync("setAnchor",
-                    Data.AnchorLatitude, Data.AnchorLongitude, radius);
-                serverAnchorDrawn = true;
-                lastPushedAnchorRadius = radius;
-            }
-            else if (Math.Abs(radius - lastPushedAnchorRadius) > 0.1)
-            {
-                // Only update JS if radius actually changed.
-                if (!mapInitialized) return;
-                await module.InvokeVoidAsync("updateAnchorRadius", radius);
-                lastPushedAnchorRadius = radius;
-            }
-
-            // Watchdog: if the helm tapped raise and Data.AnchorActive
-            // is STILL true beyond the timeout, surface a warning and
-            // un-dim the marker so the helm investigates rather than
-            // staring at a dimmed-indefinitely anchor.
-            //
-            // Suppressed while the WebSocket is disconnected -- the
-            // delta might have been published server-side but the
-            // client isn't subscribed to receive it. Reset the timer
-            // on reconnect so the user gets a fresh 5 s window once
-            // we're listening again, instead of a false-positive
-            // "server didn't confirm" the moment the connection is
-            // restored. Without this, every reconnect during a raise
-            // would blast a misleading warning.
-            if (_anchorRaisePendingUtc is DateTime t)
-            {
-                if (!SignalkClient.IsConnected)
-                {
-                    _anchorRaisePendingUtc = DateTime.UtcNow;  // re-arm
-                }
-                else if ((DateTime.UtcNow - t).TotalSeconds > AnchorRaiseTimeoutSec)
-                {
-                    _anchorRaisePendingUtc = null;
-                    Toasts.Warning("Anchor raise not confirmed by server -- still anchored");
-                    if (!mapInitialized) return;
-                    try { await module.InvokeVoidAsync("setAnchorRaising", false); }
-                    catch (JSDisconnectedException) { }
-                }
-            }
-        }
-        else if (serverAnchorDrawn)
-        {
-            // Server anchor was raised — clear from map. Also clear
-            // any "raising in progress" visual (the marker is going
-            // away anyway, but the flag should follow truth).
-            if (!mapInitialized) return;
-            await module.InvokeVoidAsync("clearAnchor");
-            serverAnchorDrawn = false;
-            _anchorRaisePendingUtc = null;
-        }
     }
 
     /// <summary>
@@ -3329,6 +3256,12 @@
         Atons.OnAtonsUpdated -= HandleAtonsUpdated;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         RemoveEditNavGuard();
+        // Mark JS wrappers as disposed so any in-flight Sync* calls that
+        // are parked between awaits become silent no-ops instead of
+        // hitting the about-to-be-disposed module reference. The wrappers
+        // themselves don't own the IJSObjectReference; the page disposes
+        // it once below.
+        _anchorJs?.MarkDisposed();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
