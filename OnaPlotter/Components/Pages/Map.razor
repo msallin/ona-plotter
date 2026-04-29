@@ -395,11 +395,11 @@
                      FilteredRoutes="FilteredRoutes"
                      LoadedWaypoints="loadedWaypoints"
                      LoadedNotes="loadedNotes"
-                     NotesVisible="notesVisible"
+                     NotesVisible="@(_resources?.NotesVisible ?? true)"
                      OnFocusNote="FocusNote"
                      OnToggleNotesVisible="ToggleNotesVisible"
                      LoadedRegions="loadedRegions"
-                     RegionsVisible="regionsVisible"
+                     RegionsVisible="@(_resources?.RegionsVisible ?? true)"
                      OnFocusRegion="FocusRegion"
                      OnEditRegion="EditRegion"
                      OnDeleteRegion="(r) => DeleteRegion(r.Id)"
@@ -496,6 +496,14 @@
     private OnaPlotter.Services.Map.WeatherOverlayController? _weather;
     private OnaPlotter.Services.Map.ServerTrackController? _serverTrack;
     private OnaPlotter.Services.Map.ChartLayerController? _charts;
+
+    // Marker-rendering facade for the user-placed resources
+    // (waypoints / notes / regions). The CRUD flows live on
+    // Map.razor.cs because they share the dialog state with the page;
+    // the controller takes care of init batch-pushes + visibility
+    // toggles.
+    private OnaPlotter.Services.Js.MapResourceJs? _resourceJs;
+    private OnaPlotter.Services.Map.MapResourceController? _resources;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -1127,6 +1135,8 @@
             // re-sort propagates without an extra render call.
             OnChartOrderChanged = ReSortAvailableCharts,
         };
+        _resourceJs = new OnaPlotter.Services.Js.MapResourceJs(module);
+        _resources = new OnaPlotter.Services.Map.MapResourceController(_resourceJs);
 
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
@@ -1216,31 +1226,11 @@
         RebuildFilteredLayers();
         StateHasChanged();
 
-        // Draw waypoint markers on the map.
-        foreach (var wp in loadedWaypoints)
-        {
-            if (wp.Latitude is not null && wp.Longitude is not null)
-                await module.InvokeVoidAsync("addWaypointMarker", wp.Id, wp.Latitude, wp.Longitude, wp.Name);
-        }
-
-        // Draw note markers. Notes use a bare position (not a GeoJSON
-        // Feature); GetAllAsync has already filtered out entries without
-        // a position, so the nullability check is just defensive.
-        foreach (var n in loadedNotes)
-        {
-            if (n.Position is not null)
-                await module.InvokeVoidAsync("addNoteMarker",
-                    n.Id, n.Position.Latitude, n.Position.Longitude, n.Title, n.Description);
-        }
-
-        // Draw region polygons. OuterRings is in Leaflet [lat, lon]
-        // order already, one ring per polygon (MultiPolygon produces
-        // multiple).
-        foreach (var r in loadedRegions)
-        {
-            await module.InvokeVoidAsync("addRegion",
-                r.Id, r.OuterRings, r.Name, r.Description);
-        }
+        // Batch-push markers via the resource controller. The page
+        // still owns loadedWaypoints / loadedNotes / loadedRegions
+        // because the CRUD flows on Map.razor.cs need them; the
+        // controller is the rendering facade.
+        await _resources!.DrawAllAsync(loadedWaypoints, loadedNotes, loadedRegions);
 
         // Restore persisted settings (including enabled charts/routes) before
         // applying defaults so user choices survive a reload.
@@ -2688,6 +2678,7 @@
         _routeJs?.MarkDisposed();
         _aisJs?.MarkDisposed();
         _overlaysJs?.MarkDisposed();
+        _resourceJs?.MarkDisposed();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
