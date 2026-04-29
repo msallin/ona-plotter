@@ -1156,7 +1156,7 @@
         _serverTrack = new OnaPlotter.Services.Map.ServerTrackController(
             _overlaysJs, TrackApi, msg => Toasts.Info(msg));
         _charts = new OnaPlotter.Services.Map.ChartLayerController(
-            _overlaysJs, Settings,
+            _overlaysJs, Settings, Settings,
             toastError: (chartName, msg) => Toasts.Error($"Chart {chartName}: {msg}"))
         {
             // Re-sort the page-side availableCharts list when the

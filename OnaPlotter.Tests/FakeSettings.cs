@@ -25,6 +25,8 @@ internal sealed class FakeSettings : IAppSettings
     public bool LaylinesVisible { get; set; }
     public bool AtonsVisible { get; set; } = true;
     public bool GuardZoneVisible { get; set; } = true;
+    public bool ChartUpscaleEnabled { get; set; }
+    public int ChartUpscaleLevels { get; set; } = 2;
     public double WeatherOverlayOpacity { get; set; } = 0.5;
     public bool HarborMode { get; set; }
     public bool SidebarCollapsed { get; set; }
@@ -79,6 +81,8 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }
     public Task SetGuardZoneVisibleAsync(bool v) { GuardZoneVisible = v; return Task.CompletedTask; }
+    public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }
+    public Task SetChartUpscaleLevelsAsync(int v) { ChartUpscaleLevels = v; return Task.CompletedTask; }
     public Task SetWeatherOverlayOpacityAsync(double v) { WeatherOverlayOpacity = v; return Task.CompletedTask; }
     public Task SetHarborModeAsync(bool v) { HarborMode = v; return Task.CompletedTask; }
     public Task ApplyMobileFirstRunDefaultsAsync(bool isMobile)

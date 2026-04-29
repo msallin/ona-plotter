@@ -38,6 +38,8 @@ public sealed class AppSettingsService : IAppSettings
     public bool AtonsVisible { get; private set; } = true;
     public bool GuardZoneVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
+    public bool ChartUpscaleEnabled { get; private set; } = false;
+    public int ChartUpscaleLevels { get; private set; } = OnaPlotter.Utilities.ChartUpscale.DefaultLevels;
     /// <summary>In-memory only -- never persisted, never restored.
     /// See IAppSettings.HarborMode for the rationale (a forgotten
     /// Harbor mode silently riding into open water is the worst-case
@@ -120,6 +122,10 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
+            ChartUpscaleEnabled = await LoadBool("chartUpscaleEnabled.v1", false);
+            ChartUpscaleLevels = OnaPlotter.Utilities.ChartUpscale.ClampLevels(
+                (int)await LoadDouble("chartUpscaleLevels.v1",
+                    OnaPlotter.Utilities.ChartUpscale.DefaultLevels));
             // Read raw to detect whether the key was ever stored. A
             // missing value triggers ApplyMobileFirstRunDefaultsAsync's
             // viewport-aware default; a stored "false" is respected.
@@ -279,6 +285,24 @@ public sealed class AppSettingsService : IAppSettings
     {
         GuardZoneVisible = value;
         await Save("guardZoneVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetChartUpscaleEnabledAsync(bool value)
+    {
+        ChartUpscaleEnabled = value;
+        await Save("chartUpscaleEnabled.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetChartUpscaleLevelsAsync(int value)
+    {
+        // Clamp via the shared helper so a future caller / corrupted
+        // localStorage value can't drive the JS-side decorator out of
+        // its tested 0..3 range.
+        ChartUpscaleLevels = OnaPlotter.Utilities.ChartUpscale.ClampLevels(value);
+        await Save("chartUpscaleLevels.v1",
+            ChartUpscaleLevels.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

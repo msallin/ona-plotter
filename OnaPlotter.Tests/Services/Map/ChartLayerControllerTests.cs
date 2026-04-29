@@ -22,10 +22,16 @@ public class ChartLayerControllerTests
         public Microsoft.JSInterop.JSException? NextRemoveError { get; set; }
         public Microsoft.JSInterop.JSException? NextOrderError { get; set; }
 
-        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds)
+        /// <summary>Records the most recent upscaleLevels arg so tests
+        /// can assert the controller resolved it correctly from
+        /// IMapDisplaySettings.ChartUpscaleEnabled / Levels.</summary>
+        public List<int> UpscaleLevelsCalls { get; } = [];
+
+        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels)
         {
             if (NextAddError is not null) { var e = NextAddError; NextAddError = null; throw e; }
             Added.Add(id);
+            UpscaleLevelsCalls.Add(upscaleLevels);
             return Task.CompletedTask;
         }
 
@@ -99,20 +105,54 @@ public class ChartLayerControllerTests
         }
     }
 
-    private static (ChartLayerController ctrl, FakeOverlaysJs js, ChartFakeSettings settings, List<(string name, string msg)> errors)
+    /// <summary>Minimal IMapDisplaySettings stub. The controller only
+    /// consults ChartUpscaleEnabled / ChartUpscaleLevels; everything
+    /// else returns sensible defaults.</summary>
+    private sealed class DisplayFakeSettings : OnaPlotter.Services.Settings.IMapDisplaySettings
+    {
+        public bool ChartUpscaleEnabled { get; set; }
+        public int ChartUpscaleLevels { get; set; } = 2;
+        public string MapOrientation => "north";
+        public bool FollowBoat => true;
+        public bool LaylinesVisible => false;
+        public bool AtonsVisible => true;
+        public bool GuardZoneVisible => true;
+        public double WeatherOverlayOpacity => 0.5;
+        public bool HarborMode => false;
+        public bool BigType => false;
+        public bool ExpandAllHud => false;
+        public bool ShowAutopilotHud => false;
+        public bool ShowRadarHud => false;
+        public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
+        public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
+        public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetWeatherOverlayOpacityAsync(double v) => Task.CompletedTask;
+        public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }
+        public Task SetChartUpscaleLevelsAsync(int v) { ChartUpscaleLevels = v; return Task.CompletedTask; }
+        public Task SetHarborModeAsync(bool v) => Task.CompletedTask;
+        public Task SetBigTypeAsync(bool v) => Task.CompletedTask;
+        public Task SetExpandAllHudAsync(bool v) => Task.CompletedTask;
+        public Task SetShowAutopilotHudAsync(bool v) => Task.CompletedTask;
+        public Task SetShowRadarHudAsync(bool v) => Task.CompletedTask;
+    }
+
+    private static (ChartLayerController ctrl, FakeOverlaysJs js, ChartFakeSettings settings, DisplayFakeSettings display, List<(string name, string msg)> errors)
         New()
     {
         var js = new FakeOverlaysJs();
         var settings = new ChartFakeSettings();
+        var display = new DisplayFakeSettings();
         var errors = new List<(string, string)>();
-        var ctrl = new ChartLayerController(js, settings, (name, msg) => errors.Add((name, msg)));
-        return (ctrl, js, settings, errors);
+        var ctrl = new ChartLayerController(js, settings, display, (name, msg) => errors.Add((name, msg)));
+        return (ctrl, js, settings, display, errors);
     }
 
     [Test]
     public async Task Toggle_On_Adds_Layer_And_Persists_Enabled()
     {
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
 
         await ctrl.ToggleAsync(Chart("c1"), true);
 
@@ -128,7 +168,7 @@ public class ChartLayerControllerTests
         // quick-bar set and the persisted draw order list. Without the
         // first the helm has no chip to hide it again; without the
         // second the up/down reorder buttons are dead.
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
 
         await ctrl.ToggleAsync(Chart("c1"), true);
 
@@ -139,7 +179,7 @@ public class ChartLayerControllerTests
     [Test]
     public async Task Toggle_Off_Removes_Layer_And_Persists()
     {
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
         await ctrl.ToggleAsync(Chart("c1"), true);
 
         await ctrl.ToggleAsync(Chart("c1"), false);
@@ -155,7 +195,7 @@ public class ChartLayerControllerTests
         // A JS regression must not corrupt the persisted state -- the
         // chart isn't actually on the map, so the enabled mirror stays
         // empty.
-        var (ctrl, js, settings, errors) = New();
+        var (ctrl, js, settings, _, errors) = New();
         js.NextAddError = new Microsoft.JSInterop.JSException("addLayer is undefined");
 
         await ctrl.ToggleAsync(Chart("c1", "OpenSeaMap"), true);
@@ -170,7 +210,7 @@ public class ChartLayerControllerTests
     {
         // Helm un-ticks the chart in Layers panel -> rendering ALSO
         // goes off (so a removed chart doesn't ghost on the map).
-        var (ctrl, js, _, _) = New();
+        var (ctrl, js, _, _, _) = New();
         await ctrl.ToggleAsync(Chart("c1"), true);
 
         await ctrl.ToggleQuickBarAsync(Chart("c1"), false);
@@ -186,7 +226,7 @@ public class ChartLayerControllerTests
         // Inverse: ticking the row in the panel = "I want this
         // chart". Activates rendering so the user doesn't have to
         // tap a separate quick-bar chip after.
-        var (ctrl, js, _, _) = New();
+        var (ctrl, js, _, _, _) = New();
 
         await ctrl.ToggleQuickBarAsync(Chart("c1"), true);
 
@@ -199,7 +239,7 @@ public class ChartLayerControllerTests
     {
         // Three charts in order [a, b, c]; reorder b up (-1) yields
         // [b, a, c]. Pushed to JS so the z-stack matches.
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
         await ctrl.ToggleAsync(Chart("a"), true);
         await ctrl.ToggleAsync(Chart("b"), true);
         await ctrl.ToggleAsync(Chart("c"), true);
@@ -213,7 +253,7 @@ public class ChartLayerControllerTests
     [Test]
     public async Task Reorder_Down_Swaps_With_Next()
     {
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
         await ctrl.ToggleAsync(Chart("a"), true);
         await ctrl.ToggleAsync(Chart("b"), true);
         await ctrl.ToggleAsync(Chart("c"), true);
@@ -226,7 +266,7 @@ public class ChartLayerControllerTests
     [Test]
     public async Task Reorder_At_Top_Edge_Is_No_Op()
     {
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
         await ctrl.ToggleAsync(Chart("a"), true);
         await ctrl.ToggleAsync(Chart("b"), true);
 
@@ -243,7 +283,7 @@ public class ChartLayerControllerTests
         // Defensive: a stale ChartOrder list missing some currently-
         // enabled ids must NOT silently break the reorder. The
         // controller pads the list before the swap.
-        var (ctrl, js, settings, _) = New();
+        var (ctrl, js, settings, _, _) = New();
         await ctrl.ToggleAsync(Chart("a"), true);
         await ctrl.ToggleAsync(Chart("b"), true);
         // Simulate a stale state: persisted order has only "a".
@@ -258,7 +298,7 @@ public class ChartLayerControllerTests
     [Test]
     public async Task Apply_Order_Sorts_Charts_By_Persisted_Index()
     {
-        var (ctrl, _, settings, _) = New();
+        var (ctrl, _, settings, _, _) = New();
         await settings.SetChartOrderAsync(new[] { "c", "a", "b" });
         var charts = new[] { Chart("a", "Alpha"), Chart("b", "Bravo"), Chart("c", "Charlie") };
 
@@ -273,7 +313,7 @@ public class ChartLayerControllerTests
     {
         // A chart that's not in the persisted order falls to the end
         // (preserves server-provided order among the unseen).
-        var (ctrl, _, settings, _) = New();
+        var (ctrl, _, settings, _, _) = New();
         await settings.SetChartOrderAsync(new[] { "a" });
         var charts = new[] { Chart("a"), Chart("b"), Chart("c") };
 
@@ -288,7 +328,7 @@ public class ChartLayerControllerTests
     {
         // The page wires this hook to re-sort availableCharts; the
         // reorder button looks dead without it.
-        var (ctrl, _, _, _) = New();
+        var (ctrl, _, _, _, _) = New();
         await ctrl.ToggleAsync(Chart("a"), true);
         await ctrl.ToggleAsync(Chart("b"), true);
         bool fired = false;
