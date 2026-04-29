@@ -33,11 +33,12 @@ public class TrackSegmenterStressTests
         var segments = TrackSegmenter.Segment(points);
         sw.Stop();
 
-        // 5-second budget. Local dev runs in ~150-200 ms; this is 25x
-        // slack so a mid-range CI runner doesn't flake.
+        // 1-second budget. Local dev runs in ~150-200 ms; this is 5x
+        // slack -- still tight enough to catch a 5-10x regression on
+        // a slow CI runner without flaking on noise.
         await Assert.That(sw.Elapsed.TotalSeconds)
-            .IsLessThan(5.0)
-            .Because($"50k points should segment under 5s; took {sw.ElapsedMilliseconds}ms");
+            .IsLessThan(1.0)
+            .Because($"50k points should segment under 1s; took {sw.ElapsedMilliseconds}ms");
 
         // Coverage: every input point sits inside exactly one output
         // segment (or in the merge-prefix that gets dropped, which

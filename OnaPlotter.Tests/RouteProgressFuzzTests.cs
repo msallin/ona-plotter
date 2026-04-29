@@ -111,6 +111,29 @@ public class RouteProgressFuzzTests
     }
 
     [Test]
+    public async Task HaversineMeters_TriangleInequality()
+    {
+        // d(A, C) <= d(A, B) + d(B, C) for any three points. This is
+        // the basic axiom of any distance metric; a regression that
+        // swaps dy/dx or drops a sin/cos would break it on
+        // long-baseline cases. Allow 1 m slack for the spherical-Earth
+        // approximation's curvature error on multi-thousand-km legs.
+        var rng = new Random(FixedSeed ^ 9);
+        for (int i = 0; i < 1000; i++)
+        {
+            double[] a = [rng.NextDouble() * 60.0 - 30.0, rng.NextDouble() * 60.0 - 30.0];
+            double[] b = [rng.NextDouble() * 60.0 - 30.0, rng.NextDouble() * 60.0 - 30.0];
+            double[] c = [rng.NextDouble() * 60.0 - 30.0, rng.NextDouble() * 60.0 - 30.0];
+
+            double ab = RouteProgress.HaversineMeters(a[0], a[1], b[0], b[1]);
+            double bc = RouteProgress.HaversineMeters(b[0], b[1], c[0], c[1]);
+            double ac = RouteProgress.HaversineMeters(a[0], a[1], c[0], c[1]);
+
+            await Assert.That(ac).IsLessThanOrEqualTo(ab + bc + 1.0);
+        }
+    }
+
+    [Test]
     public async Task TotalDistanceMeters_EqualsSumOfLegHaversines()
     {
         // Pin the contract: TotalDistanceMeters == sum(HaversineMeters

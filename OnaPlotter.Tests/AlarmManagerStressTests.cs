@@ -42,8 +42,8 @@ public class AlarmManagerStressTests
         sw.Stop();
 
         await Assert.That(sw.Elapsed.TotalMilliseconds)
-            .IsLessThan(1000)
-            .Because($"200-vessel Evaluate should complete <1s; took {sw.ElapsedMilliseconds}ms");
+            .IsLessThan(200)
+            .Because($"200-vessel Evaluate should complete <200ms; took {sw.ElapsedMilliseconds}ms");
 
         // The 5 colliders, by construction, are inside the guard zone.
         // At least one should produce an active CPA alarm.
@@ -96,9 +96,13 @@ public class AlarmManagerStressTests
         }
         sw.Stop();
 
+        // 60 ticks at ~10 ms each in steady state = ~600 ms; budget
+        // 2 s gives ~3x slack -- catches a per-tick regression that
+        // would push us above the 30 ms / tick the alarm pipeline
+        // budgets within the 1 Hz cadence.
         await Assert.That(sw.Elapsed.TotalSeconds)
-            .IsLessThan(5.0)
-            .Because($"60 ticks of 200-vessel Evaluate should stay <5s; took {sw.ElapsedMilliseconds}ms");
+            .IsLessThan(2.0)
+            .Because($"60 ticks of 200-vessel Evaluate should stay <2s; took {sw.ElapsedMilliseconds}ms");
     }
 
     // -----------------------------------------------------------------

@@ -183,9 +183,11 @@ public class CpaFuzzTests
             }
 
             compared++;
-            // 1m tolerance: the equirectangular projection introduces
-            // a few ppm drift across the ((..)+540)%360 path, but on a
-            // few-tens-of-nm separation that's sub-metre.
+            // 1e-3 nm tolerance (~1.85 m): the equirectangular projection
+            // introduces a few ppm drift across the ((..)+540)%360 path,
+            // which on a few-tens-of-nm separation is sub-metre. Allow
+            // up to ~2 m of drift for the worst-case antimeridian shift
+            // before flagging.
             await Assert.That(Math.Abs(r1.Value.CpaNm - r2.Value.CpaNm))
                 .IsLessThan(1e-3);
         }
@@ -193,6 +195,44 @@ public class CpaFuzzTests
     }
 
     // === ClassifyThreat ===
+
+    [Test]
+    public async Task Compute_Monotone_FartherInitialSeparationNeverYieldsCloserCpa()
+    {
+        // For the same headings + speeds, moving the target farther
+        // along the bearing line at t=0 must NOT decrease CpaNm.
+        // (CPA distance is a perpendicular projection that scales with
+        // the orthogonal component of separation; the parallel
+        // component pushes TCPA later but doesn't change perpendicular
+        // distance. So CpaNm is non-decreasing in initial separation
+        // along the closing axis.) A regression in the dx/dy projection
+        // axes (a typo lat<->lon swap) would break this immediately.
+        var rng = new Random(Seed ^ 8);
+        int compared = 0;
+        for (int i = 0; i < Iterations; i++)
+        {
+            // Set up a converging encounter: own at origin going north,
+            // target a north-of-origin pin going south (head-on).
+            double sog = 3.0 + rng.NextDouble() * 5.0;
+            double dLat = 0.005 + rng.NextDouble() * 0.05;
+            double dLon = (rng.NextDouble() - 0.5) * 0.005;       // small lateral offset
+
+            var rNear = Cpa.Compute(0, 0, 0, sog, dLat, dLon, Math.PI, sog);
+            // Push target 2x farther along the closing axis.
+            var rFar = Cpa.Compute(0, 0, 0, sog, dLat * 2, dLon * 2, Math.PI, sog);
+
+            if (rNear is null || rFar is null) continue;
+            compared++;
+
+            // Both should be valid finite CpaNm values, and the farther
+            // initial geometry must yield CpaNm >= the near geometry's
+            // (modulo float jitter). Pin with a relaxed 1e-6 tolerance.
+            await Assert.That(rFar.Value.CpaNm + 1e-6)
+                .IsGreaterThanOrEqualTo(rNear.Value.CpaNm)
+                .Because("doubling lateral offset should not produce a smaller CPA");
+        }
+        await Assert.That(compared).IsGreaterThan(50);
+    }
 
     [Test]
     public async Task ClassifyThreat_BuddyAlwaysNone()

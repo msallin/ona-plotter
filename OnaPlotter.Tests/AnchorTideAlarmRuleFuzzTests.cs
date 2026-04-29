@@ -18,6 +18,13 @@ public class AnchorTideAlarmRuleFuzzTests
     private const int Iterations = 1500;
     private const int Seed = 0x4E_C8_07_42;
 
+    /// <summary>Fixed clock for deterministic fuzz reproduction. Any
+    /// real-clock dependency here would interact with LW window math
+    /// across daylight-savings rolls, leap seconds, and the moving
+    /// 6-hour lookahead boundary -- noise that hides real failures.</summary>
+    private static readonly DateTime FixedNow =
+        new(2026, 4, 29, 12, 0, 0, DateTimeKind.Utc);
+
     private static NavigationData BuildNav(
         bool anchored,
         double depth, double heightNow, double heightLow,
@@ -46,7 +53,7 @@ public class AnchorTideAlarmRuleFuzzTests
         // positive on a fast-moving boat with a passing-by LW window.
         var rng = new Random(Seed);
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = FixedNow;
         for (int i = 0; i < 200; i++)
         {
             var nav = BuildNav(
@@ -68,10 +75,13 @@ public class AnchorTideAlarmRuleFuzzTests
         // TimeToEventMinutes and a non-empty Message.
         var rng = new Random(Seed ^ 1);
         var rule = new AnchorTideAlarmRule();
+        // Fixed clock so the test reproduces from the seed alone --
+        // a flaky DateTime.UtcNow inside the loop would interact
+        // with the LW lookahead window in non-deterministic ways.
+        var now = FixedNow;
         int hits = 0;
         for (int i = 0; i < Iterations; i++)
         {
-            var now = DateTime.UtcNow;
             double depth = 1.0 + rng.NextDouble() * 8.0;          // 1..9 m at anchor
             double heightLow = -0.5 + rng.NextDouble() * 1.0;     // -0.5..0.5 m
             double heightNow = heightLow + rng.NextDouble() * 4.0;// always >= heightLow
@@ -124,7 +134,9 @@ public class AnchorTideAlarmRuleFuzzTests
         int dangers = 0;
         for (int i = 0; i < Iterations; i++)
         {
-            var now = DateTime.UtcNow;
+            // Per-iteration fixed offset so each random LW window is
+            // unambiguous against `now`.
+            var now = FixedNow;
             double depth = 0.5 + rng.NextDouble() * 8.0;
             double heightLow = rng.NextDouble() * 0.8;
             double heightNow = heightLow + 0.1 + rng.NextDouble() * 4.0;
@@ -158,7 +170,7 @@ public class AnchorTideAlarmRuleFuzzTests
         var rule = new AnchorTideAlarmRule();
         for (int i = 0; i < 500; i++)
         {
-            var now = DateTime.UtcNow;
+            var now = FixedNow;
             double heightLow = 1.0 + rng.NextDouble() * 1.0;          // > heightNow
             double heightNow = heightLow - rng.NextDouble() * 0.5;    // <= heightLow
 
@@ -182,7 +194,7 @@ public class AnchorTideAlarmRuleFuzzTests
         var rule = new AnchorTideAlarmRule();
         for (int i = 0; i < 200; i++)
         {
-            var now = DateTime.UtcNow;
+            var now = FixedNow;
             // Pick LW between 6.1 and 24 hours out -- always outside
             // the alarm window.
             double hoursToLw = 6.1 + rng.NextDouble() * 18.0;
@@ -206,7 +218,7 @@ public class AnchorTideAlarmRuleFuzzTests
         var rule = new AnchorTideAlarmRule();
         for (int i = 0; i < 200; i++)
         {
-            var now = DateTime.UtcNow;
+            var now = FixedNow;
             double hoursToLwPast = -0.1 - rng.NextDouble() * 12.0;
             var nav = BuildNav(anchored: true,
                 depth: 1.0, heightNow: 3.0, heightLow: 0.0,
@@ -223,7 +235,7 @@ public class AnchorTideAlarmRuleFuzzTests
         // Without a draft from the bus the rule stays dormant rather
         // than running on a stale client default.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = FixedNow;
         var nav = new NavigationData();
         nav.ApplyAnchorPosition(47.4, 8.5);
         nav.Apply("environment.depth.belowTransducer", 1.5);
