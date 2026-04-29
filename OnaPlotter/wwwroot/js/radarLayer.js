@@ -215,6 +215,11 @@ class RadarOverlay {
         const fillFromPalette = (palette) => {
             for (let i = 0; i < 256; i++) {
                 const hex = palette[i];
+                // TRANSPARENT declared further down; referenced here
+                // from a method that runs at legend-set time, well
+                // after module init. ESLint's static pass can't see
+                // through the closure.
+                // eslint-disable-next-line no-use-before-define
                 const rgba = hex ? parseHexRgba(hex) : TRANSPARENT;
                 this.byteToRgba[i * 4 + 0] = rgba[0];
                 this.byteToRgba[i * 4 + 1] = rgba[1];
@@ -461,6 +466,9 @@ class RadarOverlay {
         if (this.layer) return;
         this.canvas.style.opacity = String(this.opacity);
         this.canvas.classList.add('radar-overlay');
+        // CanvasGeoLayer declared further down (line ~595). Method
+        // runs at first-spoke time, safely after module init.
+        // eslint-disable-next-line no-use-before-define
         this.layer = new CanvasGeoLayer(this.canvas, lat, lon, this.range);
         this.layer.addTo(this.map);
     }
