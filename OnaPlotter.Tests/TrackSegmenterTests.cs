@@ -278,6 +278,152 @@ public class TrackSegmenterTests
     }
 
     [Test]
+    public async Task BriefMovingSpot_BelowMinSegmentDuration_AbsorbedIntoStationary()
+    {
+        // 30 min stationary at anchor, then a 90-second moving blip
+        // (4 SOG-elevated samples), then back to stationary for 30
+        // more minutes. The middle blip survives the 3-min debounce
+        // (because the candidate flips back too fast for the segmenter
+        // to NOT commit it -- actually it gets committed once the run
+        // accumulates DebounceWindow's worth, so a single blip never
+        // gets that far). The merge pass is what saves us: the
+        // resulting "moving" segment is sub-MinSegmentDuration (2 min)
+        // so it gets absorbed.
+        //
+        // Pinned because the previous implementation only checked
+        // "fewer than 2 points" and let multi-point blips survive --
+        // exactly the "14-second moving trip the helm caused by
+        // stepping on the throttle" case the constant comment warns
+        // about.
+        var pts = new List<TrackPoint>();
+        // 30 min stationary
+        for (int i = 0; i < 30; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), 47.4, 8.5, sog: 0.1));
+        // 90-second moving spike: 30s, 60s, 90s into the blip from
+        // minute 30. We use shorter cadence here than the 1-min outer
+        // pattern so the blip has multiple samples but stays under
+        // MinSegmentDuration once the debounce committed it.
+        for (int i = 0; i < 4; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(30) + TimeSpan.FromSeconds(i * 30), 47.4, 8.5, sog: 3.0));
+        // 30 min stationary again, starting at minute 32
+        for (int i = 32; i < 62; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), 47.4, 8.5, sog: 0.1));
+
+        var segs = TrackSegmenter.Segment(pts);
+
+        // The blip should NOT survive as its own segment. Either we
+        // see one merged stationary segment, or two stationary
+        // segments separated by the (absorbed) blip -- both outcomes
+        // mean no spurious "moving" trip.
+        await Assert.That(segs.All(s => s.IsStationary)).IsTrue();
+    }
+
+    [Test]
+    public async Task SogExactlyAtThreshold_ClassifiesStationary()
+    {
+        // Pin the strict-inequality semantics of MovingThresholdMs.
+        // sog == 0.257 m/s == threshold. The classifier uses `> threshold`,
+        // so equality is stationary. A future refactor that flipped to
+        // `>=` would silently convert a sustained tide-only drift
+        // (rarely > 0.3 kn) into a manufactured "trip".
+        var pts = new List<TrackPoint>();
+        for (int i = 0; i <= 30; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), 47.4, 8.5,
+                sog: TrackSegmenter.MovingThresholdMs));
+
+        var segs = TrackSegmenter.Segment(pts);
+
+        await Assert.That(segs.Length).IsEqualTo(1);
+        await Assert.That(segs[0].IsStationary).IsTrue();
+    }
+
+    [Test]
+    public async Task SogJustAboveThreshold_ClassifiesMoving()
+    {
+        var pts = new List<TrackPoint>();
+        double lat = 47.4;
+        for (int i = 0; i <= 30; i++)
+        {
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), lat, 8.5,
+                sog: TrackSegmenter.MovingThresholdMs + 0.001));
+            lat += 0.00014;       // matches ~0.258 m/s
+        }
+
+        var segs = TrackSegmenter.Segment(pts);
+
+        await Assert.That(segs.Length).IsEqualTo(1);
+        await Assert.That(segs[0].IsStationary).IsFalse();
+    }
+
+    [Test]
+    public async Task DuplicateTimestamp_NoSog_ClassifiesStationary()
+    {
+        // Aggregator hiccup: two samples at the same timestamp. The
+        // dt <= 0 guard in the classifier returns false (stationary)
+        // rather than dividing by zero. Without the guard the fallback
+        // would divide and produce Infinity, classifying the gap as
+        // moving silently.
+        var pts = new List<TrackPoint>
+        {
+            Pt(T0, TimeSpan.FromMinutes(0), 47.4, 8.5),
+            Pt(T0, TimeSpan.FromMinutes(0), 47.5, 8.5),
+            Pt(T0, TimeSpan.FromMinutes(1), 47.5, 8.5),
+        };
+
+        // Should not throw on the divide-by-zero path.
+        var segs = TrackSegmenter.Segment(pts);
+
+        // Single segment, classified as stationary.
+        await Assert.That(segs.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task MovingThenStationaryAtTail_DebouncedFlip_SplitsIntoTwo()
+    {
+        // 30 min sailing, then 4 min at anchor at the end of the
+        // window. The trailing 4 min crosses the 3-min DebounceWindow
+        // so the segmenter must commit the flip and emit two
+        // segments.
+        var pts = new List<TrackPoint>();
+        double lat = 47.4;
+        for (int i = 0; i < 30; i++)
+        {
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), lat, 8.5, sog: 3.0));
+            lat += 0.00161;
+        }
+        for (int i = 30; i < 34; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), lat, 8.5, sog: 0.1));
+
+        var segs = TrackSegmenter.Segment(pts);
+
+        await Assert.That(segs.Length).IsEqualTo(2);
+        await Assert.That(segs[0].IsStationary).IsFalse();
+        await Assert.That(segs[1].IsStationary).IsTrue();
+    }
+
+    [Test]
+    public async Task MovingThenStationaryAtTail_BelowDebounce_StaysOne()
+    {
+        // 30 min sailing, then 2 min at anchor. The trailing 2 min
+        // doesn't cross the 3-min debounce window so the segmenter
+        // absorbs it back into the moving run.
+        var pts = new List<TrackPoint>();
+        double lat = 47.4;
+        for (int i = 0; i < 30; i++)
+        {
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), lat, 8.5, sog: 3.0));
+            lat += 0.00161;
+        }
+        for (int i = 30; i < 32; i++)
+            pts.Add(Pt(T0, TimeSpan.FromMinutes(i), lat, 8.5, sog: 0.1));
+
+        var segs = TrackSegmenter.Segment(pts);
+
+        await Assert.That(segs.Length).IsEqualTo(1);
+        await Assert.That(segs[0].IsStationary).IsFalse();
+    }
+
+    [Test]
     public async Task DistanceForStationarySegmentIsTinyButNotNegative()
     {
         // GPS-noise-only stationary: position oscillates by a few

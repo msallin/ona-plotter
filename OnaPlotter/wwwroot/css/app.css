@@ -106,6 +106,17 @@
     --map-anchor-ok:    #22c55e;     /* anchor circle inside radius */
     --map-anchor-drag:  var(--sev-danger);     /* anchor circle outside radius */
     --map-measure:      #e2e8f0;     /* measure-tool dashed line + dots */
+    /* History page only. Dark-theme baseline: light slate so dashed
+       stationary segments are visible against open-water (slate-blue)
+       basemap tiles. Light theme + high-contrast redefine to a darker
+       slate for the same reason on inverted basemap luminance. The
+       previous code pulled --sk-text-muted; that slate-grey-on-slate-
+       water was effectively invisible on light theme. */
+    --map-stationary:   #94a3b8;     /* slate-400; light-theme override darker below */
+    /* Playback marker on the History page: amber for warn-class
+       attention. Tokenised so a future palette tweak doesn't leave a
+       frozen #fbbf24 in the JS string. */
+    --map-playback:     #fbbf24;
 
     /* AIS palette mirrors OnaPlotter.Utilities.AisPalette on the C#
        side. The C# constants are the source of truth for the glyph
@@ -472,6 +483,11 @@
     /* Slightly darker green for sun: green-500 (#22c55e) washes into
        the pastel water on the light basemap; green-600 holds. */
     --map-anchor-ok:       #16a34a;
+    /* History stationary segments: dark slate against light basemap
+       tiles so the dashed dwell line stays legible. The dark-theme
+       default (#94a3b8) on slate-blue water reads cleanly; under the
+       light basemap the same value disappeared. */
+    --map-stationary:      #1e293b;     /* slate-800 */
     /* Soft drop-shadow into the chart for the always-dark sidebar +
        bottom action bar in light theme. Without this the dark chrome
        reads as "didn't flip"; with it, it reads as a deliberate frame
@@ -5572,6 +5588,51 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     /* Bootstrap's table-sm thead uses inherited bg by default; on
        the History overlay we want it explicitly opaque so a row's
        sticky scroll doesn't bleed text under the header. */
+}
+
+/* Coarse-pointer (iPad / phone helm) tap-target lift. The default
+   .form-select-sm + .form-control-sm + .btn-sm shapes are 28-31 px
+   tall; the iPad HIG floor is 44 px and helm thumbs in a moving
+   cockpit can't reliably hit anything under that. The .map-btn class
+   (used elsewhere on the History page) already has the coarse-pointer
+   override; the inputs we recently added need the same treatment. */
+@media (pointer: coarse) {
+    .history-controls .form-select,
+    .history-controls .form-control {
+        min-height: 44px;
+    }
+    .history-controls .btn-group-sm > .btn {
+        min-height: 44px;
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
+    }
+    .history-charts-panel input[type="checkbox"],
+    .history-table-view input[type="checkbox"] {
+        width: 24px;
+        height: 24px;
+    }
+    .history-trip-table tbody td {
+        padding-top: 12px;
+        padding-bottom: 12px;
+    }
+}
+
+/* Bootstrap's .table on the trip-list overlay re-derives colour from
+   --bs-table-color which our themed flip doesn't always remap (depends
+   on data-bs-theme on <html>). Pin the surface colours explicitly so
+   the table reads correctly on both dark and light. */
+.history-trip-table {
+    --bs-table-color: var(--sk-text);
+    --bs-table-bg: transparent;
+    --bs-table-border-color: var(--sk-border);
+}
+
+/* Use the project accent on inline checkboxes so checked-state
+   doesn't fall back to the browser's default (Chrome blue / Safari
+   blue) when the rest of the chrome is themed magenta / sky. */
+.history-charts-panel input[type="checkbox"],
+.history-table-view input[type="checkbox"] {
+    accent-color: var(--sk-accent);
 }
 
 /* ===== Quick Chart Switcher ===== */

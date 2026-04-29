@@ -36,10 +36,18 @@ public static class HistorySegmentRender
     /// arrive in chronological order from
     /// <c>TrackSegmenter.Segment</c>. Single-point segments are
     /// dropped (the segmenter merges them but a guard here keeps
-    /// the bounds calculation in JS predictable).</summary>
+    /// the bounds calculation in JS predictable).
+    /// <para>
+    /// <paramref name="tooltipTimeZone"/> defaults to the host's
+    /// local timezone (helm reads the helm clock, not UTC). Tests
+    /// pass <see cref="TimeZoneInfo.Utc"/> for deterministic output.
+    /// </para>
+    /// </summary>
     public static List<SegmentPayload> BuildSegmentPayload(
-        TrackPoint[] points, TrackSegment[] segments)
+        TrackPoint[] points, TrackSegment[] segments,
+        TimeZoneInfo? tooltipTimeZone = null)
     {
+        var tz = tooltipTimeZone ?? TimeZoneInfo.Local;
         var output = new List<SegmentPayload>(segments.Length);
         int cursor = 0;
         foreach (var s in segments)
@@ -55,7 +63,7 @@ public static class HistorySegmentRender
             output.Add(new SegmentPayload(
                 Coords: coords,
                 IsStationary: s.IsStationary,
-                Tooltip: BuildTooltip(s)));
+                Tooltip: BuildTooltip(s, tz)));
         }
         return output;
     }
@@ -66,11 +74,22 @@ public static class HistorySegmentRender
     /// helm wants to see first for a passage segment. SOG / TWS
     /// rows are omitted when the underlying samples were absent --
     /// rendering "0.0 avg / 0.0 max / 0.0 min kn" on a no-SOG track
-    /// would be misleading. Times in local zone (helm reads the
-    /// helm clock, not UTC).</summary>
-    public static string BuildTooltip(TrackSegment s)
+    /// would mislead. Times rendered in
+    /// <paramref name="tooltipTimeZone"/> (defaults to
+    /// <see cref="TimeZoneInfo.Local"/>); tests inject
+    /// <see cref="TimeZoneInfo.Utc"/> so the assertion doesn't drift
+    /// per CI runner zone.</summary>
+    public static string BuildTooltip(TrackSegment s, TimeZoneInfo? tooltipTimeZone = null)
     {
-        string when = $"{s.StartUtc.ToLocalTime():yyyy-MM-dd HH:mm} → {s.EndUtc.ToLocalTime():HH:mm}";
+        var tz = tooltipTimeZone ?? TimeZoneInfo.Local;
+        // ConvertTimeFromUtc requires a UTC-kind input; segments
+        // promise UTC by construction (TrackPoint.Timestamp is parsed
+        // AdjustToUniversal in TrackApi).
+        var startLocal = TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(s.StartUtc, DateTimeKind.Utc), tz);
+        var endLocal = TimeZoneInfo.ConvertTimeFromUtc(
+            DateTime.SpecifyKind(s.EndUtc, DateTimeKind.Utc), tz);
+        string when = $"{startLocal:yyyy-MM-dd HH:mm} → {endLocal:HH:mm}";
         string duration = Format.TimeToGo(s.Duration.TotalSeconds);
         if (s.IsStationary)
         {

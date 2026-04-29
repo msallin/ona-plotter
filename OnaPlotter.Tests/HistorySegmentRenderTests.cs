@@ -109,7 +109,9 @@ public class HistorySegmentRenderTests
     {
         // Three contiguous segments: [0..9 stationary], [10..19 moving],
         // [20..29 stationary]. The slicer must produce exactly three
-        // payloads with point counts matching the source segments.
+        // payloads with point counts matching the source segments,
+        // AND the seam between adjacent segments must be clean (no
+        // overlap that would render as a tiny "spike" in JS).
         var pts = new TrackPoint[30];
         for (int i = 0; i < 30; i++) pts[i] = Pt(TimeSpan.FromMinutes(i), 47.4 + i * 0.001, 8.5);
 
@@ -129,6 +131,60 @@ public class HistorySegmentRenderTests
         await Assert.That(payloads[0].IsStationary).IsTrue();
         await Assert.That(payloads[1].IsStationary).IsFalse();
         await Assert.That(payloads[2].IsStationary).IsTrue();
+        // Seam: segment 0 ends at point 9, segment 1 starts at point
+        // 10. The latitudes are unique (47.4 + i*0.001) so a one-coord
+        // overlap would show up as the same value at both seam ends.
+        await Assert.That(payloads[0].Coords[^1][0]).IsEqualTo(pts[9].Latitude);
+        await Assert.That(payloads[1].Coords[0][0]).IsEqualTo(pts[10].Latitude);
+        await Assert.That(payloads[1].Coords[^1][0]).IsEqualTo(pts[19].Latitude);
+        await Assert.That(payloads[2].Coords[0][0]).IsEqualTo(pts[20].Latitude);
+    }
+
+    [Test]
+    public async Task BuildTooltip_TimeZoneInjection_RendersInUtcWhenAsked()
+    {
+        // The tooltip's date row is local-time by default; tests
+        // would otherwise drift across CI runners in different
+        // timezones. With TimeZoneInfo.Utc the row format is fully
+        // deterministic and we can pin the exact rendered string.
+        var s = Seg(
+            start: new DateTime(2024, 6, 1, 12, 0, 0, DateTimeKind.Utc),
+            end:   new DateTime(2024, 6, 1, 14, 15, 0, DateTimeKind.Utc),
+            stationary: false,
+            distanceM: 12 * 1852.0,
+            sogAvg: 3.0, sogMax: 4.5, sogMin: 1.5);
+
+        var tip = HistorySegmentRender.BuildTooltip(s, TimeZoneInfo.Utc);
+
+        await Assert.That(tip).Contains("2024-06-01 12:00 → 14:15");
+        // Sanity: with a non-UTC zone the rendered hour would shift.
+        // Pick a fixed-offset zone the BCL recognises across platforms.
+        var fixedZone = TimeZoneInfo.CreateCustomTimeZone(
+            "TestZone+04:00", TimeSpan.FromHours(4),
+            "Test +04:00", "Test +04:00");
+        var tipPlus4 = HistorySegmentRender.BuildTooltip(s, fixedZone);
+        await Assert.That(tipPlus4).Contains("16:00");
+    }
+
+    [Test]
+    public async Task BuildSegmentPayload_TimeZoneInjection_PropagatesToTooltips()
+    {
+        var pts = new TrackPoint[]
+        {
+            Pt(TimeSpan.FromMinutes(0), 47.4, 8.5),
+            Pt(TimeSpan.FromMinutes(1), 47.5, 8.5),
+        };
+        var segs = new[]
+        {
+            Seg(pts[0].Timestamp, pts[1].Timestamp, stationary: false, pts: 2)
+        };
+
+        var payloads = HistorySegmentRender.BuildSegmentPayload(pts, segs, TimeZoneInfo.Utc);
+
+        await Assert.That(payloads.Count).IsEqualTo(1);
+        // T0 is 2024-06-01 12:00 UTC; tooltip rendered in UTC is
+        // deterministic.
+        await Assert.That(payloads[0].Tooltip).Contains("2024-06-01 12:00");
     }
 
     [Test]

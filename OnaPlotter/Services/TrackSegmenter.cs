@@ -80,10 +80,15 @@ public static class TrackSegmenter
         // gets folded back into the prior run.
         var rawSegments = BuildRawSegments(points, classifications);
 
-        // Pass 3: drop sub-MinSegmentDuration segments by absorbing
-        // them into whichever neighbour they're more like (or just
-        // their previous neighbour if they're at index 0).
-        var merged = MergeShortSegments(rawSegments);
+        // Pass 3: absorb sub-MinSegmentDuration segments into the
+        // adjacent run. The merge needs the points array (to read
+        // segment timestamps) -- we previously called a pure
+        // index-only helper which only caught one-point segments and
+        // missed sub-2-minute multi-point ones (e.g. a 90 s moving
+        // blip with 4 SOG-elevated samples -- exactly the "14-second
+        // moving trip the helm caused by stepping on the throttle
+        // while berthing" case the constant comment warns about).
+        var merged = MergeShortSegments(rawSegments, points);
 
         // Pass 4: materialise stats for each surviving segment.
         var output = new TrackSegment[merged.Count];
@@ -188,29 +193,54 @@ public static class TrackSegmenter
     }
 
     private static List<(int start, int end, bool isStationary)> MergeShortSegments(
-        List<(int start, int end, bool isStationary)> segments)
+        List<(int start, int end, bool isStationary)> segments,
+        IReadOnlyList<TrackPoint> points)
     {
-        // Single-pass left-to-right merge: any one-point segment gets
-        // absorbed into its left neighbour. (One-point segments are
-        // emitted at the head when the very first sample's
-        // classification differs from the run that follows.)
+        // Single-pass left-to-right merge. Two flavours of "too
+        // short" both get absorbed into the left neighbour:
+        //
+        //   1. One-point segments. These are emitted at the head
+        //      when the very first sample's classification differs
+        //      from the run that follows; they're degenerate by
+        //      construction.
+        //
+        //   2. Sub-MinSegmentDuration segments. A 90-second moving
+        //      blip with four SOG-elevated samples (e.g. the helm
+        //      stepping on the throttle while berthing, then easing
+        //      back) survives the debounce because the candidate
+        //      ran past the 3-min window before reverting --
+        //      MERGE catches it.
+        //
+        // The first segment is exempt from absorption: it has no
+        // left neighbour. A short HEAD segment instead absorbs the
+        // SECOND segment (if needed) into itself -- the head's
+        // classification wins because the head sample is what we
+        // start with.
         if (segments.Count <= 1) return segments;
         var output = new List<(int start, int end, bool isStationary)> { segments[0] };
         for (int i = 1; i < segments.Count; i++)
         {
             var current = segments[i];
             var prev = output[^1];
-            int currentSpan = current.end - current.start + 1;
-            if (currentSpan < 2)
+            bool tooShort = IsTooShort(current, points);
+            if (tooShort)
             {
-                // One-point segment is always too short. Absorb into
-                // the previous run, keeping that run's classification.
+                // Absorb into prev, keeping prev's classification.
                 output[^1] = (prev.start, current.end, prev.isStationary);
                 continue;
             }
             output.Add(current);
         }
         return output;
+    }
+
+    private static bool IsTooShort(
+        (int start, int end, bool isStationary) seg, IReadOnlyList<TrackPoint> points)
+    {
+        int span = seg.end - seg.start + 1;
+        if (span < 2) return true;
+        var duration = points[seg.end].Timestamp - points[seg.start].Timestamp;
+        return duration < MinSegmentDuration;
     }
 
     private static TrackSegment BuildSegment(
