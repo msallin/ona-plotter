@@ -8,6 +8,7 @@ import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
+import * as anchorLayerMod from './anchorLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -264,23 +265,7 @@ let mobCircle = null;
 let mobLine = null;
 let mobLabel = null;
 
-// Anchor watch state.
-let anchorMarker = null;
-let anchorCircle = null;
-// Radius line (boat -> anchor) + "Xm" label. Turn visual feedback
-// "where is the anchor / how much rode is out" into a first-class
-// affordance instead of only showing the watch circle.
-let anchorRadiusLine = null;
-// (anchorRadiusLabel removed -- the midpoint distance chip was dropped
-// per user request; the boat<->anchor line alone now communicates the
-// radius implicitly relative to the alarm circle.)
-// Swing-arc history: own-boat positions sampled while the anchor is set,
-// trimmed to ANCHOR_TRAIL_MINUTES so the captain can see at a glance how
-// much water the boat has actually covered on this tide cycle.
-const anchorTrail = [];
-let anchorTrailLayer = null;
-const ANCHOR_TRAIL_MINUTES = 60;
-const ANCHOR_TRAIL_SAMPLE_MS = 10_000;
+// Anchor watch state lives in anchorLayer.js.
 
 // Own vessel state cache (for CPA calculations).
 let selfLat = 0, selfLon = 0, selfCogRad = null, selfSogMs = null;
@@ -580,6 +565,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // re-exported below so the C#-side InvokeVoidAsync calls work
     // unchanged.
     weatherLayerMod.init(map);
+    anchorLayerMod.init(map, { colors: MapColors });
 
     // Leaflet's native +/- zoom control is turned off above
     // (zoomControl: false). The replacement lives in the app topbar
@@ -1043,7 +1029,10 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     rotateMarker(boatMarker, headingRad ?? cogRad);
 
     if (guardZoneRing) guardZoneRing.setLatLng([lat, lon]);
-    updateAnchorTrail(lat, lon);
+    // Push the new boat fix into anchorLayer.js so it can sample the
+    // swing-arc trail, recolour the alarm circle, and re-anchor the
+    // boat<->anchor line in one place.
+    anchorLayerMod.setBoatPosition(lat, lon);
 
     const end = vectorEnd(lat, lon, cogRad, sogMs);
     if (end) {
@@ -1108,14 +1097,7 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         }
     }
 
-    // Update anchor watch.
-    if (anchorMarker && anchorCircle) {
-        const all = anchorMarker.getLatLng();
-        const dist = haversineMeters(lat, lon, all.lat, all.lng);
-        const inside = dist <= anchorCircle.getRadius();
-        const acColor = inside ? MapColors.anchorOk : MapColors.anchorDrag;
-        anchorCircle.setStyle({ color: acColor, fillColor: acColor });
-    }
+    // (Anchor-watch alarm-state evaluation moved into anchorLayerMod.setBoatPosition above.)
 
     // Vessel-anchored measurement segments need their geometry + bearing
     // / distance label re-derived from the new own-boat position. Skip
@@ -2177,147 +2159,11 @@ export function clearMob() {
 }
 
 // --- Anchor Watch ---
-
-export function setAnchor(lat, lon, radiusM) {
-    // Swallow calls that hit after the Map page unmounted. Blazor's
-    // OnDataChanged handler dispatches asynchronously, so an in-flight
-    // HandleDataChanged can land here after DisposeAsync -> dispose()
-    // already nulled `map`. Without this guard the next `addTo(map)`
-    // throws "can't access property addLayer, t is null" through the
-    // console every time the user switches from Map to Dashboard.
-    if (!map) return;
-    clearAnchor();
-    anchorMarker = L.circleMarker([lat, lon], {
-        radius: 5, color: MapColors.anchorOk, fillColor: MapColors.anchorOk, fillOpacity: 1
-    }).addTo(map);
-    anchorCircle = L.circle([lat, lon], {
-        radius: radiusM, color: MapColors.anchorOk, fillColor: MapColors.anchorOk,
-        fillOpacity: 0.06, weight: 2, dashArray: '6,4'
-    }).addTo(map);
-    // Seed the trail with the current boat position so the first segment
-    // renders without waiting for ANCHOR_TRAIL_SAMPLE_MS.
-    if (selfLat && selfLon) anchorTrail.push({ lat: selfLat, lon: selfLon, t: Date.now() });
-    // Radius line + label from boat to the anchor dot. Gives the
-    // helm a direct visual "you're X metres from the pin" that the
-    // watch circle alone doesn't -- the circle shows the permitted
-    // swing, not the current offset.
-    redrawAnchorRadiusOverlay(lat, lon, radiusM);
-}
-
-export function clearAnchor() {
-    if (!map) { anchorMarker = null; anchorCircle = null; anchorTrailLayer = null; anchorTrail.length = 0; anchorRadiusLine = null; return; }
-    if (anchorMarker) { map.removeLayer(anchorMarker); anchorMarker = null; }
-    if (anchorCircle) { map.removeLayer(anchorCircle); anchorCircle = null; }
-    if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
-    if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
-    anchorTrail.length = 0;
-}
-
-// Visually mark the anchor as "raising" while we wait for the server's
-// cleared-anchor delta to land. Dims the marker + watch-circle + radius
-// line so the helm sees the action took effect without us optimistically
-// hiding the marker (which would mask a server-side raise failure and
-// race the next SyncServerAnchorAsync tick). The setStyle calls fall
-// through to no-op when a layer is null, so it's safe to call before
-// or after setAnchor / clearAnchor.
-export function setAnchorRaising(raising) {
-    if (!map) return;
-    if (anchorMarker) {
-        anchorMarker.setStyle(raising
-            ? { opacity: 0.35, fillOpacity: 0.4 }
-            : { opacity: 1.0, fillOpacity: 1.0 });
-    }
-    if (anchorCircle) {
-        anchorCircle.setStyle(raising
-            ? { opacity: 0.35, fillOpacity: 0.02, dashArray: '4,6' }
-            : { opacity: 1.0, fillOpacity: 0.06, dashArray: '6,4' });
-    }
-    if (anchorRadiusLine) {
-        anchorRadiusLine.setStyle(raising
-            ? { opacity: 0.3 }
-            : { opacity: 0.7 });
-    }
-}
-
-export function updateAnchorRadius(radiusM) {
-    if (anchorCircle) anchorCircle.setRadius(radiusM);
-    if (anchorMarker) {
-        const ll = anchorMarker.getLatLng();
-        redrawAnchorRadiusOverlay(ll.lat, ll.lng, radiusM);
-    }
-}
-
-// Draws the boat<->anchor line + midpoint "Xm" label. Re-entrant:
-// callable on every position update to keep the line pinned while
-// the boat drifts on its swing. Falls back to a "waiting for fix"
-// stub when the plotter hasn't seen a self-position yet.
-// Anchor radius overlay: dashed line from boat to anchor.
-// Mutate-in-place via setLatLngs so the 1 Hz position update doesn't
-// rebuild the SVG path each tick. Guards against missing fix and
-// against NaN sensor glitches (a divide-by-zero upstream would
-// otherwise leave the polyline in an invalid state and break
-// subsequent setLatLngs calls).
-function redrawAnchorRadiusOverlay(anchorLat, anchorLon, _radiusM) {
-    if (!map) return;
-    if (!Number.isFinite(selfLat) || !Number.isFinite(selfLon)
-        || !Number.isFinite(anchorLat) || !Number.isFinite(anchorLon)) {
-        if (anchorRadiusLine) { map.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
-        return;
-    }
-
-    if (!anchorRadiusLine) {
-        anchorRadiusLine = L.polyline(
-            [[selfLat, selfLon], [anchorLat, anchorLon]],
-            { color: MapColors.anchorOk, weight: 1.5, opacity: 0.7, dashArray: '4,3', interactive: false }
-        ).addTo(map);
-    } else {
-        anchorRadiusLine.setLatLngs([[selfLat, selfLon], [anchorLat, anchorLon]]);
-    }
-}
-
-function updateAnchorTrail(lat, lon) {
-    if (!map) return;  // page unmounted; skip rather than dereference a null map.
-    if (!anchorMarker) {
-        // Anchor not set: tear down any residual trail.
-        if (anchorTrailLayer) { map.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
-        anchorTrail.length = 0;
-        return;
-    }
-
-    const now = Date.now();
-    const last = anchorTrail[anchorTrail.length - 1];
-    if (!last || now - last.t >= ANCHOR_TRAIL_SAMPLE_MS) {
-        anchorTrail.push({ lat, lon, t: now });
-    } else {
-        // Within the sample window - update the latest point so the trail
-        // head follows the boat smoothly.
-        last.lat = lat; last.lon = lon;
-    }
-
-    // Drop points outside the rolling window.
-    const cutoff = now - ANCHOR_TRAIL_MINUTES * 60_000;
-    while (anchorTrail.length > 0 && anchorTrail[0].t < cutoff) anchorTrail.shift();
-
-    // Keep the radius line + label chasing the boat as it drifts.
-    // The anchor position itself is static (set once) but the label
-    // shows current offset, so it needs a re-render each update.
-    if (anchorMarker) {
-        const a = anchorMarker.getLatLng();
-        const r = anchorCircle ? anchorCircle.getRadius() : 0;
-        redrawAnchorRadiusOverlay(a.lat, a.lng, r);
-    }
-
-    if (anchorTrail.length < 2) return;
-    const coords = anchorTrail.map(p => [p.lat, p.lon]);
-    if (!anchorTrailLayer) {
-        anchorTrailLayer = L.polyline(coords, {
-            color: MapColors.anchorOk, weight: 2, opacity: 0.55,
-            dashArray: '2,4', interactive: false
-        }).addTo(map);
-    } else {
-        anchorTrailLayer.setLatLngs(coords);
-    }
-}
+// Implementation in anchorLayer.js; mux re-exports the C# entries.
+export const setAnchor = (lat, lon, radiusM) => anchorLayerMod.setAnchor(lat, lon, radiusM);
+export const clearAnchor = () => anchorLayerMod.clearAnchor();
+export const setAnchorRaising = (raising) => anchorLayerMod.setAnchorRaising(raising);
+export const updateAnchorRadius = (radiusM) => anchorLayerMod.updateAnchorRadius(radiusM);
 
 // --- Radar spoke overlay ---
 // Thin re-exports so Blazor's JSObjectReference can call the
@@ -4438,9 +4284,7 @@ export function dispose() {
     routeLayers.clear();
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];
     mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
-    anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
-    anchorRadiusLine = null;
-    anchorTrail.length = 0;
+    anchorLayerMod.dispose();
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
     laylineStarboard = null; laylinePort = null;
