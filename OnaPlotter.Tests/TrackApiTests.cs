@@ -170,6 +170,218 @@ public class TrackApiTests
         await Assert.That(pts).IsNull();
     }
 
+    // -----------------------------------------------------------------
+    // GetServerTrackPointsAsync: rich multi-path fetch with timestamps.
+    // Powers the History-page segmenter and the future stats page.
+    // -----------------------------------------------------------------
+
+    [Test]
+    public async Task RichFetch_ParsesAllSupportedColumns()
+    {
+        // Every path the rich query asks for present in `values`,
+        // every cell populated. The TrackPoint should carry SOG, COG,
+        // heading, TWS, TWA -- all from the per-row column indices the
+        // server reported via the `values` array.
+        string body = """
+        {
+            "context": "vessels.urn:mrn:imo:mmsi:123",
+            "values": [
+                {"path":"navigation.position","method":"first"},
+                {"path":"navigation.speedOverGround","method":"average"},
+                {"path":"navigation.courseOverGroundTrue","method":"average"},
+                {"path":"navigation.headingTrue","method":"average"},
+                {"path":"environment.wind.speedTrue","method":"average"},
+                {"path":"environment.wind.angleTrueWater","method":"average"}
+            ],
+            "data": [
+                ["2026-04-23T14:00:00Z", [-76.82, 24.60], 2.5, 1.5708, 1.5707, 5.0, 0.7],
+                ["2026-04-23T14:00:30Z", [-76.83, 24.61], 3.1, 1.5710, 1.5709, 6.0, 0.8]
+            ]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(2);
+        var p = pts[0];
+        await Assert.That(p.Latitude).IsEqualTo(24.60);
+        await Assert.That(p.Longitude).IsEqualTo(-76.82);
+        await Assert.That(p.SpeedOverGround).IsEqualTo(2.5);
+        await Assert.That(p.CourseOverGround).IsEqualTo(1.5708);
+        await Assert.That(p.Heading).IsEqualTo(1.5707);
+        await Assert.That(p.WindSpeedTrue).IsEqualTo(5.0);
+        await Assert.That(p.WindAngleTrue).IsEqualTo(0.7);
+        await Assert.That(p.Timestamp.ToString("o")).Contains("2026-04-23T14:00:00");
+    }
+
+    [Test]
+    public async Task RichFetch_ServerOmitsUnsupportedPaths_LeavesFieldsNull()
+    {
+        // Server's history provider doesn't have wind paths configured.
+        // The `values` array reflects what's actually being returned;
+        // the parser must not assume positional alignment with what we
+        // ASKED for. Only position + sog come back; the TrackPoint's
+        // wind fields stay null.
+        string body = """
+        {
+            "values": [
+                {"path":"navigation.position","method":"first"},
+                {"path":"navigation.speedOverGround","method":"average"}
+            ],
+            "data": [
+                ["2026-04-23T14:00:00Z", [-76.82, 24.60], 2.5]
+            ]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(1);
+        await Assert.That(pts[0].SpeedOverGround).IsEqualTo(2.5);
+        await Assert.That(pts[0].WindSpeedTrue).IsNull();
+        await Assert.That(pts[0].CourseOverGround).IsNull();
+    }
+
+    [Test]
+    public async Task RichFetch_ServerReordersColumns_ParserUsesValuesArray()
+    {
+        // Server picks a different column order than the request.
+        // Without the `values` lookup, positional indexing into `data`
+        // would slot SOG into the COG slot. Pinned because the parser
+        // explicitly walks `values` to learn the column-to-path mapping.
+        string body = """
+        {
+            "values": [
+                {"path":"environment.wind.speedTrue","method":"average"},
+                {"path":"navigation.position","method":"first"},
+                {"path":"navigation.speedOverGround","method":"average"}
+            ],
+            "data": [
+                ["2026-04-23T14:00:00Z", 5.0, [-76.82, 24.60], 2.5]
+            ]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(1);
+        // SOG must come from column 3 (per `values`), not column 1.
+        await Assert.That(pts[0].SpeedOverGround).IsEqualTo(2.5);
+        await Assert.That(pts[0].WindSpeedTrue).IsEqualTo(5.0);
+        await Assert.That(pts[0].Latitude).IsEqualTo(24.60);
+    }
+
+    [Test]
+    public async Task RichFetch_PositionMissing_ReturnsNull()
+    {
+        // No position path = no track. Without a fix there's nothing
+        // to plot regardless of how much SOG / wind data the server has.
+        string body = """
+        {
+            "values": [
+                {"path":"navigation.speedOverGround","method":"average"}
+            ],
+            "data": [["2026-04-23T14:00:00Z", 2.5]]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNull();
+    }
+
+    [Test]
+    public async Task RichFetch_SkipsRowWithNullPosition()
+    {
+        // Position null on a row = GPS outage at that aggregation tick.
+        // Skip that row (no fix to plot) but keep neighbouring rows
+        // that DO have a position.
+        string body = """
+        {
+            "values": [
+                {"path":"navigation.position","method":"first"},
+                {"path":"navigation.speedOverGround","method":"average"}
+            ],
+            "data": [
+                ["2026-04-23T14:00:00Z", [-76.82, 24.60], 2.5],
+                ["2026-04-23T14:00:30Z", null, 2.6],
+                ["2026-04-23T14:01:00Z", [-76.83, 24.61], 2.7]
+            ]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task RichFetch_BuildsAbsoluteWindowQuery_When_From_Provided()
+    {
+        // Helm picks an absolute date range -> the URL must carry
+        // from + to in ISO 8601 + UTC, NOT a relative duration. Pin
+        // both ends so a future refactor can't accidentally drop one.
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(
+            from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 7, 0, 0, 0, TimeSpan.Zero),
+            timespan: null);
+
+        await Assert.That(capturedQuery).IsNotNull();
+        await Assert.That(capturedQuery!).Contains("from=");
+        await Assert.That(capturedQuery).Contains("to=");
+        // Relative duration must not be present when the absolute
+        // form is used; mixing the two would produce an undefined
+        // server response.
+        await Assert.That(capturedQuery!.Contains("duration=")).IsFalse();
+        // Timestamp shape: ISO 8601 with 'Z' suffix (UTC). URL-encoded
+        // colons appear as %3A.
+        await Assert.That(capturedQuery).Contains("2026-04-01T00%3A00%3A00");
+    }
+
+    [Test]
+    public async Task RichFetch_BuildsRelativeWindowQuery_When_From_Null()
+    {
+        // No absolute window supplied -> falls back to duration. This
+        // is the History-page default-load path (timespan dropdown).
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "6h");
+
+        await Assert.That(capturedQuery).IsNotNull();
+        await Assert.That(capturedQuery!).Contains("duration=PT6H");
+        await Assert.That(capturedQuery!.Contains("from=")).IsFalse();
+    }
+
+    [Test]
+    public async Task RichFetch_MultiPathsParameter_Includes_Sog_And_Wind()
+    {
+        // The query must ask the server for the rich path set, not
+        // just position. A regression that drops sog from `paths`
+        // would yield a fast/silent fallback to position-only and
+        // the segmenter would have to rely on inter-sample distance
+        // for every classification (loss of fidelity).
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(capturedQuery).IsNotNull();
+        await Assert.That(capturedQuery!).Contains("navigation.position");
+        await Assert.That(capturedQuery).Contains("navigation.speedOverGround");
+        await Assert.That(capturedQuery).Contains("environment.wind.speedTrue");
+    }
+
     [Test]
     public async Task History_BadRequest_Returns_Null()
     {
