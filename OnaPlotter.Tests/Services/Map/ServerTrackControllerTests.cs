@@ -54,6 +54,15 @@ public class ServerTrackControllerTests
             Calls.Add((timespan, resolution));
             return Task.FromResult(Result);
         }
+
+        // The rich fetch isn't exercised by ServerTrackController (the
+        // Map page only needs the lightweight position-only track).
+        // Unused but required by the interface; null-result mirrors
+        // "no data" in production.
+        public Task<OnaPlotter.Models.TrackPoint[]?> GetServerTrackPointsAsync(
+            DateTimeOffset? from, DateTimeOffset? to, string? timespan,
+            string resolution = "30s", CancellationToken ct = default)
+            => Task.FromResult<OnaPlotter.Models.TrackPoint[]?>(null);
     }
 
     private static (ServerTrackController ctrl, FakeOverlaysJs js, FakeTrackApi api, List<string> infos)
