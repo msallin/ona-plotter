@@ -958,8 +958,10 @@ h2 {
    tuned at ~5 px total reach (cap on the outer layer) -- enough for
    depth, short enough that polarised sunglasses don't read it as a
    blur. */
-:root.theme-light .card,
-:root.theme-high-contrast .card {
+/* Card lift on light themes (incl. system on a light OS, which the
+   prior 2-selector form silently missed). theme-effective-light is
+   set on <html> by themeApply.js. */
+.theme-effective-light .card {
     box-shadow:
         0 1px 2px rgba(15, 23, 42, 0.06),
         0 1px 3px rgba(15, 23, 42, 0.04);
@@ -975,8 +977,7 @@ h2 {
    which are already close to slate. Active state goes to our accent
    so a checked radio reads as "you picked this" not "Bootstrap
    default secondary". */
-:root.theme-light .btn-outline-secondary,
-:root.theme-high-contrast .btn-outline-secondary {
+.theme-effective-light .btn-outline-secondary {
     --bs-btn-color: var(--sk-text-muted);
     --bs-btn-border-color: var(--sk-border);
     --bs-btn-hover-color: var(--sk-text);
@@ -1793,51 +1794,30 @@ html:fullscreen .hud-stack-br {
    panel. (Earlier doctrine kept it always-dark; helm asked for the
    full flip after seeing the rest of the chrome cohabit nicely on
    the white chart.) Buttons inside follow via .ctrl-btn overrides
-   below. */
-.theme-light .map-controls,
-.theme-high-contrast .map-controls {
+   below.
+   `.theme-effective-light` is set on <html> by themeApply.js whenever
+   the resolved palette is light (theme-light, theme-high-contrast,
+   OR theme-system on a light OS). Collapses what was previously
+   three duplicated selectors per rule into one. */
+.theme-effective-light .map-controls {
     background: rgba(255, 255, 255, 0.92);
     border-color: rgba(15, 23, 42, 0.10);
     box-shadow: 0 10px 28px rgba(15, 23, 42, 0.20),
                 0 2px 4px rgba(15, 23, 42, 0.10);
 }
-.theme-light .ctrl-btn,
-.theme-high-contrast .ctrl-btn {
+.theme-effective-light .ctrl-btn {
     color: rgba(15, 23, 42, 0.70);
 }
-.theme-light .ctrl-btn:hover,
-.theme-high-contrast .ctrl-btn:hover {
+.theme-effective-light .ctrl-btn:hover {
     background: rgba(15, 23, 42, 0.06);
     color: var(--sk-text);
 }
-.theme-light .ctrl-btn.active,
-.theme-high-contrast .ctrl-btn.active {
+.theme-effective-light .ctrl-btn.active {
     background: rgba(var(--sk-accent-rgb), 0.18);
     color: var(--sk-text);
 }
-.theme-light .ctrl-sep,
-.theme-high-contrast .ctrl-sep {
+.theme-effective-light .ctrl-sep {
     background: rgba(15, 23, 42, 0.10);
-}
-@media (prefers-color-scheme: light) {
-    .theme-system .map-controls {
-        background: rgba(255, 255, 255, 0.92);
-        border-color: rgba(15, 23, 42, 0.10);
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.20),
-                    0 2px 4px rgba(15, 23, 42, 0.10);
-    }
-    .theme-system .ctrl-btn { color: rgba(15, 23, 42, 0.70); }
-    .theme-system .ctrl-btn:hover {
-        background: rgba(15, 23, 42, 0.06);
-        color: var(--sk-text);
-    }
-    .theme-system .ctrl-btn.active {
-        background: rgba(var(--sk-accent-rgb), 0.18);
-        color: var(--sk-text);
-    }
-    .theme-system .ctrl-sep {
-        background: rgba(15, 23, 42, 0.10);
-    }
 }
 
 /* Icon + label button with clean hover/active states. */
@@ -2016,50 +1996,29 @@ html:fullscreen .hud-stack-br {
 /* Light + high-contrast: .map-btn inverts so it reads as a button
    sitting on a white panel (History controls, Settings forms). The
    dark-chrome default is tuned for the always-dark map context; on
-   a light panel it looked like a black blob with white text. */
-.theme-light .map-btn,
-.theme-high-contrast .map-btn {
+   a light panel it looked like a black blob with white text. Driven
+   by .theme-effective-light (set on <html> by themeApply.js) so the
+   override block doesn't repeat per theme name. */
+.theme-effective-light .map-btn {
     background: var(--sk-surface);
     border-color: var(--sk-border);
     color: var(--sk-text);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
 }
-.theme-light .map-btn:hover,
-.theme-high-contrast .map-btn:hover {
+.theme-effective-light .map-btn:hover {
     background: var(--sk-surface-hover);
     border-color: var(--sk-text-muted);
 }
-.theme-light .map-btn.active,
-.theme-high-contrast .map-btn.active {
+.theme-effective-light .map-btn.active {
     background: rgba(var(--sk-accent-rgb), 0.20);
     border-color: var(--sk-accent);
     color: var(--sk-text);
 }
-.theme-light .map-btn:disabled:hover,
-.theme-light .map-btn[disabled]:hover,
-.theme-high-contrast .map-btn:disabled:hover,
-.theme-high-contrast .map-btn[disabled]:hover {
+.theme-effective-light .map-btn:disabled:hover,
+.theme-effective-light .map-btn[disabled]:hover {
     background: var(--sk-surface);
     border-color: var(--sk-border);
-}
-@media (prefers-color-scheme: light) {
-    .theme-system .map-btn {
-        background: var(--sk-surface);
-        border-color: var(--sk-border);
-        color: var(--sk-text);
-        backdrop-filter: none;
-        -webkit-backdrop-filter: none;
-    }
-    .theme-system .map-btn:hover {
-        background: var(--sk-surface-hover);
-        border-color: var(--sk-text-muted);
-    }
-    .theme-system .map-btn.active {
-        background: rgba(var(--sk-accent-rgb), 0.20);
-        border-color: var(--sk-accent);
-        color: var(--sk-text);
-    }
 }
 
 /* MOB pulsing marker */
@@ -2913,44 +2872,6 @@ html, body {
    braces indicator on top of the orange outline + crosshair cursor
    + dedicated edit-panel hint. Field testing said it was noise; the
    outline alone already communicates "editing" strongly enough. */
-
-/* MOB-clear confirmation modal. Re-uses the welcome-card dimensions +
-   backdrop so it matches the app's modal vocabulary. Danger-bordered
-   because confirming here clears a life-safety marker. Default focus
-   is "Cancel" (autofocus in Razor) so a stray Enter / Space doesn't
-   wipe a real MOB. */
-.mob-clear-modal {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: var(--z-modal);
-    width: min(92vw, 440px);
-    background: var(--panel-bg-strong);
-    color: var(--panel-text);
-    border: 2px solid var(--sev-danger);
-    border-radius: 10px;
-    padding: 22px 26px;
-    box-shadow: var(--panel-shadow);
-    animation: welcome-pop 0.22s ease-out;
-}
-.mob-clear-modal h3 {
-    margin: 0 0 10px 0;
-    font-size: 1.2rem;
-    color: var(--sev-danger);
-}
-.mob-clear-modal p {
-    margin: 0 0 18px 0;
-    color: #cbd5e1;
-    font-size: 0.92rem;
-    line-height: 1.5;
-}
-.mob-clear-actions {
-    display: flex;
-    gap: 12px;
-    justify-content: flex-end;
-}
-.mob-clear-actions .map-btn { min-width: 120px; min-height: 44px; }
 
 /* ===== Paths overview page =====
    Table showing which SignalK paths OnaPlotter consumes, what features
@@ -4294,19 +4215,15 @@ html.night-mode-global body {
     white-space: nowrap !important;
 }
 .ais-label::before { display: none !important; }
-.theme-light .ais-label,
-.theme-system .ais-label,
-.theme-high-contrast .ais-label {
+/* Light flip via the effective-light synthetic class: white pill /
+   slate ink on light themes, default dark pill / light ink elsewhere.
+   The previous theme-system + @media-prefers-dark inverter is gone --
+   theme-effective-light is computed in JS so the dark fallback simply
+   doesn't apply the override, no media-query reverter needed. */
+.theme-effective-light .ais-label {
     background: rgba(255, 255, 255, 0.88) !important;
     color: #1e293b !important;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18) !important;
-}
-@media (prefers-color-scheme: dark) {
-    .theme-system .ais-label {
-        background: rgba(15, 18, 25, 0.8) !important;
-        color: #cbd5e1 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.2) !important;
-    }
 }
 
 /* Hide AIS labels at low zoom to avoid clutter */
@@ -5425,15 +5342,14 @@ html.night-mode-global body {
     filter: grayscale(1) brightness(0.35) contrast(1.1) sepia(0.4) hue-rotate(-30deg);
 }
 
-/* Light theme: ensure the leaflet-container background follows the
+/* Light themes: ensure the leaflet-container background follows the
    theme so any tile gap shows the page bg rather than Leaflet's
-   default #ddd grey. Tile imagery itself stays unfiltered -- helm
+   default #ddd grey. theme-effective-light is set on <html> by
+   themeApply.js. Tile imagery itself stays unfiltered -- helm
    correction "HUDs are black, not the chart" supersedes the earlier
    tile-filter attempt. The HUD card token flips below carry the
    real fix. */
-.page.theme-light .leaflet-container,
-.page.theme-system .leaflet-container,
-.page.theme-high-contrast .leaflet-container {
+.theme-effective-light .leaflet-container {
     background: var(--sk-bg);
 }
 /* Night mode also needs to red-shift the chart tile rasters -- the
@@ -5626,31 +5542,18 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 
 /* Light + high-contrast: chips invert to a white-pill with slate
    ink so the cluster reads as paper-on-chart, not as dark-blue
-   blobs floating over the pastel basemap. Active state still uses
-   --sk-accent so the on/off difference stays loud. */
-.theme-light .chart-quick-chip,
-.theme-high-contrast .chart-quick-chip {
+   blobs floating over the pastel basemap. Driven by
+   .theme-effective-light so the override block doesn't repeat per
+   theme name. */
+.theme-effective-light .chart-quick-chip {
     background: rgba(255, 255, 255, 0.85);
     border-color: rgba(15, 23, 42, 0.20);
     color: rgba(15, 23, 42, 0.65);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
 }
-.theme-light .chart-quick-chip:hover,
-.theme-high-contrast .chart-quick-chip:hover {
+.theme-effective-light .chart-quick-chip:hover {
     border-color: rgba(15, 23, 42, 0.45);
     color: var(--sk-text);
-}
-@media (prefers-color-scheme: light) {
-    .theme-system .chart-quick-chip {
-        background: rgba(255, 255, 255, 0.85);
-        border-color: rgba(15, 23, 42, 0.20);
-        color: rgba(15, 23, 42, 0.65);
-        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
-    }
-    .theme-system .chart-quick-chip:hover {
-        border-color: rgba(15, 23, 42, 0.45);
-        color: var(--sk-text);
-    }
 }
 
 /* Active chip: solid accent fill + bold text. The leading-dot
@@ -5669,8 +5572,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    pastel chart) and signals "selected" via a thicker accent border
    + accent ink + bold weight. Helm asked to dial down the
    solid-blue active fill in light mode. */
-.theme-light .chart-quick-chip.active,
-.theme-high-contrast .chart-quick-chip.active {
+.theme-effective-light .chart-quick-chip.active {
     background: rgba(255, 255, 255, 0.92);
     border-color: var(--sk-accent);
     border-width: 2px;
@@ -5680,17 +5582,6 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     padding-right: 11px;
     color: var(--sk-accent);
     font-weight: 700;
-}
-@media (prefers-color-scheme: light) {
-    .theme-system .chart-quick-chip.active {
-        background: rgba(255, 255, 255, 0.92);
-        border-color: var(--sk-accent);
-        border-width: 2px;
-        padding-left: 11px;
-        padding-right: 11px;
-        color: var(--sk-accent);
-        font-weight: 700;
-    }
 }
 
 @media (pointer: coarse) {
@@ -7128,11 +7019,16 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .section-with-action > :first-child { flex: 1; min-width: 0; }
 
-/* COLREGS classification line under a vessel row */
+/* COLREGS classification line under a vessel row.
+   Routed through --sev-* tokens so the give-way / stand-on colours
+   stay AA-readable on both the dark Layers panel and the white
+   panel in light theme. The previous pastel literals (#fca5a5 /
+   #86efac) below AA contrast on white -- helm misread the label
+   under sun. */
 .vessel-colregs { font-size: 0.7rem; opacity: 0.85; }
 .colregs-role { font-weight: 600; }
-.colregs-giveway { color: #fca5a5; }   /* we must keep clear */
-.colregs-standon { color: #86efac; }   /* we hold course */
+.colregs-giveway { color: var(--sev-danger); }   /* we must keep clear */
+.colregs-standon { color: var(--sev-ok); }       /* we hold course */
 
 /* CPA / crossing-situation labels on the map.
    Same theme-flip strategy as .ais-label: dark pill by default, white
@@ -7164,38 +7060,27 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .cpa-label::before { display: none !important; }
 .cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
 .cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
-.theme-light .cpa-label,
-.theme-system .cpa-label,
-.theme-high-contrast .cpa-label {
+/* Light flip via .theme-effective-light: white pill / slate ink, with
+   AA-passing darker red / amber for danger / warn. The previous
+   theme-system + @media-prefers-dark reverter is gone -- if
+   theme-effective-light isn't set, the default dark-pill rules above
+   apply, no media-query inverter needed. */
+.theme-effective-light .cpa-label {
     background: rgba(255, 255, 255, 0.92) !important;
     border-color: rgba(15, 23, 42, 0.22) !important;
     color: #0f172a !important;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.20) !important;
 }
-.theme-light .cpa-label.cpa-danger,
-.theme-system .cpa-label.cpa-danger,
-.theme-high-contrast .cpa-label.cpa-danger {
+.theme-effective-light .cpa-label.cpa-danger {
     /* Keep the red border (carries safety meaning); shift the text to
        a darker red that AA-passes on white instead of the pale tint
        that's tuned for a dark card. */
     border-color: #b91c1c !important;
     color: #991b1b !important;
 }
-.theme-light .cpa-label.cpa-warn,
-.theme-system .cpa-label.cpa-warn,
-.theme-high-contrast .cpa-label.cpa-warn {
+.theme-effective-light .cpa-label.cpa-warn {
     border-color: #b45309 !important;
     color: #92400e !important;
-}
-@media (prefers-color-scheme: dark) {
-    .theme-system .cpa-label {
-        background: rgba(10, 12, 18, 0.88) !important;
-        border-color: rgba(255, 255, 255, 0.2) !important;
-        color: #fff !important;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
-    }
-    .theme-system .cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
-    .theme-system .cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
 }
 
 /* ===== Anchor Alarm HUD Panel =====
