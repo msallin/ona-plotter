@@ -65,8 +65,8 @@
             ManualAnchorActive="anchorManualActive"
             ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
             WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
-            CourseStopping="@(_courseStopPendingUtc is not null)"
-            ActiveRouteDistanceTotal="@_activeRouteDistanceTotal"
+            CourseStopping="@(_activeRouteSync?.CourseStopPending ?? false)"
+            ActiveRouteDistanceTotal="@(_activeRouteSync?.ActiveRouteDistanceTotal)"
             OnPrevWaypoint="PrevWaypoint"
             OnNextWaypoint="NextWaypoint"
             OnSetAnchorRadius="SetManualAnchorRadius" />
@@ -200,7 +200,7 @@
                         Coords="routeEditCoords"
                         Saving="@_saveInFlight"
                         IsEditingExisting="@(routeEditId is not null)"
-                        IsEditingActiveRoute="@(routeEditId is not null && routeEditId == _activeRouteRegularSuppressed)"
+                        IsEditingActiveRoute="@(routeEditId is not null && routeEditId == _activeRouteSync?.ActiveRouteRegularSuppressed)"
                         OnReverse="ReverseEditRoute"
                         OnSave="SaveRoute"
                         OnSaveAsCopy="SaveRouteAsCopy"
@@ -474,40 +474,13 @@
     private bool chartPanelOpen;
     private System.Threading.Timer? aisTimer;
     private System.Threading.Timer? resourcePollTimer;
-    // Active route navigation state.
-    private string? lastActiveRouteHref;
-    private double[][]? activeRouteCoords;
-    // Id of the route whose REGULAR polyline (from addRoute) is
-    // currently hidden because it's also the active route -- the
-    // active overlay (with passed-leg dashing) would otherwise be
-    // drawn on top of an identical polyline in the regular colour
-    // and the helm sees a confusing double line. Cleared when the
-    // active route changes / clears so the regular polyline can be
-    // restored. Tracks an id (not just a bool) so a switch from one
-    // active route to another correctly redraws the previous one
-    // while suppressing the new one.
-    private string? _activeRouteRegularSuppressed;
-    // Total leg-by-leg distance (metres) of the active route's
-    // geometry. Computed once when activeRouteCoords lands and read
-    // by MapHud's route card so the HUD shows "passed / total nm"
-    // instead of the SignalK course payload's remaining-only value.
-    // Null when no active route or before the fetch completes.
-    private double? _activeRouteDistanceTotal;
-    // Last next-WP coords pushed to the JS layer. Tracking these in
-    // addition to the route href is what lets SyncActiveRouteAsync
-    // reposition the pulsing next-WP marker when only the leg index
-    // changes (Freeboard advances within the active route, our own
-    // AdvanceActiveRouteAsync runs, server auto-advances). Without
-    // this, the pulsing marker stays glued to the WP it was first
-    // drawn on while the bearing line silently jumps to the new leg.
-    private double? lastNextWpLat;
-    private double? lastNextWpLon;
-    // Last server-reported active-leg index. Tracked separately from
-    // lastNextWpLat/Lon so a pointIndex change (e.g. on first arrival
-    // after page reload, before nextPoint.position lands) re-triggers
-    // SyncActiveRouteAsync and the polyline split updates without
-    // waiting for the next-point lat/lon delta.
-    private int? lastActiveRoutePointIndex;
+    // Active-route session state (href / wpIdx diff, geometry cache,
+    // regular-polyline suppression id, course-stop watchdog) lives in
+    // ActiveRouteSync so the page stays a wiring layer. Page accesses
+    // a few read-only views (CourseStopPending / ActiveRouteDistanceTotal
+    // / ActiveRouteRegularSuppressed) for HUD bindings.
+    private OnaPlotter.Services.Js.MapRouteJs? _routeJs;
+    private OnaPlotter.Services.Map.ActiveRouteSync? _activeRouteSync;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -1048,16 +1021,9 @@
     private OnaPlotter.Services.Js.MapAnchorJs? _anchorJs;
     private OnaPlotter.Services.Map.ServerAnchorSync? _anchorSync;
 
-    // "Stopping navigation in progress" state: set when StopNavigation's
-    // CourseApi.ClearAsync returns success, cleared when
-    // SyncActiveRouteAsync sees Data.ActiveRouteHref become null.
-    // Same single-source-of-truth pattern as _anchorRaisePendingUtc:
-    // never mutate the data model locally, just style the on-map
-    // active-route elements as "fading out" while we wait for the
-    // server delta to confirm. Watchdog warns if the delta never
-    // arrives.
-    private DateTime? _courseStopPendingUtc;
-    private const int CourseStopTimeoutSec = 5;
+    // Course-stop watchdog state lives on ActiveRouteSync. The page
+    // reads CourseStopPending for HUD-card binding and calls
+    // MarkCourseStopPending() from the StopNavigation flow.
 
     // First-visit welcome + touch coachmark state moved to
     // Map.FirstRun.razor.cs so the onboarding overlays stay together.
@@ -1114,6 +1080,28 @@
                     anchorManualActive = false;
                 }
             },
+        };
+        _routeJs = new OnaPlotter.Services.Js.MapRouteJs(module);
+        _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteSync(
+            _routeJs,
+            RouteApi,
+            isSignalKConnected: () => SignalkClient.IsConnected,
+            stopTimeoutWarning: msg => Toasts.Warning(msg))
+        {
+            // When the active route changes, restore the previously-
+            // suppressed regular polyline if it's still enabled. The
+            // page owns the available-routes list + AddRouteToMap helper
+            // so the controller calls back through here.
+            OnRestoreSuppressedRoute = async id =>
+            {
+                var prevRoute = availableRoutes.FirstOrDefault(r => r.Id == id);
+                if (prevRoute is not null) await AddRouteToMap(prevRoute);
+            },
+            // Per-tick frame-builder flag lives on the page; the
+            // controller signals here so the next frame redraws the
+            // course line from scratch instead of treating it as
+            // already drawn.
+            OnActiveOverlayCleared = () => _frameBuilder.CourseLineDrawn = false,
         };
 
         // Prefer the persisted view so re-opening the app lands where
@@ -1714,7 +1702,8 @@
             if (_anchorSync is not null) await _anchorSync.SyncAsync(Data);
 
             // Sync active route visualization (href-diff -> fetch + draw).
-            await SyncActiveRouteAsync();
+            if (_activeRouteSync is not null)
+                await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes);
 
             // Only re-render Blazor component if HUD values actually changed.
             // The snapshot is a record struct -- equality is by value, no
@@ -2319,10 +2308,13 @@
         // Pure-helper path: the in-flight guard + ClearAsync call live
         // in StopNavigationFlow so the contract is unit-testable
         // without bUnit / JS interop. Map.razor still owns the visual
-        // side-effects (route-stopping CSS, undo toast,
-        // _courseStopPendingUtc stamp).
+        // side-effects (route-stopping CSS, undo toast); ActiveRouteSync
+        // owns the pending-stop timestamp.
+        DateTime? pendingSince = (_activeRouteSync?.CourseStopPending ?? false)
+            ? DateTime.UtcNow
+            : null;
         var result = await OnaPlotter.Utilities.StopNavigationFlow.RequestStopAsync(
-            CourseApi, _courseStopPendingUtc);
+            CourseApi, pendingSince);
         if (result.Outcome == OnaPlotter.Utilities.StopNavigationOutcome.AlreadyPending) return;
         if (result.Outcome == OnaPlotter.Utilities.StopNavigationOutcome.Failed)
         {
@@ -2337,9 +2329,9 @@
         // server-side failure (PUT 200 but the plugin didn't actually
         // clear) AND race the next delta tick that would re-establish
         // the cleared course from the server's still-stale state. Let
-        // SyncActiveRouteAsync drive the truth; dim the on-map elements
+        // ActiveRouteSync drive the truth; dim the on-map elements
         // so the helm sees their tap landed.
-        _courseStopPendingUtc = DateTime.UtcNow;
+        _activeRouteSync?.MarkCourseStopPending();
         if (module is not null)
         {
             try { await module.InvokeVoidAsync("setActiveRouteStopping", true); }
@@ -2663,8 +2655,8 @@
             // Suppress the regular polyline if this route is the active
             // course -- the active overlay handles the visual and a
             // duplicate polyline underneath reads as a stuck progress
-            // bar. Same logic as SyncActiveRouteAsync.
-            if (_activeRouteRegularSuppressed != route.Id)
+            // bar. Same logic as ActiveRouteSync.
+            if (_activeRouteSync?.ActiveRouteRegularSuppressed != route.Id)
             {
                 await AddRouteToMap(route);
             }
@@ -2989,194 +2981,6 @@
         catch (JSDisconnectedException) { }
     }
 
-    /// <summary>
-    /// Drives the JS active-route layer in response to course changes.
-    /// Triggers:
-    /// 1) Route href changes (activation / deactivation / replace) --
-    ///    fetches the route geometry once and draws the polyline.
-    /// 2) Next-WP coords change while href stays the same (leg
-    ///    advance from any source: our own button, auto-advance, or
-    ///    another client like Freeboard). Reuses cached coords so the
-    ///    pulsing marker hops to the new leg without an HTTP fetch.
-    /// 3) <paramref name="force"/>=true -- refetches even on unchanged
-    ///    href. Needed after an in-place edit of an already-active
-    ///    route, where the href is identical but geometry is new.
-    ///
-    /// Also runs the Stop Navigation watchdog as a side effect:
-    /// CourseApi.ClearAsync returned success but the SK delta hasn't
-    /// cleared the active route within CourseStopTimeoutSec. We warn
-    /// and un-dim the polyline rather than leaving the helm staring
-    /// at a dimmed route forever.
-    /// </summary>
-    private async Task SyncActiveRouteAsync(bool force = false)
-    {
-        if (!mapInitialized || module is null) return;
-
-        var currentHref = Data.ActiveRouteHref;
-        var nextLat = Data.CourseNextPointLatitude;
-        var nextLon = Data.CourseNextPointLongitude;
-        var currentPointIndex = Data.ActiveRoutePointIndex;
-
-        // Watchdog for a pending Stop Navigation: if the helm tapped
-        // Stop and CourseApi.ClearAsync returned success but the SK
-        // delta hasn't cleared the active route within the timeout,
-        // surface a warning rather than leaving the polyline dimmed
-        // forever. Restore the un-dimmed style so the helm can see the
-        // route is genuinely still active server-side.
-        //
-        // Suppressed while the WebSocket is disconnected: the delta
-        // might exist server-side but the client isn't listening, so
-        // a "server didn't confirm" warning would be misleading. Re-
-        // arm the timer on every disconnected pass so the helm gets a
-        // fresh 5 s grace once we reconnect.
-        if (_courseStopPendingUtc is DateTime stopT && currentHref is not null)
-        {
-            if (!SignalkClient.IsConnected)
-            {
-                _courseStopPendingUtc = DateTime.UtcNow;  // re-arm
-            }
-            else if ((DateTime.UtcNow - stopT).TotalSeconds > CourseStopTimeoutSec)
-            {
-                _courseStopPendingUtc = null;
-                Toasts.Warning("Stop navigation not confirmed by server -- still navigating");
-                try { await module.InvokeVoidAsync("setActiveRouteStopping", false); }
-                catch (JSDisconnectedException) { }
-            }
-        }
-        // If the delta cleared the route, the pending flag should
-        // follow truth -- the dimming is moot once the polyline is
-        // gone, but the flag drives the watchdog above.
-        if (currentHref is null) _courseStopPendingUtc = null;
-
-        bool hrefChanged = currentHref != lastActiveRouteHref;
-        bool nextWpChanged = nextLat != lastNextWpLat || nextLon != lastNextWpLon;
-        // pointIndex change re-triggers a redraw on its own. Important
-        // on page reload: pointIndex tends to land in the connect-time
-        // delta snapshot before nextPoint.position, and we want the
-        // "passed legs" portion of the polyline to dim straight away
-        // -- not wait for the next-point coordinates to arrive.
-        bool pointIndexChanged = currentPointIndex != lastActiveRoutePointIndex;
-        if (!force && !hrefChanged && !nextWpChanged && !pointIndexChanged) return;
-
-        if (hrefChanged || force)
-        {
-            // Route changed, deactivated, or forced refresh: clear
-            // previous. For a forced refresh the href stayed the same
-            // but the geometry didn't, so we still need to wipe the old
-            // polyline.
-            if (lastActiveRouteHref is not null || force)
-            {
-                await module.InvokeVoidAsync("clearActiveRoute");
-                if (!mapInitialized) return;
-                await module.InvokeVoidAsync("clearCourseLine");
-                activeRouteCoords = null;
-                _frameBuilder.CourseLineDrawn = false;
-            }
-
-            lastActiveRouteHref = currentHref;
-
-            // The active overlay drawn by setActiveRoute would
-            // otherwise sit on top of the regular polyline (drawn by
-            // addRoute) for the same route id, producing a visible
-            // double-stroke that confuses progress-vs-plan reading.
-            // Hide the regular polyline of the new active route, and
-            // restore the previous one if we suppressed it.
-            string? newActiveId = string.IsNullOrEmpty(currentHref)
-                ? null
-                : SignalKUrls.ExtractRouteId(currentHref);
-            if (_activeRouteRegularSuppressed is string prev
-                && prev != newActiveId
-                && enabledRoutes.Contains(prev))
-            {
-                var prevRoute = availableRoutes.FirstOrDefault(r => r.Id == prev);
-                if (prevRoute is not null)
-                {
-                    try { await AddRouteToMap(prevRoute); }
-                    catch (JSDisconnectedException) { }
-                    catch (JSException) { /* layer may already exist; harmless */ }
-                }
-                _activeRouteRegularSuppressed = null;
-            }
-            if (!string.IsNullOrEmpty(newActiveId)
-                && _activeRouteRegularSuppressed != newActiveId)
-            {
-                if (enabledRoutes.Contains(newActiveId))
-                {
-                    try { await module.InvokeVoidAsync("removeRoute", newActiveId); }
-                    catch (JSDisconnectedException) { }
-                }
-                _activeRouteRegularSuppressed = newActiveId;
-            }
-
-            // Route activated: fetch geometry once. The HTTP round-trip
-            // is where dispose races most often -- by the time the fetch
-            // completes, the page may have navigated away. Re-check
-            // mapInitialized after the await so a disposed module
-            // doesn't get called.
-            if (!string.IsNullOrEmpty(currentHref))
-            {
-                activeRouteCoords = await RouteApi.GetCoordinatesAsync(currentHref);
-                if (!mapInitialized) return;
-                _activeRouteDistanceTotal = activeRouteCoords is not null
-                    ? OnaPlotter.Utilities.RouteProgress.TotalDistanceMeters(activeRouteCoords)
-                    : null;
-            }
-            else
-            {
-                _activeRouteDistanceTotal = null;
-            }
-        }
-
-        // Redraw whenever we have the geometry and at least one
-        // signal that tells us which leg we're on. Covers the initial
-        // draw (hrefChanged or force), the leg-advance case
-        // (nextWpChanged or pointIndexChanged on an unchanged route),
-        // and the post-edit refetch (force). The leg index is resolved
-        // here (server's pointIndex preferred, lat/lon fallback) so the
-        // JS side stays a thin renderer; precedence is unit-tested in
-        // RouteProgressTests.
-        if (activeRouteCoords is not null && activeRouteCoords.Length > 0)
-        {
-            int? legIdx = OnaPlotter.Utilities.RouteProgress.ResolveLegIndex(
-                currentPointIndex, activeRouteCoords, nextLat, nextLon);
-            if (legIdx is int idx)
-            {
-                string routeId = string.IsNullOrEmpty(currentHref)
-                    ? string.Empty
-                    : SignalKUrls.ExtractRouteId(currentHref);
-                // Pass the route name through too so the active-route
-                // popup (Deactivate / Edit / Delete) can show it as a
-                // title. Falls back to Data.ActiveRouteName which the
-                // SK delta sets, then to availableRoutes if the name
-                // hasn't propagated yet, so the popup never reads
-                // "Route abc-12" for a route the helm has named.
-                string routeName = Data.ActiveRouteName
-                    ?? availableRoutes.FirstOrDefault(r => r.Id == routeId)?.Name
-                    ?? string.Empty;
-                await module.InvokeVoidAsync("setActiveRoute",
-                    (object)activeRouteCoords,
-                    idx,
-                    routeId,
-                    routeName);
-            }
-        }
-
-        // Push the live route ETA to JS so the active-route popup
-        // shows a fresh "ETA HH:MM (in Xh Ym)" each time the helm
-        // taps the polyline. Sent every sync tick (cheap one-arg
-        // call) so the cached value never lags more than the
-        // NavigationData refresh cadence. Null clears the row.
-        if (module is not null)
-        {
-            await module.InvokeVoidAsync("setActiveRouteTtgSeconds",
-                Data.ActiveRouteTimeToGo);
-        }
-
-        lastNextWpLat = nextLat;
-        lastNextWpLon = nextLon;
-        lastActiveRoutePointIndex = currentPointIndex;
-    }
-
     private async Task ZoomToTrack()
     {
         if (module is not null)
@@ -3262,6 +3066,7 @@
         // themselves don't own the IJSObjectReference; the page disposes
         // it once below.
         _anchorJs?.MarkDisposed();
+        _routeJs?.MarkDisposed();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
