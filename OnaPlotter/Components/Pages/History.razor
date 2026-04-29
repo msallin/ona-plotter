@@ -2,7 +2,10 @@
 
 @page "/history"
 @using OnaPlotter.Services
+@using OnaPlotter.Models
+@using OnaPlotter.Utilities
 @using Microsoft.JSInterop
+@using System.Globalization
 @implements IAsyncDisposable
 @using OnaPlotter.Services.Api
 @inject ITrackApi TrackApi
@@ -33,15 +36,15 @@
             </button>
         </div>
 
-        @if (trackPoints is not null && trackPoints.Length > 0)
+        @if (points is not null && points.Length > 0)
         {
             <div class="mt-2">
-                <input type="range" class="form-range" min="0" max="@(trackPoints.Length - 1)"
+                <input type="range" class="form-range" min="0" max="@(points.Length - 1)"
                        value="@playbackIndex" @oninput="OnScrub" style="width:100%;" />
                 <div class="d-flex justify-content-between" style="font-size:0.75rem; color:var(--sk-text-muted);">
                     <span>@FormatTime(0)</span>
                     <span style="font-size:0.9rem; color:var(--sk-text);">@CurrentTimeLabel</span>
-                    <span>@FormatTime(trackPoints.Length - 1)</span>
+                    <span>@FormatTime(points.Length - 1)</span>
                 </div>
             </div>
             @* Step buttons disable at their respective boundary so the
@@ -54,9 +57,9 @@
                 <button class="map-btn" @onclick="() => StepBy(-1)"
                         disabled="@(playbackIndex == 0)">&lt;</button>
                 <button class="map-btn" @onclick="() => StepBy(1)"
-                        disabled="@(playbackIndex >= trackPoints.Length - 1)">&gt;</button>
+                        disabled="@(playbackIndex >= points.Length - 1)">&gt;</button>
                 <button class="map-btn" @onclick="() => StepBy(10)"
-                        disabled="@(playbackIndex >= trackPoints.Length - 1)">&gt;&gt;</button>
+                        disabled="@(playbackIndex >= points.Length - 1)">&gt;&gt;</button>
                 @* Playback speed. User-selectable so a slow tablet can
                    pick 1x without being forced to watch 5x-fast jitter;
                    a desktop user reviewing a multi-day passage can pick
@@ -92,23 +95,36 @@
 
 @code {
     private IJSObjectReference? module;
-    private double[][]? trackPoints;
+    // Rich points (lat/lon + timestamp + sog/cog/wind) drive both the
+    // playback scrub (marker moves through this list, indices stable)
+    // and the segmenter (stationary vs moving classification + per-
+    // segment stats). The playback marker only needs (lat, lon) so we
+    // expose a side array to keep MoveMarker's JS payload tiny.
+    private TrackPoint[]? points;
+    private TrackSegment[]? segments;
     private int playbackIndex;
     private string selectedTimespan = "1d";
     private bool playing;
     private bool loadAttempted;
     private System.Threading.Timer? playTimer;
 
+    /// <summary>Surface the current scrub timestamp instead of the
+    /// previous "Point N / total" placeholder. Helms reading the
+    /// playback line want to know when something happened, not which
+    /// sample number it was. Local time because the helm is reading
+    /// the time on the helm, not in UTC.</summary>
     private string CurrentTimeLabel =>
-        trackPoints is not null && playbackIndex < trackPoints.Length
-            ? $"Point {playbackIndex + 1} / {trackPoints.Length}"
+        points is not null && playbackIndex < points.Length
+            ? points[playbackIndex].Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
             : "--";
 
+    /// <summary>End-of-range label for the playback slider. Boundary
+    /// timestamps anchor the helm visually so the slider's halves
+    /// read as "earlier" / "later" instead of just 0%/100%.</summary>
     private string FormatTime(int index)
     {
-        if (trackPoints is null || index >= trackPoints.Length) return "--";
-        double pct = trackPoints.Length > 1 ? (double)index / (trackPoints.Length - 1) * 100 : 0;
-        return $"{pct:F0}%";
+        if (points is null || index >= points.Length) return "--";
+        return points[index].Timestamp.ToLocalTime().ToString("HH:mm");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -198,43 +214,87 @@
     private async Task LoadTrack()
     {
         loadAttempted = true;
-        trackPoints = await TrackApi.GetServerTrackAsync(selectedTimespan, "30s");
+        // Rich fetch: timestamps + sog + wind in one round-trip.
+        // Segmenter splits into stationary/moving runs which JS
+        // renders with distinct styling + per-segment hover tooltips.
+        points = await TrackApi.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: selectedTimespan, resolution: "30s");
+        segments = points is { Length: > 0 } ? TrackSegmenter.Segment(points) : null;
         playbackIndex = 0;
         playing = false;
         playTimer?.Dispose();
         playTimer = null;
 
-        if (trackPoints is not null && trackPoints.Length > 0)
+        if (points is { Length: > 0 } && segments is { Length: > 0 })
         {
+            // Build per-segment payloads in C#. Each entry carries the
+            // segment's [lat, lon] coordinate list (sliced from the
+            // chronological points by timestamp window) plus a
+            // pre-formatted tooltip body. Formatting in C# keeps the
+            // JS dumb (just pass strings through to Leaflet's
+            // bindTooltip) and matches the project's preference for
+            // C# over JS for anything past pure rendering.
+            var segPayload = HistorySegmentRender.BuildSegmentPayload(points, segments);
+            // Playback marker only needs (lat, lon). Pass a flat array
+            // so MoveMarker doesn't have to thread the rich record
+            // shape through JSON every scrub.
+            var coords = points.Select(p => new[] { p.Latitude, p.Longitude }).ToArray();
+
             await JS.InvokeVoidAsync("eval", $@"
                 (function() {{
                     var m = window._historyMap;
                     if (!m) return;
-                    if (window._historyTrack) m.removeLayer(window._historyTrack);
-                    var coords = {System.Text.Json.JsonSerializer.Serialize(trackPoints)};
-                    // Pull the magenta own-vessel colour from the live
-                    // CSS variable so the track matches the boat marker
-                    // on the Map page. Slate-grey at weight 2 / opacity
-                    // 0.6 was nearly invisible against the pastel light
-                    // basemap; bumped weight + saturated colour fixes it
-                    // on both themes.
-                    var trackColor = getComputedStyle(document.documentElement)
+                    if (window._historySegments) {{
+                        window._historySegments.forEach(function(l) {{ m.removeLayer(l); }});
+                    }}
+                    window._historySegments = [];
+
+                    var segs = {System.Text.Json.JsonSerializer.Serialize(segPayload)};
+                    var movingColor = getComputedStyle(document.documentElement)
                         .getPropertyValue('--map-own').trim() || '#ec4899';
-                    window._historyTrack = L.polyline(coords, {{
-                        color: trackColor, weight: 3.5, opacity: 0.85,
-                        lineJoin: 'round', lineCap: 'round'
-                    }}).addTo(m);
-                    m.fitBounds(window._historyTrack.getBounds(), {{ padding: [40, 40] }});
+                    var stationaryColor = getComputedStyle(document.documentElement)
+                        .getPropertyValue('--sk-text-muted').trim() || '#94a3b8';
+
+                    var bounds = null;
+                    segs.forEach(function(s) {{
+                        // Stationary segments render dimmer + thinner +
+                        // dashed so the eye walks the passage shape
+                        // rather than getting drawn into the dwell
+                        // knots. Moving segments use the same magenta
+                        // weight as the live own-vessel track on the
+                        // Map page so muscle memory carries.
+                        var style = s.isStationary
+                            ? {{ color: stationaryColor, weight: 2.5, opacity: 0.55, dashArray: '4 4' }}
+                            : {{ color: movingColor, weight: 3.5, opacity: 0.9 }};
+                        style.lineJoin = 'round';
+                        style.lineCap = 'round';
+                        var poly = L.polyline(s.coords, style)
+                            .bindTooltip(s.tooltip, {{ sticky: true, direction: 'top' }})
+                            .addTo(m);
+                        window._historySegments.push(poly);
+                        var b = poly.getBounds();
+                        bounds = bounds ? bounds.extend(b) : b;
+                    }});
+                    if (bounds) m.fitBounds(bounds, {{ padding: [40, 40] }});
+
                     if (window._historyMarker) m.removeLayer(window._historyMarker);
+                    var coords = {System.Text.Json.JsonSerializer.Serialize(coords)};
                     window._historyMarker = L.circleMarker(coords[0], {{
                         radius: 8, color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 1, weight: 2
                     }}).bindTooltip('Playback').addTo(m);
+                    // Stash the flat coords for the scrub path so
+                    // MoveMarker stays a one-liner.
+                    window._historyCoords = coords;
                 }})()
             ");
         }
         await DrawBoatMarker();
         StateHasChanged();
     }
+
+    // Segment-payload + tooltip formatting moved to
+    // OnaPlotter.Utilities.HistorySegmentRender so the pure-function
+    // logic can be unit-tested without standing up the Razor page.
 
     private async Task OnScrub(ChangeEventArgs e)
     {
@@ -264,9 +324,9 @@
     private System.Threading.Timer NewPlayTimer() =>
         new(async _ =>
         {
-            if (!playing || trackPoints is null) return;
-            playbackIndex = Math.Min(playbackIndex + 1, trackPoints.Length - 1);
-            if (playbackIndex >= trackPoints.Length - 1) playing = false;
+            if (!playing || points is null) return;
+            playbackIndex = Math.Min(playbackIndex + 1, points.Length - 1);
+            if (playbackIndex >= points.Length - 1) playing = false;
             await MoveMarker();
             try { await InvokeAsync(StateHasChanged); }
             catch (ObjectDisposedException) { }
@@ -288,23 +348,30 @@
 
     private void StepBy(int delta)
     {
-        if (trackPoints is null || trackPoints.Length == 0) return;
-        playbackIndex = Math.Clamp(playbackIndex + delta, 0, trackPoints.Length - 1);
+        if (points is null || points.Length == 0) return;
+        playbackIndex = Math.Clamp(playbackIndex + delta, 0, points.Length - 1);
         _ = MoveMarker();
     }
 
     private async Task MoveMarker()
     {
-        if (trackPoints is null || trackPoints.Length == 0) return;
-        if (playbackIndex < 0 || playbackIndex >= trackPoints.Length) return;
-        var pt = trackPoints[playbackIndex];
+        if (points is null || points.Length == 0) return;
+        if (playbackIndex < 0 || playbackIndex >= points.Length) return;
+        var pt = points[playbackIndex];
         try
         {
+            // Use invariant culture on the coordinate doubles -- the
+            // helm's locale (e.g. de-CH) would otherwise render the
+            // decimal as a comma and Leaflet would parse 47,4 as
+            // [47, 4] silently. Matches the JSON-serialised format
+            // used by LoadTrack's per-segment payload.
+            string lat = pt.Latitude.ToString(CultureInfo.InvariantCulture);
+            string lon = pt.Longitude.ToString(CultureInfo.InvariantCulture);
             await JS.InvokeVoidAsync("eval", $@"
                 (function() {{
                     var m = window._historyMap;
                     if (!m || !window._historyMarker) return;
-                    window._historyMarker.setLatLng([{pt[0]}, {pt[1]}]);
+                    window._historyMarker.setLatLng([{lat}, {lon}]);
                 }})()
             ");
         }
