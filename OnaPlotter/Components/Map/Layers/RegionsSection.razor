@@ -6,50 +6,40 @@
    fishing areas). Mirrors RoutesSection: show/hide toggle in the
    header; per-row Focus / Edit / Delete actions. *@
 
-@if (Regions.Count == 0) return;
-
-@{
-    var filtered = Filter(Regions, LayerFilter);
-}
-
-@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
-
-<SectionHeader Title="Regions" Count="@filtered.Count"
-               Expanded="@expanded"
-               OnToggle="() => expanded = !expanded">
-    <label class="notes-visible-toggle"
-           title="@(Visible ? "Hide all regions on map" : "Show all regions on map")"
-           @onclick:stopPropagation>
-        <input type="checkbox" checked="@Visible"
-               @onchange="e => OnToggleVisible.InvokeAsync((bool)(e.Value ?? false))" />
-        <span>Show</span>
-    </label>
-</SectionHeader>
-
-@if (expanded)
-{
-    @foreach (var r in filtered)
-    {
-        <div @key="r.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-            <div class="chart-item-body" style="flex:1;">
-                <div class="chart-name">@(string.IsNullOrWhiteSpace(r.Name) ? "(untitled)" : r.Name)</div>
-                @if (!string.IsNullOrWhiteSpace(r.Description))
-                {
-                    <div class="chart-desc">@Truncate(r.Description!, 60)</div>
-                }
-            </div>
-            <button class="map-btn route-action-btn"
-                    @onclick="() => OnFocus.InvokeAsync(r)"
-                    title="Zoom the map to this region">Focus</button>
-            <button class="map-btn route-action-btn"
-                    @onclick="() => OnEdit.InvokeAsync(r)"
-                    title="Edit region">Edit</button>
-            <button class="map-btn route-action-btn route-action-danger"
-                    @onclick="() => ConfirmDelete(r)"
-                    title="Delete region">Delete</button>
+<CrudSection TItem="SignalkRegion"
+             Title="Regions"
+             Items="Regions"
+             ItemKey="r => r.Id"
+             LayerFilter="@LayerFilter"
+             MatchesFilter="MatchesRegion">
+    <HeaderExtras>
+        <label class="notes-visible-toggle"
+               title="@(Visible ? "Hide all regions on map" : "Show all regions on map")"
+               @onclick:stopPropagation>
+            <input type="checkbox" checked="@Visible"
+                   @onchange="e => OnToggleVisible.InvokeAsync((bool)(e.Value ?? false))" />
+            <span>Show</span>
+        </label>
+    </HeaderExtras>
+    <RowTemplate Context="r">
+        <div class="chart-item-body" style="flex:1;">
+            <div class="chart-name">@(string.IsNullOrWhiteSpace(r.Name) ? "(untitled)" : r.Name)</div>
+            @if (!string.IsNullOrWhiteSpace(r.Description))
+            {
+                <div class="chart-desc">@Truncate(r.Description!, 60)</div>
+            }
         </div>
-    }
-}
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnFocus.InvokeAsync(r)"
+                title="Zoom the map to this region">Focus</button>
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnEdit.InvokeAsync(r)"
+                title="Edit region">Edit</button>
+        <button class="map-btn route-action-btn route-action-danger"
+                @onclick="() => ConfirmDelete(r)"
+                title="Delete region">Delete</button>
+    </RowTemplate>
+</CrudSection>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRegion> Regions { get; set; } = [];
@@ -60,10 +50,12 @@
     [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
-    private bool expanded = false;
-
     private static string Truncate(string s, int n)
         => s.Length <= n ? s : s[..n] + "...";
+
+    private static bool MatchesRegion(SignalkRegion r, string filter) =>
+        (r.Name?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (r.Description?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
 
     private async Task ConfirmDelete(SignalkRegion region)
     {
@@ -76,15 +68,5 @@
             : "(untitled)";
         bool ok = await Confirmations.ConfirmAsync($"Delete region '{label}'?");
         if (ok) await OnDelete.InvokeAsync(region);
-    }
-
-    private static IReadOnlyList<SignalkRegion> Filter(
-        IReadOnlyList<SignalkRegion> all, string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter)) return all;
-        var f = filter.Trim();
-        return all.Where(r =>
-            (r.Name?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (r.Description?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
     }
 }

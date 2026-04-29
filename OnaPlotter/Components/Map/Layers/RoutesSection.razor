@@ -3,41 +3,37 @@
 @inject IConfirmationService Confirmations
 
 @* Routes the user (or GPX import) has stored on the SignalK server, with
-   visibility toggles and an Edit button per route. *@
+   visibility toggles and Go / Edit / Delete per route. Empty guard +
+   header + foreach scaffolding lives in CrudSection<TItem>; this file
+   only describes the per-row affordances. *@
 
-@if (Routes.Count == 0) return;
-
-<SectionHeader Title="Routes" Count="@Routes.Count"
-               Expanded="@expanded"
-               OnToggle="() => expanded = !expanded" />
-@if (expanded)
-{
-    @foreach (var route in Routes)
-    {
-        <div @key="route.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-            <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
-                <input type="checkbox" checked="@Enabled.Contains(route.Id)"
-                       @onchange="(e) => OnToggle.InvokeAsync((route, (bool)(e.Value ?? false)))" />
-                <div class="chart-item-body">
-                    <div class="chart-name">@(route.Name ?? ShortId(route.Id))</div>
-                    @if (route.Distance is not null)
-                    {
-                        <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
-                    }
-                </div>
-            </label>
-            <button class="map-btn route-action-btn"
-                    @onclick="() => OnNavigate.InvokeAsync(route)"
-                    title="Start navigating this route">Go</button>
-            <button class="map-btn route-action-btn"
-                    @onclick="() => OnEdit.InvokeAsync(route)"
-                    title="Edit route">Edit</button>
-            <button class="map-btn route-action-btn route-action-danger"
-                    @onclick="() => ConfirmDelete(route)"
-                    title="Delete route">Delete</button>
-        </div>
-    }
-}
+<CrudSection TItem="SignalkRoute"
+             Title="Routes"
+             Items="Routes"
+             ItemKey="r => r.Id">
+    <RowTemplate Context="route">
+        <label style="display:flex; align-items:center; gap:8px; flex:1; cursor:pointer;">
+            <input type="checkbox" checked="@Enabled.Contains(route.Id)"
+                   @onchange="(e) => OnToggle.InvokeAsync((route, (bool)(e.Value ?? false)))" />
+            <div class="chart-item-body">
+                <div class="chart-name">@(route.Name ?? ShortId(route.Id))</div>
+                @if (route.Distance is not null)
+                {
+                    <div class="chart-desc">@((route.Distance.Value / 1852).ToString("F1")) nm</div>
+                }
+            </div>
+        </label>
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnNavigate.InvokeAsync(route)"
+                title="Start navigating this route">Go</button>
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnEdit.InvokeAsync(route)"
+                title="Edit route">Edit</button>
+        <button class="map-btn route-action-btn route-action-danger"
+                @onclick="() => ConfirmDelete(route)"
+                title="Delete route">Delete</button>
+    </RowTemplate>
+</CrudSection>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> Routes { get; set; } = [];
@@ -52,8 +48,6 @@
     /// <summary>Fired after the user confirms deletion. Parent handles
     /// the REST DELETE and removes the route from the map.</summary>
     [Parameter] public EventCallback<SignalkRoute> OnDelete { get; set; }
-
-    private bool expanded = false;
 
     private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
 

@@ -8,37 +8,27 @@
    by the shared LayerFilter so the panel's search input finds waypoints
    alongside charts and routes. *@
 
-@if (Waypoints.Count == 0) return;
-
-@{
-    var filtered = Filter(Waypoints, LayerFilter);
-}
-
-@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
-
-<SectionHeader Title="Waypoints" Count="@filtered.Count"
-               Expanded="@expanded"
-               OnToggle="() => expanded = !expanded" />
-@if (expanded)
-{
-    @foreach (var wp in filtered)
-    {
-        <div @key="wp.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-            <div class="chart-item-body">
-                <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
-            </div>
-            <button class="map-btn route-action-btn"
-                    @onclick="() => OnNavigate.InvokeAsync(wp)"
-                    title="Navigate to this waypoint">Go</button>
-            <button class="map-btn route-action-btn"
-                    @onclick="() => PromptEdit(wp)"
-                    title="Rename this waypoint">Edit</button>
-            <button class="map-btn route-action-btn route-action-danger"
-                    @onclick="() => ConfirmDelete(wp)"
-                    title="Delete waypoint">Delete</button>
+<CrudSection TItem="SignalkWaypoint"
+             Title="Waypoints"
+             Items="Waypoints"
+             ItemKey="w => w.Id"
+             LayerFilter="@LayerFilter"
+             MatchesFilter="MatchesWaypoint">
+    <RowTemplate Context="wp">
+        <div class="chart-item-body">
+            <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
         </div>
-    }
-}
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnNavigate.InvokeAsync(wp)"
+                title="Navigate to this waypoint">Go</button>
+        <button class="map-btn route-action-btn"
+                @onclick="() => PromptEdit(wp)"
+                title="Rename this waypoint">Edit</button>
+        <button class="map-btn route-action-btn route-action-danger"
+                @onclick="() => ConfirmDelete(wp)"
+                title="Delete waypoint">Delete</button>
+    </RowTemplate>
+</CrudSection>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> Waypoints { get; set; } = [];
@@ -55,19 +45,11 @@
 
     [Parameter] public string LayerFilter { get; set; } = "";
 
-    private bool expanded = false;
-
     private static string ShortId(string id) => id.Length <= 8 ? id : id[..8];
 
-    private static IReadOnlyList<SignalkWaypoint> Filter(
-        IReadOnlyList<SignalkWaypoint> all, string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter)) return all;
-        var f = filter.Trim();
-        return all.Where(wp =>
-            (wp.Name?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
-            || wp.Id.Contains(f, StringComparison.OrdinalIgnoreCase)).ToList();
-    }
+    private static bool MatchesWaypoint(SignalkWaypoint wp, string filter) =>
+        (wp.Name?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
+        || wp.Id.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     // JS prompt() is a rudimentary rename UI, but for a single-field
     // edit (the waypoint's name) it's cheaper than building a modal,
