@@ -2587,63 +2587,44 @@
     {
         // Pre-fill via the heuristic so the panel opens with a chip
         // already active. Persisted ManualAnchorRadiusMeters is the
-        // fallback when no depth is published; matches the v1 design.
+        // fallback when no depth is published; AnchorRadiusHeuristic
+        // owns the decision so the radius and the eyebrow share one
+        // source of truth (no duplicate IsUsableDepth predicate).
         anchorEditInitialRadius = OnaPlotter.Utilities.AnchorRadiusHeuristic
             .Suggest(Data.Depth, Settings.ManualAnchorRadiusMeters);
-        anchorEditSuggestion = BuildAnchorSuggestionLabel();
+        anchorEditSuggestion = OnaPlotter.Utilities.AnchorRadiusHeuristic
+            .DescribeSuggestion(Data.Depth);
         anchorEditDropping = false;
         anchorEditMode = true;
     }
 
-    /// <summary>One-line "where this number came from" hint for the
-    /// panel's eyebrow. Empty when the source is uninteresting (e.g.
-    /// a stale persisted value with no depth) so we don't show
-    /// pointless chrome.</summary>
-    private string BuildAnchorSuggestionLabel()
-    {
-        if (Data.Depth is double d &&
-            !double.IsNaN(d) && !double.IsInfinity(d) && d > 0 && d < 1000)
-        {
-            // 5x scope is the heuristic's multiplier; surface the math
-            // so the helm understands the relationship without opening
-            // Settings.
-            return $"{(int)OnaPlotter.Utilities.AnchorRadiusHeuristic.ScopeMultiplier}× {d:F1} m depth";
-        }
-        // No depth: the value comes from the last drop. Still useful
-        // hint vs an empty subline.
-        return "from last drop";
-    }
-
     private async Task OnDropAnchorPanelDrop(int radiusMeters)
     {
-        // Belt-and-braces: the panel disables its own buttons via
-        // Dropping=true, but a stuck render or a future refactor
-        // could drop the gate. Pin here too.
-        if (anchorEditDropping || _anchorJs is null) return;
+        // The panel's Dropping=true gate is the single source of
+        // truth; no parent-side belt-and-braces. _anchorJs guard
+        // stays because the JS-only fallback path needs it.
+        if (_anchorJs is null) return;
         anchorEditDropping = true;
 
-        // Route + anchor share the bottom-center HUD slot and
-        // represent contradictory modes ("I'm going there" vs
-        // "I'm staying here"). Clear an active course first so the
-        // HUDs don't stack and the APPROACH / XTE alarms don't
-        // chatter against a static boat.
-        if (Data.HasActiveCourse)
-        {
-            try { await CourseApi.ClearAsync(); }
-            catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
-        }
-
-        // Prefer the SK plugin path so the anchor is server-side
-        // (visible to other plotters, persisted across SK restart).
-        // Fall back to JS-only manual when the plugin isn't installed
-        // -- the UI still works on a vanilla SK install, the helm
-        // just loses the "shared between plotters" property.
+        // Plugin path first: server-side anchor visible to other
+        // plotters, persisted across SK restart. JS-only fallback
+        // covers vanilla SK installs without the plugin.
         ApiResult r;
         try { r = await AnchorAlarmApi.DropAsync(radiusMeters); }
         catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
 
         if (r.Success)
         {
+            // Course clear AFTER a successful drop -- previously this
+            // ran first, which left the helm with a cleared course
+            // AND no anchor whenever the drop failed (timeout, plugin
+            // rejected radius, no GPS). Now the helm only loses the
+            // course when they've actually committed to anchoring.
+            if (Data.HasActiveCourse)
+            {
+                try { await CourseApi.ClearAsync(); }
+                catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+            }
             // Persist the choice so the next drop's heuristic
             // fallback (no-depth case) suggests this value.
             await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
@@ -2653,11 +2634,17 @@
             return;
         }
 
-        // 404 / plugin missing path: fall back to JS-only manual
-        // anchor with the chosen radius. Same behaviour as the
-        // pre-panel flow but with the helm's preview of the radius.
+        // Plugin failure / 404: try the JS-only manual fallback
+        // (vanilla SK install with no plugin). Course clear still
+        // gated on success so a no-GPS-then-failed-drop doesn't
+        // strand the helm with neither course nor anchor.
         if (Data.Latitude is double lat && Data.Longitude is double lon)
         {
+            if (Data.HasActiveCourse)
+            {
+                try { await CourseApi.ClearAsync(); }
+                catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+            }
             await _anchorJs.SetAnchorAsync(lat, lon, radiusMeters);
             anchorManualLat = lat;
             anchorManualLon = lon;
@@ -2672,8 +2659,10 @@
             return;
         }
 
-        // No fallback possible (no GPS) -- surface the original error.
-        Toasts.Error($"Drop anchor failed: {r.Error ?? "no GPS fix"}");
+        // No fallback possible (no GPS) -- surface the original error
+        // and leave the panel open so the helm can retry once a fix
+        // arrives, without losing the chosen radius.
+        Toasts.Error($"Drop anchor failed: {r.Error ?? "plugin missing and no GPS fix"}");
         anchorEditDropping = false;
     }
 

@@ -129,15 +129,6 @@ public sealed class NavigationData
     /// currentRadius.</summary>
     public double? AnchorPeakRadius { get; private set; }
 
-    /// <summary>True bearing from the vessel to the anchor pin
-    /// (radians, 0..2pi clockwise from true north). Plugin-published
-    /// alongside <c>maxRadius</c> / <c>currentRadius</c>; powers the
-    /// "where is my anchor" needle on the anchor HUD card so the
-    /// helm can sight back at it when it's out of sight at night.
-    /// Null on servers without the plugin or before the first delta
-    /// after a fresh drop arrives.</summary>
-    public double? AnchorBearingTrue { get; private set; }
-
     public bool AnchorActive => AnchorLatitude is not null && AnchorLongitude is not null;
 
     // Active course / route info
@@ -320,9 +311,6 @@ public sealed class NavigationData
                         AnchorPeakRadius = value;
                     }
                     break;
-                case "navigation.anchor.bearingTrue":
-                    AnchorBearingTrue = value;
-                    break;
                 case "navigation.course.calcValues.distance":
                     CourseNextPointDistance = value;
                     break;
@@ -463,11 +451,9 @@ public sealed class NavigationData
             // helm doesn't want yesterday's peak greeting them on
             // tonight's arrival.
             AnchorPeakRadius = null;
-            // Bearing only makes sense while anchored; nulling it
-            // here keeps the HUD card's needle from rendering at
-            // a stale angle the moment the helm raises and motors
-            // off in another direction.
-            AnchorBearingTrue = null;
+            // Bearing is computed client-side from anchor + own-ship
+            // lat/lon (see Utilities.GeoBearing); nulling AnchorLatitude/
+            // Longitude above is enough to make the needle stop rendering.
         }
     }
 

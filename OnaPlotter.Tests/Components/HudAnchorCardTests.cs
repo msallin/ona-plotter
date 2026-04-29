@@ -192,6 +192,56 @@ public class HudAnchorCardTests
     }
 
     [Test]
+    public async Task Bearing_NaN_HidesNeedle()
+    {
+        // The previous impl used a `while (deg < 0) deg += 360;` loop;
+        // a NaN delta from a misbehaving plugin would fall through with
+        // deg = int.MinValue (NaN -> int = 0 in .NET, but the wider
+        // risk is the loop). Pin: NaN must hide the needle entirely
+        // rather than render an invalid angle.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: double.NaN)));
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Bearing_PositiveInfinity_HidesNeedle()
+    {
+        // Critical regression target: with the old `while` loop
+        // implementation, +Infinity would cast to int.MaxValue and
+        // the loop would run ~6M iterations PER RENDER, freezing the
+        // HUD. With the modulo-based fix, the helper returns null and
+        // the needle is hidden.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: double.PositiveInfinity)));
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Bearing_NegativeInfinity_HidesNeedle()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: double.NegativeInfinity)));
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Bearing_VeryLargeFiniteRadians_NormalisesQuickly()
+    {
+        // 100 * pi = 50 full rotations + 0. The modulo idiom must
+        // handle this in O(1), not O(n) like the previous while-loop.
+        // Same expected output as bearingTrue=0: 0 deg displayed.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: 100.0 * Math.PI)));
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(1);
+        await Assert.That(cut.Find(".anchor-bearing-value").TextContent).Contains("0");
+    }
+
+    [Test]
     public async Task Snapshot_BearingChange_NotEqual()
     {
         // Bearing ticks as the boat swings; equality must catch the

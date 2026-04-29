@@ -21,14 +21,6 @@ public interface IAnchorAlarmApi
     /// whether to fall back to the JS-only manual flow.</summary>
     Task<ApiResult> DropAsync(int radiusMeters, CancellationToken ct = default);
 
-    /// <summary>POSTs to <c>/plugins/anchoralarm/setRadius</c> with
-    /// <c>{ "radius": meters }</c>. Updates the alarm radius without
-    /// moving the anchor pin. Used by the radius chips on the anchor
-    /// HUD card after the initial drop. Empty body would auto-calc
-    /// from current distance, but we always pass an explicit value
-    /// so the chip the helm tapped is what gets set.</summary>
-    Task<ApiResult> SetRadiusAsync(int radiusMeters, CancellationToken ct = default);
-
     /// <summary>POSTs to <c>/plugins/anchoralarm/raiseAnchor</c>.
     /// Clears the anchor position and disables drift monitoring.
     /// Non-success returns surface the server's error envelope so the

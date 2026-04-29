@@ -161,4 +161,134 @@ public class AnchorRadiusHeuristicTests
         // is what they'd have typed by hand anyway.
         await Assert.That(AnchorRadiusHeuristic.Suggest(null, 30.0)).IsEqualTo(30);
     }
+
+    // --- lastChosenMeters boundary defence ---------------------------
+    // Storage corruption (private-browsing fallthrough, manual
+    // edit of localStorage, future migration glitch) can produce
+    // NaN / +/-Infinity in the persisted radius. Pin the behaviour
+    // so a refactor that drops the IsNaN/IsInfinity guard surfaces.
+
+    [Test]
+    public async Task NullDepth_NaNLastChosen_LandsOnFloor()
+    {
+        await Assert.That(AnchorRadiusHeuristic.Suggest(null, double.NaN))
+            .IsEqualTo(AnchorRadiusHeuristic.MinSuggestedMeters);
+    }
+
+    [Test]
+    public async Task NullDepth_PositiveInfinityLastChosen_LandsOnCeiling()
+    {
+        // +Infinity -> the helm previously typed something insane
+        // OR storage is corrupted. Cap at the ceiling (Max) so the
+        // panel still has a usable preset to render rather than
+        // proposing int.MaxValue (which would render as "2147483647 m"
+        // and snap-up to the largest preset only by accident).
+        await Assert.That(AnchorRadiusHeuristic.Suggest(null, double.PositiveInfinity))
+            .IsEqualTo(AnchorRadiusHeuristic.MaxSuggestedMeters);
+    }
+
+    [Test]
+    public async Task NullDepth_NegativeInfinityLastChosen_LandsOnFloor()
+    {
+        await Assert.That(AnchorRadiusHeuristic.Suggest(null, double.NegativeInfinity))
+            .IsEqualTo(AnchorRadiusHeuristic.MinSuggestedMeters);
+    }
+
+    [Test]
+    public async Task NullDepth_LastChosenAboveCeiling_KeepsValue()
+    {
+        // The fallback path intentionally does NOT clamp at
+        // MaxSuggestedMeters: a helm who's chosen 250 m for a
+        // genuinely-deep anchorage shouldn't have it silently
+        // capped at 200 m the next time they drop. Pin the
+        // behaviour so a refactor that adds the clamp surfaces.
+        await Assert.That(AnchorRadiusHeuristic.Suggest(null, 250.0)).IsEqualTo(250);
+    }
+
+    // --- IsUsableDepth (now public) ----------------------------------
+    // Single source of truth shared with DescribeSuggestion + Suggest;
+    // pin a few cases so a future tweak is visible to consumers.
+
+    [Test]
+    public async Task IsUsableDepth_RejectsNonFiniteAndOutOfRange()
+    {
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(double.NaN)).IsFalse();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(double.PositiveInfinity)).IsFalse();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(double.NegativeInfinity)).IsFalse();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(0.0)).IsFalse();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(-1.0)).IsFalse();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(1500.0)).IsFalse();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(0.5)).IsTrue();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(6.0)).IsTrue();
+        await Assert.That(AnchorRadiusHeuristic.IsUsableDepth(999.99)).IsTrue();
+    }
+
+    // --- DescribeSuggestion (eyebrow label) --------------------------
+    // Same gate as Suggest. The exact format ("5x 6.0 m depth" / "from
+    // last drop") is consumed by AnchorEditPanel's eyebrow; cross-call
+    // invariant tests pin it so a multiplier change can't drift.
+
+    [Test]
+    public async Task DescribeSuggestion_UsableDepth_IncludesScopeAndDepth()
+    {
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(6.0))
+            .IsEqualTo("5x 6.0 m depth");
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(13.5))
+            .IsEqualTo("5x 13.5 m depth");
+    }
+
+    [Test]
+    public async Task DescribeSuggestion_NoDepth_FromLastDrop()
+    {
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(null))
+            .IsEqualTo("from last drop");
+    }
+
+    [Test]
+    public async Task DescribeSuggestion_UnusableDepth_FromLastDrop()
+    {
+        // Same gate as Suggest -- non-finite or out-of-range depth
+        // routes to the fallback message so the eyebrow doesn't lie
+        // about what the heuristic actually used.
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(double.NaN))
+            .IsEqualTo("from last drop");
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(double.PositiveInfinity))
+            .IsEqualTo("from last drop");
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(0.0))
+            .IsEqualTo("from last drop");
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(-3.0))
+            .IsEqualTo("from last drop");
+        await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(1500.0))
+            .IsEqualTo("from last drop");
+    }
+
+    [Test]
+    public async Task ScopeMultiplier_IsWhole_SoIntCastInLabelIsLossless()
+    {
+        // The eyebrow renders ScopeMultiplier as "(int)5" -> "5".
+        // If a future bump to 5.5 lands silently the label would
+        // show "5x" while the heuristic uses 5.5x -- a one-line
+        // contradiction. Either the multiplier stays whole (this
+        // test pins it) or the format string moves to "G3" so
+        // the displayed value tracks the applied value.
+        double mod = AnchorRadiusHeuristic.ScopeMultiplier % 1.0;
+        await Assert.That(mod).IsEqualTo(0.0);
+    }
+
+    // --- Property-style continuity check -----------------------------
+    // For a sweep across the typical-anchorage depth range, the
+    // result must always land in [floor, ceiling]. Catches a
+    // refactor that breaks the clamp at a boundary spot-checks
+    // happen to miss.
+
+    [Test]
+    public async Task Suggest_AcrossDepthRange_AlwaysInClampBounds()
+    {
+        for (double d = 0.1; d < 60.0; d += 0.3)
+        {
+            var got = AnchorRadiusHeuristic.Suggest(d, 30.0);
+            await Assert.That(got).IsGreaterThanOrEqualTo(AnchorRadiusHeuristic.MinSuggestedMeters);
+            await Assert.That(got).IsLessThanOrEqualTo(AnchorRadiusHeuristic.MaxSuggestedMeters);
+        }
+    }
 }

@@ -5867,11 +5867,52 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .anchor-edit-drop {
     /* Drop sits just inside the right edge as the primary action.
-       The base .map-btn.active styling already makes it pop; this
-       just ensures it doesn't shrink under flex pressure on narrow
+       Pin width so it doesn't shrink under flex pressure on narrow
        viewports. */
     flex: 0 0 auto;
     min-width: 4.5rem;
+}
+/* Compound selector raises specificity to (0,0,3,0) so the amber
+   accent beats the base `.map-btn.active` rule (specificity 0,0,2,0)
+   in every theme. Without this, light + high-contrast paint the
+   Drop button in the sky-blue accent inherited from --sk-accent
+   while the rest of the panel uses anchor-amber -- a visual
+   incoherence the helm parses as two different actions on one bar.
+   `color: var(--sk-text)` keeps the label readable across themes. */
+.anchor-edit-drop.map-btn.active {
+    background: rgba(245, 158, 11, 0.25);
+    border-color: rgba(245, 158, 11, 0.7);
+    color: var(--sk-text);
+}
+.anchor-edit-drop.map-btn.active:hover {
+    background: rgba(245, 158, 11, 0.35);
+}
+
+/* Theme-aware overrides for the panel chrome. The shared
+   `.route-edit-bar` rule hard-codes a dark `rgba(15,17,22,0.92)`
+   background, which leaves the panel as a dark blob in light +
+   high-contrast modes while title / Drop / Cancel resolve to slate-
+   900 / black on top of it -- unreadable. These rules give the
+   anchor panel an opaque-white surface and contrast-correct text
+   in the light branches. `:root.theme-effective-light` matches both
+   `theme-light` and `theme-system` resolved against a light OS,
+   mirroring the existing light-cascade convention in the app.
+   (The route + polygon edit panels share the same dark-only flaw;
+   out of scope here, follow-up TODO.) */
+:root.theme-effective-light .anchor-edit-bar {
+    background: rgba(255, 255, 255, 0.96);
+    color: var(--sk-text);
+    /* Amber-700 instead of amber-500 so the border reads at AA
+       contrast on a near-white surface; the dark-theme value is
+       too pale on white and the silhouette dissolves. */
+    border-color: rgba(180, 83, 9, 0.6);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+:root.theme-high-contrast .anchor-edit-bar {
+    background: #ffffff;
+    color: #000000;
+    border-color: #000000;
 }
 
 /* Crosshair cursor on the route-edit hit-line so helms discover

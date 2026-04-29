@@ -16,9 +16,14 @@
         @* Two-line eyebrow + suggestion. The eyebrow tells the helm
            what's about to happen ("you tapped Drop"); the suggestion
            tells them where the pre-fill came from so a "wait, why
-           20 m?" question doesn't need a second look at Settings. *@
+           20 m?" question doesn't need a second look at Settings.
+           The subline is suppressed entirely on empty so a missing
+           label doesn't leave an empty span eating vertical space. *@
         <span class="anchor-edit-title">Drop anchor</span>
-        <span class="anchor-edit-sub">@SuggestionLabel</span>
+        @if (!string.IsNullOrEmpty(SuggestionLabel))
+        {
+            <span class="anchor-edit-sub">@SuggestionLabel</span>
+        }
     </span>
 
     @* Chip row reuses the same preset list as the manual-anchor HUD
@@ -48,7 +53,7 @@
             title="@(Dropping ? "Dropping..." : "Drop anchor at current GPS")">
         @(Dropping ? "Dropping..." : "Drop")
     </button>
-    <button class="map-btn" @onclick="OnCancel" disabled="@Dropping">Cancel</button>
+    <button class="map-btn" @onclick="OnCancelClicked" disabled="@Dropping">Cancel</button>
 </div>
 
 @code {
@@ -91,17 +96,22 @@
     private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100, 150];
 
     private int _radius;
+    private int _seededFromInitial = int.MinValue;
 
     protected override void OnParametersSet()
     {
-        // Snap the initial value onto the nearest preset so the chip
-        // row never paints with no `.active` chip (would look like the
-        // heuristic was off-the-rails when really the helm just
-        // hasn't tapped yet). If InitialRadiusMeters is between two
-        // chips, prefer the lower one -- err on the side of a tighter
-        // alarm radius (false-positive drag alarm) over a looser one
-        // (boat dragging unnoticed).
-        _radius = SnapToPreset(InitialRadiusMeters);
+        // Snap onto the nearest preset (rounded UP, see SnapToPreset)
+        // so the chip row always has an `.active` member when the
+        // panel mounts. Only re-seed when InitialRadiusMeters
+        // actually changes -- otherwise an unrelated parent re-render
+        // (toast tick, settings change, etc.) would clobber the
+        // helm's chip choice. The sentinel `int.MinValue` guarantees
+        // the first call always seeds.
+        if (InitialRadiusMeters != _seededFromInitial)
+        {
+            _seededFromInitial = InitialRadiusMeters;
+            _radius = SnapToPreset(InitialRadiusMeters);
+        }
     }
 
     private void OnPick(int radius)
@@ -115,19 +125,38 @@
         await OnDrop.InvokeAsync(_radius);
     }
 
-    /// <summary>Picks the largest preset &lt;= the suggested value.
-    /// Falls back to the smallest preset when the suggestion is
-    /// below the floor (shouldn't happen via
-    /// <see cref="OnaPlotter.Utilities.AnchorRadiusHeuristic"/> but
-    /// defensive against a parent that bypasses it).</summary>
+    private async Task OnCancelClicked()
+    {
+        // Symmetric with OnDropClicked: a Cancel mid-drop must not
+        // fire OnCancel and have the parent close the panel while
+        // the in-flight POST is still resolving (otherwise the helm
+        // sees the panel close, then a second later a stale toast
+        // from the resolved drop they thought they cancelled).
+        // bUnit's .Click() ignores `disabled`, so the in-handler gate
+        // is the only real defence.
+        if (Dropping) return;
+        await OnCancel.InvokeAsync();
+    }
+
+    /// <summary>Picks the smallest preset &gt;= the suggested value.
+    /// Rounding UP keeps the alarm circle at LEAST as big as the
+    /// heuristic recommended -- a fractionally-larger radius costs
+    /// the helm one false-positive on a wind shift, while rounding
+    /// DOWN drops the swing scope below safe ratio (e.g. heuristic
+    /// 65 m for 13 m depth = 5:1 scope; rounding to 50 m would be
+    /// 3.85:1, below cruising-rule-of-thumb minimum). When the
+    /// suggestion exceeds the largest preset (only possible when a
+    /// caller bypasses the heuristic's <c>MaxSuggestedMeters</c>
+    /// ceiling) we cap at the largest preset; the helm can still
+    /// type more in Settings later.</summary>
     private static int SnapToPreset(int radius)
     {
-        // Preset list is sorted ascending; walk from the top to find
-        // the first preset that's <= radius.
-        for (int i = RadiusPresets.Length - 1; i >= 0; i--)
+        // Preset list is sorted ascending; walk from the bottom to
+        // find the first preset that's >= radius (round UP).
+        for (int i = 0; i < RadiusPresets.Length; i++)
         {
-            if (RadiusPresets[i] <= radius) return RadiusPresets[i];
+            if (RadiusPresets[i] >= radius) return RadiusPresets[i];
         }
-        return RadiusPresets[0];
+        return RadiusPresets[^1];
     }
 }
