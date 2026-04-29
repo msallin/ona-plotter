@@ -481,6 +481,13 @@
     // / ActiveRouteRegularSuppressed) for HUD bindings.
     private OnaPlotter.Services.Js.MapRouteJs? _routeJs;
     private OnaPlotter.Services.Map.ActiveRouteSync? _activeRouteSync;
+
+    // AIS / AtoN payload builders + pushers. Page kicks PushAsync
+    // off the 3 s timer / AtonStore event; controllers own the
+    // snapshot build + diff pre-computation.
+    private OnaPlotter.Services.Js.MapAisJs? _aisJs;
+    private OnaPlotter.Services.Map.AisPushService? _aisPush;
+    private OnaPlotter.Services.Map.AtonPushService? _atonPush;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -1103,6 +1110,10 @@
             // already drawn.
             OnActiveOverlayCleared = () => _frameBuilder.CourseLineDrawn = false,
         };
+        _aisJs = new OnaPlotter.Services.Js.MapAisJs(module);
+        _aisPush = new OnaPlotter.Services.Map.AisPushService(
+            _aisJs, AisStore, MooredVessels, Settings, Time);
+        _atonPush = new OnaPlotter.Services.Map.AtonPushService(_aisJs, Atons);
 
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
@@ -1294,7 +1305,7 @@
         // setting is honoured by setAtonsVisible JS-side.
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await module.InvokeVoidAsync("setAtonsVisible", Settings.AtonsVisible);
-        _ = PushAtons();
+        _ = _atonPush!.PushAsync();
         // Resource re-sync: waypoints / routes / notes / regions added
         // from another plotter are otherwise invisible until the user
         // toggles the Layers panel. 60 s poll keeps the list in sync
@@ -1747,143 +1758,16 @@
     // through Playwright, not C# unit tests.
     [Inject] private TimeProvider Time { get; set; } = default!;
 
-    private async Task PushAisTargets()
+    /// <summary>
+    /// Forwards the AIS push to <see cref="AisPushService"/>. Stays as
+    /// an instance method (not a direct call site) because the AIS
+    /// timer + harbour-mode handler + buddy-toggle path all need a
+    /// consistent gate: skip if the map isn't initialised yet.
+    /// </summary>
+    private Task PushAisTargets()
     {
-        if (!mapInitialized || module is null) return;
-        try
-        {
-            var vessels = AisStore.GetVessels();
-            // AisStore filters on position when building the snapshot, but
-            // defend against someone clearing a position between snapshots
-            // anyway - force-unwrap is never worth the risk in a hot path.
-            // Pre-compute COLREGS per vessel (requires own lat/lon/cog/sog) so
-            // the JS popup can render the category + give-way role without
-            // re-implementing the math on the JS side.
-            double? ownLat = Data.Latitude;
-            double? ownLon = Data.Longitude;
-            double? ownCog = Data.CourseOverGround;
-            double? ownSog = Data.SpeedOverGround;
-
-            // Harbor-mode + position filter delegated to HarborAisFilter
-            // so the moored-classification and Cleanup-on-vanished-context
-            // contract is unit-testable in isolation (HarborAisFilterTests).
-            // The tracker's nav.state + SOG-dwell rules decide what counts
-            // as moored; this caller just trusts the answer.
-            bool harbor = Settings.HarborMode;
-            var now = Time.GetUtcNow().UtcDateTime;
-            var visible = OnaPlotter.Utilities.HarborAisFilter.Apply(
-                vessels, MooredVessels, harbor, now);
-
-            var jsVessels = visible
-                .Select(v =>
-                {
-                    // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs
-                    // + CpaTests is the single source of truth and (b) the
-                    // BuildVesselList / PushAisTargets paths can't drift.
-                    double? cpaNm = null;
-                    double? tcpaMin = null;
-                    string? colregsLabel = null;
-                    string? colregsRole = null;
-                    if (ownLat is not null && ownLon is not null
-                        && ownCog is not null && ownSog is not null
-                        && v.CourseOverGround is not null && v.SpeedOverGround is not null)
-                    {
-                        var cpa = Cpa.Compute(
-                            ownLat.Value, ownLon.Value, ownCog, ownSog,
-                            v.Latitude!.Value, v.Longitude!.Value,
-                            v.CourseOverGround, v.SpeedOverGround);
-                        if (cpa is { } c)
-                        {
-                            cpaNm = c.CpaNm;
-                            tcpaMin = c.TcpaMin;
-                        }
-
-                        var r = Colregs.Classify(
-                            ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
-                            v.Latitude!.Value, v.Longitude!.Value,
-                            v.CourseOverGround.Value, v.SpeedOverGround.Value);
-                        if (r.Category != Colregs.Category.Indeterminate)
-                        {
-                            colregsLabel = Colregs.ShortLabel(r.Category);
-                            colregsRole = Colregs.RoleLabel(r.Role);
-                        }
-                    }
-                    // Pre-resolved visual fields so the JS layer is a
-                    // dumb renderer: one source of truth for the AIS
-                    // palette + SART classification in C#, tested in
-                    // AisPaletteTests / AisSartAlarmRuleTests.
-                    string? sartCat = OnaPlotter.Utilities.AisSart.CategoryFromAny(v.Mmsi, v.Context);
-                    string? glyphCategory = OnaPlotter.Utilities.AisPalette.ShipTypeCategory(v.ShipType);
-
-                    // CPA threat band (none / warning / danger) is computed
-                    // here against the helm's guard-zone settings. JS used
-                    // to redo this thresholding inline; lifting it up means
-                    // CpaTests.ClassifyThreat is the single source of truth
-                    // and the alarm pipeline + map overlay can't disagree.
-                    var threat = Cpa.ClassifyThreat(
-                        cpaNm, tcpaMin,
-                        Settings.CpaAlarmThreshold,
-                        Settings.GuardZoneLookaheadMinutes,
-                        Settings.GuardZoneWarningFactor,
-                        v.IsBuddy);
-                    string cpaThreat = threat switch
-                    {
-                        Cpa.Threat.Danger => "danger",
-                        Cpa.Threat.Warning => "warning",
-                        _ => "none"
-                    };
-
-                    // Display name resolution -- name -> mmsi -> null,
-                    // with buddy star prefix. Lifted out of JS so the
-                    // chart label and any future label-rendering surface
-                    // share the same fallback chain.
-                    string? baseName = !string.IsNullOrEmpty(v.Name) ? v.Name
-                        : !string.IsNullOrEmpty(v.Mmsi) ? v.Mmsi
-                        : null;
-                    string? displayName = baseName is null
-                        ? null
-                        : (v.IsBuddy ? "★ " + baseName : baseName);
-
-                    return new
-                    {
-                        context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
-                        displayName,                   // pre-resolved label or null
-                        lat = v.Latitude!.Value, lon = v.Longitude!.Value,
-                        headingRad = v.Heading, cogRad = v.CourseOverGround,
-                        sogMs = v.SpeedOverGround, shipType = v.ShipType,
-                        buddy = v.IsBuddy,
-                        // Tell JS whether to render with an AIS or radar-ARPA
-                        // icon. Radar targets lose buddy/danger overlays too;
-                        // JS looks at this flag.
-                        source = v.Source == OnaPlotter.Models.TargetSource.Radar ? "radar" : "ais",
-                        sartCategory = sartCat,       // "SART"/"MOB"/"EPIRB" or null
-                        glyphCategory,                 // "sail"/"fish"/"commercial"/"service"/null
-                        shipColor = OnaPlotter.Utilities.AisPalette.ShipTypeColor(v.ShipType),
-                        cpaNm,                         // nautical miles or null
-                        tcpaMin,                       // minutes or null
-                        cpaThreat,                     // "none"/"warning"/"danger"
-                        colregsLabel,
-                        colregsRole,
-                        // Seconds since we last heard from this target. JS
-                        // uses it to fade stale markers (>30 s) so the
-                        // chart visually distinguishes a live target from
-                        // a ghost that hasn't updated in minutes. Same
-                        // Time provider as the harbor filter above so
-                        // tests can pin both deterministically.
-                        ageSec = (int)(now - v.LastSeen).TotalSeconds
-                    };
-                }).ToArray();
-            await module.InvokeVoidAsync("updateAisTargets", (object)jsVessels);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
-        catch (JSException ex)
-        {
-            // Hot path (every AIS tick). See HandleDataChanged for the
-            // rationale: silent-but-logged stops a JS regression from
-            // taking down the whole map UI.
-            Console.Error.WriteLine($"[interop] PushAisTargets: {ex.Message}");
-        }
+        if (!mapInitialized || _aisPush is null) return Task.CompletedTask;
+        return _aisPush.PushAsync(Data);
     }
 
     private void HandleAtonsUpdated()
@@ -1891,55 +1775,8 @@
         // AtonStore.OnAtonsUpdated fires from the websocket thread on
         // every delta-affecting change. WASM is single-threaded so
         // there's no thread-marshal needed; we just kick off the JS
-        // push and let it await on its own. Idempotent re-pushes are
-        // cheap (the JS side diffs by id), so we don't bother
-        // debouncing -- the C# AtonStore.GetAtons cache already
-        // means a re-push on no-data-change is just a snapshot read.
-        _ = PushAtons();
-    }
-
-    private async Task PushAtons()
-    {
-        if (!mapInitialized || module is null) return;
-        try
-        {
-            // Resolve the symbol kind + cardinal/lateral side here in C#
-            // via AtonTypeCatalog.Lookup so JS stays a dumb renderer
-            // (per the project's "decisions in C# with tests" rule).
-            // Virtual flag: prefer the AtoN's own published value;
-            // otherwise fall back to the catalog's "20-25 are virtual"
-            // hint so an older plugin that omits the flag still
-            // renders dashed.
-            var atons = Atons.GetAtons();
-            var jsAtons = atons
-                .Where(a => a.Latitude is not null && a.Longitude is not null)
-                .Select(a =>
-                {
-                    var info = AtonTypeCatalog.Lookup(a.TypeId);
-                    bool isVirtual = a.Virtual ?? info.VirtualHint;
-                    return new
-                    {
-                        context = a.Context,
-                        name = a.Name,
-                        mmsi = a.Mmsi,
-                        lat = a.Latitude!.Value,
-                        lon = a.Longitude!.Value,
-                        typeId = a.TypeId,
-                        typeName = a.TypeName,
-                        symbol = info.Symbol.ToString(),
-                        side = info.Side.ToString(),
-                        @virtual = isVirtual,
-                    };
-                })
-                .ToArray();
-            await module.InvokeVoidAsync("setAtons", (object)jsAtons);
-        }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
-        catch (JSException ex)
-        {
-            Console.Error.WriteLine($"[interop] PushAtons: {ex.Message}");
-        }
+        // push and let it await on its own.
+        if (mapInitialized) _ = (_atonPush?.PushAsync() ?? Task.CompletedTask);
     }
 
     private async Task ToggleFollow()
@@ -3067,6 +2904,7 @@
         // it once below.
         _anchorJs?.MarkDisposed();
         _routeJs?.MarkDisposed();
+        _aisJs?.MarkDisposed();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
