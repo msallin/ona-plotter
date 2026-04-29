@@ -5797,6 +5797,101 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     flex: 0 0 auto;
 }
 
+/* ===== Route + Polygon edit panels: theme-aware overrides =====
+   The base `.route-edit-bar` / `.route-edit-list` / `.route-edit-hint`
+   rules above hard-code dark backgrounds, which leaves these panels
+   as dark blobs in light + high-contrast themes with the slate-900
+   route name input + the violet stats text rendering as low-contrast
+   or unreadable. Mirrors the anchor-panel theme override pattern.
+   Both light branches keep the violet identity for stats / list
+   header / count -- "violet means route" stays consistent with the
+   dark theme -- but bumped to violet-700 so it clears AA contrast
+   on white. */
+:root.theme-effective-light .route-edit-bar,
+:root.theme-effective-light .route-edit-list {
+    background: rgba(255, 255, 255, 0.96);
+    color: var(--sk-text);
+    /* Violet-700 instead of violet-400 alpha so the panel border
+       reads at AA contrast on a near-white surface; the dark-theme
+       value is too pale on white and the silhouette dissolves. */
+    border-color: rgba(109, 40, 217, 0.55);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+}
+:root.theme-effective-light .route-edit-hint {
+    /* Light tint of the violet identity rather than pure white so
+       the hint still reads as a contextual instruction band, not a
+       generic toast. */
+    background: rgba(237, 233, 254, 0.92);
+    color: #5b21b6;                        /* violet-800 ~7:1 on near-white */
+    border-color: rgba(109, 40, 217, 0.45);
+}
+:root.theme-effective-light .route-edit-stats,
+:root.theme-effective-light .route-edit-list-header {
+    /* violet-700 ~6.7:1 on white -- AA-clear, keeps the route accent. */
+    color: #6d28d9;
+}
+:root.theme-effective-light .route-edit-list-count {
+    background: rgba(109, 40, 217, 0.14);
+    color: #5b21b6;
+}
+:root.theme-effective-light .route-edit-list-header {
+    border-bottom-color: rgba(15, 23, 42, 0.12);
+}
+:root.theme-effective-light .route-edit-wp-row:hover {
+    background: rgba(15, 23, 42, 0.05);
+}
+:root.theme-effective-light .route-edit-wp-coord {
+    color: var(--sk-text);
+}
+:root.theme-effective-light .route-name-input {
+    /* Near-white input on a near-white panel needs a visible border
+       AND a darker background tint than the panel so the field
+       affordance reads as "I can type here". */
+    background: rgba(15, 23, 42, 0.04);
+    border-color: rgba(15, 23, 42, 0.2);
+    color: var(--sk-text);
+}
+
+/* High-contrast theme: pure-white surfaces, jet-black text, solid-
+   black borders -- matches the chrome strategy used by the rest of
+   the high-contrast theme (sunlit-readable, no alpha). The violet
+   accent dims to violet-900 here so it stays as the route identity
+   without competing with the black borders for visual weight. */
+:root.theme-high-contrast .route-edit-bar,
+:root.theme-high-contrast .route-edit-list {
+    background: #ffffff;
+    color: #000000;
+    border-color: #000000;
+}
+:root.theme-high-contrast .route-edit-hint {
+    background: #ffffff;
+    color: #4c1d95;                        /* violet-900 -- ~12:1 on white */
+    border-color: #000000;
+}
+:root.theme-high-contrast .route-edit-stats,
+:root.theme-high-contrast .route-edit-list-header,
+:root.theme-high-contrast .route-edit-list-count {
+    color: #4c1d95;
+}
+:root.theme-high-contrast .route-edit-list-count {
+    background: rgba(76, 29, 149, 0.16);
+}
+:root.theme-high-contrast .route-edit-list-header {
+    border-bottom-color: #000000;
+}
+:root.theme-high-contrast .route-edit-wp-row:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+:root.theme-high-contrast .route-edit-wp-coord {
+    color: #000000;
+}
+:root.theme-high-contrast .route-name-input {
+    background: #ffffff;
+    border-color: #000000;
+    color: #000000;
+}
+
 /* ===== Anchor Drop Panel =====
    Anchor-specific tweaks layered onto the shared route-edit-bar
    chrome. The anchor flow opens this panel on a single bar-button
