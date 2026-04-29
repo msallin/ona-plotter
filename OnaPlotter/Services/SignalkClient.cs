@@ -393,15 +393,17 @@ public sealed class SignalkClient : IAsyncDisposable
         return true;
     }
 
-    /// <summary>Demo of the ARCH-006 extraction pattern: this seeder
-    /// owns the <c>design.draft</c> REST round-trip. The remaining
-    /// three seed methods (vessel names, course, self context) plus
-    /// the helpers they share will follow in subsequent iterations
-    /// using the same shape. Constructed inline from the same
+    /// <summary>ARCH-006 extracts the four REST seeders into focused
+    /// classes under <c>OnaPlotter.Services.Signalk</c>. Each owns ONE
+    /// REST round-trip and its parsing rules; SignalkClient still
+    /// fires-and-forgets them on connect. Constructed inline from the
     /// dependencies SignalkClient already holds so the public ctor
-    /// signature doesn't grow another DI parameter (which would have
+    /// signature doesn't grow more DI parameters (which would have
     /// rippled through every test that builds a SignalkClient).</summary>
     private readonly OnaPlotter.Services.Signalk.SignalkDraftSeeder _draftSeeder;
+    private readonly OnaPlotter.Services.Signalk.SignalkSelfContextSeeder _selfContextSeeder;
+    private readonly OnaPlotter.Services.Signalk.SignalkVesselNamesSeeder _vesselNamesSeeder;
+    private readonly OnaPlotter.Services.Signalk.SignalkCourseSeeder _courseSeeder;
 
     public SignalkClient(ISignalKBaseUrl baseUrl, ILogger<SignalkClient> logger,
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
@@ -422,15 +424,27 @@ public sealed class SignalkClient : IAsyncDisposable
         _serverNotifs = serverNotifs;
         _time = time;
 
-        // The draft seeder reuses the SignalkClient logger via the
-        // ILogger contravariance trick (an ILogger<SignalkClient>
-        // can be wrapped in a SignalkDraftSeeder-typed adapter). For
-        // simplicity in this iteration we use NullLogger; the per-
-        // category logger can be threaded through DI when the
-        // remaining seed methods follow.
+        // Each seeder takes only the dependencies it actually touches.
+        // We use NullLogger here rather than weaving a per-category
+        // ILogger<T> through DI because all four seeders are
+        // hand-constructed (not registered) and the receive-loop
+        // already logs the surrounding lifecycle. Threading per-
+        // category loggers through is a follow-on once these classes
+        // earn their own DI registration.
         _draftSeeder = new OnaPlotter.Services.Signalk.SignalkDraftSeeder(
             http, baseUrl, _data,
             Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkDraftSeeder>.Instance,
+            onDataChanged: () => OnDataChanged?.Invoke());
+        _selfContextSeeder = new OnaPlotter.Services.Signalk.SignalkSelfContextSeeder(
+            http, baseUrl,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkSelfContextSeeder>.Instance,
+            setSelfContext: SetSelfContext);
+        _vesselNamesSeeder = new OnaPlotter.Services.Signalk.SignalkVesselNamesSeeder(
+            http, baseUrl, _ais,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkVesselNamesSeeder>.Instance);
+        _courseSeeder = new OnaPlotter.Services.Signalk.SignalkCourseSeeder(
+            http, baseUrl, _data,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OnaPlotter.Services.Signalk.SignalkCourseSeeder>.Instance,
             onDataChanged: () => OnDataChanged?.Invoke());
 
         // Heading / COG preference: settings drive which SignalK path
@@ -518,12 +532,12 @@ public sealed class SignalkClient : IAsyncDisposable
                 // wrapper). Bare `_ = FooAsync(ct)` surfaces unhandled
                 // exceptions on TaskScheduler.UnobservedTaskException
                 // instead.
-                _ = SeedVesselNamesFromRestAsync(ct);
+                _ = _vesselNamesSeeder.SeedAsync(ct);
 
                 // Identify ourselves via REST so we can filter own-boat out
                 // of the AIS list even on servers that never emit a hello
                 // with "self" or push own-boat only as "vessels.<urn>".
-                _ = ResolveSelfContextFromRestAsync(ct);
+                _ = _selfContextSeeder.SeedAsync(ct);
 
                 // Subscriptions only fire on change, so a route active
                 // BEFORE our socket opens (another plotter, freeboard-sk
@@ -531,11 +545,9 @@ public sealed class SignalkClient : IAsyncDisposable
                 // arrives on the delta stream. The v2 Course API lives
                 // on its own REST surface which the delta stream doesn't
                 // cover for the initial state; fetch it once on connect.
-                _ = SeedSelfCourseFromRestAsync(ct);
+                _ = _courseSeeder.SeedAsync(ct);
 
-                // design.draft seed delegated to SignalkDraftSeeder
-                // (ARCH-006 extraction). Narrow fetch:
-                // /vessels/self/design/draft only.
+                // design.draft: narrow fetch on /vessels/self/design/draft.
                 _ = _draftSeeder.SeedAsync(ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
@@ -1342,243 +1354,11 @@ public sealed class SignalkClient : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// One-shot REST fetch of every vessel known to the server, walking the
-    /// tree for static-data leaves (name / mmsi / callsign / ship type /
-    /// position) and feeding them to <see cref="AisStore"/> as if they had
-    /// arrived on the delta stream. Bridges the gap where SignalK's
-    /// subscription stream only sends values as they change.
-    /// <para>
-    /// Never throws: any network or parse failure is logged at Warning.
-    /// </para>
-    /// </summary>
-    /// <summary>
-    /// Asks SignalK who "self" is by hitting /signalk/v1/api/self. That
-    /// endpoint returns just the self URN (as a JSON string), which
-    /// lets us tag own-boat even when the delta stream never publishes
-    /// the hello envelope or uses only the prefixed-URN form.
-    /// </summary>
-    private async Task ResolveSelfContextFromRestAsync(CancellationToken ct)
-    {
-        try
-        {
-            var url = _baseUrl.Combine("/signalk/v1/api/self");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode) return;
-            var raw = (await res.Content.ReadAsStringAsync(ct)).Trim().Trim('"');
-            if (!string.IsNullOrWhiteSpace(raw)) SetSelfContext(raw);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "REST self-context resolution failed");
-        }
-    }
-
-    private async Task SeedVesselNamesFromRestAsync(CancellationToken ct)
-    {
-        try
-        {
-            var url = _baseUrl.Combine("/signalk/v1/api/vessels");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode) return;
-
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
-
-            int seeded = 0;
-            foreach (var vesselProp in doc.RootElement.EnumerateObject())
-            {
-                if (ct.IsCancellationRequested) break;
-                // Each property key is the short vessel id ("urn:mrn:imo:mmsi:...");
-                // AIS contexts on the delta stream use "vessels." prefix.
-                string context = vesselProp.Name.StartsWith("vessels.", StringComparison.Ordinal)
-                    ? vesselProp.Name
-                    : $"vessels.{vesselProp.Name}";
-                if (ApplyRestVesselTree(context, vesselProp.Value)) seeded++;
-            }
-            if (seeded > 0)
-                _logger.LogInformation("Seeded static data for {Count} vessels from REST snapshot", seeded);
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "REST vessel-snapshot seed failed (names will trickle in via deltas)");
-        }
-    }
-
-    /// <summary>
-    /// One-shot REST fetch of the SignalK v2 Course API
-    /// (<c>/signalk/v2/api/vessels/self/navigation/course</c>). The v1
-    /// self-tree doesn't expose this endpoint at all, which is why a
-    /// route activated BEFORE OnaPlotter connects (another plotter,
-    /// a previous browser session, freeboard-sk in a second tab)
-    /// stayed invisible -- the subscription stream only replays
-    /// deltas on change, and the activeRoute href hadn't changed
-    /// since we connected.
-    /// <para>
-    /// Response shape (per SignalK Course API v2 spec): flat object,
-    /// unwrapped scalars.
-    /// <code>
-    /// {
-    ///   "startTime": "...", "targetArrivalTime": "...", "arrivalCircle": 4000,
-    ///   "activeRoute": {"href": "...", "pointIndex": 0, "pointTotal": 5,
-    ///                    "reverse": false, "name": "..."},
-    ///   "nextPoint": {"type": "RoutePoint", "position": {"latitude": ..., "longitude": ...}},
-    ///   "previousPoint": {"position": {...}}
-    /// }
-    /// </code>
-    /// activeRoute / nextPoint / previousPoint are nulls when no
-    /// course is active; we no-op in that case. calcValues.* numbers
-    /// are NOT in this body -- they come from the delta stream which
-    /// the course-provider plugin re-emits every tick as the boat
-    /// moves, so they trickle in normally.
-    /// </para>
-    /// </summary>
-    // (design.draft REST seed extracted to SignalkDraftSeeder per ARCH-006.)
-
-    // internal (not private) so SignalkClientCourseTests can drive the
-    // seed directly with a mock HttpClient. The full ReceiveLoopAsync
-    // path requires a real WebSocket; testing the REST seed alone is
-    // enough to pin the regression-prone bit -- the active-route state
-    // that lets the map repaint its polyline on page reload.
-    internal async Task SeedSelfCourseFromRestAsync(CancellationToken ct)
-    {
-        JsonDocument? doc = null;
-        try
-        {
-            var url = _baseUrl.Combine("/signalk/v2/api/vessels/self/navigation/course");
-            using var res = await _http.GetAsync(url, ct);
-            if (!res.IsSuccessStatusCode)
-            {
-                // 404 is expected on servers without the v2 Course API
-                // or course-provider plugin; log at Debug to keep the
-                // noise floor low.
-                _logger.LogDebug("v2 course endpoint {Url} returned {Status}", url, (int)res.StatusCode);
-                return;
-            }
-
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
-
-            bool seeded = false;
-
-            // activeRoute: an object when a route is active, null when
-            // cleared. Members mirror the SK v2 spec above; OnaPlotter
-            // tracks href / name / pointIndex / pointTotal.
-            if (doc.RootElement.TryGetProperty("activeRoute", out var ar)
-                && ar.ValueKind == JsonValueKind.Object)
-            {
-                if (ar.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String)
-                    seeded |= _data.ApplyString("navigation.course.activeRoute.href", href.GetString());
-                if (ar.TryGetProperty("name", out var rn) && rn.ValueKind == JsonValueKind.String)
-                    seeded |= _data.ApplyString("navigation.course.activeRoute.name", rn.GetString());
-                if (ar.TryGetProperty("pointIndex", out var pi) && pi.ValueKind == JsonValueKind.Number)
-                    seeded |= _data.Apply("navigation.course.activeRoute.pointIndex", pi);
-                if (ar.TryGetProperty("pointTotal", out var pt) && pt.ValueKind == JsonValueKind.Number)
-                    seeded |= _data.Apply("navigation.course.activeRoute.pointTotal", pt);
-            }
-
-            // nextPoint / previousPoint: objects carrying position and
-            // a type discriminator ("RoutePoint" / "Waypoint" / ...).
-            // Only position matters to the HUD; type is informational.
-            if (doc.RootElement.TryGetProperty("nextPoint", out var np)
-                && np.ValueKind == JsonValueKind.Object
-                && np.TryGetProperty("position", out var npPos)
-                && npPos.ValueKind == JsonValueKind.Object
-                && npPos.TryGetProperty("latitude", out var npLat)
-                && npPos.TryGetProperty("longitude", out var npLon)
-                && npLat.ValueKind == JsonValueKind.Number
-                && npLon.ValueKind == JsonValueKind.Number)
-            {
-                _data.ApplyCourseNextPointPosition(npLat.GetDouble(), npLon.GetDouble());
-                seeded = true;
-            }
-
-            if (doc.RootElement.TryGetProperty("previousPoint", out var pp)
-                && pp.ValueKind == JsonValueKind.Object
-                && pp.TryGetProperty("position", out var ppPos)
-                && ppPos.ValueKind == JsonValueKind.Object
-                && ppPos.TryGetProperty("latitude", out var ppLat)
-                && ppPos.TryGetProperty("longitude", out var ppLon)
-                && ppLat.ValueKind == JsonValueKind.Number
-                && ppLon.ValueKind == JsonValueKind.Number)
-            {
-                _data.ApplyCoursePreviousPointPosition(ppLat.GetDouble(), ppLon.GetDouble());
-                seeded = true;
-            }
-
-            if (seeded)
-            {
-                OnDataChanged?.Invoke();
-                _logger.LogInformation("Seeded active course from v2 REST (href={Href}, nextPoint={HasNext})",
-                    _data.ActiveRouteHref ?? "(none)",
-                    _data.HasActiveCourse);
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "v2 course REST seed failed (active route won't appear until the next delta)");
-        }
-        finally { doc?.Dispose(); }
-    }
-
-    /// <summary>
-    /// Walks the value tree for a single vessel and forwards the leaves
-    /// <see cref="AisVessel.Apply"/> understands. Returns true if any leaf
-    /// was applied so the caller can count "interesting" vessels.
-    /// </summary>
-    private bool ApplyRestVesselTree(string context, JsonElement vessel)
-    {
-        if (vessel.ValueKind != JsonValueKind.Object) return false;
-        bool any = false;
-
-        // SignalK wraps leaf values as { "value": ..., "timestamp": ... }
-        // -- so "name" might be under vessel.name.value or vessel.name
-        // depending on the server. Try both shapes.
-        any |= TryApplyScalar(context, "name", vessel, "name");
-        any |= TryApplyScalar(context, "mmsi", vessel, "mmsi");
-        if (vessel.TryGetProperty("communication", out var comm)
-            && comm.ValueKind == JsonValueKind.Object)
-        {
-            any |= TryApplyScalar(context, "communication.callsignVhf", comm, "callsignVhf");
-        }
-        if (vessel.TryGetProperty("design", out var design)
-            && design.ValueKind == JsonValueKind.Object
-            && design.TryGetProperty("aisShipType", out var typeWrap))
-        {
-            var typeVal = UnwrapValue(typeWrap);
-            if (typeVal.ValueKind != JsonValueKind.Undefined && typeVal.ValueKind != JsonValueKind.Null)
-            {
-                _ais.Apply(context, "design.aisShipType", typeVal);
-                any = true;
-            }
-        }
-        if (vessel.TryGetProperty("navigation", out var nav)
-            && nav.ValueKind == JsonValueKind.Object
-            && nav.TryGetProperty("position", out var posWrap))
-        {
-            var posVal = UnwrapValue(posWrap);
-            if (posVal.ValueKind == JsonValueKind.Object)
-            {
-                _ais.Apply(context, "navigation.position", posVal);
-                any = true;
-            }
-        }
-        return any;
-    }
-
-    private bool TryApplyScalar(string context, string path, JsonElement parent, string key)
-    {
-        if (!parent.TryGetProperty(key, out var wrap)) return false;
-        var val = UnwrapValue(wrap);
-        if (val.ValueKind != JsonValueKind.String) return false;
-        _ais.Apply(context, path, val);
-        return true;
-    }
+    // Test-facing shim for SignalkClientCourseTests, which still drives
+    // the seed via this entry point with a mock HttpClient. Delegates
+    // to SignalkCourseSeeder so the production path stays consolidated.
+    internal Task SeedSelfCourseFromRestAsync(CancellationToken ct) =>
+        _courseSeeder.SeedAsync(ct);
 
     /// <summary>
     /// Routes a notifications.* delta into the
@@ -1689,16 +1469,6 @@ public sealed class SignalkClient : IAsyncDisposable
                 _ => false,
             };
         }
-    }
-
-    // Returns the wrapped .value if this is a SignalK leaf, otherwise the
-    // element itself. Some servers publish bare scalars; most wrap them.
-    private static JsonElement UnwrapValue(JsonElement el)
-    {
-        if (el.ValueKind == JsonValueKind.Object
-            && el.TryGetProperty("value", out var inner))
-            return inner;
-        return el;
     }
 
     // True if the value in a SignalK delta represents "no data here" --
