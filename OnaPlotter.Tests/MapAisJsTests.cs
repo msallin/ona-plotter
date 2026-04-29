@@ -124,4 +124,42 @@ public class MapAisJsTests
 
         await Assert.ThrowsAsync<JSException>(() => sut.SetHarborModeAsync(true));
     }
+
+    [Test]
+    public async Task FocusVesselAsync_PassesContextAndReturnsJsResult()
+    {
+        var fake = new RecordingJsRef();
+        fake.Returns["focusVessel"] = true;
+        var sut = new MapAisJs(fake);
+
+        bool result = await sut.FocusVesselAsync("vessels.urn:mrn:imo:mmsi:123");
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("focusVessel");
+        await Assert.That(fake.Calls[0].args[0]).IsEqualTo("vessels.urn:mrn:imo:mmsi:123");
+        await Assert.That(result).IsTrue();
+    }
+
+    [Test]
+    public async Task FocusVesselAsync_AfterDisposed_ReturnsFalseWithoutCall()
+    {
+        var fake = new RecordingJsRef();
+        var sut = new MapAisJs(fake);
+        sut.MarkDisposed();
+
+        bool result = await sut.FocusVesselAsync("anything");
+
+        await Assert.That(result).IsFalse();
+        await Assert.That(fake.Calls.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task FocusVesselAsync_OnDisconnected_ReturnsFalse()
+    {
+        var fake = new RecordingJsRef { ThrowDisconnectedNext = true };
+        var sut = new MapAisJs(fake);
+
+        bool result = await sut.FocusVesselAsync("anything");
+
+        await Assert.That(result).IsFalse();
+    }
 }

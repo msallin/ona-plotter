@@ -29,6 +29,7 @@ public class AisPushServiceTests
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
+        public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
     }
 
     /// <summary>Mutable time provider for the harbor-mode dwell test.

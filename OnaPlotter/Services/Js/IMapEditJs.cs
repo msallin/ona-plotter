@@ -31,6 +31,17 @@ public interface IMapEditJs
     /// <summary>Flip the route-edit waypoint order in place.</summary>
     Task ReverseEditRouteAsync();
 
+    /// <summary>Returns <c>[waypointCount, totalDistanceNm]</c> for the
+    /// current route-edit overlay. Returns null when the JS side has
+    /// torn down (page unmounting); callers skip the stats refresh in
+    /// that case.</summary>
+    Task<double[]?> GetEditRouteStatsAsync();
+
+    /// <summary>Returns the current route-edit vertices as
+    /// Leaflet-ordered <c>[lat, lon]</c> pairs. Returns null when the
+    /// JS side has torn down.</summary>
+    Task<double[][]?> GetEditRouteCoordsAsync();
+
     // ---- Polygon edit -------------------------------------------------
 
     /// <summary>Enter polygon-edit mode (fresh region). Hooks
@@ -54,6 +65,11 @@ public interface IMapEditJs
     /// <summary>Remove the vertex at the given 0-based index from the
     /// polygon-edit overlay.</summary>
     Task RemovePolygonEditVertexAsync(int index);
+
+    /// <summary>Returns the current polygon-edit vertices as
+    /// Leaflet-ordered <c>[lat, lon]</c> pairs (open ring -- no closing
+    /// duplicate). Returns null when the JS side has torn down.</summary>
+    Task<double[][]?> GetPolygonEditCoordsAsync();
 
     // ---- Measure tool -------------------------------------------------
 

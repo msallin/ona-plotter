@@ -245,4 +245,43 @@ public class MapControlsJsTests
 
         await Assert.ThrowsAsync<JSException>(() => sut.PanToAsync(0, 0));
     }
+
+    [Test]
+    public async Task GetMapCenterAsync_ReturnsJsPayloadAsIs()
+    {
+        var fake = new RecordingJsRef();
+        fake.Returns["getMapCenter"] = new double[] { 54.5, 11.2 };
+        var sut = new MapControlsJs(fake);
+
+        var result = await sut.GetMapCenterAsync();
+
+        await Assert.That(fake.Calls[0].id).IsEqualTo("getMapCenter");
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result![0]).IsEqualTo(54.5);
+        await Assert.That(result[1]).IsEqualTo(11.2);
+    }
+
+    [Test]
+    public async Task GetMapCenterAsync_AfterDisposed_ReturnsNullWithoutCall()
+    {
+        var fake = new RecordingJsRef();
+        var sut = new MapControlsJs(fake);
+        sut.MarkDisposed();
+
+        var result = await sut.GetMapCenterAsync();
+
+        await Assert.That(result).IsNull();
+        await Assert.That(fake.Calls.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task GetMapCenterAsync_OnDisconnected_ReturnsNull()
+    {
+        var fake = new RecordingJsRef { ThrowDisconnectedNext = true };
+        var sut = new MapControlsJs(fake);
+
+        var result = await sut.GetMapCenterAsync();
+
+        await Assert.That(result).IsNull();
+    }
 }
