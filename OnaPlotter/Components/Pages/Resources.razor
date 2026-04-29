@@ -19,6 +19,8 @@
 @inject IToastService Toasts
 @inject NavigationManager Nav
 @inject SignalkClient SignalkClient
+@inject Microsoft.JSInterop.IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>Resources</PageTitle>
 
@@ -70,6 +72,45 @@
                value="@filter" @oninput="OnFilterInput" />
     }
 
+    @* Export-format picker. Sits above the table so the helm picks
+       once per tab visit and the per-row Export button uses the
+       chosen format. Hidden when the tab is empty or still loading
+       (nothing to export). On the Regions tab the picker is just a
+       label -- GPX has no native polygon shape so GeoJSON is the
+       only sensible target there. *@
+    @if (!loading && ActiveTabCount() > 0)
+    {
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap"
+             style="font-size:0.85rem;">
+            <span style="color:var(--sk-text-muted);">Export format:</span>
+            @if (activeTab == TypeRegion + "s")
+            {
+                <span>GeoJSON
+                    <small class="text-muted">
+                        (GPX 1.1 has no native polygon shape)
+                    </small>
+                </span>
+            }
+            else
+            {
+                <div class="btn-group btn-group-sm" role="group" aria-label="Export format">
+                    <button type="button"
+                            class="btn @(exportFormat == "gpx" ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick='() => exportFormat = "gpx"'
+                            title="GPX 1.1 (universal: OpenCPN, Garmin, Navionics)">
+                        GPX
+                    </button>
+                    <button type="button"
+                            class="btn @(exportFormat == "geojson" ? "btn-primary" : "btn-outline-secondary")"
+                            @onclick='() => exportFormat = "geojson"'
+                            title="GeoJSON RFC 7946 (Freeboard-SK, QGIS, web)">
+                        GeoJSON
+                    </button>
+                </div>
+            }
+        </div>
+    }
+
     <div class="resources-body">
         @if (loading)
         {
@@ -92,6 +133,9 @@
                                         @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: false)">View</button>
                                 <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => OpenOnMap(TypeRoute, r.Id, edit: true)">Edit</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => ExportRoute(r)"
+                                        title="@($"Export as {ExportFormatLabel(activeTab)}")">Export</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => DeleteRoute(r.Id, r.Name)">Delete</button>
                             </div>
@@ -116,6 +160,9 @@
                                         @onclick="() => OpenOnMap(TypeWaypoint, w.Id, edit: false)">View</button>
                                 <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => EditWaypointName(w)">Edit</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => ExportWaypoint(w)"
+                                        title="@($"Export as {ExportFormatLabel(activeTab)}")">Export</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => DeleteWaypoint(w.Id, w.Name)">Delete</button>
                             </div>
@@ -141,6 +188,9 @@
                             <div class="resource-actions" role="group" aria-label="Note actions">
                                 <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => OpenOnMap(TypeNote, n.Id, edit: false)">View</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => ExportNote(n)"
+                                        title="@($"Export as {ExportFormatLabel(activeTab)}")">Export</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => DeleteNote(n.Id, n.Title)">Delete</button>
                             </div>
@@ -168,6 +218,9 @@
                                         @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: false)">View</button>
                                 <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => OpenOnMap(TypeRegion, r.Id, edit: true)">Edit</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => ExportRegion(r)"
+                                        title="Export as GeoJSON">Export</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => DeleteRegion(r.Id, r.Name)">Delete</button>
                             </div>
@@ -199,6 +252,22 @@
 
     private string activeTab = "routes";
     private bool loading = true;
+
+    // Export-format toggle. Persisted across tab switches within a
+    // page visit so the helm picks once and exports several rows;
+    // not persisted across reloads (chosen format is a per-task
+    // intent, not a setting). Regions ignore this and always export
+    // GeoJSON -- GPX 1.1 has no native polygon shape.
+    private string exportFormat = "gpx";
+
+    // Lazy-loaded JS helper for blob-download. Disposed in
+    // DisposeAsync so the IJSObjectReference doesn't outlive the
+    // page; same pattern as Settings.razor's GPX export. _exportLock
+    // serialises concurrent Export clicks across rapid clicks (the
+    // helm sometimes machine-guns the button on a slow tablet) so
+    // the same JS module isn't imported twice.
+    private Microsoft.JSInterop.IJSObjectReference? _fileTransfer;
+    private readonly System.Threading.SemaphoreSlim _exportLock = new(1, 1);
 
     // Filter input shown above the table once the active tab has more
     // rows than scan-by-eye works for. Case-insensitive substring match
@@ -370,6 +439,107 @@
         if (!r.Success) { Toasts.Error($"Delete region failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Region deleted");
         regions = regions.Where(rg => rg.Id != id).ToList();
+    }
+
+    // ---------------- Export -------------------------------------
+
+    private Task ExportRoute(SignalkRoute r)
+    {
+        var content = exportFormat == "geojson"
+            ? ResourceExporter.RouteGeoJson(r)
+            : ResourceExporter.RouteGpx(r);
+        return DownloadAsync(content, NameOrId(r.Name, r.Id), exportFormat);
+    }
+
+    private Task ExportWaypoint(SignalkWaypoint w)
+    {
+        var content = exportFormat == "geojson"
+            ? ResourceExporter.WaypointGeoJson(w)
+            : ResourceExporter.WaypointGpx(w);
+        return DownloadAsync(content, NameOrId(w.Name, w.Id), exportFormat);
+    }
+
+    private Task ExportNote(SignalkNote n)
+    {
+        var content = exportFormat == "geojson"
+            ? ResourceExporter.NoteGeoJson(n)
+            : ResourceExporter.NoteGpx(n);
+        return DownloadAsync(content, NameOrId(n.Title, n.Id), exportFormat);
+    }
+
+    /// <summary>Regions always export as GeoJSON (GPX 1.1 has no
+    /// native polygon shape -- the format toggle is hidden on the
+    /// regions tab).</summary>
+    private Task ExportRegion(SignalkRegion r) =>
+        DownloadAsync(ResourceExporter.RegionGeoJson(r), NameOrId(r.Name, r.Id), "geojson");
+
+    /// <summary>Wraps the JS interop + filename + toast machinery so
+    /// each per-type export method stays a one-liner. Null content
+    /// = exporter rejected the resource (missing geometry); surface
+    /// a toast rather than silently doing nothing so the helm knows
+    /// to look at the row.</summary>
+    private async Task DownloadAsync(string? content, string baseName, string format)
+    {
+        if (content is null)
+        {
+            Toasts.Error("Nothing to export -- this resource is missing geometry.");
+            return;
+        }
+
+        await _exportLock.WaitAsync();
+        try
+        {
+            _fileTransfer ??= await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string ext = format == "geojson" ? "geojson" : "gpx";
+            string filename = $"{SanitiseForFilename(baseName)}.{ext}";
+            await _fileTransfer.InvokeVoidAsync("triggerFileDownload", filename, content);
+            Toasts.Success($"Exported '{baseName}' as {format.ToUpperInvariant()}");
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Export failed: {ex.Message}");
+        }
+        finally
+        {
+            _exportLock.Release();
+        }
+    }
+
+    /// <summary>Strip filesystem-hostile characters from a resource
+    /// name so the download lands as a readable filename. Falls back
+    /// to a non-empty placeholder when stripping leaves nothing
+    /// (e.g. a name made entirely of slashes -- rare but possible
+    /// when an old plugin generated an id-style title).</summary>
+    private static string SanitiseForFilename(string name)
+    {
+        var clean = new string(name
+            .Where(c => !Path.GetInvalidFileNameChars().Contains(c))
+            .ToArray()).Trim();
+        return string.IsNullOrEmpty(clean) ? "resource" : clean;
+    }
+
+    private string ExportFormatLabel(string tabKey) => tabKey == "regions"
+        ? "GeoJSON"
+        : (exportFormat == "geojson" ? "GeoJSON" : "GPX");
+
+    private int ActiveTabCount() => activeTab switch
+    {
+        "routes"    => routes.Count,
+        "waypoints" => waypoints.Count,
+        "notes"     => notes.Count,
+        "regions"   => regions.Count,
+        _           => 0,
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_fileTransfer is not null)
+        {
+            try { await _fileTransfer.DisposeAsync(); }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
+        }
     }
 
     // Navigate to the Map page and deep-link to the given resource.
