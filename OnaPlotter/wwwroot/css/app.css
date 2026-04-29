@@ -494,13 +494,17 @@
        floating above the bright chart. */
     --sidebar-shadow:      4px 0 16px rgba(15, 23, 42, 0.10);
 
-    /* Route popup flips to a cream card with dark amber text + border
-       so it reads on a bright basemap without losing the "warm route"
-       identity. Tokens consumed by .route-popup .leaflet-popup-* below. */
-    --route-popup-bg:     #fef6e7;
-    --route-popup-fg:     #4a3211;
-    --route-popup-border: #c8862e;
-    --route-popup-title:  #8a5a14;
+    /* Route popup is a plain white card in light theme: cream + amber
+       trim that the dark theme uses pulls the eye away from the route
+       polyline (which is itself amber on the chart) and the helm read
+       it as a low-contrast secondary surface. Neutral white card with
+       slate text reads as "this is the route's metadata panel" without
+       a second accent fighting the polyline. Tokens consumed by
+       .route-popup .leaflet-popup-* below. */
+    --route-popup-bg:     #ffffff;
+    --route-popup-fg:     #0f172a;
+    --route-popup-border: #94a3b8;
+    --route-popup-title:  #0f172a;
 }
 
 /* System mode: only flip to light when the OS is in light mode. When the

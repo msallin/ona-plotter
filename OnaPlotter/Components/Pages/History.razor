@@ -661,6 +661,13 @@
                     }}
                     window._historySegments = [];
 
+                    // Property names follow C# PascalCase since the
+                    // segPayload record is serialised with default
+                    // System.Text.Json options (no naming policy). Reads
+                    // below use s.Coords / s.IsStationary / s.Tooltip
+                    // accordingly. A previous version read s.coords and
+                    // crashed at L.polyline(undefined, ...) on every
+                    // History mount.
                     var segs = {System.Text.Json.JsonSerializer.Serialize(segPayload)};
                     var movingColor = getComputedStyle(document.documentElement)
                         .getPropertyValue('--map-own').trim() || '#ec4899';
@@ -682,13 +689,13 @@
                         // knots. Moving segments use the same magenta
                         // weight as the live own-vessel track on the
                         // Map page so muscle memory carries.
-                        var style = s.isStationary
+                        var style = s.IsStationary
                             ? {{ color: stationaryColor, weight: 2.5, opacity: 0.55, dashArray: '4 4' }}
                             : {{ color: movingColor, weight: 3.5, opacity: 0.9 }};
                         style.lineJoin = 'round';
                         style.lineCap = 'round';
-                        var poly = L.polyline(s.coords, style)
-                            .bindTooltip(s.tooltip, {{ sticky: true, direction: 'top' }})
+                        var poly = L.polyline(s.Coords, style)
+                            .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
                             .addTo(m);
                         window._historySegments.push(poly);
                         var b = poly.getBounds();
