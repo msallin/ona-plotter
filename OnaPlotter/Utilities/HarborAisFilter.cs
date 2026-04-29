@@ -39,11 +39,10 @@ public static class HarborAisFilter
     {
         if (harbor)
         {
-            // Snapshot the active context set so Cleanup runs once per
-            // call rather than per-vessel inside the loop below.
-            var active = new HashSet<string>(vessels.Count);
-            foreach (var v in vessels) active.Add(v.Context);
-            tracker.Cleanup(active);
+            // Vessels-collection overload skips the HashSet build when
+            // nothing is tracked, which is most ticks. The previous
+            // pattern allocated the set unconditionally.
+            tracker.Cleanup(vessels);
         }
 
         var kept = new List<AisVessel>(vessels.Count);

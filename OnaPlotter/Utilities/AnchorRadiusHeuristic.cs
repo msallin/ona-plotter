@@ -48,6 +48,12 @@ public static class AnchorRadiusHeuristic
         // pulls the ceiling. -Infinity -> int.MinValue -> floor.
         // The Max(_, MinSuggestedMeters) below normalises every weird
         // input to the floor at minimum.
+        // Note: NO upper clamp here -- the helm's stored last-chosen
+        // value is intentionally preserved even above MaxSuggestedMeters,
+        // so a 250 m radius for a genuinely-deep anchorage doesn't get
+        // silently capped to 200 on the next drop. See the
+        // NullDepth_LastChosenAboveCeiling_KeepsValue test for the
+        // contract pin.
         if (double.IsNaN(lastChosenMeters)) return MinSuggestedMeters;
         int fromLast = double.IsInfinity(lastChosenMeters)
             ? (lastChosenMeters > 0 ? MaxSuggestedMeters : MinSuggestedMeters)

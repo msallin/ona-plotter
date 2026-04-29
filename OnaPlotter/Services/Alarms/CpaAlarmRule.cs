@@ -80,8 +80,10 @@ public sealed class CpaAlarmRule : IAlarmRule
         double tcpaLimit = ctx.Settings.GuardZoneLookaheadMinutes;
 
         // Drop tracker state for vessels that have left AIS range so the
-        // dict doesn't grow without bound over long sessions.
-        _moored.Cleanup(ctx.Vessels.Select(v => v.Context).ToHashSet());
+        // dict doesn't grow without bound over long sessions. Vessels-
+        // collection overload skips the HashSet build entirely when no
+        // dwellers are tracked (the typical open-water tick).
+        _moored.Cleanup(ctx.Vessels);
 
         foreach (var v in ctx.Vessels)
         {

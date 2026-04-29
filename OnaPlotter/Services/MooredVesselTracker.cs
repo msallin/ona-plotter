@@ -109,6 +109,18 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
         foreach (var k in toRemove) _lowSpeedSince.Remove(k);
     }
 
+    public void Cleanup(IEnumerable<AisVessel> activeVessels)
+    {
+        // Hot-path overload: most ticks have no tracked dwellers, so we
+        // can skip the HashSet build entirely. Only when something is
+        // tracked do we materialise a context set to do O(1) lookups.
+        if (_lowSpeedSince.Count == 0) return;
+        var active = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var v in activeVessels) active.Add(v.Context);
+        var toRemove = _lowSpeedSince.Keys.Where(k => !active.Contains(k)).ToList();
+        foreach (var k in toRemove) _lowSpeedSince.Remove(k);
+    }
+
     /// <summary>Visible for tests.</summary>
     public int TrackedCount => _lowSpeedSince.Count;
 }
