@@ -4557,6 +4557,28 @@ html.night-mode-global body {
    then lands here once, not N times at the callsites). */
 .hud-card-progress-alarm { color: var(--sev-danger); }
 
+/* Anchor-bearing needle on the anchor HUD card: tiny SVG compass
+   showing where the anchor is from the boat. Sits inline with the
+   "Anchor Watch" title so the card height is unchanged when the
+   bearing is absent (manual flow / first delta after drop). The
+   amber needle matches the anchor flow's accent colour (anchor-edit
+   panel border, active chip). */
+.anchor-bearing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--sk-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.anchor-bearing-value {
+    /* Wider digits column so the value doesn't reflow as the bearing
+       ticks 0 -> 359 -> 0 across north. */
+    min-width: 2.4rem;
+    text-align: right;
+}
+
 /* Prev / Next waypoint step buttons in the route HUD card. Sit
    either side of the WP-progress chip and round-trip through
    SignalK's course API (SetPointIndexAsync / AdvanceActiveRouteAsync).
@@ -5670,6 +5692,83 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .route-edit-bar > .map-btn,
 .route-edit-bar > .route-edit-stats {
     flex: 0 0 auto;
+}
+
+/* ===== Anchor Drop Panel =====
+   Anchor-specific tweaks layered onto the shared route-edit-bar
+   chrome. The anchor flow opens this panel on a single bar-button
+   tap (no anchor active) and the helm picks a radius from the chip
+   row before committing to the server-side drop. Visually it differs
+   from the route panel only by the accent border (anchor-amber, not
+   route-purple) and a stacked title+subtitle eyebrow on the left
+   instead of a name input. */
+.anchor-edit-bar {
+    /* Amber border distinguishes the safety-critical anchor flow
+       from the navigation-flavour route edit. Same opacity (0.3) so
+       both bars read at equal weight in the corner of the helm's
+       eye. */
+    border-color: rgba(245, 158, 11, 0.45);
+}
+.anchor-edit-stats {
+    /* Stack title + subtitle vertically. flex parent gives us per-
+       column control without an extra wrapper element. */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    line-height: 1.2;
+    /* Don't let the stats column eat too much horizontal space when
+       the chip row + buttons are both present. */
+    flex: 0 1 auto;
+    max-width: 12rem;
+    margin-right: 6px;
+}
+.anchor-edit-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--sk-text);
+    letter-spacing: 0.02em;
+}
+.anchor-edit-sub {
+    font-size: 0.7rem;
+    color: var(--sk-text-muted);
+    font-variant-numeric: tabular-nums;
+    /* Truncate gracefully on narrow viewports; the eyebrow is
+       informational, not interactive, so an ellipsis is acceptable. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+.anchor-edit-chips {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+    align-items: center;
+}
+.anchor-edit-chips > .map-btn {
+    /* Compact chips so the row of six 20-150 m presets fits next to
+       the title + Drop + Cancel without forcing the bar to scroll on
+       a typical iPad-landscape helm screen. */
+    padding: 4px 8px;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+.anchor-edit-chips > .map-btn.active {
+    /* Active chip uses the safety-amber accent so the helm reads
+       "this is what's about to happen" at a glance. Same colour as
+       the bar border for visual coherence. */
+    background: rgba(245, 158, 11, 0.20);
+    border-color: rgba(245, 158, 11, 0.6);
+    color: var(--sk-text);
+}
+.anchor-edit-drop {
+    /* Drop sits just inside the right edge as the primary action.
+       The base .map-btn.active styling already makes it pop; this
+       just ensures it doesn't shrink under flex pressure on narrow
+       viewports. */
+    flex: 0 0 auto;
+    min-width: 4.5rem;
 }
 
 /* Crosshair cursor on the route-edit hit-line so helms discover

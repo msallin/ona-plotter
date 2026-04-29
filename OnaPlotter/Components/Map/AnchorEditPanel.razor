@@ -1,0 +1,133 @@
+@* Anchor-drop overlay: a compact bottom-strip panel that opens when
+   the helm taps the Anchor bar button (and an anchor isn't already
+   active). Mirrors RouteEditPanel's chrome -- same `.route-edit-bar`
+   class for layout parity so the panel inherits the existing strip
+   styling without a new selector to maintain.
+
+   The flow this replaces (one-tap drop with whatever radius was last
+   stored) was too easy to fat-finger on a touch helm, and the
+   pre-fill heuristic was buried in C#. Putting the radius up where
+   the helm sees it -- with chip presets + the suggested value
+   highlighted -- means anchoring is two taps (tap Anchor, tap Drop)
+   and the helm always knows what radius is about to land. *@
+
+<div class="route-edit-bar anchor-edit-bar" role="dialog" aria-label="Drop anchor">
+    <span class="route-edit-stats anchor-edit-stats">
+        @* Two-line eyebrow + suggestion. The eyebrow tells the helm
+           what's about to happen ("you tapped Drop"); the suggestion
+           tells them where the pre-fill came from so a "wait, why
+           20 m?" question doesn't need a second look at Settings. *@
+        <span class="anchor-edit-title">Drop anchor</span>
+        <span class="anchor-edit-sub">@SuggestionLabel</span>
+    </span>
+
+    @* Chip row reuses the same preset list as the manual-anchor HUD
+       so the helm sees one coherent anchor language across surfaces.
+       Tap = picks that radius; the active chip shows which one is
+       currently selected (initial = the heuristic suggestion, then
+       follows the user's last chip tap). *@
+    <div class="anchor-edit-chips" role="radiogroup" aria-label="Swing radius">
+        @foreach (var preset in RadiusPresets)
+        {
+            var p = preset;   // capture for the lambda (loop variable)
+            <button class="map-btn @(p == _radius ? "active" : "")"
+                    type="button" role="radio"
+                    aria-checked="@(p == _radius ? "true" : "false")"
+                    @onclick="() => OnPick(p)"
+                    title="@p m swing radius">@p<span class="hud-unit">m</span></button>
+        }
+    </div>
+
+    @* Drop is the primary action; same `.map-btn.active` styling as
+       Save in RouteEditPanel for visual consistency. Cancel is the
+       neutral escape. No "Drop & Notify" or other variants -- the
+       success toast covers confirmation; helm doesn't need branching
+       commit verbs in a one-tap flow. *@
+    <button class="map-btn active anchor-edit-drop"
+            @onclick="OnDropClicked" disabled="@Dropping"
+            title="@(Dropping ? "Dropping..." : "Drop anchor at current GPS")">
+        @(Dropping ? "Dropping..." : "Drop")
+    </button>
+    <button class="map-btn" @onclick="OnCancel" disabled="@Dropping">Cancel</button>
+</div>
+
+@code {
+    /// <summary>Heuristic-derived initial radius in metres. Set when the
+    /// parent opens the panel (typically via
+    /// <c>AnchorRadiusHeuristic.Suggest(...)</c>) and used as the
+    /// default chip selection. The panel may bump it to the nearest
+    /// preset so the chip row stays in sync with the displayed
+    /// number.</summary>
+    [Parameter, EditorRequired] public int InitialRadiusMeters { get; set; }
+
+    /// <summary>True while the parent's <c>OnDrop</c> handler is
+    /// in flight (REST round-trip to the plugin). Disables both
+    /// buttons so a double-tap can't fire two drops -- the second
+    /// would either 409 or, worse, replace the first with a fresh
+    /// position lock and confuse the alarm state.</summary>
+    [Parameter] public bool Dropping { get; set; }
+
+    /// <summary>Optional source label for the "(suggestion)" subline,
+    /// e.g. "5x 6m depth" or "from last drop". Lets the helm see why
+    /// the panel pre-filled this number without opening Settings.
+    /// Empty string hides the subline entirely.</summary>
+    [Parameter] public string SuggestionLabel { get; set; } = "";
+
+    /// <summary>Fires with the chosen radius (metres) when Drop is
+    /// tapped. Parent calls
+    /// <c>IAnchorAlarmApi.DropAsync(radius)</c> and toasts the result.</summary>
+    [Parameter] public EventCallback<int> OnDrop { get; set; }
+
+    /// <summary>Fires when the helm taps Cancel. Parent closes the
+    /// panel without a server call -- the design tradeoff vs an
+    /// instant-drop flow that needs a roll-back call.</summary>
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Same chip presets as the manual-anchor HUD card so the
+    /// helm reads one anchor-radius vocabulary across the app. Whole
+    /// metres because the chip labels need to fit on a touch button
+    /// (no "12.5 m" sub-metric variants). New presets land here AND
+    /// in HudAnchorCard so the two stay aligned.</summary>
+    private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100, 150];
+
+    private int _radius;
+
+    protected override void OnParametersSet()
+    {
+        // Snap the initial value onto the nearest preset so the chip
+        // row never paints with no `.active` chip (would look like the
+        // heuristic was off-the-rails when really the helm just
+        // hasn't tapped yet). If InitialRadiusMeters is between two
+        // chips, prefer the lower one -- err on the side of a tighter
+        // alarm radius (false-positive drag alarm) over a looser one
+        // (boat dragging unnoticed).
+        _radius = SnapToPreset(InitialRadiusMeters);
+    }
+
+    private void OnPick(int radius)
+    {
+        _radius = radius;
+    }
+
+    private async Task OnDropClicked()
+    {
+        if (Dropping) return;
+        await OnDrop.InvokeAsync(_radius);
+    }
+
+    /// <summary>Picks the largest preset &lt;= the suggested value.
+    /// Falls back to the smallest preset when the suggestion is
+    /// below the floor (shouldn't happen via
+    /// <see cref="OnaPlotter.Utilities.AnchorRadiusHeuristic"/> but
+    /// defensive against a parent that bypasses it).</summary>
+    private static int SnapToPreset(int radius)
+    {
+        // Preset list is sorted ascending; walk from the top to find
+        // the first preset that's <= radius.
+        for (int i = RadiusPresets.Length - 1; i >= 0; i--)
+        {
+            if (RadiusPresets[i] <= radius) return RadiusPresets[i];
+        }
+        return RadiusPresets[0];
+    }
+}

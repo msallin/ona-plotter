@@ -186,6 +186,22 @@
        confirm on the MOB button in MapControls (parallel to Stop-
        Navigation). See OnMobClicked there. *@
 
+    @if (anchorEditMode)
+    {
+        @* Drop-anchor panel. Opens on bar-button tap when no anchor
+           is active; replaces the previous "instant manual drop with
+           last-stored radius" path so the helm sees and confirms the
+           radius before committing. The drop call goes to the SK
+           plugin (signalk-anchoralarm-plugin); on 404 we fall back
+           to the JS-only manual flow with the same radius so a boat
+           without the plugin still anchors. See OnDropAnchorPanelDrop. *@
+        <AnchorEditPanel InitialRadiusMeters="@anchorEditInitialRadius"
+                         SuggestionLabel="@anchorEditSuggestion"
+                         Dropping="@anchorEditDropping"
+                         OnDrop="OnDropAnchorPanelDrop"
+                         OnCancel="OnDropAnchorPanelCancel" />
+    }
+
     @if (routeEditMode)
     {
         @* IsEditingActiveRoute: true when the route currently being
@@ -2499,11 +2515,11 @@
     {
         if (_anchorJs is null) return;
 
-        // Confirmation for raising the watch now lives on the Anchor
-        // button itself as a two-tap arm-then-confirm pattern (parallel
-        // to MOB-clear + Stop-Navigation). By the time ToggleAnchor
-        // runs for a raise, the user has already armed + confirmed on
-        // the button; no second modal.
+        // Confirmation for raising the watch lives on the Anchor button
+        // itself as a two-tap arm-then-confirm pattern (parallel to
+        // MOB-clear + Stop-Navigation). By the time ToggleAnchor runs
+        // for a raise, the user has already armed + confirmed on the
+        // button; no second modal here.
         if (Data.AnchorActive)
         {
             // Server-side anchor (signalk-anchoralarm-plugin). Raise
@@ -2530,31 +2546,141 @@
             return;
         }
 
-        if (!anchorManualActive && Data.Latitude is double lat && Data.Longitude is double lon)
+        if (anchorManualActive)
         {
-            // Route + anchor share the bottom-center HUD slot and represent
-            // contradictory modes: "I'm going there" vs "I'm staying here".
-            // If a course is active when the user drops anchor, clear it
-            // first so the HUDs don't stack on top of each other and the
-            // APPROACH / XTE alarms don't chatter against a static boat.
-            if (Data.HasActiveCourse)
-                try { await CourseApi.ClearAsync(); }
-                catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+            // Manual-anchor (JS-only) clear. Arm + confirm already handled
+            // on the button (same as the server-anchor raise above).
+            await _anchorJs.ClearAnchorAsync();
+            anchorManualActive = false;
+            return;
+        }
 
-            // Use the user's last-chosen radius. Default 30 m on first
-            // use; persists across sessions via IAppSettings.
-            await _anchorJs.SetAnchorAsync(lat, lon, Settings.ManualAnchorRadiusMeters);
+        // No anchor active: open the Drop-Anchor panel rather than
+        // dropping immediately. The panel previews the heuristic-
+        // suggested radius and the chip presets so the helm sees and
+        // confirms the radius before the server-side commit. The panel
+        // calls back into OnDropAnchorPanelDrop / OnDropAnchorPanelCancel.
+        if (Data.Latitude is null || Data.Longitude is null)
+        {
+            // No GPS yet -- the plugin would still drop at the last
+            // known position once it has one, but the helm can't
+            // verify what was committed. Refuse loudly until we have
+            // a fix to commit against.
+            Toasts.Error("Drop anchor: no GPS fix yet");
+            return;
+        }
+        OpenAnchorEditPanel();
+    }
+
+    // --- Anchor-drop panel state + callbacks --------------------------
+    // The panel mounts above the bottom-action bar (same z-strip as
+    // RouteEditPanel / PolygonEditPanel). It owns no server state on
+    // its own; this section is the single seam between the helm-facing
+    // chrome and the plugin REST surface.
+
+    private bool anchorEditMode;
+    private int anchorEditInitialRadius;
+    private string anchorEditSuggestion = "";
+    private bool anchorEditDropping;
+
+    private void OpenAnchorEditPanel()
+    {
+        // Pre-fill via the heuristic so the panel opens with a chip
+        // already active. Persisted ManualAnchorRadiusMeters is the
+        // fallback when no depth is published; matches the v1 design.
+        anchorEditInitialRadius = OnaPlotter.Utilities.AnchorRadiusHeuristic
+            .Suggest(Data.Depth, Settings.ManualAnchorRadiusMeters);
+        anchorEditSuggestion = BuildAnchorSuggestionLabel();
+        anchorEditDropping = false;
+        anchorEditMode = true;
+    }
+
+    /// <summary>One-line "where this number came from" hint for the
+    /// panel's eyebrow. Empty when the source is uninteresting (e.g.
+    /// a stale persisted value with no depth) so we don't show
+    /// pointless chrome.</summary>
+    private string BuildAnchorSuggestionLabel()
+    {
+        if (Data.Depth is double d &&
+            !double.IsNaN(d) && !double.IsInfinity(d) && d > 0 && d < 1000)
+        {
+            // 5x scope is the heuristic's multiplier; surface the math
+            // so the helm understands the relationship without opening
+            // Settings.
+            return $"{(int)OnaPlotter.Utilities.AnchorRadiusHeuristic.ScopeMultiplier}× {d:F1} m depth";
+        }
+        // No depth: the value comes from the last drop. Still useful
+        // hint vs an empty subline.
+        return "from last drop";
+    }
+
+    private async Task OnDropAnchorPanelDrop(int radiusMeters)
+    {
+        // Belt-and-braces: the panel disables its own buttons via
+        // Dropping=true, but a stuck render or a future refactor
+        // could drop the gate. Pin here too.
+        if (anchorEditDropping || _anchorJs is null) return;
+        anchorEditDropping = true;
+
+        // Route + anchor share the bottom-center HUD slot and
+        // represent contradictory modes ("I'm going there" vs
+        // "I'm staying here"). Clear an active course first so the
+        // HUDs don't stack and the APPROACH / XTE alarms don't
+        // chatter against a static boat.
+        if (Data.HasActiveCourse)
+        {
+            try { await CourseApi.ClearAsync(); }
+            catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+        }
+
+        // Prefer the SK plugin path so the anchor is server-side
+        // (visible to other plotters, persisted across SK restart).
+        // Fall back to JS-only manual when the plugin isn't installed
+        // -- the UI still works on a vanilla SK install, the helm
+        // just loses the "shared between plotters" property.
+        ApiResult r;
+        try { r = await AnchorAlarmApi.DropAsync(radiusMeters); }
+        catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
+
+        if (r.Success)
+        {
+            // Persist the choice so the next drop's heuristic
+            // fallback (no-depth case) suggests this value.
+            await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
+            Toasts.Success($"Anchor set: {radiusMeters} m radius");
+            anchorEditMode = false;
+            anchorEditDropping = false;
+            return;
+        }
+
+        // 404 / plugin missing path: fall back to JS-only manual
+        // anchor with the chosen radius. Same behaviour as the
+        // pre-panel flow but with the helm's preview of the radius.
+        if (Data.Latitude is double lat && Data.Longitude is double lon)
+        {
+            await _anchorJs.SetAnchorAsync(lat, lon, radiusMeters);
             anchorManualLat = lat;
             anchorManualLon = lon;
             anchorManualActive = true;
+            await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
+            // Specific copy so the helm knows they got the manual
+            // (client-only) flow, not the plugin-driven one. They
+            // may want to install the plugin for shared-state reasons.
+            Toasts.Warning($"Anchor set (manual, no plugin): {radiusMeters} m radius");
+            anchorEditMode = false;
+            anchorEditDropping = false;
+            return;
         }
-        else if (anchorManualActive)
-        {
-            // Manual-anchor clear. Arm + confirm already handled on the
-            // button (same as the server-anchor raise above).
-            await _anchorJs.ClearAnchorAsync();
-            anchorManualActive = false;
-        }
+
+        // No fallback possible (no GPS) -- surface the original error.
+        Toasts.Error($"Drop anchor failed: {r.Error ?? "no GPS fix"}");
+        anchorEditDropping = false;
+    }
+
+    private void OnDropAnchorPanelCancel()
+    {
+        anchorEditMode = false;
+        anchorEditDropping = false;
     }
 
     // Origin of the manual anchor drop. Captured at toggle-on time so the

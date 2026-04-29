@@ -1010,7 +1010,11 @@
             CurrentRadius: Data.AnchorCurrentRadius,
             MaxRadius: Data.AnchorMaxRadius,
             DormantReason: AnchorTideDormantReason(),
-            PeakRadius: Data.AnchorPeakRadius);
+            PeakRadius: Data.AnchorPeakRadius,
+            // Bearing only published on the plugin path; null on the
+            // JS-only manual flow, which makes the HudAnchorCard
+            // gracefully skip the needle render.
+            BearingTrue: Data.AnchorBearingTrue);
 
     // NOAA / UKHO station names often run 40+ chars. The BL depth-
     // card width budget is tight; a long name pushes the row off the
