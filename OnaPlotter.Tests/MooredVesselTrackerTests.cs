@@ -99,6 +99,52 @@ public class MooredVesselTrackerTests
     }
 
     [Test]
+    public async Task CleanupVessels_HotPathOverload_DropsAndKeepsCorrectly()
+    {
+        // The vessels-collection overload is the hot-path entry from
+        // CpaAlarmRule + HarborAisFilter. Walk the same scenario as
+        // Cleanup_DropsVesselsNotInActiveSet but via the new overload
+        // to pin behaviour matches the string-set version.
+        var t = new MooredVesselTracker();
+        t.IsMoored(Vessel("ctx1", 0.1), DateTime.UtcNow);
+        t.IsMoored(Vessel("ctx2", 0.1), DateTime.UtcNow);
+        t.IsMoored(Vessel("ctx3", 0.1), DateTime.UtcNow);
+        await Assert.That(t.TrackedCount).IsEqualTo(3);
+
+        // Active set carries only ctx2 and a fresh ctx4.
+        var active = new[] { Vessel("ctx2", 1.0), Vessel("ctx4", 1.0) };
+        t.Cleanup(active);
+
+        await Assert.That(t.TrackedCount).IsEqualTo(1)
+            .Because("ctx1 + ctx3 dropped, ctx2 retained");
+    }
+
+    [Test]
+    public async Task CleanupVessels_NoTrackedDwellers_IsNoOpNoEnumeration()
+    {
+        // The hot-path optimisation: when nothing is tracked, the
+        // overload must short-circuit BEFORE enumerating the vessels
+        // collection. We pin this with a deliberately throwing IEnumerable
+        // -- if Cleanup tries to iterate it, the test fails with a
+        // surfaced exception. Steady-state open-water tick (no dwellers)
+        // hits this path on every CpaAlarmRule.Check call.
+        var t = new MooredVesselTracker();
+        await Assert.That(t.TrackedCount).IsEqualTo(0);
+
+        t.Cleanup(new ThrowingEnumerable());     // must NOT throw
+        await Assert.That(t.TrackedCount).IsEqualTo(0);
+    }
+
+    private sealed class ThrowingEnumerable : IEnumerable<AisVessel>
+    {
+        public IEnumerator<AisVessel> GetEnumerator() =>
+            throw new InvalidOperationException(
+                "Cleanup must short-circuit before enumerating when nothing is tracked");
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+            GetEnumerator();
+    }
+
+    [Test]
     public async Task NullSog_NotMoored()
     {
         var t = new MooredVesselTracker();

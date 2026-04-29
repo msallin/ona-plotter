@@ -105,8 +105,7 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
     public void Cleanup(IReadOnlyCollection<string> activeContexts)
     {
         if (_lowSpeedSince.Count == 0) return;
-        var toRemove = _lowSpeedSince.Keys.Where(k => !activeContexts.Contains(k)).ToList();
-        foreach (var k in toRemove) _lowSpeedSince.Remove(k);
+        RemoveExcept(activeContexts.Contains);
     }
 
     public void Cleanup(IEnumerable<AisVessel> activeVessels)
@@ -117,7 +116,22 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
         if (_lowSpeedSince.Count == 0) return;
         var active = new HashSet<string>(StringComparer.Ordinal);
         foreach (var v in activeVessels) active.Add(v.Context);
-        var toRemove = _lowSpeedSince.Keys.Where(k => !active.Contains(k)).ToList();
+        RemoveExcept(active.Contains);
+    }
+
+    /// <summary>Shared helper: drop every tracked entry whose key is
+    /// NOT in the active set (per the supplied predicate). Lazily
+    /// allocates the to-remove list only if a removal is actually
+    /// needed -- the steady-state "no churn" path stays zero-alloc.</summary>
+    private void RemoveExcept(Func<string, bool> isActive)
+    {
+        List<string>? toRemove = null;
+        foreach (var k in _lowSpeedSince.Keys)
+        {
+            if (isActive(k)) continue;
+            (toRemove ??= []).Add(k);
+        }
+        if (toRemove is null) return;
         foreach (var k in toRemove) _lowSpeedSince.Remove(k);
     }
 
