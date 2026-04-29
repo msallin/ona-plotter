@@ -443,13 +443,22 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Gated on slow-client so desktop / iPad keep the SVG renderer that
     // gives crisper outlines at high DPI.
     //
-    // Map maxZoom matches the typical base-tile native cap (19). The
-    // overzoom-past-native feature was removed; adding it back later
-    // would bump this to 22 and re-introduce per-layer maxNativeZoom
-    // management.
+    // Map maxZoom is bumped to native + ChartUpscale.MaxLevels (= 22)
+    // so the chart-upscale decorator can actually upscale tiles
+    // past the base layers' native cap. The map's view-zoom is the
+    // ceiling for what L.tileLayer.maxZoom can deliver, and a
+    // hardcoded 19 here would silently cap the upscale feature
+    // before the decorator even runs (the symptom the helm reported
+    // as "overzoom doesn't work"). OSM / OpenSeaMap below are also
+    // bumped with maxNativeZoom: 19 so the basemap upscales
+    // alongside the chart instead of going blank past 19.
+    //
+    // Removable contract for ChartUpscale: revert this to 19 if
+    // the feature is ripped out (the constant is part of the 6
+    // surfaces listed in OnaPlotter/Utilities/ChartUpscale.cs).
     map = L.map(elementId, {
         zoomControl: false,
-        maxZoom: 19,
+        maxZoom: 19 + 3,         // 3 == ChartUpscale.MaxLevels (mirrored in C#)
         preferCanvas: isSlowClient,
         // Half-step zoom. Default 1.0 jumps a full power-of-two per
         // tap which is too coarse for chart work -- the helm sees a
@@ -611,8 +620,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // us nothing; dropping it is the fix Freeboard-SK took for the same class
     // of reports.
     osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // OSM tiles cap at zoom 19 natively; let Leaflet GPU-upscale
+        // up to map.maxZoom so the basemap doesn't go blank when the
+        // helm uses chart-upscale on a native-19 chart and zooms past
+        // 19. The upscaled OSM is blurry but a rough coastline is
+        // still useful as a backdrop while the chart layer carries
+        // the close-quarters detail.
         maxNativeZoom: 19,
-        maxZoom: 19,
+        maxZoom: 19 + 3,         // mirrors map.maxZoom (= 19 + ChartUpscale.MaxLevels)
         // keepBuffer 10 (up from 6, default 2): ten extra rings of
         // tiles outside the viewport stay in the DOM, so small pans
         // during route planning don't trigger a fetch -- the next
@@ -636,8 +651,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     }).addTo(map);
 
     seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
+        // Same upscale story as OSM above: seamark tiles cap at 19
+        // natively, but we let Leaflet upscale to map.maxZoom so the
+        // buoy / lights overlay stays drawn (blurry but visible)
+        // when the chart-upscale feature pushes past native.
         maxNativeZoom: 19,
-        maxZoom: 19,
+        maxZoom: 19 + 3,
         keepBuffer: 10,
         updateWhenIdle: isSlowClient,
         detectRetina: retina,
