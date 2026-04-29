@@ -45,10 +45,35 @@ public interface ITrackApi
     /// <param name="resolution">Sampling cadence (30s, 1m, ...). Drives
     /// how aggressively the server downsamples; 30s is the helm-page
     /// default.</param>
+    /// <param name="bbox">Optional geographic bounding box. When
+    /// supplied, the History API call includes
+    /// <c>&amp;bbox=south,west,north,east</c> as a hint so a server
+    /// that supports it (signalk-parquet has the extension; others
+    /// ignore unknown query params) can return only points inside
+    /// the box. The History page passes the current viewport with a
+    /// ~20 % outward pad so a small pan doesn't trigger an immediate
+    /// re-fetch. Null = no bbox hint, server returns the full
+    /// time-windowed track.</param>
     Task<TrackPoint[]?> GetServerTrackPointsAsync(
         DateTimeOffset? from,
         DateTimeOffset? to,
         string? timespan,
         string resolution = "30s",
+        TrackBbox? bbox = null,
         CancellationToken ct = default);
 }
+
+/// <summary>
+/// Geographic bounding box for the optional <c>bbox</c> hint on
+/// <see cref="ITrackApi.GetServerTrackPointsAsync"/>. Decimal degrees;
+/// <c>South</c> &lt; <c>North</c>, <c>West</c> &lt; <c>East</c> for a
+/// non-anti-meridian-spanning box. Anti-meridian crossings aren't a
+/// concern for cruising in inland Europe / Mediterranean / Caribbean
+/// where this code runs; if a future passage hits 180°, the helper
+/// that builds the bbox can split into two requests.
+/// </summary>
+public readonly record struct TrackBbox(
+    double South,
+    double West,
+    double North,
+    double East);
