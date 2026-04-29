@@ -36,7 +36,7 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task SetNightModeAsync(bool enabled)
         => InvokeSafe("setNightMode", enabled);
 
-    public Task SetGuardZoneAsync(double radiusNm, int lookaheadMin, double warningFactor)
+    public Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor)
         => InvokeSafe("setGuardZone", radiusNm, lookaheadMin, warningFactor);
 
     public Task PanToAsync(double lat, double lon)
