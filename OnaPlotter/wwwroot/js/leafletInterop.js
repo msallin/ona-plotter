@@ -9,6 +9,7 @@ import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
+import * as mobLayerMod from './mobLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -259,11 +260,7 @@ let laylinePort = null;         // Red polyline from boat
 let laylineWpStarboard = null;  // Green polyline from waypoint (dimmer)
 let laylineWpPort = null;       // Red polyline from waypoint (dimmer)
 
-// MOB state.
-let mobMarker = null;
-let mobCircle = null;
-let mobLine = null;
-let mobLabel = null;
+// MOB state lives in mobLayer.js.
 
 // Anchor watch state lives in anchorLayer.js.
 
@@ -459,12 +456,7 @@ function getSartIcon(category) {
 // AIS name labels (tooltips).
 const aisLabels = {};
 
-const mobIcon = L.divIcon({
-    className: 'mob-icon',
-    html: '<div class="mob-pulse"></div>',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10]
-});
+// mobIcon moved into mobLayer.js (sole user).
 
 function rotateMarker(marker, rad) {
     if (rad == null) return;
@@ -566,6 +558,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // unchanged.
     weatherLayerMod.init(map);
     anchorLayerMod.init(map, { colors: MapColors });
+    mobLayerMod.init(map, { colors: MapColors });
 
     // Leaflet's native +/- zoom control is turned off above
     // (zoomControl: false). The replacement lives in the app topbar
@@ -1085,17 +1078,9 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         applyMapRotation(headingRad * DEG);
     }
 
-    // Update MOB line if active.
-    if (mobMarker) {
-        const mll = mobMarker.getLatLng();
-        const dist = haversineMeters(lat, lon, mll.lat, mll.lng) * NM_PER_METER;
-        const brg = bearingDeg(lat, lon, mll.lat, mll.lng);
-        if (mobLine) mobLine.setLatLngs([[lat, lon], [mll.lat, mll.lng]]);
-        if (mobLabel) {
-            mobLabel.setLatLng([(lat + mll.lat)/2, (lon + mll.lng)/2]);
-            mobLabel.setContent(`${brg.toFixed(0)}&deg; / ${dist.toFixed(2)} nm`);
-        }
-    }
+    // Push the new boat fix into mobLayer.js so the boat<->MOB line
+    // and bearing/distance label re-anchor when a MOB is active.
+    mobLayerMod.setBoatPosition(lat, lon);
 
     // (Anchor-watch alarm-state evaluation moved into anchorLayerMod.setBoatPosition above.)
 
@@ -2104,59 +2089,9 @@ export function measureFromVesselTo(lat, lon) {
 
 // --- MOB ---
 
-export function setMob(lat, lon) {
-    if (!map) return;  // page unmounted mid-dispatch; same guard as setAnchor.
-    clearMob();
-    mobMarker = L.marker([lat, lon], { icon: mobIcon, zIndexOffset: 2000 }).addTo(map);
-    mobCircle = L.circle([lat, lon], { radius: 50, color: MapColors.mob, fillColor: MapColors.mob,
-        fillOpacity: 0.15, weight: 2 }).addTo(map);
-    mobLine = L.polyline([[selfLat, selfLon], [lat, lon]], {
-        color: MapColors.mob, weight: 2, dashArray: '4,4'
-    }).addTo(map);
-    mobLabel = L.tooltip({ permanent: true, direction: 'center', className: 'mob-tooltip' })
-        .setLatLng([(selfLat + lat)/2, (selfLon + lon)/2])
-        .setContent('MOB')
-        .addTo(map);
-    // Audible confirmation: the helm may have been looking overboard
-    // when they pressed the button and can't see the pulse animation.
-    // Two-tone chime (880/660 Hz, same palette as the connection
-    // alarm, but once-only). Inline AudioContext so setMob doesn't
-    // depend on MainLayout's module reference; AudioContext is cheap
-    // to spin up and is garbage-collected when this scope ends.
-    try { playMobChime(); } catch (_) { /* audio blocked in context */ }
-}
-
-function playMobChime() {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    if (ctx.state === 'suspended') ctx.resume();
-    const beep = (freq, atSec, durMs) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.type = 'square';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.18, ctx.currentTime + atSec);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + atSec + durMs / 1000);
-        osc.start(ctx.currentTime + atSec);
-        osc.stop(ctx.currentTime + atSec + durMs / 1000);
-    };
-    beep(880, 0,    220);
-    beep(660, 0.26, 220);
-    beep(880, 0.54, 260);
-    // Close the context shortly after the last note so the ~1s lifetime
-    // doesn't linger. Safari occasionally warns about >6 live contexts.
-    setTimeout(() => { try { ctx.close(); } catch (_) {} }, 1200);
-}
-
-export function clearMob() {
-    if (!map) { mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null; return; }
-    if (mobMarker) { map.removeLayer(mobMarker); mobMarker = null; }
-    if (mobCircle) { map.removeLayer(mobCircle); mobCircle = null; }
-    if (mobLine) { map.removeLayer(mobLine); mobLine = null; }
-    if (mobLabel) { map.removeLayer(mobLabel); mobLabel = null; }
-}
+// Implementation in mobLayer.js; mux re-exports the C# entries.
+export const setMob = (lat, lon) => mobLayerMod.setMob(lat, lon);
+export const clearMob = () => mobLayerMod.clearMob();
 
 // --- Anchor Watch ---
 // Implementation in anchorLayer.js; mux re-exports the C# entries.
@@ -4283,7 +4218,7 @@ export function dispose() {
     chartLayers.clear();
     routeLayers.clear();
     for (const id of Object.keys(aisLabels)) delete aisLabels[id];
-    mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
+    mobLayerMod.dispose();
     anchorLayerMod.dispose();
     activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
     courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
