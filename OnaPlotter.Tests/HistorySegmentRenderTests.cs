@@ -231,4 +231,38 @@ public class HistorySegmentRenderTests
         await Assert.That(payloads[0].Coords[0][0]).IsEqualTo(47.4);   // lat
         await Assert.That(payloads[0].Coords[0][1]).IsEqualTo(8.5);    // lon
     }
+
+    [Test]
+    public async Task BuildSegmentPayload_JsonRoundTrip_KeysMatchHistoryJsContract()
+    {
+        // Regression test for a History-page mount crash: the JSON keys
+        // emitted by JsonSerializer.Serialize default-cased to PascalCase
+        // ("Coords", "IsStationary", "Tooltip"), but the eval block in
+        // History.razor::LoadTrack read s.coords / s.isStationary /
+        // s.tooltip (lowercase). Result was L.polyline(undefined, ...)
+        // on every History page mount because s.coords was undefined.
+        // The fix swaps the JS reads to PascalCase to match what the
+        // serialiser emits; this test pins the JSON keys so a future
+        // global JsonSerializerOptions change (e.g. opting into
+        // JsonSerializerDefaults.Web) doesn't silently flip casing
+        // and re-break the History page.
+        var pts = new[]
+        {
+            Pt(TimeSpan.FromMinutes(0), 47.4, 8.5),
+            Pt(TimeSpan.FromMinutes(1), 47.5, 8.6),
+        };
+        var segs = new[] {
+            Seg(pts[0].Timestamp, pts[1].Timestamp, stationary: false, pts: 2)
+        };
+
+        var payloads = HistorySegmentRender.BuildSegmentPayload(pts, segs);
+        var json = System.Text.Json.JsonSerializer.Serialize(payloads);
+
+        // Pin the exact key names; History.razor's eval block reads
+        // these verbatim. A casing flip surfaces here as a failed
+        // contains assertion before the page crashes at runtime.
+        await Assert.That(json).Contains("\"Coords\"");
+        await Assert.That(json).Contains("\"IsStationary\"");
+        await Assert.That(json).Contains("\"Tooltip\"");
+    }
 }
