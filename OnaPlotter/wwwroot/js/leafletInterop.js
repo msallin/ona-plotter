@@ -14,6 +14,8 @@ import * as laylineLayerMod from './laylineLayer.js';
 import * as atonLayerMod from './atonLayer.js';
 import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
+import * as activeRouteLayerMod from './activeRouteLayer.js';
+import * as courseLineLayerMod from './courseLineLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -187,19 +189,10 @@ const RangeScale = L.Control.extend({
 const routeLayers = new MarkerLayer();  // keyed by route ID
 let serverTrackLayer = null;
 
-// Active route navigation.
-let activeRouteLayer = null;   // L.layerGroup: full route polyline + waypoint markers
-// True while the helm is editing the currently-active route. Used
-// to suppress redraws of the active polyline + course-line by
-// applyFrame so they don't fight the edit-mode polyline. Toggled
-// from C# via setActiveOverlayHidden when EditRoute / CancelRoute /
-// SaveRoute fire on the active route.
-let activeOverlayHidden = false;
-let activeRouteCoords = null;  // [[lat, lon], ...] cached for WP index lookup
-let nextWpMarker = null;       // Pulsing marker at next waypoint
-let courseLineLeg = null;       // Polyline: previous WP to next WP
-let courseLineBearing = null;   // Polyline: boat to next WP
-let courseLineXte = null;       // Polyline: XTE perpendicular tick
+// Active route + course line state lives in activeRouteLayer.js +
+// courseLineLayer.js. The mux still consults
+// activeRouteLayerMod.isOverlayHidden() inside applyFrame because the
+// frame batcher decides whether to redraw the course line on each tick.
 
 // Layline state lives in laylineLayer.js.
 
@@ -440,16 +433,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     laylineLayerMod.init(map, { colors: MapColors });
     atonLayerMod.init(map);
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
-    aisLayerMod.init(map, {
-        colors: MapColors,
-        isSlowClient,
-        getDotNetRef: () => dotNetRef,
-        // Edit-mode flags + the mode-specific "add point" dispatcher
-        // are passed as callbacks because the AIS module's per-vessel
-        // click handler needs to forward taps into route / polygon /
-        // measure flows that live in the mux. The flags read fresh
-        // each click rather than at init time, so toggling edit mode
-        // takes effect immediately.
+    // Edit-mode flags + the mode-specific "add point" dispatcher are
+    // shared by aisLayer + activeRouteLayer (both have per-line click
+    // handlers that fall back into route / polygon / measure flows
+    // when the helm is in those modes). Built once here and passed
+    // into both inits so each module gets the same fresh-read shape.
+    const editModeDeps = {
         getEditModeFlags: () => ({
             routeEdit: routeEditMode,
             polygonEdit: polygonEditMode,
@@ -460,9 +449,27 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             else if (mode === 'polygon') addPolygonVertexInternal(lat, lon);
             else measureLayerMod.addMeasurePoint(lat, lon);
         },
+    };
+    aisLayerMod.init(map, {
+        colors: MapColors,
+        isSlowClient,
+        getDotNetRef: () => dotNetRef,
+        ...editModeDeps,
         getOwnMmsi: () => ownMmsi,
         flagUrl,
         rotateMarker,
+    });
+    courseLineLayerMod.init(map, { colors: MapColors });
+    activeRouteLayerMod.init(map, {
+        colors: MapColors,
+        getDotNetRef: () => dotNetRef,
+        ...editModeDeps,
+        buildActiveRoutePopupHtml,
+        wireRouteDeactivate,
+        wireRouteEdit,
+        wireDeleteConfirm,
+        routeTotalNauticalMiles,
+        clearCourseLine: () => courseLineLayerMod.clearCourseLine(),
     });
 
     // Leaflet's native +/- zoom control is turned off above
@@ -889,7 +896,7 @@ export function applyFrame(frame) {
         // waypoint marker via setActiveOverlayHidden(true). Re-emerges
         // when the C# side calls setActiveOverlayHidden(false) on
         // edit cancel / save.
-        if (boatLat != null && boatLon != null && !activeOverlayHidden) {
+        if (boatLat != null && boatLon != null && !activeRouteLayerMod.isOverlayHidden()) {
             setCourseLine(boatLat, boatLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity);
         }
     } else if (frame.clearCourse) {
@@ -1552,299 +1559,24 @@ export function clearServerTrack() {
     _serverTrackClipToBounds = false;
 }
 
-// --- Active Route Navigation ---
+// --- Active Route Navigation + course line ---
+// Implementations in activeRouteLayer.js + courseLineLayer.js; mux
+// re-exports the C# entries.
+export const setActiveRoute = (coords, wpIdx, routeId, routeName) =>
+    activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName);
+export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
+export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
+export const setCourseLine = (boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) =>
+    courseLineLayerMod.setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity);
+export const clearCourseLine = () => courseLineLayerMod.clearCourseLine();
 
-const activeWpIcon = L.divIcon({
-    className: 'active-wp-icon',
-    html: '<div class="active-wp-pulse"></div>',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12]
-});
-
-// Draw the active route as two polylines split by progress, plus
-// numbered waypoint markers. Already-passed legs are dotted and
-// dimmed; future legs (including the current leg from the last
-// reached WP to the next) are solid. The dashed bearing line and
-// active-leg overlay drawn by setCourseLine sit on top of this.
-//
-// wpIdx is the index of the next un-reached waypoint, resolved on
-// the C# side from SignalK's next-point lat/lon. JS stays a thin
-// renderer here -- no geometry, no closest-vertex lookup.
-//
-// routeId is the SignalK resource UUID; passing it enables tap-to-
-// skip on each marker (any WP, including passed ones, can be set as
-// the new next-WP via the JumpToRouteWaypoint JSInvokable on the C#
-// side). Pass an empty string to disable taps -- e.g. when the active
-// "course" is a single waypoint destination, not a multi-WP route.
-//
-// routeName is shown as the title of the tap-the-line popup
-// (Deactivate / Edit / Delete) so the helm doesn't have to read a
-// uuid prefix on a moving boat. Pass an empty string for unnamed
-// routes -- the popup falls back to "Route <first 6 chars of id>".
-export function setActiveRoute(coords, wpIdx, routeId, routeName) {
-    clearActiveRoute();
-    // Suppress redraw while the helm is editing the active route --
-    // any in-flight SyncActiveRouteAsync that races the edit (e.g.
-    // a stale data tick that fired between EditRoute clearing the
-    // overlay and the suppression flag landing) would otherwise
-    // re-establish the active polyline on top of the edit polyline,
-    // exactly the visual mess this whole flag was added to prevent.
-    //
-    // Defensive log: if the flag stays "true" because a JS-side error
-    // tore the C# disposal path apart (setActiveOverlayHidden(false)
-    // rejected with JSDisconnectedException, swallowed silently),
-    // every subsequent setActiveRoute is a quiet no-op and the helm
-    // stares at a chart that won't redraw the active leg. The warning
-    // makes that state visible in the console without spamming -- it
-    // only fires when a setActiveRoute call was actually attempted.
-    if (activeOverlayHidden) {
-        console.warn('[setActiveRoute] activeOverlayHidden is still true; route render suppressed.');
-        return;
-    }
-    if (!map || !coords || coords.length < 2) return;
-
-    activeRouteCoords = coords;
-    // Defensive bounds-check; C# already clamps but a stray NaN/-1
-    // from a future caller must not crash the renderer.
-    const idx = Math.max(0, Math.min(coords.length - 1, wpIdx | 0));
-    activeRouteLayer = L.layerGroup().addTo(map);
-    const tappable = !!(routeId && dotNetRef);
-
-    // Already-passed legs: dotted, dim. The two polylines share the
-    // boundary point coords[idx-1] so the dotted/solid handover
-    // renders without a visual gap. lineCap:'round' turns the 2 px
-    // dash into a true round dot, which scans more cleanly than a
-    // dash at chartplotter zoom levels.
-    if (idx >= 2) {
-        L.polyline(coords.slice(0, idx), {
-            color: MapColors.bearing,
-            weight: 2,
-            opacity: 0.5,
-            dashArray: '2,6',
-            lineCap: 'round'
-        }).addTo(activeRouteLayer);
-    }
-
-    // Planned (future + current) legs: solid, full weight. Starts at
-    // the last reached waypoint when idx > 0 so the current leg is
-    // included.
-    const futureStart = idx > 0 ? idx - 1 : 0;
-    if (futureStart < coords.length - 1) {
-        L.polyline(coords.slice(futureStart), {
-            color: MapColors.bearing, weight: 3, opacity: 0.8
-        }).addTo(activeRouteLayer);
-    }
-
-    // Tap-target hit polyline covering the whole route. Same trick as
-    // addRoute: the visible polylines (2-3 px) are a miserable touch
-    // target, so a 36 px transparent sibling carries the popup.
-    // Bound only when we have a routeId AND a dotNetRef -- a single-
-    // waypoint course (no route resource on the server) has nothing
-    // for Deactivate / Edit / Delete to act on, so the popup would
-    // open onto dead buttons. The Stop button in the bottom bar still
-    // works in that case.
-    if (tappable) {
-        const hitLine = L.polyline(coords, {
-            color: MapColors.bearing, weight: 36, opacity: 0, interactive: true,
-        }).addTo(activeRouteLayer);
-        const nmTotal = routeTotalNauticalMiles(coords);
-        const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
-        // Function-form bindPopup: Leaflet calls this each time the
-        // popup opens, so the ETA picks up the latest TTG cached from
-        // the C# data-tick. Static HTML would have frozen the ETA at
-        // route-activation time.
-        hitLine.bindPopup(() => buildActiveRoutePopupHtml(routeId, routeName, coords.length, nmTotal), popupOptions);
-        hitLine.on('popupopen', (ev) => {
-            wireRouteDeactivate(ev.popup);
-            wireRouteEdit(ev.popup, routeId);
-            wireDeleteConfirm(ev.popup, '.route-delete-btn', 'DeleteRouteById', routeId);
-        });
-        // Same edit-mode override as the regular-route popup: while
-        // the helm is in route-edit / polygon-edit / measure mode, a
-        // tap should drop a vertex / measure point rather than open
-        // the Deactivate popup.
-        hitLine.on('click', (ev) => {
-            if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
-                L.DomEvent.stopPropagation(ev);
-                const ll = ev.latlng;
-                if (!ll) return;
-                if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
-                else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
-                else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
-                hitLine.closePopup();
-            }
-        });
-    }
-
-    // Waypoint markers (skip the next WP -- it gets the pulsing marker
-    // below). Each remaining dot is tappable: clicking asks the C# side
-    // to jump pointIndex to that WP, mirroring Freeboard's gesture.
-    for (let i = 0; i < coords.length; i++) {
-        const isPassed = i < idx;
-        const isNext = i === idx;
-        if (isNext) continue;
-
-        const dot = L.circleMarker(coords[i], {
-            radius: isPassed ? 3 : 5,
-            color: MapColors.bearing,
-            fillColor: isPassed ? '#64748b' : MapColors.bearing,
-            fillOpacity: isPassed ? 0.35 : 1,
-            weight: isPassed ? 1 : 1.5,
-            opacity: isPassed ? 0.35 : 1
-        });
-        dot.bindTooltip(`${i + 1}`, {
-            permanent: false,
-            direction: 'right',
-            offset: [8, 0],
-            className: 'route-wp-tooltip'
-        });
-        if (tappable) attachJumpHandler(dot, routeId, i);
-        dot.addTo(activeRouteLayer);
-    }
-
-    // Pulsing marker at the next waypoint.
-    nextWpMarker = L.marker(coords[idx], {
-        icon: activeWpIcon,
-        zIndexOffset: 900
-    }).addTo(activeRouteLayer);
-    nextWpMarker.bindTooltip(`WP ${idx + 1}`, {
-        permanent: true,
-        direction: 'right',
-        offset: [14, 0],
-        className: 'route-wp-tooltip'
-    });
-}
-
-// Wires a click on a route-polyline waypoint dot to the C# handler
-// that PUTs /activeRoute/pointIndex with the absolute leg index.
-// Stops Leaflet's bubbling so the click doesn't also pan/zoom the map
-// or trigger the long-press context menu underneath.
-function attachJumpHandler(layer, routeId, pointIndex) {
-    layer.on('click', (e) => {
-        if (e && e.originalEvent) L.DomEvent.stopPropagation(e);
-        if (!dotNetRef) return;
-        dotNetRef.invokeMethodAsync('JumpToRouteWaypoint', routeId, pointIndex)
-            .catch(() => {});
-    });
-}
-
-export function clearActiveRoute() {
-    if (activeRouteLayer && map) { map.removeLayer(activeRouteLayer); }
-    activeRouteLayer = null;
-    activeRouteCoords = null;
-    nextWpMarker = null;
-}
-
-// Toggle the "edit-active-route in progress" suppression flag. While
-// hidden, applyFrame skips setCourseLine (so the leg / bearing / XTE
-// tick don't keep redrawing on every position update against stale
-// pre-edit geometry) and any stray setActiveRoute call during edit
-// is a no-op. Also tears down the course-line elements so the helm's
-// view is clean from the moment edit starts. C# pairs every true
-// with a false on edit cancel / save -- the next position frame
-// then redraws the course-line from the updated coords.
-export function setActiveOverlayHidden(hidden) {
-    activeOverlayHidden = !!hidden;
-    if (hidden) {
-        clearCourseLine();
-    }
-}
-
-// Visually mark the active route + course line as "stopping" while we
-// wait for the SK delta to confirm. Same single-source-of-truth
-// pattern as setAnchorRaising: dim the elements (so the helm sees
-// their tap landed) but never tear them down -- the delta drives the
-// real teardown via SyncActiveRouteAsync. Iterates the layer group's
-// children with setStyle so polyline + waypoint dots all dim
-// together. Course-line leg + bearing + XTE tick (drawn separately
-// in setCourseLine) get their own dim treatment via the same call.
+// Stopping-state visual feedback spans both modules: dim the route
+// polyline AND the course-line elements together so the helm sees
+// their "Stop Navigation" tap landed without us prematurely tearing
+// the overlays down (the SK delta drives the real teardown).
 export function setActiveRouteStopping(stopping) {
-    if (!map) return;
-    const opacity = stopping ? 0.3 : 1.0;
-    const fillOpacity = stopping ? 0.3 : 1.0;
-    if (activeRouteLayer) {
-        activeRouteLayer.eachLayer(function (l) {
-            try { l.setStyle({ opacity: opacity, fillOpacity: fillOpacity }); }
-            catch (_) { /* tooltips have no setStyle; ignore */ }
-        });
-    }
-    if (courseLineLeg) {
-        try { courseLineLeg.setStyle({ opacity: opacity }); } catch (_) { }
-    }
-    if (typeof courseLineBearing !== 'undefined' && courseLineBearing) {
-        try { courseLineBearing.setStyle({ opacity: opacity }); } catch (_) { }
-    }
-    if (typeof courseLineXte !== 'undefined' && courseLineXte) {
-        try { courseLineXte.setStyle({ opacity: opacity }); } catch (_) { }
-    }
-}
-
-
-// Draw/update course line: bearing line + XTE tick. Called on every
-// position update when an active course exists. The previous-WP to
-// next-WP "leg line" used to render here as a faint white dashed
-// stroke from the spot where navigation started; helm reported it as
-// noise (no actionable information beyond "where I was when the
-// course started"), so it's gone. The bearing line + active-route
-// polyline cover the live navigational picture.
-export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
-    if (!map) return;
-
-    // Tear down any leftover leg line from a previous build that
-    // still emitted it. courseLineLeg stays declared at module scope
-    // so dispose() can null it; this just guarantees the layer is
-    // gone if some older state left it behind.
-    if (courseLineLeg) {
-        map.removeLayer(courseLineLeg);
-        courseLineLeg = null;
-    }
-
-    // Bearing line: boat to next WP.
-    const brgCoords = [[boatLat, boatLon], [wpLat, wpLon]];
-    if (courseLineBearing) {
-        courseLineBearing.setLatLngs(brgCoords);
-    } else {
-        courseLineBearing = L.polyline(brgCoords, {
-            color: MapColors.bearing, weight: 2, opacity: 0.7, dashArray: '6,4'
-        }).addTo(map);
-    }
-
-    // XTE perpendicular tick at boat position.
-    if (xteMeters != null && prevLat != null && prevLon != null) {
-        const absXte = Math.abs(xteMeters);
-        // Severity is classified C#-side (Utilities/Xte.cs + XteTests) so
-        // the legend, the alarm pipeline and this overlay share a single
-        // set of band thresholds. Each band maps onto the shared severity
-        // palette so a single edit in :root restyles both legend and tick.
-        const xteColor = xteSeverity === 'offCourse' ? MapColors.mob
-            : xteSeverity === 'drifting' ? MapColors.guardWarn
-            : MapColors.anchorOk;
-        // Perpendicular to the leg bearing.
-        const legBrg = bearingDeg(prevLat, prevLon, wpLat, wpLon) * RAD;
-        const perpBrg = xteMeters > 0 ? legBrg + Math.PI / 2 : legBrg - Math.PI / 2;
-        // Visual length: actual XTE capped at 200m for display.
-        const tickLen = Math.min(absXte, 200);
-        const tickEnd = destPoint(boatLat, boatLon, perpBrg, tickLen);
-        const xteCoords = [[boatLat, boatLon], tickEnd];
-
-        if (courseLineXte) {
-            courseLineXte.setLatLngs(xteCoords);
-            courseLineXte.setStyle({ color: xteColor });
-        } else {
-            courseLineXte = L.polyline(xteCoords, {
-                color: xteColor, weight: 3, opacity: 0.9
-            }).addTo(map);
-        }
-    } else if (courseLineXte) {
-        map.removeLayer(courseLineXte);
-        courseLineXte = null;
-    }
-}
-
-export function clearCourseLine() {
-    if (courseLineLeg && map) { map.removeLayer(courseLineLeg); courseLineLeg = null; }
-    if (courseLineBearing && map) { map.removeLayer(courseLineBearing); courseLineBearing = null; }
-    if (courseLineXte && map) { map.removeLayer(courseLineXte); courseLineXte = null; }
+    activeRouteLayerMod.setActiveRouteStoppingPolyline(stopping);
+    courseLineLayerMod.setStoppingDim(stopping);
 }
 
 // --- Route Editing ---
@@ -2969,8 +2701,8 @@ export function dispose() {
     mobLayerMod.dispose();
     anchorLayerMod.dispose();
     measureLayerMod.dispose();
-    activeRouteLayer = null; activeRouteCoords = null; nextWpMarker = null;
-    courseLineLeg = null; courseLineBearing = null; courseLineXte = null;
+    activeRouteLayerMod.dispose();
+    courseLineLayerMod.dispose();
     laylineLayerMod.dispose();
     // `currentLabel` used to exist as a sibling of `currentArrow` for
     // a drift-speed tooltip on the tidal-current arrow; that label was
