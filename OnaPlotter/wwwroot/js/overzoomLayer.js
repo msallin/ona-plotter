@@ -47,6 +47,12 @@ export function withOverzoom(opts, levels) {
         // Tag the layer so the dev-section diagnostics + tests can
         // distinguish upscaled chart layers from bare ones without
         // groveling through option values.
+        // Coupling note: L.TileLayer copies unknown options onto
+        // `this.options`, which is how the tag survives onto the
+        // live layer. If a future Leaflet upgrade changes that
+        // pass-through behaviour, the tag goes silent (diagnostics
+        // miss it) but the upscale itself still works because
+        // maxZoom / maxNativeZoom are bona fide TileLayer options.
         _chartUpscaleLevels: lv,
     };
 }

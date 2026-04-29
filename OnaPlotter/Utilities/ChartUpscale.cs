@@ -14,8 +14,22 @@ namespace OnaPlotter.Utilities;
 /// on for the no-op case.</para>
 ///
 /// <para>Removable contract (per the design review): if the feature
-/// gets ripped out, deleting this file + the JS decorator + the
-/// Settings flag is the entire surface to revert.</para>
+/// gets ripped out, the entire surface is:
+/// <list type="bullet">
+///   <item>this file (<c>OnaPlotter/Utilities/ChartUpscale.cs</c>),</item>
+///   <item>the JS decorator (<c>OnaPlotter/wwwroot/js/overzoomLayer.js</c>) +
+///     its import + call site in <c>leafletInterop.js</c>,</item>
+///   <item>the <c>ChartUpscaleEnabled</c> + <c>ChartUpscaleLevels</c>
+///     properties (and their setters) on <c>IMapDisplaySettings</c> /
+///     <c>AppSettingsService</c>,</item>
+///   <item>the persistence keys <c>chartUpscaleEnabled.v1</c> +
+///     <c>chartUpscaleLevels.v1</c> in <c>AppSettingsService.InitializeAsync</c>,</item>
+///   <item>the Settings UI block in <c>Components/Pages/Settings.razor</c>
+///     (checkbox + levels input + the two change handlers),</item>
+///   <item>the <c>upscaleLevels</c> arg on <c>IMapOverlaysJs.AddChartLayerAsync</c>
+///     and the <c>ChartLayerController</c> call site that resolves it.</item>
+/// </list>
+/// Drop those, and the feature is gone with no leftover wiring.</para>
 /// </summary>
 public static class ChartUpscale
 {

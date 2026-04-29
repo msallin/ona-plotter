@@ -86,6 +86,15 @@ public sealed class ChartLayerController
                 // decorator no-ops on 0. See OnaPlotter.Utilities.ChartUpscale.
                 int upscale = OnaPlotter.Utilities.ChartUpscale.Effective(
                     _display.ChartUpscaleEnabled, _display.ChartUpscaleLevels);
+                // chart.MaxZoom ?? 18 fallback: a chart with no metadata-
+                // declared maxzoom (some legacy MBTiles, plus formats
+                // that don't carry a pyramid descriptor) gets the
+                // Leaflet default 18. With overzoom enabled, that
+                // becomes the maxNativeZoom, and the helm gets a free
+                // upscale window from 18 -> 18+levels. Intentional, and
+                // the "blank tiles surface OSM underneath" honest
+                // signal still applies if the chart actually tops out
+                // earlier than 18.
                 await _overlaysJs.AddChartLayerAsync(
                     chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18,
                     0.8, chart.Bounds, upscale);
