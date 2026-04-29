@@ -1069,10 +1069,19 @@
     private async Task OnChartUpscaleLevelsChanged(ChangeEventArgs e)
     {
         // Defensive parse: a malformed input keeps the previous value.
-        // Clamp lives in SetChartUpscaleLevelsAsync so a stored stale
-        // value (corrupted localStorage) clamps on the next read too.
-        if (!int.TryParse(e.Value?.ToString(), out int levels)) return;
-        await AppSettings.SetChartUpscaleLevelsAsync(levels);
+        // Clamp here AND toast on out-of-range so the helm sees the
+        // adjustment immediately -- matches the OnSnoozeDurationChanged
+        // / OnDeadmanNightMinutes pattern. The setter clamps too as
+        // belt-and-braces against future call paths and corrupted
+        // localStorage; the in-handler clamp is purely for UX so the
+        // input doesn't display "99" while the persisted value is 3.
+        if (!int.TryParse(e.Value?.ToString(), out int raw)) return;
+        int clamped = OnaPlotter.Utilities.ChartUpscale.ClampLevels(raw);
+        if (clamped != raw)
+            Toasts.Show($"Clamped to {clamped} (range " +
+                $"{OnaPlotter.Utilities.ChartUpscale.MinLevels}-" +
+                $"{OnaPlotter.Utilities.ChartUpscale.MaxLevels})");
+        await AppSettings.SetChartUpscaleLevelsAsync(clamped);
     }
 
     private static readonly (string val, string label, string tip)[] SailingModes =
