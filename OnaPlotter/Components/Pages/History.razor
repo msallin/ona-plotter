@@ -17,11 +17,84 @@
 <PageTitle>History</PageTitle>
 
 <div class="map-container">
-    <div id="historyMapDiv" style="width:100%; height:100%;"></div>
+    @* Map div stays mounted regardless of viewMode so Leaflet's
+       internal state (tiles, layers, viewport) survives flips
+       between Map and Table views. We just hide it visually when
+       the table is on top. *@
+    <div id="historyMapDiv" style="width:100%; height:100%;"
+         class="@(viewMode == "table" ? "history-map-hidden" : "")"></div>
+
+    @if (viewMode == "table" && segments is { Length: > 0 })
+    {
+        <div class="history-table-view">
+            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                <h3 class="mb-0" style="font-size:1.1rem;">Trips</h3>
+                <span style="font-size:0.85rem; color:var(--sk-text-muted);">
+                    @VisibleSegments(segments).Count() of @segments.Length segments
+                </span>
+                <label class="d-inline-flex align-items-center gap-1 ms-auto"
+                       style="font-size:0.85rem;">
+                    <input type="checkbox" @bind="tableShowStationary" />
+                    Show stationary
+                </label>
+            </div>
+            <div class="history-table-scroll">
+                <table class="table table-sm table-hover history-trip-table">
+                    <thead>
+                        <tr>
+                            <th>From</th>
+                            <th>To</th>
+                            <th class="text-end">Duration</th>
+                            <th class="text-end">Distance</th>
+                            <th class="text-end">SOG avg</th>
+                            <th class="text-end">SOG max</th>
+                            <th class="text-end">TWS avg</th>
+                            <th>Type</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @{
+                            int row = 0;
+                            foreach (var s in segments)
+                            {
+                                int idx = row++;
+                                if (s.IsStationary && !tableShowStationary) continue;
+                                <tr style="cursor:pointer;" @onclick="@(() => OnTripRowClick(idx))"
+                                    title="Click to show on map">
+                                    <td>@s.StartUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>@s.EndUtc.ToLocalTime().ToString("HH:mm")</td>
+                                    <td class="text-end">@Format.TimeToGo(s.Duration.TotalSeconds)</td>
+                                    <td class="text-end">@Format.Nm(s.DistanceMetres) nm</td>
+                                    <td class="text-end">@(s.SogAvgMs is null ? "—" : Format.Speed(s.SogAvgMs))</td>
+                                    <td class="text-end">@(s.SogMaxMs is null ? "—" : Format.Speed(s.SogMaxMs))</td>
+                                    <td class="text-end">@(s.WindSpeedAvgMs is null ? "—" : Format.Speed(s.WindSpeedAvgMs))</td>
+                                    <td>@(s.IsStationary ? "Stationary" : "Moving")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
 
     @* Playback controls *@
     <div class="history-controls">
         <div class="d-flex align-items-center gap-2 flex-wrap">
+            @* View toggle. Map = the live playback view (default).
+               Table = list of segments with stats; clicking a row
+               flies the map to the segment and switches back here.
+               Both modes share the same loaded data + segments, so
+               the toggle is instant -- no re-fetch. *@
+            <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+                <button class="btn @(viewMode == "map" ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="@(() => viewMode = "map")"
+                        title="Map view (playback)">Map</button>
+                <button class="btn @(viewMode == "table" ? "btn-primary" : "btn-outline-secondary")"
+                        @onclick="@(() => viewMode = "table")"
+                        disabled="@(segments is null || segments.Length == 0)"
+                        title="Table view (list of trips)">Table</button>
+            </div>
             @* Mode toggle: "Preset" exposes the relative-window
                dropdown ("Last 24 hours" etc.) -- fast for "what
                happened today?". "Custom" exposes from/to inputs --
@@ -179,6 +252,14 @@
     private string rangeMode = "preset";
     private DateTime customFromLocal = DateTime.Now.AddHours(-6);
     private DateTime customToLocal = DateTime.Now;
+    // View mode toggle. "map" is the default playback view; "table"
+    // hides the map behind a list of segments (filtered to moving by
+    // default; toggle to include stationary). Click a row to flip
+    // back to map and fly to that segment's bounds. Map stays mounted
+    // throughout so Leaflet's tile cache survives the swap -- no
+    // re-fetching basemap tiles on every flip.
+    private string viewMode = "map";
+    private bool tableShowStationary;
     // Chart-layer state. Loaded once from IChartApi after the map
     // initialises. enabledChartIds holds the per-session set; no
     // persistence (the Map page's IChartSettings is not shared with
@@ -336,6 +417,51 @@
         t.ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
     private void ToggleChartsPanel() => chartsPanelOpen = !chartsPanelOpen;
+
+    /// <summary>Filter segments according to the table's current
+    /// stationary toggle. Used by both the row count and the table
+    /// body iteration so they stay in sync.</summary>
+    private IEnumerable<TrackSegment> VisibleSegments(TrackSegment[] all) =>
+        tableShowStationary ? all : all.Where(s => !s.IsStationary);
+
+    /// <summary>Row click: switch back to map view and ask Leaflet to
+    /// fit the segment's bounds. Index is into the full
+    /// <c>segments</c> array (NOT the filtered one) so the JS can
+    /// look up the matching polyline by position in
+    /// <c>window._historySegments</c>. The flip + fly happens in two
+    /// frames -- viewMode change re-renders, then a one-shot timer
+    /// gives the map a chance to catch up before we call fitBounds.</summary>
+    private async Task OnTripRowClick(int segmentIndex)
+    {
+        viewMode = "map";
+        // Let the page re-render with the map visible before we ask
+        // Leaflet to fit bounds. Without the StateHasChanged + small
+        // yield, fitBounds runs while the map is still display:none
+        // and Leaflet records zero dimensions for the viewport (next
+        // tile fetch then misses the visible area entirely).
+        StateHasChanged();
+        await Task.Yield();
+        try
+        {
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    var segs = window._historySegments;
+                    if (!m || !segs) return;
+                    var idx = {segmentIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)};
+                    var poly = segs[idx];
+                    if (!poly) return;
+                    // invalidateSize after the show/hide flip so
+                    // Leaflet recomputes its viewport before we fit
+                    // bounds; otherwise the fit may target a stale
+                    // (zero-size) viewport.
+                    m.invalidateSize();
+                    m.fitBounds(poly.getBounds(), {{ padding: [40, 40] }});
+                }})()
+            ");
+        }
+        catch (JSDisconnectedException) { }
+    }
 
     private async Task ToggleChartAsync(OnaPlotter.Models.SignalkChart chart, ChangeEventArgs e)
     {
