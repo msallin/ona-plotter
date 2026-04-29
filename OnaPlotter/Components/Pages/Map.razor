@@ -363,17 +363,17 @@
        carry a strong filled-accent style so "which chart is on
        the map" reads at a glance -- the old semi-transparent
        accent was ambiguous against a bright ocean tile. *@
-    @if (quickBarCharts.Count > 0)
+    @if (_charts is not null && _charts.QuickBarCharts.Count > 0)
     {
         <div class="chart-quick-bar">
             @foreach (var chart in availableCharts
-                         .Where(c => quickBarCharts.Contains(c.Identifier))
+                         .Where(c => _charts.QuickBarCharts.Contains(c.Identifier))
                          .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
-                bool active = enabledCharts.Contains(chart.Identifier);
+                bool active = _charts.EnabledCharts.Contains(chart.Identifier);
                 <button @key="chart.Identifier"
                         class="chart-quick-chip @(active ? "active" : "")"
-                        @onclick="() => ToggleChart(chart, !active)"
+                        @onclick="() => _charts.ToggleAsync(chart, !active)"
                         aria-pressed="@(active ? "true" : "false")"
                         title="@(active ? "Showing -- tap to hide" : "Hidden -- tap to show")">
                     @chart.Name
@@ -406,9 +406,9 @@
                      OnToggleRegionsVisible="ToggleRegionsVisible"
                      Vessels="@BuildVesselList()"
                      Buddies="loadedBuddies"
-                     EnabledCharts="enabledCharts"
+                     EnabledCharts="@(_charts?.EnabledCharts ?? new HashSet<string>())"
                      EnabledRoutes="enabledRoutes"
-                     QuickBarCharts="quickBarCharts"
+                     QuickBarCharts="@(_charts?.QuickBarCharts ?? new HashSet<string>())"
                      AvailableRadars="RadarOverlay.Radars"
                      EnabledRadars="RadarOverlay.EnabledRadarIds"
                      RadarCapabilities="RadarOverlay.Capabilities"
@@ -495,6 +495,7 @@
     private OnaPlotter.Services.Js.MapOverlaysJs? _overlaysJs;
     private OnaPlotter.Services.Map.WeatherOverlayController? _weather;
     private OnaPlotter.Services.Map.ServerTrackController? _serverTrack;
+    private OnaPlotter.Services.Map.ChartLayerController? _charts;
     private bool laylinesVisible;
     private bool measureActive;
     private bool fabMenuOpen;
@@ -547,12 +548,10 @@
     // policy) lives in RadarOverlayManager so the page stays a
     // wiring layer. Page accesses RadarOverlay.Radars / .Capabilities
     // for the layers panel binding.
-    private readonly HashSet<string> enabledCharts = [];
+    // Chart enable / quick-bar / draw-order state lives in
+    // ChartLayerController (_charts); markup binds against
+    // _charts.EnabledCharts / .QuickBarCharts.
     private readonly HashSet<string> enabledRoutes = [];
-    // Subset of availableCharts the user has pinned to the on-map
-    // quick-switch bar via Layers -> Charts. See
-    // IAppSettings.QuickBarChartIds for the two-layer rationale.
-    private readonly HashSet<string> quickBarCharts = [];
     private string layerFilter = "";
     private double? viewWest, viewSouth, viewEast, viewNorth;
 
@@ -798,24 +797,16 @@
     // without removing from the quick bar.
     private async Task OnToggleChartQuickBarCallback((SignalkChart chart, bool inQuickBar) t)
     {
-        if (t.inQuickBar)
-        {
-            quickBarCharts.Add(t.chart.Identifier);
-            if (!enabledCharts.Contains(t.chart.Identifier))
-                await ToggleChart(t.chart, true);
-        }
-        else
-        {
-            quickBarCharts.Remove(t.chart.Identifier);
-            if (enabledCharts.Contains(t.chart.Identifier))
-                await ToggleChart(t.chart, false);
-        }
-        await Settings.SetQuickBarChartsAsync(quickBarCharts);
+        if (_charts is null) return;
+        await _charts.ToggleQuickBarAsync(t.chart, t.inQuickBar);
         await InvokeAsync(StateHasChanged);
     }
 
-    private Task OnReorderChartCallback((SignalkChart chart, int direction) t) =>
-        ReorderChart(t.chart, t.direction);
+    private Task OnReorderChartCallback((SignalkChart chart, int direction) t)
+    {
+        if (_charts is null) return Task.CompletedTask;
+        return _charts.ReorderAsync(t.chart, t.direction);
+    }
 
     private Task OnToggleRouteCallback((SignalkRoute route, bool enabled) t) =>
         ToggleRoute(t.route, t.enabled);
@@ -1126,6 +1117,16 @@
         _weather = new OnaPlotter.Services.Map.WeatherOverlayController(_overlaysJs, Settings);
         _serverTrack = new OnaPlotter.Services.Map.ServerTrackController(
             _overlaysJs, TrackApi, msg => Toasts.Info(msg));
+        _charts = new OnaPlotter.Services.Map.ChartLayerController(
+            _overlaysJs, Settings,
+            toastError: (chartName, msg) => Toasts.Error($"Chart {chartName}: {msg}"))
+        {
+            // Re-sort the page-side availableCharts list when the
+            // controller mutates the persisted draw order. The
+            // markup binds against availableCharts directly so the
+            // re-sort propagates without an extra render call.
+            OnChartOrderChanged = ReSortAvailableCharts,
+        };
 
         // Prefer the persisted view so re-opening the app lands where
         // the user left off. FollowBoat, when on, will pan to the boat
@@ -1191,7 +1192,7 @@
             notesTask, regionsTask, radarsTask, buddiesTask);
 
         availableCharts   = chartsTask.Result   ?? [];
-        ApplyChartOrder();
+        ReSortAvailableCharts();
         availableRoutes   = routesTask.Result   ?? [];
         loadedWaypoints   = waypointsTask.Result ?? [];
         loadedNotes       = notesTask.Result     ?? [];
@@ -1251,15 +1252,16 @@
 
         // Re-enable charts the user had turned on before navigating
         // away / reloading. Snapshot the persisted set FIRST -- if we
-        // iterate against Settings.EnabledChartIds directly, ToggleChart
-        // calls SetEnabledChartsAsync(enabledCharts) on every iteration,
-        // which rewrites the persisted set to "only the charts we've
-        // restored so far". That wiped every chart after the first on
-        // page navigation, showing as "settings reset" in the field.
+        // iterate against Settings.EnabledChartIds directly, the
+        // controller's ToggleAsync calls SetEnabledChartsAsync on
+        // every iteration, which rewrites the persisted set to "only
+        // the charts we've restored so far". That wiped every chart
+        // after the first on page navigation, showing as "settings
+        // reset" in the field.
         var chartsToRestore = Settings.EnabledChartIds.ToList();
         foreach (var chart in availableCharts)
             if (chartsToRestore.Contains(chart.Identifier))
-                await ToggleChart(chart, true);
+                await _charts!.ToggleAsync(chart, true);
 
         // First-run seeding: auto-enable OpenSeaMap-named charts so
         // the map isn't blank on first visit. ChartsSeeded is persisted
@@ -1274,7 +1276,7 @@
                 if (chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
                     || chart.Name.Contains("sea map", StringComparison.OrdinalIgnoreCase))
                 {
-                    await ToggleChart(chart, true);
+                    await _charts!.ToggleAsync(chart, true);
                 }
             }
             await Settings.MarkChartsSeededAsync();
@@ -1288,11 +1290,11 @@
             if (routesToRestore.Contains(route.Id))
                 await ToggleRoute(route, true);
 
-        // Quick-bar membership. Seed the local mirror from persisted
-        // settings; AppSettingsService has already migrated first-run
-        // users by copying EnabledChartIds into QuickBarChartIds.
-        quickBarCharts.Clear();
-        foreach (var id in Settings.QuickBarChartIds) quickBarCharts.Add(id);
+        // Quick-bar membership. Seed the controller's local mirror
+        // from persisted settings; AppSettingsService has already
+        // migrated first-run users by copying EnabledChartIds into
+        // QuickBarChartIds.
+        _charts!.SeedFromSettings();
 
         follow = Settings.FollowBoat;
         nightMode = Settings.NightMode;
@@ -2316,138 +2318,20 @@
     // lived in the Layers panel; with the UI gone the handlers belong
     // wherever the helm reaches them, which is Settings.
 
-    private async Task ToggleChart(SignalkChart chart, bool enabled)
-    {
-        if (module is null) return;
-
-        var tileUrl = chart.GetTileUrl();
-        if (tileUrl is null) return;
-
-        if (enabled)
-        {
-            try
-            {
-                await module.InvokeVoidAsync("addChartLayer",
-                    chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18, 0.8,
-                    chart.Bounds);
-            }
-            catch (JSDisconnectedException) { return; }
-            catch (JSException ex)
-            {
-                // A JS-side regression (wrong object shape, missing layer
-                // type, etc.) must not bubble into Blazor's error UI and
-                // freeze the render pass -- that's what hid the own-boat
-                // marker on the "chartLayers.map is undefined" crash.
-                // Toast the user, log the detail, stay alive.
-                Toasts.Error($"Chart {chart.Name}: could not enable ({ex.Message})");
-                return;
-            }
-            enabledCharts.Add(chart.Identifier);
-            // Seed the chart order with any newly-seen id so user-driven
-            // reorders have something to reorder. Append -- new charts go
-            // to the top of the draw stack (last .addTo wins).
-            if (!Settings.ChartOrder.Contains(chart.Identifier))
-            {
-                await Settings.SetChartOrderAsync(Settings.ChartOrder.Append(chart.Identifier));
-                ApplyChartOrder();
-            }
-            // Keep the quick-bar set in sync with any auto-enabled chart
-            // (first-run OpenSeaMap seeding, future auto-rules). Without
-            // this the chart would render but be missing from the quick
-            // bar, so the user couldn't tap to hide it again.
-            if (quickBarCharts.Add(chart.Identifier))
-                await Settings.SetQuickBarChartsAsync(quickBarCharts);
-        }
-        else
-        {
-            try { await module.InvokeVoidAsync("removeChartLayer", chart.Identifier); }
-            catch (JSDisconnectedException) { return; }
-            catch (JSException ex)
-            {
-                Toasts.Error($"Chart {chart.Name}: could not disable ({ex.Message})");
-                return;
-            }
-            enabledCharts.Remove(chart.Identifier);
-        }
-        await Settings.SetEnabledChartsAsync(enabledCharts);
-    }
-
     /// <summary>
-    /// Moves a chart up (-1) or down (+1) in the draw stack. "Up" in the UI
-    /// means "closer to the top of the rendered map", which is LATER in
-    /// the draw order (later .addTo wins). ApplyChartOrder() reorders
-    /// availableCharts to match, and the JS side re-applies z-index.
+    /// Page-side hook for ChartLayerController.OnChartOrderChanged.
+    /// Re-sorts <see cref="availableCharts"/> via the controller's
+    /// pure helper and flushes the filtered-layers cache so the
+    /// Layers panel reflects the new order. Without this, the
+    /// reorder button looked like it did nothing -- the underlying
+    /// order was right, but the UI rendered against a stale cache.
     /// </summary>
-    private async Task ReorderChart(SignalkChart chart, int direction)
+    private void ReSortAvailableCharts()
     {
-        if (module is null) return;
-        var order = Settings.ChartOrder.ToList();
-
-        // Defensive: ensure EVERY currently-enabled chart is represented
-        // in the order list before we reorder. Without this, a stale
-        // storage state (e.g. from the pre-fix SetChartOrderAsync bug
-        // that wiped ChartOrder to just the last-toggled chart) can
-        // leave a neighbour missing, so the bounds check `swapWith >=
-        // order.Count` returns and the user sees nothing happen.
-        foreach (var enabledId in enabledCharts)
-        {
-            if (!order.Contains(enabledId)) order.Add(enabledId);
-        }
-        if (!order.Contains(chart.Identifier)) order.Add(chart.Identifier);
-
-        int idx = order.IndexOf(chart.Identifier);
-        // UI convention: up = visually up in the panel list, which is
-        // earlier in the displayed Charts order. Since Charts is iterated
-        // in ChartOrder (the same list we're editing), "earlier" = lower
-        // index. direction is -1 for up / +1 for down, so swapWith is
-        // simply idx + direction -- no flip.
-        //
-        // Earlier revisions flipped the direction on the premise that
-        // "up should mean up in the z-stack" (draw-order end); that put
-        // the arrow direction at odds with visual motion and made the
-        // buttons look broken ("I tapped up and it went down"). Keep
-        // the panel and the arrow in sync; z-ordering follows.
-        int swapWith = idx + direction;
-        if (swapWith < 0 || swapWith >= order.Count) return;
-        (order[idx], order[swapWith]) = (order[swapWith], order[idx]);
-
-        await Settings.SetChartOrderAsync(order);
-        ApplyChartOrder();
-
-        // Push the new draw order to JS so z-index on each layer matches.
-        try { await module.InvokeVoidAsync("setChartLayerOrder", order.ToArray()); }
-        catch (JSDisconnectedException) { }
-        catch (JSException ex)
-        {
-            // Symptom of the "reorder button does nothing" bug: a JS
-            // exception in setChartLayerOrder silently wedges the UI.
-            // Toast so the user sees something happened.
-            Toasts.Error($"Reorder failed ({ex.Message})");
-        }
-
-        StateHasChanged();
-    }
-
-    /// <summary>
-    /// Sorts availableCharts by <see cref="IAppSettings.ChartOrder"/>.
-    /// Charts listed in the order come first (by index); unseen charts
-    /// append in server-provided order.
-    /// </summary>
-    private void ApplyChartOrder()
-    {
-        var order = Settings.ChartOrder;
-        if (order.Count == 0) return;
-        var index = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (int i = 0; i < order.Count; i++) index[order[i]] = i;
-        availableCharts = availableCharts
-            .OrderBy(c => index.TryGetValue(c.Identifier, out var i) ? i : int.MaxValue)
-            .ToList();
-        // Reorder changes the ORDER of availableCharts, not the count --
-        // RebuildFilteredLayers's cache key is count-based, so flush it
-        // explicitly and rebuild now. Without this, the Layers panel's
-        // chip stack kept showing the pre-reorder order and the reorder
-        // button appeared to do nothing (the reorder DID happen, the UI
-        // just didn't reflect it until the next cache miss).
+        if (_charts is null) return;
+        availableCharts = _charts.ApplyOrder(availableCharts);
+        // RebuildFilteredLayers's cache key is count-based; flush
+        // explicitly so an order-only change forces a rebuild.
         lastFilterKey = "";
         RebuildFilteredLayers();
     }
