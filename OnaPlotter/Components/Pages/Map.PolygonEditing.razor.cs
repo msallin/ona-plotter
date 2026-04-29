@@ -12,10 +12,9 @@ namespace OnaPlotter.Components.Pages;
 /// so the route file stays focused on its own lifecycle.
 ///
 /// Poll cadence reuses <c>RouteStatsPollIntervalMs</c> from the
-/// main Map page constants. Every JS interop call catches
-/// <see cref="JSDisconnectedException"/> so a page switch mid-edit
-/// doesn't surface a torn-down-module exception to Blazor's error
-/// UI.
+/// main Map page constants. Interop goes through the typed
+/// <c>IMapEditJs</c> / <c>IMapResourceJs</c> wrappers; lifecycle
+/// exceptions are absorbed inside the wrapper.
 /// </summary>
 public partial class Map
 {
@@ -45,11 +44,8 @@ public partial class Map
         polygonEditId = null;
         polygonEditDescription = "";
         InstallEditNavGuard();
-        if (module is not null)
-        {
-            try { await module.InvokeVoidAsync("startPolygonEdit"); }
-            catch (JSDisconnectedException) { return; }
-        }
+        if (_editJs is not null)
+            await _editJs.StartPolygonEditAsync();
         polygonStatsTimer = new System.Threading.Timer(
             _ => _ = UpdatePolygonStats(), null,
             RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
@@ -62,7 +58,7 @@ public partial class Map
     /// surface a toast -- we don't yet have a multi-ring UI.</summary>
     private async Task EditRegion(Models.SignalkRegion region)
     {
-        if (module is null) return;
+        if (_editJs is null) return;
         if (region.OuterRings.Count == 0)
         {
             Toasts.Error("Region has no editable geometry");
@@ -98,8 +94,7 @@ public partial class Map
             && ring[0][0] == ring[^1][0] && ring[0][1] == ring[^1][1]
             ? ring[..^1]
             : ring;
-        try { await module.InvokeVoidAsync("loadPolygonForEdit", (object)drawn); }
-        catch (JSDisconnectedException) { return; }
+        await _editJs.LoadPolygonForEditAsync(drawn);
         polygonStatsTimer = new System.Threading.Timer(
             _ => _ = UpdatePolygonStats(), null,
             RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
@@ -115,50 +110,41 @@ public partial class Map
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
         RemoveEditNavGuard();
-        if (module is not null)
-        {
-            try { await module.InvokeVoidAsync("stopPolygonEdit"); }
-            catch (JSDisconnectedException) { }
-        }
+        if (_editJs is not null)
+            await _editJs.StopPolygonEditAsync();
     }
 
     private async Task UndoLastPolygonVertex()
     {
-        if (module is null) return;
-        try { await module.InvokeVoidAsync("undoLastPolygonVertex"); }
-        catch (JSDisconnectedException) { return; }
+        if (_editJs is null) return;
+        await _editJs.UndoLastPolygonVertexAsync();
         await UpdatePolygonStats();
     }
 
     private async Task UpdatePolygonStats()
     {
-        if (module is null) return;
-        try
+        if (_editJs is null) return;
+        var coords = await _editJs.GetPolygonEditCoordsAsync();
+        bool dirty = false;
+        if (coords is not null)
         {
-            var coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords");
-            bool dirty = false;
-            if (coords is not null)
+            int n = coords.Length;
+            // Vertex count + area both derive from the coords we
+            // just fetched, so the C# side computes them directly
+            // instead of round-tripping a second JS interop call.
+            // PolygonGeometry returns 0 below 3 vertices.
+            double area = OnaPlotter.Utilities.PolygonGeometry.AreaSquareMeters(coords);
+            var s = n < 3
+                ? $"{n} vertices"
+                : $"{n} vertices / {FormatArea(area)}";
+            if (s != polygonEditStats) { polygonEditStats = s; dirty = true; }
+            if (!CoordsEqual(coords, polygonEditCoords))
             {
-                int n = coords.Length;
-                // Vertex count + area both derive from the coords we
-                // just fetched, so the C# side computes them directly
-                // instead of round-tripping a second JS interop call.
-                // PolygonGeometry returns 0 below 3 vertices.
-                double area = OnaPlotter.Utilities.PolygonGeometry.AreaSquareMeters(coords);
-                var s = n < 3
-                    ? $"{n} vertices"
-                    : $"{n} vertices / {FormatArea(area)}";
-                if (s != polygonEditStats) { polygonEditStats = s; dirty = true; }
-                if (!CoordsEqual(coords, polygonEditCoords))
-                {
-                    polygonEditCoords = coords;
-                    dirty = true;
-                }
+                polygonEditCoords = coords;
+                dirty = true;
             }
-            if (dirty) await InvokeAsync(StateHasChanged);
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (dirty) await InvokeAsync(StateHasChanged);
     }
 
     // Metric area formatter. Under 1 ha show square metres; above,
@@ -173,18 +159,15 @@ public partial class Map
 
     private async Task RemovePolygonVertex(int index)
     {
-        if (module is null) return;
-        try { await module.InvokeVoidAsync("removePolygonEditVertex", index); }
-        catch (JSDisconnectedException) { return; }
+        if (_editJs is null) return;
+        await _editJs.RemovePolygonEditVertexAsync(index);
         await UpdatePolygonStats();
     }
 
     private async Task SavePolygonRegion()
     {
-        if (module is null) return;
-        double[][]? coords;
-        try { coords = await module.InvokeAsync<double[][]>("getPolygonEditCoords"); }
-        catch (JSDisconnectedException) { return; }
+        if (_editJs is null || _resourceJs is null) return;
+        double[][]? coords = await _editJs.GetPolygonEditCoordsAsync();
         if (coords is null || coords.Length < 3)
         {
             Toasts.Show("Add at least 3 vertices before saving");
@@ -241,19 +224,12 @@ public partial class Map
             // still shows the old polygon; remove it first before adding
             // the updated one so we don't stack two overlapping shapes.
             if (polygonEditId is string editedId)
-            {
-                try { await module.InvokeVoidAsync("removeRegion", editedId); }
-                catch (JSDisconnectedException) { }
-            }
+                await _resourceJs.RemoveRegionAsync(editedId);
             var saved = loadedRegions.FirstOrDefault(rg => rg.Id == savedId);
             if (saved is not null)
             {
-                try
-                {
-                    await module.InvokeVoidAsync("addRegion",
-                        saved.Id, saved.OuterRings, saved.Name, saved.Description);
-                }
-                catch (JSDisconnectedException) { }
+                await _resourceJs.AddRegionAsync(
+                    saved.Id, saved.OuterRings, saved.Name, saved.Description);
             }
             RebuildFilteredLayers();
         }
@@ -269,7 +245,6 @@ public partial class Map
         polygonStatsTimer = null;
         newRegionDescription = "";
         RemoveEditNavGuard();
-        try { await module.InvokeVoidAsync("stopPolygonEdit"); }
-        catch (JSDisconnectedException) { }
+        await _editJs.StopPolygonEditAsync();
     }
 }

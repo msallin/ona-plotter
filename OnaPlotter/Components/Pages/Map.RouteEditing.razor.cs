@@ -12,9 +12,11 @@ namespace OnaPlotter.Components.Pages;
 /// re-entrancy guard shared with the polygon flow in
 /// <c>Map.Editing.razor.cs</c>.
 ///
-/// Every JS interop call catches <see cref="JSDisconnectedException"/>
-/// so a page-switch mid-edit, or a server drop, doesn't surface a
-/// torn-down-module exception to Blazor's error UI.
+/// Interop goes through the typed <c>IMapEditJs</c> / <c>IMapRouteJs</c>
+/// wrappers; lifecycle exceptions (JSDisconnected / ObjectDisposed)
+/// are absorbed inside the wrapper so call sites focus on the save /
+/// edit logic. JSException stays explicit at sites where the failure
+/// mode is recoverable (e.g. re-issue, toast).
 /// </summary>
 public partial class Map
 {
@@ -57,8 +59,8 @@ public partial class Map
             availableRoutes.Select(r => r.Name ?? string.Empty));
         routeEditStats = "0 WP / 0 nm";
         InstallEditNavGuard();
-        if (module is not null)
-            await module.InvokeVoidAsync("startRouteEdit");
+        if (_editJs is not null)
+            await _editJs.StartRouteEditAsync();
         // Poll stats twice a second while editing.
         routeStatsTimer = new System.Threading.Timer(
             _ => _ = UpdateRouteStats(), null,
@@ -98,8 +100,8 @@ public partial class Map
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
         RemoveEditNavGuard();
-        if (module is not null)
-            await module.InvokeVoidAsync("stopRouteEdit");
+        if (_editJs is not null)
+            await _editJs.StopRouteEditAsync();
 
         // If we were editing the active route, EditRoute hid the
         // active-route overlay to avoid double-drawing. Clear the
@@ -107,11 +109,8 @@ public partial class Map
         // call from SyncActiveRouteAsync isn't no-op'd by the gate
         // we added in JS, then re-fetch and redraw from
         // Data.ActiveRouteHref.
-        if (module is not null)
-        {
-            try { await module.InvokeVoidAsync("setActiveOverlayHidden", false); }
-            catch (JSDisconnectedException) { }
-        }
+        if (_routeJs is not null)
+            await _routeJs.SetActiveOverlayHiddenAsync(false);
         if (Data.ActiveRouteHref is not null)
         {
             try
@@ -148,7 +147,7 @@ public partial class Map
 
     private async Task EditRoute(SignalkRoute route)
     {
-        if (module is null || route.Feature?.Geometry is null) return;
+        if (_editJs is null || _routeJs is null || route.Feature?.Geometry is null) return;
 
         // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
         var coords = new List<double[]>();
@@ -197,11 +196,10 @@ public partial class Map
             // course-line would otherwise tick along against the OLD
             // next-waypoint coordinates, pointing the helm at stale
             // geometry that the edit is in the middle of changing.
-            try { await module.InvokeVoidAsync("setActiveOverlayHidden", true); }
-            catch (JSDisconnectedException) { }
+            await _routeJs.SetActiveOverlayHiddenAsync(true);
         }
 
-        await module.InvokeVoidAsync("loadRouteForEdit", (object)coords.ToArray());
+        await _editJs.LoadRouteForEditAsync(coords.ToArray());
         routeStatsTimer = new System.Threading.Timer(
             _ => _ = UpdateRouteStats(), null,
             RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
@@ -210,38 +208,32 @@ public partial class Map
 
     private async Task UpdateRouteStats()
     {
-        if (module is null) return;
-        try
+        if (_editJs is null) return;
+        // Fetch stats + coords together so the in-panel waypoint list
+        // stays in sync with the polyline. Both round-trips are cheap
+        // (JS-side arrays), but we still only do one render afterwards.
+        var stats = await _editJs.GetEditRouteStatsAsync();
+        var coords = await _editJs.GetEditRouteCoordsAsync();
+        bool dirty = false;
+        if (stats is not null && stats.Length == 2)
         {
-            // Fetch stats + coords together so the in-panel waypoint list
-            // stays in sync with the polyline. Both round-trips are cheap
-            // (JS-side arrays), but we still only do one render afterwards.
-            var stats = await module.InvokeAsync<double[]>("getEditRouteStats");
-            var coords = await module.InvokeAsync<double[][]>("getEditRouteCoords");
-            bool dirty = false;
-            if (stats is not null && stats.Length == 2)
-            {
-                int wpCount = (int)stats[0];
-                double nm = stats[1];
-                var s = $"{wpCount} WP / {nm:F1} nm";
-                if (s != routeEditStats) { routeEditStats = s; dirty = true; }
-            }
-            if (coords is not null && !CoordsEqual(coords, routeEditCoords))
-            {
-                routeEditCoords = coords;
-                dirty = true;
-            }
-            if (dirty) await InvokeAsync(StateHasChanged);
+            int wpCount = (int)stats[0];
+            double nm = stats[1];
+            var s = $"{wpCount} WP / {nm:F1} nm";
+            if (s != routeEditStats) { routeEditStats = s; dirty = true; }
         }
-        catch (JSDisconnectedException) { }
-        catch (ObjectDisposedException) { }
+        if (coords is not null && !CoordsEqual(coords, routeEditCoords))
+        {
+            routeEditCoords = coords;
+            dirty = true;
+        }
+        if (dirty) await InvokeAsync(StateHasChanged);
     }
 
     private async Task RemoveRouteWaypoint(int index)
     {
-        if (module is null) return;
-        try { await module.InvokeVoidAsync("removeRouteEditWaypoint", index); }
-        catch (JSDisconnectedException) { return; }
+        if (_editJs is null) return;
+        await _editJs.RemoveRouteEditWaypointAsync(index);
         await UpdateRouteStats();
     }
 
@@ -250,9 +242,8 @@ public partial class Map
     /// routeEditCoords so the panel's numbered list re-renders.</summary>
     private async Task ReverseEditRoute()
     {
-        if (module is null) return;
-        try { await module.InvokeVoidAsync("reverseEditRoute"); }
-        catch (JSDisconnectedException) { return; }
+        if (_editJs is null) return;
+        await _editJs.ReverseEditRouteAsync();
         await UpdateRouteStats();
     }
 
@@ -316,11 +307,13 @@ public partial class Map
 
     private async Task SaveRouteCoreInner(bool activate)
     {
-        if (module is null) return;
+        if (_editJs is null) return;
 
+        // The wrapper swallows the disposal exceptions and returns
+        // null; the JSException catch stays so a real JS bug
+        // surfaces as a toast rather than freezing the save flow.
         double[][]? coords = null;
-        try { coords = await module.InvokeAsync<double[][]>("getEditRouteCoords"); }
-        catch (JSDisconnectedException) { /* cleanup runs in finally */ }
+        try { coords = await _editJs.GetEditRouteCoordsAsync(); }
         catch (JSException ex) { Toasts.Error($"Couldn't read route: {ex.Message}"); }
 
         SignalkRoute? newRoute = null;
@@ -403,17 +396,16 @@ public partial class Map
                     ? availableRoutes.FirstOrDefault(r => r.Id == newRouteId)
                     : null;
 
-                if (existingId is not null && newRoute is not null && module is not null)
+                if (existingId is not null && newRoute is not null && _routeJs is not null)
                 {
                     // Edit-in-place redraw: wipe the old polyline
-                    // so the geometry change takes effect.
-                    try { await module.InvokeVoidAsync("removeRoute", existingId); }
-                    catch (JSDisconnectedException) { }
+                    // so the geometry change takes effect. JSException
+                    // is benign here -- the next addRoute replaces it.
+                    try { await _routeJs.RemoveRouteAsync(existingId); }
                     catch (JSException) { /* next addRoute replaces it */ }
                     if (enabledRoutes.Contains(existingId))
                     {
                         try { await AddRouteToMap(newRoute); }
-                        catch (JSDisconnectedException) { }
                         catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
                     }
 
@@ -442,7 +434,6 @@ public partial class Map
                     enabledRoutes.Add(newRoute.Id);
                     await Settings.SetEnabledRoutesAsync(enabledRoutes);
                     try { await AddRouteToMap(newRoute); }
-                    catch (JSDisconnectedException) { }
                     catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
                 }
                 RebuildFilteredLayers();
@@ -467,8 +458,9 @@ public partial class Map
             routeStatsTimer?.Dispose();
             routeStatsTimer = null;
             RemoveEditNavGuard();
-            try { await module.InvokeVoidAsync("stopRouteEdit"); }
-            catch (JSDisconnectedException) { }
+            // JSException here is benign: the JS side is already torn
+            // down (the overlay rebuilds on the next init).
+            try { if (_editJs is not null) await _editJs.StopRouteEditAsync(); }
             catch (JSException) { /* JS already torn down; overlay will go on next init */ }
 
             // If we entered edit mode while a course was active,
@@ -481,11 +473,8 @@ public partial class Map
             // one; this catches SaveAsCopy / failed-save / fresh-save
             // where the original active route is still on the server
             // but its visual was suppressed for the edit session.
-            if (module is not null)
-            {
-                try { await module.InvokeVoidAsync("setActiveOverlayHidden", false); }
-                catch (JSDisconnectedException) { }
-            }
+            if (_routeJs is not null)
+                await _routeJs.SetActiveOverlayHiddenAsync(false);
             if (Data.ActiveRouteHref is not null)
             {
                 try
