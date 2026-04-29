@@ -1,0 +1,114 @@
+@* Shared scaffold for the Layers panel sections that show a filterable,
+   expandable list of items with per-row actions. The Routes / Waypoints /
+   Notes / Regions / Buddies / Vessels sections all share the same shape:
+
+   1. Empty-collection guard ("@if (Items.Count == 0) return;").
+   2. Optional LayerFilter match -- the panel-wide search box hides
+      the section entirely when its filtered list goes empty AND a
+      filter is active.
+   3. SectionHeader with title + count + expand/collapse toggle.
+   4. Foreach over filtered items, emitting one .chart-item row per
+      item with the parent-supplied action template.
+
+   Each consumer would otherwise re-implement those four steps in
+   ~15 LOC of identical Razor; this component carries that cost
+   once. Sections with shapes that don't fit (RadarsSection's range
+   dropdown + per-radar power buttons; MiscSection's bundled toggles
+   without a list; TrackHistorySection's controls-without-rows) keep
+   their hand-rolled markup.
+
+   The parent supplies:
+   - Title -- shown in the SectionHeader.
+   - Items + ItemKey -- the list and its @key selector.
+   - MatchesFilter (optional) -- the per-section filter predicate
+     (Waypoint matches name + id; Note matches title + description;
+     Charts has its own complex match -- so each section keeps its
+     own match function).
+   - RowTemplate -- a RenderFragment<TItem> that renders the row's
+     content INSIDE a wrapping .chart-item div. The component owns
+     the wrapper so the styling stays uniform across sections.
+   - HeaderExtras (optional) -- ChildContent slot inside the
+     SectionHeader for per-section affordances (the Notes / Regions
+     "Show on map" master toggle, etc).
+
+   Defaults:
+   - expanded = false, controlled internally via the SectionHeader
+     toggle. If a parent ever needs to start expanded or react to
+     the change, expose @bind-Expanded as a follow-up.
+   - RowStyle defaults to the existing flex layout used by every
+     section today; an override slot is here so future variants
+     (table rows, grid items) don't have to fork the component.
+
+   Pass-through behaviour: when LayerFilter is non-empty AND the
+   filter empties the list, the section hides itself entirely. This
+   matches the existing per-section behaviour. Empty AND no filter
+   -> still show the header so the helm sees the count of zero
+   (otherwise the panel "loses" the section silently). *@
+
+@typeparam TItem
+
+@if (Items.Count == 0) return;
+
+@{
+    var filtered = ApplyFilter();
+}
+
+@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
+
+<SectionHeader Title="@Title" Count="@filtered.Count"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded">
+    @HeaderExtras
+</SectionHeader>
+
+@if (expanded)
+{
+    @foreach (var item in filtered)
+    {
+        <div @key="ItemKey(item)" class="chart-item" style="@RowStyle">
+            @RowTemplate(item)
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    [Parameter, EditorRequired] public IReadOnlyList<TItem> Items { get; set; } = [];
+
+    /// <summary>Stable @key selector so Blazor can diff rows across
+    /// re-renders. Required: a row without a stable key flashes /
+    /// loses focus on every parent re-render.</summary>
+    [Parameter, EditorRequired] public Func<TItem, string> ItemKey { get; set; } = _ => "";
+
+    /// <summary>Per-section filter predicate. Receives the item and
+    /// the trimmed filter text; returns true if the item matches.
+    /// Null means "no filter applied" -- the LayerFilter parameter
+    /// passes through to the parent without affecting visibility.</summary>
+    [Parameter] public Func<TItem, string, bool>? MatchesFilter { get; set; }
+
+    [Parameter] public string LayerFilter { get; set; } = "";
+
+    [Parameter, EditorRequired] public RenderFragment<TItem> RowTemplate { get; set; } =
+        _ => _ => { };
+
+    /// <summary>Slot inside the SectionHeader for per-section
+    /// affordances that shouldn't trigger the collapse toggle (the
+    /// "Show on map" master toggle for Notes / Regions, etc).</summary>
+    [Parameter] public RenderFragment? HeaderExtras { get; set; }
+
+    /// <summary>Default row layout matches every existing section's
+    /// inline style; override for table-style or grid-style
+    /// variants without forking this component.</summary>
+    [Parameter] public string RowStyle { get; set; } =
+        "display:flex; justify-content:space-between; align-items:center;";
+
+    private bool expanded = false;
+
+    private IReadOnlyList<TItem> ApplyFilter()
+    {
+        if (MatchesFilter is null || string.IsNullOrWhiteSpace(LayerFilter)) return Items;
+        var f = LayerFilter.Trim();
+        return Items.Where(it => MatchesFilter(it, f)).ToList();
+    }
+}

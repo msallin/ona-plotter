@@ -5,43 +5,33 @@
    visibility toggle in the header) so a chart covered in old notes
    doesn't drown the primary chart data. *@
 
-@if (Notes.Count == 0) return;
-
-@{
-    var filtered = Filter(Notes, LayerFilter);
-}
-
-@if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(LayerFilter)) return;
-
-<SectionHeader Title="Notes" Count="@filtered.Count"
-               Expanded="@expanded"
-               OnToggle="() => expanded = !expanded">
-    <label class="notes-visible-toggle"
-           title="@(Visible ? "Hide all notes on map" : "Show all notes on map")"
-           @onclick:stopPropagation>
-        <input type="checkbox" checked="@Visible"
-               @onchange="e => OnToggleVisible.InvokeAsync((bool)(e.Value ?? false))" />
-        <span>Show</span>
-    </label>
-</SectionHeader>
-
-@if (expanded)
-{
-    @foreach (var n in filtered)
-    {
-        <div @key="n.Id" class="chart-item" style="display:flex; justify-content:space-between; align-items:center;">
-            <div class="chart-item-body">
-                <div class="chart-name">@(string.IsNullOrWhiteSpace(n.Title) ? "(untitled)" : n.Title)</div>
-                @if (!string.IsNullOrWhiteSpace(n.Description))
-                {
-                    <div class="chart-desc">@Truncate(n.Description!, 60)</div>
-                }
-            </div>
-            <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                    @onclick="() => OnFocus.InvokeAsync(n)">Focus</button>
+<CrudSection TItem="SignalkNote"
+             Title="Notes"
+             Items="Notes"
+             ItemKey="n => n.Id"
+             LayerFilter="@LayerFilter"
+             MatchesFilter="MatchesNote">
+    <HeaderExtras>
+        <label class="notes-visible-toggle"
+               title="@(Visible ? "Hide all notes on map" : "Show all notes on map")"
+               @onclick:stopPropagation>
+            <input type="checkbox" checked="@Visible"
+                   @onchange="e => OnToggleVisible.InvokeAsync((bool)(e.Value ?? false))" />
+            <span>Show</span>
+        </label>
+    </HeaderExtras>
+    <RowTemplate Context="n">
+        <div class="chart-item-body">
+            <div class="chart-name">@(string.IsNullOrWhiteSpace(n.Title) ? "(untitled)" : n.Title)</div>
+            @if (!string.IsNullOrWhiteSpace(n.Description))
+            {
+                <div class="chart-desc">@Truncate(n.Description!, 60)</div>
+            }
         </div>
-    }
-}
+        <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
+                @onclick="() => OnFocus.InvokeAsync(n)">Focus</button>
+    </RowTemplate>
+</CrudSection>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkNote> Notes { get; set; } = [];
@@ -50,18 +40,10 @@
     [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
-    private bool expanded = false;
-
     private static string Truncate(string s, int n)
         => s.Length <= n ? s : s[..n] + "...";
 
-    private static IReadOnlyList<SignalkNote> Filter(
-        IReadOnlyList<SignalkNote> all, string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter)) return all;
-        var f = filter.Trim();
-        return all.Where(n =>
-            (n.Title?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (n.Description?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
-    }
+    private static bool MatchesNote(SignalkNote n, string filter) =>
+        (n.Title?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (n.Description?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
 }
