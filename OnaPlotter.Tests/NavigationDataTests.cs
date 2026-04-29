@@ -133,6 +133,7 @@ public class NavigationDataTests
         nav.ApplyAnchorPosition(47.39, 8.54);
         nav.Apply("navigation.anchor.maxRadius", JsonSerializer.SerializeToElement(30.0));
         nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(12.5));
+        nav.Apply("navigation.anchor.bearingTrue", JsonSerializer.SerializeToElement(2.1));
 
         nav.ClearAnchor();
 
@@ -144,6 +145,23 @@ public class NavigationDataTests
         // Peak resets too -- the next anchor drop must not greet the
         // helm with yesterday's worst-case distance.
         await Assert.That(nav.AnchorPeakRadius).IsNull();
+        // Bearing nulls so the HUD card doesn't render a stale needle
+        // pointing at where the anchor used to be the moment the helm
+        // raises and motors off.
+        await Assert.That(nav.AnchorBearingTrue).IsNull();
+    }
+
+    [Test]
+    public async Task Apply_AnchorBearingTrue_SetsProperty()
+    {
+        // Plugin publishes the anchor's true-north bearing (radians)
+        // so the HUD card can sight back at it. Pin the path -> property
+        // mapping so a future plugin rename to "bearing" or
+        // "bearingFromVessel" surfaces here.
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(1.5707963); // ~90 deg = east
+        await Assert.That(nav.Apply("navigation.anchor.bearingTrue", je)).IsTrue();
+        await Assert.That(nav.AnchorBearingTrue).IsEqualTo(1.5707963);
     }
 
     [Test]

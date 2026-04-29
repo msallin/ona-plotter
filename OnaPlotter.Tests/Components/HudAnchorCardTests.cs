@@ -18,8 +18,10 @@ public class HudAnchorCardTests
         double? currentRadius = 12,
         double? maxRadius = 30,
         string? dormantReason = null,
-        double? peakRadius = null) =>
-        new(visible, dragging, manual, manualRadius, currentRadius, maxRadius, dormantReason, peakRadius);
+        double? peakRadius = null,
+        double? bearingTrue = null) =>
+        new(visible, dragging, manual, manualRadius, currentRadius, maxRadius,
+            dormantReason, peakRadius, bearingTrue);
 
     [Test]
     public async Task NotVisible_RendersNothing()
@@ -147,5 +149,55 @@ public class HudAnchorCardTests
         // the consumer.
         cut.FindAll(".anchor-radius-chips .map-btn")[0].Click();
         await Assert.That(gotRadius).IsEqualTo(20);
+    }
+
+    [Test]
+    public async Task Bearing_HiddenWhenNull()
+    {
+        // No bearing data (manual flow, or first delta after drop
+        // hasn't arrived). The needle row should NOT render so the
+        // card height stays unchanged.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: null)));
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Bearing_RendersDegrees_FromRadians()
+    {
+        // Plugin publishes radians, the helm reads degrees. Half-PI =
+        // 90deg = due east. Pin the conversion so a refactor that
+        // changes the snapshot to degrees-already-converted (or back
+        // to radians) is a deliberate move, not a silent drift.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: Math.PI / 2)));
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(1);
+        await Assert.That(cut.Find(".anchor-bearing-value").TextContent).Contains("90");
+    }
+
+    [Test]
+    public async Task Bearing_NormalisesNegativeRadiansToPositiveDegrees()
+    {
+        // Plugin spec says 0..2pi, but a careless impl could publish
+        // -PI/2 for due-west; defend against that by normalising into
+        // [0, 360). -PI/2 should render as 270deg, not "-90".
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap(bearingTrue: -Math.PI / 2)));
+        var text = cut.Find(".anchor-bearing-value").TextContent;
+        await Assert.That(text).Contains("270");
+        await Assert.That(text).DoesNotContain("-");
+    }
+
+    [Test]
+    public async Task Snapshot_BearingChange_NotEqual()
+    {
+        // Bearing ticks as the boat swings; equality must catch the
+        // delta so the needle re-renders to the new angle.
+        var a = Snap(bearingTrue: 1.0);
+        var b = Snap(bearingTrue: 1.5);
+        await Assert.That(a).IsNotEqualTo(b);
     }
 }

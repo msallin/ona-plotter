@@ -193,6 +193,13 @@ public sealed class SignalkClient : IAsyncDisposable
         "navigation.anchor.position",
         "navigation.anchor.maxRadius",
         "navigation.anchor.currentRadius",
+        // Bearing from vessel to anchor; powers the small SVG needle
+        // on the anchor HUD card so the helm can sight back at the
+        // anchor when it's out of sight at night. We consume the
+        // true-north variant because the HUD compass speaks true;
+        // the plugin also publishes apparentBearing (heading-relative)
+        // which we don't need.
+        "navigation.anchor.bearingTrue",
         // Tide height + next extremes (openwatersio/signalk-tides &
         // similar plugins). No-ops when the plugin isn't installed.
         "environment.tide.heightNow",
