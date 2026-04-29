@@ -18,6 +18,10 @@ import * as activeRouteLayerMod from './activeRouteLayer.js';
 import * as courseLineLayerMod from './courseLineLayer.js';
 import * as routeEditLayerMod from './routeEditLayer.js';
 import * as polygonEditLayerMod from './polygonEditLayer.js';
+import * as waypointLayerMod from './waypointLayer.js';
+import * as noteLayerMod from './noteLayer.js';
+import * as regionLayerMod from './regionLayer.js';
+import { esc as escImported, wireDeleteConfirm as wireDeleteConfirmImported } from './popupHelpers.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -206,8 +210,15 @@ let serverTrackLayer = null;
 // anchorLayer / mobLayer / measureLayer for their own geometry).
 // boatMarker still stashes its data on _onaSelfData for popup rendering.
 
-// HTML-escape untrusted strings for popup content.
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+// HTML-escape untrusted strings for popup content. Module-level
+// alias so the in-file template literals don't have to drag the
+// 'Imported' suffix through every interpolation.
+const esc = escImported;
+// Mux-side wireDeleteConfirm passes the cached dotNetRef through;
+// modules that own their own popups call the imported helper directly
+// with their own getDotNetRef.
+const wireDeleteConfirm = (popup, selector, method, id) =>
+    wireDeleteConfirmImported(popup, selector, method, id, () => dotNetRef);
 
 // --- Icons ---
 
@@ -419,7 +430,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // remove() / clear() can pull layers off the map. Done here rather
     // than in the ctor because module-scope `new MarkerLayer()` runs
     // before initMap, when `map` is still null.
-    for (const ml of [chartLayers, routeLayers, waypointMarkers, noteMarkers, regionLayers]) {
+    // chartLayers + routeLayers MarkerLayers stay in the mux; waypoint /
+    // note / region / aton layers each own their own MarkerLayer inside
+    // their dedicated module and call setMap on it from their init().
+    for (const ml of [chartLayers, routeLayers]) {
         ml.setMap(map);
     }
 
@@ -437,6 +451,9 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     routeEditLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     polygonEditLayerMod.init(map);
+    waypointLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
+    noteLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
+    regionLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
     // Edit-mode flags + the mode-specific "add point" dispatcher are
     // shared by aisLayer + activeRouteLayer (both have per-line click
     // handlers that fall back into route / polygon / measure flows
@@ -1617,239 +1634,6 @@ function pointToSegmentPixels(p, a, b) {
     return Math.hypot(p.x - cx, p.y - cy);
 }
 
-// --- Waypoint Markers ---
-
-const waypointMarkers = new MarkerLayer();
-
-// Waypoint marker colour reads from MapColors.waypoint via
-// readMapColors(); the literal here in the MapColors fallback is
-// terracotta (a step warmer/redder than the route amber so a bare
-// waypoint reads distinct from a route dot).
-
-// Formats the hover-tooltip content for a waypoint marker: name (or
-// short id if unnamed) above a compact coordinate pair. Returned as
-// HTML so the tooltip can break onto two lines -- plain-string
-// tooltips can't wrap. Kept as a free function so map-restart
-// rebuilds use the same format as the initial addWaypointMarker.
-function formatWaypointTooltip(name, id, lat, lon) {
-    const title = name || (id ? id.substring(0, 8) : 'Waypoint');
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
-    const coords = `${Math.abs(lat).toFixed(5)}\u00B0 ${ns}, ${Math.abs(lon).toFixed(5)}\u00B0 ${ew}`;
-    return `<div class="wp-tooltip-name">${esc(title)}</div>` +
-           `<div class="wp-tooltip-coords">${esc(coords)}</div>`;
-}
-
-export function addWaypointMarker(id, lat, lon, name) {
-    if (!map || waypointMarkers.has(id)) return;
-    const marker = L.circleMarker([lat, lon], {
-        radius: 6, color: MapColors.waypoint, fillColor: MapColors.waypoint, fillOpacity: 1, weight: 2,
-        interactive: false,
-    });
-    // Wider invisible hit-buffer so a finger-wide tap registers.
-    // 6 px visible radius = 12 px target; bumped to 22 px here gives
-    // a 44 px hit (iPad WCAG floor). Visual marker stays 6 px so the
-    // chart doesn't look cluttered.
-    const hit = L.circleMarker([lat, lon], {
-        radius: 22, opacity: 0, fillOpacity: 0, weight: 0, interactive: true
-    });
-    // Tooltip on hover (quick identification); popup on click (full
-    // name + Delete). Same pattern as notes/regions so the tap-to-act
-    // affordance is consistent across user-placed objects.
-    //
-    // Coordinates now accompany the name: F5 precision gives ~1 m
-    // resolution which is what a helm reading coords off a chart
-    // actually needs, without pretending to a decimal of longitude
-    // that GPS jitter already eats. Hemisphere letters (N/S, E/W)
-    // keep the reading unambiguous when the waypoint is near the
-    // equator or the prime meridian.
-    // Events fire on the hit buffer; the visible marker is non-
-    // interactive so the two don't double-handle.
-    hit.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
-        permanent: false, direction: 'right', offset: [10, 0],
-        className: 'bearing-tooltip'
-    });
-    hit.bindPopup(buildWaypointPopupHtml(id, name, lat, lon), {
-        className: 'note-popup',
-        maxWidth: 280,
-        autoClose: true,
-        closeButton: false,
-    });
-    hit.on('click', (ev) => {
-        // During edit modes, swallow the click and forward the waypoint's
-        // location to whatever the user is plotting -- matches the note
-        // marker's edit-mode behaviour.
-        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
-            L.DomEvent.stopPropagation(ev);
-            const ll = ev.latlng || marker.getLatLng();
-            if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
-            else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
-            hit.closePopup();
-        }
-    });
-    hit.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id));
-    // Group + add-to-map so remove/clear takes both layers down
-    // together. MarkerLayer.remove -> map.removeLayer(group) which
-    // removes its children.
-    const group = L.layerGroup([marker, hit]).addTo(map);
-    waypointMarkers.set(id, group);
-}
-
-export function removeWaypointMarker(id) {
-    if (!map) return;
-    waypointMarkers.remove(id);
-}
-
-// --- Note Markers ---
-// Geolocated text annotations (SignalK /resources/notes). Rendered as a
-// small folded-page pin that reads distinct from waypoints (circular)
-// and routes (amber line). Click opens a popup with title + description
-// and a Delete button that round-trips to C# via the cached dotNetRef.
-
-const noteMarkers = new MarkerLayer();
-// Note pin colour: darker amber in the same user-annotation family as
-// routes (#e09f3e) and waypoints (#c76f51). Deliberate move from the
-// previous slate-blue -- blue-on-blue-water tested poorly, and one
-// hue family across all user-placed objects is visually coherent.
-// Shape (folded-page vs circle vs line) carries the "this is a note"
-// signal, not hue. Note hue reads from MapColors.note via
-// readMapColors() so a CSS palette tweak cascades; the dark stroke
-// stays a literal because the legend doesn't reference it.
-const NOTE_STROKE = '#7a5418';
-
-function makeNoteIcon() {
-    // Modern sticky-note pin, 22x28. Rounded-corner card (no skeuomorphic
-    // folded-corner), white text strokes for better contrast against the
-    // amber fill, clean teardrop tail pointing down to the map coord.
-    // Anchor is bottom-centre so the tip of the tail lands on the target
-    // lat/lon. Softer drop-shadow than the v1 icon so the pin lifts off
-    // the chart without adding visual noise.
-    const svg = `
-        <svg width="22" height="28" viewBox="0 0 22 28" xmlns="http://www.w3.org/2000/svg"
-             style="filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.35));">
-            <rect x="2" y="2" width="18" height="18" rx="4" ry="4"
-                  fill="${MapColors.note}" stroke="${NOTE_STROKE}" stroke-width="1.2"/>
-            <line x1="6"  y1="8"  x2="16" y2="8"
-                  stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
-            <line x1="6"  y1="12" x2="16" y2="12"
-                  stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
-            <line x1="6"  y1="16" x2="12" y2="16"
-                  stroke="rgba(255,255,255,0.92)" stroke-width="1.4" stroke-linecap="round"/>
-            <path d="M8 20 Q11 20 11 26 Q11 20 14 20 Z"
-                  fill="${MapColors.note}" stroke="${NOTE_STROKE}" stroke-width="1.2"
-                  stroke-linejoin="round"/>
-        </svg>`;
-    return L.divIcon({
-        className: 'note-icon',
-        html: svg,
-        iconSize: [22, 28],
-        iconAnchor: [11, 28],
-        popupAnchor: [0, -26],
-    });
-}
-
-let noteIconCached = null;
-function getNoteIcon() {
-    if (!noteIconCached) noteIconCached = makeNoteIcon();
-    return noteIconCached;
-}
-
-export function addNoteMarker(id, lat, lon, title, description) {
-    if (!map || noteMarkers.has(id)) return;
-    const marker = L.marker([lat, lon], { icon: getNoteIcon() }).addTo(map);
-    marker.bindPopup(buildNotePopupHtml(id, title, description), {
-        className: 'note-popup',
-        maxWidth: 280,
-        autoClose: true,
-    });
-    // During edit modes, swallow the click and append to whatever the
-    // user is building. Same guard as AIS markers.
-    marker.on('click', (ev) => {
-        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
-            L.DomEvent.stopPropagation(ev);
-            const ll = ev.latlng || marker.getLatLng();
-            if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
-            else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
-            marker.closePopup();
-        }
-    });
-    // Wire up the delete button when the popup opens. We query within the
-    // popup DOM so an id collision with something else on the page can't
-    // hijack the click.
-    marker.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.note-delete-btn', 'DeleteNote', id));
-    noteMarkers.set(id, marker);
-}
-
-// Two-step confirm wiring for a popup's delete button. First click
-// swaps the label to "Really?" (intentionally short so the button's
-// pixel width stays close to the original "Delete" label and the
-// surrounding popup layout doesn't reflow under the helm's finger);
-// second click within 3 seconds triggers the actual server delete
-// via the C# [JSInvokable] method. A passing tap in rough weather
-// is the nightmare case; the confirm-and-timeout pattern matches
-// how native iOS/Android apps guard destructive actions without
-// pulling up a full confirm dialog.
-function wireDeleteConfirm(popup, selector, dotNetMethod, id) {
-    const el = popup.getElement();
-    if (!el) return;
-    const btn = el.querySelector(selector);
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    const originalLabel = btn.textContent;
-    let confirmTimer = null;
-    const reset = () => {
-        btn.classList.remove('confirming');
-        btn.textContent = originalLabel;
-        if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
-    };
-    btn.addEventListener('click', () => {
-        if (!btn.classList.contains('confirming')) {
-            btn.classList.add('confirming');
-            btn.textContent = 'Really?';
-            confirmTimer = setTimeout(reset, 3000);
-            return;
-        }
-        reset();
-        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id).catch(() => {});
-    });
-    // Closing the popup resets confirm state so re-opening starts fresh.
-    popup.once('popupclose', reset);
-}
-
-function buildWaypointPopupHtml(id, name, lat, lon) {
-    const safeName = esc(name || id.substring(0, 8));
-    // Coords mirror the hover-tooltip format (5dp ~ 1 m, hemisphere
-    // letters) so hover-then-tap doesn't show two conflicting
-    // renderings of the same position. Tap-only users (phones, iPad)
-    // need the coords here because they never trigger hover.
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
-    const coords = `${Math.abs(lat).toFixed(5)}\u00B0 ${ns}, ${Math.abs(lon).toFixed(5)}\u00B0 ${ew}`;
-    return `
-        <div class="note-popup-inner">
-            <div class="note-popup-title">${safeName}</div>
-            <div class="note-popup-coords">${esc(coords)}</div>
-            <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
-        </div>`;
-}
-
-function buildNotePopupHtml(id, title, description) {
-    const safeTitle = esc(title || '(untitled)');
-    const safeDesc = description ? esc(description).replace(/\n/g, '<br/>') : '';
-    return `
-        <div class="note-popup-inner">
-            <div class="note-popup-title">${safeTitle}</div>
-            ${safeDesc ? `<div class="note-popup-body">${safeDesc}</div>` : ''}
-            <button class="note-delete-btn" type="button">Delete</button>
-        </div>`;
-}
-
-export function removeNoteMarker(id) { noteMarkers.remove(id); }
-
-export function clearNotes() { noteMarkers.clear(); }
-
 // Pan the map to a given lat/lon without changing the current zoom.
 // Used by the layers-panel "Focus" button on notes (and potentially
 // other resources that need a "show me where this is" action).
@@ -1877,64 +1661,25 @@ export function getMapCenter() {
     return [c.lat, c.lng];
 }
 
-// Open the popup on a note marker if it's currently rendered. No-op
-// when the id isn't present (note not yet loaded, or notes hidden).
-export function openNotePopup(id) {
-    const m = noteMarkers.get(id);
-    if (m) m.openPopup();
-}
+// --- Waypoint / Note / Region markers ---
+// Implementations in waypointLayer.js, noteLayer.js, regionLayer.js.
+export const addWaypointMarker = (id, lat, lon, name) => waypointLayerMod.addWaypointMarker(id, lat, lon, name);
+export const removeWaypointMarker = (id) => waypointLayerMod.removeWaypointMarker(id);
 
-// --- Region (polygon/circle areas) ---
-// Rendered as translucent filled polygons with a stronger border.
-// Colour is a muted lavender-gray that doesn't collide with routes
-// (amber), waypoints (terracotta), notes (slate-blue) or the AIS
-// palette. Phase 1 shows them; Phase 2 lets the user create circles
-// via a polygon-approximation.
+export const addNoteMarker = (id, lat, lon, title, description) =>
+    noteLayerMod.addNoteMarker(id, lat, lon, title, description);
+export const removeNoteMarker = (id) => noteLayerMod.removeNoteMarker(id);
+export const clearNotes = () => noteLayerMod.clearNotes();
+export const openNotePopup = (id) => noteLayerMod.openNotePopup(id);
 
-const regionLayers = new MarkerLayer();
-// Region colours read from MapColors.region (stroke) and
-// MapColors.regionFill via readMapColors(); literals here in the
-// MapColors fallback are amber-gold in the user-annotation family.
-// One hue family for every user-placed object, shape carries the
-// meaning. Lighter than the note pin so a pin over a region
-// doesn't read as "same colour blob".
-
-// rings: [[[lat, lon], ...], ...]  -- one or more outer rings.
-// A MultiPolygon region passes multiple rings; most regions are a
-// single Polygon, so `rings` is a one-element array.
-export function addRegion(id, rings, title, description) {
-    if (!map || regionLayers.has(id)) return;
-    if (!Array.isArray(rings) || rings.length === 0) return;
-    const group = L.layerGroup();
-    const popupHtml = buildRegionPopupHtml(id, title, description);
-    for (const ring of rings) {
-        const poly = L.polygon(ring, {
-            color: MapColors.region,
-            fillColor: MapColors.region,
-            fillOpacity: 0.18,
-            weight: 1.8,
-            opacity: 0.85,
-        });
-        poly.bindPopup(popupHtml, { className: 'region-popup', maxWidth: 280 });
-        // Route / polygon / measure edit: clicks on regions append to
-        // the in-progress shape instead of opening the region popup.
-        poly.on('click', (ev) => {
-            if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
-                L.DomEvent.stopPropagation(ev);
-                const ll = ev.latlng;
-                if (!ll) return;
-                if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
-                else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
-                else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
-                poly.closePopup();
-            }
-        });
-        poly.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.region-delete-btn', 'DeleteRegion', id));
-        group.addLayer(poly);
-    }
-    group.addTo(map);
-    regionLayers.set(id, group);
-}
+export const addRegion = (id, rings, title, description) =>
+    regionLayerMod.addRegion(id, rings, title, description);
+export const removeRegion = (id) => regionLayerMod.removeRegion(id);
+export const clearRegions = () => regionLayerMod.clearRegions();
+export const focusRegion = (id, firstRing) => regionLayerMod.focusRegion(id, firstRing);
+export const setCirclePreview = (lat, lon, radiusMeters) =>
+    regionLayerMod.setCirclePreview(lat, lon, radiusMeters);
+export const clearCirclePreview = () => regionLayerMod.clearCirclePreview();
 
 // Own-boat popup: same shape as the AIS popup minus the vessel-lookup
 // links / buddy toggle. Rebuilt on every popupopen from the marker's
@@ -1970,66 +1715,6 @@ export function setOwnMmsi(mmsi) {
     ownMmsi = mmsi || null;
 }
 
-function buildRegionPopupHtml(id, title, description) {
-    const safeTitle = esc(title || '(untitled region)');
-    const safeDesc = description ? esc(description).replace(/\n/g, '<br/>') : '';
-    return `
-        <div class="region-popup-inner">
-            <div class="region-popup-title">${safeTitle}</div>
-            ${safeDesc ? `<div class="region-popup-body">${safeDesc}</div>` : ''}
-            <button class="region-delete-btn" type="button">Delete</button>
-        </div>`;
-}
-
-export function removeRegion(id) { regionLayers.remove(id); }
-
-export function clearRegions() { regionLayers.clear(); }
-
-// ---- Region circle preview ----------------------------------------
-// Light-weight circle drawn while the Add-Region dialog is open in
-// Circle mode. Shares the region amber so the user sees the final
-// shape at real size before committing. Replaced on every radius tap.
-
-let circlePreviewLayer = null;
-
-export function setCirclePreview(lat, lon, radiusMeters) {
-    if (!map) return;
-    if (circlePreviewLayer) {
-        circlePreviewLayer.setLatLng([lat, lon]);
-        circlePreviewLayer.setRadius(radiusMeters);
-        return;
-    }
-    circlePreviewLayer = L.circle([lat, lon], {
-        radius: radiusMeters,
-        color: MapColors.region,
-        fillColor: MapColors.region,
-        fillOpacity: 0.12,
-        weight: 1.6,
-        dashArray: '4,4',
-        interactive: false,
-    }).addTo(map);
-}
-
-export function clearCirclePreview() {
-    if (circlePreviewLayer && map) {
-        map.removeLayer(circlePreviewLayer);
-        circlePreviewLayer = null;
-    }
-}
-
-// Pan to a region and open its popup. Accepts the first ring and
-// uses its bounds so we frame whatever the user clicked in the
-// Layers panel.
-export function focusRegion(id, firstRing) {
-    const layer = regionLayers.get(id);
-    if (!layer || !map) return;
-    if (Array.isArray(firstRing) && firstRing.length > 0) {
-        const bounds = L.latLngBounds(firstRing);
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-    }
-    // Open popup on the first polygon in the group.
-    layer.eachLayer(l => { if (l.openPopup) l.openPopup(); return false; });
-}
 
 // --- Weather Overlay ---
 // Implementation in weatherLayer.js; mux re-exports the C# entries.
@@ -2247,9 +1932,9 @@ export function dispose() {
     weatherLayerMod.dispose();
     routeEditLayerMod.dispose();
     polygonEditLayerMod.dispose();
-    waypointMarkers.clear();
-    noteMarkers.clear();
-    regionLayers.clear();
+    waypointLayerMod.dispose();
+    noteLayerMod.dispose();
+    regionLayerMod.dispose();
     atonLayerMod.dispose();
     // AIS state cleanup happens in aisLayerMod.dispose() above.
     // dotNetRef is now nulled at the TOP of dispose() so map.remove()'s
