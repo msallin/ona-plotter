@@ -36,6 +36,21 @@ public interface IMapDisplaySettings
     /// the limits + clamp logic.</summary>
     double WeatherOverlayOpacity { get; }
 
+    /// <summary>Chart upscale ("overzoom") master flag. Off by
+    /// default; see design draft for the rationale (helms who don't
+    /// ask for it shouldn't see pixelated tiles past native zoom).
+    /// When true, chart tile layers are wrapped so Leaflet GPU-
+    /// upscales tiles at <c>maxNativeZoom</c> when the helm zooms
+    /// past it.</summary>
+    bool ChartUpscaleEnabled { get; }
+
+    /// <summary>Chart upscale levels, 0..3. <c>2</c> (4x upscale)
+    /// is the recommended default; <c>3</c> (8x) is here for helms
+    /// who explicitly want more reach despite the quality cliff.
+    /// Limits + clamp live on
+    /// <see cref="OnaPlotter.Utilities.ChartUpscale"/>.</summary>
+    int ChartUpscaleLevels { get; }
+
     /// <summary>Harbor mode: bundled AIS + collision suppressions.
     /// In-memory only -- never persisted (see settings rationale).</summary>
     bool HarborMode { get; }
@@ -62,6 +77,8 @@ public interface IMapDisplaySettings
     Task SetAtonsVisibleAsync(bool value);
     Task SetGuardZoneVisibleAsync(bool value);
     Task SetWeatherOverlayOpacityAsync(double value);
+    Task SetChartUpscaleEnabledAsync(bool value);
+    Task SetChartUpscaleLevelsAsync(int value);
     Task SetHarborModeAsync(bool value);
     Task SetBigTypeAsync(bool value);
     Task SetExpandAllHudAsync(bool value);

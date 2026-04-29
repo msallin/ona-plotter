@@ -23,6 +23,7 @@ public sealed class ChartLayerController
 {
     private readonly IMapOverlaysJs _overlaysJs;
     private readonly IChartSettings _settings;
+    private readonly IMapDisplaySettings _display;
     private readonly Action<string, string> _toastError;       // (chart name, message)
 
     private readonly HashSet<string> _enabled = new(StringComparer.Ordinal);
@@ -47,10 +48,12 @@ public sealed class ChartLayerController
     public ChartLayerController(
         IMapOverlaysJs overlaysJs,
         IChartSettings settings,
+        IMapDisplaySettings display,
         Action<string, string> toastError)
     {
         _overlaysJs = overlaysJs ?? throw new ArgumentNullException(nameof(overlaysJs));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _display = display ?? throw new ArgumentNullException(nameof(display));
         _toastError = toastError ?? throw new ArgumentNullException(nameof(toastError));
     }
 
@@ -78,9 +81,14 @@ public sealed class ChartLayerController
         {
             try
             {
+                // Upscale levels resolved here (master flag * configured
+                // levels) so the JS side stays a thin renderer; the
+                // decorator no-ops on 0. See OnaPlotter.Utilities.ChartUpscale.
+                int upscale = OnaPlotter.Utilities.ChartUpscale.Effective(
+                    _display.ChartUpscaleEnabled, _display.ChartUpscaleLevels);
                 await _overlaysJs.AddChartLayerAsync(
                     chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18,
-                    0.8, chart.Bounds);
+                    0.8, chart.Bounds, upscale);
             }
             catch (Microsoft.JSInterop.JSException ex)
             {

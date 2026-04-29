@@ -21,8 +21,8 @@ public sealed class MapOverlaysJs : IMapOverlaysJs
 
     public void MarkDisposed() => _disposed = true;
 
-    public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds)
-        => InvokeSafe("addChartLayer", id, tileUrl, minZoom, maxZoom, opacity, bounds);
+    public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels)
+        => InvokeSafe("addChartLayer", id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels);
 
     public Task RemoveChartLayerAsync(string id)
         => InvokeSafe("removeChartLayer", id);

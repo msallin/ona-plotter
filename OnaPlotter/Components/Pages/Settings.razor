@@ -168,6 +168,61 @@
         </div>
     </div>
 
+    @* Chart upscale (overzoom). Off by default; helms who want extra
+       detail past a chart's native max zoom turn it on. Levels stepper
+       sits beside the master flag so the helm sees both controls
+       together; only the level value matters when the flag is on. *@
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.ChartUpscaleEnabled"
+                           @onchange="OnChartUpscaleEnabledChanged" />
+                    <span class="form-check-label">Chart upscale (overzoom)</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Lets the helm zoom past a chart's native maximum.
+                    Tiles at the native cap get GPU-upscaled to fill
+                    higher zoom levels -- pixelated but readable for
+                    close-quarters work (reefs, harbour entries, dock
+                    approaches). Above the cap + level limit, chart
+                    tiles go blank and the OpenStreetMap fallback
+                    shows through, which is the honest signal that
+                    you've zoomed past real data. Removable in one
+                    click if it doesn't behave on your charts.
+                </small>
+                <div class="mt-2 d-flex align-items-center gap-2"
+                     style="@(AppSettings.ChartUpscaleEnabled ? "" : "opacity:0.5;")">
+                    <label class="form-label mb-0" for="chart-upscale-levels">Levels:</label>
+                    <input id="chart-upscale-levels"
+                           type="number" class="form-control form-control-sm"
+                           style="width:5rem;"
+                           min="@OnaPlotter.Utilities.ChartUpscale.MinLevels"
+                           max="@OnaPlotter.Utilities.ChartUpscale.MaxLevels"
+                           step="1"
+                           disabled="@(!AppSettings.ChartUpscaleEnabled)"
+                           value="@AppSettings.ChartUpscaleLevels"
+                           @onchange="OnChartUpscaleLevelsChanged" />
+                    <small class="text-muted">
+                        @* 2 levels = 4x upscale, 3 levels = 8x. The
+                           helm explicitly asked for 0..3 so power
+                           users with mostly-fine harbour charts can
+                           push to 3 if they want. *@
+                        @(AppSettings.ChartUpscaleLevels switch
+                        {
+                            0 => "0 = no upscale (decorator off)",
+                            1 => "1 = 2x upscale",
+                            2 => "2 = 4x upscale (recommended)",
+                            3 => "3 = 8x upscale (visibly pixelated)",
+                            _ => ""
+                        })
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="col-12 mt-3">
         <h5 class="page-section-header">Navigation</h5>
     </div>
@@ -1003,6 +1058,21 @@
     {
         bool on = e.Value is bool b && b;
         await AppSettings.SetShowRadarHudAsync(on);
+    }
+
+    private async Task OnChartUpscaleEnabledChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetChartUpscaleEnabledAsync(on);
+    }
+
+    private async Task OnChartUpscaleLevelsChanged(ChangeEventArgs e)
+    {
+        // Defensive parse: a malformed input keeps the previous value.
+        // Clamp lives in SetChartUpscaleLevelsAsync so a stored stale
+        // value (corrupted localStorage) clamps on the next read too.
+        if (!int.TryParse(e.Value?.ToString(), out int levels)) return;
+        await AppSettings.SetChartUpscaleLevelsAsync(levels);
     }
 
     private static readonly (string val, string label, string tip)[] SailingModes =

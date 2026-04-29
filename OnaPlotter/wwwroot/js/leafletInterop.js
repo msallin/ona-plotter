@@ -14,6 +14,7 @@ import * as laylineLayerMod from './laylineLayer.js';
 import * as atonLayerMod from './atonLayer.js';
 import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
+import { withOverzoom } from './overzoomLayer.js';
 import * as activeRouteLayerMod from './activeRouteLayer.js';
 import * as courseLineLayerMod from './courseLineLayer.js';
 import * as routeEditLayerMod from './routeEditLayer.js';
@@ -1186,7 +1187,14 @@ export function setNightMode(enabled) {
 // server only has z15), tiles above the real max 404 and the base
 // layer shows through. Honest but simple; the feature is on the
 // backlog to revisit.
-export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
+// Per-chart tile-error counter, surfaced via getChartTileErrors() for
+// the Settings dev section. Counts the `tileerror` Leaflet event for
+// each chart layer. NOT used as a runtime probe (the design draft
+// rejected probes for v2); just diagnostic so the helm can answer
+// "is this chart serving real tiles past the cap I picked?".
+const chartTileErrors = new Map();   // id -> count
+
+export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels) {
     if (!map || chartLayers.has(id)) return false;
     // OSM + OpenSeaMap stay attached as permanent fallback layers
     // even when SignalK chart-tiles are active:
@@ -1202,7 +1210,7 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
     // misdiagnosed: OSM IS active (attached, fills the gaps) and the
     // attribution is correctly shown for that reason.
     const native = maxZoom || 18;
-    const opts = {
+    let opts = {
         minZoom: minZoom || 1,
         maxNativeZoom: native,
         maxZoom: native,
@@ -1231,16 +1239,39 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds) {
             [bounds[3], bounds[2]]   // NE: [north, east]
         );
     }
+    // Chart-upscale decorator (overzoom). Wraps options before the
+    // Leaflet constructor; 0 levels = identity passthrough. Removable
+    // contract: drop the import + this line + the upscaleLevels
+    // parameter and the feature is gone.
+    opts = withOverzoom(opts, upscaleLevels | 0);
     const layer = L.tileLayer(tileUrl, opts);
     layer.addTo(map);
     layer.setZIndex(50);
     chartLayers.set(id, layer);
+    chartTileErrors.set(id, 0);
+    layer.on('tileerror', () => {
+        chartTileErrors.set(id, (chartTileErrors.get(id) ?? 0) + 1);
+    });
     restackChartOpacities();
     return true;
 }
 
+/**
+ * Diagnostic getter for the Settings dev section. Returns a flat
+ * object { chartId: errorCount } so a Razor binding can render a
+ * simple list. Helms see "Chart X: 47 missing tiles" and decide
+ * whether to lower its upscale cap or report a server-side bug.
+ * Cleared on chart-layer removal.
+ */
+export function getChartTileErrors() {
+    const out = {};
+    for (const [id, count] of chartTileErrors) out[id] = count;
+    return out;
+}
+
 export function removeChartLayer(id) {
     chartLayers.remove(id);
+    chartTileErrors.delete(id);
     // OSM + OpenSeaMap were never removed in addChartLayer (see the
     // comment there for why), so nothing to re-add here.
     restackChartOpacities();

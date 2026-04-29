@@ -15,8 +15,13 @@ public interface IMapOverlaysJs
 
     /// <summary>Add a chart tile overlay. <paramref name="bounds"/> is
     /// <c>[west, south, east, north]</c> or null when the chart spans
-    /// the whole world.</summary>
-    Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds);
+    /// the whole world. <paramref name="upscaleLevels"/> drives the
+    /// chart-upscale decorator: <c>0</c> = no upscale (bare layer),
+    /// <c>1..3</c> = let Leaflet GPU-upscale tiles fetched at
+    /// <c>maxNativeZoom</c> up to <c>maxNativeZoom + upscaleLevels</c>.
+    /// Limits + clamping live on
+    /// <see cref="OnaPlotter.Utilities.ChartUpscale"/>.</summary>
+    Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels);
 
     /// <summary>Remove a previously-added chart tile overlay.</summary>
     Task RemoveChartLayerAsync(string id);

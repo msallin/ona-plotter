@@ -11,22 +11,23 @@ namespace OnaPlotter.Tests;
 public class MapOverlaysJsTests
 {
     [Test]
-    public async Task AddChartLayerAsync_PassesAllSixArgs()
+    public async Task AddChartLayerAsync_PassesAllSevenArgs()
     {
         var fake = new RecordingJsRef();
         var sut = new MapOverlaysJs(fake);
         var bounds = new[] { -10.0, 50.0, 10.0, 60.0 };
 
-        await sut.AddChartLayerAsync("c1", "https://tiles/{z}/{x}/{y}.png", 1, 18, 0.8, bounds);
+        await sut.AddChartLayerAsync("c1", "https://tiles/{z}/{x}/{y}.png", 1, 18, 0.8, bounds, 2);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("addChartLayer");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(6);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(7);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("c1");
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo("https://tiles/{z}/{x}/{y}.png");
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(1);
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo(18);
         await Assert.That(fake.Calls[0].args[4]).IsEqualTo(0.8);
         await Assert.That(fake.Calls[0].args[5]).IsSameReferenceAs(bounds);
+        await Assert.That(fake.Calls[0].args[6]).IsEqualTo(2);
     }
 
     [Test]
@@ -37,9 +38,10 @@ public class MapOverlaysJsTests
         var fake = new RecordingJsRef();
         var sut = new MapOverlaysJs(fake);
 
-        await sut.AddChartLayerAsync("c1", "url", 1, 18, 1.0, null);
+        await sut.AddChartLayerAsync("c1", "url", 1, 18, 1.0, null, 0);
 
         await Assert.That(fake.Calls[0].args[5]).IsNull();
+        await Assert.That(fake.Calls[0].args[6]).IsEqualTo(0);
     }
 
     [Test]
@@ -174,7 +176,7 @@ public class MapOverlaysJsTests
         var sut = new MapOverlaysJs(fake);
 
         sut.MarkDisposed();
-        await sut.AddChartLayerAsync("c", "u", 1, 18, 1.0, null);
+        await sut.AddChartLayerAsync("c", "u", 1, 18, 1.0, null, 0);
         await sut.RemoveChartLayerAsync("c");
         await sut.SetWeatherOverlayAsync("u", 1.0);
         await sut.ClearWeatherOverlayAsync();
@@ -211,6 +213,6 @@ public class MapOverlaysJsTests
         var sut = new MapOverlaysJs(fake);
 
         await Assert.ThrowsAsync<JSException>(() =>
-            sut.AddChartLayerAsync("c", "u", 1, 18, 1.0, null));
+            sut.AddChartLayerAsync("c", "u", 1, 18, 1.0, null, 0));
     }
 }
