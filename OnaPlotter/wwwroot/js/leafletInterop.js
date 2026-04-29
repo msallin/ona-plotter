@@ -7,6 +7,7 @@ import { RAD, DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
 import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
+import * as weatherLayerMod from './weatherLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -571,6 +572,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     for (const ml of [chartLayers, routeLayers, waypointMarkers, noteMarkers, regionLayers]) {
         ml.setMap(map);
     }
+
+    // Per-feature module init. Each module receives the freshly-built
+    // Leaflet map plus any cross-module deps it needs to read at update
+    // time (palette, edit-mode flags, helper functions). Modules cache
+    // these refs internally; their public update / clear functions are
+    // re-exported below so the C#-side InvokeVoidAsync calls work
+    // unchanged.
+    weatherLayerMod.init(map);
 
     // Leaflet's native +/- zoom control is turned off above
     // (zoomControl: false). The replacement lives in the app topbar
@@ -3990,49 +3999,10 @@ export function focusRegion(id, firstRing) {
 }
 
 // --- Weather Overlay ---
-
-let weatherLayer = null;
-
-// Weather / radar overlay. Currently wired to RainViewer radar-precipitation
-// tiles, which top out around z=12 server-side. We cap fetches at that
-// level via maxNativeZoom and let Leaflet upscale (maxZoom 22 to match
-// the map) so pinching further in just blurs the nowcast instead of
-// erroring out with "zoom level not supported" from the upstream CDN.
-// (OpenWeatherMap would need an API key -- not threaded through yet.)
-// Default opacity matches the previous baked-in 0.5 so an existing
-// install without a Settings value keeps the same look. Helm can dial
-// from 10% (so faint it's just a hint) to 90% (chart underneath
-// barely visible) via the Misc-section slider.
-const WEATHER_OPACITY_DEFAULT = 0.5;
-let _weatherOpacity = WEATHER_OPACITY_DEFAULT;
-export function setWeatherOverlay(tileUrl, opacity) {
-    clearWeatherOverlay();
-    if (!map || !tileUrl) return;
-    if (typeof opacity === 'number' && isFinite(opacity)) {
-        _weatherOpacity = Math.min(0.95, Math.max(0.05, opacity));
-    }
-    weatherLayer = L.tileLayer(tileUrl, {
-        maxNativeZoom: 12,
-        maxZoom: 22,
-        opacity: _weatherOpacity,
-        errorTileUrl: '',
-        attribution: '&copy; RainViewer'
-    }).addTo(map);
-    weatherLayer.setZIndex(40); // Below chart layers (50) but above base map.
-}
-
-// Live opacity update without re-fetching tiles. Helm dragging the
-// slider gets immediate feedback; cached value persists across the
-// next setWeatherOverlay call so a cycle off+on keeps the setting.
-export function setWeatherOverlayOpacity(opacity) {
-    if (typeof opacity !== 'number' || !isFinite(opacity)) return;
-    _weatherOpacity = Math.min(0.95, Math.max(0.05, opacity));
-    if (weatherLayer) weatherLayer.setOpacity(_weatherOpacity);
-}
-
-export function clearWeatherOverlay() {
-    if (weatherLayer && map) { map.removeLayer(weatherLayer); weatherLayer = null; }
-}
+// Implementation in weatherLayer.js; mux re-exports the C# entries.
+export const setWeatherOverlay = (tileUrl, opacity) => weatherLayerMod.setWeatherOverlay(tileUrl, opacity);
+export const setWeatherOverlayOpacity = (opacity) => weatherLayerMod.setWeatherOverlayOpacity(opacity);
+export const clearWeatherOverlay = () => weatherLayerMod.clearWeatherOverlay();
 
 // --- File I/O helpers (GPX import/export) ---
 
@@ -4482,7 +4452,7 @@ export function dispose() {
     // as "Unhandled exception rendering component" in Blazor's error
     // boundary when the user navigated off the Chart page. Removed.
     currentArrow = null;
-    weatherLayer = null;
+    weatherLayerMod.dispose();
     routeEditMode = false; routeEditLayer = null;
     routeEditCoords = []; routeEditMarkers = []; routeEditLine = null;
     polygonEditMode = false; polygonEditLayer = null;
