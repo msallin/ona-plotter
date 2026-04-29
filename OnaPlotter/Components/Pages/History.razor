@@ -20,14 +20,47 @@
     @* Playback controls *@
     <div class="history-controls">
         <div class="d-flex align-items-center gap-2 flex-wrap">
+            @* Mode toggle: "Preset" exposes the relative-window
+               dropdown ("Last 24 hours" etc.) -- fast for "what
+               happened today?". "Custom" exposes from/to inputs --
+               required for reviewing a specific passage / day.
+               Default is Preset because that's the helm's normal
+               glance use; Custom is the deliberate analysis use. *@
             <select class="form-select form-select-sm" style="width:auto;"
-                    @onchange="OnTimespanChanged">
-                <option value="1h">Last 1 hour</option>
-                <option value="6h">Last 6 hours</option>
-                <option value="1d" selected>Last 24 hours</option>
-                <option value="3d">Last 3 days</option>
-                <option value="7d">Last 7 days</option>
+                    title="Window mode"
+                    @onchange="OnModeChanged">
+                <option value="preset" selected="@(rangeMode == "preset")">Preset</option>
+                <option value="custom" selected="@(rangeMode == "custom")">Custom</option>
             </select>
+            @if (rangeMode == "preset")
+            {
+                <select class="form-select form-select-sm" style="width:auto;"
+                        @onchange="OnTimespanChanged">
+                    <option value="1h" selected="@(selectedTimespan == "1h")">Last 1 hour</option>
+                    <option value="6h" selected="@(selectedTimespan == "6h")">Last 6 hours</option>
+                    <option value="1d" selected="@(selectedTimespan == "1d")">Last 24 hours</option>
+                    <option value="3d" selected="@(selectedTimespan == "3d")">Last 3 days</option>
+                    <option value="7d" selected="@(selectedTimespan == "7d")">Last 7 days</option>
+                </select>
+            }
+            else
+            {
+                @* Custom date range. datetime-local takes wall-clock
+                   input from the helm's tablet timezone; we convert
+                   to UTC at fetch time so the API call is unambiguous
+                   regardless of where the helm is. *@
+                <input type="datetime-local" class="form-control form-control-sm"
+                       style="width:auto;"
+                       title="Start of window (local time)"
+                       value="@FormatLocalForInput(customFromLocal)"
+                       @onchange="OnCustomFromChanged" />
+                <span style="font-size:0.85rem; color:var(--sk-text-muted);">to</span>
+                <input type="datetime-local" class="form-control form-control-sm"
+                       style="width:auto;"
+                       title="End of window (local time)"
+                       value="@FormatLocalForInput(customToLocal)"
+                       @onchange="OnCustomToChanged" />
+            }
             <button class="map-btn" @onclick="LoadTrack">Load</button>
             <button class="map-btn" @onclick="GoToBoat" title="Center on current boat position">
                 @* .map-btn is inline-flex so the icon + label line up
@@ -107,6 +140,14 @@
     private bool playing;
     private bool loadAttempted;
     private System.Threading.Timer? playTimer;
+    // Custom date-range state. "preset" mode uses selectedTimespan
+    // (the dropdown); "custom" uses customFromLocal + customToLocal.
+    // The local fields hold WALL-CLOCK times in the helm's tablet
+    // timezone (matches what the datetime-local input emits); LoadTrack
+    // converts to UTC before passing to TrackApi.
+    private string rangeMode = "preset";
+    private DateTime customFromLocal = DateTime.Now.AddHours(-6);
+    private DateTime customToLocal = DateTime.Now;
 
     /// <summary>Surface the current scrub timestamp instead of the
     /// previous "Point N / total" placeholder. Helms reading the
@@ -211,14 +252,119 @@
         selectedTimespan = e.Value?.ToString() ?? "1d";
     }
 
+    private void OnModeChanged(ChangeEventArgs e)
+    {
+        rangeMode = e.Value?.ToString() == "custom" ? "custom" : "preset";
+    }
+
+    private void OnCustomFromChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+        {
+            // datetime-local emits a timezone-naive value in the
+            // helm's tablet timezone. Mark it Unspecified so future
+            // ToUniversalTime() conversion treats it as local rather
+            // than guessing.
+            customFromLocal = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+        }
+    }
+
+    private void OnCustomToChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+        {
+            customToLocal = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
+        }
+    }
+
+    /// <summary>Format a local DateTime for an HTML datetime-local
+    /// input: <c>yyyy-MM-ddTHH:mm</c>. Anything else (full ISO with
+    /// offset, etc.) renders the input blank because the spec is
+    /// strict about the format. Invariant culture so the helm's
+    /// locale doesn't accidentally produce <c>05.06.2024</c>.</summary>
+    private static string FormatLocalForInput(DateTime t) =>
+        t.ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Pulls the current Leaflet viewport bounds from JS and
+    /// returns them as a <see cref="TrackBbox"/> padded outward by
+    /// <see cref="BboxPadFraction"/>. Returns null when the map isn't
+    /// ready, when JS interop fails (page teardown), or when the
+    /// bounds aren't a sensible numeric quadruple. Padding the bounds
+    /// avoids re-fetching every time the helm pans by a few pixels --
+    /// 20 % means the box only "moves" once the helm pans ~10 % of
+    /// the viewport off-screen.</summary>
+    private const double BboxPadFraction = 0.20;
+
+    private async Task<TrackBbox?> TryGetViewportBboxAsync()
+    {
+        try
+        {
+            // Returns [south, west, north, east] from Leaflet's
+            // getBounds(). Defensive: if any of those isn't a finite
+            // number, fall back to "no bbox" rather than send garbage.
+            var raw = await JS.InvokeAsync<double[]?>("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m) return null;
+                    var b = m.getBounds();
+                    return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+                }})()
+            ");
+            if (raw is null || raw.Length != 4) return null;
+            double s = raw[0], w = raw[1], n = raw[2], e = raw[3];
+            if (!double.IsFinite(s) || !double.IsFinite(w)
+                || !double.IsFinite(n) || !double.IsFinite(e)) return null;
+            // Pad outward 20 % per axis so a small pan doesn't
+            // re-fetch. dLat / dLon are signed so we correctly
+            // expand both N+S and E+W.
+            double dLat = (n - s) * BboxPadFraction;
+            double dLon = (e - w) * BboxPadFraction;
+            return new TrackBbox(
+                South: s - dLat, West: w - dLon,
+                North: n + dLat, East: e + dLon);
+        }
+        catch (JSDisconnectedException) { return null; }
+        catch (JSException) { return null; }
+        catch (ObjectDisposedException) { return null; }
+    }
+
     private async Task LoadTrack()
     {
         loadAttempted = true;
+        // Resolve the time window from the current mode. Custom mode
+        // sends absolute (from, to) UTC instants -- helm-locale
+        // wall-clock at this layer becomes UTC at the API boundary.
+        // Preset mode sends a relative duration (timespan).
+        DateTimeOffset? fromUtc = null, toUtc = null;
+        string? span = selectedTimespan;
+        if (rangeMode == "custom")
+        {
+            // Guard against an inverted range (start > end). Snap by
+            // swapping rather than refusing, since the helm probably
+            // just edited the inputs in the wrong order and a silent
+            // swap is friendlier than an error toast.
+            var (lo, hi) = customFromLocal <= customToLocal
+                ? (customFromLocal, customToLocal)
+                : (customToLocal, customFromLocal);
+            fromUtc = new DateTimeOffset(lo.ToUniversalTime(), TimeSpan.Zero);
+            toUtc = new DateTimeOffset(hi.ToUniversalTime(), TimeSpan.Zero);
+            span = null;     // ignored when from is supplied; explicit for clarity
+        }
+
+        // Optional bbox hint from the current viewport, oversized 20 %
+        // outward so a small pan doesn't trigger a re-fetch. The
+        // server may or may not honour the bbox; signalk-parquet does,
+        // others ignore unknown query params and we fall back to
+        // time-only filtering. Skipped when the map isn't ready yet
+        // or the bounds call fails.
+        TrackBbox? bbox = await TryGetViewportBboxAsync();
+
         // Rich fetch: timestamps + sog + wind in one round-trip.
         // Segmenter splits into stationary/moving runs which JS
         // renders with distinct styling + per-segment hover tooltips.
         points = await TrackApi.GetServerTrackPointsAsync(
-            from: null, to: null, timespan: selectedTimespan, resolution: "30s");
+            from: fromUtc, to: toUtc, timespan: span,
+            resolution: "30s", bbox: bbox);
         segments = points is { Length: > 0 } ? TrackSegmenter.Segment(points) : null;
         playbackIndex = 0;
         playing = false;

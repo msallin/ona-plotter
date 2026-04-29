@@ -105,6 +105,7 @@ public sealed class TrackApi : ITrackApi
         DateTimeOffset? to,
         string? timespan,
         string resolution = "30s",
+        TrackBbox? bbox = null,
         CancellationToken ct = default)
     {
         // Build the time window. Either an absolute (from + to) or
@@ -134,6 +135,21 @@ public sealed class TrackApi : ITrackApi
             // first paint.
             string isoDuration = ToIsoDuration(timespan ?? "1d");
             url += $"&duration={Uri.EscapeDataString(isoDuration)}";
+        }
+
+        if (bbox is TrackBbox b)
+        {
+            // bbox query convention: south,west,north,east. Same order
+            // Leaflet's Bounds.toBBoxString uses, same order GeoJSON's
+            // bbox member uses (modulo lon/lat swap -- GeoJSON is
+            // (west,south,east,north); we go (south,west,north,east)
+            // here because that's the order signalk-parquet's bbox
+            // extension accepts and our server is the source of truth).
+            // Servers that don't recognise bbox just ignore it; the
+            // page falls back to client-side filtering.
+            url += "&bbox="
+                + Uri.EscapeDataString(string.Format(CultureInfo.InvariantCulture,
+                    "{0},{1},{2},{3}", b.South, b.West, b.North, b.East));
         }
 
         HttpResponseMessage response;

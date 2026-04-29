@@ -61,7 +61,7 @@ public class ServerTrackControllerTests
         // "no data" in production.
         public Task<OnaPlotter.Models.TrackPoint[]?> GetServerTrackPointsAsync(
             DateTimeOffset? from, DateTimeOffset? to, string? timespan,
-            string resolution = "30s", CancellationToken ct = default)
+            string resolution = "30s", TrackBbox? bbox = null, CancellationToken ct = default)
             => Task.FromResult<OnaPlotter.Models.TrackPoint[]?>(null);
     }
 

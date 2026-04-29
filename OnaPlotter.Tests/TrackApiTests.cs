@@ -363,6 +363,54 @@ public class TrackApiTests
     }
 
     [Test]
+    public async Task RichFetch_BboxParam_Appends_SouthWestNorthEast_InvariantCulture()
+    {
+        // Pin: the bbox query string is ordered south,west,north,east
+        // (signalk-parquet's bbox extension), and the doubles render
+        // with '.' decimals regardless of ambient locale. A de-CH or
+        // fr-FR helm running this code with the locale picking up
+        // ',' as the decimal would otherwise smuggle a value the
+        // server can't parse. This is a defensive assertion: the
+        // implementation already pins InvariantCulture, the test
+        // catches a future drift.
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        var bbox = new TrackBbox(South: 47.30, West: 8.40, North: 47.50, East: 8.60);
+        await api.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: "1h", bbox: bbox);
+
+        await Assert.That(capturedQuery).IsNotNull();
+        // URL-encoded comma is %2C; the order in the query value is
+        // s,w,n,e. Pin the formatted values as substrings -- a future
+        // serialiser change that adds extra precision (47.300000)
+        // shouldn't break the test, hence the substring matches.
+        await Assert.That(capturedQuery!).Contains("bbox=47.3");
+        await Assert.That(capturedQuery).Contains("8.4");
+        await Assert.That(capturedQuery).Contains("47.5");
+        await Assert.That(capturedQuery).Contains("8.6");
+        // No comma-decimals snuck in.
+        await Assert.That(capturedQuery!.Contains("47%2C3")).IsFalse();
+    }
+
+    [Test]
+    public async Task RichFetch_NoBbox_OmitsBboxParam()
+    {
+        // Default behaviour without a bbox: don't add the parameter.
+        // Some servers reject unknown params strictly; sending an
+        // empty bbox= would hit that. Pin "absent when null".
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(capturedQuery).IsNotNull();
+        await Assert.That(capturedQuery!.Contains("bbox=")).IsFalse();
+    }
+
+    [Test]
     public async Task RichFetch_MultiPathsParameter_Includes_Sog_And_Wind()
     {
         // The query must ask the server for the rich path set, not
