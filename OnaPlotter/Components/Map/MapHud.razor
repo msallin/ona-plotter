@@ -247,9 +247,16 @@
                 }
                 @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
                 {
-                    <div class="hud-extra-row">
+                    @* Hard-cap the station name in the HUD card; the
+                       BL depth card has limited horizontal real estate
+                       and a 40-char NOAA name pushes the row off the
+                       card. Full name stays in the row's title for
+                       desktop hover (no helm benefit on touch but
+                       cheap). Dashboard renders the full name -- it
+                       has the room. *@
+                    <div class="hud-extra-row" title="@Data.TideStationName">
                         <span class="hud-extra-k">Station</span>
-                        <span class="hud-extra-v">@Data.TideStationName</span>
+                        <span class="hud-extra-v">@TruncateStation(Data.TideStationName!)</span>
                     </div>
                 }
                 @if (Data.CurrentDrift is double drift && Data.CurrentSet is double set)
@@ -1004,6 +1011,17 @@
             MaxRadius: Data.AnchorMaxRadius,
             DormantReason: AnchorTideDormantReason(),
             PeakRadius: Data.AnchorPeakRadius);
+
+    // NOAA / UKHO station names often run 40+ chars. The BL depth-
+    // card width budget is tight; a long name pushes the row off the
+    // card. 18 chars + a 3-char ellipsis (21 visible) is the same cap
+    // the Dashboard used to apply before the trim moved here -- the
+    // Dashboard now renders the full name, the HUD takes over the
+    // truncation. Title attribute on the row carries the full name
+    // for desktop hover.
+    private const int HudStationNameMaxChars = 18;
+    private static string TruncateStation(string s) =>
+        s.Length <= HudStationNameMaxChars ? s : s[..HudStationNameMaxChars] + "...";
 
     private static MarkupString SvgText(double x, double y, string content, string fill, int fontSize)
     {

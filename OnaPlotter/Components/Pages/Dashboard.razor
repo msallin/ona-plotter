@@ -203,12 +203,10 @@ else if (Polar.HasPolar)
         Tide
         @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
         {
-            @* NOAA station names are often long and push the layout; cap
-               at 18 chars plus a 3-char ellipsis (21 visible). Keep the
-               full name as title text so hovering restores it. *@
-            <span class="tide-station-name" title="@Data.TideStationName">
-                @TruncateStation(Data.TideStationName!)
-            </span>
+            @* Dashboard has a full-width header to spend; render the
+               whole NOAA / UKHO station name. The map HUD truncates
+               (where horizontal space is tight); see HudDepthCard. *@
+            <span class="tide-station-name">@Data.TideStationName</span>
         }
     </h6>
     <div class="row g-3 mb-4">
@@ -392,13 +390,6 @@ else if (Polar.HasPolar)
         Data.TideHeightNow is not null
         || Data.TideTimeHigh is not null
         || Data.TideTimeLow is not null;
-
-    // NOAA/UKHO station names often run 40+ chars ("Honolulu Harbor,
-    // Reef Runway, Pearl Harbor Entrance ..."). Cap at 22 so the header
-    // doesn't wrap awkwardly; full name stays available on hover.
-    private const int StationNameMaxChars = 18;
-    private static string TruncateStation(string s) =>
-        s.Length <= StationNameMaxChars ? s : s[..StationNameMaxChars] + "...";
 
     private static string FormatDashInterval(DateTime futureUtc)
     {
