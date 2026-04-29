@@ -16,6 +16,8 @@ import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
 import * as activeRouteLayerMod from './activeRouteLayer.js';
 import * as courseLineLayerMod from './courseLineLayer.js';
+import * as routeEditLayerMod from './routeEditLayer.js';
+import * as polygonEditLayerMod from './polygonEditLayer.js';
 
 let map = null;
 // Module-scoped bounds-debounce timer so dispose() can cancel it.
@@ -433,6 +435,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     laylineLayerMod.init(map, { colors: MapColors });
     atonLayerMod.init(map);
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
+    routeEditLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
+    polygonEditLayerMod.init(map);
     // Edit-mode flags + the mode-specific "add point" dispatcher are
     // shared by aisLayer + activeRouteLayer (both have per-line click
     // handlers that fall back into route / polygon / measure flows
@@ -440,8 +444,8 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // into both inits so each module gets the same fresh-read shape.
     const editModeDeps = {
         getEditModeFlags: () => ({
-            routeEdit: routeEditMode,
-            polygonEdit: polygonEditMode,
+            routeEdit: routeEditLayerMod.isActive(),
+            polygonEdit: polygonEditLayerMod.isActive(),
             measure: measureLayerMod.isActive(),
         }),
         editModeAddPoint: (mode, lat, lon) => {
@@ -631,7 +635,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // Map click: in route edit mode, add waypoint. In measurement
     // mode, drop a measurement point. Otherwise just dismiss menus.
     map.on('click', (e) => {
-        if (routeEditMode) {
+        if (routeEditLayerMod.isActive()) {
             // L.DomEvent.stopPropagation on the polyline click
             // doesn't actually stop Leaflet's map-level click dispatch
             // (different event channels), so a leg-click fires
@@ -639,14 +643,11 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
             // also append the same point at the end. The segment
             // handler sets a short-lived suppression flag; we honour
             // it here.
-            if (routeEditSuppressNextMapClick) {
-                routeEditSuppressNextMapClick = false;
-                return;
-            }
+            if (routeEditLayerMod.consumeSuppressNextMapClick()) return;
             addEditWaypoint(e.latlng.lat, e.latlng.lng);
             return;
         }
-        if (polygonEditMode) {
+        if (polygonEditLayerMod.isActive()) {
             addPolygonVertexInternal(e.latlng.lat, e.latlng.lng);
             return;
         }
@@ -665,7 +666,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
 
     // Right-click (desktop) and long-press (touch) -> context menu callback to Blazor.
     function showContextMenu(latlng) {
-        if (routeEditMode || polygonEditMode || !dotNetRef) return;
+        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || !dotNetRef) return;
         // In measure mode the right-click / long-press gesture means
         // "reset the current measurement" rather than "open the create-
         // here menu". Wipe the points and stay in measure mode so the
@@ -1291,12 +1292,12 @@ export function addRoute(id, name, coords) {
     hitLine.bindPopup(popupHtml(), popupOptions);
 
     const onLineClick = (ev, sourceLine) => {
-        if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
+        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng;
             if (!ll) return;
-            if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+            if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
             else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             sourceLine.closePopup();
         }
@@ -1364,10 +1365,10 @@ function wireRouteActivate(popup, id, name) {
 }
 
 // Edit button -- matches the Layers-panel Edit action. Hands off to
-// C# which flips routeEditMode on and loads the polyline into the
+// C# which flips routeEditLayerMod.isActive() on and loads the polyline into the
 // edit layer. Closes the popup immediately so a second tap doesn't
 // land on a now-invisible button (the edit toolbar takes over the
-// viewport once routeEditMode flips).
+// viewport once routeEditLayerMod.isActive() flips).
 function wireRouteEdit(popup, id) {
     const el = popup.getElement();
     if (!el) return;
@@ -1579,102 +1580,33 @@ export function setActiveRouteStopping(stopping) {
     courseLineLayerMod.setStoppingDim(stopping);
 }
 
-// --- Route Editing ---
+// --- Route + Polygon editing ---
+// Implementations in routeEditLayer.js + polygonEditLayer.js. The
+// route-edit module exports addEditWaypoint as a public function so
+// the mux's map-click handler can forward taps into it; the polygon
+// module mirrors that with addPolygonVertexInternal.
+export const startRouteEdit = () => routeEditLayerMod.startRouteEdit();
+export const stopRouteEdit = () => routeEditLayerMod.stopRouteEdit();
+export const getEditRouteCoords = () => routeEditLayerMod.getEditRouteCoords();
+export const undoLastEditWaypoint = () => routeEditLayerMod.undoLastEditWaypoint();
+export const reverseEditRoute = () => routeEditLayerMod.reverseEditRoute();
+export const removeRouteEditWaypoint = (index) => routeEditLayerMod.removeRouteEditWaypoint(index);
+export const getEditRouteStats = () => routeEditLayerMod.getEditRouteStats();
+export const loadRouteForEdit = (coords) => routeEditLayerMod.loadRouteForEdit(coords);
+const addEditWaypoint = (lat, lon) => routeEditLayerMod.addEditWaypoint(lat, lon);
 
-let routeEditMode = false;
-let routeEditLayer = null;
-let routeEditCoords = [];
-let routeEditMarkers = [];
-let routeEditLine = null;
+export const startPolygonEdit = () => polygonEditLayerMod.startPolygonEdit();
+export const stopPolygonEdit = () => polygonEditLayerMod.stopPolygonEdit();
+export const getPolygonEditCoords = () => polygonEditLayerMod.getPolygonEditCoords();
+export const undoLastPolygonVertex = () => polygonEditLayerMod.undoLastPolygonVertex();
+export const removePolygonEditVertex = (index) => polygonEditLayerMod.removePolygonEditVertex(index);
+export const loadPolygonForEdit = (coords) => polygonEditLayerMod.loadPolygonForEdit(coords);
+const addPolygonVertexInternal = (lat, lon) => polygonEditLayerMod.addPolygonVertexInternal(lat, lon);
 
-function makeEditWpIcon(num) {
-    return L.divIcon({
-        className: 'edit-wp-icon',
-        html: `<div class="edit-wp-circle">${num}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
-    });
-}
-
-let routeEditHitLine = null;   // wide, transparent; used for touch-friendly tapping
-// Set briefly inside insertEditVertexOnSegment; consumed by the
-// map-click handler on the very next click event. Stops an
-// insert-on-leg from also appending the point at the end of the
-// route via the map-click fallback. A flag rather than Leaflet's
-// stopPropagation because Leaflet's map click is a separate dispatch
-// channel that DOM-level stopPropagation doesn't intercept.
-let routeEditSuppressNextMapClick = false;
-
-function redrawEditLine() {
-    if (!routeEditLine && routeEditCoords.length >= 2) {
-        routeEditLine = L.polyline(routeEditCoords, {
-            color: MapColors.current, weight: 2.5, opacity: 0.8, dashArray: '8,6'
-        }).addTo(routeEditLayer);
-        // Wider, transparent polyline underneath as a chunky hit target.
-        // On a touch screen the 2.5 px visible line is almost impossible
-        // to tap without a stylus; 20 px invisible overlay fixes that
-        // without thickening the rendered line. stopPropagation on both
-        // click handlers prevents the map-level handler (which APPENDS
-        // at the end of the route) from firing in addition to the
-        // insert-between-segment handler.
-        // 40 px invisible hitbox (was 20). Real sailing routes don't
-        // zig-zag at 5-10 m scale, so a tap a finger-width off the
-        // line almost always means "insert here" rather than "drop
-        // a new point over there". Wider hitbox removes the "I tapped
-        // the line and got a new endpoint instead of an insert"
-        // frustration on iPad.
-        routeEditHitLine = L.polyline(routeEditCoords, {
-            color: MapColors.current, weight: 40, opacity: 0, interactive: true,
-            // Crosshair cursor on hover so it's discoverable that
-            // clicking a leg inserts a waypoint between existing ones,
-            // rather than appending at the end.
-            className: 'route-edit-hit-line',
-        }).addTo(routeEditLayer);
-        const onSegmentClick = (e) => {
-            L.DomEvent.stopPropagation(e);
-            insertEditVertexOnSegment(e.latlng);
-        };
-        routeEditHitLine.on('click', onSegmentClick);
-        routeEditLine.on('click', onSegmentClick);
-    } else if (routeEditLine) {
-        routeEditLine.setLatLngs(routeEditCoords);
-        if (routeEditHitLine) routeEditHitLine.setLatLngs(routeEditCoords);
-    }
-}
-
-// Pick the segment closest to `ll` (pixel distance at current zoom, so
-// "close" matches what the user sees), splice the click point in as a
-// new vertex, rebuild numbered markers.
-function insertEditVertexOnSegment(ll) {
-    if (routeEditCoords.length < 2 || !map) return;
-    const p = map.latLngToLayerPoint(ll);
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < routeEditCoords.length - 1; i++) {
-        const a = map.latLngToLayerPoint(L.latLng(routeEditCoords[i][0],     routeEditCoords[i][1]));
-        const b = map.latLngToLayerPoint(L.latLng(routeEditCoords[i + 1][0], routeEditCoords[i + 1][1]));
-        const d = pointToSegmentPixels(p, a, b);
-        if (d < bestDist) { bestDist = d; bestIdx = i; }
-    }
-    // Insert at bestIdx + 1 so the order becomes ... prev, new, next ...
-    const insertAt = bestIdx + 1;
-    routeEditCoords.splice(insertAt, 0, [ll.lat, ll.lng]);
-    // Shift any stack entries >= insertAt up by one so historical
-    // indices still point at the same waypoint objects, then push
-    // the new insertion so undo finds it on top of the stack.
-    for (let i = 0; i < routeEditAddStack.length; i++) {
-        if (routeEditAddStack[i] >= insertAt) routeEditAddStack[i]++;
-    }
-    routeEditAddStack.push(insertAt);
-    // Signal the map-level click handler (fires immediately after
-    // this one in Leaflet's dispatch order) to skip the append-on-
-    // map-click fallback. Without this the user gets a phantom Nth+1
-    // waypoint at the end on every leg click.
-    routeEditSuppressNextMapClick = true;
-    rebuildRouteEditMarkers();
-}
-
-// Euclidean pixel distance from point p to segment ab.
+// Euclidean pixel distance from point p to segment ab. Used by
+// routeEditLayer + measureLayer for "find the closest segment to the
+// click" insertion. Kept in the mux because it's a pure helper used
+// by multiple modules; passing as a dep keeps each module hermetic.
 function pointToSegmentPixels(p, a, b) {
     const dx = b.x - a.x, dy = b.y - a.y;
     const len2 = dx * dx + dy * dy;
@@ -1683,405 +1615,6 @@ function pointToSegmentPixels(p, a, b) {
     t = Math.max(0, Math.min(1, t));
     const cx = a.x + t * dx, cy = a.y + t * dy;
     return Math.hypot(p.x - cx, p.y - cy);
-}
-
-function rebuildRouteEditMarkers() {
-    if (!routeEditLayer) return;
-    for (const m of routeEditMarkers) routeEditLayer.removeLayer(m);
-    routeEditMarkers = [];
-    for (let i = 0; i < routeEditCoords.length; i++) {
-        const [lat, lon] = routeEditCoords[i];
-        const marker = L.marker([lat, lon], {
-            icon: makeEditWpIcon(i + 1),
-            draggable: true, zIndexOffset: 800
-        }).addTo(routeEditLayer);
-        bindEditMarker(marker, i);
-        routeEditMarkers.push(marker);
-    }
-    redrawEditLine();
-}
-
-// Attach drag handlers with a "ghost" visual: during drag we leave the
-// original position visible as a hollow ghost marker and draw a dashed
-// rubber-band line from it to the live cursor, with a tooltip showing the
-// delta distance. This matches what Axiom/Aqua Map do when repositioning
-// a waypoint -- the sailor always sees "how far from where it was".
-function bindEditMarker(marker, idx) {
-    let ghostLine = null;
-    let ghostMarker = null;
-    let origLL = null;
-
-    marker.on('dragstart', (e) => {
-        origLL = e.target.getLatLng();
-        ghostMarker = L.marker(origLL, {
-            icon: L.divIcon({
-                className: 'edit-wp-ghost-icon',
-                html: '<div class="edit-wp-ghost-circle"></div>',
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-            }),
-            interactive: false,
-            keyboard: false,
-            zIndexOffset: 500
-        }).addTo(routeEditLayer);
-        ghostLine = L.polyline([origLL, origLL], {
-            color: MapColors.current, weight: 1.5, opacity: 0.7, dashArray: '3,4',
-            interactive: false
-        }).addTo(routeEditLayer);
-        // Bind once; setTooltipContent on each drag event is cheaper than
-        // rebinding a fresh tooltip at ~60 Hz during a long drag. We
-        // reposition explicitly via setLatLng, so no `sticky` needed.
-        ghostLine.bindTooltip('\u0394 0 m', {
-            permanent: true, direction: 'center',
-            className: 'measure-tooltip'
-        }).openTooltip(origLL);
-    });
-
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        routeEditCoords[idx] = [ll.lat, ll.lng];
-        redrawEditLine();
-        if (ghostLine && origLL) {
-            ghostLine.setLatLngs([origLL, ll]);
-            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
-            const label = dm < 1000 ? `\u0394 ${dm.toFixed(0)} m` : `\u0394 ${(dm * NM_PER_METER).toFixed(2)} nm`;
-            ghostLine.setTooltipContent(label);
-            const tt = ghostLine.getTooltip();
-            if (tt) tt.setLatLng(ll);
-        }
-    });
-
-    marker.on('dragend', () => {
-        if (ghostMarker && routeEditLayer) routeEditLayer.removeLayer(ghostMarker);
-        if (ghostLine && routeEditLayer) routeEditLayer.removeLayer(ghostLine);
-        ghostMarker = null;
-        ghostLine = null;
-        origLL = null;
-    });
-}
-
-// Undo history. Each entry is the index of the most recently ADDED
-// waypoint (append OR mid-route insert). Popping off the top and
-// splicing that index back out gives the user "undo = remove the
-// last thing I added", which is the intuitive semantic. The old
-// undoLastEditWaypoint just popped the last coord -- when the user
-// had inserted between two existing waypoints, the last coord was
-// the OLD endpoint, not the just-inserted vertex, and undo felt
-// wrong. See the ticket: "route edit undo does strange things".
-let routeEditAddStack = [];
-
-function addEditWaypoint(lat, lon) {
-    const idx = routeEditCoords.length;
-    routeEditCoords.push([lat, lon]);
-    routeEditAddStack.push(idx);
-
-    const marker = L.marker([lat, lon], {
-        icon: makeEditWpIcon(idx + 1),
-        draggable: true,
-        zIndexOffset: 800
-    }).addTo(routeEditLayer);
-
-    bindEditMarker(marker, idx);
-
-    routeEditMarkers.push(marker);
-    redrawEditLine();
-}
-
-export function startRouteEdit() {
-    stopRouteEdit();
-    routeEditMode = true;
-    routeEditLayer = L.layerGroup().addTo(map);
-}
-
-export function stopRouteEdit() {
-    routeEditMode = false;
-    if (routeEditLayer && map) map.removeLayer(routeEditLayer);
-    routeEditLayer = null;
-    routeEditCoords = [];
-    routeEditMarkers = [];
-    routeEditLine = null;
-    routeEditHitLine = null;
-    routeEditAddStack = [];
-}
-
-export function getEditRouteCoords() {
-    return routeEditCoords;
-}
-
-export function undoLastEditWaypoint() {
-    if (routeEditCoords.length === 0) return;
-    // Pop the index of the most recently added waypoint. For pure
-    // appends this is always "remove the last"; for mid-route
-    // inserts it's the inserted vertex, which is what the user
-    // actually wanted undone. Fallback to last-coord pop when the
-    // stack is empty (happens after a loadRouteForEdit hydrate --
-    // the existing coords weren't "added" in this session).
-    let removeIdx;
-    if (routeEditAddStack.length > 0) {
-        removeIdx = routeEditAddStack.pop();
-    } else {
-        removeIdx = routeEditCoords.length - 1;
-    }
-    if (removeIdx < 0 || removeIdx >= routeEditCoords.length) {
-        removeIdx = routeEditCoords.length - 1;
-    }
-    // Shift any remaining stack entries above the removal point down
-    // so they keep pointing at the same waypoint objects after the
-    // splice renumbers everything below them.
-    for (let i = 0; i < routeEditAddStack.length; i++) {
-        if (routeEditAddStack[i] > removeIdx) routeEditAddStack[i]--;
-    }
-    routeEditCoords.splice(removeIdx, 1);
-    rebuildRouteEditMarkers();
-    redrawEditLine();
-}
-
-// Reverse the order of all edit waypoints in place. Used when the
-// user wants to flip a route's direction (e.g. they planned outbound
-// and now need the return leg). The marker numbers and the polyline
-// are rebuilt from the reversed coord array; the add-stack is wiped
-// because per-vertex add-order tracking is meaningless after a flip.
-export function reverseEditRoute() {
-    if (routeEditCoords.length < 2) return;
-    routeEditCoords.reverse();
-    routeEditAddStack = [];
-    rebuildRouteEditMarkers();
-    redrawEditLine();
-}
-
-// Remove a specific waypoint by index (called from the in-panel list).
-// Removing the middle of an N-point route means every subsequent marker's
-// number changes, so we tear down the dragging markers and rebuild from
-// the coord array. The polyline is re-used (setLatLngs) for cheapness.
-export function removeRouteEditWaypoint(index) {
-    if (index < 0 || index >= routeEditCoords.length) return;
-    routeEditCoords.splice(index, 1);
-    // Shift any add-stack entries. Anything at >index drops one;
-    // anything == index is dropped (the user explicitly removed
-    // it via the in-panel list, not via undo).
-    routeEditAddStack = routeEditAddStack
-        .filter(i => i !== index)
-        .map(i => i > index ? i - 1 : i);
-    if (routeEditCoords.length < 2 && routeEditLine && routeEditLayer) {
-        routeEditLayer.removeLayer(routeEditLine);
-        if (routeEditHitLine) routeEditLayer.removeLayer(routeEditHitLine);
-        routeEditLine = null;
-        routeEditHitLine = null;
-    }
-    rebuildRouteEditMarkers();
-}
-
-// Returns [waypointCount, totalDistanceNm]
-export function getEditRouteStats() {
-    const n = routeEditCoords.length;
-    if (n < 2) return [n, 0];
-    let meters = 0;
-    for (let i = 1; i < n; i++) {
-        meters += haversineMeters(
-            routeEditCoords[i-1][0], routeEditCoords[i-1][1],
-            routeEditCoords[i][0], routeEditCoords[i][1]
-        );
-    }
-    return [n, meters * NM_PER_METER];
-}
-
-// Load an existing saved route into edit mode for editing.
-export function loadRouteForEdit(coords) {
-    stopRouteEdit();
-    routeEditMode = true;
-    routeEditLayer = L.layerGroup().addTo(map);
-    for (const c of coords) {
-        addEditWaypoint(c[0], c[1]);
-    }
-    // The loaded waypoints weren't "added" in this edit session --
-    // the user didn't tap them here, they came from the server. Clear
-    // the stack so Undo only removes vertices the user added AFTER
-    // opening the existing route for edit.
-    routeEditAddStack = [];
-}
-
-// --- Polygon editing (freeform region draw) ---
-//
-// Parallel to route editing but the saved shape is a closed polygon, not
-// an open polyline. Vertices are draggable, numbered, and removable via
-// the same drag-ghost / renumber / undo flow as routes. When the user
-// saves, Map.razor pulls the coords and POSTs them through
-// RegionApi.CreatePolygonAsync.
-
-let polygonEditMode = false;
-let polygonEditLayer = null;
-let polygonEditCoords = [];
-let polygonEditMarkers = [];
-let polygonEditShape = null;   // L.polygon once there are >= 3 vertices
-let polygonEditLine = null;    // L.polyline for 2-vertex preview
-
-// Polygon edit uses the same violet as route-edit so "I am editing"
-// reads consistently across both drawing modes. Was amber
-// (--ann-region, #d4a850) which matched finished regions but fought
-// the route-edit cue.  User feedback: keep the in-edit colour the
-// same regardless of shape; saved-region amber kicks in on save.
-const POLYGON_COLOR = '#a78bfa';                    // --map-current
-
-function makePolygonVertexIcon(num) {
-    return L.divIcon({
-        className: 'edit-wp-icon',
-        html: `<div class="edit-wp-circle edit-poly-circle">${num}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
-    });
-}
-
-function redrawPolygonShape() {
-    if (!polygonEditLayer) return;
-    // Remove stale shapes; recreate the right one for the current count.
-    if (polygonEditCoords.length >= 3) {
-        if (polygonEditLine) { polygonEditLayer.removeLayer(polygonEditLine); polygonEditLine = null; }
-        if (!polygonEditShape) {
-            polygonEditShape = L.polygon(polygonEditCoords, {
-                color: POLYGON_COLOR, weight: 2, fillColor: POLYGON_COLOR, fillOpacity: 0.18,
-                dashArray: '6,4'
-            }).addTo(polygonEditLayer);
-        } else {
-            polygonEditShape.setLatLngs(polygonEditCoords);
-        }
-    } else if (polygonEditCoords.length === 2) {
-        if (polygonEditShape) { polygonEditLayer.removeLayer(polygonEditShape); polygonEditShape = null; }
-        if (!polygonEditLine) {
-            polygonEditLine = L.polyline(polygonEditCoords, {
-                color: POLYGON_COLOR, weight: 2, dashArray: '6,4', opacity: 0.8
-            }).addTo(polygonEditLayer);
-        } else {
-            polygonEditLine.setLatLngs(polygonEditCoords);
-        }
-    } else {
-        if (polygonEditShape) { polygonEditLayer.removeLayer(polygonEditShape); polygonEditShape = null; }
-        if (polygonEditLine) { polygonEditLayer.removeLayer(polygonEditLine); polygonEditLine = null; }
-    }
-}
-
-// Reuses the route-edit ghost-marker + Delta tooltip. The closure over
-// idx captures the current index; removals tear down all markers and
-// rebuild, so idx stays in sync with the coords array.
-function bindPolygonVertex(marker, idx) {
-    let ghostLine = null;
-    let ghostMarker = null;
-    let origLL = null;
-
-    marker.on('dragstart', (e) => {
-        origLL = e.target.getLatLng();
-        ghostMarker = L.marker(origLL, {
-            icon: L.divIcon({
-                className: 'edit-wp-ghost-icon',
-                html: '<div class="edit-wp-ghost-circle"></div>',
-                iconSize: [24, 24],
-                iconAnchor: [12, 12]
-            }),
-            interactive: false, keyboard: false, zIndexOffset: 500
-        }).addTo(polygonEditLayer);
-        ghostLine = L.polyline([origLL, origLL], {
-            color: POLYGON_COLOR, weight: 1.5, opacity: 0.7, dashArray: '3,4',
-            interactive: false
-        }).addTo(polygonEditLayer);
-        ghostLine.bindTooltip('\u0394 0 m', {
-            permanent: true, direction: 'center', className: 'measure-tooltip'
-        }).openTooltip(origLL);
-    });
-
-    marker.on('drag', (e) => {
-        const ll = e.target.getLatLng();
-        polygonEditCoords[idx] = [ll.lat, ll.lng];
-        redrawPolygonShape();
-        if (ghostLine && origLL) {
-            ghostLine.setLatLngs([origLL, ll]);
-            const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
-            const label = dm < 1000 ? `\u0394 ${dm.toFixed(0)} m` : `\u0394 ${(dm * NM_PER_METER).toFixed(2)} nm`;
-            ghostLine.setTooltipContent(label);
-            const tt = ghostLine.getTooltip();
-            if (tt) tt.setLatLng(ll);
-        }
-    });
-
-    marker.on('dragend', () => {
-        if (ghostMarker && polygonEditLayer) polygonEditLayer.removeLayer(ghostMarker);
-        if (ghostLine && polygonEditLayer) polygonEditLayer.removeLayer(ghostLine);
-        ghostMarker = null; ghostLine = null; origLL = null;
-    });
-}
-
-function addPolygonVertexInternal(lat, lon) {
-    const idx = polygonEditCoords.length;
-    polygonEditCoords.push([lat, lon]);
-    const marker = L.marker([lat, lon], {
-        icon: makePolygonVertexIcon(idx + 1),
-        draggable: true, zIndexOffset: 800
-    }).addTo(polygonEditLayer);
-    bindPolygonVertex(marker, idx);
-    polygonEditMarkers.push(marker);
-    redrawPolygonShape();
-}
-
-export function startPolygonEdit() {
-    stopPolygonEdit();
-    polygonEditMode = true;
-    polygonEditLayer = L.layerGroup().addTo(map);
-}
-
-// Seed an existing polygon's vertices into edit mode. Called from the
-// Layers-panel Edit button on a region row. Mirrors loadRouteForEdit.
-export function loadPolygonForEdit(coords) {
-    stopPolygonEdit();
-    polygonEditMode = true;
-    polygonEditLayer = L.layerGroup().addTo(map);
-    if (!coords) return;
-    for (const c of coords) {
-        addPolygonVertexInternal(c[0], c[1]);
-    }
-}
-
-export function stopPolygonEdit() {
-    polygonEditMode = false;
-    if (polygonEditLayer && map) map.removeLayer(polygonEditLayer);
-    polygonEditLayer = null;
-    polygonEditCoords = [];
-    polygonEditMarkers = [];
-    polygonEditShape = null;
-    polygonEditLine = null;
-}
-
-export function getPolygonEditCoords() { return polygonEditCoords; }
-
-// Vertex count + polygon area are derived in C# (see
-// OnaPlotter.Utilities.PolygonGeometry) from the coords returned above
-// so the formula stays unit-tested without a browser.
-
-export function undoLastPolygonVertex() {
-    if (polygonEditCoords.length === 0) return;
-    polygonEditCoords.pop();
-    const last = polygonEditMarkers.pop();
-    if (last && polygonEditLayer) polygonEditLayer.removeLayer(last);
-    redrawPolygonShape();
-}
-
-export function removePolygonEditVertex(index) {
-    if (index < 0 || index >= polygonEditCoords.length) return;
-    polygonEditCoords.splice(index, 1);
-    for (const m of polygonEditMarkers) {
-        if (polygonEditLayer) polygonEditLayer.removeLayer(m);
-    }
-    polygonEditMarkers = [];
-    // Rebuild markers without re-entering addPolygonVertexInternal (which
-    // would redraw the polygon per vertex -- O(n^2)). Build the markers
-    // in one pass, then call redrawPolygonShape() once at the end.
-    for (let i = 0; i < polygonEditCoords.length; i++) {
-        const [lat, lon] = polygonEditCoords[i];
-        const marker = L.marker([lat, lon], {
-            icon: makePolygonVertexIcon(i + 1),
-            draggable: true, zIndexOffset: 800
-        }).addTo(polygonEditLayer);
-        bindPolygonVertex(marker, i);
-        polygonEditMarkers.push(marker);
-    }
-    redrawPolygonShape();
 }
 
 // --- Waypoint Markers ---
@@ -2146,11 +1679,11 @@ export function addWaypointMarker(id, lat, lon, name) {
         // During edit modes, swallow the click and forward the waypoint's
         // location to whatever the user is plotting -- matches the note
         // marker's edit-mode behaviour.
-        if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
+        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
-            if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+            if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
             else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             hit.closePopup();
         }
@@ -2233,11 +1766,11 @@ export function addNoteMarker(id, lat, lon, title, description) {
     // During edit modes, swallow the click and append to whatever the
     // user is building. Same guard as AIS markers.
     marker.on('click', (ev) => {
-        if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
+        if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
-            if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+            if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
             else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             marker.closePopup();
         }
@@ -2386,12 +1919,12 @@ export function addRegion(id, rings, title, description) {
         // Route / polygon / measure edit: clicks on regions append to
         // the in-progress shape instead of opening the region popup.
         poly.on('click', (ev) => {
-            if (routeEditMode || polygonEditMode || measureLayerMod.isActive()) {
+            if (routeEditLayerMod.isActive() || polygonEditLayerMod.isActive() || measureLayerMod.isActive()) {
                 L.DomEvent.stopPropagation(ev);
                 const ll = ev.latlng;
                 if (!ll) return;
-                if (routeEditMode)         addEditWaypoint(ll.lat, ll.lng);
-                else if (polygonEditMode)  addPolygonVertexInternal(ll.lat, ll.lng);
+                if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
+                else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
                 else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
                 poly.closePopup();
             }
@@ -2712,11 +2245,8 @@ export function dispose() {
     // boundary when the user navigated off the Chart page. Removed.
     currentArrow = null;
     weatherLayerMod.dispose();
-    routeEditMode = false; routeEditLayer = null;
-    routeEditCoords = []; routeEditMarkers = []; routeEditLine = null;
-    polygonEditMode = false; polygonEditLayer = null;
-    polygonEditCoords = []; polygonEditMarkers = [];
-    polygonEditShape = null; polygonEditLine = null;
+    routeEditLayerMod.dispose();
+    polygonEditLayerMod.dispose();
     waypointMarkers.clear();
     noteMarkers.clear();
     regionLayers.clear();
