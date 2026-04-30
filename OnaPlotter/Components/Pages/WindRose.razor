@@ -184,7 +184,14 @@
                        axis confusion Tom (the tactician persona) flagged
                        in the field study. The .wind-polar-key chip below
                        the rose names the polar curve explicitly. *@
-                    <svg width="30" height="180" aria-hidden="true">
+                    @* SVG width 44 (was 30): the rect occupies 16 px on
+                       the left edge, leaving x=20..44 for the labels.
+                       At width 30 the labels were anchored at x=20 with
+                       only 10 px of room, so a two-digit MaxSpeedKn
+                       like "30" was clipped at the right edge -- the
+                       helm saw "3" alone for the top tick. 44 px gives
+                       room for up to three digits. *@
+                    <svg width="44" height="180" aria-hidden="true">
                         <defs>
                             @* Viridis stops -- match SpeedColor() in the
                                @code block. Perceptually uniform in
