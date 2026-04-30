@@ -11,8 +11,6 @@
 @inject OnaPlotter.Services.SignalkClient SignalkClient
 @inject IJSRuntime JS
 @inject ClientErrorRelay ErrorRelay
-@inject IRouteApi RouteApi
-@inject IWaypointApi WaypointApi
 @inject INotificationsApi NotificationsApi
 
 <PageTitle>Settings</PageTitle>
@@ -729,53 +727,14 @@
         </div>
     </div>
 
-    @* === Backup / GPX exchange =============================
-       Helm-flagged: import/export GPX used to live in the Layers
-       panel on the map, where it took up vertical space alongside
-       layer toggles and was a confusing fit ("why is import next
-       to OpenSeaMap?"). Settings is the right home for "data in /
-       data out" actions. Imports route through the same RouteApi /
-       WaypointApi that the map uses, so a freshly-imported GPX
-       shows on the map the next time the helm visits it (no live
-       re-render -- import is rare, the next-visit fetch is cheap). *@
-    <div class="col-12 mt-3">
-        <h5 class="page-section-header">Backup</h5>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <strong class="d-block">Import GPX</strong>
-                <small class="text-muted d-block mb-2">
-                    Reads routes + waypoints from a GPX file and writes
-                    them to the SignalK server via the same REST APIs the
-                    map uses. The map page picks up the new entries on
-                    next visit.
-                </small>
-                <label class="map-btn gpx-btn">
-                    Choose file...
-                    <InputFile OnChange="HandleGpxImport" Accept=".gpx" style="display:none;" />
-                </label>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <strong class="d-block">Export GPX</strong>
-                <small class="text-muted d-block mb-2">
-                    Saves every server-side route + waypoint as a single
-                    GPX file. Useful for taking a snapshot before a
-                    plugin upgrade or sharing a passage plan with another
-                    chartplotter.
-                </small>
-                <button class="map-btn gpx-btn" @onclick="HandleGpxExport">
-                    Download...
-                </button>
-            </div>
-        </div>
-    </div>
+    @* Backup / GPX import + export moved to /resources where the
+       per-tab lists already live (focus-group field report 2026-04).
+       Per-row Export already shipped on every Resources row with a
+       format chooser; the page-level Import on /resources accepts
+       any GPX or GeoJSON drop-in and routes each feature into its
+       matching API (Routes / Waypoints / Notes / Regions). Keeping
+       data-in / data-out in one place stops the helm hunting
+       between Settings and Resources. *@
 
     @* === Advanced / developer tools ========================
        Data (raw delta stream) + Paths (which SK paths the plotter
@@ -1359,55 +1318,9 @@
         if (firstRender) await Polar.InitializeAsync();
     }
 
-    // GPX import / export. Lives on the Settings page (was previously
-    // on the Map's Layers panel). Wires to the same RouteApi /
-    // WaypointApi the map uses so imports flow through one path and
-    // the map picks up new entries on next visit. The 8 MB cap on the
-    // input file matches what GpxService.Parse can comfortably hold;
-    // larger imports are rare and would need a streaming parser.
-    private const long MaxGpxImportBytes = 8 * 1024 * 1024;
-    private IJSObjectReference? _fileTransfer;
-
-    private async Task HandleGpxImport(InputFileChangeEventArgs e)
-    {
-        try
-        {
-            using var reader = new System.IO.StreamReader(
-                e.File.OpenReadStream(maxAllowedSize: MaxGpxImportBytes));
-            string xml = await reader.ReadToEndAsync();
-            var data = GpxService.Parse(xml);
-            foreach (var route in data.Routes)
-                await RouteApi.SaveAsync(route.Name, route.Coords);
-            foreach (var wp in data.Waypoints)
-                await WaypointApi.CreateAsync(wp.Name, wp.Lat, wp.Lon);
-            Toasts.Success($"Imported {data.Routes.Count} routes, {data.Waypoints.Count} waypoints");
-        }
-        catch (Exception ex)
-        {
-            Toasts.Error($"GPX import failed: {ex.Message}");
-        }
-    }
-
-    private async Task HandleGpxExport()
-    {
-        try
-        {
-            // Pull fresh from the server -- Settings has no live route
-            // cache so the export reflects exactly what the SK server
-            // currently holds. Cheap (single REST round-trip per type)
-            // and avoids subtle drift from a stale parent-page snapshot.
-            var routes = await RouteApi.GetAllAsync();
-            var waypoints = await WaypointApi.GetAllAsync();
-            string gpx = GpxService.Export(routes, waypoints);
-            _fileTransfer ??= await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
-            await _fileTransfer.InvokeVoidAsync("triggerFileDownload",
-                $"export-{DateTime.Now:yyyyMMdd-HHmm}.gpx", gpx);
-            Toasts.Success($"Exported {routes.Count} routes, {waypoints.Count} waypoints");
-        }
-        catch (Exception ex)
-        {
-            Toasts.Error($"GPX export failed: {ex.Message}");
-        }
-    }
+    // GPX import / export moved to /resources where the per-tab
+    // lists already live. Settings keeps tooling concerns only;
+    // the helm's data-management flow stays in one place. Per-row
+    // Export is on every Resources row (gpx + geojson per format
+    // chooser); the page-level Import handles bulk drop-in.
 }
