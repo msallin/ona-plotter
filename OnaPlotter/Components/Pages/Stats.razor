@@ -20,6 +20,9 @@
 @using System.Globalization
 @inject ITrackApi TrackApi
 @inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime JS
+@inject IToastService Toasts
+@implements IAsyncDisposable
 
 <PageTitle>Stats</PageTitle>
 
@@ -137,16 +140,26 @@
            link round-trips the resolved window so the helm doesn't
            have to re-pick. Hidden when there are no trips since
            the table would be empty. *@
-        @if (t.TripCount > 0)
-        {
-            <div class="d-flex justify-content-end mb-2">
+        <div class="d-flex justify-content-end gap-2 mb-2 flex-wrap">
+            @* Share: opens the system share sheet on iOS / Android /
+               Win10+ (WhatsApp, iMessage, Mail, ...) and falls back
+               to clipboard copy on Firefox / desktop Safari. Always
+               available, even with zero trips -- a "0 trips this week"
+               summary is itself a useful thing to share with crew. *@
+            <button class="btn btn-outline-secondary btn-sm"
+                    @onclick="() => ShareSummary(t)"
+                    title="Share via WhatsApp / iMessage / Mail / clipboard">
+                Share
+            </button>
+            @if (t.TripCount > 0)
+            {
                 <a class="btn btn-outline-primary btn-sm"
                    href="@DrillDownHref(t)"
                    title="Show these trips on the History page (table view + same window)">
                     View @t.TripCount trip@(t.TripCount == 1 ? "" : "s") &rarr;
                 </a>
-            </div>
-        }
+            }
+        </div>
 
         @* Totals grid. Headline numbers as big readouts so a glance
            reads them; supplementary numbers inline. Two rows: the
@@ -398,6 +411,13 @@
     private IReadOnlyList<DailyStats> daily = [];
     private bool showDaily;
 
+    // Lazy-loaded JS helper for navigator.share + clipboard fallback.
+    // Same disposal pattern as Resources / Settings; the import
+    // happens on first Share click so a helm who never shares pays
+    // no module-load cost. _shareLock serialises rapid taps.
+    private Microsoft.JSInterop.IJSObjectReference? _fileTransfer;
+    private readonly System.Threading.SemaphoreSlim _shareLock = new(1, 1);
+
     private void OnModeChanged(ChangeEventArgs e)
         => rangeMode = e.Value?.ToString() == "custom" ? "custom" : "preset";
 
@@ -541,6 +561,80 @@
         finally
         {
             loading = false;
+        }
+    }
+
+    /// <summary>Compose a plain-text summary and hand it to the
+    /// browser's share-or-copy primitive. Web Share opens the system
+    /// sheet on iPad / Android / Win10+ (WhatsApp / iMessage / Mail
+    /// appear there); on Firefox / desktop Safari without the API
+    /// the same content lands on the clipboard. Toast tells the helm
+    /// which path ran so they can paste themselves if needed.</summary>
+    private async Task ShareSummary(StatsTotals t)
+    {
+        string text = BuildShareText(t);
+        await _shareLock.WaitAsync();
+        try
+        {
+            _fileTransfer ??= await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string outcome = await _fileTransfer.InvokeAsync<string>(
+                "shareOrCopy", "Voyage stats", text);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Summary copied to clipboard"); break;
+                case "cancelled":   /* helm dismissed the sheet -- no toast */ break;
+                default:            Toasts.Error("Couldn't share or copy on this browser"); break;
+            }
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Share failed: {ex.Message}");
+        }
+        finally
+        {
+            _shareLock.Release();
+        }
+    }
+
+    /// <summary>Markdown-flavoured plain text summary. Headline +
+    /// bullet list; WhatsApp / iMessage / Mail render <c>**bold**</c>
+    /// and a leading dash as a list, so the same blob reads cleanly
+    /// in every common share target. Window dates rendered in the
+    /// helm's local timezone (<c>ToLocalTime</c>) since they're
+    /// reading the share preview on the same tablet.</summary>
+    private static string BuildShareText(StatsTotals t)
+    {
+        var sb = new System.Text.StringBuilder();
+        string fromLocal = t.From.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
+        string toLocal = t.To.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture);
+        sb.AppendLine($"*Voyage stats* {fromLocal} → {toLocal}");
+        sb.AppendLine();
+        sb.AppendLine($"- Trips: {t.TripCount}");
+        sb.AppendLine($"- Distance underway: {Format.Nm(t.TotalDistanceMetres)} nm");
+        sb.AppendLine($"- Time underway: {FormatHours(t.MovingDurationSeconds)}");
+        sb.AppendLine($"- Time at anchor / berth: {FormatHours(t.StationaryDurationSeconds)}");
+        if (t.AvgSogMs is not null)
+            sb.AppendLine($"- Avg speed: {Format.Speed(t.AvgSogMs)} kn");
+        if (t.MaxSogMs is not null)
+            sb.AppendLine($"- Peak speed: {Format.Speed(t.MaxSogMs)} kn");
+        if (t.Best24hMetres is not null)
+            sb.AppendLine($"- Best 24 h: {Format.Nm(t.Best24hMetres)} nm");
+        if (t.MaxTripDistanceMetres is not null)
+            sb.AppendLine($"- Longest trip: {Format.Nm(t.MaxTripDistanceMetres)} nm");
+        sb.AppendLine();
+        sb.AppendLine($"Coverage: {CoveragePct(t).ToString("F0", CultureInfo.InvariantCulture)}%");
+        return sb.ToString().TrimEnd();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_fileTransfer is not null)
+        {
+            try { await _fileTransfer.DisposeAsync(); }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
         }
     }
 
