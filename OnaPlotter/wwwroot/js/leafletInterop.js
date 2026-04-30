@@ -83,10 +83,10 @@ function flagUrl(mmsi) {
 // initMap *after* these dicts are constructed, MarkerLayer takes the
 // map reference lazily via setMap() below, once initMap runs.
 
-// Chart layers from SignalK.
+// Chart layers (SignalK chart-server tiles + the built-in OSM /
+// OpenSeaMap entries from BuiltInCharts.cs). All flow through
+// addChartLayer so they share the lifecycle + opacity stacking.
 const chartLayers = new MarkerLayer();  // keyed by chart identifier
-let osmBaseLayer = null;
-let seaBaseLayer = null;
 
 // Zoom-level badge (bottom-right). Assigned in initMap so the control
 // exists before the first zoomend fires.
@@ -602,73 +602,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     // few rings further out; panning back doesn't re-request. Cheap
     // memory, noticeable smoothness on the Pi-local-wifi setup where
     // re-fetch RTT is low but visible.
-    // detectRetina: fetches {z+1} tiles and scales to the display grid
-    // on high-DPI devices (iPad, most phones). Without it Leaflet uses
-    // the raw {z} tile scaled up by devicePixelRatio, which on a DPR=2
-    // iPad renders a 256-px source tile into 512 px of screen -- the
-    // user-visible "tiles are blurry, even without overzoom" bug.
-    // Skipped on slow clients: fetching 4x as many tiles (z+1 quad-tree
-    // child) would more than undo the updateWhenIdle win.
-    const retina = !isSlowClient;
-
-    // crossOrigin intentionally unset on the base tiles. tile.openstreetmap.org
-    // serves `Access-Control-Allow-Origin: *` most of the time, but a cached
-    // response from an earlier non-anonymous fetch (browser, corporate proxy,
-    // Service-Worker shim) can arrive WITHOUT the header, and Chromium then
-    // fails the anonymous request rather than reusing the cached body. We
-    // never sample the tiles into a canvas, so the anonymous handshake gives
-    // us nothing; dropping it is the fix Freeboard-SK took for the same class
-    // of reports.
-    osmBaseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        // OSM tiles cap at zoom 19 natively. Deliberately NOT bumped
-        // to map.maxZoom: when chart-upscale takes the helm past 19,
-        // OSM goes blank and the chart's GPU-upscaled tiles are the
-        // only thing on screen. Helm field study reported that an
-        // upscaled OSM layer competing with the chart at zoom 20+
-        // looked like "OSM is loading on top of my chart" -- the
-        // visual flip from "chart only" to "chart + blurry OSM"
-        // arrived a frame after the chart upscale and was confusing.
-        // Letting OSM stay capped at 19 keeps the chart unambiguously
-        // dominant past native and matches the original design intent
-        // ("blank tiles past real cap with OSM showing through
-        // underneath" -- but only up to OSM's own native cap).
-        maxNativeZoom: 19,
-        maxZoom: 19,
-        // keepBuffer 10 (up from 6, default 2): ten extra rings of
-        // tiles outside the viewport stay in the DOM, so small pans
-        // during route planning don't trigger a fetch -- the next
-        // ring is already rendered and just gets revealed. Trade-off
-        // is more DOM nodes (~250-400 extra per layer at typical
-        // iPad zoom), still negligible on modern WebKit / Chromium
-        // tile pipelines, and on the Pi-local-wifi setup where
-        // re-fetch RTT is low but visible the smoothness gain is
-        // noticeable.
-        keepBuffer: 10,
-        updateWhenIdle: isSlowClient,
-        detectRetina: retina,
-        // Minimum acceptable ODbL attribution: short visible text
-        // ("© OpenStreetMap") linking to the canonical copyright page
-        // (which lists contributors). The conventional "contributors"
-        // word is dropped from the visible text so the chip stays
-        // small at the edge of the chart -- the link still satisfies
-        // the licence's "credit and link" requirement.
-        attribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">&copy; OpenStreetMap</a>',
-        referrerPolicy: 'strict-origin-when-cross-origin'
-    }).addTo(map);
-
-    seaBaseLayer = L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', {
-        // Same as OSM above: kept at maxZoom 19 so seamark tiles
-        // disappear past the native cap rather than appearing as a
-        // blurry overlay on top of the chart-upscale view.
-        maxNativeZoom: 19,
-        maxZoom: 19,
-        keepBuffer: 10,
-        updateWhenIdle: isSlowClient,
-        detectRetina: retina,
-        attribution: '<a href="https://www.openseamap.org/" target="_blank" rel="noreferrer">&copy; OpenSeaMap</a>',
-        opacity: 0.8,
-        referrerPolicy: 'strict-origin-when-cross-origin'
-    }).addTo(map);
+    // OSM + OpenSeaMap base layers used to be hardcoded here as
+    // L.tileLayer instances with detectRetina: !isSlowClient. They
+    // now flow through addChartLayer like any other chart, synthesised
+    // on the C# side via OnaPlotter/Utilities/BuiltInCharts.cs and
+    // seeded as enabled on first run from Map.razor. The helm gets
+    // uniform control (toggle, reorder, opacity stacking) over basemap
+    // and SignalK charts. Tile URLs still point at the public internet
+    // endpoints so the boat doesn't need to host basemaps. detectRetina
+    // (which fetches {z+1} tiles for high-DPI devices, gated on
+    // !isSlowClient to avoid 4x tile fetches on a Pi) is applied per-
+    // layer inside addChartLayer.
 
     // featureGroup (not layerGroup) so zoomToTrack can call getBounds() on it.
     trackLayer = L.featureGroup().addTo(map);
@@ -1216,21 +1160,16 @@ export function setNightMode(enabled) {
 // "is this chart serving real tiles past the cap I picked?".
 const chartTileErrors = new Map();   // id -> count
 
-export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels) {
+export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution) {
     if (!map || chartLayers.has(id)) return false;
-    // OSM + OpenSeaMap stay attached as permanent fallback layers
-    // even when SignalK chart-tiles are active:
-    //   * OpenStreetMap road tiles fill anywhere SK chart tiles fail
-    //     to fetch (404, network error, beyond chart bounds) so the
-    //     helm sees something useful instead of a blank rectangle.
-    //   * OpenSeaMap seamark overlay (transparent) draws buoys /
-    //     lights / marinas on top of whatever basemap is showing.
-    // Earlier versions of this function removed one or both layers
-    // when a chart was added -- that broke the fallback behaviour
-    // and (for OpenSeaMap) the seamark overlay itself. The original
-    // "OSM attribution leaks when OSM is inactive" concern was
-    // misdiagnosed: OSM IS active (attached, fills the gaps) and the
-    // attribution is correctly shown for that reason.
+    // OSM + OpenSeaMap used to be hardcoded as Leaflet base layers
+    // attached at initMap time. They now flow through this function
+    // like any other chart, synthesised on the C# side via
+    // OnaPlotter/Utilities/BuiltInCharts.cs. The helm can toggle them
+    // off, reorder them, and they participate in the same opacity
+    // stacking + chart-upscale opt-out that SignalK-served charts do.
+    // Tile URLs still point at the public internet endpoints for OSM
+    // and OpenSeaMap so the boat doesn't need to host basemaps.
     const native = maxZoom || 18;
     let opts = {
         minZoom: minZoom || 1,
@@ -1251,7 +1190,18 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         updateWhenIdle: isSlowClient,
         detectRetina: !isSlowClient,
         crossOrigin: 'anonymous',
-        attribution: '',
+        // Attribution: SK chart-server tiles ship empty (the SK server
+        // doesn't preach about chart sources), but the built-in OSM /
+        // OpenSeaMap synthesised charts pass the ODbL / CC-BY-SA
+        // licence string through here so Leaflet's bottom-right
+        // attribution control surfaces it whenever the layer is on.
+        attribution: attribution || '',
+        // referrerPolicy: matches what the previous hardcoded
+        // osmBaseLayer / seaBaseLayer used so the OSM tile servers
+        // see only the origin (not the full referrer URL) -- some
+        // tile providers reject when the referrer carries a path
+        // they don't whitelist.
+        referrerPolicy: 'strict-origin-when-cross-origin',
         errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.
     };
     // Constrain tile requests to the chart's coverage area.
@@ -2020,7 +1970,7 @@ export function dispose() {
     dotNetRef = null;
     if (map) { map.remove(); map = null; }
     boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
-    osmBaseLayer = null; seaBaseLayer = null; serverTrackLayer = null;
+    serverTrackLayer = null;
     chartLayers.clear();
     routeLayers.clear();
     aisLayerMod.dispose();

@@ -82,22 +82,32 @@ public sealed class ChartLayerController
             try
             {
                 // Upscale levels resolved here (master flag * configured
-                // levels) so the JS side stays a thin renderer; the
-                // decorator no-ops on 0. See OnaPlotter.Utilities.ChartUpscale.
-                int upscale = OnaPlotter.Utilities.ChartUpscale.Effective(
-                    _display.ChartUpscaleEnabled, _display.ChartUpscaleLevels);
+                // levels * the chart's own AllowUpscale opt-out) so
+                // the JS side stays a thin renderer; the decorator
+                // no-ops on 0. The built-in OSM + OpenSeaMap charts
+                // disable AllowUpscale because their upscaled tiles
+                // arriving a frame after a SK chart's GPU upscale
+                // looked like the basemap was loading on top of the
+                // chart -- helm reported the visual flicker as
+                // confusing during a close-quarters zoom.
+                int upscale = chart.AllowUpscale
+                    ? OnaPlotter.Utilities.ChartUpscale.Effective(
+                        _display.ChartUpscaleEnabled, _display.ChartUpscaleLevels)
+                    : 0;
                 // chart.MaxZoom ?? 18 fallback: a chart with no metadata-
                 // declared maxzoom (some legacy MBTiles, plus formats
                 // that don't carry a pyramid descriptor) gets the
                 // Leaflet default 18. With overzoom enabled, that
                 // becomes the maxNativeZoom, and the helm gets a free
-                // upscale window from 18 -> 18+levels. Intentional, and
-                // the "blank tiles surface OSM underneath" honest
-                // signal still applies if the chart actually tops out
-                // earlier than 18.
+                // upscale window from 18 -> 18+levels. Intentional.
+                //
+                // Opacity + Attribution come from the chart descriptor
+                // so the built-in OSM (1.0, ODbL credit) and OpenSeaMap
+                // (0.8, attribution) and SK chart-server entries (0.8,
+                // empty attribution by default) carry through cleanly.
                 await _overlaysJs.AddChartLayerAsync(
                     chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18,
-                    0.8, chart.Bounds, upscale);
+                    chart.Opacity, chart.Bounds, upscale, chart.Attribution);
             }
             catch (Microsoft.JSInterop.JSException ex)
             {

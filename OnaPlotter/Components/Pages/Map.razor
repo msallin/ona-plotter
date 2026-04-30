@@ -1303,18 +1303,32 @@
             if (chartsToRestore.Contains(chart.Identifier))
                 await _charts!.ToggleAsync(chart, true);
 
-        // First-run seeding: auto-enable OpenSeaMap-named charts so
-        // the map isn't blank on first visit. ChartsSeeded is persisted
-        // so this fires EXACTLY ONCE in a device's history -- earlier
+        // First-run seeding: auto-enable the built-in OSM + OpenSeaMap
+        // charts (the basemap pair that used to be hardcoded as
+        // permanent Leaflet base layers in initMap) plus any
+        // SK-server chart whose name reads as "seamap" so the map
+        // isn't blank on first visit. ChartsSeeded is persisted so
+        // this fires EXACTLY ONCE in a device's history -- earlier
         // revisions re-seeded whenever EnabledChartIds was empty,
         // which "reset" the user's deliberate choice to disable every
         // chart (common when plotter is paired with offline tiles).
+        //
+        // The OSM + OpenSeaMap entries come from
+        // OnaPlotter/Utilities/BuiltInCharts.cs via ChartApi; matching
+        // them by Identifier rather than Name is more robust because
+        // a SK plugin could theoretically also publish a chart named
+        // "OpenStreetMap".
         if (!Settings.ChartsSeeded)
         {
             foreach (var chart in availableCharts)
             {
-                if (chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
-                    || chart.Name.Contains("sea map", StringComparison.OrdinalIgnoreCase))
+                bool builtInBasemap =
+                    chart.Identifier == OnaPlotter.Utilities.BuiltInCharts.OsmIdentifier
+                    || chart.Identifier == OnaPlotter.Utilities.BuiltInCharts.OpenSeaMapIdentifier;
+                bool seamapByName =
+                    chart.Name.Contains("seamap", StringComparison.OrdinalIgnoreCase)
+                    || chart.Name.Contains("sea map", StringComparison.OrdinalIgnoreCase);
+                if (builtInBasemap || seamapByName)
                 {
                     await _charts!.ToggleAsync(chart, true);
                 }

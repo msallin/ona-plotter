@@ -17,7 +17,7 @@ public class WeatherOverlayControllerTests
         public List<double> OpacityUpdates { get; } = [];
         public int WeatherClears { get; private set; }
 
-        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels) => Task.CompletedTask;
+        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution) => Task.CompletedTask;
         public Task RemoveChartLayerAsync(string id) => Task.CompletedTask;
         public Task SetChartLayerOrderAsync(string[] orderedIds) => Task.CompletedTask;
 

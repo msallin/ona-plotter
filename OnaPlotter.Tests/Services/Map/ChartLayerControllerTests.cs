@@ -27,11 +27,23 @@ public class ChartLayerControllerTests
         /// IMapDisplaySettings.ChartUpscaleEnabled / Levels.</summary>
         public List<int> UpscaleLevelsCalls { get; } = [];
 
-        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels)
+        /// <summary>Records the most recent attribution arg. Built-in
+        /// OSM / OpenSeaMap charts ship a non-empty ODbL credit; SK
+        /// chart-server entries ship empty.</summary>
+        public List<string> AttributionCalls { get; } = [];
+
+        /// <summary>Records the most recent opacity arg. Built-in OSM
+        /// is 1.0 (basemap); OpenSeaMap is 0.8 (transparent overlay);
+        /// SK charts default 0.8.</summary>
+        public List<double> OpacityCalls { get; } = [];
+
+        public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution)
         {
             if (NextAddError is not null) { var e = NextAddError; NextAddError = null; throw e; }
             Added.Add(id);
             UpscaleLevelsCalls.Add(upscaleLevels);
+            AttributionCalls.Add(attribution);
+            OpacityCalls.Add(opacity);
             return Task.CompletedTask;
         }
 
@@ -187,6 +199,67 @@ public class ChartLayerControllerTests
         await Assert.That(js.Removed).IsEquivalentTo(["c1"]);
         await Assert.That(ctrl.EnabledCharts.Contains("c1")).IsFalse();
         await Assert.That(settings.EnabledChartIds.Contains("c1")).IsFalse();
+    }
+
+    [Test]
+    public async Task Toggle_On_AllowUpscale_True_HonoursDisplaySettings()
+    {
+        // SignalkChart.AllowUpscale = true (the SK-server default)
+        // means the controller resolves upscale levels via the
+        // ChartUpscale.Effective(enabled, levels) path. With master
+        // flag on + 3 levels, we expect 3 to land in JS.
+        var (ctrl, js, _, display, _) = New();
+        display.ChartUpscaleEnabled = true;
+        display.ChartUpscaleLevels = 3;
+        var chart = Chart("c1");
+        chart.AllowUpscale = true;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.UpscaleLevelsCalls.Count).IsEqualTo(1);
+        await Assert.That(js.UpscaleLevelsCalls[0]).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task Toggle_On_AllowUpscale_False_ForcesZeroEvenWhenSettingsEnabled()
+    {
+        // The built-in OSM + OpenSeaMap charts ship AllowUpscale = false
+        // because their upscaled tiles arriving a frame after a SK
+        // chart's GPU upscale read as a flicker. Pin: the controller
+        // must force levels = 0 regardless of the helm's master flag.
+        // A regression that ignored AllowUpscale would re-introduce
+        // the "OSM is loading on top of my chart" symptom.
+        var (ctrl, js, _, display, _) = New();
+        display.ChartUpscaleEnabled = true;
+        display.ChartUpscaleLevels = 3;
+        var chart = Chart("c1");
+        chart.AllowUpscale = false;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.UpscaleLevelsCalls.Count).IsEqualTo(1);
+        await Assert.That(js.UpscaleLevelsCalls[0])
+            .IsEqualTo(0)
+            .Because("AllowUpscale=false forces levels=0 regardless of Settings");
+    }
+
+    [Test]
+    public async Task Toggle_On_PassesAttributionAndOpacityFromChart()
+    {
+        // The chart descriptor's Attribution + Opacity flow through
+        // unchanged so Leaflet's bottom-right control surfaces the
+        // ODbL credit and the opacity stack matches the helm's mental
+        // model ("OSM is the basemap at full opacity, SK charts layer
+        // at 0.8 over it").
+        var (ctrl, js, _, _, _) = New();
+        var chart = Chart("c1");
+        chart.Attribution = "<a href=\"https://x\">© X</a>";
+        chart.Opacity = 1.0;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.AttributionCalls[0]).IsEqualTo(chart.Attribution);
+        await Assert.That(js.OpacityCalls[0]).IsEqualTo(1.0);
     }
 
     [Test]
