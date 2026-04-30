@@ -432,8 +432,15 @@
             // handler attached below has it ready by the time the
             // helm pans. Two-step (set ref, then create map +
             // listeners) keeps the wire-up race-free.
-            await JS.InvokeVoidAsync("eval",
-                "window._historyDotNet = arguments[0];", _historyDotNet);
+            //
+            // Was previously eval("window._historyDotNet = arguments[0]",
+            // ref). That threw "arguments is not defined" -- eval
+            // runs in the surrounding strict-module context where
+            // `arguments` isn't bound, and Blazor's eval interop
+            // doesn't pass extra args to the eval'd code anyway.
+            // The exported helper receives serialised args
+            // correctly because it's a real exported function.
+            await module.InvokeVoidAsync("setHistoryDotNetRef", _historyDotNet);
             await JS.InvokeVoidAsync("eval", $@"
                 (function() {{
                     if (window._historyMap) window._historyMap.remove();

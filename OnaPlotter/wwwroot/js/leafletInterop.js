@@ -66,6 +66,20 @@ export function setSignalKBaseUrl(url) {
     signalKBaseUrl = (url || '').replace(/\/+$/, '');
 }
 
+/** Stash the History page's DotNetObjectReference on window so the
+ *  Leaflet moveend handler attached inline (via eval) can invoke
+ *  back into C#. Replaces an earlier `eval("window._historyDotNet
+ *  = arguments[0]", ref)` call which threw "arguments is not
+ *  defined" -- eval runs in the surrounding script/module strict
+ *  context where `arguments` isn't bound, and Blazor's eval interop
+ *  doesn't pass extra args to the eval'd code anyway. A real
+ *  exported function via JSObjectReference.InvokeVoidAsync DOES
+ *  receive serialised args (DotNetObjectReference round-trips as
+ *  a JS proxy), so this is the correct shape for the handoff. */
+export function setHistoryDotNetRef(ref) {
+    window._historyDotNet = ref;
+}
+
 /** Build the flag-image URL for an MMSI. Same path on every server
  *  (signalk-flags plugin); only the origin varies. Used by the
  *  own-boat popup and the AIS layer module. */
