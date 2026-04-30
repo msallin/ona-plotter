@@ -189,6 +189,36 @@
             </div>
         </div>
 
+        @* Performance row: avg underway speed + best rolling 24-hour
+           run. The two numbers ocean voyagers and racers ask for that
+           the four-tile "voyage" row above doesn't answer: peak alone
+           is bragging-rights, average is the actual passage answer;
+           best 24h is the noon-to-noon log entry. *@
+        <div class="row g-3 mb-3">
+            <div class="col-sm-6 col-lg-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Avg underway speed</h6>
+                        <div class="metric-lg">
+                            @(t.AvgSogMs is null ? "--" : Format.Speed(t.AvgSogMs))<span class="dash-unit">kn</span>
+                        </div>
+                        <small class="text-muted">total nm &divide; time underway (excludes time at anchor)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6 class="page-section-header">Best 24 h</h6>
+                        <div class="metric-lg">
+                            @(t.Best24hMetres is null ? "--" : Format.Nm(t.Best24hMetres))<span class="dash-unit">nm</span>
+                        </div>
+                        <small class="text-muted">most underway distance in any rolling 24-hour window</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row g-3 mb-3">
             <div class="col-sm-6 col-lg-4">
                 <div class="card h-100">

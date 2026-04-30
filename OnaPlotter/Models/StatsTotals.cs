@@ -37,6 +37,21 @@ namespace OnaPlotter.Models;
 /// Null when no moving segments.</param>
 /// <param name="MaxSogMs">Peak SOG observed across all segments
 /// (m/s). Null when no SOG samples in the window.</param>
+/// <param name="AvgSogMs">Average underway speed (m/s), computed as
+/// <see cref="TotalDistanceMetres"/> / <see cref="MovingDurationSeconds"/>.
+/// Distance-over-time rather than a weighted mean of segment
+/// <c>SogAvgMs</c>: (a) always derivable from numbers we already have,
+/// even when individual segments lack SOG samples; (b) it answers the
+/// helm-facing question "how fast was I going?" without the outlier
+/// pull that arithmetic SogAvg means have. Null when no moving
+/// segments / zero moving duration.</param>
+/// <param name="Best24hMetres">Best 24-hour run -- the single rolling
+/// 24 h window with the most underway distance. The classic
+/// "noon-to-noon" bragging-rights number for ocean voyagers; relevant
+/// for any helm comparing "what was my biggest day?". A moving segment
+/// is counted in full when its start falls inside a candidate window
+/// (over-counts segments longer than 24 h, which are rare in practice;
+/// would need clipping otherwise). Null when no moving segments.</param>
 public sealed record StatsTotals(
     DateTime From,
     DateTime To,
@@ -46,4 +61,6 @@ public sealed record StatsTotals(
     double StationaryDurationSeconds,
     double TotalDistanceMetres,
     double? MaxTripDistanceMetres,
-    double? MaxSogMs);
+    double? MaxSogMs,
+    double? AvgSogMs,
+    double? Best24hMetres);

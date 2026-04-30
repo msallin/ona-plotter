@@ -165,4 +165,138 @@ public class StatsAggregatorTests
 
         await Assert.That(t.TotalDurationSeconds).IsEqualTo(0);
     }
+
+    // ---------------- AvgSogMs --------------------------------------
+
+    [Test]
+    public async Task AvgSogMs_DistanceOverMovingTime()
+    {
+        // 1 h moving = 3600 s, 3600 m moving distance -> exactly
+        // 1 m/s avg. Helm question "what was my average speed?"
+        // derives from numbers we already have rather than averaging
+        // segment SogAvgMs, which would skew when a stretch had no
+        // SOG samples.
+        var segs = new[]
+        {
+            Seg(From, From.AddHours(1), stationary: false, distanceM: 3600),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.AvgSogMs).IsEqualTo(1.0);
+    }
+
+    [Test]
+    public async Task AvgSogMs_NullWhenNoMovingTime()
+    {
+        // No moving segments -> avg-of-zero is undefined, not 0.
+        // Rendering "0.0 kn" would mislead.
+        var segs = new[]
+        {
+            Seg(From, From.AddHours(2), stationary: true, distanceM: 5),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.AvgSogMs).IsNull();
+    }
+
+    [Test]
+    public async Task AvgSogMs_StationaryDistanceExcluded()
+    {
+        // Avg = total moving distance / total moving time. Stationary
+        // distance must NOT contribute to the numerator (GPS jitter,
+        // not progress); stationary time must NOT contribute to the
+        // denominator (the boat wasn't moving).
+        var segs = new[]
+        {
+            Seg(From, From.AddHours(1), stationary: false, distanceM: 1800),  // 0.5 m/s
+            Seg(From.AddHours(2), From.AddHours(3), stationary: true,  distanceM: 100),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.AvgSogMs).IsEqualTo(0.5);
+    }
+
+    // ---------------- Best24hMetres ---------------------------------
+
+    [Test]
+    public async Task Best24hMetres_SingleSegment_EqualsItsDistance()
+    {
+        var segs = new[]
+        {
+            Seg(From, From.AddHours(2), stationary: false, distanceM: 12345),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.Best24hMetres).IsEqualTo(12345);
+    }
+
+    [Test]
+    public async Task Best24hMetres_TwoSegments_WithinSameDay_SumsBoth()
+    {
+        // Two trips on the same calendar day fit one 24h rolling
+        // window -> both contribute.
+        var segs = new[]
+        {
+            Seg(From.AddHours(0), From.AddHours(2),  stationary: false, distanceM: 10000),
+            Seg(From.AddHours(6), From.AddHours(10), stationary: false, distanceM: 20000),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.Best24hMetres).IsEqualTo(30000);
+    }
+
+    [Test]
+    public async Task Best24hMetres_SegmentsMoreThan24hApart_TakesMaxIndividual()
+    {
+        // Three trips spaced 30h apart. No rolling 24h window
+        // contains more than one. Best24h = max single-trip distance,
+        // not the sum -- this is the headline test that pins the
+        // "rolling window, not lifetime sum" semantics.
+        var segs = new[]
+        {
+            Seg(From.AddHours(0),  From.AddHours(2),  stationary: false, distanceM: 10000),
+            Seg(From.AddHours(30), From.AddHours(32), stationary: false, distanceM: 25000),
+            Seg(From.AddHours(60), From.AddHours(62), stationary: false, distanceM: 15000),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.Best24hMetres).IsEqualTo(25000);
+    }
+
+    [Test]
+    public async Task Best24hMetres_StationarySegments_DontContribute()
+    {
+        // A stationary segment between two trips must NOT pull its
+        // distance into the rolling-window sum even when it falls
+        // inside the window. (GPS-jitter distance again.)
+        var segs = new[]
+        {
+            Seg(From.AddHours(0),  From.AddHours(2),  stationary: false, distanceM: 10000),
+            Seg(From.AddHours(4),  From.AddHours(8),  stationary: true,  distanceM: 999999),
+            Seg(From.AddHours(10), From.AddHours(12), stationary: false, distanceM: 20000),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.Best24hMetres).IsEqualTo(30000);
+    }
+
+    [Test]
+    public async Task Best24hMetres_NullWhenNoMovingSegments()
+    {
+        var segs = new[]
+        {
+            Seg(From, From.AddHours(5), stationary: true, distanceM: 5),
+        };
+
+        var t = StatsAggregator.Aggregate(From, To, segs);
+
+        await Assert.That(t.Best24hMetres).IsNull();
+    }
 }
