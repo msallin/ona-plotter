@@ -93,6 +93,79 @@ public static class StatsAggregator
             Best24hMetres: best24h);
     }
 
+    /// <summary>Aggregate the supplied segments into per-day rows.
+    /// Each row covers one calendar day in <paramref name="tz"/>
+    /// (defaults to local time so the helm reads "Saturday" / "Apr 19"
+    /// against their wall clock, not a UTC bucket). A segment is
+    /// attributed to its START day; segments crossing midnight don't
+    /// split (uniform-speed clipping would be needed and most
+    /// segments don't cross). Returned list is sorted by date
+    /// DESCENDING so the most recent day shows first in the UI.
+    /// Empty days are excluded -- a 365-day window with sailing
+    /// only on weekends returns ~104 rows, not 365.</summary>
+    public static IReadOnlyList<DailyStats> AggregateDaily(
+        IReadOnlyList<TrackSegment> segments, TimeZoneInfo? tz = null)
+    {
+        var zone = tz ?? TimeZoneInfo.Local;
+        var byDate = new Dictionary<DateTime, DailyAccum>();
+
+        foreach (var s in segments)
+        {
+            // ConvertTimeFromUtc requires a UTC-kind input; the
+            // segmenter promises UTC by construction.
+            var startUtc = DateTime.SpecifyKind(s.StartUtc, DateTimeKind.Utc);
+            var startLocal = TimeZoneInfo.ConvertTimeFromUtc(startUtc, zone);
+            var dayKey = startLocal.Date;   // midnight, kind=Unspecified
+
+            if (!byDate.TryGetValue(dayKey, out var acc))
+            {
+                acc = new DailyAccum();
+                byDate[dayKey] = acc;
+            }
+
+            if (s.IsStationary)
+            {
+                acc.StationarySec += s.Duration.TotalSeconds;
+            }
+            else
+            {
+                acc.TripCount++;
+                acc.MovingSec += s.Duration.TotalSeconds;
+                acc.DistanceM += s.DistanceMetres;
+            }
+            if (s.SogMaxMs is double sm && (acc.MaxSog is null || sm > acc.MaxSog.Value))
+                acc.MaxSog = sm;
+        }
+
+        var rows = new List<DailyStats>(byDate.Count);
+        foreach (var (date, a) in byDate)
+        {
+            double? avgSog = a.MovingSec > 0 ? a.DistanceM / a.MovingSec : (double?)null;
+            rows.Add(new DailyStats(
+                LocalDate: date,
+                TripCount: a.TripCount,
+                MovingDurationSeconds: a.MovingSec,
+                StationaryDurationSeconds: a.StationarySec,
+                DistanceMetres: a.DistanceM,
+                MaxSogMs: a.MaxSog,
+                AvgSogMs: avgSog));
+        }
+        rows.Sort((a, b) => b.LocalDate.CompareTo(a.LocalDate));   // descending
+        return rows;
+    }
+
+    /// <summary>Mutable accumulator used while binning segments by
+    /// local date. Local class because using <see cref="DailyStats"/>
+    /// directly would force a record-with rebuild on every update.</summary>
+    private sealed class DailyAccum
+    {
+        public int TripCount;
+        public double MovingSec;
+        public double StationarySec;
+        public double DistanceM;
+        public double? MaxSog;
+    }
+
     /// <summary>Rolling 24-hour window with the most underway distance.
     /// Sliding-window over moving segments by start time: O(n).
     /// <para>

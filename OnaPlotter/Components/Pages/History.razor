@@ -13,6 +13,7 @@
 @inject ISignalKBaseUrl SkBaseUrl
 @inject SignalkClient SignalkClient
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 
 <PageTitle>History</PageTitle>
 
@@ -365,7 +366,14 @@
             }
             catch (HttpRequestException) { availableCharts = []; }
 
-            // Auto-load the default timespan.
+            // Apply incoming query params before the auto-load, so a
+            // deep link (?from=...&to=...&view=table) lands on the
+            // requested window + view instead of the page default.
+            // Drill-down from /stats uses this to "show me these
+            // trips" without forcing a re-pick of the date range.
+            ApplyQueryParams();
+
+            // Auto-load the (possibly query-overridden) timespan.
             await LoadTrack();
         }
         catch (JSDisconnectedException) { /* page teardown race */ }
@@ -413,6 +421,51 @@
             }})()
         ");
         await DrawBoatMarker();
+    }
+
+    /// <summary>Parse <c>?from=&amp;to=&amp;view=table</c> from the
+    /// current URL and apply to the page state. Used for the Stats
+    /// page's "View these trips" drill-down: the link encodes the
+    /// helm's chosen window + a request for table view, History
+    /// reads it, switches to custom mode + table mode, then
+    /// LoadTrack picks up the values.
+    /// <para>
+    /// Robust to malformed input: any unparseable timestamp is
+    /// silently ignored and the page falls back to its preset
+    /// default. Same posture as the Map page's
+    /// <c>?focus=</c> / <c>?edit=</c> handlers; the helm shouldn't
+    /// see a stack trace because someone hand-edited the URL.
+    /// </para>
+    /// </summary>
+    private void ApplyQueryParams()
+    {
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            var qs = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            string? fromStr = qs["from"];
+            string? toStr = qs["to"];
+            string? view = qs["view"];
+
+            // Window: when both from + to are valid, switch to custom
+            // mode + apply. Just one valid (or none) keeps the helm's
+            // preset default rather than half-applying.
+            if (DateTime.TryParse(fromStr, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var fromUtc)
+                && DateTime.TryParse(toStr, System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.RoundtripKind, out var toUtc))
+            {
+                rangeMode = "custom";
+                customFromLocal = DateTime.SpecifyKind(fromUtc.ToLocalTime(), DateTimeKind.Unspecified);
+                customToLocal = DateTime.SpecifyKind(toUtc.ToLocalTime(), DateTimeKind.Unspecified);
+            }
+
+            // View: only "table" is meaningful as a deep-link target;
+            // "map" is the default. Falls through silently for
+            // anything else.
+            if (view == "table") viewMode = "table";
+        }
+        catch (UriFormatException) { /* unparseable URI; keep defaults */ }
     }
 
     private void OnTimespanChanged(ChangeEventArgs e)

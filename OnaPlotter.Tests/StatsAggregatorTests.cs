@@ -299,4 +299,121 @@ public class StatsAggregatorTests
 
         await Assert.That(t.Best24hMetres).IsNull();
     }
+
+    // ---------------- AggregateDaily --------------------------------
+
+    [Test]
+    public async Task AggregateDaily_BinsByLocalStartDate()
+    {
+        // Two trips on different UTC days. With UTC tz the binning is
+        // unambiguous (no DST / wall-clock surprises). The aggregator
+        // returns one row per day that had activity, sorted descending.
+        var d1 = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc);
+        var d2 = new DateTime(2026, 4, 3,  9, 0, 0, DateTimeKind.Utc);
+        var segs = new[]
+        {
+            Seg(d1, d1.AddHours(1), stationary: false, distanceM: 1000),
+            Seg(d2, d2.AddHours(2), stationary: false, distanceM: 2000),
+        };
+
+        var rows = StatsAggregator.AggregateDaily(segs, TimeZoneInfo.Utc);
+
+        await Assert.That(rows.Count).IsEqualTo(2);
+        // Descending sort: April 3 first.
+        await Assert.That(rows[0].LocalDate).IsEqualTo(new DateTime(2026, 4, 3));
+        await Assert.That(rows[0].DistanceMetres).IsEqualTo(2000);
+        await Assert.That(rows[0].TripCount).IsEqualTo(1);
+        await Assert.That(rows[1].LocalDate).IsEqualTo(new DateTime(2026, 4, 1));
+        await Assert.That(rows[1].DistanceMetres).IsEqualTo(1000);
+    }
+
+    [Test]
+    public async Task AggregateDaily_SameDay_SumsTripsAndPicksMaxSog()
+    {
+        // Two moving + one stationary on the same day. Aggregator
+        // sums trip distances + durations, peaks the max SOG across
+        // ALL segments on the day (including stationary -- a surge
+        // inside ferry-wash is still a real reading).
+        var d = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc);
+        var segs = new[]
+        {
+            Seg(d.AddHours(0), d.AddHours(2), stationary: false, distanceM: 1000, sogMax: 3.0),
+            Seg(d.AddHours(3), d.AddHours(4), stationary: true,  distanceM: 5,    sogMax: 5.5),  // ferry wash surge
+            Seg(d.AddHours(5), d.AddHours(7), stationary: false, distanceM: 2000, sogMax: 4.0),
+        };
+
+        var rows = StatsAggregator.AggregateDaily(segs, TimeZoneInfo.Utc);
+
+        await Assert.That(rows.Count).IsEqualTo(1);
+        await Assert.That(rows[0].TripCount).IsEqualTo(2);
+        await Assert.That(rows[0].DistanceMetres).IsEqualTo(3000);
+        await Assert.That(rows[0].MaxSogMs).IsEqualTo(5.5);   // includes stationary
+        await Assert.That(rows[0].MovingDurationSeconds).IsEqualTo(4 * 3600);
+        await Assert.That(rows[0].StationaryDurationSeconds).IsEqualTo(1 * 3600);
+    }
+
+    [Test]
+    public async Task AggregateDaily_AvgSogMs_PerDay_ExcludesStationaryTime()
+    {
+        // 1 h moving covering 1800 m -> 0.5 m/s avg for that day,
+        // unaffected by stationary time on the same day.
+        var d = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc);
+        var segs = new[]
+        {
+            Seg(d.AddHours(0), d.AddHours(1), stationary: false, distanceM: 1800),
+            Seg(d.AddHours(2), d.AddHours(3), stationary: true,  distanceM: 100),
+        };
+
+        var rows = StatsAggregator.AggregateDaily(segs, TimeZoneInfo.Utc);
+
+        await Assert.That(rows.Count).IsEqualTo(1);
+        await Assert.That(rows[0].AvgSogMs).IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task AggregateDaily_DayOnlyStationary_HasZeroTripsAvgSogNull()
+    {
+        // A day at anchor with no moving segments still appears as a
+        // row (it had stationary activity). TripCount = 0, AvgSogMs
+        // = null (no underway time to average).
+        var d = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc);
+        var segs = new[]
+        {
+            Seg(d.AddHours(0), d.AddHours(8), stationary: true, distanceM: 12),
+        };
+
+        var rows = StatsAggregator.AggregateDaily(segs, TimeZoneInfo.Utc);
+
+        await Assert.That(rows.Count).IsEqualTo(1);
+        await Assert.That(rows[0].TripCount).IsEqualTo(0);
+        await Assert.That(rows[0].AvgSogMs).IsNull();
+        await Assert.That(rows[0].StationaryDurationSeconds).IsEqualTo(8 * 3600);
+    }
+
+    [Test]
+    public async Task AggregateDaily_EmptySegments_ReturnsEmpty()
+    {
+        var rows = StatsAggregator.AggregateDaily([], TimeZoneInfo.Utc);
+        await Assert.That(rows.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task AggregateDaily_AttributesByStartDay_NotCrossingMidnight()
+    {
+        // Segment crosses midnight UTC: starts April 1 23:00, ends
+        // April 2 01:00. Attributed to April 1 in full -- splitting
+        // distance across two days would need a uniform-speed
+        // assumption (over-engineered for the rare case).
+        var start = new DateTime(2026, 4, 1, 23, 0, 0, DateTimeKind.Utc);
+        var segs = new[]
+        {
+            Seg(start, start.AddHours(2), stationary: false, distanceM: 1000),
+        };
+
+        var rows = StatsAggregator.AggregateDaily(segs, TimeZoneInfo.Utc);
+
+        await Assert.That(rows.Count).IsEqualTo(1);
+        await Assert.That(rows[0].LocalDate).IsEqualTo(new DateTime(2026, 4, 1));
+        await Assert.That(rows[0].DistanceMetres).IsEqualTo(1000);
+    }
 }
