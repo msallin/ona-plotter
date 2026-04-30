@@ -26,8 +26,11 @@ internal sealed class FakeConfirmationService : IConfirmationService
     public string? CancelLabel { get; private set; }
     public bool IsPending => false;
     public bool IsTextPrompt { get; private set; }
+    public bool IsChoice { get; private set; }
+    public IReadOnlyList<string> Options { get; private set; } = [];
     public string TextValue { get; set; } = "";
     public void Resolve(bool ok) { /* tests resolve synchronously via AutoConfirm */ }
+    public void Pick(string option) { /* tests resolve synchronously via AutoChooseValue */ }
 
     public Task<bool> ConfirmAsync(string message, bool destructive = true,
         string? confirmLabel = null, string? cancelLabel = null)
@@ -56,7 +59,29 @@ internal sealed class FakeConfirmationService : IConfirmationService
         ConfirmLabel = confirmLabel;
         CancelLabel = cancelLabel;
         IsTextPrompt = true;
+        IsChoice = false;
+        Options = [];
         TextValue = initialValue;
         return Task.FromResult(AutoConfirm ? AutoPromptValue : null);
+    }
+
+    /// <summary>Auto-answer for <see cref="ChooseAsync"/>. Tests that
+    /// exercise the chooser flow set this to one of the offered
+    /// option labels; AutoConfirm gates this -- false means return
+    /// null (simulates Cancel) regardless.</summary>
+    public string? AutoChooseValue { get; set; }
+
+    public Task<string?> ChooseAsync(string message, IReadOnlyList<string> options)
+    {
+        CallCount++;
+        LastMessage = message;
+        Destructive = false;
+        ConfirmLabel = null;
+        CancelLabel = "Cancel";
+        IsTextPrompt = false;
+        IsChoice = true;
+        Options = options;
+        TextValue = "";
+        return Task.FromResult(AutoConfirm ? AutoChooseValue : null);
     }
 }

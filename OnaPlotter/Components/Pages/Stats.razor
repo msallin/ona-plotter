@@ -51,13 +51,22 @@
                 </select>
                 @if (rangeMode == "preset")
                 {
+                    @* 1h + 6h presets added so daysailers / racing
+                       crews can see "this afternoon" totals without
+                       a trip-of-zero on a 24-hour window full of
+                       slip time. Long-haul presets cap at 365d --
+                       beyond that the aggregator + History API
+                       round-trip costs add up faster than the
+                       data is interesting. *@
                     <select class="form-select form-select-sm" style="width:auto;"
                             @onchange="OnTimespanChanged">
-                        <option value="1d" selected="@(selectedTimespan == "1d")">Today (24 h)</option>
-                        <option value="3d" selected="@(selectedTimespan == "3d")">Last 3 days</option>
-                        <option value="7d" selected="@(selectedTimespan == "7d")">Last 7 days</option>
-                        <option value="30d" selected="@(selectedTimespan == "30d")">Last 30 days</option>
-                        <option value="90d" selected="@(selectedTimespan == "90d")">Last 90 days</option>
+                        <option value="1h"   selected="@(selectedTimespan == "1h")">Last 1 hour</option>
+                        <option value="6h"   selected="@(selectedTimespan == "6h")">Last 6 hours</option>
+                        <option value="1d"   selected="@(selectedTimespan == "1d")">Today (24 h)</option>
+                        <option value="3d"   selected="@(selectedTimespan == "3d")">Last 3 days</option>
+                        <option value="7d"   selected="@(selectedTimespan == "7d")">Last 7 days</option>
+                        <option value="30d"  selected="@(selectedTimespan == "30d")">Last 30 days</option>
+                        <option value="90d"  selected="@(selectedTimespan == "90d")">Last 90 days</option>
                         <option value="365d" selected="@(selectedTimespan == "365d")">Last year</option>
                     </select>
                 }
@@ -225,6 +234,23 @@
             Lower coverage means gaps -- plotter offline, server didn't log,
             or the resolution is finer than the feed cadence.
         </div>
+        @* Zero-trip explainer. A "Trips: 0" headline with high
+           coverage (>50 %) reads as "your boat went nowhere"; helms
+           reading that during a focus group asked "but why?". The
+           segmenter's threshold is documented in TrackSegmenter.cs;
+           surfacing the reason in the page closes the loop without
+           making them open the source. *@
+        @if (t.TripCount == 0 && CoveragePct(t) >= 50)
+        {
+            <div class="alert alert-info mt-2 py-2" style="font-size:0.85rem;">
+                Zero trips with @CoveragePct(t).ToString("F0", CultureInfo.InvariantCulture) % coverage:
+                the segmenter classified every fix as stationary -- SOG below the
+                <code>~1 kn</code> moving threshold for the whole window.
+                Common causes: a day in port, a slow drift at anchor, or a SOG feed
+                that wasn't reporting (every fix has zero speed, so the segmenter
+                falls back to inter-sample distance and finds nothing above noise).
+            </div>
+        }
     }
     else if (computeAttempted)
     {
@@ -309,6 +335,12 @@
     private static string FormatHours(double seconds)
     {
         double h = seconds / 3600.0;
+        // Switch to days for windows >= 48 h. "Today" / "yesterday"
+        // still read in hours; a 3+ day cruise reads as "5.3 d"
+        // rather than "127.2 h" -- closer to how the helm thinks
+        // about voyage length.
+        if (h >= 48)
+            return $"{(h / 24.0).ToString("F1", CultureInfo.InvariantCulture)} d";
         return $"{h.ToString("F1", CultureInfo.InvariantCulture)} h";
     }
 
