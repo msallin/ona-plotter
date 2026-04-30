@@ -1497,22 +1497,18 @@
     private async Task PushGuardZoneAsync()
     {
         if (_controlsJs is null) return;
-        // Effective radius mirrors CpaAlarmRule.EffectiveCpaRadiusNm:
-        // when the SignalK anchoralarm plugin is active and has
-        // published a max-radius, narrow the visible guard ring +
-        // CPA threshold to the anchor swing radius. The underway
-        // threshold (typically 0.3+ nm) generates "too many warnings"
-        // (focus-group field report) when applied to a stationary
-        // boat in a crowded anchorage; the anchor radius is the
-        // right gate for "vessel could enter MY swing".
-        double radiusNm = Settings.CpaAlarmThreshold;
-        if (SignalkClient.Data.AnchorActive
-            && SignalkClient.Data.AnchorMaxRadius is double maxM
-            && double.IsFinite(maxM) && maxM > 0)
-        {
-            double anchorNm = maxM / 1852.0;
-            if (anchorNm < radiusNm) radiusNm = anchorNm;
-        }
+        // Effective radius via the shared Cpa.EffectiveRadiusNm helper.
+        // Three render paths consume it: the alarm rule
+        // (CpaAlarmRule.EffectiveCpaRadiusNm), the chip classifier
+        // (AisPushService.BuildSnapshot), and the visible rings
+        // (this call site). All three MUST settle on one number --
+        // a previous bug had the rings narrow under anchor while
+        // chips kept the underway threshold, helm saw chips outside
+        // the rings and asked "how can this be?".
+        double radiusNm = OnaPlotter.Utilities.Cpa.EffectiveRadiusNm(
+            Settings.CpaAlarmThreshold,
+            SignalkClient.Data.AnchorActive,
+            SignalkClient.Data.AnchorMaxRadius);
         await _controlsJs.SetGuardZoneAsync(
             radiusNm,
             Settings.GuardZoneLookaheadMinutes,

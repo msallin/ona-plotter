@@ -146,6 +146,60 @@ public class AisPushServiceTests
     }
 
     [Test]
+    public async Task ChipClassifier_Anchored_NarrowsToAnchorRadius()
+    {
+        // Helm-flagged regression: visible guard-zone rings narrow
+        // to the anchor swing radius (e.g. 0.05 nm) when the SK
+        // anchoralarm-plugin is active, but the chart-side chip
+        // classifier was still using the underway threshold (0.5 nm
+        // default), so amber chips appeared OUTSIDE the visible
+        // rings. Pin: when anchored with a 30 m max-radius, a vessel
+        // with CPA = 0.09 nm gets cpaThreat = "none" (not "warning"),
+        // because 0.09 nm > anchor-narrowed warning band of
+        // ~0.0162 * 2 = ~0.032 nm.
+        var ownLat = 47.0; var ownLon = 8.0;
+        // Place the AIS target ahead of own boat at a distance whose
+        // CPA works out to ~0.09 nm given matching headings.
+        // 0.0015 deg lat = ~0.09 nm. Same lon so target is straight
+        // ahead. Closing speed: own going north, target going south.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", ownLat + 0.0015, ownLon,
+            sog: 5.0, cog: Math.PI);  // south-bound
+        var js = new FakeAisJs();
+
+        // Anchored own-boat with a tight 30 m radius.
+        var nav = new NavigationData();
+        nav.Apply("navigation.position", JsonSerializer.SerializeToElement(
+            new { latitude = ownLat, longitude = ownLon }));
+        nav.Apply("navigation.speedOverGround", 0.05);          // basically still
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.ApplyAnchorPosition(ownLat, ownLon);
+        nav.Apply("navigation.anchor.maxRadius", 30.0);
+
+        var settings = new FakeSettings
+        {
+            CpaAlarmThreshold = 0.5,
+            GuardZoneLookaheadMinutes = 30.0,
+            GuardZoneWarningFactor = 2.0,
+        };
+        var svc = NewService(store, js, settings);
+
+        await svc.PushAsync(nav);
+
+        var entry = js.Pushes[0][0];
+        var threat = (string?)entry.GetType().GetProperty("cpaThreat")?.GetValue(entry);
+        // 0.09 nm CPA is OUTSIDE the anchor-narrowed warning band
+        // (~0.032 nm) -- the chip should be classified None. Without
+        // the AisPushService fix this returns "warning" because the
+        // 0.5 nm underway threshold's warning band reaches to 1.0 nm.
+        await Assert.That(threat)
+            .IsEqualTo("none")
+            .Because("anchored chip classifier must use the narrowed " +
+                     "anchor radius so chips don't appear outside the " +
+                     "visible guard-zone rings");
+    }
+
+    [Test]
     public async Task Buddy_Vessels_Get_Star_Prefix()
     {
         // displayName = "★ NAME" when the vessel is on the buddy list.

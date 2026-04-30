@@ -30,37 +30,25 @@ public sealed class CpaAlarmRule : IAlarmRule
     }
 
     /// <summary>Effective CPA radius for THIS tick (nautical miles).
+    /// Wraps the shared <see cref="Cpa.EffectiveRadiusNm"/> helper so
+    /// the alarm rule, the chart-side chip classifier
+    /// (<c>AisPushService</c>), and the visible guard-ring renderer
+    /// (<c>Map.razor.PushGuardZoneAsync</c>) all settle on one number.
+    /// <para>
     /// The user-configured <see cref="IAlarmThresholds.CpaAlarmThreshold"/>
     /// is the underway value -- typically 0.3..0.5 nm so a developing
-    /// crossing situation has time to read.
-    /// <para>
-    /// When the boat is anchored (<see cref="NavigationData.AnchorActive"/>
-    /// = the SignalK anchoralarm-plugin has a drop point set) the
-    /// underway threshold is wildly inappropriate: every passing
-    /// vessel inside 0.3 nm of a stationary boat fires a CPA alarm
-    /// even when the actual approach distance is hundreds of metres.
-    /// We narrow the threshold to the anchor's max swing radius
-    /// (<c>data.AnchorMaxRadius</c>, metres -&gt; nm) so an alarm
-    /// fires only when a vessel could enter the anchor circle.
-    /// </para>
-    /// <para>
-    /// Falls through to the underway threshold when:
-    ///  - anchor isn't active,
-    ///  - the radius hasn't arrived yet (server race),
-    ///  - the anchor radius is somehow LARGER than the underway
-    ///    threshold (the user wants the more cautious of the two,
-    ///    which is the smaller).
+    /// crossing situation has time to read. When the boat is anchored
+    /// (<see cref="NavigationData.AnchorActive"/> = the SignalK
+    /// anchoralarm-plugin has a drop point set) the threshold narrows
+    /// to the anchor's max swing radius -- an alarm fires only when a
+    /// vessel could enter the anchor circle, not on every passer-by.
     /// </para>
     /// </summary>
-    public static double EffectiveCpaRadiusNm(AlarmEvaluationContext ctx)
-    {
-        double underway = ctx.Settings.CpaAlarmThreshold;
-        if (!ctx.Data.AnchorActive) return underway;
-        if (ctx.Data.AnchorMaxRadius is not double maxM) return underway;
-        if (!double.IsFinite(maxM) || maxM <= 0) return underway;
-        double anchorNm = maxM / 1852.0;
-        return Math.Min(underway, anchorNm);
-    }
+    public static double EffectiveCpaRadiusNm(AlarmEvaluationContext ctx) =>
+        Cpa.EffectiveRadiusNm(
+            ctx.Settings.CpaAlarmThreshold,
+            ctx.Data.AnchorActive,
+            ctx.Data.AnchorMaxRadius);
 
     /// <summary>Mirrors the publisher's previous private helper. Strips
     /// the <c>vessels.</c> prefix from a SK context and replaces every
