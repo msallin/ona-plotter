@@ -7688,6 +7688,39 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .colregs-giveway { color: var(--sev-danger); }   /* we must keep clear */
 .colregs-standon { color: var(--sev-ok); }       /* we hold course */
 
+/* Guard-ring distance labels. Tiny text-only chips placed at the
+   north of each ring (inner danger + outer dashed warning) so the
+   helm reads "what's my CPA radius?" at a glance without going to
+   Settings. Pure-text + no background by design -- the rings
+   themselves carry the visual weight, the label is just a tag. */
+.guard-ring-label {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: var(--guard-warn, #f59e0b);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    padding: 0 !important;
+    /* Subtle text shadow so the label survives over both bright +
+       dark chart tiles without us painting a pill. Dual-stroke
+       trick: opaque dark stroke on a light theme chart, opaque
+       light stroke on a dark theme chart. */
+    text-shadow:
+        0 0 2px rgba(0, 0, 0, 0.55),
+        0 0 4px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
+.guard-ring-label::before { display: none !important; }
+.guard-ring-label-warn { opacity: 0.85; }
+.theme-effective-light .guard-ring-label {
+    color: #92400e;             /* amber-900 -- AA on white tiles */
+    text-shadow:
+        0 0 2px rgba(255, 255, 255, 0.85),
+        0 0 4px rgba(255, 255, 255, 0.55);
+}
+
 /* CPA / crossing-situation labels on the map.
    Same theme-flip strategy as .ais-label: dark pill by default, white
    pill in light + high-contrast so the label reads as paper-on-chart
