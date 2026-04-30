@@ -29,7 +29,17 @@ const aisMarkers = {};
 const aisVectors = {};
 const aisCpaOwnLines = {};
 const aisCpaTgtLines = {};
-const aisCpaLabels = {};
+// X markers at the closest-approach endpoints. Rendering each
+// CPA point as a small "×" rather than a midpoint label means the
+// helm can SEE the meeting point on the chart -- the previous
+// label hid it. The label is now a tooltip BOUND to the target's
+// X so it sits above without obscuring the point itself.
+const aisCpaTgtX = {};
+const aisCpaOwnX = {};
+// Last-seen severity per target so we can detect first-detection
+// transitions and run the 2-second auto-hide on warning-state
+// labels (danger labels stay permanent, see CpaLabelMode below).
+const aisCpaLastSeverity = {};
 const aisTrailHistory = {};
 const aisTrailLines = {};
 const aisLabels = {};
@@ -608,52 +618,57 @@ export function updateAisTargets(vessels) {
             const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
             const lineColor = isDangerEff ? colors.mob : colors.guardWarn;
 
+            // CPA lines: less prominent than they used to be (weight
+            // 1.2 + smaller dash + lower opacity) so the helm's eye
+            // tracks the X markers + label rather than the lines
+            // themselves. The lines still anchor "from boat to where
+            // we'll be at CPA" so the geometry is readable, but they
+            // shouldn't dominate the chart when other vessels around
+            // are not in collision territory.
             updateCpaLine(aisCpaOwnLines, v.context, [selfLat, selfLon], ownCpa, lineColor);
             updateCpaLine(aisCpaTgtLines, v.context, [v.lat, v.lon], tgtCpa, lineColor);
 
-            const midLat = (ownCpa[0] + tgtCpa[0]) / 2;
-            const midLon = (ownCpa[1] + tgtCpa[1]) / 2;
-            // Label leads with the target name (or MMSI fallback) so a
-            // sailor glancing at the chart knows WHICH vessel is on a
-            // collision track without having to click the marker.
-            // Format:
-            //   MV Aurora
-            //   0.42 nm · T-5m
-            // displayName is the C#-resolved fallback chain (name ->
-            // mmsi -> short context); falls back to v.name / v.mmsi
-            // explicitly here so the label still renders something
-            // useful if the C# pipeline missed a tick.
+            // X markers at each closest-approach endpoint. The
+            // previous design put the label at the midpoint between
+            // the two CPA points, which hid the actual approach
+            // points (helm couldn't see WHERE the boats would be
+            // closest). Two small "×" glyphs render as crosses on
+            // the chart; the target's X carries the tooltip with
+            // the label so it sits ABOVE the cross rather than over
+            // it.
             const cpaName = v.displayName || v.name || v.mmsi || 'Unknown';
-            const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)} nm · T-${cpaInfo.tcpa.toFixed(0)}m`;
-            let lbl = aisCpaLabels[v.context];
-            if (!lbl) {
-                // `interactive: true` lets the label accept pointer events
-                // (clicks + touch taps). Without it Leaflet routes every
-                // event on the tooltip surface straight to the map below,
-                // which is why tapping the CPA chip on the chart previously
-                // did nothing. Paired with the click handler below, a tap
-                // now opens the target vessel's full popup so the helm
-                // can read name / MMSI / SOG / COG / COLREGS role without
-                // having to hunt the tiny triangle marker.
-                lbl = L.tooltip({
-                    permanent: true, direction: 'center', interactive: true,
-                    className: `cpa-label ${isDangerEff ? 'cpa-danger' : 'cpa-warn'}`
-                }).setLatLng([midLat, midLon]).setContent(labelText).addTo(mapRef);
-                aisCpaLabels[v.context] = lbl;
-                attachCpaLabelClick(lbl, v.context);
-            } else {
-                lbl.setLatLng([midLat, midLon]);
-                lbl.setContent(labelText);
-                const el = lbl.getElement();
-                if (el) {
-                    el.classList.toggle('cpa-danger', isDangerEff);
-                    el.classList.toggle('cpa-warn', !isDangerEff);
-                    // setContent rebuilds the DOM, so the click listener
-                    // we attached via addEventListener survives on the
-                    // container but not if the container itself was
-                    // replaced. Re-wiring every update is cheap and
-                    // covers the replacement case without bookkeeping.
-                    attachCpaLabelClick(lbl, v.context);
+            // Compact format (no spaces around units) -- focus-group
+            // readback. Helm reads "0.42nm in 5min" as one phrase.
+            const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)}nm in ${cpaInfo.tcpa.toFixed(0)}min`;
+            const severity = isDangerEff ? 'danger' : 'warn';
+            updateCpaXMarker(aisCpaOwnX, v.context, ownCpa, severity, /*withTooltip*/false, null, null);
+            updateCpaXMarker(aisCpaTgtX, v.context, tgtCpa, severity, /*withTooltip*/true, labelText, v.context);
+
+            // Auto-hide the label on warning state. Danger labels
+            // stay permanent (the helm needs to see the collision
+            // info without hovering); warning labels show on first
+            // detection for 2 s then fade to "tap / hover the X to
+            // re-show", which keeps the chart less cluttered when
+            // multiple low-priority targets are in view simultaneously.
+            const prevSeverity = aisCpaLastSeverity[v.context];
+            aisCpaLastSeverity[v.context] = severity;
+            if (severity === 'warn' && prevSeverity !== 'warn') {
+                // First-tick of a warn -- pop the tooltip briefly.
+                const m = aisCpaTgtX[v.context];
+                if (m) {
+                    m.openTooltip();
+                    setTimeout(() => {
+                        // Defensive: target may have aged out, severity
+                        // may have escalated to danger (now permanent),
+                        // or the helm may be hovering the X right now
+                        // (Leaflet's hover-tooltip behavior re-opens
+                        // it). closeTooltip is idempotent on already-
+                        // closed; non-permanent permits hover re-open.
+                        if (aisCpaLastSeverity[v.context] === 'warn'
+                            && aisCpaTgtX[v.context] === m) {
+                            m.closeTooltip();
+                        }
+                    }, 2000);
                 }
             }
         } else {
@@ -705,8 +720,12 @@ function removeAisTrail(ctx) {
 function updateCpaLine(store, ctx, from, to, color) {
     let line = store[ctx];
     if (!line) {
+        // weight 1.2 + 3,5 dash + opacity 0.65 reads as a hint
+        // rather than a hard stroke; the X markers + label carry
+        // the visual emphasis. Original was weight 2 dash 4,4
+        // opacity 0.9 which dominated nearby vessels' triangles.
         line = L.polyline([from, to], {
-            color, weight: 2, dashArray: '4,4', opacity: 0.9
+            color, weight: 1.2, dashArray: '3,5', opacity: 0.65
         }).addTo(mapRef);
         store[ctx] = line;
     } else {
@@ -715,34 +734,104 @@ function updateCpaLine(store, ctx, from, to, color) {
     }
 }
 
+/// Build / update the "×" marker at a closest-approach endpoint.
+/// `withTooltip` true on the target side carries the label; the
+/// own side renders just a small cross since the label is bound
+/// to the target marker. Severity controls the colour class.
+/// Click on either X opens the target vessel's popup so a helm
+/// can drill into name / MMSI / COLREGS without finding the
+/// triangle marker first.
+function updateCpaXMarker(store, ctx, latlon, severity, withTooltip, labelText, vesselCtx) {
+    let m = store[ctx];
+    const className = `cpa-x-marker cpa-x-${severity}`;
+    if (!m) {
+        const icon = L.divIcon({
+            className,
+            html: '<div class="cpa-x">×</div>',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+        });
+        m = L.marker(latlon, {
+            icon,
+            interactive: true,
+            // keepInView=false so the marker doesn't drag the map
+            // pan when the boat moves toward it.
+            keyboard: false,
+        }).addTo(mapRef);
+        store[ctx] = m;
+        if (vesselCtx) attachCpaXClick(m, vesselCtx);
+        if (withTooltip && labelText) {
+            const isDanger = severity === 'danger';
+            // permanent for danger so the alarm chip is always
+            // visible; non-permanent for warn so it auto-hides
+            // and re-opens on hover. direction: 'top' puts the
+            // chip above the X rather than over it.
+            m.bindTooltip(labelText, {
+                permanent: isDanger,
+                direction: 'top',
+                offset: [0, -4],
+                className: `cpa-label cpa-${severity}`,
+            });
+        }
+    } else {
+        m.setLatLng(latlon);
+        const el = m.getElement();
+        if (el) {
+            el.classList.remove('cpa-x-danger', 'cpa-x-warn');
+            el.classList.add(`cpa-x-${severity}`);
+        }
+        if (withTooltip && labelText) {
+            const tt = m.getTooltip();
+            if (tt) {
+                tt.setContent(labelText);
+                const ttEl = tt.getElement();
+                if (ttEl) {
+                    ttEl.classList.remove('cpa-danger', 'cpa-warn');
+                    ttEl.classList.add(`cpa-${severity}`);
+                }
+                // Severity escalated warn -> danger: flip the
+                // tooltip to permanent so it stays visible without
+                // requiring hover. Leaflet's tooltip options are
+                // settable via `options`; calling openTooltip
+                // after the toggle ensures it's open even if the
+                // helm wasn't hovering.
+                const isDanger = severity === 'danger';
+                if (tt.options.permanent !== isDanger) {
+                    tt.options.permanent = isDanger;
+                    if (isDanger) m.openTooltip();
+                }
+            }
+        }
+    }
+}
+
 function removeCpaOverlay(ctx) {
     if (aisCpaOwnLines[ctx]) { mapRef.removeLayer(aisCpaOwnLines[ctx]); delete aisCpaOwnLines[ctx]; }
     if (aisCpaTgtLines[ctx]) { mapRef.removeLayer(aisCpaTgtLines[ctx]); delete aisCpaTgtLines[ctx]; }
-    if (aisCpaLabels[ctx]) { mapRef.removeLayer(aisCpaLabels[ctx]); delete aisCpaLabels[ctx]; }
+    if (aisCpaTgtX[ctx])     { mapRef.removeLayer(aisCpaTgtX[ctx]);     delete aisCpaTgtX[ctx]; }
+    if (aisCpaOwnX[ctx])     { mapRef.removeLayer(aisCpaOwnX[ctx]);     delete aisCpaOwnX[ctx]; }
+    delete aisCpaLastSeverity[ctx];
 }
 
 /**
- * Wires a click / tap on a CPA label to open the target vessel's
- * popup. The popup (built by buildAisPopupHtml) already carries full
- * detail: name, MMSI, callsign, SOG, COG, HDG, bearing / distance
- * from own boat, COLREGS role, external-lookup links, Buddy / Snooze
- * controls, AND a CPA row. The compact CPA label on the chart is a
- * glance-level chip; the full popup is the one-tap drill-in.
+ * Wires a click / tap on the target's CPA X marker to open the
+ * vessel popup AND show its tooltip. The popup carries full detail
+ * (name, MMSI, callsign, SOG, COG, HDG, bearing / distance, COLREGS
+ * role, external links, Buddy / Snooze, CPA row); the tooltip is
+ * the compact chip the helm reads at a glance. Tapping the X gives
+ * the helm both: chip stays open while they pick the next action,
+ * popup gives them the deeper drill-in.
  *
- * `stopPropagation` keeps the map from panning or the popup under
- * the label from opening instead. L.DomEvent handles both mouse and
- * touch paths so iPad taps work the same as desktop clicks.
+ * Hover (mouse only) shows just the tooltip via Leaflet's default
+ * tooltip-on-hover behaviour for non-permanent tooltips. Touch is
+ * tap-only; iPad helms get the click path.
  */
-function attachCpaLabelClick(tooltip, vesselContext) {
-    const el = tooltip.getElement();
-    if (!el) return;
-    if (el._onaCpaClickBound) return; // idempotent for setContent rebuilds
-    el._onaCpaClickBound = true;
-    L.DomEvent.on(el, 'click touchend', (e) => {
-        L.DomEvent.stop(e);
-        const marker = aisMarkers[vesselContext];
-        if (marker && typeof marker.openPopup === 'function') {
-            marker.openPopup();
+function attachCpaXClick(marker, vesselContext) {
+    marker.on('click', () => {
+        marker.openTooltip();
+        const target = aisMarkers[vesselContext];
+        if (target && typeof target.openPopup === 'function') {
+            target.openPopup();
         }
     });
 }
@@ -824,9 +913,16 @@ export function setHarborMode(enabled) {
             safeRemoveLayer(aisCpaTgtLines[ctx]);
             delete aisCpaTgtLines[ctx];
         }
-        for (const ctx of Object.keys(aisCpaLabels)) {
-            safeRemoveLayer(aisCpaLabels[ctx]);
-            delete aisCpaLabels[ctx];
+        for (const ctx of Object.keys(aisCpaTgtX)) {
+            safeRemoveLayer(aisCpaTgtX[ctx]);
+            delete aisCpaTgtX[ctx];
+        }
+        for (const ctx of Object.keys(aisCpaOwnX)) {
+            safeRemoveLayer(aisCpaOwnX[ctx]);
+            delete aisCpaOwnX[ctx];
+        }
+        for (const ctx of Object.keys(aisCpaLastSeverity)) {
+            delete aisCpaLastSeverity[ctx];
         }
         if (guardZoneRing) {
             safeRemoveLayer(guardZoneRing);
@@ -886,7 +982,9 @@ export function dispose() {
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
     for (const ctx of Object.keys(aisCpaOwnLines)) delete aisCpaOwnLines[ctx];
     for (const ctx of Object.keys(aisCpaTgtLines)) delete aisCpaTgtLines[ctx];
-    for (const ctx of Object.keys(aisCpaLabels)) delete aisCpaLabels[ctx];
+    for (const ctx of Object.keys(aisCpaTgtX)) delete aisCpaTgtX[ctx];
+    for (const ctx of Object.keys(aisCpaOwnX)) delete aisCpaOwnX[ctx];
+    for (const ctx of Object.keys(aisCpaLastSeverity)) delete aisCpaLastSeverity[ctx];
     for (const ctx of Object.keys(aisTrailLines)) delete aisTrailLines[ctx];
     for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];
     for (const ctx of Object.keys(aisLabels)) delete aisLabels[ctx];

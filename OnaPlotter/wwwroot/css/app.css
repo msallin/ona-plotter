@@ -7505,6 +7505,42 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     color: #92400e !important;
 }
 
+/* CPA "×" markers: a small cross at the closest-approach endpoint
+   so the helm can SEE where the boats meet. Replaced the previous
+   midpoint label that hid the actual approach point. The icon
+   container is transparent (no Leaflet-default white square round
+   the divIcon); the glyph carries its own colour + drop-shadow so
+   it reads on any chart background. cursor:pointer announces the
+   click affordance (tap opens the vessel popup + the label
+   tooltip). */
+.cpa-x-marker {
+    background: transparent !important;
+    border: none !important;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.cpa-x {
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    width: 18px;
+    height: 18px;
+    text-shadow:
+        0 0 2px rgba(0, 0, 0, 0.85),
+        0 0 4px rgba(0, 0, 0, 0.55);
+}
+.cpa-x-danger .cpa-x { color: #ef4444; }
+.cpa-x-warn   .cpa-x { color: #f59e0b; }
+.theme-effective-light .cpa-x-danger .cpa-x { color: #b91c1c; }
+.theme-effective-light .cpa-x-warn   .cpa-x { color: #b45309; }
+/* Slight scale-up on hover -- same affordance hint as the AIS
+   markers without resorting to a full filter:drop-shadow blur. */
+.cpa-x-marker:hover .cpa-x {
+    transform: scale(1.15);
+    transition: transform 80ms ease-out;
+}
+
 /* ===== Anchor Alarm HUD Panel =====
    Shares the .hud-stack-bc slot with the route card. They are
    mutually exclusive in the code (NavigateRouteInternal /
