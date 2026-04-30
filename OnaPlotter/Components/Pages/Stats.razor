@@ -329,16 +329,24 @@
            the common question; the daily table is for liveaboards /
            ocean voyagers who want the log entry per day. Toggle keeps
            the page from looking dense on a quick "last 7 days" check.
-           Sorted descending (most recent first) by AggregateDaily. *@
+           Sorted descending (most recent first) by AggregateDaily.
+           --
+           Helm-feedback: the toggle was a near-invisible link-style
+           button. Helms missed the daily view entirely. Now an
+           outline-secondary card-spanning button so it reads as a
+           real affordance. Chevron + count + clear "Show daily / Hide
+           daily" verb. *@
         @if (daily.Count > 0)
         {
-            <div class="mt-3">
-                <button class="btn btn-link btn-sm p-0"
-                        style="font-size:0.85rem; text-decoration:none;"
-                        @onclick="() => showDaily = !showDaily">
-                    @(showDaily ? "▾" : "▸") Daily breakdown (@daily.Count day@(daily.Count == 1 ? "" : "s"))
-                </button>
-            </div>
+            <button type="button"
+                    class="btn btn-outline-secondary w-100 mt-3 d-flex align-items-center justify-content-center gap-2"
+                    style="font-weight:500;"
+                    @onclick="() => showDaily = !showDaily"
+                    aria-expanded="@(showDaily ? "true" : "false")">
+                <span style="font-size:1.1rem; line-height:1;">@(showDaily ? "▾" : "▸")</span>
+                <span>@(showDaily ? "Hide" : "Show") daily breakdown</span>
+                <span class="badge bg-secondary">@daily.Count day@(daily.Count == 1 ? "" : "s")</span>
+            </button>
             @if (showDaily)
             {
                 <div class="table-responsive mt-2">
