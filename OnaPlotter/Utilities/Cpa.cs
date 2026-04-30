@@ -85,6 +85,37 @@ public static class Cpa
     }
 
     /// <summary>
+    /// Effective CPA radius (nautical miles) given the helm's underway
+    /// threshold + anchor state. When the SignalK anchoralarm plugin is
+    /// active and has published a max-radius, the visible guard ring AND
+    /// the chip-classifier both narrow to the anchor swing radius; the
+    /// underway threshold (typically 0.3+ nm) generates "every passing
+    /// vessel chips" noise on a stationary boat in a crowded anchorage.
+    /// <para>Pure helper so the alarm rule (CpaAlarmRule), the chip
+    /// snapshot path (AisPushService), and the ring rendering
+    /// (Map.razor.PushGuardZoneAsync) all settle on one number. A
+    /// previous bug had the rings narrow but the chips keep using
+    /// the underway threshold -- helm saw amber chips floating
+    /// outside the visible rings, called it broken.</para>
+    /// </summary>
+    /// <param name="underwayNm">Helm-configured CPA radius
+    /// (<c>IAppSettings.CpaAlarmThreshold</c>).</param>
+    /// <param name="anchorActive">True when SK anchoralarm-plugin has
+    /// a drop point set (<c>NavigationData.AnchorActive</c>).</param>
+    /// <param name="anchorMaxRadiusM">SK-published max swing radius in
+    /// metres (<c>NavigationData.AnchorMaxRadius</c>); null when the
+    /// plugin hasn't pushed a value yet.</param>
+    public static double EffectiveRadiusNm(
+        double underwayNm, bool anchorActive, double? anchorMaxRadiusM)
+    {
+        if (!anchorActive) return underwayNm;
+        if (anchorMaxRadiusM is not double maxM) return underwayNm;
+        if (!double.IsFinite(maxM) || maxM <= 0) return underwayNm;
+        double anchorNm = maxM / 1852.0;
+        return Math.Min(underwayNm, anchorNm);
+    }
+
+    /// <summary>
     /// Threat severity for a single CPA hit, used to drive marker colour /
     /// danger-ring pulse / red-vs-amber crossing line on the chart. Pure
     /// classification, no rendering side-effects.

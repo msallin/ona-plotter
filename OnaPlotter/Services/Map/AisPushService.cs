@@ -91,6 +91,19 @@ public sealed class AisPushService
         var now = _time.GetUtcNow().UtcDateTime;
         var visible = HarborAisFilter.Apply(vessels, _mooredTracker, harbor, now);
 
+        // Effective CPA radius for THIS snapshot (anchor-narrowing
+        // when applicable). The visible guard-zone rings AND the
+        // chip classifier MUST agree -- using the underway threshold
+        // here while the rings show the anchor-narrowed radius made
+        // chips appear outside the rings ("how can this be?").
+        // See OnaPlotter.Utilities.Cpa.EffectiveRadiusNm for the
+        // single source of truth used by all three render paths
+        // (rings, chips, alarm rule).
+        double effectiveCpaRadiusNm = Cpa.EffectiveRadiusNm(
+            _settings.CpaAlarmThreshold,
+            ownship.AnchorActive,
+            ownship.AnchorMaxRadius);
+
         return visible.Select(v =>
         {
             // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs +
@@ -136,9 +149,12 @@ public sealed class AisPushService
             // redo this thresholding inline; lifting it up means
             // CpaTests.ClassifyThreat is the single source of truth
             // and the alarm pipeline + map overlay can't disagree.
+            // Uses the EFFECTIVE radius (computed once above) so chips
+            // narrow to the anchor swing radius when anchored, matching
+            // what the visible guard-zone rings show.
             var threat = Cpa.ClassifyThreat(
                 cpaNm, tcpaMin,
-                _settings.CpaAlarmThreshold,
+                effectiveCpaRadiusNm,
                 _settings.GuardZoneLookaheadMinutes,
                 _settings.GuardZoneWarningFactor,
                 v.IsBuddy);

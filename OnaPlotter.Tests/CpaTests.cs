@@ -200,4 +200,61 @@ public class CpaTests
         var t2 = Cpa.ClassifyThreat(0.49999, 5.0, Radius, Lookahead, WarnFactor, false);
         await Assert.That(t2).IsEqualTo(Cpa.Threat.Danger);
     }
+
+    // ===== EffectiveRadiusNm =====
+    // Pinned because three render paths read this value (alarm rule,
+    // chart-side chip classifier, visible guard-ring renderer); drift
+    // between any of them surfaces as "chip outside the ring", which
+    // is exactly the helm-flagged bug this helper exists to prevent.
+
+    [Test]
+    public async Task EffectiveRadius_NotAnchored_ReturnsUnderway()
+    {
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(0.5);
+        // Anchored=false even with a radius set means we ignore the
+        // radius and use the underway value.
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: false, anchorMaxRadiusM: 30.0))
+            .IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task EffectiveRadius_Anchored_NarrowsToAnchorSwingRadius()
+    {
+        // 30 m anchor radius = ~0.0162 nm, much narrower than 0.5
+        // underway. Expected: the smaller wins.
+        double eff = Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: 30.0);
+        await Assert.That(eff).IsLessThan(0.05);
+        await Assert.That(eff).IsGreaterThan(0.01);
+    }
+
+    [Test]
+    public async Task EffectiveRadius_AnchorRadiusLargerThanUnderway_KeepsUnderway()
+    {
+        // Helm asked for 0.3 nm underway but their anchor swing is
+        // 1000 m (~0.54 nm). The cautious choice is the smaller --
+        // 0.3 nm.
+        await Assert.That(Cpa.EffectiveRadiusNm(0.3, anchorActive: true, anchorMaxRadiusM: 1000.0))
+            .IsEqualTo(0.3);
+    }
+
+    [Test]
+    public async Task EffectiveRadius_AnchorActiveButRadiusMissing_FallsBackToUnderway()
+    {
+        // SK anchoralarm-plugin race: anchor.position arrives a tick
+        // before anchor.maxRadius. We don't want chips disappearing
+        // for one tick on the path between "anchor active" and "have
+        // a radius" -- they should keep using the underway value
+        // until we know better.
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: null))
+            .IsEqualTo(0.5);
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: 0))
+            .IsEqualTo(0.5);
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: -10))
+            .IsEqualTo(0.5);
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: double.NaN))
+            .IsEqualTo(0.5);
+        await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: double.PositiveInfinity))
+            .IsEqualTo(0.5);
+    }
 }
