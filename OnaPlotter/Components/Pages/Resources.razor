@@ -20,6 +20,7 @@
 @inject NavigationManager Nav
 @inject SignalkClient SignalkClient
 @inject Microsoft.JSInterop.IJSRuntime JS
+@using Microsoft.AspNetCore.Components.Forms
 @implements IAsyncDisposable
 
 <PageTitle>Resources</PageTitle>
@@ -34,13 +35,38 @@
     hover to see the full text without an extra click.
 *@
 <div class="app-page resources-page">
-    <header class="app-page-header">
-        <h1>Resources</h1>
-        <p class="app-page-subtitle">
-            Everything stored on this SignalK server that OnaPlotter can render:
-            routes, waypoints, notes, regions. Useful for house-keeping when the
-            Layers panel is full or when a past plotter left orphans behind.
-        </p>
+    <header class="app-page-header d-flex align-items-start justify-content-between gap-2 flex-wrap">
+        <div>
+            <h1>Resources</h1>
+            <p class="app-page-subtitle">
+                Everything stored on this SignalK server that OnaPlotter can render:
+                routes, waypoints, notes, regions. Useful for house-keeping when the
+                Layers panel is full or when a past plotter left orphans behind.
+            </p>
+        </div>
+        @* Page-level Import. Auto-detects GPX (XML) or GeoJSON (JSON)
+           on the way in and routes each feature to its matching API:
+           LineString -> route, Point + title -> note, Point + name ->
+           waypoint, Polygon / MultiPolygon -> region, GPX rte ->
+           route, GPX wpt -> waypoint. Per-row Export already lives
+           on every row above; the matching Import rounds the data-
+           management flow into one place. Replaces the Settings
+           Backup section (focus-group field report 2026-04). *@
+        <label class="btn btn-outline-primary @(importing ? "disabled" : "")"
+               style="white-space:nowrap;"
+               title="Drop in a GPX or GeoJSON file -- format auto-detected">
+            @if (importing)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                <span>Importing...</span>
+            }
+            else
+            {
+                <span>Import...</span>
+            }
+            <InputFile OnChange="HandleImport" Accept=".gpx,.geojson,.json,.xml"
+                       style="display:none;" disabled="@importing" />
+        </label>
     </header>
 
     <ul class="nav nav-tabs resources-tabs" role="tablist">
@@ -214,6 +240,16 @@
 
     private string activeTab = "routes";
     private bool loading = true;
+
+    /// <summary>True while a page-level Import is in flight. Drives
+    /// the Import button's spinner + disabled state so a slow
+    /// SignalK server (per-feature POST round-trips) doesn't tempt
+    /// the helm into picking the file twice.</summary>
+    private bool importing;
+    /// <summary>Filesystem cap on the import payload. 8 MB matches
+    /// what GpxService used to allow; a typical season's GPX or
+    /// GeoJSON dump is under 1 MB.</summary>
+    private const long MaxImportBytes = 8 * 1024 * 1024;
 
     // Lazy-loaded JS helper for blob-download. Disposed in
     // DisposeAsync so the IJSObjectReference doesn't outlive the
@@ -401,6 +437,112 @@
         if (!r.Success) { Toasts.Error($"Delete region failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Region deleted");
         regions = regions.Where(rg => rg.Id != id).ToList();
+    }
+
+    // ---------------- Import -------------------------------------
+
+    /// <summary>Handle a page-level file pick: read text, sniff
+    /// format (GPX vs GeoJSON), parse, and POST each feature into
+    /// its matching API. Refreshes every loaded list after, so the
+    /// imported routes / waypoints / notes / regions appear in
+    /// their tabs without a manual reload. Toasts the count
+    /// breakdown so the helm can verify against what they expected.</summary>
+    private async Task HandleImport(InputFileChangeEventArgs e)
+    {
+        if (importing) return;
+        importing = true;
+        StateHasChanged();
+        try
+        {
+            string content;
+            using (var reader = new System.IO.StreamReader(
+                e.File.OpenReadStream(maxAllowedSize: MaxImportBytes)))
+            {
+                content = await reader.ReadToEndAsync();
+            }
+
+            ImportResult parsed;
+            try { parsed = ResourceImporter.Parse(content); }
+            catch (FormatException fx) { Toasts.Error($"Import failed: {fx.Message}"); return; }
+            catch (System.Xml.XmlException xx) { Toasts.Error($"Import failed: malformed GPX -- {xx.Message}"); return; }
+            catch (System.Text.Json.JsonException jx) { Toasts.Error($"Import failed: malformed GeoJSON -- {jx.Message}"); return; }
+
+            if (parsed.TotalCount == 0)
+            {
+                Toasts.Info("No routes / waypoints / notes / regions found in the file.");
+                return;
+            }
+
+            // Per-feature creates. Fire sequentially to keep server
+            // load gentle (typical pi-class SK server) and so a
+            // mid-flight failure surfaces with an accurate count.
+            int rOk = 0, wOk = 0, nOk = 0, gOk = 0, failed = 0;
+            foreach (var route in parsed.Routes)
+            {
+                try
+                {
+                    var r = await RouteApi.SaveAsync(route.Name, route.CoordsLatLon);
+                    if (r.Success) rOk++; else failed++;
+                }
+                catch { failed++; }
+            }
+            foreach (var wp in parsed.Waypoints)
+            {
+                try
+                {
+                    var r = await WaypointApi.CreateAsync(wp.Name, wp.Lat, wp.Lon, wp.Description);
+                    if (r.Success) wOk++; else failed++;
+                }
+                catch { failed++; }
+            }
+            foreach (var note in parsed.Notes)
+            {
+                try
+                {
+                    var r = await NoteApi.CreateAsync(
+                        note.Title, note.Description ?? "", note.Lat, note.Lon);
+                    if (r.Success) nOk++; else failed++;
+                }
+                catch { failed++; }
+            }
+            foreach (var region in parsed.Regions)
+            {
+                try
+                {
+                    var r = await RegionApi.CreatePolygonAsync(
+                        region.Name, region.Description ?? "", region.RingLatLon);
+                    if (r.Success) gOk++; else failed++;
+                }
+                catch { failed++; }
+            }
+
+            // Refresh lists so the new entries appear in their tabs.
+            await LoadAllAsync();
+
+            string summary = $"Imported {rOk} route{Plural(rOk)}, "
+                + $"{wOk} waypoint{Plural(wOk)}, "
+                + $"{nOk} note{Plural(nOk)}, "
+                + $"{gOk} region{Plural(gOk)}";
+            if (failed > 0)
+            {
+                Toasts.Error($"{summary}. {failed} failed (see browser console).");
+            }
+            else
+            {
+                Toasts.Success(summary);
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Import failed: {ex.Message}");
+        }
+        finally
+        {
+            importing = false;
+            StateHasChanged();
+        }
+
+        static string Plural(int n) => n == 1 ? "" : "s";
     }
 
     // ---------------- Export -------------------------------------
