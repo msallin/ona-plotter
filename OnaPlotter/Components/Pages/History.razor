@@ -17,6 +17,7 @@
 @inject NavigationManager Nav
 @inject IToastService Toasts
 @inject IConfirmationService Confirmations
+@inject OnaPlotter.Services.State.HistoryPageState State
 
 <PageTitle>History</PageTitle>
 
@@ -427,6 +428,37 @@
     {
         if (points is null || index >= points.Length) return "--";
         return points[index].Timestamp.ToLocalTime().ToString("HH:mm");
+    }
+
+    protected override void OnInitialized()
+    {
+        // Restore the helm's last-picked inputs from the singleton
+        // page-state cache so navigating away + back finds the page
+        // exactly where they left it (focus-group request 2026-04).
+        // We ONLY restore inputs; the loaded geometry refetches via
+        // LoadTrack so the helm sees fresh data on return rather
+        // than a stale cache.
+        rangeMode = State.RangeMode;
+        selectedTimespan = State.SelectedTimespan;
+        customFromLocal = State.CustomFromLocal;
+        customToLocal = State.CustomToLocal;
+        resolution = State.Resolution;
+        viewMode = State.ViewMode;
+    }
+
+    /// <summary>Snapshot the current input state into the page-state
+    /// cache so the next visit restores the same window + view
+    /// pick. Loaded geometry is NOT cached -- LoadTrack on the next
+    /// mount refetches with the same inputs, surfacing fresh
+    /// numbers.</summary>
+    private void SaveToState()
+    {
+        State.RangeMode = rangeMode;
+        State.SelectedTimespan = selectedTimespan;
+        State.CustomFromLocal = customFromLocal;
+        State.CustomToLocal = customToLocal;
+        State.Resolution = resolution;
+        State.ViewMode = viewMode;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1351,6 +1383,11 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Persist the helm's last-seen inputs so the next visit
+        // restores the same window + view. Catches a helm who
+        // tweaked the range and navigated away without tapping
+        // Load -- the new range survives.
+        SaveToState();
         playing = false;
         if (playTimer is not null) await playTimer.DisposeAsync();
         try
