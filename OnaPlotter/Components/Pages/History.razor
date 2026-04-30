@@ -87,7 +87,22 @@
                 <option value="5m"  selected="@(resolution == "5m")">5 m</option>
                 <option value="15m" selected="@(resolution == "15m")">15 m</option>
             </select>
-            <button class="map-btn" @onclick="LoadTrack">Load</button>
+            @* Loading-aware Load button. Disabled + spinner while a
+               fetch is in flight so a slow History API on a sat link
+               doesn't tempt the helm into machine-gunning Load and
+               racing several requests. *@
+            <button class="map-btn" @onclick="LoadTrack" disabled="@loading"
+                    title="@(loading ? "Loading..." : "Load track for the chosen window")">
+                @if (loading)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <span>Loading...</span>
+                }
+                else
+                {
+                    <span>Load</span>
+                }
+            </button>
         </div>
     </div>
 
@@ -350,6 +365,11 @@
     private string selectedTimespan = "1d";
     private bool playing;
     private bool loadAttempted;
+    /// <summary>True while a LoadTrack fetch is in flight. Drives the
+    /// Load button's spinner + disabled state so a slow History API
+    /// (sat-link, large window) doesn't have helms tapping Load
+    /// repeatedly thinking the page froze.</summary>
+    private bool loading;
     private System.Threading.Timer? playTimer;
     // Custom date-range state. "preset" mode uses selectedTimespan
     // (the dropdown); "custom" uses customFromLocal + customToLocal.
@@ -1073,7 +1093,23 @@
 
     private async Task LoadTrack()
     {
+        if (loading) return;     // re-tap guard
         loadAttempted = true;
+        loading = true;
+        StateHasChanged();
+        try
+        {
+            await LoadTrackInner();
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadTrackInner()
+    {
         // Resolve the time window from the current mode. Custom mode
         // sends absolute (from, to) UTC instants -- helm-locale
         // wall-clock at this layer becomes UTC at the API boundary.

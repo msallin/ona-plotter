@@ -206,10 +206,14 @@
        --panel-bottom so they stack predictably. Update in one place. */
     --ctrl-bar-height: 64px;  /* Approx height of .map-controls (icon + label + padding). */
     --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
-    /* 18 px gap between the bottom action bar and the bc-stack
-       cards (anchor watch + active route). Was 10 px and the helm
-       reported the cards looked cramped against the bar. */
-    --panel-gap: 18px;
+    /* 9 px gap between the bottom action bar and the bc-stack
+       cards (anchor watch + active route). Helm-feedback: 18 px
+       was excessive ("half the empty space between anchor watch /
+       route and the bottom menu"). 10 px was previously rejected
+       for cramped feel; 9 px split the difference and the cards
+       now sit close enough that the negative space reads as a
+       deliberate gutter rather than a layout gap. */
+    --panel-gap: 9px;
     --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 
     /* ===== HUD design system =====
@@ -5572,6 +5576,16 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     height: calc(100dvh - 3rem);
     width: 100%;
     overflow: hidden;
+    /* isolation: isolate scopes child z-indexes (the history-top-bar
+       at z 900, the table overlay at z 850) to a stacking context
+       owned by .history-page itself. Without this they leaked into
+       the document root stacking context and competed with the
+       alarm-banner-stack -- which is also at --z-modal: 900 -- so
+       a banner could land BEHIND the history-top-bar at the same z.
+       Helm-feedback: "warnings hidden below the bar (filtering)".
+       Now the page is a sealed stacking context; the banner (in the
+       MainLayout, at the document root) renders above it cleanly. */
+    isolation: isolate;
 }
 .history-top-bar {
     background: var(--panel-bg-strong);

@@ -43,6 +43,7 @@ let isSlowClient = false;
 let ownMmsi = null;
 let boatMarker = null;
 let boatVector = null;
+let boatVectorTip = null;  // Filled dot at the COG-vector end -- matches AIS layer's tip.
 let vectorLabel = null;  // Time/distance label at end of COG vector.
 let trackLayer = null;
 let followBoat = true;
@@ -654,7 +655,16 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
         const data = boatMarker._onaSelfData || {};
         boatMarker.setPopupContent(buildSelfPopupHtml(data));
     });
-    boatVector = L.polyline([], { color: MapColors.cogVector, weight: 1.5, dashArray: '6,4', opacity: 0.8 }).addTo(map);
+    // Own COG vector -- matches the AIS COG vector style (weight 1.5,
+    // dash 6/4) but in MapColors.own (the boat's identity colour, same
+    // chevron palette) instead of the lighter MapColors.cogVector. Helm
+    // wants a single visual language: own + AIS vectors look the same,
+    // colour disambiguates whose. Tip dot below mirrors AIS's
+    // aisVectorTips so both share the "boat is here at +VECTOR_MINUTES"
+    // landmark.
+    boatVector = L.polyline([], {
+        color: MapColors.own, weight: 1.5, dashArray: '6,4', opacity: 0.85,
+    }).addTo(map);
 
     // Map click: in route edit mode, add waypoint. In measurement
     // mode, drop a measurement point. Otherwise just dismiss menus.
@@ -964,6 +974,22 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     const end = vectorEnd(lat, lon, cogRad, sogMs);
     if (end) {
         boatVector.setLatLngs([[lat, lon], end]);
+        // Tip dot at the vector end -- mirrors aisLayer's vessel
+        // vector tip so own + AIS vectors share the same visual
+        // landmark ("boat will be here at +VECTOR_MINUTES"). Same
+        // shape: filled circle, MapColors.own, non-interactive.
+        if (boatVectorTip) {
+            boatVectorTip.setLatLng(end);
+        } else {
+            boatVectorTip = L.circleMarker(end, {
+                radius: 2.5,
+                color: MapColors.own,
+                fillColor: MapColors.own,
+                fillOpacity: 1,
+                weight: 1,
+                interactive: false,
+            }).addTo(map);
+        }
         // Label at vector tip: time and distance.
         const distNm = (sogMs * VECTOR_MINUTES * 60) * NM_PER_METER;
         const label = `${VECTOR_MINUTES}min / ${distNm.toFixed(1)}nm`;
@@ -978,6 +1004,7 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         }
     } else {
         boatVector.setLatLngs([]);
+        if (boatVectorTip) { map.removeLayer(boatVectorTip); boatVectorTip = null; }
         if (vectorLabel) { map.removeLayer(vectorLabel); vectorLabel = null; }
     }
 
@@ -2038,7 +2065,7 @@ export function dispose() {
     // "no tracked object with id X" error in the console.
     dotNetRef = null;
     if (map) { map.remove(); map = null; }
-    boatMarker = null; boatVector = null; vectorLabel = null; trackLayer = null;
+    boatMarker = null; boatVector = null; boatVectorTip = null; vectorLabel = null; trackLayer = null;
     serverTrackLayer = null;
     chartLayers.clear();
     routeLayers.clear();
