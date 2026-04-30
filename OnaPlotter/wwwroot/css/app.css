@@ -6732,18 +6732,24 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     transform: translate(-50%, -50%);
     z-index: 2;
     padding: 18px 28px;
-    background: rgba(15, 17, 22, 0.82);
-    color: var(--sk-text-muted);
-    border: 1px solid var(--sk-border);
+    /* Theme-aware tokens. Hardcoded rgba(15, 17, 22, 0.82) before --
+       on light theme that read as a black box over a bright SVG and
+       the muted text inside was barely visible. --panel-bg + --panel-
+       text-muted flip with the page theme so the overlay looks like
+       a deliberate panel in every mode (dark, light, high-contrast). */
+    background: var(--panel-bg);
+    color: var(--panel-text-muted);
+    border: 1px solid var(--panel-border);
     border-radius: 10px;
     text-align: center;
     font-size: 0.9rem;
     -webkit-backdrop-filter: blur(4px);
     backdrop-filter: blur(4px);
+    box-shadow: var(--panel-shadow);
 }
 .instrument-empty-state strong {
     display: block;
-    color: var(--sk-text);
+    color: var(--panel-text);
     margin-bottom: 6px;
     font-size: 1rem;
 }
