@@ -2191,13 +2191,20 @@ html:fullscreen .hud-stack-br {
     height: 12px;
     margin-right: 6px;
     vertical-align: -1px;
-    border: 1px solid rgba(255,255,255,0.15);
+    /* var(--panel-border) flips with the theme; the previous
+       rgba(255,255,255,0.15) was invisible on the light-theme
+       cream card and the flag's own border (e.g. JP's red disc on
+       white) bled into the popup background. */
+    border: 1px solid var(--panel-border);
     border-radius: 2px;
     object-fit: cover;
 }
 .ais-popup-type {
     font-size: 11px;
-    color: rgba(255,255,255,0.4);
+    /* Was rgba(255,255,255,0.4) -- pale white invisible on the
+       light-theme cream card. --panel-text-muted is slate-600 on
+       light, slate-400 on dark, both readable. */
+    color: var(--panel-text-muted);
     margin-bottom: 6px;
 }
 .ais-popup-table {
@@ -2209,7 +2216,9 @@ html:fullscreen .hud-stack-br {
     padding: 1px 0;
 }
 .ais-popup-table td:first-child {
-    color: rgba(255,255,255,0.4);
+    /* See ais-popup-type: same hardcoded-white-vanishing-on-light
+       fix. */
+    color: var(--panel-text-muted);
     width: 40px;
     font-size: 11px;
 }
@@ -6419,32 +6428,45 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     margin-top: 8px;
 }
 
-/* Note popup: muted slate-blue accent matching the pin colour. Title
+/* Note popup: muted amber accent matching the pin colour. Title
    bold, body pre-wrapped (line breaks preserved), delete button stays
    visually quiet until hover to avoid the "I might click it by accident"
-   fear. */
+   fear.
+   --
+   The wrapper background flips through the base
+   .leaflet-popup-content-wrapper rule (var(--panel-bg-strong)
+   !important) so the popup is dark slate on dark theme and a clean
+   cream card on light. We keep the amber border across both -- it's
+   the "note pin colour" cue the helm reads as "from the note", and
+   var(--ann-note) renders fine on either bg.
+   --
+   Inner element colours (title, coords, body, delete-btn) used to be
+   hardcoded slate-on-cream values that vanished on light theme: a
+   pale gold "rodney" title and a near-white coords line on the cream
+   card was effectively invisible. Now: title pulls var(--ann-note)
+   (mid-amber, readable on dark slate AND light cream), coords +
+   body pull --panel-text-muted / --panel-text (theme-flipping), the
+   delete button uses --sk-text-muted for its resting label so the
+   helm can read "Delete" before hovering. */
 .note-popup .leaflet-popup-content-wrapper {
-    background: rgba(30, 22, 14, 0.96);
-    color: #e2e8f0;
     border-radius: 6px;
-    border: 1px solid rgba(200, 137, 46, 0.45);    /* --ann-note accent */
+    border: 1px solid var(--ann-note);
 }
-.note-popup .leaflet-popup-tip { background: rgba(30, 22, 14, 0.96); }
 .note-popup-inner { padding: 2px 4px; min-width: 180px; }
-.note-popup-title { font-weight: 600; color: #f0d49c; margin-bottom: 4px; }
+.note-popup-title { font-weight: 600; color: var(--ann-note); margin-bottom: 4px; }
 /* Coordinates line on waypoint popups. Dimmer + smaller than the
    title so the name leads and the numbers sit underneath as
    reference data. Tabular-nums keeps adjacent-waypoint coords
    vertically aligned when the popup is compared by eye. */
 .note-popup-coords {
     font-size: 0.72rem;
-    color: rgba(203, 213, 225, 0.75);
+    color: var(--panel-text-muted);
     font-variant-numeric: tabular-nums;
     margin-bottom: 8px;
     line-height: 1.2;
 }
 .note-popup-body {
-    color: #cbd5e1;
+    color: var(--panel-text);
     font-size: 0.85rem;
     line-height: 1.35;
     margin-bottom: 8px;
@@ -6453,7 +6475,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .note-delete-btn {
     background: transparent;
-    color: #94a3b8;
+    color: var(--sk-text-muted);
     border: 1px solid rgba(239, 68, 68, 0.4);
     padding: 3px 10px;
     font-size: 0.72rem;
@@ -6522,19 +6544,18 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 
 /* Region popup: amber-gold accent matching the polygon stroke so the
    popup reads as "from this shape". Same user-annotation hue family
-   as the note popup; popup background tone slightly lighter than
-   notes so stacked popups still tell apart. */
+   as the note popup. Background, title, body, and delete-button
+   colours flip per theme via panel + ann-region tokens; previously
+   the popup was hardcoded warm-on-warm and turned into pale gold
+   text on a cream card on light theme. */
 .region-popup .leaflet-popup-content-wrapper {
-    background: rgba(36, 28, 18, 0.96);
-    color: #e2e8f0;
     border-radius: 6px;
-    border: 1px solid rgba(212, 168, 80, 0.50);    /* --ann-region accent */
+    border: 1px solid var(--ann-region);
 }
-.region-popup .leaflet-popup-tip { background: rgba(36, 28, 18, 0.96); }
 .region-popup-inner { padding: 2px 4px; min-width: 180px; }
-.region-popup-title { font-weight: 600; color: #f5dca3; margin-bottom: 4px; }
+.region-popup-title { font-weight: 600; color: var(--ann-region); margin-bottom: 4px; }
 .region-popup-body {
-    color: #cbd5e1;
+    color: var(--panel-text);
     font-size: 0.85rem;
     line-height: 1.35;
     margin-bottom: 8px;
@@ -6543,7 +6564,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .region-delete-btn {
     background: transparent;
-    color: #94a3b8;
+    color: var(--sk-text-muted);
     border: 1px solid rgba(239, 68, 68, 0.4);
     padding: 3px 10px;
     font-size: 0.72rem;
@@ -6600,7 +6621,13 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .route-edit-btn,
 .route-delete-btn {
     background: transparent;
-    color: #94a3b8;
+    /* Resting label colour pulls --sk-text-muted so the four
+       buttons are legible on both the dark warm-amber popup card
+       and the light theme's cream card. The hardcoded #94a3b8 was
+       slate-on-cream on light, almost invisible. The amber +
+       sk-accent + danger-red overrides below stay hardcoded since
+       they're already designed to read on both themes. */
+    color: var(--sk-text-muted);
     padding: 3px 10px;
     font-size: 0.72rem;
     border-radius: 4px;
