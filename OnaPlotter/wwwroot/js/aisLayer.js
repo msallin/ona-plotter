@@ -98,6 +98,12 @@ let selfLat = 0, selfLon = 0, selfCogRad = null, selfSogMs = null;
 //     ring?" surprise without changing the underlying thresholds.
 let guardZoneRing = null;
 let guardZoneWarningRing = null;
+// Small text labels with the radius in nm placed at the top of each
+// ring. Pure-display affordance so the helm can read the ring's
+// radius at a glance without going to Settings (helm field-tested
+// "what's my guard ring's radius again?" as a real friction point).
+let guardZoneRingLabel = null;
+let guardZoneWarningRingLabel = null;
 let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThreshold
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
 let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
@@ -131,7 +137,8 @@ export function init(map, deps) {
 }
 
 // Mux pushes the own-boat snapshot. CPA prediction needs SOG / COG
-// in addition to lat / lon, and the guard-zone rings chase the boat.
+// in addition to lat / lon, and the guard-zone rings (+ their
+// north-of-boat distance labels) chase the boat.
 export function setBoatPosition(lat, lon, cogRad, sogMs) {
     selfLat = lat;
     selfLon = lon;
@@ -139,6 +146,15 @@ export function setBoatPosition(lat, lon, cogRad, sogMs) {
     selfSogMs = sogMs;
     if (guardZoneRing)        guardZoneRing.setLatLng([lat, lon]);
     if (guardZoneWarningRing) guardZoneWarningRing.setLatLng([lat, lon]);
+    if (guardZoneRingLabel) {
+        const latDeg = (guardZoneRadiusNm * 1852) / 111320;
+        guardZoneRingLabel.setLatLng([lat + latDeg, lon]);
+    }
+    if (guardZoneWarningRingLabel) {
+        const warnNm = guardZoneRadiusNm * Math.max(1.0, guardZoneWarningFactor);
+        const latDeg = (warnNm * 1852) / 111320;
+        guardZoneWarningRingLabel.setLatLng([lat + latDeg, lon]);
+    }
 }
 
 // --- icons ---
@@ -1006,12 +1022,66 @@ export function setHarborMode(enabled) {
             safeRemoveLayer(guardZoneRing);
             guardZoneRing = null;
         }
+        if (guardZoneWarningRing) {
+            safeRemoveLayer(guardZoneWarningRing);
+            guardZoneWarningRing = null;
+        }
+        if (guardZoneRingLabel) {
+            safeRemoveLayer(guardZoneRingLabel);
+            guardZoneRingLabel = null;
+        }
+        if (guardZoneWarningRingLabel) {
+            safeRemoveLayer(guardZoneWarningRingLabel);
+            guardZoneWarningRingLabel = null;
+        }
     } else {
         // Coming out of harbor mode: redraw the guard ring at the
         // current radius. AIS labels / vectors / CPA overlays will
         // be re-established by the next updateAisTargets tick.
         drawGuardZone();
     }
+}
+
+/**
+ * Format a radius in nautical miles for the on-chart guard-ring
+ * label. Two decimals below 1 nm so 0.5 doesn't round to "1"; whole
+ * number above 1 to keep the label compact ("1 nm" / "2 nm" /
+ * "5 nm"). Standalone helper so the inner + outer ring labels
+ * format the same way.
+ */
+function formatRingLabelNm(nm) {
+    if (!isFinite(nm) || nm <= 0) return '';
+    if (nm < 1) return `${nm.toFixed(2)} nm`;
+    return `${nm.toFixed(nm < 10 ? 1 : 0)} nm`;
+}
+
+/**
+ * Drop a Leaflet tooltip (or update an existing one) at the
+ * northern edge of a circle of `radiusM` metres centred on the
+ * boat. The tooltip is permanent + non-interactive + carries the
+ * `.guard-ring-label` CSS class for theme-aware styling. Returns
+ * the (possibly newly-created) tooltip so the caller can stash it
+ * for later removal.
+ */
+function placeRingLabel(existing, radiusM, text, extraClass) {
+    if (!mapRef) return existing;
+    // ~111 320 m per latitude degree at the equator; close enough at
+    // the lat range a helm cruises through (sub-tenth-of-a-percent
+    // error per degree). North-of-boat by exactly the ring's radius
+    // so the label sits where the helm expects to see it.
+    const latDeg = radiusM / 111320;
+    const labelLat = selfLat + latDeg;
+    const labelLng = selfLon;
+    if (!existing) {
+        existing = L.tooltip({
+            permanent: true, direction: 'center', interactive: false,
+            className: `guard-ring-label ${extraClass || ''}`.trim(),
+        }).setLatLng([labelLat, labelLng]).setContent(text).addTo(mapRef);
+    } else {
+        existing.setLatLng([labelLat, labelLng]);
+        existing.setContent(text);
+    }
+    return existing;
 }
 
 function drawGuardZone() {
@@ -1022,16 +1092,20 @@ function drawGuardZone() {
     // hide the rings without disabling the CPA alarm pipeline (the
     // alarm still fires off the radius / lookahead values).
     if (harborMode || !guardZoneVisible) {
-        if (guardZoneRing)        { mapRef.removeLayer(guardZoneRing);        guardZoneRing = null; }
-        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
+        if (guardZoneRing)             { mapRef.removeLayer(guardZoneRing);             guardZoneRing = null; }
+        if (guardZoneWarningRing)      { mapRef.removeLayer(guardZoneWarningRing);      guardZoneWarningRing = null; }
+        if (guardZoneRingLabel)        { mapRef.removeLayer(guardZoneRingLabel);        guardZoneRingLabel = null; }
+        if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
         return;
     }
     // Disabled (radius <= 0) - remove the rings entirely instead of
     // shrinking them to zero-radius invisible points we would still
     // reposition every tick.
     if (guardZoneRadiusNm <= 0) {
-        if (guardZoneRing)        { mapRef.removeLayer(guardZoneRing);        guardZoneRing = null; }
-        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
+        if (guardZoneRing)             { mapRef.removeLayer(guardZoneRing);             guardZoneRing = null; }
+        if (guardZoneWarningRing)      { mapRef.removeLayer(guardZoneWarningRing);      guardZoneWarningRing = null; }
+        if (guardZoneRingLabel)        { mapRef.removeLayer(guardZoneRingLabel);        guardZoneRingLabel = null; }
+        if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
         return;
     }
     const radiusM = guardZoneRadiusNm * 1852;
@@ -1055,6 +1129,11 @@ function drawGuardZone() {
         guardZoneRing.setLatLng([selfLat, selfLon]);
         guardZoneRing.setRadius(radiusM);
     }
+    // Place the inner ring's distance label at the top of the ring.
+    guardZoneRingLabel = placeRingLabel(
+        guardZoneRingLabel, radiusM,
+        formatRingLabelNm(guardZoneRadiusNm),
+        'guard-ring-label-danger');
 
     // Outer warning ring at radius * warningFactor. CPA chips for
     // vessels whose CPA falls between the inner and outer rings are
@@ -1071,12 +1150,14 @@ function drawGuardZone() {
     //   - the computed warning radius would equal the inner radius
     //     pixel-for-pixel.
     if (!guardZoneWarningRingVisible) {
-        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
+        if (guardZoneWarningRing)      { mapRef.removeLayer(guardZoneWarningRing);      guardZoneWarningRing = null; }
+        if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
         return;
     }
     const warnRadiusM = radiusM * Math.max(1.0, guardZoneWarningFactor);
     if (warnRadiusM <= radiusM + 0.5) {
-        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
+        if (guardZoneWarningRing)      { mapRef.removeLayer(guardZoneWarningRing);      guardZoneWarningRing = null; }
+        if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
         return;
     }
     if (!guardZoneWarningRing) {
@@ -1093,6 +1174,10 @@ function drawGuardZone() {
         guardZoneWarningRing.setLatLng([selfLat, selfLon]);
         guardZoneWarningRing.setRadius(warnRadiusM);
     }
+    guardZoneWarningRingLabel = placeRingLabel(
+        guardZoneWarningRingLabel, warnRadiusM,
+        formatRingLabelNm(guardZoneRadiusNm * Math.max(1.0, guardZoneWarningFactor)),
+        'guard-ring-label-warn');
 }
 
 export function dispose() {
@@ -1109,6 +1194,8 @@ export function dispose() {
     for (const ctx of Object.keys(aisLabels)) delete aisLabels[ctx];
     guardZoneRing = null;
     guardZoneWarningRing = null;
+    guardZoneRingLabel = null;
+    guardZoneWarningRingLabel = null;
     selfLat = 0; selfLon = 0; selfCogRad = null; selfSogMs = null;
     mapRef = null;
     colors = null;
