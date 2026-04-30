@@ -342,6 +342,16 @@
                                 @onclick="() => PickRegionRadius(m)" type="button">@label</button>
                     }
                 </div>
+                @* Hazard toggle. Was previously polygon-only (lived
+                   inside PolygonEditPanel which only appears AFTER
+                   the dialog closes). Lifted into the dialog so the
+                   circle path can set it too -- focus-group field
+                   report: "Cant add hazard flag for circle". *@
+                <label class="route-edit-hazard" style="margin-top:10px;"
+                       title="Raise an alarm whenever own-ship is inside this region">
+                    <input type="checkbox" @bind="newRegionIsHazard" />
+                    <span>Hazard</span>
+                </label>
                 <div style="display:flex; gap:6px; margin-top:10px;">
                     <button class="map-btn active" @onclick="SaveRegion">Save</button>
                     <button class="map-btn" @onclick="CancelRegionDialog">Cancel</button>
@@ -349,18 +359,25 @@
             }
             else
             {
-                @* Polygon path gets the same Title + Description
-                   inputs as Circle. Title pre-fills the edit panel's
-                   name field so the user doesn't retype it, and
-                   Description is piped into SaveRegion on save.
-                   Previously this branch just said "name + description
-                   come after you save" -- confusing second step; now
-                   both branches ask the same questions up front. *@
+                @* Polygon path gets the same Title + Description +
+                   Hazard inputs as Circle. Title pre-fills the edit
+                   panel's name field so the user doesn't retype it,
+                   Description is piped into SaveRegion on save, and
+                   Hazard pre-seeds polygonEditIsHazard so the toggle
+                   in the post-save edit panel reflects the dialog's
+                   choice. Both branches ask the same questions up
+                   front so the helm doesn't discover halfway through
+                   that the flag is missing or hidden. *@
                 <input type="text" class="route-name-input" aria-label="Region title"
                        placeholder="Title" @bind="newRegionTitle" @bind:event="oninput" />
                 <textarea class="route-name-input note-dialog-body" aria-label="Region description"
                           placeholder="Description (optional)" rows="3"
                           @bind="newRegionDescription" @bind:event="oninput"></textarea>
+                <label class="route-edit-hazard" style="margin-top:10px;"
+                       title="Raise an alarm whenever own-ship is inside this region">
+                    <input type="checkbox" @bind="newRegionIsHazard" />
+                    <span>Hazard</span>
+                </label>
                 <div style="display:flex; gap:6px; margin-top:10px;">
                     <button class="map-btn active" @onclick="StartPolygonFromDialog">Start drawing</button>
                     <button class="map-btn" @onclick="CancelRegionDialog">Cancel</button>
@@ -2039,6 +2056,11 @@
         {
             polygonEditName = newRegionTitle;
         }
+        // Pre-fill hazard so the user's dialog choice carries into
+        // the edit panel (where they can still toggle it before
+        // saving). Without this the dialog flag was a no-op for
+        // polygons -- the panel always defaulted false.
+        polygonEditIsHazard = newRegionIsHazard;
     }
 
     // Route + polygon edit methods live in Map.Editing.razor.cs:

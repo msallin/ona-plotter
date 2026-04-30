@@ -139,9 +139,14 @@ public sealed class CpaAlarmRule : IAlarmRule
             if (cpa.Value.TcpaMin > tcpaLimit) continue;
 
             string name = v.Name ?? v.Mmsi ?? "vessel";
+            // Compact countdown format matching the on-chart CPA
+            // chip: "0.42nm T -5′" -- prime glyph for minutes,
+            // signed leading dash so it reads as "time-minus-N"
+            // rather than "T plus N". Helm reads CPA distance +
+            // time-to-encounter as one phrase.
             return new AlarmInfo(
                 Title: Title,
-                Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm in {cpa.Value.TcpaMin:F0}min",
+                Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm T -{cpa.Value.TcpaMin:F0}′",
                 Severity: AlarmSeverity.Danger,
                 TargetKey: v.Context,
                 TargetLabel: name,

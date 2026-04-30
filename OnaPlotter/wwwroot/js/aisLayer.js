@@ -27,6 +27,10 @@ let rotateMarker = null;
 // Per-vessel rendered state. Keys are SignalK contexts.
 const aisMarkers = {};
 const aisVectors = {};
+// Tip-of-vector dot. Reads as "this is where the boat will be in
+// VECTOR_MINUTES" -- without it the line just trails off and the
+// helm has to mentally extrapolate the endpoint.
+const aisVectorTips = {};
 const aisCpaOwnLines = {};
 const aisCpaTgtLines = {};
 // X markers at the closest-approach endpoints. Rendering each
@@ -43,7 +47,12 @@ const aisCpaLastSeverity = {};
 const aisTrailHistory = {};
 const aisTrailLines = {};
 const aisLabels = {};
-const AIS_TRAIL_SECONDS = 60;
+// AIS trail window. Bumped 60 s -> 5 min so the helm can read the
+// vessel's recent track shape (turning, accelerating, drifting),
+// not just a 60 s smudge. 5 min still drops fast enough that a
+// vessel passing through stale AIS coverage doesn't accumulate a
+// permanent ghost line.
+const AIS_TRAIL_SECONDS = 300;
 
 // Best-effort external-lookup cache for vessels whose SignalK feed
 // hasn't yet delivered a static-data AIS message (message 5 / 24).
@@ -611,6 +620,32 @@ export function updateAisTargets(vessels) {
                 vec.setLatLngs([[v.lat, v.lon], end]);
                 vec.setStyle({ color });
             }
+            // Small circle at the tip of the vector -- "boat is here
+            // at +VECTOR_MINUTES" landmark so the helm reads the
+            // endpoint without extrapolating from the trailing
+            // dashes. Same colour as the vector so the eye groups
+            // them; non-interactive so it doesn't intercept clicks
+            // that should hit the marker triangle.
+            let tip = aisVectorTips[v.context];
+            if (!tip) {
+                tip = L.circleMarker(end, {
+                    radius: 2.5,
+                    color,
+                    fillColor: color,
+                    fillOpacity: 1,
+                    weight: 1,
+                    interactive: false,
+                }).addTo(mapRef);
+                aisVectorTips[v.context] = tip;
+            } else {
+                tip.setLatLng(end);
+                tip.setStyle({ color, fillColor: color });
+            }
+        } else if (aisVectorTips[v.context]) {
+            // Harbor mode flipped on, or vessel went stationary: drop
+            // the tip alongside the vector.
+            mapRef.removeLayer(aisVectorTips[v.context]);
+            delete aisVectorTips[v.context];
         }
 
         // Crossing-situation lines: draw from each vessel's current position
@@ -649,7 +684,13 @@ export function updateAisTargets(vessels) {
             const cpaName = v.displayName || v.name || v.mmsi || 'Unknown';
             // Compact format (no spaces around units) -- focus-group
             // readback. Helm reads "0.42nm in 5min" as one phrase.
-            const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)}nm in ${cpaInfo.tcpa.toFixed(0)}min`;
+            // "T -N′" (prime symbol) reads as "Time minus N
+            // minutes" in countdown-clock convention, which is the
+            // CPA semantics the helm needs at a glance. Compact
+            // form vs the verbose "in N min"; the apostrophe-style
+            // glyph (U+2032 prime) avoids ambiguity with the unit
+            // "m" which on a chart may be metres.
+            const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)}nm  T -${cpaInfo.tcpa.toFixed(0)}′`;
             const severity = isDangerEff ? 'danger' : 'warn';
             updateCpaXMarker(aisCpaOwnX, v.context, ownCpa, severity, /*withTooltip*/false, null, null);
             updateCpaXMarker(aisCpaTgtX, v.context, tgtCpa, severity, /*withTooltip*/true, labelText, v.context);
@@ -692,6 +733,7 @@ export function updateAisTargets(vessels) {
             mapRef.removeLayer(aisMarkers[ctx]);
             delete aisMarkers[ctx];
             if (aisVectors[ctx]) { mapRef.removeLayer(aisVectors[ctx]); delete aisVectors[ctx]; }
+            if (aisVectorTips[ctx]) { mapRef.removeLayer(aisVectorTips[ctx]); delete aisVectorTips[ctx]; }
             delete aisLabels[ctx];
             removeCpaOverlay(ctx);
             removeAisTrail(ctx);
@@ -713,8 +755,13 @@ function updateAisTrail(ctx, lat, lon) {
     const coords = hist.map(p => [p.lat, p.lon]);
     let line = aisTrailLines[ctx];
     if (!line) {
+        // Dashed slate line: distinguishes the historical trail from
+        // the SOLID forward COG vector that points where the vessel
+        // is GOING. With both rendered solid the helm couldn't tell
+        // forward from backward at a glance.
         line = L.polyline(coords, {
-            color: '#94a3b8', weight: 1.2, opacity: 0.45, interactive: false
+            color: '#94a3b8', weight: 1.2, opacity: 0.5,
+            dashArray: '2,4', interactive: false,
         }).addTo(mapRef);
         aisTrailLines[ctx] = line;
     } else {
@@ -915,6 +962,10 @@ export function setHarborMode(enabled) {
             safeRemoveLayer(aisVectors[ctx]);
             delete aisVectors[ctx];
         }
+        for (const ctx of Object.keys(aisVectorTips)) {
+            safeRemoveLayer(aisVectorTips[ctx]);
+            delete aisVectorTips[ctx];
+        }
         for (const ctx of Object.keys(aisCpaOwnLines)) {
             safeRemoveLayer(aisCpaOwnLines[ctx]);
             delete aisCpaOwnLines[ctx];
@@ -1024,6 +1075,7 @@ function drawGuardZone() {
 export function dispose() {
     for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
+    for (const ctx of Object.keys(aisVectorTips)) delete aisVectorTips[ctx];
     for (const ctx of Object.keys(aisCpaOwnLines)) delete aisCpaOwnLines[ctx];
     for (const ctx of Object.keys(aisCpaTgtLines)) delete aisCpaTgtLines[ctx];
     for (const ctx of Object.keys(aisCpaTgtX)) delete aisCpaTgtX[ctx];

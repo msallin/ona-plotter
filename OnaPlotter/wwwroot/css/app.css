@@ -644,6 +644,17 @@ html, body {
     font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     background-color: var(--sk-bg);
     color: var(--sk-text);
+    /* iOS Safari ignores `user-scalable=no` in the viewport meta
+       tag for accessibility reasons (post-iOS-10). `touch-action:
+       manipulation` on the document root tells the browser
+       "tap-to-click only -- no pinch-zoom, no double-tap-zoom".
+       Pages still scroll (manipulation allows pan), so document-
+       level page scroll keeps working. The map opts back into the
+       full pan-x pan-y gesture set via .map-container's own
+       touch-action so two-finger zoom on the chart still pans the
+       Leaflet viewport. Focus-group field report: "I can zoom on
+       the nav list and scroll on pages that do not need it." */
+    touch-action: manipulation;
 }
 
 /* Theme tokens live on .page (e.g. .page.theme-light redefines
