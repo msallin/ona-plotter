@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<!-- data-bs-theme starts at "dark" so Bootstrap's .card / .form-* /
-     .btn / .text-muted etc. pick their dark-theme tokens before the
-     Blazor runtime mounts (avoids a flash of unstyled content where
-     unclassified text would briefly read as black-on-black against our
-     dark .card override). themeApply.js::setBootstrapTheme rewrites
-     the attribute as soon as Settings.Theme is known so the Sailing
-     Mode + Heading source segmented controls in Settings actually
-     follow the active theme instead of staying in Bootstrap's dark
-     palette while the rest of the app is on light. -->
-<html lang="en" data-bs-theme="dark">
+<!-- data-bs-theme is set by the inline boot script below from the
+     persisted theme in localStorage, BEFORE Bootstrap's CSS first
+     evaluates. This avoids a flash of dark-themed Bootstrap chrome on
+     a light-themed install (the previous hardcoded "dark" value was
+     visibly wrong for half-a-second on light / high-contrast helms
+     until themeApply.js::setTheme caught up). themeApply.js still owns
+     the attribute at runtime once Settings.Theme is known; this script
+     is just the pre-mount seed so first paint matches the helm's
+     persisted choice. -->
+<html lang="en">
 
 <head>
     <meta charset="utf-8" />
@@ -28,6 +28,37 @@
     <meta name="apple-mobile-web-app-title" content="OnaPlotter" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <base href="/" />
+    <!-- Pre-mount theme seed. Reads the same "ona.theme" key that
+         AppSettingsService persists and sets data-bs-theme + the
+         matching theme-* class on <html> before Bootstrap CSS first
+         parses. Mirrors the fold logic in themeApply.js::setTheme:
+         dark stays dark, light + high-contrast collapse to Bootstrap's
+         "light" palette (Bootstrap only ships two), system resolves
+         via prefers-color-scheme so an iOS sunset flip lands on the
+         right palette before Blazor boots. Wrapped in try/catch
+         because localStorage throws in private-browsing mode and the
+         page must still boot. -->
+    <script>
+        (function () {
+            try {
+                var raw = localStorage.getItem('ona.theme');
+                var known = ['light', 'dark', 'system', 'high-contrast'];
+                var safe = known.indexOf(raw) >= 0 ? raw : 'system';
+                var bs;
+                if (safe === 'dark') bs = 'dark';
+                else if (safe === 'system') {
+                    bs = (window.matchMedia
+                        && window.matchMedia('(prefers-color-scheme: dark)').matches)
+                        ? 'dark' : 'light';
+                } else bs = 'light';
+                var html = document.documentElement;
+                html.setAttribute('data-bs-theme', bs);
+                html.classList.add('theme-' + safe);
+            } catch (_) {
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+            }
+        })();
+    </script>
     <link rel="stylesheet" href="lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="OnaPlotter.styles.css" />

@@ -27,6 +27,7 @@
 @inject IBuddyListApi BuddyListApi
 @inject IPolarService Polar
 @inject IAppSettings Settings
+@inject IClientCapabilities ClientCaps
 @inject IToastService Toasts
 @inject IConfirmationService Confirmations
 @inject IKeyValueStore Kv
@@ -1229,7 +1230,13 @@
         // hooks the JS side into the .NET dotNetRef. None of the
         // feature wrappers cover this primitive; it's the call that
         // makes them all subsequently work.
-        await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef);
+        // Resolve the slow-client flag in C# first so the JS side
+        // doesn't have to detect it: pass the boolean into initMap so
+        // tile/renderer choices flow from the same source the rest of
+        // the C# perf gates use.
+        await ClientCaps.InitializeAsync();
+        await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef,
+            ClientCaps.IsSlowClient);
         mapInitialized = true;
 
         // Tell the JS side where the SignalK server lives so its
@@ -2588,7 +2595,7 @@
             var ew = lon >= 0 ? 'E' : 'W';
             Toasts.Show(
                 $"MOB dropped {DateTime.Now:HH:mm:ss} -- {Math.Abs(lat):F5}\u00B0{ns}, {Math.Abs(lon):F5}\u00B0{ew}",
-                ToastService.ToastLevel.Success,
+                ToastLevel.Success,
                 durationSec: 30);
         }
         else

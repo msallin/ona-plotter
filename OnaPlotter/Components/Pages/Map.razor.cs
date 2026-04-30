@@ -444,7 +444,7 @@ public partial class Map
                 if (Data.AnchorActive || anchorManualActive)
                 {
                     Toasts.Show("Anchor still active -- raise it before getting under way to silence the drag alarm",
-                        ToastService.ToastLevel.Info, durationSec: 8);
+                        ToastLevel.Info, durationSec: 8);
                 }
                 // Force an immediate route draw instead of waiting for
                 // the next delta tick to notice the href change. The

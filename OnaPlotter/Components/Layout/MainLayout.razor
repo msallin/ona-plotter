@@ -344,7 +344,7 @@
                     <div class="toast-item toast-@(t.Level.ToString().ToLowerInvariant())"
                          @key="t.Id"
                          role="status"
-                         aria-live="@(t.Level == ToastService.ToastLevel.Error ? "assertive" : "polite")"
+                         aria-live="@(t.Level == ToastLevel.Error ? "assertive" : "polite")"
                          @onclick="() => Toasts.Dismiss(t.Id)">
                         <span class="toast-message">@t.Message</span>
                         @if (t.ActionLabel is not null && t.Action is not null)
@@ -628,7 +628,7 @@
         // the new ConnectAsync resolves (success) or fails (another loop
         // with a reset backoff).
         SignalkClient.ReconnectNow();
-        Toasts.Show("Reconnecting...", ToastService.ToastLevel.Info, durationSec: 3);
+        Toasts.Show("Reconnecting...", ToastLevel.Info, durationSec: 3);
     }
 
     private void ToggleAlarmLog()
@@ -1003,7 +1003,7 @@
         if (e.Key == " " || e.Key == "Enter") EndAlarmHold();
     }
 
-    private async Task RunToastAction(ToastService.Toast t)
+    private async Task RunToastAction(Toast t)
     {
         Toasts.Dismiss(t.Id);
         if (t.Action is null) return;
