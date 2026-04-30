@@ -49,6 +49,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool ShowKeyboardHints { get; set; } = false;
     public bool ShowAutopilotHud { get; set; } = false;
     public bool ShowRadarHud { get; set; } = false;
+    public bool ShowDefaultHud { get; set; } = true;
     public bool PreferMagneticHeading { get; set; } = false;
     public bool PreferMagneticCourse { get; set; } = false;
     public bool AutoAdvanceWaypoints { get; set; } = true;
@@ -109,6 +110,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetShowKeyboardHintsAsync(bool v) { ShowKeyboardHints = v; return Task.CompletedTask; }
     public Task SetShowAutopilotHudAsync(bool v) { ShowAutopilotHud = v; return Task.CompletedTask; }
     public Task SetShowRadarHudAsync(bool v) { ShowRadarHud = v; return Task.CompletedTask; }
+    public Task SetShowDefaultHudAsync(bool v) { ShowDefaultHud = v; return Task.CompletedTask; }
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
     public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
     public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }

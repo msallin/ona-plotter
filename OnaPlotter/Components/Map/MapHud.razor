@@ -12,7 +12,10 @@
    Click to expand with VMG / XTE (when an active course exists) and a
    DMS-formatted position below the decimal one. The panel stays docked
    in its corner; only its height grows, which avoids shoving the map
-   controls around. *@
+   controls around. Gated by ShowDefaultHud so a helm running an
+   external instrument cluster can declutter the chart. *@
+@if (ShowDefaultHud)
+{
 <div class="hud-stack hud-stack-tl">
     <div class="hud-panel hud-card @(IsExpanded(CornerTopLeft) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
@@ -65,10 +68,13 @@
         }
     </div>
 </div>
+}
 
 @* === Top-Right: Wind (apparent + true when available) ===
    Expanded: port/starboard-labelled angles, TWD absolute from north,
-   Beaufort labels for the speeds. *@
+   Beaufort labels for the speeds. Gated by ShowDefaultHud. *@
+@if (ShowDefaultHud)
+{
 <div class="hud-stack hud-stack-tr">
     <div class="hud-panel hud-card @(IsExpanded(CornerTopRight) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
@@ -177,12 +183,16 @@
         }
     </div>
 </div>
+}
 
 @* === Bottom-Left: Depth (+ tide when a plugin feeds it) === *@
 @* Tide was a separate HUD card above depth; merging because they answer
    the same question from a sailor's point of view -- water under the
    boat NOW (depth) and where it's heading (tide). Depth alarm threshold
-   still lives here; a tide row appears only when the plugin publishes. *@
+   still lives here; a tide row appears only when the plugin publishes.
+   Gated by ShowDefaultHud. *@
+@if (ShowDefaultHud)
+{
 <div class="hud-stack hud-stack-bl">
     <div class="hud-panel hud-card @(IsExpanded(CornerBottomLeft) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
@@ -280,6 +290,7 @@
         }
     </div>
 </div>
+}
 
 @* === Bottom-right stack: radar + race + autopilot + heading compass ===
    Heading compass is the always-on anchor (last in DOM = corner-most
@@ -414,10 +425,16 @@
         </div>
 }
 
-@* === Heading compass (always present, corner-most card) ===
+@* === Heading compass (default corner-most card) ===
    Expanded: COG next to HDG and their signed delta (boat's apparent
    leeway/drift angle), plus the autopilot target heading when the
-   autopilot is engaged. *@
+   autopilot is engaged. Gated by ShowDefaultHud (the autopilot /
+   radar / race cards above have their own gates -- toggling
+   "default cards" off doesn't affect them, so a helm running an
+   external instrument cluster + the autopilot card stays
+   coherent). *@
+@if (ShowDefaultHud)
+{
     <div class="hud-panel hud-card @(IsExpanded(CornerBottomRight) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded(CornerBottomRight) ? "true" : "false")"
@@ -521,6 +538,7 @@
             </div>
         }
     </div>
+}
 </div>
 
 @* === Bottom-center stack: anchor + route ===
@@ -626,6 +644,16 @@
     /// Defaults to false because the engage buttons are easy to fat-
     /// finger on a touch device.</summary>
     [Parameter] public bool ShowAutopilotHud { get; set; } = false;
+
+    /// <summary>When true, render the four default corner HUD cards
+    /// (TL = SOG/COG/Pos, TR = Wind, BL = Depth, BR = Heading
+    /// compass). Default true so existing installs keep their corner
+    /// readouts; toggle off when running an external instrument
+    /// cluster or capturing a clean chart screenshot. Independent of
+    /// <see cref="ShowAutopilotHud"/> / <see cref="ShowRadarHud"/> --
+    /// those have their own gates further inside the bottom-right
+    /// stack.</summary>
+    [Parameter] public bool ShowDefaultHud { get; set; } = true;
 
     /// <summary>When true, render the dedicated Radar control card
     /// (status / range stepper / Stby / Transmit). The card guards

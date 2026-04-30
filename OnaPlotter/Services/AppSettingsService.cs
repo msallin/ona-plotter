@@ -68,6 +68,10 @@ public sealed class AppSettingsService : IAppSettings
     public bool ShowKeyboardHints { get; private set; } = false;
     public bool ShowAutopilotHud { get; private set; } = false;
     public bool ShowRadarHud { get; private set; } = false;
+    // Defaults true so existing installs see the same four corner
+    // panels they always did; toggle is for helms running external
+    // instruments or wanting a clean screenshot.
+    public bool ShowDefaultHud { get; private set; } = true;
     public bool PreferMagneticHeading { get; private set; } = false;
     public bool PreferMagneticCourse { get; private set; } = false;
     public bool AutoAdvanceWaypoints { get; private set; } = true;
@@ -159,6 +163,7 @@ public sealed class AppSettingsService : IAppSettings
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
             ShowRadarHud = await LoadBool("showRadarHud.v1", false);
+            ShowDefaultHud = await LoadBool("showDefaultHud.v1", true);
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
             AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
@@ -451,6 +456,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         ShowRadarHud = value;
         await Save("showRadarHud.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetShowDefaultHudAsync(bool value)
+    {
+        ShowDefaultHud = value;
+        await Save("showDefaultHud.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 
