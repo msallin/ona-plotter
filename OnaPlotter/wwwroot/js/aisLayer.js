@@ -134,6 +134,22 @@ export function init(map, deps) {
     getOwnMmsi = deps.getOwnMmsi;
     flagUrl = deps.flagUrl;
     rotateMarker = deps.rotateMarker;
+
+    // Custom pane for COG vectors so they stack ABOVE the CPA
+    // crossing-situation lines. Both used to share Leaflet's default
+    // overlayPane (zIndex 400) and rendered in creation order, which
+    // meant the long red CPA line sat on top of the small forward
+    // COG vector and obscured it. zIndex 410 is above overlayPane
+    // and below markerPane (600 by default); CPA lines stay in the
+    // overlayPane below. Created idempotently in case init runs
+    // twice.
+    if (!map.getPane('aisCogVectors')) {
+        const pane = map.createPane('aisCogVectors');
+        pane.style.zIndex = '410';
+        // Pane events disabled -- we don't want the pane element
+        // intercepting clicks meant for the marker pane above.
+        pane.style.pointerEvents = 'none';
+    }
 }
 
 // Mux pushes the own-boat snapshot. CPA prediction needs SOG / COG
@@ -630,38 +646,57 @@ export function updateAisTargets(vessels) {
         // Course vector. Suppressed in harbor mode -- with dozens of
         // AIS targets in port every vector sweeps across every other
         // marker and the chart turns into a hatch of dashed lines.
+        //
+        // Vector colour is the vessel's NATURAL palette tone, NOT
+        // the danger-red `color` variable used for the marker icon.
+        // Helm-feedback: when CPA fires, the vessel triangle should
+        // turn red (that's the alarm signal), but the COG vector is
+        // a "this is where it's heading" line and shouldn't lose
+        // its identity colour just because the alarm is on. The
+        // vector continues to point the same direction with or
+        // without the alarm; the alarm is the marker's job.
+        const vecColor = isRadar ? colors.radar
+            : (v.buddy ? colors.buddy : (v.shipColor || '#e0c9a6'));
         const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs);
         if (end && !harborMode) {
             let vec = aisVectors[v.context];
             if (!vec) {
+                // Custom pane (zIndex 410) so the vector renders
+                // ABOVE the CPA crossing-situation lines (overlayPane,
+                // zIndex 400). Helm-feedback: the long red CPA line
+                // was previously obscuring the smaller COG vectors
+                // for vessels not in the alarm.
                 vec = L.polyline([[v.lat, v.lon], end], {
-                    color, weight: 1.5, dashArray: '6,4'
+                    color: vecColor, weight: 1.5, dashArray: '6,4',
+                    pane: 'aisCogVectors',
                 }).addTo(mapRef);
                 aisVectors[v.context] = vec;
             } else {
                 vec.setLatLngs([[v.lat, v.lon], end]);
-                vec.setStyle({ color });
+                vec.setStyle({ color: vecColor });
             }
             // Small circle at the tip of the vector -- "boat is here
             // at +VECTOR_MINUTES" landmark so the helm reads the
             // endpoint without extrapolating from the trailing
             // dashes. Same colour as the vector so the eye groups
             // them; non-interactive so it doesn't intercept clicks
-            // that should hit the marker triangle.
+            // that should hit the marker triangle. Same pane as the
+            // vector so they stack above CPA lines together.
             let tip = aisVectorTips[v.context];
             if (!tip) {
                 tip = L.circleMarker(end, {
                     radius: 2.5,
-                    color,
-                    fillColor: color,
+                    color: vecColor,
+                    fillColor: vecColor,
                     fillOpacity: 1,
                     weight: 1,
                     interactive: false,
+                    pane: 'aisCogVectors',
                 }).addTo(mapRef);
                 aisVectorTips[v.context] = tip;
             } else {
                 tip.setLatLng(end);
-                tip.setStyle({ color, fillColor: color });
+                tip.setStyle({ color: vecColor, fillColor: vecColor });
             }
         } else if (aisVectorTips[v.context]) {
             // Harbor mode flipped on, or vessel went stationary: drop
@@ -799,12 +834,16 @@ function removeAisTrail(ctx) {
 function updateCpaLine(store, ctx, from, to, color) {
     let line = store[ctx];
     if (!line) {
-        // weight 1.2 + 3,5 dash + opacity 0.65 reads as a hint
-        // rather than a hard stroke; the X markers + label carry
-        // the visual emphasis. Original was weight 2 dash 4,4
-        // opacity 0.9 which dominated nearby vessels' triangles.
+        // weight 0.8 + 2,7 dash + opacity 0.5: the line connects
+        // own boat to where own / target will be at TCPA, which on
+        // a 9-minute tcpa is HALF a nautical mile of dashed line
+        // running across the chart. Helm-feedback: it dominated the
+        // chart and the eye couldn't lock on the X marker at the
+        // end. Now reads as a faint trace of the geometry; the X
+        // and label carry the emphasis. Was 1.2 + 3,5 + 0.65 from
+        // PR #134; now further toned down per follow-up review.
         line = L.polyline([from, to], {
-            color, weight: 1.2, dashArray: '3,5', opacity: 0.65
+            color, weight: 0.8, dashArray: '2,7', opacity: 0.5
         }).addTo(mapRef);
         store[ctx] = line;
     } else {
@@ -1113,10 +1152,21 @@ function drawGuardZone() {
         guardZoneRing = L.circle([selfLat, selfLon], {
             radius: radiusM,
             color: colors.guardWarn,
+            // Stroke-only ring (matches the outer warning ring's
+            // style). Helm-feedback: the previous 4 % amber fill
+            // tinted everything inside the inner guard, including
+            // own boat's marker, the COG vector tip, and any AIS
+            // target sitting in port -- "I just want to see the
+            // boundary, not a coloured area". Outer ring is dashed
+            // already; making the inner ring dashed too gives the
+            // pair a consistent visual language ("these are
+            // advisory boundaries"). Slightly higher opacity than
+            // the outer ring (0.6 vs 0.3) so the helm can still
+            // tell which is the alarm-trigger line.
             weight: 1,
-            opacity: 0.5,
-            fillColor: colors.guardWarn,
-            fillOpacity: 0.04,
+            opacity: 0.6,
+            dashArray: '4 6',
+            fillOpacity: 0,
             // Non-interactive: the ring no longer gets its own tooltip
             // (user-reported: the "Guard zone (CPA alarm radius)"
             // hover chip was distracting). The legend + Settings
