@@ -10,10 +10,13 @@
 @using OnaPlotter.Services.Api
 @inject ITrackApi TrackApi
 @inject IChartApi ChartApi
+@inject IRouteApi RouteApi
 @inject ISignalKBaseUrl SkBaseUrl
 @inject SignalkClient SignalkClient
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject IToastService Toasts
+@inject IConfirmationService Confirmations
 
 <PageTitle>History</PageTitle>
 
@@ -51,6 +54,7 @@
                             <th class="text-end">SOG max</th>
                             <th class="text-end">TWS avg</th>
                             <th>Type</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -75,6 +79,23 @@
                                     <td class="text-end">@(s.SogMaxMs is null ? "—" : Format.Speed(s.SogMaxMs))</td>
                                     <td class="text-end">@(s.WindSpeedAvgMs is null ? "—" : Format.Speed(s.WindSpeedAvgMs))</td>
                                     <td>@(s.IsStationary ? "Stationary" : "Moving")</td>
+                                    <td>
+                                        @* "Save as route" only on moving segments --
+                                           a stationary dwell isn't a route. stopPropagation
+                                           on click + onclick:preventDefault so the row's
+                                           fly-to-map handler doesn't fire when the helm
+                                           taps the button. *@
+                                        @if (!s.IsStationary)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary"
+                                                    style="padding: 2px 8px; font-size: 0.75rem;"
+                                                    @onclick="() => SaveSegmentAsRouteAsync(s)"
+                                                    @onclick:stopPropagation="true"
+                                                    title="Save this trip as a route on the SignalK server">
+                                                Save as route
+                                            </button>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         }
@@ -527,6 +548,62 @@
     /// <c>window._historySegments</c>. The flip + fly happens in two
     /// frames -- viewMode change re-renders, then a one-shot timer
     /// gives the map a chance to catch up before we call fitBounds.</summary>
+    /// <summary>Promote a moving segment to a saved SignalK route.
+    /// Helm wants this when an unplanned passage turned out useful
+    /// ("we found a nice anchorage; do that again next time"); the
+    /// existing route picker is then a one-click "Activate" away
+    /// from re-running it.
+    /// <para>
+    /// Coords come from slicing the chronological <c>points</c>
+    /// array by the segment's [StartUtc, EndUtc] window. RouteApi
+    /// does the rest (POST to /resources/routes; SignalK assigns the
+    /// id). Default name = "Trip yyyy-MM-dd HH:mm" so saved trips
+    /// list naturally; the helm can rename later via the Resources
+    /// page or the Layers panel.
+    /// </para>
+    /// </summary>
+    private async Task SaveSegmentAsRouteAsync(TrackSegment s)
+    {
+        if (points is null) return;
+
+        // Suggest a name, let the helm tweak before commit. Cancel
+        // = abort. Whitespace-only = use the suggestion.
+        string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
+        var chosen = await Confirmations.PromptAsync(
+            $"Save this trip ({Format.TimeToGo(s.Duration.TotalSeconds)}, "
+            + $"{Format.Nm(s.DistanceMetres)} nm) as a route. Name:",
+            initialValue: suggested,
+            confirmLabel: "Save");
+        if (chosen is null) return;
+        string name = string.IsNullOrWhiteSpace(chosen) ? suggested : chosen;
+
+        // Slice chronological points by the segment time window. Same
+        // boundary inclusivity as HistorySegmentRender: start <= ts
+        // <= end. Cursor walks forward; we don't need to re-sort.
+        var coords = new List<double[]>();
+        foreach (var p in points)
+        {
+            if (p.Timestamp < s.StartUtc) continue;
+            if (p.Timestamp > s.EndUtc) break;
+            coords.Add([p.Latitude, p.Longitude]);
+        }
+        if (coords.Count < 2)
+        {
+            Toasts.Error("Trip has fewer than 2 points -- can't save as a route.");
+            return;
+        }
+
+        ApiResult<string> r;
+        try { r = await RouteApi.SaveAsync(name, [.. coords]); }
+        catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); return; }
+        if (!r.Success)
+        {
+            Toasts.Error($"Save route failed: {r.Error ?? "server rejected"}");
+            return;
+        }
+        Toasts.Success($"Saved as route '{name}'");
+    }
+
     private async Task OnTripRowClick(int segmentIndex)
     {
         viewMode = "map";
