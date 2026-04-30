@@ -61,7 +61,12 @@
                                 if (s.IsStationary && !tableShowStationary) continue;
                                 <tr style="cursor:pointer;" @onclick="@(() => OnTripRowClick(idx))"
                                     title="Click to show on map">
-                                    <td>@s.StartUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                    @* Weekday + date so a helm scanning rows can spot
+                                       "Saturday afternoon" without parsing yyyy-MM-dd
+                                       in their head. End cell shows the to-time only
+                                       since rows that span midnight are rare and would
+                                       inflate the column width otherwise. *@
+                                    <td>@s.StartUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)</td>
                                     <td>@s.EndUtc.ToLocalTime().ToString("HH:mm")</td>
                                     <td class="text-end">@Format.TimeToGo(s.Duration.TotalSeconds)</td>
                                     <td class="text-end">@Format.Nm(s.DistanceMetres) nm</td>
@@ -136,6 +141,20 @@
                        value="@FormatLocalForInput(customToLocal)"
                        @onchange="OnCustomToChanged" />
             }
+            @* Sampling resolution. Mirror Stats' dropdown so a
+               long-window load on a tethered tablet (sat link / boat
+               wifi) doesn't pull millions of points just to render a
+               polyline. 30 s stays default for the "what happened
+               today?" use; 5 m / 15 m for "show me the season". *@
+            <select class="form-select form-select-sm" style="width:auto;"
+                    title="Sampling resolution"
+                    aria-label="Sampling resolution"
+                    @onchange="OnResolutionChanged">
+                <option value="30s" selected="@(resolution == "30s")">30 s</option>
+                <option value="1m"  selected="@(resolution == "1m")">1 m</option>
+                <option value="5m"  selected="@(resolution == "5m")">5 m</option>
+                <option value="15m" selected="@(resolution == "15m")">15 m</option>
+            </select>
             <button class="map-btn" @onclick="LoadTrack">Load</button>
             <button class="map-btn" @onclick="GoToBoat" title="Center on current boat position">
                 @* .map-btn is inline-flex so the icon + label line up
@@ -197,21 +216,27 @@
                         disabled="@(playbackIndex >= points.Length - 1)">&gt;</button>
                 <button class="map-btn" @onclick="() => StepBy(10)"
                         disabled="@(playbackIndex >= points.Length - 1)">&gt;&gt;</button>
-                @* Playback speed. User-selectable so a slow tablet can
-                   pick 1x without being forced to watch 5x-fast jitter;
-                   a desktop user reviewing a multi-day passage can pick
-                   10x to scrub quickly. Timer reinitialises on change. *@
+                @* Playback speed. User-selectable so a slow tablet
+                   can pick 1x without being forced to watch 5x-fast
+                   jitter; a desktop user reviewing a multi-day passage
+                   can pick 10x to scrub quickly. Timer reinitialises
+                   on change. The dropdown values are speed multipliers
+                   (1x/2x/...) rather than raw timer ms ("200" /
+                   "100" / ...) -- the latter looked like a bug to a
+                   focus-group sailor reading the dropdown cold.
+                   OnSpeedChanged maps the multiplier back to the
+                   200 ms / multiplier interval. *@
                 <label class="d-inline-flex align-items-center gap-1 ms-2"
                        style="font-size:0.75rem; color:var(--sk-text-muted);">
                     Speed
                     <select class="form-select form-select-sm" style="width:auto;"
                             aria-label="Playback speed"
                             @onchange="OnSpeedChanged">
-                        <option value="400">0.5x</option>
-                        <option value="200" selected>1x</option>
-                        <option value="100">2x</option>
-                        <option value="40">5x</option>
-                        <option value="20">10x</option>
+                        <option value="0.5">0.5x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="2">2x</option>
+                        <option value="5">5x</option>
+                        <option value="10">10x</option>
                     </select>
                 </label>
             </div>
@@ -252,6 +277,12 @@
     private string rangeMode = "preset";
     private DateTime customFromLocal = DateTime.Now.AddHours(-6);
     private DateTime customToLocal = DateTime.Now;
+    // Sampling resolution. 30 s default matches the original behaviour
+    // (helm-page tracks were always fetched at 30 s); the dropdown
+    // adds 1 m / 5 m / 15 m for long windows where a tethered-tablet
+    // bandwidth budget can't afford 30 s sampling. Mirrors the Stats
+    // page's resolution selector so muscle memory carries.
+    private string resolution = "30s";
     // View mode toggle. "map" is the default playback view; "table"
     // hides the map behind a list of segments (filtered to moving by
     // default; toggle to include stationary). Click a row to flip
@@ -387,6 +418,12 @@
     private void OnTimespanChanged(ChangeEventArgs e)
     {
         selectedTimespan = e.Value?.ToString() ?? "1d";
+    }
+
+    private void OnResolutionChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(v)) resolution = v;
     }
 
     private void OnModeChanged(ChangeEventArgs e)
@@ -630,7 +667,7 @@
         // renders with distinct styling + per-segment hover tooltips.
         points = await TrackApi.GetServerTrackPointsAsync(
             from: fromUtc, to: toUtc, timespan: span,
-            resolution: "30s", bbox: bbox);
+            resolution: resolution, bbox: bbox);
         segments = points is { Length: > 0 } ? TrackSegmenter.Segment(points) : null;
         playbackIndex = 0;
         playing = false;
@@ -737,11 +774,23 @@
 
     private int playbackPeriodMs = 200;   // default 1x
 
+    /// <summary>Map the dropdown's speed multiplier (0.5x, 1x, 2x,
+    /// 5x, 10x) to a timer interval. 1x = 200 ms per step (5 steps
+    /// per second). Faster multipliers shorten the period; slower
+    /// ones lengthen it. Clamped to [20, 1000] ms so an arbitrary
+    /// dropdown value can't starve the renderer (20 ms = 50 fps,
+    /// 1000 ms = 1 fps -- below that the helm thinks the playback
+    /// has stuck).</summary>
     private void OnSpeedChanged(ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out int ms))
+        if (double.TryParse(e.Value?.ToString(),
+                            System.Globalization.NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out double mult)
+            && mult > 0)
         {
-            playbackPeriodMs = Math.Clamp(ms, 20, 1000);
+            int period = (int)Math.Round(200.0 / mult);
+            playbackPeriodMs = Math.Clamp(period, 20, 1000);
             if (playing)
             {
                 // Re-arm timer at the new cadence.
