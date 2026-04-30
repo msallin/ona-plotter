@@ -20,8 +20,13 @@ public interface IMapOverlaysJs
     /// <c>1..3</c> = let Leaflet GPU-upscale tiles fetched at
     /// <c>maxNativeZoom</c> up to <c>maxNativeZoom + upscaleLevels</c>.
     /// Limits + clamping live on
-    /// <see cref="OnaPlotter.Utilities.ChartUpscale"/>.</summary>
-    Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels);
+    /// <see cref="OnaPlotter.Utilities.ChartUpscale"/>.
+    /// <para><paramref name="attribution"/> is the HTML credit Leaflet
+    /// shows in its bottom-right corner while the layer is on the map.
+    /// SK chart-server tiles ship empty ("" -- the SK server doesn't
+    /// preach about the chart's source); the built-in OSM / OpenSeaMap
+    /// layers ship the ODbL / CC-BY-SA-required credit + link string.</para></summary>
+    Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution);
 
     /// <summary>Remove a previously-added chart tile overlay.</summary>
     Task RemoveChartLayerAsync(string id);

@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using OnaPlotter.Models;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
@@ -14,26 +15,58 @@ public sealed class ChartApi : IChartApi
         _baseUrl = baseUrl;
     }
 
+    /// <summary>
+    /// Returns the helm-visible chart list: the built-in
+    /// OSM + OpenSeaMap entries first (synthesised from
+    /// <see cref="BuiltInCharts.All"/> with internet tile URLs), then
+    /// every chart published by the SignalK server's charts API. The
+    /// built-ins always appear regardless of SK-server reachability so
+    /// the helm has a basemap available even on a failed first boot.
+    /// SK-server failure surfaces as JSON / HTTP exceptions to the
+    /// caller (Map.razor's SafeLoad wrapper toasts them).
+    /// </summary>
     public async Task<List<SignalkChart>> GetAllAsync(CancellationToken ct = default)
     {
-        var url = _baseUrl.Combine(SignalKUrls.ChartsPath);
-        using var response = await _http.GetAsync(url, ct);
-        response.EnsureSuccessStatusCode();
+        // Built-ins go first so they show up at the top of the Layers
+        // panel and the quick-bar, matching the visual convention of
+        // "basemap stays under everything" (chart order is render
+        // order, with the first-listed chart drawn lowest in the
+        // z-stack -- ChartLayerController.ApplyOrder controls this).
+        var charts = new List<SignalkChart>(BuiltInCharts.All.Count + 8);
+        charts.AddRange(BuiltInCharts.All);
 
-        var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkChart>>(cancellationToken: ct);
-        if (dict is null) return [];
-
-        var charts = new List<SignalkChart>(dict.Count);
-        foreach (var (key, chart) in dict)
+        try
         {
-            if (string.IsNullOrEmpty(chart.Identifier)) chart.Identifier = key;
+            var url = _baseUrl.Combine(SignalKUrls.ChartsPath);
+            using var response = await _http.GetAsync(url, ct);
+            response.EnsureSuccessStatusCode();
 
-            // Resolve relative tile URLs against the SignalK server origin.
-            var tileUrl = chart.GetTileUrl();
-            if (tileUrl is not null && tileUrl.StartsWith('/'))
-                chart.TilemapUrl = _baseUrl.BaseUrl + tileUrl;
+            var dict = await response.Content.ReadFromJsonAsync<Dictionary<string, SignalkChart>>(cancellationToken: ct);
+            if (dict is null) return charts;
 
-            if (chart.GetTileUrl() is not null) charts.Add(chart);
+            foreach (var (key, chart) in dict)
+            {
+                if (string.IsNullOrEmpty(chart.Identifier)) chart.Identifier = key;
+
+                // Resolve relative tile URLs against the SignalK server origin.
+                var tileUrl = chart.GetTileUrl();
+                if (tileUrl is not null && tileUrl.StartsWith('/'))
+                    chart.TilemapUrl = _baseUrl.BaseUrl + tileUrl;
+
+                if (chart.GetTileUrl() is not null) charts.Add(chart);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            // SK server unreachable / 5xx: the helm still gets the
+            // built-in basemap charts from the prefix above. Re-throw
+            // would erase that fallback (Map.razor's SafeLoad would
+            // null the list), which defeats the purpose of having
+            // client-side basemaps at all. Log to the browser console
+            // so a developer inspecting DevTools sees the SK failure;
+            // the helm just sees a Layers panel with the basemaps and
+            // none of the SK-served charts.
+            Console.Error.WriteLine($"[charts] SK fetch failed: {ex.Message}");
         }
         return charts;
     }
