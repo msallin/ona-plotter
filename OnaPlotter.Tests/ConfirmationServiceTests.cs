@@ -3,12 +3,13 @@ using OnaPlotter.Services;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Coverage for the dual-flavour <see cref="ConfirmationService"/>:
-/// ConfirmAsync (yes/no) and PromptAsync (text input) share the same
-/// modal host but resolve different return types and have to handle
-/// cross-flavour cancellation cleanly. These tests pin the contract
-/// the dialog and call sites depend on, so a future refactor that
-/// splits the service into two interfaces still preserves behaviour.
+/// Coverage for the three-flavour <see cref="ConfirmationService"/>:
+/// ConfirmAsync (yes/no), PromptAsync (text input), and ChooseAsync
+/// (N-option chooser) share the same modal host but resolve different
+/// return types and have to handle cross-flavour cancellation
+/// cleanly. These tests pin the contract the dialog and call sites
+/// depend on, so a future refactor that splits the service into
+/// separate interfaces still preserves behaviour.
 /// </summary>
 public class ConfirmationServiceTests
 {
@@ -177,5 +178,106 @@ public class ConfirmationServiceTests
         await Assert.That(svc.CancelLabel).IsEqualTo("Keep editing");
         svc.Resolve(false);
         await task;
+    }
+
+    // ---------------- ChooseAsync ----------------------------------
+
+    [Test]
+    public async Task ChooseAsync_Pick_Returns_Selected_Option()
+    {
+        var svc = new ConfirmationService();
+        var task = svc.ChooseAsync("Export as:", ["GPX", "GeoJSON"]);
+        await Assert.That(svc.IsPending).IsTrue();
+        await Assert.That(svc.IsChoice).IsTrue();
+        await Assert.That(svc.IsTextPrompt).IsFalse();
+        await Assert.That(svc.Options.Count).IsEqualTo(2);
+        await Assert.That(svc.Options[1]).IsEqualTo("GeoJSON");
+
+        svc.Pick("GeoJSON");
+
+        await Assert.That(await task).IsEqualTo("GeoJSON");
+        await Assert.That(svc.IsPending).IsFalse();
+        await Assert.That(svc.IsChoice).IsFalse();
+        await Assert.That(svc.Options.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ChooseAsync_Resolve_False_Returns_Null()
+    {
+        // Cancel button + Esc both go through Resolve(false). Helm
+        // gets a null return so the caller can `is null` short-circuit
+        // out, same convention as PromptAsync.
+        var svc = new ConfirmationService();
+        var task = svc.ChooseAsync("Export as:", ["GPX", "GeoJSON"]);
+        svc.Resolve(false);
+        await Assert.That(await task).IsNull();
+    }
+
+    [Test]
+    public async Task ChooseAsync_EmptyOptions_Returns_Null_Synchronously()
+    {
+        // Degenerate caller: opens a chooser with zero options. The
+        // service refuses rather than show an empty dialog the helm
+        // has to dismiss. Returns null synchronously so the awaiting
+        // call site continues straight through.
+        var svc = new ConfirmationService();
+        var result = await svc.ChooseAsync("?", []);
+        await Assert.That(result).IsNull();
+        await Assert.That(svc.IsPending).IsFalse();
+    }
+
+    [Test]
+    public async Task ChooseAsync_NonDestructive_NoConfirmLabel()
+    {
+        // Choosers don't have a single "confirm" button -- each option
+        // is its own button -- so ConfirmLabel is null. The dialog
+        // host branches on IsChoice and renders the option buttons
+        // instead of a primary button.
+        var svc = new ConfirmationService();
+        var task = svc.ChooseAsync("?", ["A", "B"]);
+        await Assert.That(svc.Destructive).IsFalse();
+        await Assert.That(svc.ConfirmLabel).IsNull();
+        await Assert.That(svc.CancelLabel).IsEqualTo("Cancel");
+        svc.Resolve(false);
+        await task;
+    }
+
+    [Test]
+    public async Task NewChoose_While_Confirm_Pending_Cancels_Confirm()
+    {
+        var svc = new ConfirmationService();
+        var firstTask = svc.ConfirmAsync("delete?");
+        var secondTask = svc.ChooseAsync("export as:", ["GPX", "GeoJSON"]);
+
+        await Assert.That(firstTask.IsCompleted).IsTrue();
+        await Assert.That(await firstTask).IsFalse();
+
+        svc.Pick("GPX");
+        await Assert.That(await secondTask).IsEqualTo("GPX");
+    }
+
+    [Test]
+    public async Task NewConfirm_While_Choose_Pending_Cancels_Choose()
+    {
+        var svc = new ConfirmationService();
+        var firstTask = svc.ChooseAsync("export as:", ["GPX", "GeoJSON"]);
+        var secondTask = svc.ConfirmAsync("delete?");
+
+        await Assert.That(firstTask.IsCompleted).IsTrue();
+        await Assert.That(await firstTask).IsNull();
+
+        svc.Resolve(true);
+        await Assert.That(await secondTask).IsTrue();
+    }
+
+    [Test]
+    public async Task Pick_When_No_Choose_Pending_IsNoOp()
+    {
+        // Defensive: a stale dialog double-click after the modal was
+        // already dismissed must not throw. Pick on no-pending-choose
+        // is silently dropped; nothing observable changes.
+        var svc = new ConfirmationService();
+        svc.Pick("GPX");
+        await Assert.That(svc.IsPending).IsFalse();
     }
 }

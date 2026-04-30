@@ -4,15 +4,18 @@
 
 @* Global confirmation modal. Hosted once from MainLayout so every
    call site (Map.razor, Settings, Resources, RoutesSection, ...) that
-   does `await Confirmations.ConfirmAsync(...)` or `PromptAsync(...)`
-   is shown through this one dialog. Gated on Confirm.IsPending so
-   the DOM footprint is zero when idle.
+   does `await Confirmations.ConfirmAsync(...)` / `PromptAsync(...)` /
+   `ChooseAsync(...)` is shown through this one dialog. Gated on
+   Confirm.IsPending so the DOM footprint is zero when idle.
 
-   Two modes:
+   Three modes:
      - ConfirmAsync: yes/no question; no input shown.
      - PromptAsync:  message + text input (editable, pre-filled with
                      the caller's initial value). Enter commits, Esc
                      cancels.
+     - ChooseAsync:  message + one button per option + Cancel. Esc
+                     cancels. No primary palette since none of the N
+                     options is the default; helm picks deliberately.
    Enter-to-submit on the input lets the helm rename things without
    reaching for the OK button, same muscle memory as window.prompt. *@
 
@@ -44,16 +47,35 @@
             <button type="button"
                     class="btn confirm-btn confirm-btn-cancel"
                     @onclick="OnCancel"
-                    autofocus="@(!Confirm.IsTextPrompt)">
+                    autofocus="@(!Confirm.IsTextPrompt && !Confirm.IsChoice)">
                 @(string.IsNullOrEmpty(Confirm.CancelLabel) ? "Cancel" : Confirm.CancelLabel)
             </button>
-            <button type="button"
-                    class="btn confirm-btn @(Confirm.Destructive ? "confirm-btn-danger" : "confirm-btn-primary")"
-                    @onclick="OnOk">
-                @(!string.IsNullOrEmpty(Confirm.ConfirmLabel)
-                    ? Confirm.ConfirmLabel
-                    : Confirm.Destructive ? "Confirm" : "OK")
-            </button>
+            @if (Confirm.IsChoice)
+            {
+                @* One button per option. No primary palette: each
+                   option is an equally valid pick, so making the
+                   first one "primary" would steer the helm toward
+                   whichever order the caller listed. Outline-style
+                   keeps them visually equal. *@
+                @foreach (var opt in Confirm.Options)
+                {
+                    <button type="button"
+                            class="btn confirm-btn confirm-btn-primary"
+                            @onclick="() => OnPick(opt)">
+                        @opt
+                    </button>
+                }
+            }
+            else
+            {
+                <button type="button"
+                        class="btn confirm-btn @(Confirm.Destructive ? "confirm-btn-danger" : "confirm-btn-primary")"
+                        @onclick="OnOk">
+                    @(!string.IsNullOrEmpty(Confirm.ConfirmLabel)
+                        ? Confirm.ConfirmLabel
+                        : Confirm.Destructive ? "Confirm" : "OK")
+                </button>
+            }
         </div>
     </div>
 }
@@ -97,10 +119,15 @@
 
     private void OnOk() => Confirm.Resolve(true);
     private void OnCancel() => Confirm.Resolve(false);
+    private void OnPick(string option) => Confirm.Pick(option);
 
     private void OnKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
+        // Esc cancels in every mode. Enter commits OK on confirm /
+        // prompt; for chooser there's no "default" option to commit
+        // (that's why the chooser exists), so Enter is a no-op there
+        // -- the helm clicks / taps the button they want.
         if (e.Key == "Escape") OnCancel();
-        else if (e.Key == "Enter") OnOk();
+        else if (e.Key == "Enter" && !Confirm.IsChoice) OnOk();
     }
 }
