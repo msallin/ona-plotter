@@ -1257,8 +1257,12 @@ body:has(.map-container) {
     overflow: hidden;
 }
 
-/* Make the map article flush to the edges (no horizontal padding steal). */
-article.content:has(.map-container) {
+/* Make the map article flush to the edges (no horizontal padding steal).
+   Same rule applies to the History page chrome since it shares the
+   "fill the article" intent -- toolbar / body / controls live inside
+   .history-page directly without extra outer padding. */
+article.content:has(.map-container),
+article.content:has(.history-page) {
     padding: 0 !important;
 }
 
@@ -5508,6 +5512,47 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     transform-origin: center center;
 }
 
+/* ===== History page layout =====
+   Top toolbar (filters + view toggle) sits at the top so changing
+   the time window applies to BOTH map and table views without the
+   helm having to scroll past the playback strip. The middle body
+   hosts the map (or the table overlay, depending on viewMode), and
+   the bottom controls strip carries playback + locate-boat + the
+   bbox-filtered chart picker -- visible only in map view since
+   none of those controls are useful while reading the table. */
+.history-page {
+    display: flex;
+    flex-direction: column;
+    /* Match the .map-container baseline (full viewport minus the
+       3-rem topbar) so the History page covers the same screen
+       real estate Map does. flex-direction column then splits
+       toolbar / body / controls vertically inside that. */
+    height: calc(100dvh - 3rem);
+    width: 100%;
+    overflow: hidden;
+}
+.history-top-bar {
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 8px 16px;
+    /* Above the table overlay (z 850) so when the table is on top
+       the filters chrome stays accessible. */
+    z-index: 900;
+    flex-shrink: 0;
+}
+.history-body {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    /* Lets the descendant absolute-positioned overlays (.history-
+       table-view, .history-trip-detail) take the body's full area.
+       min-height: 0 is the standard flex-child fix that prevents
+       overflow content (the table list) from blowing past the body
+       and pushing the bottom controls strip out of view. */
+    min-height: 0;
+}
+
 /* ===== History Playback Controls ===== */
 
 .history-controls {
@@ -5526,6 +5571,19 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     min-width: 320px;
     max-width: 90%;
     box-shadow: var(--panel-shadow);
+}
+
+/* Trip-action buttons inside the table's Actions column. Tight
+   padding so a row of four (Open / Save / Export / Share) fits
+   without forcing a wrap on tablet widths. */
+.trip-action-btn {
+    padding: 2px 8px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+@media (pointer: coarse) {
+    .trip-action-btn { min-height: 36px; padding: 6px 10px; font-size: 0.78rem; }
 }
 
 .history-controls .form-range {
@@ -5633,6 +5691,142 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .history-charts-panel input[type="checkbox"],
 .history-table-view input[type="checkbox"] {
     accent-color: var(--sk-accent);
+}
+
+/* ===== Trip detail panel =====
+   Slides over the table when the helm clicks a row. Built as an
+   absolute-positioned overlay rather than a modal so it inherits
+   the page's theme tokens cleanly without modal-backdrop opacity
+   ambiguity. Z-index sits above the table overlay (850) but below
+   the bottom controls strip's bottom-anchored panel so the helm can
+   still see "did I click on the right window?" at the bottom edge. */
+.history-trip-detail {
+    position: absolute;
+    inset: 12px;
+    /* Slightly inset from the body edges so the page chrome is
+       visible behind the panel -- the helm reads it as "panel over
+       table" rather than "this took over the screen". */
+    background: var(--panel-bg-strong);
+    color: var(--panel-text);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    overflow-y: auto;
+    z-index: 870;
+    box-shadow: var(--panel-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.history-trip-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+}
+.history-trip-detail-header .map-btn {
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 2px 10px;
+}
+.history-trip-detail-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+}
+.history-trip-detail-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--panel-border);
+    padding-top: 12px;
+    flex-shrink: 0;
+}
+/* Headline-stat grid. Auto-fit so it reflows from 4 columns on a
+   wide tablet down to 2 on phone width. */
+.history-trip-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+.trip-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.trip-stat-label {
+    font-size: 0.7rem;
+    color: var(--panel-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.trip-stat-value {
+    font-size: 1.05rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+.trip-stat-unit {
+    font-size: 0.7rem;
+    color: var(--panel-text-muted);
+    margin-left: 2px;
+}
+
+.trip-section-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--panel-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+}
+
+/* Heading-distribution histogram. 8 cardinal buckets; bar height
+   maps to share %. Bars share a fixed-height row so the eye walks
+   the relative magnitudes without us computing scale. */
+.trip-heading-section { display: flex; flex-direction: column; }
+.trip-heading-buckets {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    height: 80px;
+    align-items: end;
+}
+.trip-heading-bucket {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    height: 100%;
+    text-align: center;
+}
+.trip-heading-bucket-bar {
+    width: 70%;
+    min-height: 2px;
+    background: var(--sk-accent);
+    border-radius: 2px 2px 0 0;
+}
+.trip-heading-bucket-label {
+    font-size: 0.7rem;
+    margin-top: 4px;
+    color: var(--panel-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.trip-window-section { display: flex; flex-direction: column; }
+.trip-window-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+.trip-window-row > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
 }
 
 /* ===== Quick Chart Switcher ===== */

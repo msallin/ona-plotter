@@ -215,6 +215,100 @@ public class ResourceExporterTests
         await Assert.That(ResourceExporter.RegionGeoJson(region)).IsNull();
     }
 
+    // ---------------- TRIP (history segment) -------------------------
+
+    [Test]
+    public async Task TripGpx_EmitsTrkSegmentWithTimestampedPoints()
+    {
+        // Two-point synthetic trip. GPX must wrap as <trk><trkseg>
+        // with <trkpt><time> per fix; consumers re-importing this
+        // (OpenCPN, Garmin BaseCamp) treat it as a track, not a route.
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5,  null, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6,  null, null, null, null, null, null, null),
+        };
+
+        var gpx = ResourceExporter.TripGpx("Test trip", pts);
+
+        await Assert.That(gpx).IsNotNull();
+        await Assert.That(gpx).Contains("<trk");
+        await Assert.That(gpx).Contains("<trkseg");
+        await Assert.That(gpx).Contains("<trkpt lat=\"47.400000\" lon=\"8.500000\"");
+        await Assert.That(gpx).Contains("<trkpt lat=\"47.500000\" lon=\"8.600000\"");
+        await Assert.That(gpx).Contains("<name>Test trip</name>");
+        // 'o' format suffix for UTC kind ends with Z.
+        await Assert.That(gpx).Contains("Z</time>");
+    }
+
+    [Test]
+    public async Task TripGpx_NullWhenFewerThanTwoPoints()
+    {
+        // Single fix isn't a track. Pin: caller-side UI shouldn't
+        // offer Export on these, but the helper guards defensively
+        // so a stale list-cache state can't ship a one-point GPX.
+        var t0 = DateTime.UtcNow;
+        var single = new[] {
+            new TrackPoint(t0, 47.0, 8.0, null, null, null, null, null, null, null)
+        };
+        await Assert.That(ResourceExporter.TripGpx("Solo", single)).IsNull();
+        await Assert.That(ResourceExporter.TripGpx("Solo", [])).IsNull();
+    }
+
+    [Test]
+    public async Task TripGeoJson_BuildsLineStringWithStatsProperties()
+    {
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5,  3.0, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(10), 47.5, 8.6,  3.5, null, null, null, null, null, null),
+        };
+        var seg = new TrackSegment(
+            StartUtc: t0,
+            EndUtc: t0.AddMinutes(10),
+            StartLat: 47.4, StartLon: 8.5,
+            EndLat: 47.5, EndLon: 8.6,
+            DistanceMetres: 1234.0,
+            SogAvgMs: 3.25, SogMaxMs: 3.5, SogMinMs: 3.0,
+            WindSpeedAvgMs: 5.5,
+            PointCount: 2,
+            IsStationary: false);
+
+        var json = ResourceExporter.TripGeoJson("Trip A", seg, pts);
+
+        await Assert.That(json).IsNotNull();
+        await Assert.That(json).Contains("\"type\": \"Feature\"");
+        await Assert.That(json).Contains("\"type\": \"LineString\"");
+        // Coordinates are [lon, lat] per RFC 7946.
+        await Assert.That(json).Contains("8.5");
+        await Assert.That(json).Contains("47.4");
+        await Assert.That(json).Contains("\"name\": \"Trip A\"");
+        await Assert.That(json).Contains("\"distanceMeters\": 1234");
+        await Assert.That(json).Contains("\"sogAvgMs\": 3.25");
+        await Assert.That(json).Contains("\"sogMaxMs\": 3.5");
+        await Assert.That(json).Contains("\"twsAvgMs\": 5.5");
+        await Assert.That(json).Contains("\"isStationary\": false");
+        await Assert.That(json).Contains("\"pointCount\": 2");
+    }
+
+    [Test]
+    public async Task TripGeoJson_NullWhenFewerThanTwoPoints()
+    {
+        var t0 = DateTime.UtcNow;
+        var seg = new TrackSegment(
+            StartUtc: t0, EndUtc: t0,
+            StartLat: 0, StartLon: 0, EndLat: 0, EndLon: 0,
+            DistanceMetres: 0,
+            SogAvgMs: null, SogMaxMs: null, SogMinMs: null,
+            WindSpeedAvgMs: null, PointCount: 1, IsStationary: true);
+        await Assert.That(ResourceExporter.TripGeoJson("X", seg, [])).IsNull();
+        await Assert.That(ResourceExporter.TripGeoJson("X", seg, [
+            new TrackPoint(t0, 0, 0, null, null, null, null, null, null, null)
+        ])).IsNull();
+    }
+
     // ---------------- helpers ---------------------------------------
 
     private static SignalkRoute MakeRoute(string name, string? description, double[][] coordsLonLat)

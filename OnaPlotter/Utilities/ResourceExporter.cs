@@ -175,6 +175,90 @@ public static class ResourceExporter
         return JsonSerializer.Serialize(feature, PrettyJson);
     }
 
+    // ---------------- TRIP (history segment) ------------------------
+
+    /// <summary>GPX 1.1 export of a single track segment as a
+    /// <c>&lt;trk&gt;</c> with one <c>&lt;trkseg&gt;</c>. Each point
+    /// emits its lat / lon plus the captured timestamp inside
+    /// <c>&lt;time&gt;</c>; OpenCPN, Garmin BaseCamp, and Navionics
+    /// all read this back as a track and can replay it. Returns null
+    /// when the slice has fewer than two points (a single fix isn't
+    /// a track).
+    /// </summary>
+    /// <param name="name">Track name. Caller passes "Trip yyyy-MM-dd"
+    /// or whatever the helm typed.</param>
+    /// <param name="points">Chronological points to write. Caller is
+    /// responsible for slicing the larger TrackPoint array down to
+    /// the segment's window.</param>
+    public static string? TripGpx(string name, IReadOnlyList<TrackPoint> points)
+    {
+        if (points is null || points.Count < 2) return null;
+        var trk = new XElement(Gpx + "trk");
+        if (!string.IsNullOrEmpty(name))
+            trk.Add(new XElement(Gpx + "name", name));
+        var seg = new XElement(Gpx + "trkseg");
+        foreach (var p in points)
+        {
+            var pt = new XElement(Gpx + "trkpt",
+                new XAttribute("lat", p.Latitude.ToString(LatLonFormat, Inv)),
+                new XAttribute("lon", p.Longitude.ToString(LatLonFormat, Inv)));
+            // GPX spec uses ISO 8601 in UTC. TrackPoint.Timestamp is
+            // already UTC at ingest (TrackApi adjusts to universal
+            // before constructing the record); the 'o' format emits
+            // the canonical Z-suffixed form.
+            pt.Add(new XElement(Gpx + "time",
+                p.Timestamp.ToString("o", Inv)));
+            seg.Add(pt);
+        }
+        trk.Add(seg);
+        return WrapGpx(trk);
+    }
+
+    /// <summary>GeoJSON Feature export of a single trip: a LineString
+    /// of [lon, lat] coordinates with a properties bag carrying the
+    /// trip's headline stats (name, start / end UTC, duration, distance,
+    /// SOG / TWS aggregates). Stats are taken verbatim from the
+    /// supplied <see cref="TrackSegment"/> -- callers should pass the
+    /// segmenter's output rather than recomputing.</summary>
+    public static string? TripGeoJson(
+        string name, TrackSegment segment, IReadOnlyList<TrackPoint> points)
+    {
+        if (points is null || points.Count < 2) return null;
+        var coords = new double[points.Count][];
+        for (int i = 0; i < points.Count; i++)
+            coords[i] = [points[i].Longitude, points[i].Latitude];
+
+        var feature = new
+        {
+            type = "Feature",
+            properties = new
+            {
+                name = name ?? "",
+                // ISO-8601 in UTC. Same convention as the GPX <time>
+                // elements above so downstream tooling sees one format.
+                startUtc = segment.StartUtc.ToString("o", Inv),
+                endUtc = segment.EndUtc.ToString("o", Inv),
+                // Numeric fields stay raw so the consumer can format
+                // (knots vs m/s, nm vs km, h:mm vs seconds). null fields
+                // elide via JsonSerializer for missing aggregates.
+                durationSec = segment.Duration.TotalSeconds,
+                distanceMeters = segment.DistanceMetres,
+                sogAvgMs = segment.SogAvgMs,
+                sogMaxMs = segment.SogMaxMs,
+                sogMinMs = segment.SogMinMs,
+                twsAvgMs = segment.WindSpeedAvgMs,
+                pointCount = segment.PointCount,
+                isStationary = segment.IsStationary,
+            },
+            geometry = new
+            {
+                type = "LineString",
+                coordinates = coords,
+            },
+        };
+        return JsonSerializer.Serialize(feature, PrettyJson);
+    }
+
     // ---------------- REGION ----------------------------------------
 
     /// <summary>GeoJSON Polygon / MultiPolygon export. GPX has no
