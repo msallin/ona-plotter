@@ -13,20 +13,30 @@
 /* ===== Inter Variable -- self-hosted for offline use =====
    One file covers weight 100..900. font-display: swap so the page
    renders immediately with the platform fallback while the font
-   loads (matters on iPad over LTE / first boot at the dock). */
+   loads (matters on iPad over LTE / first boot at the dock).
+   <para>
+   format('woff2') -- not 'woff2-variations'. The 'woff2-variations'
+   hint was a draft proposal that never made it into the final
+   CSS Fonts spec; Firefox treats it as a foreign mismatch and
+   refuses the source, then surfaces "downloadable font: download
+   failed" with status NS_ERROR_CORRUPTED_CONTENT in the console.
+   The fix is the plain 'woff2' format hint -- browsers detect
+   variation-axis support inside the WOFF2 file itself, so no
+   capability is lost.
+   </para> */
 @font-face {
     font-family: 'Inter Variable';
     font-style: normal;
     font-weight: 100 900;
     font-display: swap;
-    src: url('/fonts/InterVariable.woff2') format('woff2-variations');
+    src: url('/fonts/InterVariable.woff2') format('woff2');
 }
 @font-face {
     font-family: 'Inter Variable';
     font-style: italic;
     font-weight: 100 900;
     font-display: swap;
-    src: url('/fonts/InterVariable-Italic.woff2') format('woff2-variations');
+    src: url('/fonts/InterVariable-Italic.woff2') format('woff2');
 }
 
 :root {
