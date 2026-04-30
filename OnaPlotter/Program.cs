@@ -28,6 +28,12 @@ builder.Services.AddSingleton<IPolarService, PolarService>();
 // The check fires fire-and-forget; a 404 / offline / timeout is
 // swallowed and retried on the next tick.
 builder.Services.AddSingleton<OnaPlotter.Services.UpdateChecker>();
+// Page-state caches: keep the helm's last range / loaded data on
+// History + Stats so navigating to /map and back doesn't reset
+// the view. Singleton-scoped (one per circuit); cleared on a
+// hard reload.
+builder.Services.AddSingleton<OnaPlotter.Services.State.StatsPageState>();
+builder.Services.AddSingleton<OnaPlotter.Services.State.HistoryPageState>();
 // Server-side SignalK notifications store. SignalkClient pushes
 // notifications.* deltas here; the rule below reads the active set
 // every Evaluate tick and surfaces each as an alarm-banner entry.

@@ -22,6 +22,7 @@
 @inject NavigationManager Nav
 @inject Microsoft.JSInterop.IJSRuntime JS
 @inject IToastService Toasts
+@inject OnaPlotter.Services.State.StatsPageState State
 @implements IAsyncDisposable
 
 <PageTitle>Stats</PageTitle>
@@ -398,9 +399,11 @@
 @code {
     // Window state. Mirrors History.razor's split: presets for the
     // common glance ("this week", "this year") + custom for the
-    // deliberate analysis ("April only"). Defaults to last 7 days
-    // -- the sweet spot for "what did this week look like?" without
-    // pulling a season's worth of points.
+    // deliberate analysis ("April only"). Defaults restored from
+    // the StatsPageState singleton on OnInitialized so a helm who
+    // navigates to /map and back finds the page exactly where they
+    // left it (focus-group request 2026-04). Save back happens in
+    // DisposeAsync.
     private string rangeMode = "preset";
     private string selectedTimespan = "7d";
     private DateTime customFromLocal = DateTime.Now.Date.AddDays(-7);
@@ -411,13 +414,41 @@
     private bool computeAttempted;
     private string? errorMessage;
     private StatsTotals? totals;
-    // Per-day breakdown rows -- toggle below the totals card. Empty
-    // when no compute has run; populated alongside `totals` in the
-    // Compute path. Hidden by default since the headline numbers
-    // answer the common question; the day-by-day view is for the
-    // ocean-voyager / liveaboard who wants the log entries.
     private IReadOnlyList<DailyStats> daily = [];
     private bool showDaily;
+
+    protected override void OnInitialized()
+    {
+        // Restore from cache. First page-load: cache holds the
+        // hard-coded defaults above (StatsPageState ctor matches);
+        // every subsequent visit gets the helm's last-tapped values.
+        rangeMode = State.RangeMode;
+        selectedTimespan = State.SelectedTimespan;
+        customFromLocal = State.CustomFromLocal;
+        customToLocal = State.CustomToLocal;
+        resolution = State.Resolution;
+        showDaily = State.ShowDaily;
+        computeAttempted = State.ComputeAttempted;
+        totals = State.Totals;
+        daily = State.Daily;
+    }
+
+    /// <summary>Snapshot the current UI state into the singleton
+    /// cache so the next visit sees the same values. Called from
+    /// DisposeAsync (page teardown) and after Compute (so a forced
+    /// reload mid-compute doesn't lose freshly-loaded results).</summary>
+    private void SaveToState()
+    {
+        State.RangeMode = rangeMode;
+        State.SelectedTimespan = selectedTimespan;
+        State.CustomFromLocal = customFromLocal;
+        State.CustomToLocal = customToLocal;
+        State.Resolution = resolution;
+        State.ShowDaily = showDaily;
+        State.ComputeAttempted = computeAttempted;
+        State.Totals = totals;
+        State.Daily = daily;
+    }
 
     // Lazy-loaded JS helper for navigator.share + clipboard fallback.
     // Same disposal pattern as Resources / Settings; the import
@@ -561,6 +592,10 @@
             var segments = TrackSegmenter.Segment(points);
             totals = StatsAggregator.Aggregate(windowFrom, windowTo, segments);
             daily = StatsAggregator.AggregateDaily(segments);
+            // Snapshot eagerly: a forced reload (UpdateChecker chip)
+            // mid-Compute would otherwise drop the freshly computed
+            // result. DisposeAsync's save catches the slow path.
+            SaveToState();
         }
         catch (HttpRequestException ex)
         {
@@ -639,6 +674,11 @@
 
     public async ValueTask DisposeAsync()
     {
+        // Persist the helm's last-seen state so the next visit
+        // restores the same view. Catches the case where they
+        // navigated away without tapping Compute (eg. tweaked the
+        // range then jumped to /map) -- the new range survives.
+        SaveToState();
         if (_fileTransfer is not null)
         {
             try { await _fileTransfer.DisposeAsync(); }
