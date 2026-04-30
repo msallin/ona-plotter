@@ -9,6 +9,18 @@
                OnToggle="() => expanded = !expanded" />
 @if (expanded)
 {
+    @* Default corner cards. Top-left = SOG / COG / Pos, top-right
+       = Wind, bottom-left = Depth, bottom-right = Heading. Defaults
+       on; toggle off when running an external instrument cluster
+       or capturing a clean chart screenshot. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@ShowDefaultHud"
+               @onchange="(e) => OnToggleDefaultHud.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Default cards</div>
+            <div class="chart-desc">Speed / wind / depth / heading corner panels.</div>
+        </div>
+    </label>
     <label class="chart-item">
         <input type="checkbox" checked="@ShowAutopilotHud"
                @onchange="(e) => OnToggleAutopilotHud.InvokeAsync((bool)(e.Value ?? false))" />
@@ -44,10 +56,12 @@
 }
 
 @code {
+    [Parameter] public bool ShowDefaultHud { get; set; } = true;
     [Parameter] public bool ShowAutopilotHud { get; set; }
     [Parameter] public bool ShowRadarHud { get; set; }
     [Parameter] public bool BigType { get; set; }
     [Parameter] public bool ExpandAllHud { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleDefaultHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAutopilotHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleRadarHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleBigType { get; set; }

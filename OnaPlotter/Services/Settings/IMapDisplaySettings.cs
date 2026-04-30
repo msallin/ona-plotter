@@ -71,6 +71,17 @@ public interface IMapDisplaySettings
     /// rendered on the map.</summary>
     bool ShowRadarHud { get; }
 
+    /// <summary>When true, the four corner HUD cards (top-left
+    /// SOG/COG/Pos, top-right Wind, bottom-left Depth, bottom-right
+    /// Heading) are rendered on the map. Defaults to true so
+    /// existing installs see the same panels they always did; the
+    /// toggle was added in PR-B of the focus-group sweep so a helm
+    /// running an external instrument cluster (or doing a clean
+    /// chart screenshot) can declutter the corners without losing
+    /// the autopilot / radar / route HUDs which have their own
+    /// switches.</summary>
+    bool ShowDefaultHud { get; }
+
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
@@ -84,4 +95,5 @@ public interface IMapDisplaySettings
     Task SetExpandAllHudAsync(bool value);
     Task SetShowAutopilotHudAsync(bool value);
     Task SetShowRadarHudAsync(bool value);
+    Task SetShowDefaultHudAsync(bool value);
 }

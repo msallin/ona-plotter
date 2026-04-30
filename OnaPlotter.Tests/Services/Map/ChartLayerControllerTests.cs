@@ -135,6 +135,7 @@ public class ChartLayerControllerTests
         public bool ExpandAllHud => false;
         public bool ShowAutopilotHud => false;
         public bool ShowRadarHud => false;
+        public bool ShowDefaultHud => true;
         public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
         public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
         public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
@@ -148,6 +149,7 @@ public class ChartLayerControllerTests
         public Task SetExpandAllHudAsync(bool v) => Task.CompletedTask;
         public Task SetShowAutopilotHudAsync(bool v) => Task.CompletedTask;
         public Task SetShowRadarHudAsync(bool v) => Task.CompletedTask;
+        public Task SetShowDefaultHudAsync(bool v) => Task.CompletedTask;
     }
 
     private static (ChartLayerController ctrl, FakeOverlaysJs js, ChartFakeSettings settings, DisplayFakeSettings display, List<(string name, string msg)> errors)
