@@ -78,8 +78,17 @@ const RADAR_ICON_SIZE = 26;
 // Own vessel state, pushed by the mux on every updatePosition tick.
 let selfLat = 0, selfLon = 0, selfCogRad = null, selfSogMs = null;
 
-// Guard zone (CPA alarm envelope drawn around own boat).
+// Guard zone (CPA alarm envelope drawn around own boat). Two rings:
+//   * guardZoneRing -- DANGER band at radius. CPA chips with a
+//     red/danger style appear when a vessel's CPA is inside this.
+//   * guardZoneWarningRing -- WARNING band at radius * warningFactor.
+//     Drawn fainter + dashed so the helm SEES that amber CPA chips
+//     for vessels whose CPA falls between the two rings are still
+//     within the (wider) advisory band, not "outside the guard ring"
+//     as helm-flagged. Removes the "why is this CPA chip outside my
+//     ring?" surprise without changing the underlying thresholds.
 let guardZoneRing = null;
+let guardZoneWarningRing = null;
 let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThreshold
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
 let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
@@ -107,13 +116,14 @@ export function init(map, deps) {
 }
 
 // Mux pushes the own-boat snapshot. CPA prediction needs SOG / COG
-// in addition to lat / lon, and the guard-zone ring chases the boat.
+// in addition to lat / lon, and the guard-zone rings chase the boat.
 export function setBoatPosition(lat, lon, cogRad, sogMs) {
     selfLat = lat;
     selfLon = lon;
     selfCogRad = cogRad;
     selfSogMs = sogMs;
-    if (guardZoneRing) guardZoneRing.setLatLng([lat, lon]);
+    if (guardZoneRing)        guardZoneRing.setLatLng([lat, lon]);
+    if (guardZoneWarningRing) guardZoneWarningRing.setLatLng([lat, lon]);
 }
 
 // --- icons ---
@@ -938,20 +948,22 @@ export function setHarborMode(enabled) {
 
 function drawGuardZone() {
     if (!mapRef) return;
-    // Harbor mode hides the ring entirely. The radius itself is not
+    // Harbor mode hides the rings entirely. The radius itself is not
     // touched (so leaving harbor mode restores the previous setting).
     // Same teardown for the Misc-section visibility toggle: helms can
-    // hide the ring without disabling the CPA alarm pipeline (the
+    // hide the rings without disabling the CPA alarm pipeline (the
     // alarm still fires off the radius / lookahead values).
     if (harborMode || !guardZoneVisible) {
-        if (guardZoneRing) { mapRef.removeLayer(guardZoneRing); guardZoneRing = null; }
+        if (guardZoneRing)        { mapRef.removeLayer(guardZoneRing);        guardZoneRing = null; }
+        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
         return;
     }
-    // Disabled (radius <= 0) - remove the ring entirely instead of
-    // shrinking it to a zero-radius invisible point we would still
+    // Disabled (radius <= 0) - remove the rings entirely instead of
+    // shrinking them to zero-radius invisible points we would still
     // reposition every tick.
     if (guardZoneRadiusNm <= 0) {
-        if (guardZoneRing) { mapRef.removeLayer(guardZoneRing); guardZoneRing = null; }
+        if (guardZoneRing)        { mapRef.removeLayer(guardZoneRing);        guardZoneRing = null; }
+        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
         return;
     }
     const radiusM = guardZoneRadiusNm * 1852;
@@ -975,6 +987,38 @@ function drawGuardZone() {
         guardZoneRing.setLatLng([selfLat, selfLon]);
         guardZoneRing.setRadius(radiusM);
     }
+
+    // Outer warning ring at radius * warningFactor. CPA chips for
+    // vessels whose CPA falls between the inner and outer rings are
+    // amber-styled by the JS render path; without this second ring
+    // the helm read those chips as "outside my guard ring" and
+    // assumed the alarm logic was buggy. The ring is dashed +
+    // half the inner ring's opacity so it reads as advisory rather
+    // than the same-weight ring as the danger band.
+    //
+    // Hidden when warningFactor <= 1 (helm collapsed warning into
+    // danger band -- nothing meaningful to draw outside the inner
+    // ring) and when the computed warning radius would equal the
+    // inner radius pixel-for-pixel.
+    const warnRadiusM = radiusM * Math.max(1.0, guardZoneWarningFactor);
+    if (warnRadiusM <= radiusM + 0.5) {
+        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
+        return;
+    }
+    if (!guardZoneWarningRing) {
+        guardZoneWarningRing = L.circle([selfLat, selfLon], {
+            radius: warnRadiusM,
+            color: colors.guardWarn,
+            weight: 1,
+            opacity: 0.3,
+            fillOpacity: 0,
+            dashArray: '4 6',
+            interactive: false,
+        }).addTo(mapRef);
+    } else {
+        guardZoneWarningRing.setLatLng([selfLat, selfLon]);
+        guardZoneWarningRing.setRadius(warnRadiusM);
+    }
 }
 
 export function dispose() {
@@ -989,6 +1033,7 @@ export function dispose() {
     for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];
     for (const ctx of Object.keys(aisLabels)) delete aisLabels[ctx];
     guardZoneRing = null;
+    guardZoneWarningRing = null;
     selfLat = 0; selfLon = 0; selfCogRad = null; selfSogMs = null;
     mapRef = null;
     colors = null;
