@@ -1086,6 +1086,8 @@ export const setGuardZone = (radiusNm, lookaheadMin, warningFactor) =>
     aisLayerMod.setGuardZone(radiusNm, lookaheadMin, warningFactor);
 export const setGuardZoneVisible = (visible) =>
     aisLayerMod.setGuardZoneVisible(visible);
+export const setGuardZoneWarningRingVisible = (visible) =>
+    aisLayerMod.setGuardZoneWarningRingVisible(visible);
 export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
 
 // --- Persistent measurement tool ---
