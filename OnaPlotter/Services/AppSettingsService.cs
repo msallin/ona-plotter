@@ -37,6 +37,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool LaylinesVisible { get; private set; }
     public bool AtonsVisible { get; private set; } = true;
     public bool GuardZoneVisible { get; private set; } = true;
+    public bool GuardZoneWarningRingVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
     public bool ChartUpscaleEnabled { get; private set; } = false;
     public int ChartUpscaleLevels { get; private set; } = OnaPlotter.Utilities.ChartUpscale.DefaultLevels;
@@ -124,6 +125,7 @@ public sealed class AppSettingsService : IAppSettings
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
             GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
+            GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
             ChartUpscaleEnabled = await LoadBool("chartUpscaleEnabled.v1", false);
@@ -298,6 +300,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         GuardZoneVisible = value;
         await Save("guardZoneVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetGuardZoneWarningRingVisibleAsync(bool value)
+    {
+        GuardZoneWarningRingVisible = value;
+        await Save("guardZoneWarningRingVisible.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

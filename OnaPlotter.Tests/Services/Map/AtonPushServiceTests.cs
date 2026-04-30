@@ -29,6 +29,7 @@ public class AtonPushServiceTests
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
         public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
         public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
     }
 
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;

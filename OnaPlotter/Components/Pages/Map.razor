@@ -1394,6 +1394,7 @@
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
         await _aisJs.SetGuardZoneVisibleAsync(Settings.GuardZoneVisible);
+        await _aisJs.SetGuardZoneWarningRingVisibleAsync(Settings.GuardZoneWarningRingVisible);
         _ = _atonPush!.PushAsync();
         // Resource re-sync: waypoints / routes / notes / regions added
         // from another plotter are otherwise invisible until the user
@@ -1541,7 +1542,14 @@
         // AtoN visibility toggle. The marker layer state survives the
         // hide/show cycle so flipping back doesn't have to re-fetch.
         if (_aisJs is not null)
+        {
             _ = _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
+            // Outer guard-zone warning ring: tracked here too so a
+            // Settings-page toggle reaches the JS layer without the
+            // helm having to refresh the Map page.
+            _ = _aisJs.SetGuardZoneWarningRingVisibleAsync(
+                Settings.GuardZoneWarningRingVisible);
+        }
     }
 
     [JSInvokable]

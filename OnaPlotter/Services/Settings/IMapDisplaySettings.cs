@@ -30,6 +30,20 @@ public interface IMapDisplaySettings
     /// installs see the ring as before.</summary>
     bool GuardZoneVisible { get; }
 
+    /// <summary>Outer dashed warning ring visible on the map at
+    /// <c>GuardZone × WarningFactor</c>. Helps the helm see why an
+    /// amber CPA chip can sit between the inner danger ring and the
+    /// outer advisory band -- the chip is in the warning band, not
+    /// "outside the guard ring" as field-tested. Independent of the
+    /// inner ring's visibility (helms can show the danger ring alone
+    /// for a cleaner chart, or both rings for full context).
+    /// Defaults to true so existing installs gain the new advisory
+    /// ring without an opt-in step. Has no effect when the inner
+    /// ring is hidden, when harbor mode is active, or when
+    /// <c>GuardZoneWarningFactor &lt;= 1</c> (warning band collapsed
+    /// onto the danger band -- nothing to draw).</summary>
+    bool GuardZoneWarningRingVisible { get; }
+
     /// <summary>RainViewer weather overlay opacity, 0.05..0.95
     /// fraction. The shared
     /// <see cref="OnaPlotter.Utilities.WeatherOpacity"/> helper holds
@@ -87,6 +101,7 @@ public interface IMapDisplaySettings
     Task SetLaylinesVisibleAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
     Task SetGuardZoneVisibleAsync(bool value);
+    Task SetGuardZoneWarningRingVisibleAsync(bool value);
     Task SetWeatherOverlayOpacityAsync(double value);
     Task SetChartUpscaleEnabledAsync(bool value);
     Task SetChartUpscaleLevelsAsync(int value);

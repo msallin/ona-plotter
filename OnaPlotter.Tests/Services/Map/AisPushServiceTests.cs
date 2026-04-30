@@ -31,6 +31,7 @@ public class AisPushServiceTests
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
         public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
         public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
     }
 
     /// <summary>Mutable time provider for the harbor-mode dwell test.
