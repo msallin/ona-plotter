@@ -20,99 +20,15 @@
 
 <PageTitle>History</PageTitle>
 
-<div class="map-container">
-    @* Map div stays mounted regardless of viewMode so Leaflet's
-       internal state (tiles, layers, viewport) survives flips
-       between Map and Table views. We just hide it visually when
-       the table is on top. *@
-    <div id="historyMapDiv" style="width:100%; height:100%;"
-         class="@(viewMode == "table" ? "history-map-hidden" : "")"></div>
-
-    @if (viewMode == "table" && segments is { Length: > 0 })
-    {
-        <div class="history-table-view">
-            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                <h3 class="mb-0" style="font-size:1.1rem;">Trips</h3>
-                <span style="font-size:0.85rem; color:var(--sk-text-muted);">
-                    @VisibleSegments(segments).Count() of @segments.Length segments
-                </span>
-                <label class="d-inline-flex align-items-center gap-1 ms-auto"
-                       style="font-size:0.85rem;">
-                    <input type="checkbox" @bind="tableShowStationary" />
-                    Show stationary
-                </label>
-            </div>
-            <div class="history-table-scroll">
-                <table class="table table-sm table-hover history-trip-table">
-                    <thead>
-                        <tr>
-                            <th>From</th>
-                            <th>To</th>
-                            <th class="text-end">Duration</th>
-                            <th class="text-end">Distance</th>
-                            <th class="text-end">SOG avg</th>
-                            <th class="text-end">SOG max</th>
-                            <th class="text-end">TWS avg</th>
-                            <th>Type</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @{
-                            int row = 0;
-                            foreach (var s in segments)
-                            {
-                                int idx = row++;
-                                if (s.IsStationary && !tableShowStationary) continue;
-                                <tr style="cursor:pointer;" @onclick="@(() => OnTripRowClick(idx))"
-                                    title="Click to show on map">
-                                    @* Weekday + date so a helm scanning rows can spot
-                                       "Saturday afternoon" without parsing yyyy-MM-dd
-                                       in their head. End cell shows the to-time only
-                                       since rows that span midnight are rare and would
-                                       inflate the column width otherwise. *@
-                                    <td>@s.StartUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)</td>
-                                    <td>@s.EndUtc.ToLocalTime().ToString("HH:mm")</td>
-                                    <td class="text-end">@Format.TimeToGo(s.Duration.TotalSeconds)</td>
-                                    <td class="text-end">@Format.Nm(s.DistanceMetres) nm</td>
-                                    <td class="text-end">@(s.SogAvgMs is null ? "—" : Format.Speed(s.SogAvgMs))</td>
-                                    <td class="text-end">@(s.SogMaxMs is null ? "—" : Format.Speed(s.SogMaxMs))</td>
-                                    <td class="text-end">@(s.WindSpeedAvgMs is null ? "—" : Format.Speed(s.WindSpeedAvgMs))</td>
-                                    <td>@(s.IsStationary ? "Stationary" : "Moving")</td>
-                                    <td>
-                                        @* "Save as route" only on moving segments --
-                                           a stationary dwell isn't a route. stopPropagation
-                                           on click + onclick:preventDefault so the row's
-                                           fly-to-map handler doesn't fire when the helm
-                                           taps the button. *@
-                                        @if (!s.IsStationary)
-                                        {
-                                            <button class="btn btn-sm btn-outline-primary"
-                                                    style="padding: 2px 8px; font-size: 0.75rem;"
-                                                    @onclick="() => SaveSegmentAsRouteAsync(s)"
-                                                    @onclick:stopPropagation="true"
-                                                    title="Save this trip as a route on the SignalK server">
-                                                Save as route
-                                            </button>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    }
-
-    @* Playback controls *@
-    <div class="history-controls">
+<div class="history-page">
+    @* Top toolbar: view-mode + filters + Load. Lives at the top so
+       the helm sees what window they're looking at AND can pick the
+       map/table view without scrolling past the playback strip. The
+       same filters drive both views (segments are computed from the
+       same fetched points whichever mode is active), so changing the
+       timespan / resolution refreshes both at once. *@
+    <div class="history-top-bar">
         <div class="d-flex align-items-center gap-2 flex-wrap">
-            @* View toggle. Map = the live playback view (default).
-               Table = list of segments with stats; clicking a row
-               flies the map to the segment and switches back here.
-               Both modes share the same loaded data + segments, so
-               the toggle is instant -- no re-fetch. *@
             <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
                 <button class="btn @(viewMode == "map" ? "btn-primary" : "btn-outline-secondary")"
                         @onclick="@(() => viewMode = "map")"
@@ -122,12 +38,6 @@
                         disabled="@(segments is null || segments.Length == 0)"
                         title="Table view (list of trips)">Table</button>
             </div>
-            @* Mode toggle: "Preset" exposes the relative-window
-               dropdown ("Last 24 hours" etc.) -- fast for "what
-               happened today?". "Custom" exposes from/to inputs --
-               required for reviewing a specific passage / day.
-               Default is Preset because that's the helm's normal
-               glance use; Custom is the deliberate analysis use. *@
             <select class="form-select form-select-sm" style="width:auto;"
                     title="Window mode"
                     @onchange="OnModeChanged">
@@ -178,107 +88,257 @@
                 <option value="15m" selected="@(resolution == "15m")">15 m</option>
             </select>
             <button class="map-btn" @onclick="LoadTrack">Load</button>
-            <button class="map-btn" @onclick="GoToBoat" title="Center on current boat position">
-                @* .map-btn is inline-flex so the icon + label line up
-                   without an inner wrapper; same visual as "Load". *@
-                @((MarkupString)Icons.Follow) Boat
-            </button>
-            @* Charts toggle. Minimal version of the Map page's
-               LayersPanel: just a flat list of available charts with
-               a checkbox each. No quick-bar, no drag-reorder, no
-               persistence -- chart selection is per-session here so
-               opening History to review a passage doesn't clobber the
-               helm's chart preferences on the live Map page. *@
-            @if (availableCharts is { Count: > 0 })
-            {
-                <button class="map-btn" @onclick="ToggleChartsPanel"
-                        title="Show / hide chart layers">
-                    Charts (@enabledChartIds.Count / @availableCharts.Count)
-                </button>
-            }
         </div>
+    </div>
 
-        @if (chartsPanelOpen && availableCharts is { Count: > 0 })
+    <div class="history-body">
+        @* Map div stays mounted regardless of viewMode so Leaflet's
+           internal state (tiles, layers, viewport) survives flips
+           between Map and Table views. We just hide it visually when
+           the table is on top. *@
+        <div id="historyMapDiv" style="width:100%; height:100%;"
+             class="@(viewMode == "table" ? "history-map-hidden" : "")"></div>
+
+        @if (viewMode == "table" && segments is { Length: > 0 })
         {
-            <div class="history-charts-panel">
-                @foreach (var chart in availableCharts)
-                {
-                    <label class="d-flex align-items-center gap-2"
-                           style="font-size:0.85rem; padding:0.25rem 0;">
-                        <input type="checkbox"
-                               checked="@enabledChartIds.Contains(chart.Identifier)"
-                               @onchange="async e => await ToggleChartAsync(chart, e)" />
-                        <span>@(string.IsNullOrEmpty(chart.Name) ? chart.Identifier : chart.Name)</span>
+            <div class="history-table-view">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    <h3 class="mb-0" style="font-size:1.1rem;">Trips</h3>
+                    <span style="font-size:0.85rem; color:var(--sk-text-muted);">
+                        @VisibleSegments(segments).Count() of @segments.Length segments
+                    </span>
+                    <label class="d-inline-flex align-items-center gap-1 ms-auto"
+                           style="font-size:0.85rem;">
+                        <input type="checkbox" @bind="tableShowStationary" />
+                        Show stationary
                     </label>
-                }
-            </div>
-        }
-
-        @if (points is not null && points.Length > 0)
-        {
-            <div class="mt-2">
-                <input type="range" class="form-range" min="0" max="@(points.Length - 1)"
-                       value="@playbackIndex" @oninput="OnScrub" style="width:100%;" />
-                <div class="d-flex justify-content-between" style="font-size:0.75rem; color:var(--sk-text-muted);">
-                    <span>@FormatTime(0)</span>
-                    <span style="font-size:0.9rem; color:var(--sk-text);">@CurrentTimeLabel</span>
-                    <span>@FormatTime(points.Length - 1)</span>
+                </div>
+                <div class="history-table-scroll">
+                    <table class="table table-sm table-hover history-trip-table">
+                        <thead>
+                            <tr>
+                                <th>From</th>
+                                <th>To</th>
+                                <th class="text-end">Duration</th>
+                                <th class="text-end">Distance</th>
+                                <th class="text-end">SOG avg</th>
+                                <th class="text-end">SOG max</th>
+                                <th class="text-end">TWS avg</th>
+                                <th>Type</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int row = 0;
+                                foreach (var s in segments)
+                                {
+                                    int idx = row++;
+                                    if (s.IsStationary && !tableShowStationary) continue;
+                                    @* Click a row to open the trip detail
+                                       panel (rich stats + per-trip action
+                                       row). The "Open map" / "Save route" /
+                                       "Export" / "Share" buttons in the
+                                       Actions column stop propagation so
+                                       a tap on them doesn't ALSO open the
+                                       detail. Replaces the previous "click
+                                       row -> fly to map" behaviour; the
+                                       Open button now carries that intent
+                                       explicitly so the row click stays
+                                       reserved for "tell me more about
+                                       this trip". *@
+                                    <tr style="cursor:pointer;" @onclick="@(() => OpenTripDetail(idx))"
+                                        title="Click for trip detail">
+                                        <td>@s.StartUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)</td>
+                                        <td>@s.EndUtc.ToLocalTime().ToString("HH:mm")</td>
+                                        <td class="text-end">@Format.TimeToGo(s.Duration.TotalSeconds)</td>
+                                        <td class="text-end">@Format.Nm(s.DistanceMetres) nm</td>
+                                        <td class="text-end">@(s.SogAvgMs is null ? "—" : Format.Speed(s.SogAvgMs))</td>
+                                        <td class="text-end">@(s.SogMaxMs is null ? "—" : Format.Speed(s.SogMaxMs))</td>
+                                        <td class="text-end">@(s.WindSpeedAvgMs is null ? "—" : Format.Speed(s.WindSpeedAvgMs))</td>
+                                        <td>@(s.IsStationary ? "Stationary" : "Moving")</td>
+                                        <td class="text-end">
+                                            @* Action buttons. stopPropagation
+                                               on each click handler so the
+                                               row's open-detail handler
+                                               doesn't fire twice. Save /
+                                               Export / Share are only
+                                               offered on moving segments
+                                               (a stationary dwell isn't a
+                                               trip a friend would want).
+                                               Open map is fine on either
+                                               so the helm can fly to a
+                                               long anchor sit too. *@
+                                            <div class="d-inline-flex gap-1 flex-nowrap">
+                                                <button class="btn btn-sm btn-outline-secondary trip-action-btn"
+                                                        @onclick="() => OpenSegmentOnMap(idx)"
+                                                        @onclick:stopPropagation="true"
+                                                        title="Show this trip on the map">Open</button>
+                                                @if (!s.IsStationary)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-secondary trip-action-btn"
+                                                            @onclick="() => SaveSegmentAsRouteAsync(s)"
+                                                            @onclick:stopPropagation="true"
+                                                            title="Save this trip as a route on the SignalK server">Save</button>
+                                                    <button class="btn btn-sm btn-outline-secondary trip-action-btn"
+                                                            @onclick="() => ExportSegmentAsync(s)"
+                                                            @onclick:stopPropagation="true"
+                                                            title="Download this trip as GPX or GeoJSON">Export</button>
+                                                    <button class="btn btn-sm btn-outline-secondary trip-action-btn"
+                                                            @onclick="() => ShareSegmentAsync(s)"
+                                                            @onclick:stopPropagation="true"
+                                                            title="Share this trip via system share sheet or clipboard">Share</button>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            @* Step buttons disable at their respective boundary so the
-               user isn't left wondering whether &lt;&lt; was registered
-               but silently no-op'd at the start of the track. *@
-            <div class="d-flex gap-2 mt-1 flex-wrap align-items-center">
-                <button class="map-btn" @onclick="PlayPause">@(playing ? "Pause" : "Play")</button>
-                <button class="map-btn" @onclick="() => StepBy(-10)"
-                        disabled="@(playbackIndex == 0)">&lt;&lt;</button>
-                <button class="map-btn" @onclick="() => StepBy(-1)"
-                        disabled="@(playbackIndex == 0)">&lt;</button>
-                <button class="map-btn" @onclick="() => StepBy(1)"
-                        disabled="@(playbackIndex >= points.Length - 1)">&gt;</button>
-                <button class="map-btn" @onclick="() => StepBy(10)"
-                        disabled="@(playbackIndex >= points.Length - 1)">&gt;&gt;</button>
-                @* Playback speed. User-selectable so a slow tablet
-                   can pick 1x without being forced to watch 5x-fast
-                   jitter; a desktop user reviewing a multi-day passage
-                   can pick 10x to scrub quickly. Timer reinitialises
-                   on change. The dropdown values are speed multipliers
-                   (1x/2x/...) rather than raw timer ms ("200" /
-                   "100" / ...) -- the latter looked like a bug to a
-                   focus-group sailor reading the dropdown cold.
-                   OnSpeedChanged maps the multiplier back to the
-                   200 ms / multiplier interval. *@
-                <label class="d-inline-flex align-items-center gap-1 ms-2"
-                       style="font-size:0.75rem; color:var(--sk-text-muted);">
-                    Speed
-                    <select class="form-select form-select-sm" style="width:auto;"
-                            aria-label="Playback speed"
-                            @onchange="OnSpeedChanged">
-                        <option value="0.5">0.5x</option>
-                        <option value="1" selected>1x</option>
-                        <option value="2">2x</option>
-                        <option value="5">5x</option>
-                        <option value="10">10x</option>
-                    </select>
-                </label>
-            </div>
         }
-        else if (loadAttempted)
+
+        @* Trip detail panel. Renders as an overlay above the table /
+           map when the helm clicks a row. Closes via the X button or
+           the Esc key (handled in the page's keydown). Built as an
+           in-page panel rather than a Bootstrap modal so it inherits
+           the page's theme tokens cleanly without the modal-backdrop
+           opacity logic getting in the way. *@
+        @if (tripDetailIdx is int detailIdx
+             && segments is { Length: > 0 }
+             && detailIdx >= 0 && detailIdx < segments.Length)
         {
-            <EmptyState Compact="true"
-                        Title="No track data for this timespan"
-                        Message="Tracks come from a SignalK History provider (signalk-parquet, signalk-to-influxdb2). If you expected data, check the plugin is active on the server." />
-        }
-        else
-        {
-            <EmptyState Compact="true"
-                        Title="Pick a timespan and tap Load" />
+            <TripDetailPanel Segment="segments[detailIdx]"
+                             Points="SegmentPoints(segments[detailIdx])"
+                             OnClose="CloseTripDetail"
+                             OnOpenOnMap="@(() => OpenSegmentOnMap(detailIdx))"
+                             OnSave="@(() => SaveSegmentAsRouteAsync(segments[detailIdx]))"
+                             OnExport="@(() => ExportSegmentAsync(segments[detailIdx]))"
+                             OnShare="@(() => ShareSegmentAsync(segments[detailIdx]))" />
         }
     </div>
+
+    @* Bottom strip: playback + locate-boat + charts. ONLY rendered
+       when viewMode == "map" -- on the table the playback isn't
+       meaningful (no marker on screen) and the chart toggle
+       reorganises the underlying map which the helm can't see
+       anyway. The empty-state message + the "Pick a timespan" hint
+       also live here so the bottom strip retains a purpose during
+       the pre-load idle. *@
+    @if (viewMode == "map")
+    {
+        <div class="history-controls">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button class="map-btn" @onclick="GoToBoat" title="Center on current boat position">
+                    @((MarkupString)Icons.Follow) Boat
+                </button>
+                @* Charts toggle. Minimal version of the Map page's
+                   LayersPanel: just a flat list of available charts
+                   with a checkbox each. The list is bbox-filtered to
+                   the current viewport so the picker doesn't drown
+                   the helm in irrelevant chart entries on a passage
+                   review (a 10-NM Solent zoom doesn't need to list
+                   the helm's Med-coast offline tiles).
+                   No quick-bar, no drag-reorder, no persistence --
+                   chart selection is per-session here so opening
+                   History to review a passage doesn't clobber the
+                   helm's chart preferences on the live Map page. *@
+                @if (VisibleChartCount() > 0 || enabledChartIds.Count > 0)
+                {
+                    <button class="map-btn" @onclick="ToggleChartsPanel"
+                            title="Show / hide chart layers (filtered to map viewport)">
+                        Charts (@enabledChartIds.Count / @VisibleChartCount())
+                    </button>
+                }
+            </div>
+
+            @if (chartsPanelOpen)
+            {
+                <div class="history-charts-panel">
+                    @foreach (var chart in VisibleCharts())
+                    {
+                        <label class="d-flex align-items-center gap-2"
+                               style="font-size:0.85rem; padding:0.25rem 0;">
+                            <input type="checkbox"
+                                   checked="@enabledChartIds.Contains(chart.Identifier)"
+                                   @onchange="async e => await ToggleChartAsync(chart, e)" />
+                            <span>@(string.IsNullOrEmpty(chart.Name) ? chart.Identifier : chart.Name)</span>
+                        </label>
+                    }
+                    @if (!VisibleCharts().Any())
+                    {
+                        <div style="font-size:0.8rem; color:var(--sk-text-muted); padding:0.25rem 0;">
+                            No charts cover the current viewport.
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (points is not null && points.Length > 0)
+            {
+                <div class="mt-2">
+                    <input type="range" class="form-range" min="0" max="@(points.Length - 1)"
+                           value="@playbackIndex" @oninput="OnScrub" style="width:100%;" />
+                    <div class="d-flex justify-content-between" style="font-size:0.75rem; color:var(--sk-text-muted);">
+                        <span>@FormatTime(0)</span>
+                        <span style="font-size:0.9rem; color:var(--sk-text);">@CurrentTimeLabel</span>
+                        <span>@FormatTime(points.Length - 1)</span>
+                    </div>
+                </div>
+                @* Step buttons disable at their respective boundary so the
+                   user isn't left wondering whether &lt;&lt; was registered
+                   but silently no-op'd at the start of the track. *@
+                <div class="d-flex gap-2 mt-1 flex-wrap align-items-center">
+                    <button class="map-btn" @onclick="PlayPause">@(playing ? "Pause" : "Play")</button>
+                    <button class="map-btn" @onclick="() => StepBy(-10)"
+                            disabled="@(playbackIndex == 0)">&lt;&lt;</button>
+                    <button class="map-btn" @onclick="() => StepBy(-1)"
+                            disabled="@(playbackIndex == 0)">&lt;</button>
+                    <button class="map-btn" @onclick="() => StepBy(1)"
+                            disabled="@(playbackIndex >= points.Length - 1)">&gt;</button>
+                    <button class="map-btn" @onclick="() => StepBy(10)"
+                            disabled="@(playbackIndex >= points.Length - 1)">&gt;&gt;</button>
+                    @* Playback speed -- 1x default; multipliers map
+                       through OnSpeedChanged into the timer interval. *@
+                    <label class="d-inline-flex align-items-center gap-1 ms-2"
+                           style="font-size:0.75rem; color:var(--sk-text-muted);">
+                        Speed
+                        <select class="form-select form-select-sm" style="width:auto;"
+                                aria-label="Playback speed"
+                                @onchange="OnSpeedChanged">
+                            <option value="0.5">0.5x</option>
+                            <option value="1" selected>1x</option>
+                            <option value="2">2x</option>
+                            <option value="5">5x</option>
+                            <option value="10">10x</option>
+                        </select>
+                    </label>
+                </div>
+            }
+            else if (loadAttempted)
+            {
+                <EmptyState Compact="true"
+                            Title="No track data for this timespan"
+                            Message="Tracks come from a SignalK History provider (signalk-parquet, signalk-to-influxdb2). If you expected data, check the plugin is active on the server." />
+            }
+            else
+            {
+                <EmptyState Compact="true"
+                            Title="Pick a timespan and tap Load" />
+            }
+        </div>
+    }
 </div>
 
 @code {
     private IJSObjectReference? module;
+    /// <summary>DotNet ref handed to JS so the Leaflet moveend
+    /// handler can invoke <see cref="OnHistoryViewportChanged"/> when
+    /// the helm pans / zooms. The chart-picker's bbox filter listens
+    /// via the cached viewport bounds. Disposed alongside the page.</summary>
+    private DotNetObjectReference<History>? _historyDotNet;
     // Rich points (lat/lon + timestamp + sog/cog/wind) drive both the
     // playback scrub (marker moves through this list, indices stable)
     // and the segmenter (stationary vs moving classification + per-
@@ -321,6 +381,14 @@
     private List<OnaPlotter.Models.SignalkChart>? availableCharts;
     private readonly HashSet<string> enabledChartIds = new(StringComparer.Ordinal);
     private bool chartsPanelOpen;
+    /// <summary>Open trip-detail target. Index into the FULL
+    /// <c>segments</c> array (not the visible-segments filter).
+    /// Null when no detail panel is open.</summary>
+    private int? tripDetailIdx;
+    /// <summary>Last-seen viewport bounds (south, west, north, east),
+    /// updated on map moveend so the chart-picker can re-filter
+    /// without a fresh JS roundtrip every render.</summary>
+    private double[]? viewportBounds;
 
     /// <summary>Surface the current scrub timestamp instead of the
     /// previous "Point N / total" placeholder. Helms reading the
@@ -354,6 +422,18 @@
             double lon = SignalkClient.Data.Longitude ?? 8.5;
             int zoom = SignalkClient.Data.Latitude is not null ? 13 : 8;
 
+            // Build a DotNet ref before constructing the map so the
+            // moveend handler can call back into C# to refresh the
+            // viewport-bounds cache for the bbox-filtered chart
+            // picker. The ref is disposed alongside the page (see
+            // DisposeAsync).
+            _historyDotNet = DotNetObjectReference.Create(this);
+            // Stash the dotnet-ref globally first so the moveend
+            // handler attached below has it ready by the time the
+            // helm pans. Two-step (set ref, then create map +
+            // listeners) keeps the wire-up race-free.
+            await JS.InvokeVoidAsync("eval",
+                "window._historyDotNet = arguments[0];", _historyDotNet);
             await JS.InvokeVoidAsync("eval", $@"
                 (function() {{
                     if (window._historyMap) window._historyMap.remove();
@@ -367,6 +447,15 @@
                     window._historyMarker = null;
                     window._historyTrack = null;
                     window._historyBoatMarker = null;
+
+                    // moveend / zoomend invoke C# so the chart-picker
+                    // bbox filter stays in sync with the visible map.
+                    var ref = window._historyDotNet;
+                    if (ref) {{
+                        m.on('moveend zoomend', function() {{
+                            ref.invokeMethodAsync('OnHistoryViewportChanged');
+                        }});
+                    }}
                 }})()
             ");
 
@@ -533,7 +622,84 @@
     private static string FormatLocalForInput(DateTime t) =>
         t.ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
-    private void ToggleChartsPanel() => chartsPanelOpen = !chartsPanelOpen;
+    private async Task ToggleChartsPanel()
+    {
+        chartsPanelOpen = !chartsPanelOpen;
+        if (chartsPanelOpen)
+        {
+            // Refresh the cached viewport bounds when the panel opens
+            // so a freshly-rendered list reflects the current map
+            // view -- otherwise the helm sees stale entries from the
+            // last moveend until the next pan.
+            await RefreshViewportBoundsAsync();
+        }
+    }
+
+    /// <summary>Pull the current Leaflet viewport bounds and stash on
+    /// <see cref="viewportBounds"/>. Used by the chart picker's
+    /// bbox filter. Silently no-ops on JS interop failure (page
+    /// teardown, map not ready) so a load-time invocation can't
+    /// crash the page.</summary>
+    private async Task RefreshViewportBoundsAsync()
+    {
+        try
+        {
+            var raw = await JS.InvokeAsync<double[]?>("eval", $@"
+                (function() {{
+                    var m = window._historyMap;
+                    if (!m) return null;
+                    var b = m.getBounds();
+                    return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+                }})()
+            ");
+            if (raw is { Length: 4 }
+                && double.IsFinite(raw[0]) && double.IsFinite(raw[1])
+                && double.IsFinite(raw[2]) && double.IsFinite(raw[3]))
+            {
+                viewportBounds = raw;
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    /// <summary>Charts whose declared bounds intersect (or are
+    /// world-spanning over) the current viewport. Built-in charts
+    /// (OSM / OpenSeaMap) ship null bounds and always pass through.
+    /// SK-served charts with a [west, south, east, north] tuple
+    /// pass through when their bbox overlaps viewport. Charts with
+    /// no bounds we don't have evidence to drop, so they pass too.
+    /// Empty viewport (panel opened before map ready) = unfiltered.</summary>
+    private IEnumerable<OnaPlotter.Models.SignalkChart> VisibleCharts()
+    {
+        if (availableCharts is null) yield break;
+        if (viewportBounds is not { Length: 4 })
+        {
+            foreach (var c in availableCharts) yield return c;
+            yield break;
+        }
+        double vS = viewportBounds[0], vW = viewportBounds[1];
+        double vN = viewportBounds[2], vE = viewportBounds[3];
+        foreach (var c in availableCharts)
+        {
+            if (c.Bounds is not { Length: 4 })
+            {
+                // Unbounded -> world-covering by convention.
+                yield return c;
+                continue;
+            }
+            // Bounds shape: [west, south, east, north].
+            double cW = c.Bounds[0], cS = c.Bounds[1];
+            double cE = c.Bounds[2], cN = c.Bounds[3];
+            // Reject only if there's no overlap on either axis.
+            // (cE < vW) means chart entirely west of viewport.
+            // Standard AABB intersection.
+            if (cE < vW || cW > vE || cN < vS || cS > vN) continue;
+            yield return c;
+        }
+    }
+
+    private int VisibleChartCount() => VisibleCharts().Count();
 
     /// <summary>Filter segments according to the table's current
     /// stationary toggle. Used by both the row count and the table
@@ -604,8 +770,15 @@
         Toasts.Success($"Saved as route '{name}'");
     }
 
-    private async Task OnTripRowClick(int segmentIndex)
+    /// <summary>Row "Open" button: switch to map view and ask Leaflet
+    /// to fit the segment's bounds. Index is into the full
+    /// <c>segments</c> array (NOT the filtered one) so the JS can
+    /// look up the matching polyline by position in
+    /// <c>window._historySegments</c>. Closes the trip-detail panel
+    /// if it was open over the table.</summary>
+    private async Task OpenSegmentOnMap(int segmentIndex)
     {
+        tripDetailIdx = null;
         viewMode = "map";
         // Let the page re-render with the map visible before we ask
         // Leaflet to fit bounds. Without the StateHasChanged + small
@@ -624,16 +797,146 @@
                     var idx = {segmentIndex.ToString(System.Globalization.CultureInfo.InvariantCulture)};
                     var poly = segs[idx];
                     if (!poly) return;
-                    // invalidateSize after the show/hide flip so
-                    // Leaflet recomputes its viewport before we fit
-                    // bounds; otherwise the fit may target a stale
-                    // (zero-size) viewport.
                     m.invalidateSize();
                     m.fitBounds(poly.getBounds(), {{ padding: [40, 40] }});
                 }})()
             ");
         }
         catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>Row click: open the trip detail panel for the segment
+    /// at <paramref name="segmentIndex"/>. The detail view shows
+    /// rich stats (avg / max / min SOG, TWS, dwell breakdown,
+    /// heading distribution) and the same per-trip action buttons
+    /// the table row carries -- so the helm can drive everything
+    /// from the detail panel without going back to the table.</summary>
+    private void OpenTripDetail(int segmentIndex)
+    {
+        tripDetailIdx = segmentIndex;
+    }
+
+    private void CloseTripDetail()
+    {
+        tripDetailIdx = null;
+    }
+
+    /// <summary>Slice the chronological <c>points</c> array by the
+    /// supplied segment's [StartUtc, EndUtc] window. Used by the
+    /// trip-detail panel + by the per-trip Export / Share /
+    /// Save-as-route paths so they share one slicing rule. Returns
+    /// an empty array when <c>points</c> is null (lifecycle race).
+    /// </summary>
+    private IReadOnlyList<TrackPoint> SegmentPoints(TrackSegment s)
+    {
+        if (points is null || points.Length == 0) return [];
+        var slice = new List<TrackPoint>();
+        foreach (var p in points)
+        {
+            if (p.Timestamp < s.StartUtc) continue;
+            if (p.Timestamp > s.EndUtc) break;
+            slice.Add(p);
+        }
+        return slice;
+    }
+
+    /// <summary>GPX or GeoJSON download of the trip. The format
+    /// chooser uses the shared confirmation modal so the helm sees
+    /// the same dialog they use for waypoints / routes / regions on
+    /// the Resources page; cancel = abort.</summary>
+    private async Task ExportSegmentAsync(TrackSegment s)
+    {
+        var pts = SegmentPoints(s);
+        if (pts.Count < 2)
+        {
+            Toasts.Error("Trip has fewer than 2 points -- nothing to export.");
+            return;
+        }
+
+        const string FormatGpx = "GPX";
+        const string FormatGeoJson = "GeoJSON";
+        var picked = await Confirmations.ChooseAsync(
+            "Export this trip as which format?",
+            [FormatGpx, FormatGeoJson]);
+        if (picked is null) return;
+
+        string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH-mm}";
+        string? content = picked == FormatGpx
+            ? ResourceExporter.TripGpx(suggested, pts)
+            : ResourceExporter.TripGeoJson(suggested, s, pts);
+        if (content is null)
+        {
+            Toasts.Error("Couldn't build export -- trip has no usable geometry.");
+            return;
+        }
+
+        // Sanitised filename so the OS save dialog doesn't reject
+        // colons / slashes from the human-readable suggested name.
+        string ext = picked == FormatGpx ? "gpx" : "geojson";
+        string filename = SanitiseFilename(suggested) + "." + ext;
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            await fileTransfer.InvokeVoidAsync("triggerFileDownload", filename, content);
+            Toasts.Success($"Exported {filename}");
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException ex) { Toasts.Error($"Export failed: {ex.Message}"); }
+    }
+
+    /// <summary>Web Share API (system share sheet on iPad / Android
+    /// Chrome) with a clipboard fallback when the API isn't
+    /// available. Shares the GeoJSON because that's the
+    /// most-portable format that round-trips through every consumer
+    /// the helm is likely to send to (Freeboard-SK, QGIS, browser
+    /// previews); GPX would be more interop-friendly with Garmin
+    /// chartplotters but doesn't preview as nicely in chat apps.</summary>
+    private async Task ShareSegmentAsync(TrackSegment s)
+    {
+        var pts = SegmentPoints(s);
+        if (pts.Count < 2)
+        {
+            Toasts.Error("Trip has fewer than 2 points -- nothing to share.");
+            return;
+        }
+        string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
+        string? content = ResourceExporter.TripGeoJson(suggested, s, pts);
+        if (content is null) return;
+
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string outcome = await fileTransfer.InvokeAsync<string>(
+                "shareOrCopy", suggested, content);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Copied to clipboard"); break;
+                case "cancelled":   /* helm tapped cancel; no toast */ break;
+                default:            Toasts.Error("Couldn't share or copy."); break;
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
+    }
+
+    /// <summary>Strip filesystem-illegal characters from a humanly-
+    /// chosen name so the browser-side download dialog doesn't reject
+    /// it. Same conservative whitelist the Resources page uses for
+    /// per-resource exports.</summary>
+    private static string SanitiseFilename(string raw)
+    {
+        var sb = new System.Text.StringBuilder(raw.Length);
+        foreach (var ch in raw)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '-' || ch == '_' || ch == ' ')
+                sb.Append(ch);
+            else
+                sb.Append('_');
+        }
+        return sb.ToString().Trim();
     }
 
     private async Task ToggleChartAsync(OnaPlotter.Models.SignalkChart chart, ChangeEventArgs e)
@@ -988,6 +1291,21 @@
         catch (ObjectDisposedException) { }
     }
 
+    /// <summary>JS-invoked callback wired to Leaflet's moveend +
+    /// zoomend events. Refreshes the cached viewport bounds and
+    /// re-renders so the chart-picker's bbox filter shows the
+    /// charts that actually cover the map area in front of the
+    /// helm. Cheap; doesn't refetch chart metadata.</summary>
+    [JSInvokable]
+    public async Task OnHistoryViewportChanged()
+    {
+        await RefreshViewportBoundsAsync();
+        // Only fire StateHasChanged when the chart panel is actually
+        // visible -- otherwise every pan would re-render the page
+        // for no UX win.
+        if (chartsPanelOpen) StateHasChanged();
+    }
+
     public async ValueTask DisposeAsync()
     {
         playing = false;
@@ -995,9 +1313,11 @@
         try
         {
             await JS.InvokeVoidAsync("eval",
-                "if(window._historyMap){window._historyMap.remove();window._historyMap=null;}");
+                "if(window._historyMap){window._historyMap.remove();window._historyMap=null;}"
+                + "window._historyDotNet=null;");
         }
         catch { /* Ignore on disconnect. */ }
+        _historyDotNet?.Dispose();
         if (module is not null) await module.DisposeAsync();
     }
 }

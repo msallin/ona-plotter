@@ -1,0 +1,198 @@
+@* Trip detail panel.
+   Sliding overlay that opens when the helm clicks a row in History's
+   table view. Shows rich per-trip stats (durations, SOG / TWS
+   aggregates, dwell breakdown, heading distribution) plus the same
+   action buttons the table row carries so the helm can drive
+   everything from inside the detail without round-tripping.
+
+   Component (vs an inlined block in History.razor) so the panel +
+   its layout-derived stats can be unit-tested via bUnit later, and
+   so the History page's @code section doesn't bloat further with
+   per-stat formatters. *@
+@using OnaPlotter.Models
+@using OnaPlotter.Utilities
+@using System.Globalization
+
+<div class="history-trip-detail" role="dialog" aria-label="Trip detail">
+    <div class="history-trip-detail-header">
+        <div>
+            <h3 class="mb-0" style="font-size:1.1rem;">@Title</h3>
+            <div style="font-size:0.78rem; color:var(--sk-text-muted);">@SubTitle</div>
+        </div>
+        <button class="map-btn" @onclick="OnClose" aria-label="Close">×</button>
+    </div>
+
+    <div class="history-trip-detail-body">
+        @* Headline stats grid. Uses display-6 weights to match the
+           Dashboard hero typography so the helm reads the same scale
+           across pages. *@
+        <div class="history-trip-stats">
+            <div class="trip-stat">
+                <span class="trip-stat-label">Duration</span>
+                <span class="trip-stat-value">@Format.TimeToGo(Segment.Duration.TotalSeconds)</span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Distance</span>
+                <span class="trip-stat-value">@Format.Nm(Segment.DistanceMetres) <span class="trip-stat-unit">nm</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Avg SOG</span>
+                <span class="trip-stat-value">@(Segment.SogAvgMs is null ? "—" : Format.Speed(Segment.SogAvgMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Max SOG</span>
+                <span class="trip-stat-value">@(Segment.SogMaxMs is null ? "—" : Format.Speed(Segment.SogMaxMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Min SOG</span>
+                <span class="trip-stat-value">@(Segment.SogMinMs is null ? "—" : Format.Speed(Segment.SogMinMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Avg TWS</span>
+                <span class="trip-stat-value">@(Segment.WindSpeedAvgMs is null ? "—" : Format.Speed(Segment.WindSpeedAvgMs)) <span class="trip-stat-unit">kn</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Points</span>
+                <span class="trip-stat-value">@Segment.PointCount.ToString(CultureInfo.InvariantCulture)</span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Type</span>
+                <span class="trip-stat-value">@(Segment.IsStationary ? "Stationary" : "Moving")</span>
+            </div>
+        </div>
+
+        @* Heading distribution. Helm gets a quick "did we beat or
+           reach?" answer at a glance. 8 cardinal buckets keeps the
+           chart readable at narrow widths; finer bucketing didn't
+           add value in the focus-group review. *@
+        @if (HeadingBuckets is { Count: > 0 })
+        {
+            <div class="trip-heading-section">
+                <div class="trip-section-title">Heading distribution</div>
+                <div class="trip-heading-buckets">
+                    @foreach (var bucket in HeadingBuckets)
+                    {
+                        <div class="trip-heading-bucket"
+                             title="@bucket.Label (@bucket.Count points, @bucket.SharePct.ToString("F0", CultureInfo.InvariantCulture)%)">
+                            <div class="trip-heading-bucket-bar"
+                                 style="height: @(bucket.SharePct.ToString("F0", CultureInfo.InvariantCulture))%"></div>
+                            <div class="trip-heading-bucket-label">@bucket.Label</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @* Time window chip row -- start, end (local time) plus the
+           UTC timestamps for export reference. *@
+        <div class="trip-window-section">
+            <div class="trip-section-title">Time window</div>
+            <div class="trip-window-row">
+                <div>
+                    <span class="trip-stat-label">Start</span>
+                    <span>@Segment.StartUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)</span>
+                </div>
+                <div>
+                    <span class="trip-stat-label">End</span>
+                    <span>@Segment.EndUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="history-trip-detail-actions">
+        <button class="map-btn" @onclick="OnOpenOnMap"
+                title="Show this trip on the map">Open on map</button>
+        @if (!Segment.IsStationary)
+        {
+            <button class="map-btn" @onclick="OnSave"
+                    title="Save as a SignalK route">Save as route</button>
+            <button class="map-btn" @onclick="OnExport"
+                    title="Download as GPX or GeoJSON">Export</button>
+            <button class="map-btn" @onclick="OnShare"
+                    title="Share via system share sheet or clipboard">Share</button>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>Headline segment driving the title + stats grid.
+    /// Required.</summary>
+    [Parameter, EditorRequired] public TrackSegment Segment { get; set; } = default!;
+
+    /// <summary>Slice of <c>TrackPoint</c>s belonging to the segment.
+    /// Used by the heading-distribution histogram. Empty list is
+    /// fine -- the histogram simply doesn't render.</summary>
+    [Parameter, EditorRequired]
+    public IReadOnlyList<TrackPoint> Points { get; set; } = [];
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnOpenOnMap { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnExport { get; set; }
+    [Parameter] public EventCallback OnShare { get; set; }
+
+    private string Title => Segment.IsStationary
+        ? $"Stationary · {Format.TimeToGo(Segment.Duration.TotalSeconds)}"
+        : $"Trip · {Format.Nm(Segment.DistanceMetres)} nm";
+
+    private string SubTitle =>
+        Segment.StartUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm",
+            CultureInfo.CurrentCulture);
+
+    /// <summary>8-cardinal-bucket heading distribution. Counts
+    /// points into N / NE / E / SE / S / SW / W / NW slots based on
+    /// either CourseOverGround (preferred) or Heading (fallback).
+    /// Returns an empty list when no points carry a usable bearing,
+    /// so the section renders only when the data supports it.</summary>
+    private List<HeadingBucket>? HeadingBuckets => _headingBuckets ??= BuildHeadingBuckets();
+    private List<HeadingBucket>? _headingBuckets;
+
+    protected override void OnParametersSet()
+    {
+        // Drop the cache when the parent swaps the segment under us
+        // (helm clicks a different row while the panel is open). The
+        // ?? assignment in the property handles re-build lazily.
+        _headingBuckets = null;
+    }
+
+    private List<HeadingBucket> BuildHeadingBuckets()
+    {
+        if (Points.Count == 0) return [];
+        // Bucket centres at 0, 45, 90, ..., 315 degrees. Each point
+        // bucketed by nearest cardinal so a point at 22 degrees
+        // lands in N (0) and a point at 23 degrees in NE.
+        string[] labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+        var counts = new int[8];
+        int total = 0;
+        foreach (var p in Points)
+        {
+            // Course over ground is the navigation truth. Heading is
+            // the boat's nose direction; we'd rather know which way
+            // the trip actually moved.
+            double? bearingRad = p.CourseOverGround ?? p.Heading;
+            if (bearingRad is not double rad) continue;
+            if (!double.IsFinite(rad)) continue;
+            // Normalise to [0, 360).
+            double deg = rad * 180.0 / Math.PI;
+            deg = ((deg % 360.0) + 360.0) % 360.0;
+            // Round-to-nearest 45 deg cardinal. Adding 22.5 shifts
+            // the boundary so that 23 deg lands in NE rather than N.
+            int bucket = (int)Math.Floor((deg + 22.5) / 45.0) % 8;
+            counts[bucket]++;
+            total++;
+        }
+        if (total == 0) return [];
+        var output = new List<HeadingBucket>(8);
+        for (int i = 0; i < 8; i++)
+        {
+            output.Add(new HeadingBucket(
+                Label: labels[i],
+                Count: counts[i],
+                SharePct: counts[i] / (double)total * 100.0));
+        }
+        return output;
+    }
+
+    private readonly record struct HeadingBucket(string Label, int Count, double SharePct);
+}
