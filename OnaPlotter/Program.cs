@@ -23,6 +23,11 @@ builder.Services.AddSingleton<AisStore>();
 builder.Services.AddSingleton<IToastService, ToastService>();
 builder.Services.AddSingleton<IConfirmationService, ConfirmationService>();
 builder.Services.AddSingleton<IPolarService, PolarService>();
+// Polls the server's version.g.js every 5 min and surfaces a
+// "Reload to update" chip when the published bundle hash changes.
+// The check fires fire-and-forget; a 404 / offline / timeout is
+// swallowed and retried on the next tick.
+builder.Services.AddSingleton<OnaPlotter.Services.UpdateChecker>();
 // Server-side SignalK notifications store. SignalkClient pushes
 // notifications.* deltas here; the rule below reads the active set
 // every Evaluate tick and surfaces each as an alarm-banner entry.

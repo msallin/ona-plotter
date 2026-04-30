@@ -10,6 +10,7 @@
 @inject OnaPlotter.Services.Api.ICourseApi CourseApi
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject OnaPlotter.Services.UpdateChecker Updates
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
@@ -44,6 +45,26 @@
                 <button class="alarm-log-btn" @onclick="ToggleAlarmLog"
                         title="Alarm log (@historyCount recent)">
                     Log @historyCount
+                </button>
+            }
+
+            @* Update-available chip. The UpdateChecker singleton polls
+               js/version.g.js every 5 min and flips a latch when the
+               server's hash differs from the bundle the helm is
+               running. Reload uses NavigationManager.forceLoad so the
+               browser re-fetches index.html + _framework/* with the
+               cache-bypass headers the SK webapp host sets on those
+               paths -- helm gets the new bundle in one tap. Sticky
+               latch: even if a later poll happens to match (rolling
+               deploy / CDN race), the helm has already SEEN the
+               prompt so we don't take it back. *@
+            @if (Updates.IsUpdateAvailable)
+            {
+                <button class="update-available-chip"
+                        @onclick="ReloadForUpdate"
+                        title="A new OnaPlotter bundle is on the server. Tap to reload.">
+                    <span aria-hidden="true">↻</span>
+                    Update available
                 </button>
             }
 
@@ -399,6 +420,10 @@
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
         Alarms.OnAlarmsChanged += HandleAlarmsChanged;
+        // UpdateChecker fires when the server's bundle hash diverges
+        // from ours. The chip in the topbar above gates on
+        // Updates.IsUpdateAvailable -- this re-render unhides it.
+        Updates.OnChanged += HandleUpdatesChanged;
         // Re-render when the route changes so the topbar zoom
         // buttons appear/disappear based on IsMapRoute.
         Nav.LocationChanged += HandleLocationChanged;
@@ -414,6 +439,19 @@
         snoozeCountdownTimer = new System.Threading.Timer(
             _ => _ = RefreshSnoozeCountdownAsync(), null, 60_000, 60_000);
     }
+
+    /// <summary>UpdateChecker fires this when the server's bundle
+    /// hash diverges. Re-render so the new chip is visible. Sticky:
+    /// once shown, even a later poll that matches stays the chip
+    /// up because the helm has already SEEN the prompt.</summary>
+    private void HandleUpdatesChanged() => InvokeAsync(StateHasChanged);
+
+    /// <summary>Force-reload the page so the browser fetches the
+    /// fresh index.html + WASM bundle. NavigationManager.NavigateTo
+    /// with forceLoad=true triggers a full document load; combined
+    /// with the SK webapp host's cache headers on those paths, the
+    /// helm gets the new bundle in one tap.</summary>
+    private void ReloadForUpdate() => Nav.NavigateTo(Nav.Uri, forceLoad: true);
 
     private async void HandleSettingsChanged()
     {
@@ -1055,6 +1093,7 @@
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;
         Alarms.OnAlarmsChanged -= HandleAlarmsChanged;
+        Updates.OnChanged -= HandleUpdatesChanged;
         Nav.LocationChanged -= HandleLocationChanged;
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
