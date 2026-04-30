@@ -4164,6 +4164,17 @@ html.night-mode-global body {
     opacity: 0.5;
 }
 
+/* When CrudSection wraps a SectionHeader and the parent passes a
+   null HeaderExtras, Blazor still renders <span class="section-header-
+   extra"></span> as an empty element. The flex parent's `gap: 6px`
+   then reserves a 6 px slot to the right of the count, pushing the
+   count's right edge inward and making CrudSection-based rows
+   (Routes / Waypoints / Notes / Regions) appear ~6 px less indented
+   than direct-SectionHeader rows (Charts / Radars / Buddies / Vessels).
+   `:empty` matches a span with no children at all so it drops out
+   of the layout entirely; the count then sits flush at the right. */
+.section-header-extra:empty { display: none; }
+
 .section-count {
     font-size: 0.65rem;
     opacity: 0.5;
