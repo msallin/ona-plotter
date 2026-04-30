@@ -34,10 +34,37 @@ public interface IConfirmationService
     Task<string?> PromptAsync(string message, string initialValue = "",
         string? confirmLabel = null, string? cancelLabel = null);
 
+    /// <summary>N-option chooser. Shows the modal with one button per
+    /// entry in <paramref name="options"/> plus a Cancel; resolves to
+    /// the picked option string, or <c>null</c> on Cancel / Escape /
+    /// backdrop click. Used for "Export as GPX or GeoJSON?" -- where
+    /// a yes/no Confirm would force misleading "Cancel = GeoJSON"
+    /// labelling and a free-text Prompt would be slower than two
+    /// taps. Caller can <c>switch</c> on the returned string; null
+    /// means "no usable answer", same convention as
+    /// <see cref="PromptAsync"/>.</summary>
+    Task<string?> ChooseAsync(string message, IReadOnlyList<string> options);
+
     /// <summary>True when the pending prompt is a text-input prompt;
     /// the dialog renders an <c>&lt;input&gt;</c> in that mode.
     /// False for a yes/no confirmation.</summary>
     bool IsTextPrompt { get; }
+
+    /// <summary>True when the pending prompt is an N-option chooser;
+    /// the dialog renders one button per <see cref="Options"/> entry
+    /// + a Cancel. Mutually exclusive with <see cref="IsTextPrompt"/>.</summary>
+    bool IsChoice { get; }
+
+    /// <summary>The choices for an in-flight chooser prompt; empty
+    /// when no chooser is pending. The dialog host iterates this to
+    /// render one button per option and calls <see cref="Pick"/>
+    /// when the user clicks one.</summary>
+    IReadOnlyList<string> Options { get; }
+
+    /// <summary>Called by the modal host when the user clicks one of
+    /// the chooser buttons. Resolves the pending
+    /// <see cref="ChooseAsync"/> with the picked label.</summary>
+    void Pick(string option);
 
     /// <summary>Current text-input value. The dialog two-way binds
     /// to this; on Resolve the committed value is returned to the

@@ -23,11 +23,12 @@ namespace OnaPlotter.Services;
 /// </summary>
 public sealed class ConfirmationService : IConfirmationService
 {
-    // Separate TCSes because the two flavours resolve different types
-    // and we can't easily share one via a boxed / object answer
+    // Separate TCSes because the three flavours resolve different
+    // types and we can't easily share one via a boxed / object answer
     // without re-introducing type ambiguity at every call site.
     private TaskCompletionSource<bool>? _pendingConfirm;
     private TaskCompletionSource<string?>? _pendingPrompt;
+    private TaskCompletionSource<string?>? _pendingChoose;
 
     public event Action? OnChanged;
 
@@ -36,8 +37,13 @@ public sealed class ConfirmationService : IConfirmationService
     public string? ConfirmLabel { get; private set; }
     public string? CancelLabel { get; private set; }
     public bool IsTextPrompt { get; private set; }
+    public bool IsChoice { get; private set; }
+    public IReadOnlyList<string> Options { get; private set; } = [];
     public string TextValue { get; set; } = "";
-    public bool IsPending => _pendingConfirm is not null || _pendingPrompt is not null;
+    public bool IsPending =>
+        _pendingConfirm is not null
+        || _pendingPrompt is not null
+        || _pendingChoose is not null;
 
     public Task<bool> ConfirmAsync(string message, bool destructive = true,
         string? confirmLabel = null, string? cancelLabel = null)
@@ -73,22 +79,69 @@ public sealed class ConfirmationService : IConfirmationService
         ConfirmLabel = confirmLabel ?? "OK";
         CancelLabel = cancelLabel ?? "Cancel";
         IsTextPrompt = true;
+        IsChoice = false;
+        Options = [];
         TextValue = initialValue;
         OnChanged?.Invoke();
         return _pendingPrompt.Task;
+    }
+
+    public Task<string?> ChooseAsync(string message, IReadOnlyList<string> options)
+    {
+        CancelPending();
+        if (options is null || options.Count == 0)
+        {
+            // No options = degenerate caller. Return null synchronously
+            // rather than open an empty dialog the helm has to dismiss.
+            return Task.FromResult<string?>(null);
+        }
+        _pendingChoose = new TaskCompletionSource<string?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Message = message;
+        // Choosers are non-destructive by default. If a future
+        // destructive chooser ("Delete just this / Delete the whole
+        // group?") shows up, add an overload then; YAGNI for now.
+        Destructive = false;
+        ConfirmLabel = null;
+        CancelLabel = "Cancel";
+        IsTextPrompt = false;
+        IsChoice = true;
+        Options = options;
+        TextValue = "";
+        OnChanged?.Invoke();
+        return _pendingChoose.Task;
+    }
+
+    public void Pick(string option)
+    {
+        var choose = _pendingChoose;
+        if (choose is null) return;
+        // Reset before notifying, same pattern as Resolve().
+        _pendingChoose = null;
+        Message = "";
+        ConfirmLabel = null;
+        CancelLabel = null;
+        IsChoice = false;
+        Options = [];
+        OnChanged?.Invoke();
+        choose.TrySetResult(option);
     }
 
     public void Resolve(bool ok)
     {
         var confirm = _pendingConfirm;
         var prompt = _pendingPrompt;
+        var choose = _pendingChoose;
         var value = TextValue;
         _pendingConfirm = null;
         _pendingPrompt = null;
+        _pendingChoose = null;
         Message = "";
         ConfirmLabel = null;
         CancelLabel = null;
         IsTextPrompt = false;
+        IsChoice = false;
+        Options = [];
         TextValue = "";
         // Reset state BEFORE firing OnChanged so a re-render sees the
         // cleared state immediately. Notify then resolve the task so
@@ -101,15 +154,23 @@ public sealed class ConfirmationService : IConfirmationService
         prompt?.TrySetResult(ok
             ? (string.IsNullOrWhiteSpace(value) ? null : value.Trim())
             : null);
+        // Chooser: Resolve(true) without going through Pick() means a
+        // background flow tried to confirm a chooser; treat as cancel.
+        // Pick() handles the actual option-chosen path and clears the
+        // TCS before this branch is reached.
+        choose?.TrySetResult(null);
     }
 
     private void CancelPending()
     {
         var confirm = _pendingConfirm;
         var prompt = _pendingPrompt;
+        var choose = _pendingChoose;
         _pendingConfirm = null;
         _pendingPrompt = null;
+        _pendingChoose = null;
         confirm?.TrySetResult(false);
         prompt?.TrySetResult(null);
+        choose?.TrySetResult(null);
     }
 }
