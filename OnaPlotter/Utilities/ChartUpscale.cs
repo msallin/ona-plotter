@@ -28,12 +28,13 @@ namespace OnaPlotter.Utilities;
 ///     (checkbox + levels input + the two change handlers),</item>
 ///   <item>the <c>upscaleLevels</c> arg on <c>IMapOverlaysJs.AddChartLayerAsync</c>
 ///     and the <c>ChartLayerController</c> call site that resolves it,</item>
-///   <item>the <c>maxZoom: 19 + 3</c> literal on <c>L.map(...)</c> and the
-///     two <c>L.tileLayer</c> base layers (OSM, OpenSeaMap) in
-///     <c>leafletInterop.js</c>'s <c>initMap</c>: revert these to a
-///     plain <c>maxZoom: 19</c> so the helm can't zoom past native
-///     anymore. The <c>maxNativeZoom: 19</c> on the OSM / OpenSeaMap
-///     layers can stay or go -- it's harmless when <c>maxZoom == 19</c>.</item>
+///   <item>the <c>maxZoom: 19 + 3</c> literal on the <c>L.map(...)</c>
+///     call in <c>leafletInterop.js</c>'s <c>initMap</c>: revert to
+///     a plain <c>maxZoom: 19</c> so the helm can't zoom past native.
+///     OSM / OpenSeaMap layers already use <c>maxZoom: 19</c> --
+///     deliberately not bumped, so they go blank past native and
+///     don't compete with the upscaled chart, which means there's
+///     nothing to revert on the base layers.</item>
 /// </list>
 /// Drop those, and the feature is gone with no leftover wiring.</para>
 /// </summary>
