@@ -295,4 +295,99 @@ public class CpaAlarmRuleTests
         await Assert.That(rule.Priority).IsEqualTo(200);
         await Assert.That(rule.AutoClear).IsTrue();
     }
+
+    // --- Anchor-aware effective CPA radius -------------------------
+
+    [Test]
+    public async Task EffectiveCpaRadius_NotAnchored_UsesUnderwaySetting()
+    {
+        // Anchor not active -> threshold is the user's underway value.
+        var nav = OwnShipUnderway();
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.5 });
+        await Assert.That(CpaAlarmRule.EffectiveCpaRadiusNm(ctx)).IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task EffectiveCpaRadius_Anchored_ClampsToAnchorRadius()
+    {
+        // SignalK anchoralarm-plugin active with 30 m max radius:
+        // the focus-group field report -- a stationary boat in a
+        // crowded anchorage was firing CPA alarms on every passing
+        // vessel because the underway 0.5 nm threshold (~926 m) was
+        // wildly inappropriate. Effective threshold drops to the
+        // anchor swing.
+        var nav = OwnShipUnderway();
+        nav.ApplyAnchorPosition(OwnLat, OwnLon);
+        nav.Apply("navigation.anchor.maxRadius", 30.0);
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.5 });
+
+        double eff = CpaAlarmRule.EffectiveCpaRadiusNm(ctx);
+        // 30 m / 1852 m/nm ~ 0.0162 nm.
+        await Assert.That(eff).IsLessThan(0.02);
+        await Assert.That(eff).IsGreaterThan(0.01);
+    }
+
+    [Test]
+    public async Task EffectiveCpaRadius_AnchorRadiusLargerThanUnderway_UsesUnderway()
+    {
+        // Pathological: someone dropped anchor with a huge max radius
+        // (200 m boat-length cable on a 50 ft boat). Don't INCREASE
+        // the threshold past the underway value -- always use the
+        // smaller of the two.
+        var nav = OwnShipUnderway();
+        nav.ApplyAnchorPosition(OwnLat, OwnLon);
+        nav.Apply("navigation.anchor.maxRadius", 5000.0);  // ~2.7 nm
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.3 });
+
+        await Assert.That(CpaAlarmRule.EffectiveCpaRadiusNm(ctx)).IsEqualTo(0.3);
+    }
+
+    [Test]
+    public async Task EffectiveCpaRadius_AnchorActiveButRadiusNotYetArrived_UsesUnderway()
+    {
+        // Server-anchor activated but the maxRadius field hasn't
+        // arrived yet (startup race). Falls through to underway
+        // rather than narrow the threshold to a missing value.
+        var nav = OwnShipUnderway();
+        nav.ApplyAnchorPosition(OwnLat, OwnLon);
+        // No maxRadius applied.
+        var ctx = Ctx(nav, [], new FakeSettings { CpaAlarmThreshold = 0.5 });
+
+        await Assert.That(CpaAlarmRule.EffectiveCpaRadiusNm(ctx)).IsEqualTo(0.5);
+    }
+
+    [Test]
+    public async Task DoesNotFire_WhenVesselPassingOutsideAnchorRadius()
+    {
+        // Own boat anchored (SOG=0 -- a real anchored boat doesn't
+        // move). A vessel passing 200 m east of own at 5 m/s heading
+        // north never gets closer than 200 m. Underway 0.5 nm
+        // threshold (~926 m) would have fired; the anchor 30 m
+        // (~0.0162 nm) threshold does not. Pins the focus-group fix:
+        // a stationary boat in an anchorage no longer cries CPA on
+        // every passing vessel.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var nav = new NavigationData();
+        nav.ApplyPosition(OwnLat, OwnLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 0.0);  // anchored
+        nav.ApplyAnchorPosition(OwnLat, OwnLon);
+        nav.Apply("navigation.anchor.maxRadius", 30.0);
+
+        // Vessel 200 m east of own, heading north (parallel pass).
+        double dLon = 200.0 / (111_320.0 * Math.Cos(OwnLat * Math.PI / 180));
+        var passing = new AisVessel($"vessels.urn:mrn:imo:mmsi:{Guid.NewGuid():N}".Substring(0, 36))
+        {
+            Name = "MV Passing",
+            Mmsi = "111111111",
+            Latitude = OwnLat,
+            Longitude = OwnLon + dLon,
+            CourseOverGround = 0.0,    // due north
+            SpeedOverGround = 5.0,
+            IsBuddy = false,
+        };
+
+        var alarm = rule.Check(Ctx(nav, [passing], new FakeSettings { CpaAlarmThreshold = 0.5 }));
+        await Assert.That(alarm).IsNull();
+    }
 }

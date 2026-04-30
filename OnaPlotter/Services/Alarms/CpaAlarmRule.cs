@@ -29,6 +29,39 @@ public sealed class CpaAlarmRule : IAlarmRule
             "notifications.security.collision", alarm.TargetKey);
     }
 
+    /// <summary>Effective CPA radius for THIS tick (nautical miles).
+    /// The user-configured <see cref="IAlarmThresholds.CpaAlarmThreshold"/>
+    /// is the underway value -- typically 0.3..0.5 nm so a developing
+    /// crossing situation has time to read.
+    /// <para>
+    /// When the boat is anchored (<see cref="NavigationData.AnchorActive"/>
+    /// = the SignalK anchoralarm-plugin has a drop point set) the
+    /// underway threshold is wildly inappropriate: every passing
+    /// vessel inside 0.3 nm of a stationary boat fires a CPA alarm
+    /// even when the actual approach distance is hundreds of metres.
+    /// We narrow the threshold to the anchor's max swing radius
+    /// (<c>data.AnchorMaxRadius</c>, metres -&gt; nm) so an alarm
+    /// fires only when a vessel could enter the anchor circle.
+    /// </para>
+    /// <para>
+    /// Falls through to the underway threshold when:
+    ///  - anchor isn't active,
+    ///  - the radius hasn't arrived yet (server race),
+    ///  - the anchor radius is somehow LARGER than the underway
+    ///    threshold (the user wants the more cautious of the two,
+    ///    which is the smaller).
+    /// </para>
+    /// </summary>
+    public static double EffectiveCpaRadiusNm(AlarmEvaluationContext ctx)
+    {
+        double underway = ctx.Settings.CpaAlarmThreshold;
+        if (!ctx.Data.AnchorActive) return underway;
+        if (ctx.Data.AnchorMaxRadius is not double maxM) return underway;
+        if (!double.IsFinite(maxM) || maxM <= 0) return underway;
+        double anchorNm = maxM / 1852.0;
+        return Math.Min(underway, anchorNm);
+    }
+
     /// <summary>Mirrors the publisher's previous private helper. Strips
     /// the <c>vessels.</c> prefix from a SK context and replaces every
     /// non-path-safe character with '_' so the resulting suffix can't
@@ -76,7 +109,7 @@ public sealed class CpaAlarmRule : IAlarmRule
             || data.CourseOverGround is null || data.SpeedOverGround is null)
             return null;
 
-        double cpaLimit = ctx.Settings.CpaAlarmThreshold;
+        double cpaLimit = EffectiveCpaRadiusNm(ctx);
         double tcpaLimit = ctx.Settings.GuardZoneLookaheadMinutes;
 
         // Drop tracker state for vessels that have left AIS range so the
