@@ -166,6 +166,13 @@ public partial class Map
     private string newRegionTitle = "";
     private string newRegionDescription = "";
     private double newRegionRadiusMeters = 250;
+    /// <summary>Hazard flag picked in the Add Region dialog. Applies
+    /// to both Circle and Polygon paths so the helm sets it once
+    /// up front rather than discovering on save that the polygon
+    /// route hides it inside the edit panel and the circle route
+    /// can't set it at all (focus-group field report). Defaults
+    /// false; reset on every dialog open.</summary>
+    private bool newRegionIsHazard;
     private List<SignalkRegion> loadedRegions = [];
     private bool regionsVisible = true;
 
@@ -188,6 +195,7 @@ public partial class Map
         newRegionTitle = "";
         newRegionDescription = "";
         newRegionRadiusMeters = 250;
+        newRegionIsHazard = false;
         // Default mode is the last pick (newRegionMode persists within the
         // session); draw the preview immediately if circle is the choice
         // so the user sees the real size before touching a radius chip.
@@ -249,7 +257,8 @@ public partial class Map
         try
         {
             r = await RegionApi.CreateCircleAsync(title, description,
-                contextMenuLat, contextMenuLon, newRegionRadiusMeters);
+                contextMenuLat, contextMenuLon, newRegionRadiusMeters,
+                newRegionIsHazard);
         }
         catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); return; }
         if (!r.Success || string.IsNullOrEmpty(r.Value))
