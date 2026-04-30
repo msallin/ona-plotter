@@ -109,4 +109,51 @@ public class PolygonEditPanelTests
         await Assert.That(undo).IsEqualTo(1);
         await Assert.That(cancel).IsEqualTo(1);
     }
+
+    [Test]
+    public async Task IsHazard_Defaults_To_Unchecked()
+    {
+        // Existing decorative regions must NOT silently become hazards
+        // when the panel is mounted with default parameters. Pin so a
+        // future refactor that flips the [Parameter] default surfaces.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<PolygonEditPanel>();
+
+        var checkbox = cut.Find(".route-edit-hazard input[type=\"checkbox\"]");
+        await Assert.That(checkbox.HasAttribute("checked")).IsFalse();
+    }
+
+    [Test]
+    public async Task IsHazard_Renders_As_Checked_When_Parameter_Is_True()
+    {
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+            .Add(x => x.IsHazard, true));
+
+        var checkbox = cut.Find(".route-edit-hazard input[type=\"checkbox\"]");
+        await Assert.That(checkbox.HasAttribute("checked")).IsTrue();
+    }
+
+    [Test]
+    public async Task IsHazard_Toggle_Raises_IsHazardChanged_With_New_Value()
+    {
+        // Bound via parent-owns-state pattern (see RouteEditPanel
+        // NameChanged): the panel doesn't mutate the [Parameter]
+        // directly, just bubbles the new bool. Pin both directions.
+        using var ctx = new Bunit.TestContext();
+        bool? captured = null;
+        var cut = ctx.RenderComponent<PolygonEditPanel>(p => p
+            .Add(x => x.IsHazard, false)
+            .Add(x => x.IsHazardChanged, EventCallback.Factory.Create<bool>(this, v => captured = v)));
+
+        // Tick on.
+        cut.Find(".route-edit-hazard input[type=\"checkbox\"]").Change(true);
+        await Assert.That(captured.HasValue).IsTrue();
+        await Assert.That(captured!.Value).IsTrue();
+
+        // Re-render with the parent's new state, then tick off.
+        cut.SetParametersAndRender(p => p.Add(x => x.IsHazard, true));
+        cut.Find(".route-edit-hazard input[type=\"checkbox\"]").Change(false);
+        await Assert.That(captured!.Value).IsFalse();
+    }
 }

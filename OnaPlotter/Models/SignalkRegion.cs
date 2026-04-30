@@ -20,6 +20,17 @@ public sealed class SignalkRegion
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
+    /// <summary>When true, the region marks a hazardous area; the
+    /// <c>HazardousRegionAlarmRule</c> raises a <c>Danger</c> alarm
+    /// while own-ship is inside it. Stored both at the wire top level
+    /// and in <see cref="GeoJsonFeature.Properties"/> -- some Freeboard
+    /// builds round-trip the inner copy, others read the outer; we
+    /// emit both for compatibility and read whichever the server
+    /// happens to send back. Defaults to false so existing decorative
+    /// regions don't suddenly start firing alarms.</summary>
+    [JsonPropertyName("isHazard")]
+    public bool IsHazard { get; set; }
+
     [JsonPropertyName("feature")]
     public GeoJsonFeature? Feature { get; set; }
 

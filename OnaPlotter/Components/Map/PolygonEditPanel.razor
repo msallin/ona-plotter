@@ -38,6 +38,17 @@
 <div class="route-edit-bar">
     <input type="text" class="route-name-input" aria-label="Region name"
            placeholder="Region name" value="@Name" @oninput="OnNameInput" />
+    @* Hazard toggle. When set, HazardousRegionAlarmRule fires a Danger
+       banner whenever own-ship enters this polygon. Living next to the
+       name input keeps the safety-affecting flag in the helm's eye
+       during every region edit -- a hidden setting buried in a context
+       menu would be too easy to forget. The label trails the checkbox
+       so the panel reads "[name] [Hazard] N vertices Save Cancel" left
+       to right. *@
+    <label class="route-edit-hazard" title="Raise an alarm whenever own-ship is inside this region">
+        <input type="checkbox" checked="@IsHazard" @onchange="OnIsHazardChanged" />
+        <span>Hazard</span>
+    </label>
     <span class="route-edit-stats">@Stats</span>
     <button class="map-btn" @onclick="OnUndo"
             disabled="@((Coords?.Length ?? 0) == 0)"
@@ -53,10 +64,24 @@
     [Parameter] public EventCallback<string> NameChanged { get; set; }
     [Parameter] public string Stats { get; set; } = "";
     [Parameter] public double[][]? Coords { get; set; }
+    /// <summary>When true, this region triggers the hazard alarm
+    /// when own-ship is inside it. Defaults to false (decorative
+    /// region) so an existing untagged region doesn't suddenly
+    /// fire on edit-then-save.</summary>
+    [Parameter] public bool IsHazard { get; set; }
+    [Parameter] public EventCallback<bool> IsHazardChanged { get; set; }
     [Parameter] public EventCallback OnUndo { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
     [Parameter] public EventCallback<int> OnRemoveVertex { get; set; }
+
+    private async Task OnIsHazardChanged(ChangeEventArgs e)
+    {
+        // Same parent-owns-state pattern as OnNameInput: don't mutate
+        // the [Parameter] directly, just bubble the new value.
+        var on = e.Value is bool b && b;
+        await IsHazardChanged.InvokeAsync(on);
+    }
 
     private async Task OnNameInput(ChangeEventArgs e)
     {

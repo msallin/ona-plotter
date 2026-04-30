@@ -17,6 +17,7 @@
 @inject IWaypointApi WaypointApi
 @inject INoteApi NoteApi
 @inject IRegionApi RegionApi
+@inject IRegionStore RegionStore
 @inject ICourseApi CourseApi
 @inject IAutopilotApi AutopilotApi
 @inject IAnchorAlarmApi AnchorAlarmApi
@@ -231,6 +232,8 @@
                           NameChanged="v => polygonEditName = v"
                           Stats="@polygonEditStats"
                           Coords="polygonEditCoords"
+                          IsHazard="@polygonEditIsHazard"
+                          IsHazardChanged="v => polygonEditIsHazard = v"
                           OnUndo="UndoLastPolygonVertex"
                           OnSave="SavePolygonRegion"
                           OnCancel="CancelPolygonEdit"
@@ -679,7 +682,16 @@
             if (waypoints is not null) loadedWaypoints = waypoints;
             if (routes is not null) { availableRoutes = routes; PrecomputeRouteBounds(); }
             if (notes is not null) loadedNotes = notes;
-            if (regions is not null) loadedRegions = regions;
+            if (regions is not null)
+            {
+                loadedRegions = regions;
+                // Mirror into the singleton store so the
+                // HazardousRegionAlarmRule (and any future
+                // region-aware consumer) sees fresh data without a
+                // separate plumb. Cheap reference replacement;
+                // alarm tick polls Regions per evaluation, no event.
+                RegionStore.SetRegions(regions);
+            }
             if (radars is not null)
             {
                 await RadarOverlay.OnRadarListUpdatedAsync(radars);
@@ -1242,6 +1254,9 @@
         loadedWaypoints   = waypointsTask.Result ?? [];
         loadedNotes       = notesTask.Result     ?? [];
         loadedRegions     = regionsTask.Result   ?? [];
+        // Mirror into the singleton store; same reasoning as the
+        // regular-refresh path (HazardousRegionAlarmRule reads here).
+        RegionStore.SetRegions(loadedRegions);
         // Radar device discovery. Empty list when no radar-provider
         // plugin is installed, which is the common case; the Layers
         // panel hides the section entirely in that state.

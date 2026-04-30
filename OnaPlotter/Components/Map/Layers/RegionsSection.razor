@@ -23,7 +23,21 @@
     </HeaderExtras>
     <RowTemplate Context="r">
         <div class="chart-item-body" style="flex:1;">
-            <div class="chart-name">@(string.IsNullOrWhiteSpace(r.Name) ? "(untitled)" : r.Name)</div>
+            <div class="chart-name">
+                @(string.IsNullOrWhiteSpace(r.Name) ? "(untitled)" : r.Name)
+                @* Inline hazard chip so the helm can scan the regions
+                   list and immediately see which areas are wired to
+                   raise an alarm vs which are decorative. The chip
+                   borrows the existing radar-status palette so a new
+                   selector stays out of the CSS. *@
+                @if (r.IsHazard)
+                {
+                    <span class="radar-status-chip radar-status-off"
+                          title="Region is flagged hazardous: own-ship inside fires a Danger alarm">
+                        HAZARD
+                    </span>
+                }
+            </div>
             @if (!string.IsNullOrWhiteSpace(r.Description))
             {
                 <div class="chart-desc">@Truncate(r.Description!, 60)</div>

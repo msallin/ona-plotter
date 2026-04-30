@@ -32,6 +32,11 @@ public partial class Map
     // dialog drops its entered description into newRegionDescription;
     // edit flows stash the existing region's description here.
     private string polygonEditDescription = "";
+    // Hazard flag carried through edit -> save. New regions start
+    // false (decorative); edit flows seed from the existing region's
+    // IsHazard so a re-save preserves the flag without forcing the
+    // helm to re-tick it. Bound to the panel's `IsHazard` parameter.
+    private bool polygonEditIsHazard;
 
     private async Task StartPolygonEdit()
     {
@@ -43,6 +48,7 @@ public partial class Map
         polygonEditCoords = null;
         polygonEditId = null;
         polygonEditDescription = "";
+        polygonEditIsHazard = false;
         InstallEditNavGuard();
         if (_editJs is not null)
             await _editJs.StartPolygonEditAsync();
@@ -84,6 +90,7 @@ public partial class Map
         polygonEditCoords = null;
         polygonEditId = region.Id;
         polygonEditDescription = region.Description ?? "";
+        polygonEditIsHazard = region.IsHazard;
         InstallEditNavGuard();
         // The stored ring is closed (last point == first); drop the
         // duplicate before seeding the edit vertices so the user
@@ -106,6 +113,7 @@ public partial class Map
         polygonEditCoords = null;
         polygonEditId = null;
         polygonEditDescription = "";
+        polygonEditIsHazard = false;
         newRegionDescription = "";
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
@@ -199,15 +207,18 @@ public partial class Map
         {
             if (polygonEditId is string editingId)
             {
-                // In-place update of an existing region.
-                var upd = await RegionApi.UpdatePolygonAsync(editingId, name, description, coords);
+                // In-place update of an existing region; thread the
+                // hazard flag so a re-save preserves (or toggles) it.
+                var upd = await RegionApi.UpdatePolygonAsync(
+                    editingId, name, description, coords, polygonEditIsHazard);
                 if (upd.Success) savedId = editingId;
                 else failReason = upd.Error ?? "server rejected";
             }
             else
             {
                 // Fresh region.
-                var create = await RegionApi.CreatePolygonAsync(name, description, coords);
+                var create = await RegionApi.CreatePolygonAsync(
+                    name, description, coords, polygonEditIsHazard);
                 if (create is { Success: true, Value: { Length: > 0 } }) savedId = create.Value;
                 else failReason = create?.Error ?? "server rejected";
             }
@@ -241,6 +252,7 @@ public partial class Map
         polygonEditCoords = null;
         polygonEditId = null;
         polygonEditDescription = "";
+        polygonEditIsHazard = false;
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
         newRegionDescription = "";
