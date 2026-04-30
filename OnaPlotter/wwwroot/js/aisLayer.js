@@ -286,7 +286,10 @@ function buildAisPopupHtml(snap) {
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {
         const cls = isDangerEff ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
-        cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)} nm in ${cpaInfo.tcpa.toFixed(0)} min</td></tr>`;
+        // Compact format (no space before nm / min). Helm reads
+        // "0.15nm in 1min" as one phrase; the spaced version
+        // "0.15 nm in 1 min" wrapped to two lines on a narrow popup.
+        cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)}nm in ${cpaInfo.tcpa.toFixed(0)}min</td></tr>`;
     }
 
     let colregsHtml = '';

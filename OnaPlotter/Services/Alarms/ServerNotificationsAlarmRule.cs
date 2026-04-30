@@ -134,15 +134,21 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// <summary>Maps a SignalK notification path to a short banner
     /// title and a human-readable default message. Examples:
     /// <list type="bullet">
-    /// <item>notifications.environment.depth.belowTransducer -> ("DEPTH", "depth.belowTransducer")</item>
-    /// <item>notifications.navigation.anchor.position -> ("ANCHOR", "anchor")</item>
+    /// <item>notifications.environment.depth.belowTransducer -> ("DEPTH", "below transducer")</item>
+    /// <item>notifications.navigation.anchor.position -> ("ANCHOR", "position")</item>
+    /// <item>notifications.environment.wind.shift -> ("WIND", "shift")</item>
     /// <item>notifications.mob -> ("MOB", "Man overboard")</item>
-    /// <item>notifications.foo.bar.baz -> ("BAZ", "foo.bar.baz")</item>
+    /// <item>notifications.foo.bar.baz -> ("BAZ", "foo bar baz")</item>
     /// </list>
     /// Unknown prefixes degrade gracefully: leaf-segment uppercased
-    /// becomes the title, the trailing path becomes the default
-    /// message. The helm always gets SOMETHING informative even when
-    /// a brand-new plugin shows up.</summary>
+    /// becomes the title, the trailing path (with dots replaced and
+    /// camelCase split) becomes the default message. The helm always
+    /// gets SOMETHING informative even when a brand-new plugin shows
+    /// up. Used as the FALLBACK when the upstream notification didn't
+    /// include a <c>message</c> field; an OnaPlotter-published alarm
+    /// almost always carries a richer message ("TWD shifted 60° in
+    /// 30 min") that wins via the !string.IsNullOrEmpty check at the
+    /// call site.</summary>
     internal static (string title, string defaultMessage) DeriveTitleAndDefault(string path)
     {
         // Strip the leading "notifications." prefix when present.
@@ -155,25 +161,79 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
         // helm-readable; commonly-shipped plugins (anchor watch, MOB,
         // depth, collision) get a recognised label so the helm's
         // muscle memory carries from one chartplotter to the next.
+        // Default messages are humanised path tails so a missing
+        // upstream message renders as "shift" / "below transducer"
+        // / "position" rather than "environment.wind.shift" / etc.
         if (tail.StartsWith("environment.depth.", StringComparison.Ordinal))
-            return ("DEPTH", tail);
-        if (tail.StartsWith("navigation.anchor", StringComparison.Ordinal))
-            return ("ANCHOR", tail);
+            return ("DEPTH", HumaniseTail(tail, "environment.depth."));
+        if (tail.StartsWith("navigation.anchor.", StringComparison.Ordinal))
+            return ("ANCHOR", HumaniseTail(tail, "navigation.anchor."));
+        if (tail == "navigation.anchor")
+            return ("ANCHOR", "anchor");
         if (tail == "mob" || tail.StartsWith("mob.", StringComparison.Ordinal))
             return ("MOB", "Man overboard");
         if (tail.StartsWith("security.collision", StringComparison.Ordinal))
-            return ("COLLISION", tail);
+            return ("COLLISION", HumaniseTail(tail, "security."));
         if (tail.StartsWith("environment.wind.", StringComparison.Ordinal))
-            return ("WIND", tail);
+            return ("WIND", HumaniseTail(tail, "environment.wind."));
         if (tail.StartsWith("environment.fire.", StringComparison.Ordinal))
-            return ("FIRE", tail);
+            return ("FIRE", HumaniseTail(tail, "environment.fire."));
         if (tail.StartsWith("buddy.", StringComparison.Ordinal))
-            return ("BUDDY", tail);
+            return ("BUDDY", HumaniseTail(tail, "buddy."));
 
         // Default: last path segment, uppercased. Reasonable banner
         // for any plugin we don't have a hard-coded mapping for.
         var lastDot = tail.LastIndexOf('.');
         var leaf = lastDot >= 0 ? tail[(lastDot + 1)..] : tail;
-        return (leaf.ToUpperInvariant(), tail);
+        return (leaf.ToUpperInvariant(), HumaniseTail(tail, ""));
+    }
+
+    /// <summary>Turn a SignalK path tail into a helm-readable phrase.
+    /// Drops the supplied prefix, replaces dots with spaces, and
+    /// inserts a space before each capital letter so camelCase reads
+    /// as words. <c>environment.wind.shift</c> with prefix
+    /// <c>environment.wind.</c> -&gt; <c>shift</c>.
+    /// <c>environment.depth.belowTransducer</c> with prefix
+    /// <c>environment.depth.</c> -&gt; <c>below transducer</c>.
+    /// Empty result (the prefix consumed the whole tail) falls back
+    /// to the prefix's own leaf so the banner never renders empty.</summary>
+    private static string HumaniseTail(string tail, string knownPrefix)
+    {
+        var rest = !string.IsNullOrEmpty(knownPrefix)
+                   && tail.StartsWith(knownPrefix, StringComparison.Ordinal)
+            ? tail[knownPrefix.Length..]
+            : tail;
+
+        if (string.IsNullOrEmpty(rest))
+        {
+            // Whole tail was the known prefix (e.g. "navigation.anchor"
+            // with prefix "navigation.anchor."). Fall back to the
+            // last segment of the original tail.
+            int dot = tail.LastIndexOf('.');
+            rest = dot >= 0 ? tail[(dot + 1)..] : tail;
+        }
+
+        var sb = new System.Text.StringBuilder(rest.Length + 4);
+        for (int i = 0; i < rest.Length; i++)
+        {
+            char c = rest[i];
+            if (c == '.')
+            {
+                sb.Append(' ');
+            }
+            else if (i > 0 && char.IsUpper(c) && !char.IsUpper(rest[i - 1]))
+            {
+                // camelCase boundary: insert a space so "belowTransducer"
+                // reads as "below transducer". Don't split runs of caps
+                // (e.g. "MOB", "MMSI") so acronyms stay glued.
+                sb.Append(' ');
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 }

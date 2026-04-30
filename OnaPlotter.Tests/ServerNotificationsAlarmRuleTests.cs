@@ -37,18 +37,39 @@ public class ServerNotificationsAlarmRuleTests
     [Test]
     public async Task DeriveTitleAndDefault_Depth()
     {
+        // Default message humanised: drops the "environment.depth."
+        // prefix, splits camelCase into "below transducer". Used
+        // as fallback when the upstream notification's `message`
+        // field is empty (focus-group field report 2026-04: a
+        // bridged notification rendered "DEPTH environment.depth.
+        // belowTransducer" because the originator didn't include
+        // a message; humanised default reads as "DEPTH below
+        // transducer" instead).
         var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.environment.depth.belowTransducer");
         await Assert.That(title).IsEqualTo("DEPTH");
-        await Assert.That(msg).IsEqualTo("environment.depth.belowTransducer");
+        await Assert.That(msg).IsEqualTo("below transducer");
     }
 
     [Test]
     public async Task DeriveTitleAndDefault_Anchor()
     {
-        var (title, _) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.navigation.anchor.position");
         await Assert.That(title).IsEqualTo("ANCHOR");
+        await Assert.That(msg).IsEqualTo("position");
+    }
+
+    [Test]
+    public async Task DeriveTitleAndDefault_WindShift()
+    {
+        // The exact path the focus-group screenshot showed
+        // mis-rendered as "WIND environment.wind.shift". With the
+        // humanised default it reads "WIND shift" instead.
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.environment.wind.shift");
+        await Assert.That(title).IsEqualTo("WIND");
+        await Assert.That(msg).IsEqualTo("shift");
     }
 
     [Test]
@@ -63,21 +84,23 @@ public class ServerNotificationsAlarmRuleTests
     [Test]
     public async Task DeriveTitleAndDefault_Collision()
     {
-        var (title, _) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.security.collision.proximity");
         await Assert.That(title).IsEqualTo("COLLISION");
+        await Assert.That(msg).IsEqualTo("collision proximity");
     }
 
     [Test]
     public async Task DeriveTitleAndDefault_UnknownPath_FallsBackToLeafSegment()
     {
         // Plugin that doesn't fit a known prefix: leaf segment
-        // uppercased becomes the title, full tail (no notifications.
-        // prefix) becomes the default message.
+        // uppercased becomes the title, the full tail (humanised --
+        // dots replaced with spaces, camelCase split) becomes the
+        // default message.
         var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
             "notifications.plugin.somePluginAlert.detail");
         await Assert.That(title).IsEqualTo("DETAIL");
-        await Assert.That(msg).IsEqualTo("plugin.somePluginAlert.detail");
+        await Assert.That(msg).IsEqualTo("plugin some plugin alert detail");
     }
 
     [Test]
@@ -140,8 +163,11 @@ public class ServerNotificationsAlarmRuleTests
     public async Task BuildAlarmInfo_FallsBackToDefaultMessageWhenServerMessageMissing()
     {
         // When the SignalK plugin doesn't include a "message" string
-        // in the notification, BuildAlarmInfo uses the path-tail
-        // default so the banner isn't blank.
+        // in the notification, BuildAlarmInfo uses the humanised
+        // path-tail default so the banner reads as "DEPTH below
+        // transducer" rather than "DEPTH environment.depth.belowTransducer"
+        // (focus-group field report 2026-04: the raw-path render was
+        // unhelpful; helms read words faster than dotted paths).
         var n = new ServerNotification(
             "notifications.environment.depth.belowTransducer",
             "alarm",
@@ -149,7 +175,7 @@ public class ServerNotificationsAlarmRuleTests
             AlarmSeverity.Danger);
         var info = ServerNotificationsAlarmRule.BuildAlarmInfo(n, api: null);
 
-        await Assert.That(info.Message).IsEqualTo("environment.depth.belowTransducer");
+        await Assert.That(info.Message).IsEqualTo("below transducer");
     }
 
     [Test]
