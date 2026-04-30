@@ -253,6 +253,150 @@ public class RegionApiTests
     }
 
     [Test]
+    public async Task CreatePolygon_EmitsIsHazardFlag_WhenSet()
+    {
+        // The hazard flag rides at top level + inside properties
+        // (GeoJsonBuilder convention). HazardousRegionAlarmRule reads
+        // SignalkRegion.IsHazard which is wired to the top-level
+        // [JsonPropertyName("isHazard")]; pinning the wire format
+        // protects that read path from refactor drift.
+        string? captured = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            captured = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("\"rgn-hazard\""),
+            };
+        });
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var vertices = new[]
+        {
+            new[] { 47.40, 8.50 },
+            new[] { 47.41, 8.51 },
+            new[] { 47.42, 8.50 },
+        };
+        var r = await api.CreatePolygonAsync("Reefs", "rocky", vertices, isHazard: true);
+
+        await Assert.That(r.Success).IsTrue();
+        await Assert.That(captured).IsNotNull();
+        // Top-level isHazard:true.
+        await Assert.That(captured!).Contains(",\"isHazard\":true,\"feature\":");
+        // And inside properties (use the description anchor to pin the
+        // exact pairing rather than a global "isHazard":true match
+        // that the top-level emission would already satisfy).
+        await Assert.That(captured).Contains("\"description\":\"rocky\",\"isHazard\":true}");
+    }
+
+    [Test]
+    public async Task CreatePolygon_DefaultsIsHazardFalse()
+    {
+        // Existing call sites that didn't pass isHazard must keep
+        // emitting decorative regions -- adding the parameter must
+        // not silently start flagging existing call sites' regions
+        // as hazardous.
+        string? captured = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            captured = req.Content?.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("\"rgn-decor\""),
+            };
+        });
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var vertices = new[]
+        {
+            new[] { 47.40, 8.50 },
+            new[] { 47.41, 8.51 },
+            new[] { 47.42, 8.50 },
+        };
+        await api.CreatePolygonAsync("Decor", "", vertices);
+
+        await Assert.That(captured!).Contains("\"isHazard\":false");
+    }
+
+    [Test]
+    public async Task UpdatePolygon_EmitsIsHazardFlag()
+    {
+        // PUT path mirrors POST -- a re-save with the flag set must
+        // round-trip the new value, and a re-save with it cleared must
+        // round-trip the false explicitly (so toggling OFF actually
+        // disarms the alarm rather than silently keeping the old true).
+        var bodies = new List<string>();
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            bodies.Add(req.Content?.ReadAsStringAsync().Result ?? "");
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var vertices = new[]
+        {
+            new[] { 47.40, 8.50 },
+            new[] { 47.41, 8.51 },
+            new[] { 47.42, 8.50 },
+        };
+        var setOn = await api.UpdatePolygonAsync("rgn-1", "Reefs", "", vertices, isHazard: true);
+        var setOff = await api.UpdatePolygonAsync("rgn-1", "Reefs", "", vertices, isHazard: false);
+
+        await Assert.That(setOn.Success).IsTrue();
+        await Assert.That(setOff.Success).IsTrue();
+        await Assert.That(bodies.Count).IsEqualTo(2);
+        await Assert.That(bodies[0]).Contains("\"isHazard\":true");
+        await Assert.That(bodies[1]).Contains("\"isHazard\":false");
+    }
+
+    [Test]
+    public async Task GetAll_ParsesIsHazard_TopLevel()
+    {
+        // The RegionApi reads SignalkRegion.IsHazard via the top-level
+        // [JsonPropertyName("isHazard")]. Pin the round-trip so a
+        // future GeoJsonFeature refactor that drops it surfaces here.
+        var body = """
+        {
+            "rgn-1": {
+                "name": "Hazard Reef",
+                "description": "rocky",
+                "isHazard": true,
+                "feature": {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[8.5, 47.4], [8.6, 47.4], [8.6, 47.5], [8.5, 47.5], [8.5, 47.4]]]
+                    }
+                }
+            },
+            "rgn-2": {
+                "name": "Decorative",
+                "feature": {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[8.5, 47.4], [8.6, 47.4], [8.55, 47.5], [8.5, 47.4]]]
+                    }
+                }
+            }
+        }
+        """;
+        var http = ApiTestHelpers.JsonClient(_ => body);
+        var api = new RegionApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var regions = await api.GetAllAsync();
+        await Assert.That(regions.Count).IsEqualTo(2);
+
+        var hazard = regions.Single(r => r.Id == "rgn-1");
+        await Assert.That(hazard.IsHazard).IsTrue();
+
+        // Region without the field defaults to false (existing
+        // decorative regions keep their pre-feature behaviour).
+        var decor = regions.Single(r => r.Id == "rgn-2");
+        await Assert.That(decor.IsHazard).IsFalse();
+    }
+
+    [Test]
     public async Task Delete_UrlEncodesId()
     {
         string? capturedUrl = null;

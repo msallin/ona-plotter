@@ -81,15 +81,20 @@ internal static class GeoJsonBuilder
     /// Region variant: carries <c>description</c> at the TOP level
     /// as well as inside <c>properties</c>. Some Freeboard builds
     /// read the top-level copy, some read the inner one -- shipping
-    /// both is the compatible choice.
+    /// both is the compatible choice. The <paramref name="isHazard"/>
+    /// flag rides along the same way: top level (where the C# DTO
+    /// reads it back) and inside properties (so a future
+    /// non-OnaPlotter consumer that walks GeoJSON-only sees it too).
     /// </summary>
-    public static object RegionFeatureBody(string name, object geometry, string? description = null)
+    public static object RegionFeatureBody(string name, object geometry,
+        string? description = null, bool isHazard = false)
     {
         var desc = description ?? "";
         return new
         {
             name,
             description = desc,
+            isHazard,
             feature = new
             {
                 type = "Feature",
@@ -98,6 +103,7 @@ internal static class GeoJsonBuilder
                 {
                     name,
                     description = desc,
+                    isHazard,
                 },
             },
         };

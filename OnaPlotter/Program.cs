@@ -42,6 +42,13 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.AnchorDragA
 // state and the same SK navigation.state interpretation.
 builder.Services.AddSingleton<OnaPlotter.Services.IMooredVesselTracker, OnaPlotter.Services.MooredVesselTracker>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRule>();
+// Region store is a thin singleton AisStore-shaped: Map.razor pushes
+// regions in on every resource refresh; HazardousRegionAlarmRule reads
+// the snapshot per tick. Threaded as a separate dependency rather than
+// added to AlarmEvaluationContext so the context shape stays minimal
+// for every other rule that doesn't care about regions.
+builder.Services.AddSingleton<OnaPlotter.Services.IRegionStore, OnaPlotter.Services.RegionStore>();
+builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.HazardousRegionAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
 // Bridge rule needs the v2 notifications API (to attach an

@@ -5777,6 +5777,27 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     flex: 0 0 auto;
 }
 
+/* Hazard checkbox label inside the polygon-edit bar. inline-flex so
+   the checkbox + "Hazard" text sit next to each other instead of
+   stacking (a bare <label> defaults to display:block). flex:0 0 auto
+   matches the surrounding bar's no-shrink convention. Native browser
+   checkbox -- not restyled here; the default reads cleanly in both
+   light and dark themes. */
+.route-edit-hazard {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+.route-edit-hazard input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+}
+
 /* ===== Route + Polygon edit panels: theme-aware overrides =====
    The base `.route-edit-bar` / `.route-edit-list` / `.route-edit-hint`
    rules above hard-code dark backgrounds, which leaves these panels

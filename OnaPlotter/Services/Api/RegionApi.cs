@@ -57,43 +57,38 @@ public sealed class RegionApi : IRegionApi
     }
 
     public Task<ApiResult<string>> CreateCircleAsync(string name, string description,
-        double lat, double lon, double radiusMeters, CancellationToken ct = default)
+        double lat, double lon, double radiusMeters,
+        bool isHazard = false, CancellationToken ct = default)
     {
         var ring = BuildCircleRing(lat, lon, radiusMeters, CircleVertexCount);
-        return PostPolygonAsync(name, description, ring, ct);
+        return PostPolygonAsync(name, description, ring, isHazard, ct);
     }
 
     public Task<ApiResult<string>> CreatePolygonAsync(string name, string description,
-        double[][] vertices, CancellationToken ct = default)
+        double[][] vertices,
+        bool isHazard = false, CancellationToken ct = default)
     {
         // Freeform polygon: map the [lat, lon] Leaflet vertices back to
         // GeoJSON [lon, lat] order and close the ring by repeating the
         // first vertex at the end. Minimum 3 vertices -- the toast on
         // fewer is more useful than a null return that looked identical
         // to a server-side rejection.
-        if (vertices is null || vertices.Length < 3)
-            return Task.FromResult(ApiResult<string>.Fail("polygon needs at least 3 vertices"));
-        var ring = new double[vertices.Length + 1][];
-        for (int i = 0; i < vertices.Length; i++)
-        {
-            if (vertices[i] is null || vertices[i].Length < 2)
-                return Task.FromResult(ApiResult<string>.Fail("polygon vertex missing lat / lon"));
-            ring[i] = [vertices[i][1], vertices[i][0]];
-        }
-        ring[vertices.Length] = ring[0];
-        return PostPolygonAsync(name, description, ring, ct);
+        var ring = BuildClosedRingFromLeaflet(vertices, out var err);
+        if (ring is null) return Task.FromResult(ApiResult<string>.Fail(err!));
+        return PostPolygonAsync(name, description, ring, isHazard, ct);
     }
 
     /// <summary>Posts the common body shape for both circle-derived and
     /// freeform polygons. Factored out so the two CreateXxxAsync methods
     /// differ only in how they build their ring.</summary>
     private Task<ApiResult<string>> PostPolygonAsync(string name, string description,
-        double[][] ring, CancellationToken ct)
+        double[][] ring, bool isHazard, CancellationToken ct)
     {
         var body = GeoJsonBuilder.RegionFeatureBody(
             name,
             GeoJsonBuilder.Polygon(ring),
-            description);
+            description,
+            isHazard);
         var url = _baseUrl.Combine(SignalKUrls.RegionsPath);
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
@@ -104,26 +99,48 @@ public sealed class RegionApi : IRegionApi
     /// Edit button so tweaks replace the original instead of spawning
     /// a second region on save.</summary>
     public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description,
-        double[][] vertices, CancellationToken ct = default)
+        double[][] vertices,
+        bool isHazard = false, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(id))
             return Task.FromResult(ApiResult.Fail("region id required"));
+        var ring = BuildClosedRingFromLeaflet(vertices, out var err);
+        if (ring is null) return Task.FromResult(ApiResult.Fail(err!));
+        var body = GeoJsonBuilder.RegionFeatureBody(
+            name,
+            GeoJsonBuilder.Polygon(ring),
+            description,
+            isHazard);
+        var url = _baseUrl.Combine(SignalKUrls.Region(id));
+        return ResourceHttp.PutAsync(_http, url, body, ct);
+    }
+
+    /// <summary>Validates a Leaflet-order vertex array and returns a
+    /// closed GeoJSON-order ring (last vertex == first), or null + an
+    /// error message via <paramref name="err"/>. Factored out so
+    /// CreatePolygonAsync and UpdatePolygonAsync share the validation
+    /// + flip + close logic instead of duplicating the same eight
+    /// lines twice.</summary>
+    internal static double[][]? BuildClosedRingFromLeaflet(double[][]? vertices, out string? err)
+    {
         if (vertices is null || vertices.Length < 3)
-            return Task.FromResult(ApiResult.Fail("polygon needs at least 3 vertices"));
+        {
+            err = "polygon needs at least 3 vertices";
+            return null;
+        }
         var ring = new double[vertices.Length + 1][];
         for (int i = 0; i < vertices.Length; i++)
         {
             if (vertices[i] is null || vertices[i].Length < 2)
-                return Task.FromResult(ApiResult.Fail("polygon vertex missing lat / lon"));
+            {
+                err = "polygon vertex missing lat / lon";
+                return null;
+            }
             ring[i] = [vertices[i][1], vertices[i][0]];
         }
         ring[vertices.Length] = ring[0];
-        var body = GeoJsonBuilder.RegionFeatureBody(
-            name,
-            GeoJsonBuilder.Polygon(ring),
-            description);
-        var url = _baseUrl.Combine(SignalKUrls.Region(id));
-        return ResourceHttp.PutAsync(_http, url, body, ct);
+        err = null;
+        return ring;
     }
 
     public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
