@@ -12,7 +12,15 @@
    the same callbacks (OnSetPower / OnSetRange) so both surfaces
    stay in lock-step. *@
 
-@if (Radars.Count == 0) return;
+@* Hide when there are no radars at all OR every radar is "off"
+   (the status the SK plugin reports when the array is powered
+   down). Helm-feedback: the card on a quiescent boat just sat
+   there empty-and-greyed; it's visual chrome only when at least
+   one radar is in standby / preparing / transmit. The Layers ->
+   HUDs section toggle ("Radar card") still gates the card; this
+   is the secondary "but only when there's something to control"
+   gate. *@
+@if (Radars.Count == 0 || !Radars.Any(IsRadarActive)) return;
 
 @{
     // Resolve the displayed radar from the current selection. Re-runs
@@ -165,6 +173,21 @@
 
     private static bool IsTransmitting(RadarInfo r) =>
         string.Equals(r.Status, "transmit", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the radar is in a state worth showing the
+    /// card for. The only state we explicitly hide on is the SK
+    /// plugin's "off" -- a powered-down array offers nothing
+    /// reachable from the chart and the empty card just took up
+    /// chart real estate. Anything else (transmit / standby /
+    /// preparing / unknown / null) shows so the helm can both see
+    /// what the radar is doing AND reach for the Transmit / Standby
+    /// buttons. Permissive default mirrors the alarm UI: hide only
+    /// when we're sure the device is dormant.</summary>
+    private static bool IsRadarActive(RadarInfo r)
+    {
+        var s = r.Status?.Trim().ToLowerInvariant();
+        return s != "off";
+    }
 
     private static string DisplayName(RadarInfo r) =>
         !string.IsNullOrWhiteSpace(r.Name) ? r.Name!
