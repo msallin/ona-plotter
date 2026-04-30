@@ -4,8 +4,13 @@
 //   * CPA crossing-situation overlay: lines from each vessel to its
 //     predicted CPA point + a labelled chip at the midpoint.
 //   * Guard zone ring around own boat (CPA alarm radius).
-//   * Harbor mode declutter: drops labels / vectors / CPA overlays
-//     and hides the guard ring without losing per-context state.
+//   * Harbor mode declutter: drops name labels and hides the guard
+//     ring without losing per-context state. COG vectors + CPA
+//     crossing lines stay -- moored vessels are filtered out C#-side
+//     by HarborAisFilter, so every target still on screen is moving
+//     and the helm needs to see where it's heading + any closing
+//     geometry. Audio CPA alarm is suppressed by CpaAlarmRule on
+//     the C# side; only the visual stays.
 // Visual fields (ship-type palette, glyph category, SART category,
 // CPA threat band) are resolved on the C# side; JS just draws them.
 
@@ -643,9 +648,15 @@ export function updateAisTargets(vessels) {
         // We only push when the position actually changes to avoid empty ticks.
         updateAisTrail(v.context, v.lat, v.lon);
 
-        // Course vector. Suppressed in harbor mode -- with dozens of
-        // AIS targets in port every vector sweeps across every other
-        // marker and the chart turns into a hatch of dashed lines.
+        // Course vector. Drawn for any vessel with a known COG and a
+        // non-trivial SOG (vectorEnd returns null below the 0.1 m/s
+        // floor). Harbor mode no longer hides this -- the moored-
+        // vessel filter on the C# side (HarborAisFilter) already
+        // drops every dwelling target before it reaches us, so the
+        // vessels still on screen in harbor mode are the ones
+        // actually moving and the helm needs to see where they're
+        // headed. The earlier "every vector sweeps across every
+        // marker" decluttering was working off the un-filtered list.
         //
         // Vector colour is the vessel's NATURAL palette tone, NOT
         // the danger-red `color` variable used for the marker icon.
@@ -658,7 +669,7 @@ export function updateAisTargets(vessels) {
         const vecColor = isRadar ? colors.radar
             : (v.buddy ? colors.buddy : (v.shipColor || '#e0c9a6'));
         const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs);
-        if (end && !harborMode) {
+        if (end) {
             let vec = aisVectors[v.context];
             if (!vec) {
                 // Custom pane (zIndex 410) so the vector renders
@@ -699,7 +710,7 @@ export function updateAisTargets(vessels) {
                 tip.setStyle({ color: vecColor, fillColor: vecColor });
             }
         } else if (aisVectorTips[v.context]) {
-            // Harbor mode flipped on, or vessel went stationary: drop
+            // Vessel went stationary (vectorEnd returned null): drop
             // the tip alongside the vector.
             mapRef.removeLayer(aisVectorTips[v.context]);
             delete aisVectorTips[v.context];
@@ -709,12 +720,14 @@ export function updateAisTargets(vessels) {
         // to its predicted CPA point, plus a label with CPA / TCPA at the
         // target's CPA dot. Rendered for danger (red) and warning (yellow).
         // Buddies never render these - they're exempt from the alarm pipeline
-        // and the red lines would be misleading. Suppressed in harbor
-        // mode where every other vessel is technically a "near miss" --
-        // the audio CPA alarm is suppressed in C# (CpaAlarmRule short-
-        // circuits on Settings.HarborMode) and the on-chart overlay
-        // would just add noise to a chart the helm needs to read.
-        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0 && !harborMode) {
+        // and the red lines would be misleading. The visual chip stays on
+        // in harbor mode (the moored-vessel filter on the C# side already
+        // removes the "every other boat is technically a near-miss" noise);
+        // only the AUDIO alarm is suppressed in harbor (CpaAlarmRule short-
+        // circuits on Settings.HarborMode) so the helm hears nothing while
+        // creeping past pontoon traffic, but a genuinely closing target
+        // amongst the moving vessels still gets a visible crossing line.
+        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
             const tcpaSec = cpaInfo.tcpa * 60;
             const ownCpa = destPoint(selfLat, selfLon, selfCogRad, selfSogMs * tcpaSec);
             const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
@@ -1026,36 +1039,19 @@ export function setHarborMode(enabled) {
     harborMode = !!enabled;
     if (!mapRef) return;
     if (harborMode) {
+        // Harbor mode declutter: suppress NAME LABELS (with hundreds of
+        // pontoon vessels visible the labels stack into a wall of text)
+        // and the GUARD RING (anchored-helm-only feature; not useful
+        // while making way through pontoon traffic). COG vectors and
+        // CPA crossing-lines stay visible -- the moored-vessel filter
+        // on the C# side already drops every dwelling target before it
+        // reaches us, so the vessels still on screen are the moving
+        // ones the helm needs to track. The next updateAisTargets tick
+        // re-evaluates COG / CPA per surviving vessel; nothing to
+        // tear down here.
         for (const ctx of Object.keys(aisLabels)) {
             try { aisMarkers[ctx]?.unbindTooltip(); } catch (_) { /* marker gone */ }
             delete aisLabels[ctx];
-        }
-        for (const ctx of Object.keys(aisVectors)) {
-            safeRemoveLayer(aisVectors[ctx]);
-            delete aisVectors[ctx];
-        }
-        for (const ctx of Object.keys(aisVectorTips)) {
-            safeRemoveLayer(aisVectorTips[ctx]);
-            delete aisVectorTips[ctx];
-        }
-        for (const ctx of Object.keys(aisCpaOwnLines)) {
-            safeRemoveLayer(aisCpaOwnLines[ctx]);
-            delete aisCpaOwnLines[ctx];
-        }
-        for (const ctx of Object.keys(aisCpaTgtLines)) {
-            safeRemoveLayer(aisCpaTgtLines[ctx]);
-            delete aisCpaTgtLines[ctx];
-        }
-        for (const ctx of Object.keys(aisCpaTgtX)) {
-            safeRemoveLayer(aisCpaTgtX[ctx]);
-            delete aisCpaTgtX[ctx];
-        }
-        for (const ctx of Object.keys(aisCpaOwnX)) {
-            safeRemoveLayer(aisCpaOwnX[ctx]);
-            delete aisCpaOwnX[ctx];
-        }
-        for (const ctx of Object.keys(aisCpaLastSeverity)) {
-            delete aisCpaLastSeverity[ctx];
         }
         if (guardZoneRing) {
             safeRemoveLayer(guardZoneRing);
@@ -1075,8 +1071,8 @@ export function setHarborMode(enabled) {
         }
     } else {
         // Coming out of harbor mode: redraw the guard ring at the
-        // current radius. AIS labels / vectors / CPA overlays will
-        // be re-established by the next updateAisTargets tick.
+        // current radius. AIS labels are re-established by the next
+        // updateAisTargets tick.
         drawGuardZone();
     }
 }
