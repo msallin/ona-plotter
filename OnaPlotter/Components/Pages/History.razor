@@ -39,7 +39,7 @@
                         disabled="@(segments is null || segments.Length == 0)"
                         title="Table view (list of trips)">Table</button>
             </div>
-            <select class="form-select form-select-sm" style="width:auto;"
+            <select class="form-select form-select-sm" data-history-input
                     title="Window mode"
                     @onchange="OnModeChanged">
                 <option value="preset" selected="@(rangeMode == "preset")">Preset</option>
@@ -47,7 +47,7 @@
             </select>
             @if (rangeMode == "preset")
             {
-                <select class="form-select form-select-sm" style="width:auto;"
+                <select class="form-select form-select-sm" data-history-input
                         @onchange="OnTimespanChanged">
                     <option value="1h" selected="@(selectedTimespan == "1h")">Last 1 hour</option>
                     <option value="6h" selected="@(selectedTimespan == "6h")">Last 6 hours</option>
@@ -63,13 +63,13 @@
                    to UTC at fetch time so the API call is unambiguous
                    regardless of where the helm is. *@
                 <input type="datetime-local" class="form-control form-control-sm"
-                       style="width:auto;"
+                       data-history-input
                        title="Start of window (local time)"
                        value="@FormatLocalForInput(customFromLocal)"
                        @onchange="OnCustomFromChanged" />
-                <span style="font-size:0.85rem; color:var(--sk-text-muted);">to</span>
+                <span class="history-muted-sm">to</span>
                 <input type="datetime-local" class="form-control form-control-sm"
-                       style="width:auto;"
+                       data-history-input
                        title="End of window (local time)"
                        value="@FormatLocalForInput(customToLocal)"
                        @onchange="OnCustomToChanged" />
@@ -79,7 +79,7 @@
                wifi) doesn't pull millions of points just to render a
                polyline. 30 s stays default for the "what happened
                today?" use; 5 m / 15 m for "show me the season". *@
-            <select class="form-select form-select-sm" style="width:auto;"
+            <select class="form-select form-select-sm" data-history-input
                     title="Sampling resolution"
                     aria-label="Sampling resolution"
                     @onchange="OnResolutionChanged">
@@ -112,19 +112,18 @@
            internal state (tiles, layers, viewport) survives flips
            between Map and Table views. We just hide it visually when
            the table is on top. *@
-        <div id="historyMapDiv" style="width:100%; height:100%;"
+        <div id="historyMapDiv"
              class="@(viewMode == "table" ? "history-map-hidden" : "")"></div>
 
         @if (viewMode == "table" && segments is { Length: > 0 })
         {
             <div class="history-table-view">
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <h3 class="mb-0" style="font-size:1.1rem;">Trips</h3>
-                    <span style="font-size:0.85rem; color:var(--sk-text-muted);">
+                    <h3 class="mb-0 history-trips-title">Trips</h3>
+                    <span class="history-muted-sm">
                         @VisibleSegments(segments).Count() of @segments.Length segments
                     </span>
-                    <label class="d-inline-flex align-items-center gap-1 ms-auto"
-                           style="font-size:0.85rem;">
+                    <label class="d-inline-flex align-items-center gap-1 ms-auto history-text-sm">
                         <input type="checkbox" @bind="tableShowStationary" />
                         Show stationary
                     </label>
@@ -163,7 +162,7 @@
                                        explicitly so the row click stays
                                        reserved for "tell me more about
                                        this trip". *@
-                                    <tr style="cursor:pointer;" @onclick="@(() => OpenTripDetail(idx))"
+                                    <tr class="history-trip-row" @onclick="@(() => OpenTripDetail(idx))"
                                         title="Click for trip detail">
                                         <td>@s.StartUtc.ToLocalTime().ToString("ddd yyyy-MM-dd HH:mm", CultureInfo.CurrentCulture)</td>
                                         <td>@s.EndUtc.ToLocalTime().ToString("HH:mm")</td>
@@ -275,8 +274,7 @@
                 <div class="history-charts-panel">
                     @foreach (var chart in VisibleCharts())
                     {
-                        <label class="d-flex align-items-center gap-2"
-                               style="font-size:0.85rem; padding:0.25rem 0;">
+                        <label class="d-flex align-items-center gap-2 history-charts-item">
                             <input type="checkbox"
                                    checked="@enabledChartIds.Contains(chart.Identifier)"
                                    @onchange="async e => await ToggleChartAsync(chart, e)" />
@@ -285,7 +283,7 @@
                     }
                     @if (!VisibleCharts().Any())
                     {
-                        <div style="font-size:0.8rem; color:var(--sk-text-muted); padding:0.25rem 0;">
+                        <div class="history-empty-msg">
                             No charts cover the current viewport.
                         </div>
                     }
@@ -296,10 +294,10 @@
             {
                 <div class="mt-2">
                     <input type="range" class="form-range" min="0" max="@(points.Length - 1)"
-                           value="@playbackIndex" @oninput="OnScrub" style="width:100%;" />
-                    <div class="d-flex justify-content-between" style="font-size:0.75rem; color:var(--sk-text-muted);">
+                           value="@playbackIndex" @oninput="OnScrub" />
+                    <div class="d-flex justify-content-between history-muted-xs">
                         <span>@FormatTime(0)</span>
-                        <span style="font-size:0.9rem; color:var(--sk-text);">@CurrentTimeLabel</span>
+                        <span class="history-time-current">@CurrentTimeLabel</span>
                         <span>@FormatTime(points.Length - 1)</span>
                     </div>
                 </div>
@@ -318,10 +316,9 @@
                             disabled="@(playbackIndex >= points.Length - 1)">&gt;&gt;</button>
                     @* Playback speed -- 1x default; multipliers map
                        through OnSpeedChanged into the timer interval. *@
-                    <label class="d-inline-flex align-items-center gap-1 ms-2"
-                           style="font-size:0.75rem; color:var(--sk-text-muted);">
+                    <label class="d-inline-flex align-items-center gap-1 ms-2 history-muted-xs">
                         Speed
-                        <select class="form-select form-select-sm" style="width:auto;"
+                        <select class="form-select form-select-sm" data-history-input
                                 aria-label="Playback speed"
                                 @onchange="OnSpeedChanged">
                             <option value="0.5">0.5x</option>

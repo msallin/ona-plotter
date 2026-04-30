@@ -14,6 +14,9 @@ builder.Services.AddSingleton(new HttpClient());
 // Storage + settings.
 builder.Services.AddSingleton<IKeyValueStore, LocalStorageKeyValueStore>();
 builder.Services.AddSingleton<IAppSettings, AppSettingsService>();
+// Detected once per session (navigator.hardwareConcurrency + UA).
+// Drives renderer / tile-prefetch decisions; no user-facing knob.
+builder.Services.AddSingleton<IClientCapabilities, ClientCapabilitiesService>();
 
 // Domain state.
 builder.Services.AddSingleton<TrackBuffer>();

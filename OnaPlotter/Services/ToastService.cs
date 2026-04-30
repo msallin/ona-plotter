@@ -1,3 +1,5 @@
+using OnaPlotter.Models;
+
 namespace OnaPlotter.Services;
 
 /// <summary>
@@ -6,19 +8,6 @@ namespace OnaPlotter.Services;
 /// </summary>
 public sealed class ToastService : IToastService
 {
-    /// <summary>A transient notification. When <paramref name="ActionLabel"/>
-    /// is non-null the UI renders an action button; clicking it invokes
-    /// <paramref name="Action"/> and dismisses the toast.</summary>
-    public sealed record Toast(
-        Guid Id,
-        string Message,
-        ToastLevel Level,
-        DateTime ExpiresAt,
-        string? ActionLabel = null,
-        Func<Task>? Action = null);
-
-    public enum ToastLevel { Info, Success, Warning, Error }
-
     private readonly List<Toast> _toasts = [];
 
     public IReadOnlyList<Toast> Active

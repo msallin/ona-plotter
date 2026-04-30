@@ -152,7 +152,12 @@
             @onclick="OnAnchorClicked"
             title="@(anchorClearConfirming ? "Tap again to raise anchor" : AnchorActive ? "Raise anchor (A)" : "Drop anchor (A)")">
         <span class="ctrl-ico">@((MarkupString)Icons.Anchor)</span>
-        <span class="ctrl-lbl">@(anchorClearConfirming ? "Confirm?" : AnchorActive ? "Set" : "Anchor")</span>
+        @* "Anchored" reads as state ("an anchor IS down") rather than
+           the previous "Set", which the helm field-tested as ambiguous
+           ("set what?"). The button is a state indicator + toggle: when
+           inactive it says "Anchor" (the noun, also the affordance),
+           when active it says "Anchored" (the state). *@
+        <span class="ctrl-lbl">@(anchorClearConfirming ? "Confirm?" : AnchorActive ? "Anchored" : "Anchor")</span>
     </button>
     @* Stop Navigation lives next to Anchor because the two are the
        "end the current safety state" grouping: a route and a manual

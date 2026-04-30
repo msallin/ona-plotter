@@ -418,7 +418,7 @@ function rotateMarker(marker, rad) {
 
 // ========== EXPORTED FUNCTIONS ==========
 
-export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
+export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     if (map) map.remove();
     dotNetRef = dotNetObjRef;
 
@@ -430,16 +430,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef) {
     readMapColors();
     selfIcon = makeIcon(makeBoatSvg(MapColors.own, 30, true), 30);
 
-    // Detect weak client BEFORE building the map so the renderer choice
-    // below can flip with it. Heuristic: 4-or-fewer logical cores (Pi)
-    // or 'arm'/'raspberry' in the UA. isSlowClient is a module-scope
-    // let because other functions (tile layer creation, AIS updates)
-    // also consult it later.
-    isSlowClient =
-        (typeof navigator !== 'undefined' && navigator.hardwareConcurrency
-            && navigator.hardwareConcurrency <= 4)
-        || /\barm\b|\barmv|raspberry/i.test(
-            typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '');
+    // The slow-client flag is detected on the C# side
+    // (ClientCapabilitiesService) and passed in here. Coercing to a
+    // bool in case Blazor's interop hands us undefined for an older
+    // C# call site that hasn't been updated yet -- in that case we
+    // fall back to the desktop-class default of false.
+    isSlowClient = !!slowClient;
 
     // Mirror the flag to the DOM so CSS can strip perf-heavy effects
     // (backdrop-filter blur passes, drop-shadow filters) on slow
