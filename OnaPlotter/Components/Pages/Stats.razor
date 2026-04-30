@@ -19,6 +19,7 @@
 @using OnaPlotter.Utilities
 @using System.Globalization
 @inject ITrackApi TrackApi
+@inject NavigationManager Nav
 
 <PageTitle>Stats</PageTitle>
 
@@ -129,6 +130,24 @@
 
     @if (totals is { } t)
     {
+        @* Drill-down: take this window into History's table view.
+           Hands the helm a list of the individual trips behind the
+           "Trips: 8" headline + a click-to-fly-to-segment row. /stats
+           answers "how much"; /history answers "where + which". The
+           link round-trips the resolved window so the helm doesn't
+           have to re-pick. Hidden when there are no trips since
+           the table would be empty. *@
+        @if (t.TripCount > 0)
+        {
+            <div class="d-flex justify-content-end mb-2">
+                <a class="btn btn-outline-primary btn-sm"
+                   href="@DrillDownHref(t)"
+                   title="Show these trips on the History page (table view + same window)">
+                    View @t.TripCount trip@(t.TripCount == 1 ? "" : "s") &rarr;
+                </a>
+            </div>
+        }
+
         @* Totals grid. Headline numbers as big readouts so a glance
            reads them; supplementary numbers inline. Two rows: the
            "voyage" totals (trips, distance, peak speed) and the
@@ -257,12 +276,23 @@
            gap, plotter offline). Surfacing the coverage % keeps the
            helm honest about totals -- "12 nm in 7 days at 30 % coverage"
            reads very differently from "12 nm at 95 % coverage". *@
+        @* Three-bucket breakdown -- moving + stationary + unknown.
+           The previous "X of Y had position fixes" lumped underway
+           and dwell time together against an opaque gap; ocean-
+           voyager personas asked "but what was the GAP?". Splitting
+           it out keeps the helm honest about what 95% (or 30%)
+           coverage actually means. *@
         <div class="text-muted" style="font-size:0.85rem;">
             Data coverage: @CoveragePct(t).ToString("F0", CultureInfo.InvariantCulture) %
-            (@FormatHours(t.MovingDurationSeconds + t.StationaryDurationSeconds)
-            of @FormatHours(t.TotalDurationSeconds) had position fixes).
-            Lower coverage means gaps -- plotter offline, server didn't log,
-            or the resolution is finer than the feed cadence.
+            &mdash;
+            <span title="Time the boat was moving (above the segmenter's SOG threshold)">
+                @FormatHours(t.MovingDurationSeconds) underway</span>,
+            <span title="Time the boat dwelled (anchor / berth / drifting)">
+                @FormatHours(t.StationaryDurationSeconds) at anchor / berth</span>,
+            <span title="Wall-clock time inside the window with no position fixes">
+                @FormatHours(UnknownSeconds(t)) unknown</span>.
+            Unknown = plotter offline, server didn't log, or the resolution
+            is finer than the feed cadence.
         </div>
         @* Zero-trip explainer. A "Trips: 0" headline with high
            coverage (>50 %) reads as "your boat went nowhere"; helms
@@ -280,6 +310,54 @@
                 that wasn't reporting (every fix has zero speed, so the segmenter
                 falls back to inter-sample distance and finds nothing above noise).
             </div>
+        }
+
+        @* Per-day breakdown. Hidden by default -- the totals answer
+           the common question; the daily table is for liveaboards /
+           ocean voyagers who want the log entry per day. Toggle keeps
+           the page from looking dense on a quick "last 7 days" check.
+           Sorted descending (most recent first) by AggregateDaily. *@
+        @if (daily.Count > 0)
+        {
+            <div class="mt-3">
+                <button class="btn btn-link btn-sm p-0"
+                        style="font-size:0.85rem; text-decoration:none;"
+                        @onclick="() => showDaily = !showDaily">
+                    @(showDaily ? "▾" : "▸") Daily breakdown (@daily.Count day@(daily.Count == 1 ? "" : "s"))
+                </button>
+            </div>
+            @if (showDaily)
+            {
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th class="text-end">Trips</th>
+                                <th class="text-end">Distance</th>
+                                <th class="text-end">Avg SOG</th>
+                                <th class="text-end">Max SOG</th>
+                                <th class="text-end">Underway</th>
+                                <th class="text-end">At anchor</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var d in daily)
+                            {
+                                <tr>
+                                    <td>@d.LocalDate.ToString("ddd yyyy-MM-dd", CultureInfo.CurrentCulture)</td>
+                                    <td class="text-end">@d.TripCount</td>
+                                    <td class="text-end">@Format.Nm(d.DistanceMetres) nm</td>
+                                    <td class="text-end">@(d.AvgSogMs is null ? "—" : $"{Format.Speed(d.AvgSogMs)} kn")</td>
+                                    <td class="text-end">@(d.MaxSogMs is null ? "—" : $"{Format.Speed(d.MaxSogMs)} kn")</td>
+                                    <td class="text-end">@FormatHours(d.MovingDurationSeconds)</td>
+                                    <td class="text-end">@FormatHours(d.StationaryDurationSeconds)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         }
     }
     else if (computeAttempted)
@@ -312,6 +390,13 @@
     private bool computeAttempted;
     private string? errorMessage;
     private StatsTotals? totals;
+    // Per-day breakdown rows -- toggle below the totals card. Empty
+    // when no compute has run; populated alongside `totals` in the
+    // Compute path. Hidden by default since the headline numbers
+    // answer the common question; the day-by-day view is for the
+    // ocean-voyager / liveaboard who wants the log entries.
+    private IReadOnlyList<DailyStats> daily = [];
+    private bool showDaily;
 
     private void OnModeChanged(ChangeEventArgs e)
         => rangeMode = e.Value?.ToString() == "custom" ? "custom" : "preset";
@@ -358,6 +443,26 @@
             ? 100.0 * (t.MovingDurationSeconds + t.StationaryDurationSeconds) / t.TotalDurationSeconds
             : 0;
 
+    /// <summary>Wall-clock seconds inside the window that had no
+    /// position fixes (plotter offline, server outage, sample
+    /// cadence finer than the feed). Clamped to >= 0 so a tiny
+    /// rounding drift in totals never renders "-0.1 h unknown".</summary>
+    private static double UnknownSeconds(StatsTotals t) =>
+        Math.Max(0, t.TotalDurationSeconds - t.MovingDurationSeconds - t.StationaryDurationSeconds);
+
+    /// <summary>Build a deep link into <c>/history</c> with the same
+    /// from/to window and table view pre-selected. UTC ISO-8601 in
+    /// the URL (DateTimeKind.Utc with "o" format) so the History
+    /// page parses unambiguously regardless of helm timezone. View
+    /// = table because the helm clicked "view trips" -- they want
+    /// the list, not the playback map.</summary>
+    private string DrillDownHref(StatsTotals t)
+    {
+        string from = DateTime.SpecifyKind(t.From, DateTimeKind.Utc).ToString("o", CultureInfo.InvariantCulture);
+        string to = DateTime.SpecifyKind(t.To, DateTimeKind.Utc).ToString("o", CultureInfo.InvariantCulture);
+        return $"history?from={Uri.EscapeDataString(from)}&to={Uri.EscapeDataString(to)}&view=table";
+    }
+
     /// <summary>Format seconds as "Nh" for the headline number. Helm
     /// reads "12 h" faster than "12h00m" or "43200 s". Uses
     /// non-breaking space so the unit doesn't wrap to its own line in
@@ -379,6 +484,7 @@
         computeAttempted = true;
         errorMessage = null;
         totals = null;
+        daily = [];
         loading = true;
         StateHasChanged();
         try
@@ -426,6 +532,7 @@
 
             var segments = TrackSegmenter.Segment(points);
             totals = StatsAggregator.Aggregate(windowFrom, windowTo, segments);
+            daily = StatsAggregator.AggregateDaily(segments);
         }
         catch (HttpRequestException ex)
         {
