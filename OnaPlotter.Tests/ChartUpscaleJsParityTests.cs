@@ -86,10 +86,14 @@ public class ChartUpscaleJsParityTests
         // ceiling silently capping the feature before the decorator
         // got a chance to apply.
         //
-        // Scrape "maxZoom: 19 + 3" (with whitespace tolerance) and
-        // assert the second number matches ChartUpscale.MaxLevels.
-        // Same regex shape covers the OSM + OpenSeaMap base layers
-        // a few hundred lines below; we pin all three here.
+        // Note: OSM + OpenSeaMap base layers DELIBERATELY stay at the
+        // unbumped maxZoom: 19 so they go blank past native and the
+        // chart's upscaled tiles dominate the view. An earlier
+        // iteration bumped them too and the helm reported "OSM
+        // loading on top of my chart" -- the second-frame appearance
+        // of upscaled OSM looked like a flicker. So this parity test
+        // expects exactly ONE 'maxZoom: 19 + N' literal (the map
+        // itself) and pins it to ChartUpscale.MaxLevels.
         var path = Path.Combine(
             AppContext.BaseDirectory,
             "..", "..", "..", "..",
@@ -99,18 +103,17 @@ public class ChartUpscaleJsParityTests
         var matches = Regex.Matches(src,
             @"maxZoom:\s*19\s*\+\s*(?<lv>\d+)");
         await Assert.That(matches.Count)
-            .IsGreaterThanOrEqualTo(3)
-            .Because("expected map + OSM + OpenSeaMap to all use 19 + ChartUpscale.MaxLevels");
+            .IsEqualTo(1)
+            .Because("expected exactly one 'maxZoom: 19 + ChartUpscale.MaxLevels' " +
+                     "literal (the L.map call). Base layers must stay at the " +
+                     "unbumped 'maxZoom: 19' so they don't compete with the " +
+                     "upscaled chart past native.");
 
-        foreach (Match m in matches)
-        {
-            int lv = int.Parse(m.Groups["lv"].Value,
-                System.Globalization.CultureInfo.InvariantCulture);
-            await Assert.That(lv)
-                .IsEqualTo(ChartUpscale.MaxLevels)
-                .Because($"a 'maxZoom: 19 + N' literal in leafletInterop.js used N={lv} " +
-                         $"but ChartUpscale.MaxLevels is {ChartUpscale.MaxLevels}; " +
-                         "update both together");
-        }
+        int lv = int.Parse(matches[0].Groups["lv"].Value,
+            System.Globalization.CultureInfo.InvariantCulture);
+        await Assert.That(lv)
+            .IsEqualTo(ChartUpscale.MaxLevels)
+            .Because($"L.map maxZoom uses 19 + {lv} but ChartUpscale.MaxLevels " +
+                     $"is {ChartUpscale.MaxLevels}; update both together");
     }
 }
