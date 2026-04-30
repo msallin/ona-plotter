@@ -106,6 +106,12 @@ let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarn
 // rendering flag. Default true preserves the previous always-visible
 // behaviour for installs that haven't explicitly hidden it.
 let guardZoneVisible = true;
+// Outer dashed warning-ring visibility. Independent of
+// guardZoneVisible so the helm can show the danger ring alone for a
+// cleaner chart, or both rings for full advisory-band context.
+// Default true matches the previous always-drawn behaviour so
+// existing installs gain the toggle without an opt-in step.
+let guardZoneWarningRingVisible = true;
 
 // Harbor-mode flag. When true the AIS render path skips name labels,
 // COG vectors, and CPA overlays, the guard-zone ring is not drawn,
@@ -936,6 +942,17 @@ export function setGuardZoneVisible(visible) {
     drawGuardZone();
 }
 
+/**
+ * Toggle the outer dashed warning-band ring without touching the
+ * inner danger ring or the alarm pipeline. Helms who prefer the
+ * cleaner single-ring look turn this off; the default is on so
+ * the advisory band stays visually evident.
+ */
+export function setGuardZoneWarningRingVisible(visible) {
+    guardZoneWarningRingVisible = !!visible;
+    drawGuardZone();
+}
+
 // Best-effort layer removal that never throws. Some entries in the
 // per-context dicts can be null / undefined under tear-down races
 // (a concurrent updateAisTargets that just deleted the key, or a
@@ -1047,10 +1064,16 @@ function drawGuardZone() {
     // half the inner ring's opacity so it reads as advisory rather
     // than the same-weight ring as the danger band.
     //
-    // Hidden when warningFactor <= 1 (helm collapsed warning into
-    // danger band -- nothing meaningful to draw outside the inner
-    // ring) and when the computed warning radius would equal the
-    // inner radius pixel-for-pixel.
+    // Hidden when:
+    //   - the helm turned it off via Settings (guardZoneWarningRingVisible),
+    //   - warningFactor <= 1 (helm collapsed warning into danger
+    //     band -- nothing meaningful to draw outside the inner ring),
+    //   - the computed warning radius would equal the inner radius
+    //     pixel-for-pixel.
+    if (!guardZoneWarningRingVisible) {
+        if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }
+        return;
+    }
     const warnRadiusM = radiusM * Math.max(1.0, guardZoneWarningFactor);
     if (warnRadiusM <= radiusM + 0.5) {
         if (guardZoneWarningRing) { mapRef.removeLayer(guardZoneWarningRing); guardZoneWarningRing = null; }

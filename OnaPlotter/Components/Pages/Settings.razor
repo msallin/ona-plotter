@@ -327,6 +327,30 @@
                     <span class="input-group-text">nm</span>
                 </div>
                 <small class="text-muted">Alert when a vessel's projected closest approach is inside this radius.</small>
+                @* Outer warning-band ring toggle. The CPA classifier
+                   raises Warning when CPA is between the inner radius
+                   and radius * factor (default factor 2). Drawing the
+                   advisory ring at radius * factor lets the helm see
+                   why amber chips appear in the band -- helm-flagged
+                   the chips as "outside my guard ring" before the
+                   ring was drawn. The toggle is here so a helm
+                   running a busy chart can opt out for a cleaner
+                   single-ring look. *@
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           id="guard-zone-warning-ring-switch"
+                           checked="@AppSettings.GuardZoneWarningRingVisible"
+                           @onchange="(e) => OnGuardZoneWarningRingChanged(e)" />
+                    <label class="form-check-label" for="guard-zone-warning-ring-switch">
+                        Show outer warning ring
+                    </label>
+                </div>
+                <small class="text-muted d-block">
+                    Dashed ring at <code>radius × warning factor</code>
+                    (default 2×). Targets between the two rings raise
+                    an advisory CPA chip but no audible alarm; the
+                    audible alarm fires only inside the inner ring.
+                </small>
             </div>
         </div>
     </div>
@@ -955,6 +979,12 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetCpaAlarmThresholdAsync(val);
+    }
+
+    private async Task OnGuardZoneWarningRingChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetGuardZoneWarningRingVisibleAsync(on);
     }
 
     private async Task OnHeadingPrefChanged(bool magnetic)

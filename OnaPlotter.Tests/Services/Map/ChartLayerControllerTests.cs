@@ -129,6 +129,7 @@ public class ChartLayerControllerTests
         public bool LaylinesVisible => false;
         public bool AtonsVisible => true;
         public bool GuardZoneVisible => true;
+        public bool GuardZoneWarningRingVisible => true;
         public double WeatherOverlayOpacity => 0.5;
         public bool HarborMode => false;
         public bool BigType => false;
@@ -141,6 +142,7 @@ public class ChartLayerControllerTests
         public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetGuardZoneWarningRingVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetWeatherOverlayOpacityAsync(double v) => Task.CompletedTask;
         public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }
         public Task SetChartUpscaleLevelsAsync(int v) { ChartUpscaleLevels = v; return Task.CompletedTask; }

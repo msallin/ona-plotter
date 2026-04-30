@@ -1288,6 +1288,65 @@ public class AppSettingsServiceTests
     // Without these guards the JS decorator could see (e.g.) -1 and
     // the chart would render with a broken maxZoom calculation.
 
+    // === Guard zone warning ring ===
+    // Default true so existing installs gain the new advisory ring
+    // without an opt-in step. Persistence pinned because the toggle
+    // is the only path the helm has to opt out -- the value MUST
+    // round-trip across reloads.
+
+    [Test]
+    public async Task GuardZoneWarningRingVisible_DefaultsTrue()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.GuardZoneWarningRingVisible).IsTrue();
+    }
+
+    [Test]
+    public async Task GuardZoneWarningRingVisible_RoundTrips()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetGuardZoneWarningRingVisibleAsync(false);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.GuardZoneWarningRingVisible).IsFalse();
+        await Assert.That(await kv.GetAsync("guardZoneWarningRingVisible.v1"))
+            .IsEqualTo("false");
+    }
+
+    [Test]
+    public async Task SetGuardZoneWarningRingVisible_FiresOnSettingsChanged()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+
+        await svc.SetGuardZoneWarningRingVisibleAsync(false);
+
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GuardZoneWarningRingVisible_GarbageStored_TreatedAsFalse()
+    {
+        // LoadBool's contract: a stored value is interpreted as the
+        // string "true" or false-otherwise. Pin: a corrupted "yes"
+        // entry resolves as false. Same shape every other boolean
+        // setting on the service uses, so the helm's "off" choice
+        // can never be silently flipped back to on by a corrupt
+        // localStorage value AND the rare "weird stored value"
+        // path is documented as off.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("guardZoneWarningRingVisible.v1", "yes");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.GuardZoneWarningRingVisible).IsFalse();
+    }
+
     [Test]
     public async Task ChartUpscale_DefaultsWhenStorageEmpty()
     {
