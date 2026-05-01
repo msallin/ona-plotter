@@ -128,6 +128,13 @@ public class AlarmPublisherTests
         public Func<string, NotificationPayload, ApiResult<string>>? RaiseHandler { get; set; }
         public Func<string, NotificationPayload, Task<ApiResult<string>>>? AsyncRaiseHandler { get; set; }
 
+        /// <summary>Fires once for every <see cref="ClearAsync"/> call.
+        /// Lets tests await a clear deterministically instead of polling
+        /// the <see cref="Cleared"/> list with sleeps. Subscribers that
+        /// only care about a specific id filter on <c>e</c> in their
+        /// handler.</summary>
+        public event Action<string>? OnCleared;
+
         public Task<ApiResult> AcknowledgeAsync(string id, CancellationToken ct = default)
             => Task.FromResult(ApiResult.Ok);
         public Task<ApiResult> SilenceAsync(string id, CancellationToken ct = default)
@@ -147,6 +154,7 @@ public class AlarmPublisherTests
         public Task<ApiResult> ClearAsync(string id, CancellationToken ct = default)
         {
             Cleared.Add(id);
+            OnCleared?.Invoke(id);
             return Task.FromResult(ApiResult.Ok);
         }
     }
@@ -457,6 +465,12 @@ public class AlarmPublisherTests
         var raiseTcs = new TaskCompletionSource<ApiResult<string>>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         api.AsyncRaiseHandler = (_, _) => raiseTcs.Task;
+        // Signal that fires when ClearAsync runs for our late id;
+        // replaces a polling loop that previously slept up to a second
+        // checking the Cleared list every 10 ms.
+        var lateClearSeen = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        api.OnCleared += id => { if (id == "late-id") lateClearSeen.TrySetResult(); };
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
         mgr.Set(new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger));
@@ -470,17 +484,10 @@ public class AlarmPublisherTests
         // in _raised; fires ClearAsync directly.
         raiseTcs.SetResult(ApiResult<string>.Ok("late-id"));
 
-        // Bounded poll: wait up to 1s for the late-clear continuation
-        // to run. Yields drive both the threadpool and any Blazor-
-        // style sync context the test runner installed; under heavy
-        // parallel load three Task.Yield() calls aren't enough on
-        // every platform. The deadline keeps the test fast on CI
-        // while tolerating a busy scheduler.
-        var deadline = DateTime.UtcNow.AddSeconds(1);
-        while (DateTime.UtcNow < deadline && !api.Cleared.Contains("late-id"))
-        {
-            await Task.Delay(10);
-        }
+        // Wait for ClearAsync to run, with a generous deadline that
+        // only matters when the scheduler genuinely starves us. The
+        // happy path completes in microseconds.
+        await lateClearSeen.Task.WaitAsync(TimeSpan.FromSeconds(2));
         await Assert.That(api.Cleared).Contains("late-id");
     }
 }

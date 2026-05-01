@@ -42,15 +42,10 @@ public class AlarmManagerTests
             new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker()),
             new WindShiftAlarmRule(),
         ];
-        // Reflection access to the internal clock-injecting constructor.
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
-            culture: null)!;
+        // OnaPlotter has [InternalsVisibleTo("OnaPlotter.Tests")] so the
+        // internal clock-injecting ctor is reachable directly. The
+        // earlier reflection ceremony predated that wiring.
+        var mgr = new AlarmManager(rules, () => clock.Now);
         int fires = 0;
         mgr.OnAlarmChanged += _ => fires++;
         return (mgr, clock, settings, fires);
@@ -221,14 +216,7 @@ public class AlarmManagerTests
     {
         var clock = new MutableClock();
         var settings = new FakeSettings();
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
-            culture: null)!;
+        var mgr = new AlarmManager(rules, () => clock.Now);
         return (mgr, clock, settings);
     }
 
@@ -238,15 +226,7 @@ public class AlarmManagerTests
         NewMgrWithSettings(FakeSettings settings, params IAlarmRule[] rules)
     {
         var clock = new MutableClock();
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now),
-                   (IKeyValueStore?)null, (IAppSettings?)settings],
-            culture: null)!;
+        var mgr = new AlarmManager(rules, () => clock.Now, kv: null, settings: settings);
         return (mgr, clock, settings);
     }
 
@@ -705,16 +685,7 @@ public class AlarmManagerTests
     }
 
     private static AlarmManager NewMgrWithKv(IKeyValueStore kv, MutableClock clock, params IAlarmRule[] rules)
-    {
-        return (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now), kv],
-            culture: null)!;
-    }
+        => new(rules, () => clock.Now, kv);
 
     [Test]
     public async Task Snooze_PersistsToKv()
@@ -858,14 +829,7 @@ public class AlarmManagerTests
         var clock = new MutableClock();
         var settings = new FakeSettings();
         IAlarmRule[] rules = [rule];
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
-            culture: null)!;
+        var mgr = new AlarmManager(rules, () => clock.Now);
         return (mgr, clock, settings);
     }
 
@@ -1009,15 +973,7 @@ public class AlarmManagerTests
 
         var clock = new MutableClock();
         var rule = new StubRule("CPA", 200, AlarmSeverity.Danger, "vessels.urn:mrn:imo:mmsi:111");
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)new IAlarmRule[] { rule },
-                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
-            culture: null)!;
+        var mgr = new AlarmManager(new IAlarmRule[] { rule }, () => clock.Now, kv);
 
         await mgr.InitializeAsync();
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(1);
@@ -1039,15 +995,7 @@ public class AlarmManagerTests
         await kv.SetAsync("alarmSnoozes.v1", json);
 
         var clock = new MutableClock();
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)Array.Empty<IAlarmRule>(),
-                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
-            culture: null)!;
+        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), () => clock.Now, kv);
 
         await mgr.InitializeAsync();
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
@@ -1063,15 +1011,7 @@ public class AlarmManagerTests
         await kv.SetAsync("alarmSnoozes.v1", "{not-json");
 
         var clock = new MutableClock();
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)Array.Empty<IAlarmRule>(),
-                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
-            culture: null)!;
+        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), () => clock.Now, kv);
 
         await mgr.InitializeAsync();   // must not throw
         await Assert.That(mgr.SnoozedTargets.Count).IsEqualTo(0);
@@ -1087,15 +1027,7 @@ public class AlarmManagerTests
         // _initialized flag guards this.
         var kv = new CountingKv();
         var clock = new MutableClock();
-        var mgr = (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)Array.Empty<IAlarmRule>(),
-                   (Func<DateTime>)(() => clock.Now), (IKeyValueStore?)kv],
-            culture: null)!;
+        var mgr = new AlarmManager(Array.Empty<IAlarmRule>(), () => clock.Now, kv);
 
         await mgr.InitializeAsync();
         await mgr.InitializeAsync();

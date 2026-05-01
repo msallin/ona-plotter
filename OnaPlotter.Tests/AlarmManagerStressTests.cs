@@ -117,14 +117,7 @@ public class AlarmManagerStressTests
     ];
 
     private static AlarmManager NewManager(IAlarmRule[] rules, MutableClock clock) =>
-        (AlarmManager)Activator.CreateInstance(
-            typeof(AlarmManager),
-            bindingAttr: System.Reflection.BindingFlags.Instance
-                       | System.Reflection.BindingFlags.NonPublic
-                       | System.Reflection.BindingFlags.Public,
-            binder: null,
-            args: [(IEnumerable<IAlarmRule>)rules, (Func<DateTime>)(() => clock.Now)],
-            culture: null)!;
+        new(rules, () => clock.Now);
 
     private static NavigationData OwnNav(double lat, double lon, double cogRad, double sogMs)
     {

@@ -91,17 +91,7 @@ public class MultiInstancePlotterTests
             // is last so its emissions overlay if a (Title, TargetKey)
             // collides -- matches the production rule order.
             var allRules = new List<IAlarmRule>(localRules) { bridgeRule };
-            Manager = (AlarmManager)Activator.CreateInstance(
-                typeof(AlarmManager),
-                bindingAttr: System.Reflection.BindingFlags.Instance
-                           | System.Reflection.BindingFlags.NonPublic
-                           | System.Reflection.BindingFlags.Public,
-                binder: null,
-                args: [(IEnumerable<IAlarmRule>)allRules,
-                       (Func<DateTime>)(() => Clock.Now),
-                       (IKeyValueStore?)null,
-                       (IAppSettings?)null],
-                culture: null)!;
+            Manager = new AlarmManager(allRules, () => Clock.Now, kv: null, settings: null);
             Publisher = new AlarmPublisher(Manager, api, Tracker);
         }
 

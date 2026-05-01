@@ -15,7 +15,12 @@ namespace OnaPlotter.Tests;
 /// </summary>
 public class AnchorRadiusHeuristicFuzzTests
 {
-    private const int Iterations = 5000;
+    // 1000 iterations cover the (depth, last) input space densely enough
+    // that the seed-pinned random walk hits every guarded code path
+    // (NaN, infinity, int.MinValue/MaxValue, depth-driven vs fallback).
+    // The previous 5000 was a holdover from a debugging session and
+    // dominated the suite duration without buying additional coverage.
+    private const int Iterations = 1000;
     private const int Seed = 0x4E_C8_05_42;
 
     [Test]
