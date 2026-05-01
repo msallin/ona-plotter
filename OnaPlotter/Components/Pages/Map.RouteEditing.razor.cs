@@ -100,6 +100,12 @@ public partial class Map
         routeStatsTimer?.Dispose();
         routeStatsTimer = null;
         RemoveEditNavGuard();
+        // Clear the persisted draft: the helm explicitly threw the
+        // edit away, so the restore prompt should NOT show on next
+        // load. Best-effort -- a failure here just means the prompt
+        // appears once and the helm taps Discard to clean it up.
+        try { await RouteDraftStore.ClearAsync(); }
+        catch (Exception) { }
         if (_editJs is not null)
             await _editJs.StopRouteEditAsync();
 
@@ -131,6 +137,112 @@ public partial class Map
     // gesture (e.g. swipe-back) wants to call it -- it's a few lines
     // and removing it now would force a follow-up commit if the
     // gesture lands later.
+
+    /// <summary>App-start prompt: when a route draft survived the
+    /// previous session (save failed, accidental refresh, etc.),
+    /// ask the helm whether to restore it or discard. Skips
+    /// silently when no draft exists or it's degenerate (less than
+    /// 2 vertices). Restore enters the same edit mode the helm
+    /// would reach via Add Route or the Layers-panel Edit button;
+    /// Discard clears the draft and the prompt won't show again.
+    /// Cancel (Esc / backdrop click) keeps the draft for next
+    /// time -- the helm hasn't decided yet.</summary>
+    private async Task MaybeShowRouteDraftRestoreAsync()
+    {
+        RouteDraft? draft;
+        try { draft = await RouteDraftStore.LoadAsync(); }
+        catch (Exception) { return; }   // best-effort
+        if (draft is null || draft.Coords.Length < 2) return;
+
+        // Format "from N min ago" so the helm has a sense of how
+        // stale the work is. Falls back to a raw timestamp if the
+        // saved-at parse fails -- malformed but non-empty drafts
+        // are still better than nothing.
+        string when = "your last session";
+        if (DateTime.TryParse(draft.SavedAtIso,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var savedAt))
+        {
+            var ago = DateTime.UtcNow - savedAt;
+            when = ago.TotalMinutes < 1 ? "less than a minute ago"
+                : ago.TotalMinutes < 60 ? $"{(int)ago.TotalMinutes} min ago"
+                : ago.TotalHours < 24 ? $"{(int)ago.TotalHours} h ago"
+                : $"{(int)ago.TotalDays} d ago";
+        }
+
+        string nameOrFallback = string.IsNullOrWhiteSpace(draft.Name)
+            ? "(unnamed)"
+            : draft.Name;
+        string question = $"Restore unsaved route '{nameOrFallback}' "
+            + $"({draft.Coords.Length} waypoints, {when})?";
+        var choice = await Confirmations.ChooseAsync(question, ["Restore", "Discard"]);
+        if (choice == "Restore")
+        {
+            await RestoreRouteDraftAsync(draft);
+        }
+        else if (choice == "Discard")
+        {
+            try { await RouteDraftStore.ClearAsync(); }
+            catch (Exception) { }
+            Toasts.Info("Route draft discarded");
+        }
+        // Cancel (null) -> keep draft for next time. The helm
+        // hasn't decided yet.
+    }
+
+    /// <summary>Re-enter route-edit mode with the draft's coords +
+    /// name + (optional) source-route id. Path mirrors
+    /// <see cref="EditRoute"/> for an existing route or
+    /// <see cref="StartRouteEdit"/> for a fresh one; we don't call
+    /// either directly because both reset state we want to control
+    /// (StartRouteEdit clobbers the name; EditRoute requires a
+    /// SignalkRoute that may no longer exist server-side if the
+    /// helm deleted it from another plotter mid-edit).</summary>
+    private async Task RestoreRouteDraftAsync(RouteDraft draft)
+    {
+        if (_editJs is null)
+        {
+            Toasts.Error("Can't restore -- map isn't ready yet.");
+            return;
+        }
+        // If the draft references a server-side route, verify it
+        // still exists. A deleted-on-another-plotter source means
+        // we treat the draft as a "create new" with the saved
+        // coords -- losing the in-place link is the lesser evil
+        // vs. crashing the save flow against a non-existent id.
+        string? routeId = draft.RouteId;
+        if (!string.IsNullOrEmpty(routeId)
+            && !availableRoutes.Any(r => r.Id == routeId))
+        {
+            routeId = null;
+        }
+
+        fabMenuOpen = false;
+        routeEditMode = true;
+        routeEditId = routeId;
+        routeEditName = draft.Name ?? "";
+        routeEditOriginalName = null;
+        routeEditCoords = draft.Coords;
+        routeEditStats = $"{draft.Coords.Length} WP";   // refreshed by next poll tick
+        InstallEditNavGuard();
+        try
+        {
+            await _editJs.StartRouteEditAsync();
+            await _editJs.LoadRouteForEditAsync(draft.Coords);
+        }
+        catch (JSDisconnectedException) { return; }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            Toasts.Error($"Restore failed: {ex.Message}");
+            return;
+        }
+        routeStatsTimer = new System.Threading.Timer(
+            _ => _ = UpdateRouteStats(), null,
+            RouteStatsPollIntervalMs, RouteStatsPollIntervalMs);
+        await UpdateRouteStats();
+        Toasts.Success($"Restored route draft ({draft.Coords.Length} waypoints)");
+    }
 
     /// <summary>JS-invokable entry point for the "Edit" button on the
     /// route popup (click on a route polyline -> Edit). Looks up the
@@ -226,8 +338,44 @@ public partial class Map
         {
             routeEditCoords = coords;
             dirty = true;
+            // Persist a localStorage draft on every coords change while
+            // edit mode is active. The poll runs at RouteStatsPollIntervalMs
+            // (sub-second) so a save that fails (no network, not logged
+            // in, accidental refresh) loses at most one tick's worth of
+            // edit. Empty / single-point edits skip the save -- a
+            // helm who tapped once and walked away shouldn't get a
+            // restore prompt for nothing.
+            if (routeEditMode && coords.Length >= 1)
+            {
+                _ = PersistRouteDraftAsync(coords);
+            }
         }
         if (dirty) await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Fire-and-forget draft snapshot. Catches the
+    /// JSDisconnectedException / ObjectDisposedException race when
+    /// the page is being torn down mid-tick; localStorage write
+    /// failures (full disk, quota) silently degrade to "no
+    /// persistence this tick" -- the next tick will retry, and a
+    /// failed write is no worse than the pre-feature behaviour.</summary>
+    private async Task PersistRouteDraftAsync(double[][] coords)
+    {
+        try
+        {
+            var draft = new RouteDraft(
+                RouteId: routeEditId,
+                Name: routeEditName,
+                Coords: coords,
+                SavedAtIso: DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+            await RouteDraftStore.SaveAsync(draft);
+        }
+        catch (Exception)
+        {
+            // Best-effort persistence. The next coord change will
+            // retry; a permanent failure (storage disabled) just
+            // means the helm doesn't get the restore prompt.
+        }
     }
 
     private async Task RemoveRouteWaypoint(int index)
@@ -384,6 +532,13 @@ public partial class Map
             if (ok)
             {
                 Toasts.Success($"Saved route '{name}' ({coords.Length} waypoints)");
+                // Drop the persisted draft: the work is now safely
+                // on the server, so the restore prompt should NOT
+                // show on next load. Best-effort -- a failure here
+                // just means the prompt appears once and the helm
+                // taps Discard.
+                try { await RouteDraftStore.ClearAsync(); }
+                catch (Exception) { }
                 // Reload the list so the newly-saved route shows up
                 // in Layers / search / route-switcher. The route
                 // id we already have (from the server response or

@@ -14,6 +14,11 @@ builder.Services.AddSingleton(new HttpClient());
 // Storage + settings.
 builder.Services.AddSingleton<IKeyValueStore, LocalStorageKeyValueStore>();
 builder.Services.AddSingleton<IAppSettings, AppSettingsService>();
+// In-progress route-edit snapshots survive a page reload via
+// localStorage. The store is consulted on app start so a save that
+// failed mid-edit (no network, not logged in, accidental refresh)
+// can be recovered rather than silently lost.
+builder.Services.AddSingleton<IRouteDraftStore, RouteDraftStore>();
 // Detected once per session (navigator.hardwareConcurrency + UA).
 // Drives renderer / tile-prefetch decisions; no user-facing knob.
 builder.Services.AddSingleton<IClientCapabilities, ClientCapabilitiesService>();
