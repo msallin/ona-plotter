@@ -1,14 +1,19 @@
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using OnaPlotter.Components.Map.Layers;
 using OnaPlotter.Models;
+using OnaPlotter.Services;
 
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
-/// bUnit coverage for the Notes section in the Layers panel. Pins:
-/// list rendering, Focus callback wiring, Show-toggle wiring, and
-/// the empty-state (section hides itself entirely when no notes).
+/// bUnit coverage for the Notes section in the Layers panel. After
+/// the bbox-filter rework the section no longer hosts a global
+/// "Show" toggle; relevance is driven by the parent's bbox-filtered
+/// list. The row buttons (Focus / Go / Edit / Delete) all flow into
+/// EventCallbacks the Map page wires up. Tests pin the wiring + the
+/// IConfirmationService-driven Edit and Delete confirmation flows.
 /// </summary>
 public class NotesSectionTests
 {
@@ -25,6 +30,19 @@ public class NotesSectionTests
         return n;
     }
 
+    /// <summary>Test scaffolding: register a fresh
+    /// <see cref="FakeConfirmationService"/> in DI so the
+    /// section's @inject resolves. Mirrors WaypointsSectionTests'
+    /// Context helper so a future change to either section's
+    /// confirmation flow doesn't drift between the two.</summary>
+    private static (Bunit.TestContext ctx, FakeConfirmationService confirm) Context()
+    {
+        var ctx = new Bunit.TestContext();
+        var confirm = new FakeConfirmationService();
+        ctx.Services.AddSingleton<IConfirmationService>(confirm);
+        return (ctx, confirm);
+    }
+
     // Sections render collapsed by default (UX principle: panel opens
     // compact). Every test below that asserts on inner content first
     // clicks the header to expand.
@@ -34,7 +52,8 @@ public class NotesSectionTests
     [Test]
     public async Task EmptyList_SectionHidden()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, Array.Empty<SignalkNote>()));
 
@@ -46,7 +65,8 @@ public class NotesSectionTests
     [Test]
     public async Task NotesPresent_RendersTitleAndCount()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp patch"), Note("n2", "Reef") }));
         Expand(cut);
@@ -60,7 +80,8 @@ public class NotesSectionTests
     [Test]
     public async Task UntitledNote_ShownAsPlaceholder()
     {
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "") }));
         Expand(cut);
@@ -71,8 +92,9 @@ public class NotesSectionTests
     [Test]
     public async Task DescriptionTruncated_ToSixtyChars()
     {
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var longDesc = new string('x', 80);
-        using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Title", desc: longDesc) }));
         Expand(cut);
@@ -87,35 +109,134 @@ public class NotesSectionTests
     public async Task FocusButton_InvokesCallback()
     {
         SignalkNote? focused = null;
-        using var ctx = new Bunit.TestContext();
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
             .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkNote>(
                 this, n => focused = n)));
         Expand(cut);
 
-        cut.Find("button.map-btn").Click();
+        // Focus is the first action button (Focus / Go / Edit /
+        // Delete order). The CrudSection scrollable rows render
+        // buttons inside .crud-row; we pin the BUTTON title rather
+        // than relying on order so a future palette tweak (e.g.
+        // re-shuffling Focus to second position) doesn't false-fail.
+        cut.FindAll("button[title^='Center the map']")[0].Click();
 
         await Assert.That(focused).IsNotNull();
         await Assert.That(focused!.Id).IsEqualTo("n1");
     }
 
     [Test]
-    public async Task VisibleToggle_InvokesCallback_WithToggledValue()
+    public async Task GoButton_InvokesNavigateCallback()
     {
-        bool? received = null;
-        using var ctx = new Bunit.TestContext();
+        // The Go button feeds the Map page's NavigateToNote, which
+        // PUTs the note's lat/lon as the SignalK course destination.
+        // Tested in isolation here -- the section just bubbles the
+        // SignalkNote up. End-to-end coverage of the destination
+        // PUT lives in the (future) NavigateToNote tests on the
+        // page.
+        SignalkNote? navigated = null;
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
+        var cut = ctx.RenderComponent<NotesSection>(p => p
+            .Add(x => x.Notes, new[] { Note("n1", "Reef") })
+            .Add(x => x.OnNavigate, EventCallback.Factory.Create<SignalkNote>(
+                this, n => navigated = n)));
+        Expand(cut);
+
+        cut.FindAll("button[title^='Set this note']")[0].Click();
+
+        await Assert.That(navigated).IsNotNull();
+        await Assert.That(navigated!.Id).IsEqualTo("n1");
+    }
+
+    [Test]
+    public async Task EditButton_FiresRename_WithTrimmedTitle()
+    {
+        // PromptAsync returns the new title when the helm confirms;
+        // the section trims and re-fires only when the trimmed value
+        // differs from the current title (a no-change rename would
+        // bump the resource's last-modified timestamp for nothing).
+        (SignalkNote note, string title)? renamed = null;
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoPromptValue = "  Renamed Title  ";
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
-            .Add(x => x.Visible, true)
-            .Add(x => x.OnToggleVisible, EventCallback.Factory.Create<bool>(
-                this, v => received = v)));
+            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkNote, string)>(
+                this, t => renamed = t)));
+        Expand(cut);
 
-        // Clicking the checkbox (currently checked=true) fires with the new
-        // value. bUnit's Change event simulates the browser's change flow.
-        var checkbox = cut.Find("input[type=checkbox]");
-        await checkbox.ChangeAsync(new Microsoft.AspNetCore.Components.ChangeEventArgs { Value = false });
+        cut.FindAll("button[title^='Rename this note']")[0].Click();
+        // Wait one render tick for the async PromptAsync round-trip.
+        await Task.Delay(10);
 
-        await Assert.That(received).IsFalse();
+        await Assert.That(renamed).IsNotNull();
+        await Assert.That(renamed!.Value.note.Id).IsEqualTo("n1");
+        await Assert.That(renamed.Value.title).IsEqualTo("Renamed Title");
+    }
+
+    [Test]
+    public async Task EditButton_NoChange_DoesNotFireRename()
+    {
+        // Helm types the existing title back -- common when they
+        // open the prompt to read the title and dismiss with Enter.
+        // Don't fire OnRename for a no-op edit; the round-trip would
+        // add nothing but a "renamed" toast that's confusing.
+        (SignalkNote note, string title)? renamed = null;
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoPromptValue = "Kelp";
+        var cut = ctx.RenderComponent<NotesSection>(p => p
+            .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
+            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkNote, string)>(
+                this, t => renamed = t)));
+        Expand(cut);
+
+        cut.FindAll("button[title^='Rename this note']")[0].Click();
+        await Task.Delay(10);
+
+        await Assert.That(renamed).IsNull();
+    }
+
+    [Test]
+    public async Task DeleteButton_FiresAfterConfirm()
+    {
+        SignalkNote? deleted = null;
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoConfirm = true;
+        var cut = ctx.RenderComponent<NotesSection>(p => p
+            .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
+            .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkNote>(
+                this, n => deleted = n)));
+        Expand(cut);
+
+        cut.FindAll("button[title='Delete note']")[0].Click();
+        await Task.Delay(10);
+
+        await Assert.That(deleted).IsNotNull();
+        await Assert.That(deleted!.Id).IsEqualTo("n1");
+    }
+
+    [Test]
+    public async Task DeleteButton_DeclinedConfirm_DoesNothing()
+    {
+        SignalkNote? deleted = null;
+        var (ctx, confirm) = Context();
+        using var _ctx = ctx;
+        confirm.AutoConfirm = false;
+        var cut = ctx.RenderComponent<NotesSection>(p => p
+            .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
+            .Add(x => x.OnDelete, EventCallback.Factory.Create<SignalkNote>(
+                this, n => deleted = n)));
+        Expand(cut);
+
+        cut.FindAll("button[title='Delete note']")[0].Click();
+        await Task.Delay(10);
+
+        await Assert.That(deleted).IsNull();
     }
 }

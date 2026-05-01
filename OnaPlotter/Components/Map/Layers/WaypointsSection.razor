@@ -19,6 +19,9 @@
             <div class="chart-name">@(wp.Name ?? ShortId(wp.Id))</div>
         </div>
         <button class="map-btn route-action-btn"
+                @onclick="() => OnFocus.InvokeAsync(wp)"
+                title="Center the map on this waypoint">Focus</button>
+        <button class="map-btn route-action-btn"
                 @onclick="() => OnNavigate.InvokeAsync(wp)"
                 title="Navigate to this waypoint">Go</button>
         <button class="map-btn route-action-btn"
@@ -32,6 +35,11 @@
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> Waypoints { get; set; } = [];
+    /// <summary>Center the map on the waypoint's lat/lon and open its
+    /// popup. Mirrors the Notes section's Focus + the Routes section's
+    /// equivalent so all three "go look at this thing" affordances
+    /// behave the same.</summary>
+    [Parameter] public EventCallback<SignalkWaypoint> OnFocus { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigate { get; set; }
 
     /// <summary>Fires with the waypoint + new name after the user

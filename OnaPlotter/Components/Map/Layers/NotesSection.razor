@@ -1,9 +1,14 @@
 @using OnaPlotter.Models
+@using OnaPlotter.Services
+@inject IConfirmationService Confirmations
 
-@* Server-stored notes with a "Focus" button that pans the map to the
-   note and opens its popup. The whole section can be hidden (global
-   visibility toggle in the header) so a chart covered in old notes
-   doesn't drown the primary chart data. *@
+@* Server-stored notes filtered to the current viewport. Each row
+   has Focus (centre + popup), Go (route to the note's lat/lon via
+   the SignalK course-destination PUT), Edit (rename via the shared
+   confirmation prompt), and Delete (with confirm). The previous
+   global "Show" toggle is gone -- helms field-tested that the
+   bbox-filter is the natural relevance cue, and the global hide
+   was rarely used once notes started being created at all. *@
 
 <CrudSection TItem="SignalkNote"
              Title="Notes"
@@ -11,15 +16,6 @@
              ItemKey="n => n.Id"
              LayerFilter="@LayerFilter"
              MatchesFilter="MatchesNote">
-    <HeaderExtras>
-        <label class="notes-visible-toggle"
-               title="@(Visible ? "Hide all notes on map" : "Show all notes on map")"
-               @onclick:stopPropagation>
-            <input type="checkbox" checked="@Visible"
-                   @onchange="e => OnToggleVisible.InvokeAsync((bool)(e.Value ?? false))" />
-            <span>Show</span>
-        </label>
-    </HeaderExtras>
     <RowTemplate Context="n">
         <div class="chart-item-body">
             <div class="chart-name">@(string.IsNullOrWhiteSpace(n.Title) ? "(untitled)" : n.Title)</div>
@@ -28,16 +24,37 @@
                 <div class="chart-desc">@Truncate(n.Description!, 60)</div>
             }
         </div>
-        <button class="map-btn" style="font-size:0.65rem; padding:2px 8px; min-width:0;"
-                @onclick="() => OnFocus.InvokeAsync(n)">Focus</button>
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnFocus.InvokeAsync(n)"
+                title="Center the map on this note">Focus</button>
+        <button class="map-btn route-action-btn"
+                @onclick="() => OnNavigate.InvokeAsync(n)"
+                title="Set this note's position as the navigation destination">Go</button>
+        <button class="map-btn route-action-btn"
+                @onclick="() => PromptEdit(n)"
+                title="Rename this note">Edit</button>
+        <button class="map-btn route-action-btn route-action-danger"
+                @onclick="() => ConfirmDelete(n)"
+                title="Delete note">Delete</button>
     </RowTemplate>
 </CrudSection>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<SignalkNote> Notes { get; set; } = [];
-    [Parameter] public bool Visible { get; set; } = true;
     [Parameter] public EventCallback<SignalkNote> OnFocus { get; set; }
-    [Parameter] public EventCallback<bool> OnToggleVisible { get; set; }
+    /// <summary>Fires when the helm taps Go: parent issues a course
+    /// PUT against the note's lat/lon (no need to materialise a
+    /// throwaway waypoint first because SignalK's course API accepts
+    /// a position destination directly).</summary>
+    [Parameter] public EventCallback<SignalkNote> OnNavigate { get; set; }
+    /// <summary>Fires after the helm confirms a title rename. Parent
+    /// does the PUT and refreshes the list so the new title appears
+    /// without a manual reload. Description editing is intentionally
+    /// out of scope here -- the layers panel is the "rename real
+    /// quick" surface; full edits belong in a dedicated dialog
+    /// (separate work).</summary>
+    [Parameter] public EventCallback<(SignalkNote note, string newTitle)> OnRename { get; set; }
+    [Parameter] public EventCallback<SignalkNote> OnDelete { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
     private static string Truncate(string s, int n)
@@ -46,4 +63,30 @@
     private static bool MatchesNote(SignalkNote n, string filter) =>
         (n.Title?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
         || (n.Description?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    /// <summary>Single-field rename via the shared confirmation
+    /// prompt. Mirrors WaypointsSection's PromptEdit shape so a
+    /// helm who knows one knows the other. Cancel = no-op; an
+    /// unchanged title is also a no-op (avoids a PUT that does
+    /// nothing but bumps the resource's last-modified
+    /// timestamp).</summary>
+    private async Task PromptEdit(SignalkNote n)
+    {
+        var newTitle = await Confirmations.PromptAsync(
+            "Note title:",
+            initialValue: n.Title ?? "",
+            confirmLabel: "Save");
+        if (newTitle is null) return;
+        var trimmed = newTitle.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+        if (trimmed == (n.Title ?? "")) return;
+        await OnRename.InvokeAsync((n, trimmed));
+    }
+
+    private async Task ConfirmDelete(SignalkNote n)
+    {
+        bool ok = await Confirmations.ConfirmAsync(
+            $"Delete note '{(string.IsNullOrWhiteSpace(n.Title) ? "(untitled)" : n.Title)}'?");
+        if (ok) await OnDelete.InvokeAsync(n);
+    }
 }
