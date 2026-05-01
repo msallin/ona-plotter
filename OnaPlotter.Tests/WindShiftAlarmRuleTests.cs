@@ -186,6 +186,49 @@ public class WindShiftAlarmRuleTests
     }
 
     [Test]
+    public async Task Null_Tws_After_Live_Suppresses_Like_LightWind()
+    {
+        // signalk-derived-data publishes TWS=null on ticks where it
+        // can't derive the value (SOG missing / zero). Once the rule
+        // has seen TWS go live, a subsequent null is functionally
+        // identical to "below threshold": the wind data is unreliable
+        // and the gate is supposed to suppress on unreliable data.
+        // Pin both: the alarm is suppressed AND the anchor resets so
+        // when real wind returns the rule re-anchors fresh.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        // Tick 1: TWS=8 kn live; rule anchors at 90 deg.
+        rule.Check(Ctx(NavWithTwd(90, twsKn: 8.0), t0, minTws: 3));
+        // Tick 2: TWS goes null (SK plugin can't derive); TWD jumps
+        // 60 deg from heading noise. Without the fix this would fire
+        // a "60 deg shift" alarm; with the fix it suppresses.
+        var alarm = rule.Check(Ctx(NavWithTwd(150), t0.AddMinutes(5), minTws: 3));
+        await Assert.That(alarm).IsNull();
+
+        // Tick 3: real wind returns at 8 kn, but the anchor was
+        // dropped on the null tick, so this is a fresh first-armed
+        // sample -- no alarm against the pre-null anchor.
+        var rearmed = rule.Check(Ctx(NavWithTwd(140, twsKn: 8.0), t0.AddMinutes(10), minTws: 3));
+        await Assert.That(rearmed).IsNull();
+    }
+
+    [Test]
+    public async Task Null_Tws_Without_Prior_Live_Bypasses_Gate()
+    {
+        // Same scenario as Missing_Tws_Path_Bypasses_Gate but with
+        // an explicit null on the second tick instead of just absent.
+        // The rule has never seen TWS go live, so the null reads as
+        // "this server doesn't publish TWS" rather than "becalmed";
+        // the bypass keeps installs without TWS publishing from
+        // losing every wind-shift alarm under a >0 minTws setting.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        rule.Check(Ctx(NavWithTwd(90), t0, minTws: 3));
+        var alarm = rule.Check(Ctx(NavWithTwd(120), t0.AddMinutes(5), minTws: 3));
+        await Assert.That(alarm).IsNotNull();
+    }
+
+    [Test]
     public async Task Min_Tws_Zero_Disables_Gate_Even_With_Tws_Reading()
     {
         // minTws = 0 is the explicit "off switch": the rule arms

@@ -15,6 +15,18 @@ namespace OnaPlotter.Services.Alarms;
 /// near-zero wind samples is not a tactical event. Dropping the anchor
 /// means that when real wind returns, the next lookback window starts
 /// fresh rather than measuring against a stale before-becalmed bearing.
+///
+/// <para>Null TWS handling: signalk-derived-data publishes
+/// <c>environment.wind.speedTrue</c> = null on ticks where it can't
+/// derive TWS (typically: SOG is missing or zero, so AWS-minus-boat-
+/// motion can't be computed). That null is functionally identical to
+/// "below threshold" -- the wind data is unreliable and the helm
+/// asked the gate to suppress on unreliable data. We track whether
+/// TWS has EVER been live this session: once we've seen a non-null
+/// TWS, a later null is treated as below-threshold (suppressed).
+/// First-call null (TWS path absent) preserves the bypass so installs
+/// without TWS publishing don't silently lose every wind-shift alarm.
+/// </para>
 /// </summary>
 public sealed class WindShiftAlarmRule : IAlarmRule
 {
@@ -30,26 +42,47 @@ public sealed class WindShiftAlarmRule : IAlarmRule
 
     private double? _anchorDeg;
     private DateTime _anchorAt = DateTime.MinValue;
+    /// <summary>Sticks to true on first non-null TWS observation.
+    /// Distinguishes "server doesn't publish TWS at all" (always-null,
+    /// bypass the gate) from "TWS was live but went null this tick"
+    /// (becalmed / SOG dropped, suppress the alarm).</summary>
+    private bool _anyTwsSeen;
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
         var twdRad = ctx.Data.WindDirectionTrue;
         if (twdRad is null) return null;
 
-        // Light-wind gate. Only enforced when the user opted in (>0 kn)
-        // AND the server actually publishes TWS -- a missing TWS path
-        // must not silently suppress every shift on installs that don't
-        // emit environment.wind.speedTrue.
+        // Light-wind gate. Only enforced when the user opted in (>0 kn).
+        // A missing TWS path (never seen in this session) bypasses --
+        // installs that don't publish TWS shouldn't silently lose all
+        // wind-shift alarms. A null after we've seen TWS go live is
+        // treated as below-threshold: the SK plugin emits null when it
+        // can't derive TWS (no SOG, becalmed), which is exactly the
+        // condition the gate is meant to suppress.
         var minTwsKn = ctx.Settings.WindShiftMinTrueWindSpeed;
-        if (minTwsKn > 0 && ctx.Data.WindSpeedTrue is double twsMs)
+        if (ctx.Data.WindSpeedTrue is double twsMsLive)
         {
-            double twsKn = twsMs * Format.MsToKnots;
-            if (twsKn < minTwsKn)
+            _anyTwsSeen = true;
+            if (minTwsKn > 0)
             {
-                _anchorDeg = null;
-                _anchorAt = DateTime.MinValue;
-                return null;
+                double twsKn = twsMsLive * Format.MsToKnots;
+                if (twsKn < minTwsKn)
+                {
+                    _anchorDeg = null;
+                    _anchorAt = DateTime.MinValue;
+                    return null;
+                }
             }
+        }
+        else if (minTwsKn > 0 && _anyTwsSeen)
+        {
+            // TWS path is publishing nulls AFTER having been live --
+            // treat as below-threshold so the helm doesn't get a
+            // shift alarm fired on heading-noise TWD while becalmed.
+            _anchorDeg = null;
+            _anchorAt = DateTime.MinValue;
+            return null;
         }
 
         double twdDeg = twdRad.Value * 180.0 / Math.PI;
