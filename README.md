@@ -280,7 +280,7 @@ Browser (Blazor WASM)                          SignalK server
 │    Cpa, Colregs, Format            │        │                      │
 │                                    │        │                      │
 │  wwwroot/js/leafletInterop.js      │        │                      │
-│  wwwroot/js/audioAlert.js          │        │                      │
+│  wwwroot/js/platform/audioAlert.js │        │                      │
 └────────────────────────────────────┘        └──────────────────────┘
 ```
 

@@ -132,7 +132,7 @@
                (tab mode) cannot, and matching Freeboard-SK's behaviour
                we simply hide the button there; the user installs the
                app via Share -> Add to Home Screen to get a true
-               fullscreen launcher. See wwwroot/js/fullscreen.js
+               fullscreen launcher. See wwwroot/js/platform/fullscreen.js
                ::isSupported(). Standalone PWAs also hide the button
                because they're already fullscreen at launch.
                NO Blazor @onclick -- fullscreen.js wires a native
@@ -663,7 +663,7 @@
             try
             {
                 var viewport = await JS.InvokeAsync<IJSObjectReference>(
-                    "import", "./js/viewport.js");
+                    "import", "./js/platform/viewport.js");
                 bool isMobile = await viewport.InvokeAsync<bool>("isMobile");
                 await Settings.ApplyMobileFirstRunDefaultsAsync(isMobile);
                 await viewport.DisposeAsync();
@@ -675,13 +675,13 @@
             // OnAlarmsChanged event fires if anything was loaded.
             await Alarms.InitializeAsync();
             StateHasChanged();
-            audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/audioAlert.js");
-            fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fullscreen.js");
+            audioModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/audioAlert.js");
+            fsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/fullscreen.js");
             // Theme module applies theme + night-mode classes to <html>
             // so body background + anything outside .page honours the
             // palette. Both writes go through the helper's whitelist so
             // a corrupt Settings store can't smuggle a class injection.
-            themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/themeApply.js");
+            themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/themeApply.js");
             try
             {
                 await themeModule.InvokeVoidAsync("setTheme", Settings.Theme);
@@ -713,7 +713,7 @@
             // mid-watch doesn't drop the screen lock. Lives in its own
             // tiny module (wakeLock.js) so importing doesn't drag the
             // whole Leaflet bundle in.
-            wakeLockModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/wakeLock.js");
+            wakeLockModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/wakeLock.js");
             if (Settings.KeepScreenAwake)
             {
                 try { await wakeLockModule.InvokeVoidAsync("setWakeLock", true); }

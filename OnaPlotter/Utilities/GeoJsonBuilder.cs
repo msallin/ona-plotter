@@ -132,7 +132,7 @@ internal static class GeoJsonBuilder
 
     /// <summary>Outer-ring-only polygon (no holes). Caller provides
     /// the ring already in GeoJSON [lon, lat] order (that's how
-    /// RegionApi.BuildCircleRing emits it, so no flip needed here).
+    /// CircleGeometry.BuildRing emits it, so no flip needed here).
     /// The wrapping <c>coordinates</c> is the GeoJSON
     /// <c>array-of-rings</c> shape.</summary>
     public static object Polygon(double[][] geoJsonRing) =>
