@@ -21,8 +21,8 @@ public sealed class MapResourceJs : IMapResourceJs
 
     public void MarkDisposed() => _disposed = true;
 
-    public Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name)
-        => InvokeSafe("addWaypointMarker", id, lat, lon, name);
+    public Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name, string? createdAtIso)
+        => InvokeSafe("addWaypointMarker", id, lat, lon, name, createdAtIso);
 
     public Task RemoveWaypointMarkerAsync(string id)
         => InvokeSafe("removeWaypointMarker", id);

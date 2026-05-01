@@ -49,7 +49,9 @@ public sealed class MapResourceController
         {
             if (wp.Latitude is double lat && wp.Longitude is double lon)
             {
-                await _resourceJs.AddWaypointMarkerAsync(wp.Id, lat, lon, wp.Name);
+                await _resourceJs.AddWaypointMarkerAsync(
+                    wp.Id, lat, lon, wp.Name,
+                    wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
             }
         }
         // Notes use a bare position (not a GeoJSON Feature);

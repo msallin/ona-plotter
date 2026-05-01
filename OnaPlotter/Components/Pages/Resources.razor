@@ -151,6 +151,9 @@
                                 <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => ExportWaypoint(w)"
                                         title="Export (asks GPX or GeoJSON)">Export</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => ShareWaypoint(w)"
+                                        title="Share via system share or copy GeoJSON to clipboard">Share</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => DeleteWaypoint(w.Id, w.Name)">Delete</button>
                             </div>
@@ -570,6 +573,57 @@
             ? ResourceExporter.WaypointGeoJson(w)
             : ResourceExporter.WaypointGpx(w);
         await DownloadAsync(content, NameOrId(w.Name, w.Id), format);
+    }
+
+    /// <summary>Resources-page Share for waypoints. Mirror of
+    /// <see cref="ShareNote"/>: GeoJSON Feature with name +
+    /// createdAt properties, routed through fileTransfer.shareOrCopy
+    /// (system share sheet on iPad / Android, clipboard on desktop).
+    /// </summary>
+    private async Task ShareWaypoint(SignalkWaypoint w)
+    {
+        if (w.Latitude is not double lat || w.Longitude is not double lon)
+        {
+            Toasts.Error("Nothing to share -- this waypoint has no position.");
+            return;
+        }
+        var feature = new
+        {
+            type = "Feature",
+            geometry = new
+            {
+                type = "Point",
+                coordinates = new[] { lon, lat },
+            },
+            properties = new
+            {
+                name = w.Name,
+                createdAt = w.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            },
+        };
+        string json = System.Text.Json.JsonSerializer.Serialize(feature,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string title = NameOrId(w.Name, w.Id);
+            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Copied to clipboard"); break;
+                case "cancelled":   /* helm tapped cancel */ break;
+                default:            Toasts.Error("Couldn't share or copy."); break;
+            }
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
     }
 
     private async Task ExportNote(SignalkNote n)

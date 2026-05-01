@@ -23,23 +23,38 @@ internal static class GeoJsonBuilder
     /// <c>properties</c> block that mirrors the name and carries a
     /// description (empty string when not provided, which SK + Freeboard
     /// expect over a missing key).
+    /// <para>Optional <paramref name="createdAt"/> rides as a top-level
+    /// custom field (not part of the SK schema, but resources-fs
+    /// round-trips arbitrary fields). When null the field is omitted
+    /// entirely so existing servers / clients see no change in
+    /// shape.</para>
     /// </summary>
-    public static object FeatureBody(string name, object geometry, string? description = null)
+    public static object FeatureBody(string name, object geometry, string? description = null, DateTime? createdAt = null)
     {
-        return new
+        var feature = new
         {
-            name,
-            feature = new
+            type = "Feature",
+            geometry,
+            properties = new
             {
-                type = "Feature",
-                geometry,
-                properties = new
-                {
-                    name,
-                    description = description ?? "",
-                },
+                name,
+                description = description ?? "",
             },
         };
+        // Two record shapes (with-createdAt vs without) so JSON output
+        // doesn't carry a literal "createdAt": null. Anonymous objects
+        // are the simplest way to keep the System.Text.Json output
+        // stable without standing up named record types.
+        if (createdAt is DateTime t)
+        {
+            return new
+            {
+                name,
+                feature,
+                createdAt = t.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            };
+        }
+        return new { name, feature };
     }
 
     /// <summary>
