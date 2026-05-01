@@ -16,12 +16,12 @@ public sealed class TrackApi : ITrackApi
     /// (no point with no fix).</summary>
     private static readonly string[] RichPaths =
     [
-        "navigation.position",
-        "navigation.speedOverGround",
-        "navigation.courseOverGroundTrue",
-        "navigation.headingTrue",
-        "environment.wind.speedTrue",
-        "environment.wind.angleTrueWater",
+        OnaPlotter.Utilities.SkPaths.Navigation.Position,
+        OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround,
+        OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundTrue,
+        OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue,
+        OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue,
+        OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater,
     ];
 
     public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
@@ -54,7 +54,7 @@ public sealed class TrackApi : ITrackApi
         string resExpr = string.IsNullOrWhiteSpace(resolution) ? "30s" : resolution;
 
         var url = _baseUrl.Combine(SignalKUrls.HistoryValuesPath)
-            + $"?paths={Uri.EscapeDataString("navigation.position")}"
+            + $"?paths={Uri.EscapeDataString(OnaPlotter.Utilities.SkPaths.Navigation.Position)}"
             + $"&duration={Uri.EscapeDataString(isoDuration)}"
             + $"&resolution={Uri.EscapeDataString(resExpr)}";
 
@@ -201,12 +201,12 @@ public sealed class TrackApi : ITrackApi
                 var path = pathEl.GetString();
                 switch (path)
                 {
-                    case "navigation.position": posIdx = colNum; break;
-                    case "navigation.speedOverGround": sogIdx = colNum; break;
-                    case "navigation.courseOverGroundTrue": cogIdx = colNum; break;
-                    case "navigation.headingTrue": hdgIdx = colNum; break;
-                    case "environment.wind.speedTrue": twsIdx = colNum; break;
-                    case "environment.wind.angleTrueWater": twaIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Navigation.Position: posIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround: sogIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundTrue: cogIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue: hdgIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue: twsIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater: twaIdx = colNum; break;
                 }
             }
             colNum++;

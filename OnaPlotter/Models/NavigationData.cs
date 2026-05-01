@@ -249,19 +249,19 @@ public sealed class NavigationData
             // 3. Add a display card in Dashboard.razor
             switch (path)
             {
-                case "navigation.speedOverGround":
+                case OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround:
                     SpeedOverGround = value;
                     break;
-                case "navigation.courseOverGroundTrue":
+                case OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundTrue:
                     CourseOverGroundTrue = value;
                     break;
-                case "navigation.courseOverGroundMagnetic":
+                case OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundMagnetic:
                     CourseOverGroundMagnetic = value;
                     break;
-                case "navigation.headingTrue":
+                case OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue:
                     HeadingTrue = value;
                     break;
-                case "navigation.headingMagnetic":
+                case OnaPlotter.Utilities.SkPaths.Navigation.HeadingMagnetic:
                     HeadingMagnetic = value;
                     break;
                 case "environment.depth.belowTransducer":
@@ -279,26 +279,26 @@ public sealed class NavigationData
                     // publish both and .current is the live reading.
                     DraftFromSignalK ??= value;
                     break;
-                case "environment.wind.angleApparent":
+                case OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleApparent:
                     WindAngleApparent = value;
                     break;
-                case "environment.wind.speedApparent":
+                case OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedApparent:
                     WindSpeedApparent = value;
                     break;
-                case "environment.wind.angleTrueWater":
+                case OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater:
                     WindAngleTrue = value;
                     break;
-                case "environment.wind.speedTrue":
+                case OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue:
                     WindSpeedTrue = value;
                     break;
-                case "environment.wind.directionTrue":
+                case OnaPlotter.Utilities.SkPaths.Environment.Wind.DirectionTrue:
                     WindDirectionTrue = value;
                     break;
-                case "navigation.anchor.maxRadius":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.MaxRadius:
                     AnchorMaxRadius = value;
                     AnchorRadiusUpdatedUtc = _now();
                     break;
-                case "navigation.anchor.currentRadius":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.CurrentRadius:
                     AnchorCurrentRadius = value;
                     AnchorRadiusUpdatedUtc = _now();
                     // Track the peak observed distance so the helm can
@@ -311,19 +311,19 @@ public sealed class NavigationData
                         AnchorPeakRadius = value;
                     }
                     break;
-                case "navigation.course.calcValues.distance":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.Distance:
                     CourseNextPointDistance = value;
                     break;
-                case "navigation.course.calcValues.bearingTrue":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.BearingTrue:
                     CourseNextPointBearing = value;
                     break;
-                case "navigation.course.calcValues.timeToGo":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.TimeToGo:
                     CourseNextPointTimeToGo = value;
                     break;
-                case "navigation.course.calcValues.velocityMadeGood":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.VelocityMadeGood:
                     CourseNextPointVmg = value;
                     break;
-                case "navigation.course.calcValues.crossTrackError":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.CrossTrackError:
                     CrossTrackError = value;
                     break;
                 case "steering.autopilot.target.headingTrue":
@@ -361,20 +361,20 @@ public sealed class NavigationData
                 // "Metres left to cover for the rest of the active
                 // route". course-provider-plugin computes this on the
                 // SK server + publishes it here; we consume it straight.
-                case "navigation.course.calcValues.route.distance":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.RouteDistance:
                     ActiveRouteDistanceRemaining = value;
                     break;
-                case "navigation.course.calcValues.route.timeToGo":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.RouteTimeToGo:
                     ActiveRouteTimeToGo = value;
                     break;
                 // pointIndex / pointTotal come as numbers too; route them
                 // through the number-apply path and cast back to int at
                 // the UI boundary so NaN / fractional server quirks don't
                 // trip the hot path.
-                case "navigation.course.activeRoute.pointIndex":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex:
                     ActiveRoutePointIndex = (int)value;
                     break;
-                case "navigation.course.activeRoute.pointTotal":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal:
                     ActiveRoutePointTotal = (int)value;
                     break;
                 default:

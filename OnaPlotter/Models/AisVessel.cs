@@ -90,7 +90,7 @@ public sealed class AisVessel
             // the short leaf names (position / course / speed) under their
             // own radars.*.targets.* subtree. Accept both for the same fields
             // so every consumer downstream sees a uniform target shape.
-            case "navigation.position":
+            case OnaPlotter.Utilities.SkPaths.Navigation.Position:
             case "position":
                 if (rawValue is JsonElement posEl && posEl.ValueKind == JsonValueKind.Object
                     && posEl.TryGetProperty("latitude", out var lat)
@@ -104,21 +104,21 @@ public sealed class AisVessel
                 }
                 return false;
 
-            case "navigation.headingTrue":
+            case OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue:
                 Heading = ToDouble(rawValue);
                 return Heading is not null;
 
-            case "navigation.courseOverGroundTrue":
+            case OnaPlotter.Utilities.SkPaths.Navigation.CourseOverGroundTrue:
             case "course":
                 CourseOverGround = ToDouble(rawValue);
                 return CourseOverGround is not null;
 
-            case "navigation.speedOverGround":
+            case OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround:
             case "speed":
                 SpeedOverGround = ToDouble(rawValue);
                 return SpeedOverGround is not null;
 
-            case "navigation.state":
+            case OnaPlotter.Utilities.SkPaths.Navigation.State:
                 {
                     // Lowercase and trim for stable matching downstream
                     // (MooredVesselTracker compares against fixed lower-

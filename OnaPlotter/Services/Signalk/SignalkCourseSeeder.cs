@@ -91,13 +91,13 @@ public sealed class SignalkCourseSeeder
                 && ar.ValueKind == JsonValueKind.Object)
             {
                 if (ar.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String)
-                    seeded |= _data.ApplyString("navigation.course.activeRoute.href", href.GetString());
+                    seeded |= _data.ApplyString(OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRouteHref, href.GetString());
                 if (ar.TryGetProperty("name", out var rn) && rn.ValueKind == JsonValueKind.String)
-                    seeded |= _data.ApplyString("navigation.course.activeRoute.name", rn.GetString());
+                    seeded |= _data.ApplyString(OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRouteName, rn.GetString());
                 if (ar.TryGetProperty("pointIndex", out var pi) && pi.ValueKind == JsonValueKind.Number)
-                    seeded |= _data.Apply("navigation.course.activeRoute.pointIndex", pi);
+                    seeded |= _data.Apply(OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex, pi);
                 if (ar.TryGetProperty("pointTotal", out var pt) && pt.ValueKind == JsonValueKind.Number)
-                    seeded |= _data.Apply("navigation.course.activeRoute.pointTotal", pt);
+                    seeded |= _data.Apply(OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal, pt);
             }
 
             // nextPoint / previousPoint: objects carrying position and
