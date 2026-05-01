@@ -392,12 +392,15 @@
     private string rangeMode = "preset";
     private DateTime customFromLocal = DateTime.Now.AddHours(-6);
     private DateTime customToLocal = DateTime.Now;
-    // Sampling resolution. 30 s default matches the original behaviour
-    // (helm-page tracks were always fetched at 30 s); the dropdown
-    // adds 1 m / 5 m / 15 m for long windows where a tethered-tablet
-    // bandwidth budget can't afford 30 s sampling. Mirrors the Stats
-    // page's resolution selector so muscle memory carries.
-    private string resolution = "30s";
+    // Sampling resolution. 5 m default after helm field-test on long
+    // windows: at 30 s a 7-day load chunks into ~42 sub-requests
+    // (the History API caps each response at 500 rows), which on a
+    // sat-link feels slow. 5 m gives 7 d × 12 buckets/h = ~2 016
+    // rows -- one round-trip, sub-second on LAN -- and the helm
+    // who actually wants 30 s detail can still pick it from the
+    // dropdown. Mirrors the Stats page's resolution selector so
+    // muscle memory carries.
+    private string resolution = "5m";
     // View mode toggle. "map" is the default playback view; "table"
     // hides the map behind a list of segments (filtered to moving by
     // default; toggle to include stationary). Click a row to flip
