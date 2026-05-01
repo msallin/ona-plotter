@@ -67,6 +67,32 @@ public class AuthApiTests
     }
 
     [Test]
+    public async Task LoggedIn_Admin_With_ReadOnlyAccess_Hides_Banner()
+    {
+        // Field-captured response from openplotter.local for a logged-in
+        // admin: status=loggedIn, BUT readOnlyAccess=true. The original
+        // rule treated readOnlyAccess as a per-user authority and lit
+        // the chip on a fully-logged-in admin -- helm reported "I am
+        // logged in but the chip says I'm not". The fix: trust
+        // status=="loggedIn" alone; readOnlyAccess is a server-config
+        // signal ("by default sessions are read-only") that even a
+        // signed-in admin sees as true. Pinned here so a future rule
+        // tweak that re-introduces readOnlyAccess into the gate goes
+        // red against this exact body.
+        string body = """
+        {"status":"loggedIn","readOnlyAccess":true,"authenticationRequired":true,"allowNewUserRegistration":false,"allowDeviceAccessRequests":true,"userLevel":"admin","username":"ona","securityWasEnabled":false}
+        """;
+        var s = await Api(body).GetLoginStatusAsync();
+
+        await Assert.That(s).IsNotNull();
+        await Assert.That(s!.Username).IsEqualTo("ona");
+        await Assert.That(s.Status).IsEqualTo("loggedIn");
+        await Assert.That(s.ReadOnlyAccess).IsTrue();
+        await Assert.That(s.AuthenticationRequired).IsTrue();
+        await Assert.That(s.ShouldShowLoginWarning).IsFalse();
+    }
+
+    [Test]
     public async Task AuthDisabled_Hides_Banner_Even_If_NotLoggedIn()
     {
         // Open homelab / dev server: authenticationRequired=false.
@@ -104,6 +130,40 @@ public class AuthApiTests
         var sut = new AuthApi(http, ApiTestHelpers.FixedBaseUrl());
         var s = await sut.GetLoginStatusAsync();
         await Assert.That(s).IsNull();
+    }
+
+    [Test]
+    public async Task ExternalCancellation_Returns_Null_NotThrows()
+    {
+        // The 5-min auth poll passes a CT; if the page is torn down
+        // mid-probe (helm navigates away), the linked CT cancels and
+        // the awaiter sees TaskCanceledException. AuthApi swallows
+        // that and returns null rather than propagating -- the page-
+        // teardown path doesn't want to handle a phantom auth
+        // exception. Simulates the same cancellation that an 8-s
+        // ProbeTimeout would produce, without sleeping the test 8 s.
+        var http = new HttpClient(new CancelRespectingHandler());
+        var sut = new AuthApi(http, ApiTestHelpers.FixedBaseUrl());
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var s = await sut.GetLoginStatusAsync(cts.Token);
+        await Assert.That(s).IsNull();
+    }
+
+    /// <summary>Handler that respects the request CT so a pre-cancelled
+    /// token surfaces as TaskCanceledException -- the same surface as
+    /// AuthApi's internal 8-s timeout firing.</summary>
+    private sealed class CancelRespectingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken ct)
+        {
+            // Yield once so the CT-cancelled check has a turn even if
+            // the caller cancelled before the SendAsync call landed.
+            await Task.Yield();
+            ct.ThrowIfCancellationRequested();
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
     }
 
     [Test]

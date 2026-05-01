@@ -12,6 +12,7 @@
 @inject NavigationManager Nav
 @inject OnaPlotter.Services.UpdateChecker Updates
 @inject OnaPlotter.Services.Api.IAuthApi AuthApi
+@inject OnaPlotter.Services.Api.ISignalKBaseUrl SkBaseUrl
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
@@ -70,19 +71,24 @@
             }
 
             @* Not-logged-in chip. Probed once at app start via
-               IAuthApi.GetLoginStatusAsync. Visible only when the
-               server has security ENABLED and the current session is
-               read-only (auth flag stale, never logged in, etc.); a
-               no-auth dev / homelab server returns
-               authenticationRequired=false and the chip stays hidden.
-               Tap opens the SK admin UI in a new tab so the helm can
-               log in there; on return they reload OnaPlotter to pick
-               up the cookie. *@
+               IAuthApi.GetLoginStatusAsync, refreshed every 5 min,
+               and re-probed immediately on tab visibility-change so
+               a helm who signs in via the SK admin tab and returns
+               sees the chip clear without waiting up to 5 min for
+               the next poll. Visible only when the server has
+               security ENABLED and status != "loggedIn"; a no-auth
+               dev / homelab server hides the chip
+               (authenticationRequired=false). Tap opens the SK
+               admin UI on the SERVER ORIGIN (not the plugin mount)
+               so installs hosted under /signalk-onaplotter/ get the
+               right URL; on return the visibilitychange handler
+               picks up the new cookie. *@
             @if (_loginStatus is { ShouldShowLoginWarning: true })
             {
                 <a class="auth-warning-chip"
-                   href="@(_baseUri + SkAdminLoginPath)" target="_blank" rel="noreferrer"
-                   title="Read-only session: saves and edits will fail until you sign in. Tap to open the SK admin login.">
+                   href="@(SkBaseUrl.BaseUrl + SkAdminLoginPath)"
+                   target="_blank" rel="noopener noreferrer"
+                   title="Not signed in to the SK server: saves and edits will fail. Tap to open the admin login; the chip clears when you switch back to this tab.">
                     <span aria-hidden="true">⚠</span>
                     Not logged in
                 </a>
@@ -384,6 +390,11 @@
 @code {
     private IJSObjectReference? audioModule;
     private IJSObjectReference? fsModule;
+    // Tab-visibility hook for re-probing /skServer/loginStatus the
+    // moment the helm switches back from the SK admin tab. Without
+    // this the not-logged-in chip lingers up to 5 min after a fresh
+    // login. See wwwroot/js/visibility.js for the listener side.
+    private IJSObjectReference? visibilityModule;
     // Leaflet module handle used by the topbar zoom buttons. Imported
     // lazily on first click so non-map pages don't pay the cost, and
     // shared via ES-module caching with Map.razor's own import (same
@@ -596,6 +607,18 @@
     // introducing the gesture-chain bug by routing through Blazor
     // dispatch.
 
+    /// <summary>Fires every time the tab becomes visible, wired from
+    /// wwwroot/js/visibility.js. We use it to re-probe
+    /// /skServer/loginStatus immediately so the helm who fixed the
+    /// underlying auth problem in the SK admin tab sees the chip
+    /// clear on return -- the 5-min poll alone makes the chip feel
+    /// stuck. Fire-and-forget: the probe handles its own errors.</summary>
+    [JSInvokable]
+    public void OnTabVisible()
+    {
+        _ = RefreshLoginStatusAsync();
+    }
+
     [JSInvokable]
     public async Task OnFullscreenChanged(bool fs)
     {
@@ -745,6 +768,27 @@
             catch (JSDisconnectedException) { }
             fsSelfRef = DotNetObjectReference.Create(this);
             await fsModule.InvokeVoidAsync("subscribe", fsSelfRef);
+
+            // Hook tab-visibilitychange so the not-logged-in chip
+            // re-probes the server the moment the helm returns from
+            // signing in via the SK admin tab. The same fsSelfRef
+            // doubles as the JSInvokable target -- one DotNetObjectReference
+            // serves both fullscreen-state and tab-visible callbacks.
+            // Best-effort: a missing module file or a JSDisconnected at
+            // boot leaves us on the 5-min poll fallback rather than
+            // failing the whole layout init.
+            try
+            {
+                visibilityModule = await JS.InvokeAsync<IJSObjectReference>(
+                    "import", "./js/visibility.js");
+                await visibilityModule.InvokeVoidAsync(
+                    "attachVisibilityListener", fsSelfRef, nameof(OnTabVisible));
+            }
+            catch (JSDisconnectedException) { }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[auth] visibility hook failed: {ex.Message}");
+            }
             // Wire a native click listener to the fullscreen button
             // (NOT via Blazor @onclick). Safari / iOS reject
             // requestFullscreen() if the call isn't synchronous with
@@ -1206,6 +1250,18 @@
         if (leafletModule is not null)
         {
             try { await leafletModule.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+        if (visibilityModule is not null)
+        {
+            // The document listener inside the module survives module
+            // disposal (it's attached to `document`, not the module
+            // object), but disposeAsync still releases the .NET-side
+            // proxy so the GC can collect this layout. The _attached
+            // guard inside visibility.js means a re-import on a
+            // subsequent navigation is a no-op and we don't double-
+            // fire OnTabVisible.
+            try { await visibilityModule.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
         if (themeModule is not null)
