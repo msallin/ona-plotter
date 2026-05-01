@@ -6568,8 +6568,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     height: 22px;
     border-radius: 4px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    /* Theme tokens (not hardcoded white): the previous
+       rgba(255,255,255, ...) values rendered fine on the dark
+       theme but were near-invisible against the light theme's
+       white panel. --panel-text-muted gives the helm a readable
+       glyph in both modes; --panel-border matches the
+       surrounding edit-panel chrome. */
+    color: var(--panel-text-muted);
+    border: 1px solid var(--panel-border);
     font-size: 0.95rem;
     line-height: 1;
     cursor: pointer;

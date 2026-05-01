@@ -166,9 +166,12 @@ export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
         if (flags.routeEdit || flags.polygonEdit || flags.measure) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
-            if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
+            // Measure beats route / polygon edit -- helm asked for
+            // priority parity across every layer's click handler so
+            // a started measurement always wins.
+            if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
+            else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
             else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
-            else                         editModeAddPoint('measure', ll.lat, ll.lng);
             marker.closePopup();
         }
     });

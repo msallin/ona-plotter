@@ -668,7 +668,25 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
 
     // Map click: in route edit mode, add waypoint. In measurement
     // mode, drop a measurement point. Otherwise just dismiss menus.
+    //
+    // Priority: measure FIRST, then route-edit, then polygon-edit.
+    // Helm asked for this after testing route-edit + measure
+    // simultaneously: every click landed on the route, and the
+    // ruler couldn't be extended without ending route-edit. Now an
+    // active measurement always wins the click; route-edit stays
+    // open in the background and resumes accepting clicks once
+    // measure stops.
     map.on('click', (e) => {
+        if (measureLayerMod.isActive()) {
+            // Segment-click insertion (insertMeasurePointOnSegment)
+            // bubbles into this handler immediately after splicing the
+            // new vertex; without the suppression flag we'd then append
+            // a duplicate point at the end of the ruler. Same pattern
+            // as routeEditSuppressNextMapClick for route edit.
+            if (measureLayerMod.consumeSuppressNextMapClick()) return;
+            measureLayerMod.addMeasurePoint(e.latlng.lat, e.latlng.lng);
+            return;
+        }
         if (routeEditLayerMod.isActive()) {
             // L.DomEvent.stopPropagation on the polyline click
             // doesn't actually stop Leaflet's map-level click dispatch
@@ -683,16 +701,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         }
         if (polygonEditLayerMod.isActive()) {
             addPolygonVertexInternal(e.latlng.lat, e.latlng.lng);
-            return;
-        }
-        if (measureLayerMod.isActive()) {
-            // Segment-click insertion (insertMeasurePointOnSegment)
-            // bubbles into this handler immediately after splicing the
-            // new vertex; without the suppression flag we'd then append
-            // a duplicate point at the end of the ruler. Same pattern
-            // as routeEditSuppressNextMapClick for route edit.
-            if (measureLayerMod.consumeSuppressNextMapClick()) return;
-            measureLayerMod.addMeasurePoint(e.latlng.lat, e.latlng.lng);
             return;
         }
         if (dotNetRef) dotNetRef.invokeMethodAsync('OnDismissContextMenu').catch(() => {});
@@ -1496,9 +1504,11 @@ export function addRoute(id, name, coords) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng;
             if (!ll) return;
-            if (routeEditLayerMod.isActive())         addEditWaypoint(ll.lat, ll.lng);
-            else if (polygonEditLayerMod.isActive())  addPolygonVertexInternal(ll.lat, ll.lng);
-            else                       measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
+            // Measure beats route / polygon edit -- same priority as
+            // every other layer's click handler.
+            if (measureLayerMod.isActive())            measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
+            else if (routeEditLayerMod.isActive())     addEditWaypoint(ll.lat, ll.lng);
+            else if (polygonEditLayerMod.isActive())   addPolygonVertexInternal(ll.lat, ll.lng);
             sourceLine.closePopup();
         }
     };

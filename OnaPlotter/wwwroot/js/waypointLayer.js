@@ -142,9 +142,14 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
         if (flags.routeEdit || flags.polygonEdit || flags.measure) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
-            if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
+            // Measure takes priority over route / polygon edit:
+            // the helm field-tested that starting a measurement
+            // while a route was open mid-edit was impossible
+            // because every click landed on the route, not the
+            // ruler. Now ANY active measure mode wins.
+            if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
+            else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
             else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
-            else                         editModeAddPoint('measure', ll.lat, ll.lng);
             hit.closePopup();
         }
     });

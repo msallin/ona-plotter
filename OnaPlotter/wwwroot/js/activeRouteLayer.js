@@ -165,9 +165,11 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
                 L.DomEvent.stopPropagation(ev);
                 const ll = ev.latlng;
                 if (!ll) return;
-                if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
+                // Measure beats route / polygon edit. Same priority
+                // as the other layer click handlers.
+                if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
+                else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
                 else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
-                else                         editModeAddPoint('measure', ll.lat, ll.lng);
                 hitLine.closePopup();
             }
         });
