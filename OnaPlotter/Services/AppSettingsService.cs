@@ -39,7 +39,16 @@ public sealed class AppSettingsService : IAppSettings
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
-    public bool ChartUpscaleEnabled { get; private set; } = false;
+    // Defaults ON so a fresh helm gets readable tiles past a chart's
+    // native max out of the box. Without this, a chart that declares
+    // (or quietly downshifts to) maxzoom 16 leaves the helm staring at
+    // grey tiles at z17/z18 with no 404 in the network panel -- Leaflet
+    // simply doesn't fire requests above the layer's maxZoom. The
+    // helm's escape hatch (Settings -> Display -> Chart upscale) still
+    // works either direction. OSM + OpenSeaMap opt out via AllowUpscale
+    // = false so the basemap doesn't compete with a GPU-upscaled SK
+    // chart on top -- field-tested as visual flicker.
+    public bool ChartUpscaleEnabled { get; private set; } = true;
     public int ChartUpscaleLevels { get; private set; } = OnaPlotter.Utilities.ChartUpscale.DefaultLevels;
     /// <summary>In-memory only -- never persisted, never restored.
     /// See IAppSettings.HarborMode for the rationale (a forgotten
@@ -128,7 +137,7 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
-            ChartUpscaleEnabled = await LoadBool("chartUpscaleEnabled.v1", false);
+            ChartUpscaleEnabled = await LoadBool("chartUpscaleEnabled.v1", true);
             // chartUpscaleLevels.v1 is stored as an integer string ("2")
             // but read via LoadDouble + cast: this matches the same
             // pattern SnoozeDurationMinutes uses, and keeps a single

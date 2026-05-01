@@ -1352,8 +1352,11 @@ public class AppSettingsServiceTests
     {
         var svc = new AppSettingsService(new InMemoryKv());
         await svc.InitializeAsync();
-        // Default master flag OFF: feature dormant on first run.
-        await Assert.That(svc.ChartUpscaleEnabled).IsFalse();
+        // Default master flag ON so a fresh helm gets readable tiles
+        // past a chart's native max out of the box (otherwise charts
+        // with maxzoom < 18 render as grey with no 404 because Leaflet
+        // doesn't fire requests above maxZoom).
+        await Assert.That(svc.ChartUpscaleEnabled).IsTrue();
         // Default levels = ChartUpscale.DefaultLevels = 2.
         await Assert.That(svc.ChartUpscaleLevels)
             .IsEqualTo(OnaPlotter.Utilities.ChartUpscale.DefaultLevels);
@@ -1465,11 +1468,30 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task ChartUpscaleEnabled_GarbageStored_FallsBackToFalse()
+    public async Task ChartUpscaleEnabled_ExplicitFalse_StaysFalse()
     {
-        // LoadBool only accepts "true"; anything else falls back to
-        // the default. Pin so a corrupted entry can't silently turn
-        // overzoom ON for a helm who never enabled it.
+        // Helms who explicitly opted out (before the default flipped
+        // to true) keep their choice on next load. Pin so a future
+        // refactor can't silently re-enable overzoom for someone who
+        // turned it off.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("chartUpscaleEnabled.v1", "false");
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartUpscaleEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task ChartUpscaleEnabled_GarbageStored_LoadsAsFalse()
+    {
+        // LoadBool returns false for any stored value that isn't the
+        // literal "true" (and only falls back to the default when the
+        // key is absent). So a corrupt entry like "yes please" maps to
+        // false even though the default flipped to true. Helms hitting
+        // this end up with overzoom off rather than the new default,
+        // but the only ways to hit it are external tampering or a
+        // legacy persistence bug; preserving the LoadBool contract
+        // keeps every other bool setting honest.
         var kv = new InMemoryKv();
         await kv.SetAsync("chartUpscaleEnabled.v1", "yes please");
         var svc = new AppSettingsService(kv);
