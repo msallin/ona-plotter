@@ -3591,8 +3591,18 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-top-row-text: #ffcccc;
 }
 
-/* Amber preset: topbar/sidebar tokens shift to the amber palette. */
+/* Preset: Amber. Brighter, warmer than soft; good around dusk when the
+   eye is still partly day-adapted and pure red feels dim. Both the
+   page-wide tokens and the topbar/sidebar tokens flip together so the
+   chrome and the body share one palette. */
 .night-mode-global.night-mode-amber {
+    --sk-bg: #1a1000;
+    --sk-surface: #2a1a00;
+    --sk-surface-hover: #3a2608;
+    --sk-border: #3a2810;
+    --sk-text: #ffcc80;
+    --sk-text-muted: #b39060;
+    --sk-accent: #e69100;
     --sk-sidebar-bg: linear-gradient(180deg, #2a1a00 0%, #1a1000 100%);
     --sk-sidebar-border: #3a2810;
     --sk-sidebar-text: #ffcc80;
@@ -3602,31 +3612,6 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-top-row-bg: #1a1000;
     --sk-top-row-border: #3a2810;
     --sk-top-row-text: #ffcc80;
-}
-
-/* Red preset: pure-red palette for long watches. */
-.night-mode-global.night-mode-red {
-    --sk-sidebar-bg: linear-gradient(180deg, #1a0000 0%, #0a0000 100%);
-    --sk-sidebar-border: #401010;
-    --sk-sidebar-text: #ff8080;
-    --sk-sidebar-text-active: #ffa0a0;
-    --sk-sidebar-hover-bg: #240404;
-    --sk-sidebar-active-bg: #401010;
-    --sk-top-row-bg: #0a0000;
-    --sk-top-row-border: #401010;
-    --sk-top-row-text: #ff8080;
-}
-
-/* Preset: Amber. Brighter, warmer than soft; good around dusk when the
-   eye is still partly day-adapted and pure red feels dim. */
-.night-mode-global.night-mode-amber {
-    --sk-bg: #1a1000;
-    --sk-surface: #2a1a00;
-    --sk-surface-hover: #3a2608;
-    --sk-border: #3a2810;
-    --sk-text: #ffcc80;
-    --sk-text-muted: #b39060;
-    --sk-accent: #e69100;
 }
 
 /* Preset: Red. Classic single-channel helm red; darkest, least blue,
@@ -3639,6 +3624,15 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-accent: #ff3030;
     --sk-text: #ff8080;
     --sk-text-muted: #a04040;
+    --sk-sidebar-bg: linear-gradient(180deg, #1a0000 0%, #0a0000 100%);
+    --sk-sidebar-border: #401010;
+    --sk-sidebar-text: #ff8080;
+    --sk-sidebar-text-active: #ffa0a0;
+    --sk-sidebar-hover-bg: #240404;
+    --sk-sidebar-active-bg: #401010;
+    --sk-top-row-bg: #0a0000;
+    --sk-top-row-border: #401010;
+    --sk-top-row-text: #ff8080;
 }
 
 .night-mode-global .card {

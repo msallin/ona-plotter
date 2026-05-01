@@ -9,8 +9,6 @@ namespace OnaPlotter.Utilities;
 /// </summary>
 public static class PolygonGeometry
 {
-    private const double MetersPerDegreeLatitude = 111_320.0;
-
     /// <summary>
     /// Area of a polygon defined by [lat, lon] vertex pairs, in square
     /// metres. Uses the shoelace formula on an equirectangular projection
@@ -36,7 +34,7 @@ public static class PolygonGeometry
         // is effectively constant across the polygon.
         double lat0Rad = coords[0][0] * Math.PI / 180.0;
         double cosLat = Math.Cos(lat0Rad);
-        double metersPerDegLon = MetersPerDegreeLatitude * cosLat;
+        double metersPerDegLon = CircleGeometry.MetersPerDegLatitude * cosLat;
 
         double signedDoubleArea = 0;
         int n = coords.Length;
@@ -47,9 +45,9 @@ public static class PolygonGeometry
             if (a is null || b is null || a.Length < 2 || b.Length < 2) continue;
 
             double x1 = a[1] * metersPerDegLon;
-            double y1 = a[0] * MetersPerDegreeLatitude;
+            double y1 = a[0] * CircleGeometry.MetersPerDegLatitude;
             double x2 = b[1] * metersPerDegLon;
-            double y2 = b[0] * MetersPerDegreeLatitude;
+            double y2 = b[0] * CircleGeometry.MetersPerDegLatitude;
             signedDoubleArea += (x1 * y2) - (x2 * y1);
         }
 
