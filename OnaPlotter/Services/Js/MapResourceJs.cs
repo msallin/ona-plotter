@@ -27,8 +27,8 @@ public sealed class MapResourceJs : IMapResourceJs
     public Task RemoveWaypointMarkerAsync(string id)
         => InvokeSafe("removeWaypointMarker", id);
 
-    public Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description)
-        => InvokeSafe("addNoteMarker", id, lat, lon, title, description);
+    public Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description, string? createdAtIso)
+        => InvokeSafe("addNoteMarker", id, lat, lon, title, description, createdAtIso);
 
     public Task RemoveNoteMarkerAsync(string id)
         => InvokeSafe("removeNoteMarker", id);

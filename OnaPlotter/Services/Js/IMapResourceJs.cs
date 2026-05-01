@@ -23,8 +23,11 @@ public interface IMapResourceJs
     // ---- Notes --------------------------------------------------------
 
     /// <summary>Draw a note marker at the given lat/lon. Position type
-    /// is non-nullable double on the model, matching the JS shape.</summary>
-    Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description);
+    /// is non-nullable double on the model, matching the JS shape.
+    /// <paramref name="createdAtIso"/> renders in the popup as the
+    /// "Created" line; null = dash (notes from Freeboard / KIP or
+    /// pre-feature OnaPlotter notes don't carry the field).</summary>
+    Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description, string? createdAtIso);
 
     /// <summary>Remove a previously-drawn note marker.</summary>
     Task RemoveNoteMarkerAsync(string id);

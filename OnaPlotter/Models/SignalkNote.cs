@@ -31,6 +31,18 @@ public sealed class SignalkNote
 
     [JsonPropertyName("url")]
     public string? Url { get; set; }
+
+    /// <summary>UTC instant the note was first PUT to the server. The
+    /// SignalK Note schema doesn't include this -- it's a custom field
+    /// OnaPlotter writes on Create + preserves on Update. The
+    /// resources-fs provider (and most third-party providers) round-trip
+    /// arbitrary JSON fields on the resource body unchanged, so it's a
+    /// reasonably-portable place to stash the timestamp without
+    /// inventing a sidecar resource. Notes created by other clients
+    /// (Freeboard, kip, etc.) won't have this populated; the popup
+    /// renders a dash for those rather than a fake "now".</summary>
+    [JsonPropertyName("createdAt")]
+    public DateTime? CreatedAt { get; set; }
 }
 
 public sealed class NotePosition

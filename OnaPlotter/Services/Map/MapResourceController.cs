@@ -60,7 +60,9 @@ public sealed class MapResourceController
             if (n.Position is not null)
             {
                 await _resourceJs.AddNoteMarkerAsync(
-                    n.Id, n.Position.Latitude, n.Position.Longitude, n.Title, n.Description);
+                    n.Id, n.Position.Latitude, n.Position.Longitude,
+                    n.Title, n.Description,
+                    n.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
             }
         }
         // Region polygons: OuterRings is in Leaflet [lat, lon] order
@@ -87,7 +89,9 @@ public sealed class MapResourceController
             {
                 if (n.Position is null) continue;
                 await _resourceJs.AddNoteMarkerAsync(
-                    n.Id, n.Position.Latitude, n.Position.Longitude, n.Title, n.Description);
+                    n.Id, n.Position.Latitude, n.Position.Longitude,
+                    n.Title, n.Description,
+                    n.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
             }
         }
         else

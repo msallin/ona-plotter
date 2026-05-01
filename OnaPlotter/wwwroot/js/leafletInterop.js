@@ -1857,8 +1857,8 @@ export function getMapCenter() {
 export const addWaypointMarker = (id, lat, lon, name) => waypointLayerMod.addWaypointMarker(id, lat, lon, name);
 export const removeWaypointMarker = (id) => waypointLayerMod.removeWaypointMarker(id);
 
-export const addNoteMarker = (id, lat, lon, title, description) =>
-    noteLayerMod.addNoteMarker(id, lat, lon, title, description);
+export const addNoteMarker = (id, lat, lon, title, description, createdAtIso) =>
+    noteLayerMod.addNoteMarker(id, lat, lon, title, description, createdAtIso);
 export const removeNoteMarker = (id) => noteLayerMod.removeNoteMarker(id);
 export const clearNotes = () => noteLayerMod.clearNotes();
 export const openNotePopup = (id) => noteLayerMod.openNotePopup(id);

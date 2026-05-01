@@ -56,20 +56,41 @@ public class MapResourceJsTests
     }
 
     [Test]
-    public async Task AddNoteMarkerAsync_PassesAllFiveArgs()
+    public async Task AddNoteMarkerAsync_PassesAllSixArgs()
     {
+        // Sixth arg is the createdAt ISO string (nullable; null when
+        // a third-party note client populated the resource without
+        // OnaPlotter's createdAt custom field). Pin the position of
+        // every arg so a future shape change shows up here, not at
+        // runtime as a silently-misplaced popup field.
         var fake = new RecordingJsRef();
         var sut = new MapResourceJs(fake);
 
-        await sut.AddNoteMarkerAsync("n1", 54.5, 11.2, "title", "description");
+        await sut.AddNoteMarkerAsync("n1", 54.5, 11.2, "title", "description", "2026-04-25T12:00:00Z");
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("addNoteMarker");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(5);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(6);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("n1");
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(11.2);
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo("title");
         await Assert.That(fake.Calls[0].args[4]).IsEqualTo("description");
+        await Assert.That(fake.Calls[0].args[5]).IsEqualTo("2026-04-25T12:00:00Z");
+    }
+
+    [Test]
+    public async Task AddNoteMarkerAsync_NullCreatedAt_ForwardsNull()
+    {
+        // Notes from Freeboard / KIP / pre-feature OnaPlotter won't
+        // have a createdAt; the call must pass null through cleanly
+        // (the JS popup formatter renders a dash for null).
+        var fake = new RecordingJsRef();
+        var sut = new MapResourceJs(fake);
+
+        await sut.AddNoteMarkerAsync("n1", 54.5, 11.2, "title", "description", createdAtIso: null);
+
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(6);
+        await Assert.That(fake.Calls[0].args[5]).IsNull();
     }
 
     [Test]
@@ -188,7 +209,7 @@ public class MapResourceJsTests
         sut.MarkDisposed();
         await sut.AddWaypointMarkerAsync("w", 0, 0, null);
         await sut.RemoveWaypointMarkerAsync("w");
-        await sut.AddNoteMarkerAsync("n", 0, 0, null, null);
+        await sut.AddNoteMarkerAsync("n", 0, 0, null, null, null);
         await sut.ClearNotesAsync();
         await sut.AddRegionAsync("r", new List<double[][]>(), null, null);
         await sut.ClearCirclePreviewAsync();
