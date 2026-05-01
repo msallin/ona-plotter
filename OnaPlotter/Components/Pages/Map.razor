@@ -31,6 +31,7 @@
 @inject IToastService Toasts
 @inject IConfirmationService Confirmations
 @inject IKeyValueStore Kv
+@inject IRouteDraftStore RouteDraftStore
 @inject IAlarmManager Alarms
 @inject DeadmanTracker DeadmanTracker
 @inject IJSRuntime JS
@@ -1566,6 +1567,14 @@
         // buttons. Runs after the REST seed + map module are ready so
         // the target layers are already on the map.
         await ApplyMapDeepLinkAsync();
+
+        // If a route-edit draft survived the last session (save
+        // failed mid-edit, accidental tab close, browser crash),
+        // prompt the helm to restore. AFTER deep-link so the
+        // deep-link target wins on contention; AFTER welcome so
+        // first-ever helms see the welcome card before the more
+        // niche restore prompt.
+        await MaybeShowRouteDraftRestoreAsync();
         }
         catch (JSDisconnectedException) { /* circuit gone -- no-op */ }
         catch (ObjectDisposedException) { /* navigated away during load */ }
