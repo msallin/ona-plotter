@@ -61,8 +61,10 @@ public static class ChartUpscale
 
     /// <summary>Resolve the effective overzoom levels given the
     /// master flag + the configured levels. Returns 0 when the
-    /// master flag is off so call sites have one branch instead
-    /// of two.</summary>
+    /// master flag is off, otherwise the clamped level. Named so
+    /// the call site reads as one resolution step (the chart-level
+    /// AllowUpscale opt-out is a separate concern wrapped at the
+    /// caller).</summary>
     public static int Effective(bool enabled, int levels) =>
         enabled ? ClampLevels(levels) : 0;
 }

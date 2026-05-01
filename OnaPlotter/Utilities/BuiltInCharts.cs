@@ -57,6 +57,11 @@ public static class BuiltInCharts
             // conventional "contributors" word is dropped to keep
             // the chip narrow at the chart edge.
             Attribution = "<a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noreferrer\">&copy; OpenStreetMap</a>",
+            // Trusted: this string is hardcoded inside the WASM
+            // bundle; AttributionSanitizer passes it through to
+            // Leaflet's innerHTML sink unchanged so the ODbL credit
+            // renders as a clickable link.
+            IsTrustedAttribution = true,
             Opacity = 1.0,
         },
         new SignalkChart
@@ -70,6 +75,8 @@ public static class BuiltInCharts
             Bounds = null,
             AllowUpscale = false,
             Attribution = "<a href=\"https://www.openseamap.org/\" target=\"_blank\" rel=\"noreferrer\">&copy; OpenSeaMap</a>",
+            // Trusted (same rationale as the OSM entry above).
+            IsTrustedAttribution = true,
             // 0.8 opacity so the seamark glyphs blend over whatever
             // basemap (OSM / SignalK chart) is below. Mirrors the
             // value the previous hardcoded seaBaseLayer used.

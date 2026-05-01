@@ -2,8 +2,9 @@
 //
 // Lets the helm zoom past a chart's native max by GPU-upscaling
 // tiles at the native cap. The decorator is a higher-order function
-// that mutates an options bag before L.tileLayer(url, opts) is
-// called -- no Leaflet subclass, no runtime probe, no calibrator.
+// that returns a new options bag for L.tileLayer(url, opts) -- no
+// Leaflet subclass, no runtime probe.
+//
 // Removable in one go: drop this file + the addChartLayer call site
 // + the Settings flag and the feature is gone.
 //
@@ -13,10 +14,10 @@
 // SignalK chart-plugin variant behaves differently. The probe
 // jittered, the calibrator settled at unstable values, and the
 // helm saw tiles popping in and out. v2 trusts the metadata: if
-// MBTiles says maxzoom 18, we believe it. When metadata lies,
-// the helm sees blank tiles past the real cap (with OSM showing
-// through underneath via the existing fallback). That's an honest
-// signal -- not a regression hidden behind silently-failing logic.
+// MBTiles says maxzoom 18, we believe it. The downshift calibrator
+// in leafletInterop.js (driven by bonafide `tileerror` 404s, only
+// at the current cap) handles the metadata-lies-about-maxzoom
+// case without re-introducing the probe instability.
 
 /**
  * Wrap a Leaflet TileLayer options bag for chart upscaling.
@@ -37,6 +38,9 @@
 export function withOverzoom(opts, levels) {
     const lv = Math.max(0, Math.min(3, levels | 0));
     if (lv === 0) {
+        // Identity: a structural copy keeps callers safe from later
+        // mutation of the returned object without paying the bump-
+        // by-zero assignment.
         return { ...opts };
     }
     const native = opts.maxNativeZoom ?? opts.maxZoom ?? 18;
@@ -44,15 +48,5 @@ export function withOverzoom(opts, levels) {
         ...opts,
         maxNativeZoom: native,
         maxZoom: native + lv,
-        // Tag the layer so the dev-section diagnostics + tests can
-        // distinguish upscaled chart layers from bare ones without
-        // groveling through option values.
-        // Coupling note: L.TileLayer copies unknown options onto
-        // `this.options`, which is how the tag survives onto the
-        // live layer. If a future Leaflet upgrade changes that
-        // pass-through behaviour, the tag goes silent (diagnostics
-        // miss it) but the upscale itself still works because
-        // maxZoom / maxNativeZoom are bona fide TileLayer options.
-        _chartUpscaleLevels: lv,
     };
 }

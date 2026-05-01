@@ -94,20 +94,31 @@ public sealed class ChartLayerController
                     ? OnaPlotter.Utilities.ChartUpscale.Effective(
                         _display.ChartUpscaleEnabled, _display.ChartUpscaleLevels)
                     : 0;
-                // chart.MaxZoom ?? 18 fallback: a chart with no metadata-
-                // declared maxzoom (some legacy MBTiles, plus formats
-                // that don't carry a pyramid descriptor) gets the
-                // Leaflet default 18. With overzoom enabled, that
-                // becomes the maxNativeZoom, and the helm gets a free
-                // upscale window from 18 -> 18+levels. Intentional.
-                //
-                // Opacity + Attribution come from the chart descriptor
-                // so the built-in OSM (1.0, ODbL credit) and OpenSeaMap
-                // (0.8, attribution) and SK chart-server entries (0.8,
-                // empty attribution by default) carry through cleanly.
+                // Sanity-clamp MinZoom / MaxZoom: a hostile or buggy SK
+                // chart provider sending negative or zero values would
+                // pass the null-coalescing fallback (which only catches
+                // null) and reach the JS layer where the `|| 18` falsy
+                // idiom doesn't catch negatives either; the layer would
+                // render nothing and the calibrator's floor would
+                // misfire. Force a positive int with a sane default
+                // before crossing the JS boundary.
+                int safeMin = chart.MinZoom is int mn and > 0 ? mn : 1;
+                int safeMax = chart.MaxZoom is int mx and > 0 ? mx : 18;
+                // Attribution lands in Leaflet's AttributionControl
+                // which uses innerHTML -- a SK chart provider is an
+                // in-scope trust boundary, so untrusted values are
+                // HTML-escaped here. Only the built-in OSM + OpenSeaMap
+                // entries (synthesised in BuiltInCharts.cs) ship
+                // IsTrustedAttribution=true and pass through with
+                // their clickable ODbL / CC-BY-SA links intact.
+                string safeAttribution = OnaPlotter.Utilities.AttributionSanitizer.Sanitize(
+                    chart.Attribution, chart.IsTrustedAttribution);
+                // Opacity comes from the chart descriptor so the built-
+                // in OSM (1.0) and OpenSeaMap (0.8) and SK chart-server
+                // entries (0.8 default) carry through cleanly.
                 await _overlaysJs.AddChartLayerAsync(
-                    chart.Identifier, tileUrl, chart.MinZoom ?? 1, chart.MaxZoom ?? 18,
-                    chart.Opacity, chart.Bounds, upscale, chart.Attribution);
+                    chart.Identifier, tileUrl, safeMin, safeMax,
+                    chart.Opacity, chart.Bounds, upscale, safeAttribution);
             }
             catch (Microsoft.JSInterop.JSException ex)
             {

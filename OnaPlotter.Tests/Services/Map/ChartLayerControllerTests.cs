@@ -37,6 +37,13 @@ public class ChartLayerControllerTests
         /// SK charts default 0.8.</summary>
         public List<double> OpacityCalls { get; } = [];
 
+        /// <summary>Records min / max zoom and bounds. Lets tests pin
+        /// the controller's positive-int guard for hostile MaxZoom
+        /// values and bounds forwarding.</summary>
+        public List<int> MinZoomCalls { get; } = [];
+        public List<int> MaxZoomCalls { get; } = [];
+        public List<double[]?> BoundsCalls { get; } = [];
+
         public Task AddChartLayerAsync(string id, string tileUrl, int minZoom, int maxZoom, double opacity, double[]? bounds, int upscaleLevels, string attribution)
         {
             if (NextAddError is not null) { var e = NextAddError; NextAddError = null; throw e; }
@@ -44,6 +51,9 @@ public class ChartLayerControllerTests
             UpscaleLevelsCalls.Add(upscaleLevels);
             AttributionCalls.Add(attribution);
             OpacityCalls.Add(opacity);
+            MinZoomCalls.Add(minZoom);
+            MaxZoomCalls.Add(maxZoom);
+            BoundsCalls.Add(bounds);
             return Task.CompletedTask;
         }
 
@@ -206,64 +216,118 @@ public class ChartLayerControllerTests
     }
 
     [Test]
-    public async Task Toggle_On_AllowUpscale_True_HonoursDisplaySettings()
+    public async Task Toggle_On_PassesOpacityFromChart()
     {
-        // SignalkChart.AllowUpscale = true (the SK-server default)
-        // means the controller resolves upscale levels via the
-        // ChartUpscale.Effective(enabled, levels) path. With master
-        // flag on + 3 levels, we expect 3 to land in JS.
-        var (ctrl, js, _, display, _) = New();
-        display.ChartUpscaleEnabled = true;
-        display.ChartUpscaleLevels = 3;
-        var chart = Chart("c1");
-        chart.AllowUpscale = true;
-
-        await ctrl.ToggleAsync(chart, true);
-
-        await Assert.That(js.UpscaleLevelsCalls.Count).IsEqualTo(1);
-        await Assert.That(js.UpscaleLevelsCalls[0]).IsEqualTo(3);
-    }
-
-    [Test]
-    public async Task Toggle_On_AllowUpscale_False_ForcesZeroEvenWhenSettingsEnabled()
-    {
-        // The built-in OSM + OpenSeaMap charts ship AllowUpscale = false
-        // because their upscaled tiles arriving a frame after a SK
-        // chart's GPU upscale read as a flicker. Pin: the controller
-        // must force levels = 0 regardless of the helm's master flag.
-        // A regression that ignored AllowUpscale would re-introduce
-        // the "OSM is loading on top of my chart" symptom.
-        var (ctrl, js, _, display, _) = New();
-        display.ChartUpscaleEnabled = true;
-        display.ChartUpscaleLevels = 3;
-        var chart = Chart("c1");
-        chart.AllowUpscale = false;
-
-        await ctrl.ToggleAsync(chart, true);
-
-        await Assert.That(js.UpscaleLevelsCalls.Count).IsEqualTo(1);
-        await Assert.That(js.UpscaleLevelsCalls[0])
-            .IsEqualTo(0)
-            .Because("AllowUpscale=false forces levels=0 regardless of Settings");
-    }
-
-    [Test]
-    public async Task Toggle_On_PassesAttributionAndOpacityFromChart()
-    {
-        // The chart descriptor's Attribution + Opacity flow through
-        // unchanged so Leaflet's bottom-right control surfaces the
-        // ODbL credit and the opacity stack matches the helm's mental
-        // model ("OSM is the basemap at full opacity, SK charts layer
-        // at 0.8 over it").
         var (ctrl, js, _, _, _) = New();
         var chart = Chart("c1");
-        chart.Attribution = "<a href=\"https://x\">© X</a>";
         chart.Opacity = 1.0;
 
         await ctrl.ToggleAsync(chart, true);
 
-        await Assert.That(js.AttributionCalls[0]).IsEqualTo(chart.Attribution);
         await Assert.That(js.OpacityCalls[0]).IsEqualTo(1.0);
+    }
+
+    [Test]
+    public async Task Toggle_On_TrustedAttribution_PassesThroughRaw()
+    {
+        // Built-in OSM / OpenSeaMap entries ship IsTrustedAttribution
+        // = true so their hardcoded ODbL credits keep their clickable
+        // links. The sanitizer must not strip them.
+        var (ctrl, js, _, _, _) = New();
+        var chart = Chart("c1");
+        chart.Attribution = "<a href=\"https://x\">© X</a>";
+        chart.IsTrustedAttribution = true;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.AttributionCalls[0]).IsEqualTo(chart.Attribution);
+    }
+
+    [Test]
+    public async Task Toggle_On_UntrustedAttribution_HtmlEscaped()
+    {
+        // SK chart-server entries default IsTrustedAttribution = false
+        // because Leaflet's AttributionControl uses innerHTML; a
+        // hostile provider's "<img onerror=...>" would otherwise
+        // execute in the WASM origin. Pin the escape so the tag
+        // renders as visible text.
+        var (ctrl, js, _, _, _) = New();
+        var chart = Chart("c1");
+        chart.Attribution = "<img src=x onerror=alert(1)>";
+        chart.IsTrustedAttribution = false;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.AttributionCalls[0]).DoesNotContain("<img");
+        await Assert.That(js.AttributionCalls[0]).Contains("&lt;img");
+    }
+
+    [Test]
+    [Arguments(null, 1)]    // null -> default 1
+    [Arguments(0, 1)]       // zero -> default
+    [Arguments(-5, 1)]      // negative -> default (the load-bearing case)
+    [Arguments(2, 2)]       // positive -> pass through
+    public async Task Toggle_On_MinZoom_NegativeOrNull_ClampedToOne(int? input, int expected)
+    {
+        // A hostile or buggy chart provider sending negative MinZoom
+        // would otherwise reach the JS layer where the `|| 1` falsy
+        // idiom doesn't catch negatives -- the layer's calibrator
+        // floor (`native <= minZ + 1`) would misfire.
+        var (ctrl, js, _, _, _) = New();
+        var chart = Chart("c1");
+        chart.MinZoom = input;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.MinZoomCalls[0]).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments(null, 18)]   // null -> default 18
+    [Arguments(0, 18)]      // zero -> default
+    [Arguments(-1, 18)]     // negative -> default (the load-bearing case)
+    [Arguments(15, 15)]     // positive -> pass through
+    [Arguments(22, 22)]     // upper-edge -> pass through (Leaflet caps via map maxZoom anyway)
+    public async Task Toggle_On_MaxZoom_NegativeOrNull_ClampedToEighteen(int? input, int expected)
+    {
+        var (ctrl, js, _, _, _) = New();
+        var chart = Chart("c1");
+        chart.MaxZoom = input;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.MaxZoomCalls[0]).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments(false, 0, true, 0)]    // master off -> 0
+    [Arguments(false, 3, true, 0)]    // master off, levels irrelevant
+    [Arguments(false, 3, false, 0)]   // both off
+    [Arguments(true, 0, true, 0)]     // master on, levels=0 -> 0 (A/B path)
+    [Arguments(true, 2, true, 2)]     // happy path
+    [Arguments(true, 3, true, 3)]     // max levels
+    [Arguments(true, 3, false, 0)]    // chart opt-out forces 0 even when master on
+    [Arguments(true, 99, true, 3)]    // out-of-range clamps via Effective
+    [Arguments(true, -5, true, 0)]    // out-of-range below floor clamps via Effective
+    public async Task Toggle_On_UpscaleResolution_CrossProduct(
+        bool masterEnabled, int configuredLevels, bool chartAllowUpscale, int expectedJsValue)
+    {
+        // The 6-cell truth table: (master flag, levels, chart opt-out)
+        // -> what lands in the JS upscaleLevels arg. Two cells were
+        // pinned by previous tests; this matrix locks down all six
+        // plus the out-of-range edges so a regression in either
+        // ChartUpscale.Effective or the controller's AllowUpscale
+        // gating is one assertion away from a red.
+        var (ctrl, js, _, display, _) = New();
+        display.ChartUpscaleEnabled = masterEnabled;
+        display.ChartUpscaleLevels = configuredLevels;
+        var chart = Chart("c1");
+        chart.AllowUpscale = chartAllowUpscale;
+
+        await ctrl.ToggleAsync(chart, true);
+
+        await Assert.That(js.UpscaleLevelsCalls.Count).IsEqualTo(1);
+        await Assert.That(js.UpscaleLevelsCalls[0]).IsEqualTo(expectedJsValue);
     }
 
     [Test]
