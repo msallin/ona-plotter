@@ -344,16 +344,21 @@ function buildAisPopupHtml(snap) {
     const dist = haversineMeters(_selfLat, _selfLon, v.lat, v.lon) * NM_PER_METER;
     const brg = bearingDeg(_selfLat, _selfLon, v.lat, v.lon);
 
-    // Display name preference: SignalK name -> external-lookup cache
-    // -> callsign -> MMSI.
+    // Title preference: v.displayName is the C#-side canonical (SK
+    // name -> MMSI fallback, with buddy-star prefix already applied).
+    // Two JS-only enrichments slot in ABOVE the canonical when SK gave
+    // us only an MMSI: an external-lookup cache that may have resolved
+    // it to a real name (the C# layer can't see this cache), and the
+    // callsign as a last readable fallback. 'Unknown' covers the rare
+    // case where neither SK nor any fallback delivered anything.
+    const cachedName = (!v.name && mmsi) ? vesselNameCacheGet(mmsi) : undefined;
+    const buddyStar = v.buddy ? '★ ' : '';
     let displayTitle;
-    const cachedName = mmsi ? vesselNameCacheGet(mmsi) : undefined;
-    if (name)            displayTitle = name;
-    else if (cachedName) displayTitle = esc(cachedName);
-    else if (callsign)   displayTitle = callsign;
-    else if (mmsi)       displayTitle = `MMSI ${esc(mmsi)}`;
-    else                 displayTitle = 'Unknown';
-    if (v.buddy) displayTitle = '★ ' + displayTitle;
+    if (v.displayName && v.name) displayTitle = esc(v.displayName);
+    else if (cachedName)         displayTitle = buddyStar + esc(cachedName);
+    else if (callsign)           displayTitle = buddyStar + callsign;
+    else if (v.displayName)      displayTitle = esc(v.displayName);
+    else                         displayTitle = buddyStar + 'Unknown';
 
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {

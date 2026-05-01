@@ -607,7 +607,7 @@
         try
         {
             _fileTransfer ??= await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string ext = format == FormatGeoJson ? "geojson" : "gpx";
             string filename = $"{SanitiseForFilename(baseName)}.{ext}";
             await _fileTransfer.InvokeVoidAsync("triggerFileDownload", filename, content);

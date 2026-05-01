@@ -62,7 +62,7 @@ Two buttons:
   dangerous vessel will still trigger the alarm. The snooze is in-memory only,
   cleared by a page reload — a new watch is a fresh start.
 
-Audio is orchestrated by `wwwroot/js/audioAlert.js` and uses different pulse
+Audio is orchestrated by `wwwroot/js/platform/audioAlert.js` and uses different pulse
 rates for `danger` (1 s, used by CPA and SHALLOW) and `warn` (3 s, used by
 WIND SHIFT). A single looped tone so it's obvious to a sleeping captain.
 
@@ -191,7 +191,7 @@ push, which happens at 3 Hz on a fast delta feed.
 | Moored auto-mute               | `OnaPlotter/Services/MooredVesselTracker.cs`              |
 | Alarm pipeline (C#)            | `OnaPlotter/Services/AlarmManager.cs` (`Evaluate`, `DismissAsync`, `SnoozeActiveAsync`, `SnoozeAsync`) |
 | CPA alarm rule                 | `OnaPlotter/Services/Alarms/CpaAlarmRule.cs`              |
-| Audio (JS)                     | `OnaPlotter/wwwroot/js/audioAlert.js`                     |
+| Audio (JS)                     | `OnaPlotter/wwwroot/js/platform/audioAlert.js`            |
 | Guard-zone ring + CPA lines    | `OnaPlotter/wwwroot/js/leafletInterop.js` (`drawGuardZone`, `updateCpaLine`) |
 | Settings UI                    | `OnaPlotter/Components/Pages/Settings.razor`              |
 | Tests                          | `OnaPlotter.Tests/CpaTests.cs`, `MooredVesselTrackerTests.cs`, `geoMath.test.js` |

@@ -13,17 +13,6 @@ namespace OnaPlotter.Services.Api;
 /// </summary>
 public sealed class RegionApi : IRegionApi
 {
-    /// <summary>Approximation resolution for circle-creation. 32 is
-    /// visually indistinguishable from a true circle at chart zooms up
-    /// to ~100m/px and is 64 floats on the wire, trivially cheap.</summary>
-    private const int CircleVertexCount = 32;
-
-    /// <summary>Average metres per degree of latitude anywhere on the
-    /// sphere. Close enough for circle approximation at the few-km
-    /// scales we care about; we're drawing a circle, not navigating
-    /// by dead reckoning.</summary>
-    private const double MetersPerDegLatitude = 111_320.0;
-
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
 
@@ -60,7 +49,7 @@ public sealed class RegionApi : IRegionApi
         double lat, double lon, double radiusMeters,
         bool isHazard = false, CancellationToken ct = default)
     {
-        var ring = BuildCircleRing(lat, lon, radiusMeters, CircleVertexCount);
+        var ring = CircleGeometry.BuildRing(lat, lon, radiusMeters, CircleGeometry.DefaultVertexCount);
         return PostPolygonAsync(name, description, ring, isHazard, ct);
     }
 
@@ -145,30 +134,6 @@ public sealed class RegionApi : IRegionApi
 
     public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Region(id)), ct);
-
-    /// <summary>
-    /// Builds a closed linear ring approximating a circle of the given
-    /// radius (metres) about a lat/lon centre. Output is GeoJSON order:
-    /// each vertex is <c>[lon, lat]</c>, and the first vertex is
-    /// repeated at the end to close the ring.
-    /// </summary>
-    internal static double[][] BuildCircleRing(double lat, double lon, double radiusMeters, int vertices)
-    {
-        double cosLat = Math.Cos(lat * Math.PI / 180.0);
-        double metersPerDegLon = MetersPerDegLatitude * cosLat;
-        if (metersPerDegLon < 1) metersPerDegLon = 1; // pole safety
-
-        var ring = new double[vertices + 1][];
-        for (int i = 0; i < vertices; i++)
-        {
-            double angle = 2 * Math.PI * i / vertices;
-            double dLat = (radiusMeters * Math.Cos(angle)) / MetersPerDegLatitude;
-            double dLon = (radiusMeters * Math.Sin(angle)) / metersPerDegLon;
-            ring[i] = [lon + dLon, lat + dLat];
-        }
-        ring[vertices] = ring[0]; // close
-        return ring;
-    }
 
     /// <summary>
     /// Extracts every outer ring from a GeoJSON Polygon or MultiPolygon

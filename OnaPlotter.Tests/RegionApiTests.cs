@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Tests;
 
@@ -45,7 +46,7 @@ public class RegionApiTests
         // the equirectangular approximation we use doesn't distort the
         // circle at a reasonable latitude.
         double lat = 47.4, lon = 8.5, radius = 500;
-        var ring = RegionApi.BuildCircleRing(lat, lon, radius, 32);
+        var ring = CircleGeometry.BuildRing(lat, lon, radius, 32);
 
         await Assert.That(ring.Length).IsEqualTo(33); // 32 vertices + closing point
         await Assert.That(ring[0][0]).IsEqualTo(ring[^1][0]); // same lon

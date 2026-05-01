@@ -620,7 +620,7 @@
         try
         {
             _fileTransfer ??= await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string outcome = await _fileTransfer.InvokeAsync<string>(
                 "shareOrCopy", "Voyage stats", text);
             switch (outcome)

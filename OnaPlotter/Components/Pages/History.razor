@@ -933,7 +933,7 @@
         try
         {
             var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             await fileTransfer.InvokeVoidAsync("triggerFileDownload", filename, content);
             Toasts.Success($"Exported {filename}");
         }
@@ -963,7 +963,7 @@
         try
         {
             var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string outcome = await fileTransfer.InvokeAsync<string>(
                 "shareOrCopy", suggested, content);
             switch (outcome)

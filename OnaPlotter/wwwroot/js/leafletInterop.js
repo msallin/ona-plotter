@@ -157,7 +157,7 @@ function computeNiceScale(map, sampleHalfPx, minPx) {
     return { label, widthPx };
 }
 
-// Wake-lock code used to live here; moved to wakeLock.js so it can
+// Wake-lock code lives in platform/wakeLock.js so it can
 // be held across every page, not just the Map. MainLayout manages it
 // now.
 
