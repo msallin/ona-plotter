@@ -104,6 +104,21 @@
                     <span>Load</span>
                 }
             </button>
+            @* Stationary-as-dot toggle. Default ON: each stationary
+               segment collapses to a single circleMarker at its
+               centroid so a 7-day window of swing-at-anchor doesn't
+               drown the moving passages in dashed grey. OFF brings
+               back the full polyline. Reuses the cached points +
+               segments -- no refetch on flip, just a JS re-render.
+               Lives in the top toolbar alongside resolution because
+               both knobs control "what the helm sees for this data
+               window", not "what data we fetch". *@
+            <label class="d-inline-flex align-items-center gap-1"
+                   style="font-size:0.85rem; color:var(--sk-text-muted);"
+                   title="Stationary segments collapse to a single dot at their centroid; uncheck for the full dashed-grey track">
+                <input type="checkbox" @bind="mapStationaryAsDot" @bind:after="RerenderMapSegmentsAsync" />
+                Stationary as dot
+            </label>
         </div>
     </div>
 
@@ -391,6 +406,15 @@
     // re-fetching basemap tiles on every flip.
     private string viewMode = "map";
     private bool tableShowStationary;
+    /// <summary>Map-side stationary render mode. <c>true</c> (default)
+    /// collapses each stationary segment to a single circleMarker at
+    /// its centroid -- visually quiet, the eye walks moving-trip
+    /// passages without getting tangled in dwell jitter. <c>false</c>
+    /// brings back the full dashed-grey polyline so the helm can see
+    /// where the boat actually swung at anchor. Independent of
+    /// <see cref="tableShowStationary"/> (table-row filter) so the
+    /// two views can be tuned separately for the same data.</summary>
+    private bool mapStationaryAsDot = true;
     // Chart-layer state. Loaded once from IChartApi after the map
     // initialises. enabledChartIds holds the per-session set; no
     // persistence (the Map page's IChartSettings is not shared with
@@ -1181,19 +1205,45 @@
 
         if (points is { Length: > 0 } && segments is { Length: > 0 })
         {
-            // Build per-segment payloads in C#. Each entry carries the
-            // segment's [lat, lon] coordinate list (sliced from the
-            // chronological points by timestamp window) plus a
-            // pre-formatted tooltip body. Formatting in C# keeps the
-            // JS dumb (just pass strings through to Leaflet's
-            // bindTooltip) and matches the project's preference for
-            // C# over JS for anything past pure rendering.
-            var segPayload = HistorySegmentRender.BuildSegmentPayload(points, segments);
-            // Playback marker only needs (lat, lon). Pass a flat array
-            // so MoveMarker doesn't have to thread the rich record
-            // shape through JSON every scrub.
-            var coords = points.Select(p => new[] { p.Latitude, p.Longitude }).ToArray();
+            await RenderMapSegmentsAsync(fitBounds: true);
+        }
+        await DrawBoatMarker();
+        StateHasChanged();
+    }
 
+    /// <summary>Re-render the cached points + segments onto the map
+    /// without re-fetching. Called from <see cref="LoadTrack"/> after
+    /// a fresh fetch (with <paramref name="fitBounds"/> true so the
+    /// viewport snaps to the loaded data) and from
+    /// <see cref="RerenderMapSegmentsAsync"/> when the helm flips the
+    /// stationary-as-dot toggle (without fitBounds so the helm's
+    /// chosen pan / zoom survives the re-render).</summary>
+    private async Task RenderMapSegmentsAsync(bool fitBounds)
+    {
+        if (points is null || points.Length == 0
+            || segments is null || segments.Length == 0) return;
+
+        // Build per-segment payloads in C#. Each entry carries the
+        // segment's [lat, lon] coordinate list (sliced from the
+        // chronological points by timestamp window) plus a
+        // pre-formatted tooltip body. Formatting in C# keeps the
+        // JS dumb (just pass strings through to Leaflet's
+        // bindTooltip) and matches the project's preference for
+        // C# over JS for anything past pure rendering.
+        var segPayload = HistorySegmentRender.BuildSegmentPayload(points, segments);
+        // Playback marker only needs (lat, lon). Pass a flat array
+        // so MoveMarker doesn't have to thread the rich record
+        // shape through JSON every scrub.
+        var coords = points.Select(p => new[] { p.Latitude, p.Longitude }).ToArray();
+
+        // Bool flags interpolated as JS literals (not JSON-serialised)
+        // so the eval template stays readable without the
+        // {System.Text.Json.JsonSerializer.Serialize(...)} ceremony.
+        string statAsDotJs = mapStationaryAsDot ? "true" : "false";
+        string fitBoundsJs = fitBounds ? "true" : "false";
+
+        try
+        {
             await JS.InvokeVoidAsync("eval", $@"
                 (function() {{
                     var m = window._historyMap;
@@ -1211,7 +1261,8 @@
                     // crashed at L.polyline(undefined, ...) on every
                     // History mount.
                     var segs = {System.Text.Json.JsonSerializer.Serialize(segPayload)};
-                    var movingColor = getComputedStyle(document.documentElement)
+                    var statAsDot = {statAsDotJs};
+                    var movingBaseColor = getComputedStyle(document.documentElement)
                         .getPropertyValue('--map-own').trim() || '#ec4899';
                     // Pull the dedicated --map-stationary token. The
                     // previous code used --sk-text-muted (slate-grey
@@ -1223,27 +1274,92 @@
                     var stationaryColor = getComputedStyle(document.documentElement)
                         .getPropertyValue('--map-stationary').trim() || '#94a3b8';
 
+                    // Trip palette: cycles through 8 distinct hues so
+                    // consecutive moving segments are visually
+                    // distinguishable on the map (helm wants to pick
+                    // out the Tuesday passage from the Wednesday one
+                    // without checking the tooltip). The first slot
+                    // is the live-track magenta so a one-trip view
+                    // keeps the colour the helm has built muscle
+                    // memory for. Stationary always uses the neutral
+                    // stationary token regardless of trip index.
+                    var palette = [
+                        movingBaseColor,
+                        '#a78bfa', '#fbbf24', '#34d399',
+                        '#60a5fa', '#f87171', '#22d3ee', '#fb923c'
+                    ];
+
                     var bounds = null;
-                    segs.forEach(function(s) {{
-                        // Stationary segments render dimmer + thinner +
-                        // dashed so the eye walks the passage shape
-                        // rather than getting drawn into the dwell
-                        // knots. Moving segments use the same magenta
-                        // weight as the live own-vessel track on the
-                        // Map page so muscle memory carries.
-                        var style = s.IsStationary
-                            ? {{ color: stationaryColor, weight: 2.5, opacity: 0.55, dashArray: '4 4' }}
-                            : {{ color: movingColor, weight: 3.5, opacity: 0.9 }};
-                        style.lineJoin = 'round';
-                        style.lineCap = 'round';
-                        var poly = L.polyline(s.Coords, style)
-                            .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
-                            .addTo(m);
-                        window._historySegments.push(poly);
-                        var b = poly.getBounds();
-                        bounds = bounds ? bounds.extend(b) : b;
+                    var movingCount = 0;
+                    var ref_ = window._historyDotNet;
+                    segs.forEach(function(s, idx) {{
+                        var leafletObj;
+                        if (s.IsStationary) {{
+                            // Stationary rendering branches on the
+                            // helm's preference. Dot mode: a single
+                            // circleMarker at the segment's centroid
+                            // (middle index of the coord list, the
+                            // typical anchorage centre). Track mode:
+                            // the legacy dashed grey polyline.
+                            if (statAsDot) {{
+                                var mid = s.Coords[Math.floor(s.Coords.length / 2)] || s.Coords[0];
+                                leafletObj = L.circleMarker(mid, {{
+                                    radius: 5,
+                                    color: stationaryColor, fillColor: stationaryColor,
+                                    fillOpacity: 0.6, weight: 1
+                                }}).bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
+                                  .addTo(m);
+                                if (!bounds) bounds = L.latLngBounds(mid, mid);
+                                else bounds.extend(mid);
+                            }} else {{
+                                var statStyle = {{
+                                    color: stationaryColor, weight: 2.5,
+                                    opacity: 0.55, dashArray: '4 4',
+                                    lineJoin: 'round', lineCap: 'round'
+                                }};
+                                leafletObj = L.polyline(s.Coords, statStyle)
+                                    .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
+                                    .addTo(m);
+                                var b = leafletObj.getBounds();
+                                bounds = bounds ? bounds.extend(b) : b;
+                            }}
+                        }} else {{
+                            // Moving segments cycle through the
+                            // palette. movingCount counts only moving
+                            // segments so palette[0] always lands on
+                            // the FIRST trip regardless of how many
+                            // stationary segments precede it.
+                            var color = palette[movingCount % palette.length];
+                            movingCount++;
+                            var moveStyle = {{
+                                color: color, weight: 3.5, opacity: 0.9,
+                                lineJoin: 'round', lineCap: 'round'
+                            }};
+                            leafletObj = L.polyline(s.Coords, moveStyle)
+                                .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
+                                .addTo(m);
+                            var b = leafletObj.getBounds();
+                            bounds = bounds ? bounds.extend(b) : b;
+                        }}
+
+                        // Click on a polyline / dot opens the trip
+                        // detail panel for that segment, mirroring
+                        // the table row click. stopPropagation so
+                        // the map's own click handler (dismiss
+                        // context menu) doesn't also fire. Wrapped
+                        // in catch(noop) for the page-teardown race
+                        // where dotNetRef has been disposed but a
+                        // stale click event lands.
+                        leafletObj.on('click', function(ev) {{
+                            L.DomEvent.stopPropagation(ev);
+                            if (ref_) {{
+                                ref_.invokeMethodAsync('OpenTripDetailFromMap', idx)
+                                    .catch(function() {{}});
+                            }}
+                        }});
+                        window._historySegments.push(leafletObj);
                     }});
-                    if (bounds) m.fitBounds(bounds, {{ padding: [40, 40] }});
+                    if ({fitBoundsJs} && bounds) m.fitBounds(bounds, {{ padding: [40, 40] }});
 
                     if (window._historyMarker) m.removeLayer(window._historyMarker);
                     var coords = {System.Text.Json.JsonSerializer.Serialize(coords)};
@@ -1260,8 +1376,30 @@
                 }})()
             ");
         }
-        await DrawBoatMarker();
-        StateHasChanged();
+        catch (JSDisconnectedException) { /* page teardown race */ }
+    }
+
+    /// <summary>Bound to the "Stationary as dot" checkbox via
+    /// <c>@bind:after</c> so flipping the toggle re-renders the
+    /// cached segments without a fresh API fetch. Cheap because
+    /// every per-segment polyline / dot is rebuilt from the same
+    /// coord arrays we already have in memory.</summary>
+    private async Task RerenderMapSegmentsAsync()
+    {
+        await RenderMapSegmentsAsync(fitBounds: false);
+    }
+
+    /// <summary>Map-side polyline / dot click handler. Mirrors the
+    /// table-row click: opens the trip detail panel for the segment
+    /// the helm picked. Index is into the FULL <c>segments</c> array
+    /// (matches the order JS got via <c>BuildSegmentPayload</c>) so
+    /// stationary toggle changes don't shift the indexing.</summary>
+    [JSInvokable]
+    public async Task OpenTripDetailFromMap(int idx)
+    {
+        if (segments is null || idx < 0 || idx >= segments.Length) return;
+        tripDetailIdx = idx;
+        await InvokeAsync(StateHasChanged);
     }
 
     // Segment-payload + tooltip formatting moved to
