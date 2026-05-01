@@ -43,6 +43,17 @@ public interface IAlarmThresholds
     /// (minutes). Racing crews want 1-2 min; cruisers 10-15.</summary>
     double WindShiftLookbackMinutes { get; }
 
+    /// <summary>Minimum true wind speed (knots) required for the
+    /// WIND SHIFT alarm to arm. Below this TWS the rule skips
+    /// evaluation and drops its anchor. Reason: TWD is derived from
+    /// AWS + heading + SOG; in light air, heading and SOG noise
+    /// dominate and small errors blow up to 30-60 deg "shifts" with
+    /// no real wind change. Default 3 kn. 0 disables the gate. The
+    /// gate is also bypassed when the server doesn't publish
+    /// <c>environment.wind.speedTrue</c>, so a missing path can't
+    /// suppress every shift.</summary>
+    double WindShiftMinTrueWindSpeed { get; }
+
     /// <summary>Safety margin added to draft for the tide-aware
     /// anchor alarm (metres): alarm fires when predicted LW depth
     /// is less than <c>draft + margin</c>.</summary>
@@ -75,6 +86,7 @@ public interface IAlarmThresholds
     Task SetGuardZoneWarningFactorAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetWindShiftLookbackMinutesAsync(double value);
+    Task SetWindShiftMinTrueWindSpeedAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);

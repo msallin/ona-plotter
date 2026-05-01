@@ -482,6 +482,22 @@
         </div>
     </div>
 
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Wind Shift Min TWS</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.5" min="0" max="20"
+                           aria-label="Wind shift minimum true wind speed in knots"
+                           value="@AppSettings.WindShiftMinTrueWindSpeed"
+                           @onchange="(e) => OnWindShiftMinTwsChanged(e)" />
+                    <span class="input-group-text">kn</span>
+                </div>
+                <small class="text-muted">Suppress the alarm below this TWS -- in light air the derived TWD is dominated by sensor noise. 0 disables the gate.</small>
+            </div>
+        </div>
+    </div>
+
     @* Boat Draft card removed -- the same information is surfaced on
        the Paths page (`design.draft.current` / `.maximum` with live
        values) and is also called out in the Anchor Tide Alarm setup
@@ -1014,6 +1030,12 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 1)
             await AppSettings.SetWindShiftLookbackMinutesAsync(val);
+    }
+
+    private async Task OnWindShiftMinTwsChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
+            await AppSettings.SetWindShiftMinTrueWindSpeedAsync(val);
     }
 
     private async Task OnAnchorTideMarginChanged(ChangeEventArgs e)

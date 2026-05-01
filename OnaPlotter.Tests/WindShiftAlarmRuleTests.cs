@@ -13,21 +13,27 @@ namespace OnaPlotter.Tests;
 public class WindShiftAlarmRuleTests
 {
     private const double DegToRad = Math.PI / 180.0;
+    private const double KnotsToMs = 1.0 / 1.94384;
 
-    private static NavigationData NavWithTwd(double twdDeg)
+    private static NavigationData NavWithTwd(double twdDeg, double? twsKn = null)
     {
         var nav = new NavigationData();
         nav.Apply("environment.wind.directionTrue", twdDeg * DegToRad);
+        if (twsKn is double kn)
+            nav.Apply("environment.wind.speedTrue", kn * KnotsToMs);
         return nav;
     }
 
+    // Default minTws=0 keeps the existing tests gate-free; tests that
+    // exercise the gate set it explicitly.
     private static AlarmEvaluationContext Ctx(NavigationData nav, DateTime now,
-        double threshold = 15, double lookback = 5)
+        double threshold = 15, double lookback = 5, double minTws = 0)
         => new(nav, [],
             new FakeSettings
             {
                 WindShiftAlarmThreshold = threshold,
                 WindShiftLookbackMinutes = lookback,
+                WindShiftMinTrueWindSpeed = minTws,
             },
             now, _ => false);
 
@@ -137,5 +143,83 @@ public class WindShiftAlarmRuleTests
         var t0 = DateTime.UtcNow;
         rule.Check(Ctx(NavWithTwd(0), t0, threshold: 60, lookback: 2));
         await Assert.That(rule.Check(Ctx(NavWithTwd(50), t0.AddMinutes(2), threshold: 60, lookback: 2))).IsNull();
+    }
+
+    [Test]
+    public async Task Below_Min_Tws_Suppresses_Alarm_Even_With_Big_Shift()
+    {
+        // 60 deg shift across 5 min, but TWS is 2 kn against a 3 kn
+        // gate -- the rule should never arm. In light air the TWD
+        // computation is dominated by heading / SOG noise and a 60 deg
+        // swing means nothing.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        rule.Check(Ctx(NavWithTwd(90, twsKn: 2.0), t0, minTws: 3));
+        var alarm = rule.Check(Ctx(NavWithTwd(150, twsKn: 2.0), t0.AddMinutes(5), minTws: 3));
+        await Assert.That(alarm).IsNull();
+    }
+
+    [Test]
+    public async Task Above_Min_Tws_Behaves_Normally()
+    {
+        // Same shift, but TWS 8 kn -- well above the 3 kn gate. The
+        // alarm should fire as it would without the gate.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        rule.Check(Ctx(NavWithTwd(90, twsKn: 8.0), t0, minTws: 3));
+        var alarm = rule.Check(Ctx(NavWithTwd(120, twsKn: 8.0), t0.AddMinutes(5), minTws: 3));
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Message).Contains("30");
+    }
+
+    [Test]
+    public async Task Missing_Tws_Path_Bypasses_Gate()
+    {
+        // Server doesn't publish environment.wind.speedTrue -- the gate
+        // must not silently suppress every shift on those installs. The
+        // rule falls back to its un-gated behaviour.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        rule.Check(Ctx(NavWithTwd(90), t0, minTws: 3));
+        var alarm = rule.Check(Ctx(NavWithTwd(120), t0.AddMinutes(5), minTws: 3));
+        await Assert.That(alarm).IsNotNull();
+    }
+
+    [Test]
+    public async Task Min_Tws_Zero_Disables_Gate_Even_With_Tws_Reading()
+    {
+        // minTws = 0 is the explicit "off switch": the rule arms
+        // regardless of how light the wind is. Helm who wants every
+        // shift can set the gate to 0 and get pre-gate behaviour.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        rule.Check(Ctx(NavWithTwd(90, twsKn: 0.5), t0, minTws: 0));
+        var alarm = rule.Check(Ctx(NavWithTwd(120, twsKn: 0.5), t0.AddMinutes(5), minTws: 0));
+        await Assert.That(alarm).IsNotNull();
+    }
+
+    [Test]
+    public async Task Becalmed_Period_Drops_Anchor_Instead_Of_Reporting_Stale_Shift()
+    {
+        // Anchor at 90 deg in 8 kn, then wind dies (1 kn) for an hour --
+        // boat lies to current and TWD drifts to 270. When real wind
+        // returns at 280 deg, we must NOT report a "190 deg shift in 5
+        // min" against the pre-becalmed anchor. The gate drops the
+        // anchor while wind is below threshold so the next live wind
+        // re-anchors fresh.
+        var rule = new WindShiftAlarmRule();
+        var t0 = DateTime.UtcNow;
+        rule.Check(Ctx(NavWithTwd(90, twsKn: 8.0), t0, minTws: 3));
+        // 30 minutes of light air: anchor should be cleared.
+        rule.Check(Ctx(NavWithTwd(180, twsKn: 1.0), t0.AddMinutes(10), minTws: 3));
+        rule.Check(Ctx(NavWithTwd(270, twsKn: 1.0), t0.AddMinutes(30), minTws: 3));
+        // Wind comes back: this is the FIRST armed sample post-becalm,
+        // so it just re-anchors -- no alarm.
+        var first = rule.Check(Ctx(NavWithTwd(280, twsKn: 8.0), t0.AddMinutes(40), minTws: 3));
+        await Assert.That(first).IsNull();
+        // 5 min later, wind steady at 285 -- 5 deg shift against the
+        // post-becalm anchor, well below threshold, no alarm.
+        var second = rule.Check(Ctx(NavWithTwd(285, twsKn: 8.0), t0.AddMinutes(45), minTws: 3));
+        await Assert.That(second).IsNull();
     }
 }

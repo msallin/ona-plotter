@@ -63,6 +63,7 @@ public sealed class AppSettingsService : IAppSettings
     public double GuardZoneWarningFactor { get; private set; } = 2.0;
     public double WindShiftAlarmThreshold { get; private set; } = 15.0;
     public double WindShiftLookbackMinutes { get; private set; } = 5.0;
+    public double WindShiftMinTrueWindSpeed { get; private set; } = 3.0;
     // Boat draft is read from SignalK (design.draft.current / .maximum)
     // via NavigationData.DraftFromSignalK; no manual override here.
     public double AnchorTideSafetyMargin { get; private set; } = 1.0;
@@ -161,6 +162,7 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneWarningFactor = await LoadDouble("guardZoneWarningFactor", 2.0);
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
+            WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 3.0);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
@@ -425,6 +427,18 @@ public sealed class AppSettingsService : IAppSettings
     {
         WindShiftLookbackMinutes = value;
         await Save("windShiftLookbackMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetWindShiftMinTrueWindSpeedAsync(double value)
+    {
+        // Clamp at 0 (negative TWS is meaningless and would re-introduce
+        // the noise the gate was added to prevent). No upper clamp -- a
+        // user who sets 50 kn has effectively disabled the alarm, which
+        // is a legitimate choice.
+        WindShiftMinTrueWindSpeed = Math.Max(0, value);
+        await Save("windShiftMinTrueWindSpeed.v1",
+            WindShiftMinTrueWindSpeed.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 
