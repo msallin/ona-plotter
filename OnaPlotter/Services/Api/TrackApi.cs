@@ -8,6 +8,7 @@ public sealed class TrackApi : ITrackApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly HistoryCache? _cache;
 
     /// <summary>SignalK paths the rich fetch asks for. Order matters
     /// because the response's <c>data</c> rows align element-per-path,
@@ -24,10 +25,24 @@ public sealed class TrackApi : ITrackApi
         OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater,
     ];
 
-    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    /// <summary>Production ctor: DI hands us the session cache.
+    /// The two-arg overload below is a back-compat hatch for tests
+    /// that don't care about caching -- they pass null and every
+    /// chunk fetch goes through unconditionally.</summary>
+    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl, HistoryCache cache)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _cache = cache;
+    }
+
+    /// <summary>Test-only overload: skip the cache. Lets pre-cache
+    /// tests keep their original wiring without changing every
+    /// instantiation site. New cache-behavior tests use the
+    /// three-arg ctor with a fresh <see cref="HistoryCache"/>.</summary>
+    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
+        : this(http, baseUrl, cache: null!)
+    {
     }
 
     /// <summary>
@@ -175,6 +190,12 @@ public sealed class TrackApi : ITrackApi
             resSpan!.Value.TotalSeconds,
             Math.Floor(MaxRowsPerRequest * ChunkSafetyFraction * resSpan.Value.TotalSeconds));
 
+        // Cache key prefix shared by every chunk in this pagination
+        // loop. `paths` and `resolution` are stable across chunks;
+        // only the `from`/`to` instants vary. Computing once avoids
+        // re-joining the rich-paths array per iteration.
+        string pathsKey = string.Join(',', RichPaths);
+
         var aggregated = new List<TrackPoint>();
         DateTimeOffset cursor = fromAbs;
         DateTime? lastBoundaryTimestamp = null;
@@ -184,9 +205,26 @@ public sealed class TrackApi : ITrackApi
             DateTimeOffset chunkTo = cursor.AddSeconds(chunkSeconds);
             if (chunkTo > toAbs) chunkTo = toAbs;
 
-            var chunk = await FetchChunkAsync(
-                from: cursor, to: chunkTo,
-                timespan: null, resolution: resExpr, bbox: bbox, ct: ct);
+            // Cache lookup. The cache itself enforces the live-tail
+            // skip rule (chunks within HeadFreshness of "now" miss
+            // unconditionally) so we don't have to repeat that test
+            // here. Null cache = test-only ctor; behave as if every
+            // lookup misses.
+            var key = HistoryCache.Key.From(
+                pathsKey, resExpr, cursor.UtcDateTime, chunkTo.UtcDateTime, bbox);
+            var chunk = _cache?.TryGet(key);
+            if (chunk is null)
+            {
+                chunk = await FetchChunkAsync(
+                    from: cursor, to: chunkTo,
+                    timespan: null, resolution: resExpr, bbox: bbox, ct: ct);
+                // Store on success only. Null = transport / parse
+                // failure; storing null would poison subsequent
+                // loads of the same window. The cache's own
+                // live-tail rule will silently no-op the head chunk
+                // even when the response is non-null.
+                if (chunk is { Length: > 0 }) _cache?.Set(key, chunk);
+            }
             if (chunk is { Length: > 0 })
             {
                 // Dedupe the seam: consecutive sub-requests can

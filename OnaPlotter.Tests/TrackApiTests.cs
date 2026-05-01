@@ -700,6 +700,209 @@ public class TrackApiTests
         await Assert.That(TrackApi.TryParseResolutionToSpan("nonsense")).IsNull();
     }
 
+    // -----------------------------------------------------------------
+    // Cache integration: paginated chunks consult HistoryCache. First
+    // load fills the cache; second load with the same window reuses
+    // every chunk (zero HTTP requests on warm cache). Live-tail
+    // chunks (within 1 min of "now") refetch every time.
+    // -----------------------------------------------------------------
+
+    /// <summary>Frozen-clock TimeProvider so the live-tail rule fires
+    /// deterministically in cache integration tests. Same shape as
+    /// the one in <c>HistoryCacheTests</c>; duplicated here rather
+    /// than promoted to a shared helper because the two test classes
+    /// only have this one type in common, and a shared file would
+    /// hide the pin from a future reader.</summary>
+    private sealed class FrozenTime(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    /// <summary>Paginating TrackApi wired to a fresh cache + a request
+    /// counter. The mock returns the supplied body for every chunk,
+    /// which is fine for cache-behaviour assertions where we only
+    /// care about HOW MANY times the server was hit, not which
+    /// chunks came back with which data.</summary>
+    private static (TrackApi api, HistoryCache cache, Func<int> getRequestCount)
+        CachedHistoryApi(string body, FrozenTime time)
+    {
+        int count = 0;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            count++;
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+            };
+        });
+        var cache = new HistoryCache(time);
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), cache);
+        return (api, cache, () => count);
+    }
+
+    [Test]
+    public async Task Cache_FirstLoad_PopulatesCache_SecondLoad_ServesFromCache()
+    {
+        // Frozen at a "now" far past the queried window so every
+        // chunk is OUTSIDE the live-tail freshness band. Otherwise
+        // the cache's HeadFreshness rule would refuse to store the
+        // chunks and the second load would still hit the server.
+        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
+        // Two-sample body; passes the segmenter contract but the
+        // cache test only cares about request count.
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
+        var (api, cache, getCount) = CachedHistoryApi(body, time);
+
+        // 950 s @ 1 s = 950 expected rows -> 2 chunks at the cap.
+        var window = (
+            from: new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 25, 12, 15, 50, TimeSpan.Zero));
+
+        var first = await api.GetServerTrackPointsAsync(
+            from: window.from, to: window.to, timespan: null, resolution: "1s");
+
+        int afterFirst = getCount();
+        await Assert.That(first).IsNotNull();
+        await Assert.That(afterFirst).IsEqualTo(2);
+        await Assert.That(cache.Count).IsEqualTo(2);
+        await Assert.That(cache.Hits).IsEqualTo(0);
+        await Assert.That(cache.Misses).IsGreaterThanOrEqualTo(2);
+
+        // Second load with the EXACT same window: every chunk is
+        // already cached. Request count must NOT advance, and the
+        // cache hit counter must rise by the chunk count.
+        var second = await api.GetServerTrackPointsAsync(
+            from: window.from, to: window.to, timespan: null, resolution: "1s");
+
+        int afterSecond = getCount();
+        await Assert.That(second).IsNotNull();
+        await Assert.That(afterSecond)
+            .IsEqualTo(afterFirst)
+            .Because("warm cache must serve every chunk without hitting the server");
+        await Assert.That(cache.Hits).IsGreaterThanOrEqualTo(2);
+    }
+
+    [Test]
+    public async Task Cache_DifferentResolution_Misses()
+    {
+        // Resolution is part of the cache key. Re-issuing the same
+        // window at a different resolution must NOT serve cached
+        // 30s chunks as if they were 5m chunks (the buckets are
+        // different and the server's response would differ).
+        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
+        var (api, cache, getCount) = CachedHistoryApi(body, time);
+        var window = (
+            from: new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 25, 12, 15, 50, TimeSpan.Zero));
+
+        await api.GetServerTrackPointsAsync(
+            from: window.from, to: window.to, timespan: null, resolution: "1s");
+        int afterFirst = getCount();
+
+        // Same window, different resolution: must hit the server again.
+        await api.GetServerTrackPointsAsync(
+            from: window.from, to: window.to, timespan: null, resolution: "5s");
+
+        int afterSecond = getCount();
+        await Assert.That(afterSecond - afterFirst).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task Cache_DifferentBbox_Misses()
+    {
+        // bbox is part of the cache key. A re-load with a different
+        // bbox (e.g. helm panned the History map) must refetch
+        // because the server may return different points for the
+        // narrowed area.
+        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
+        var (api, cache, getCount) = CachedHistoryApi(body, time);
+        var window = (
+            from: new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 25, 12, 15, 50, TimeSpan.Zero));
+
+        await api.GetServerTrackPointsAsync(
+            from: window.from, to: window.to, timespan: null, resolution: "1s",
+            bbox: new TrackBbox(South: 47.0, West: 8.0, North: 48.0, East: 9.0));
+        int afterFirst = getCount();
+
+        await api.GetServerTrackPointsAsync(
+            from: window.from, to: window.to, timespan: null, resolution: "1s",
+            bbox: new TrackBbox(South: 24.0, West: -77.0, North: 25.0, East: -76.0));
+
+        int afterSecond = getCount();
+        await Assert.That(afterSecond - afterFirst).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task Cache_LiveTailChunk_RefetchesEveryTime()
+    {
+        // Live-tail rule: chunks whose `to` is within HeadFreshness
+        // (60 s) of "now" must NOT be cached and must NOT be served
+        // from cache. If the boat is currently underway, the head
+        // chunk is still being filled; a cached "you're stationary"
+        // entry would be stale. Pin both directions: cache stays
+        // empty after the first load, and the second load hits the
+        // server the same number of times.
+        //
+        // Setup math: 510 s window @ 1 s resolution. Chunking
+        // triggers (>500 expected rows). Chunk size = 475 s
+        // (= 500 × 0.95 × 1 s):
+        //   chunk 1: [t, t+475]   -> to = t + 475 s
+        //   chunk 2: [t+475, t+510] -> to = t + 510 s
+        // Set "now" = t + 510 s (= window end). Live-tail boundary
+        // = now - 60 s = t + 450 s. Both chunk `to`s (475 and 510)
+        // are AFTER 450, so both are live-tail.
+        var windowStart = new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero);
+        var windowEnd = windowStart.AddSeconds(510);
+        var time = new FrozenTime(windowEnd);
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
+        var (api, cache, getCount) = CachedHistoryApi(body, time);
+
+        await api.GetServerTrackPointsAsync(
+            from: windowStart, to: windowEnd, timespan: null, resolution: "1s");
+        int afterFirst = getCount();
+        await Assert.That(afterFirst)
+            .IsEqualTo(2)
+            .Because("510 s @ 1 s exceeds the 500-row cap -> chunked into 2 sub-requests");
+
+        // Cache must be EMPTY after the first load: every chunk
+        // is in the tail and HistoryCache.Set silently no-ops.
+        await Assert.That(cache.Count).IsEqualTo(0);
+
+        // Second identical load: cache stays empty, server is hit
+        // again the same number of times.
+        await api.GetServerTrackPointsAsync(
+            from: windowStart, to: windowEnd, timespan: null, resolution: "1s");
+
+        int afterSecond = getCount();
+        await Assert.That(afterSecond)
+            .IsEqualTo(afterFirst * 2)
+            .Because("live-tail chunks must refetch unconditionally; " +
+                     "caching them would surface stale 'boat hasn't moved' data");
+        await Assert.That(cache.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Cache_SmallSingleRequestWindow_DoesNotCache()
+    {
+        // Below-cap windows take the original single-request path
+        // (`duration=PT1H`, no chunking). That path bypasses the
+        // cache entirely because the relative form would always
+        // miss against absolute-bound cache keys. Pin the
+        // bypass: cache stays empty even after a small fetch.
+        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]]]}""";
+        var (api, cache, _) = CachedHistoryApi(body, time);
+
+        await api.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: "1h", resolution: "30s");
+
+        await Assert.That(cache.Count).IsEqualTo(0);
+    }
+
     [Test]
     public async Task History_BadRequest_Returns_Null()
     {

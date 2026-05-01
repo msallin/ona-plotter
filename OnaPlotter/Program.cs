@@ -106,6 +106,11 @@ builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // the app startup.
 builder.Services.AddSingleton<IAnchorAlarmApi, AnchorAlarmApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();
+// Session-scoped chunk cache for the History API. WASM is single-
+// process so AddSingleton is effectively scope-equivalent; the cache
+// lives until tab close. Registered BEFORE TrackApi so DI's
+// constructor injection sees it.
+builder.Services.AddSingleton<OnaPlotter.Services.Api.HistoryCache>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.
 builder.Services.AddSingleton<IRadarApi, RadarApi>();
