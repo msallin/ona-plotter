@@ -110,7 +110,7 @@ public sealed class Aton
                     Mmsi = v;
                     return true;
                 }
-            case "navigation.position":
+            case OnaPlotter.Utilities.SkPaths.Navigation.Position:
                 return ApplyPosition(rawValue);
             case "atonType":
                 return ApplyAtonType(rawValue);

@@ -107,11 +107,11 @@ public sealed class SignalkClient : IAsyncDisposable
     private static readonly string[] SelfFastTierPaths =
     [
         "environment.depth.belowTransducer",
-        "environment.wind.angleApparent",
-        "environment.wind.speedApparent",
-        "environment.wind.angleTrueWater",
-        "environment.wind.speedTrue",
-        "environment.wind.directionTrue",
+        Utilities.SkPaths.Environment.Wind.AngleApparent,
+        Utilities.SkPaths.Environment.Wind.SpeedApparent,
+        Utilities.SkPaths.Environment.Wind.AngleTrueWater,
+        Utilities.SkPaths.Environment.Wind.SpeedTrue,
+        Utilities.SkPaths.Environment.Wind.DirectionTrue,
         // Mayara radar ARPA targets. Paths arrive as
         // radars.<radarId>.targets.<targetId>.(position|course|speed|...)
         // under context vessels.self; ProcessSelfDelta detects and
@@ -128,21 +128,21 @@ public sealed class SignalkClient : IAsyncDisposable
         // tech-debt pass. NavigationData.Apply's v1 case labels
         // remain as a safety net for any plugin that still emits
         // them.
-        "navigation.course.activeRoute",
-        "navigation.course.activeRoute.href",
-        "navigation.course.activeRoute.name",
-        "navigation.course.activeRoute.pointIndex",
-        "navigation.course.activeRoute.pointTotal",
-        "navigation.course.nextPoint",
+        Utilities.SkPaths.Navigation.Course.ActiveRoute,
+        Utilities.SkPaths.Navigation.Course.ActiveRouteHref,
+        Utilities.SkPaths.Navigation.Course.ActiveRouteName,
+        Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex,
+        Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal,
+        Utilities.SkPaths.Navigation.Course.NextPoint,
         "navigation.course.nextPoint.position",
         "navigation.course.previousPoint.position",
-        "navigation.course.calcValues.distance",
-        "navigation.course.calcValues.bearingTrue",
-        "navigation.course.calcValues.timeToGo",
-        "navigation.course.calcValues.velocityMadeGood",
-        "navigation.course.calcValues.crossTrackError",
-        "navigation.course.calcValues.route.distance",
-        "navigation.course.calcValues.route.timeToGo",
+        Utilities.SkPaths.Navigation.Course.CalcValues.Distance,
+        Utilities.SkPaths.Navigation.Course.CalcValues.BearingTrue,
+        Utilities.SkPaths.Navigation.Course.CalcValues.TimeToGo,
+        Utilities.SkPaths.Navigation.Course.CalcValues.VelocityMadeGood,
+        Utilities.SkPaths.Navigation.Course.CalcValues.CrossTrackError,
+        Utilities.SkPaths.Navigation.Course.CalcValues.RouteDistance,
+        Utilities.SkPaths.Navigation.Course.CalcValues.RouteTimeToGo,
         // Bare-boolean leg-advance fallbacks. The notification-shaped
         // siblings live in SelfFastNotificationsTierPaths below (separate
         // tier so they ride policy=instant and don't get coalesced).
@@ -190,9 +190,9 @@ public sealed class SignalkClient : IAsyncDisposable
     private static readonly string[] SelfSlowTierPaths =
     [
         // Anchor alarm plugin (sbender9/signalk-anchoralarm-plugin).
-        "navigation.anchor.position",
-        "navigation.anchor.maxRadius",
-        "navigation.anchor.currentRadius",
+        Utilities.SkPaths.Navigation.Anchor.Position,
+        Utilities.SkPaths.Navigation.Anchor.MaxRadius,
+        Utilities.SkPaths.Navigation.Anchor.CurrentRadius,
         // Note: bearing-to-anchor is NOT subscribed -- we compute it
         // client-side via Utilities.GeoBearing from anchor lat/lon
         // and own-ship lat/lon. That keeps the HUD bearing needle
@@ -232,12 +232,12 @@ public sealed class SignalkClient : IAsyncDisposable
     /// every AIS vessel gets them once -- no duplication on self.</summary>
     private static readonly string[] AisTierPaths =
     [
-        "navigation.position",
-        "navigation.speedOverGround",
-        "navigation.courseOverGroundTrue",
-        "navigation.courseOverGroundMagnetic",
-        "navigation.headingTrue",
-        "navigation.headingMagnetic",
+        Utilities.SkPaths.Navigation.Position,
+        Utilities.SkPaths.Navigation.SpeedOverGround,
+        Utilities.SkPaths.Navigation.CourseOverGroundTrue,
+        Utilities.SkPaths.Navigation.CourseOverGroundMagnetic,
+        Utilities.SkPaths.Navigation.HeadingTrue,
+        Utilities.SkPaths.Navigation.HeadingMagnetic,
         "name",
         "mmsi",
         "communication.callsignVhf",
@@ -784,7 +784,7 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                if (val.Path == "navigation.position" && val.Value is JsonElement posEl
+                if (val.Path == Utilities.SkPaths.Navigation.Position && val.Value is JsonElement posEl
                     && posEl.ValueKind == JsonValueKind.Object)
                 {
                     if (posEl.TryGetProperty("latitude", out var lat)
@@ -809,7 +809,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 // User-reported bug: anchor stayed on ONA after being
                 // cleared in freeboard-sk because only case 1 was
                 // handled. All three now clear our side.
-                if (val.Path == "navigation.anchor.position")
+                if (val.Path == Utilities.SkPaths.Navigation.Anchor.Position)
                 {
                     if (val.Value is JsonElement anchorEl)
                     {
@@ -841,7 +841,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 // Treat a null maxRadius as "anchor no longer armed" too,
                 // covering servers that don't re-emit a null position on
                 // deactivation.
-                if (val.Path == "navigation.anchor.maxRadius" && IsNullDelta(val.Value))
+                if (val.Path == Utilities.SkPaths.Navigation.Anchor.MaxRadius && IsNullDelta(val.Value))
                 {
                     _data.ClearAnchor();
                     changed = true;
@@ -863,31 +863,31 @@ public sealed class SignalkClient : IAsyncDisposable
                 // SyncActiveRouteAsync reads Data.ActiveRouteHref,
                 // which stayed null. See the symmetric null-branch
                 // further down for deactivation.
-                if (val.Path == "navigation.course.activeRoute"
+                if (val.Path == Utilities.SkPaths.Navigation.Course.ActiveRoute
                     && val.Value is JsonElement arEl
                     && arEl.ValueKind == JsonValueKind.Object)
                 {
                     if (arEl.TryGetProperty("href", out var arHref)
                         && arHref.ValueKind == JsonValueKind.String)
                     {
-                        _data.ApplyString("navigation.course.activeRoute.href", arHref.GetString());
+                        _data.ApplyString(Utilities.SkPaths.Navigation.Course.ActiveRouteHref, arHref.GetString());
                     }
                     if (arEl.TryGetProperty("name", out var arName)
                         && arName.ValueKind == JsonValueKind.String)
                     {
-                        _data.ApplyString("navigation.course.activeRoute.name", arName.GetString());
+                        _data.ApplyString(Utilities.SkPaths.Navigation.Course.ActiveRouteName, arName.GetString());
                     }
                     if (arEl.TryGetProperty("pointIndex", out var arIdx)
                         && arIdx.ValueKind == JsonValueKind.Number
                         && arIdx.TryGetDouble(out var idxD))
                     {
-                        _data.Apply("navigation.course.activeRoute.pointIndex", idxD);
+                        _data.Apply(Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex, idxD);
                     }
                     if (arEl.TryGetProperty("pointTotal", out var arTot)
                         && arTot.ValueKind == JsonValueKind.Number
                         && arTot.TryGetDouble(out var totD))
                     {
-                        _data.Apply("navigation.course.activeRoute.pointTotal", totD);
+                        _data.Apply(Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal, totD);
                     }
                     changed = true;
                     continue;
@@ -1079,9 +1079,9 @@ public sealed class SignalkClient : IAsyncDisposable
                 //       course state stays stale until a fresh route is
                 //       set. Freeboard does the same (its processCourseData
                 //       treats a null value as "clear everything").
-                if (val.Path == "navigation.course.activeRoute.href"
-                    || val.Path == "navigation.course.activeRoute"
-                    || val.Path == "navigation.course.nextPoint")
+                if (val.Path == Utilities.SkPaths.Navigation.Course.ActiveRouteHref
+                    || val.Path == Utilities.SkPaths.Navigation.Course.ActiveRoute
+                    || val.Path == Utilities.SkPaths.Navigation.Course.NextPoint)
                 {
                     bool isNull = val.Value is null
                         || (val.Value is JsonElement nel && nel.ValueKind == JsonValueKind.Null);

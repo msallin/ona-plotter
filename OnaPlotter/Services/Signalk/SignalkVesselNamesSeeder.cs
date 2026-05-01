@@ -116,7 +116,7 @@ public sealed class SignalkVesselNamesSeeder
             var posVal = SignalkDraftSeeder.UnwrapValue(posWrap);
             if (posVal.ValueKind == JsonValueKind.Object)
             {
-                _ais.Apply(context, "navigation.position", posVal);
+                _ais.Apply(context, OnaPlotter.Utilities.SkPaths.Navigation.Position, posVal);
                 any = true;
             }
         }
