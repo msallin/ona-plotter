@@ -258,6 +258,35 @@
                     + "<code>signalk-flags</code>",
                     IsLive: _ => true),
             ]),
+            // History + Radar are first-class APIs but ride REST, not
+            // the delta stream, so they go in their own group rather
+            // than padding the AIS/resources block. Same "no per-path
+            // value" shape as the resources row -- the helm just wants
+            // to see the endpoint URL + which plugin publishes it.
+            new PathGroup("History API (REST)",
+            [
+                new("/signalk/v2/api/history/values",
+                    "History page playback + segmenter, Stats page totals, "
+                    + "saved-trip route export",
+                    "<code>signalk-parquet</code> or <code>signalk-to-influxdb2</code> "
+                    + "(install one to populate the History page)",
+                    IsLive: _ => true),
+                new("/signalk/v2/api/history/_providers",
+                    "Plugin discovery -- which provider serves history queries",
+                    "<code>signalk-server</code> core (provider registry)",
+                    IsLive: _ => true),
+            ]),
+            new PathGroup("Radar API (REST + tile streams)",
+            [
+                new("/signalk/v2/api/vessels/self/radars",
+                    "Radar overlay listing + per-radar control (range, gain, sea / rain clutter)",
+                    "<code>mayara-server</code> + <code>signalk-radar</code> bridge plugin",
+                    IsLive: _ => true),
+                new("/signalk/v2/api/vessels/self/radars/{id}/stream",
+                    "Live PPI tile stream painted on the chart map",
+                    "<code>mayara-server</code> radar driver",
+                    IsLive: _ => true),
+            ]),
         ];
 
         _ = RefreshLiveStateAsync();

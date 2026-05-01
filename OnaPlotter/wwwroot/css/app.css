@@ -5831,7 +5831,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     border-radius: 10px;
     padding: 14px 18px;
     overflow-y: auto;
-    z-index: 870;
+    /* 1100 is above Leaflet's .leaflet-top / .leaflet-bottom
+       control containers (z-index 1000 in Leaflet v1.x). The
+       previous value of 870 sat ABOVE .leaflet-control (800) so
+       most layers were covered, but the +/- zoom buttons live
+       inside .leaflet-top which has its own 1000 stacking, so
+       they leaked through on top of the panel. Pinning above
+       1000 puts the trip detail decisively in front. */
+    z-index: 1100;
     box-shadow: var(--panel-shadow);
     display: flex;
     flex-direction: column;
