@@ -1436,27 +1436,11 @@
     // another plotter after they opened the Resources page).
     private async Task ApplyMapDeepLinkAsync()
     {
-        // Minimal query-string parse so we don't need the
-        // Microsoft.AspNetCore.WebUtilities package for this single
-        // call site. Only two keys are meaningful (focus / edit) and
-        // the value format is "<kind>:<id>".
         var uri = new Uri(Nav.Uri);
-        string? raw = null;
-        bool editFlow = false;
-        foreach (var seg in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            int eq = seg.IndexOf('=');
-            if (eq <= 0) continue;
-            string key = seg[..eq];
-            string val = Uri.UnescapeDataString(seg[(eq + 1)..]);
-            if (key == "edit") { raw = val; editFlow = true; break; }
-            if (key == "focus") { raw = val; editFlow = false; }
-        }
-        if (raw is null) return;
-        var parts = raw.Split(':', 2);
-        if (parts.Length != 2) return;
-        string kind = parts[0];
-        string id   = parts[1];
+        if (OnaPlotter.Utilities.MapDeepLink.Parse(uri.Query) is not { } target) return;
+        string kind = target.Kind;
+        string id = target.Id;
+        bool editFlow = target.IsEdit;
 
         switch (kind)
         {
