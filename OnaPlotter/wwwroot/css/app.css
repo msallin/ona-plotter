@@ -3378,6 +3378,39 @@ main:has(.alarm-banner-stack) .snooze-chips {
     .update-available-chip { min-height: 32px; padding: 6px 14px; font-size: 0.8rem; }
 }
 
+/* Not-logged-in chip. Same shape as .update-available-chip (helm
+   reads it as another "topbar status pill") but uses the warning
+   colour family to read as "you've got a problem to fix" rather
+   than "good news, take this update". Anchor (not button) because
+   it opens the SK admin login in a new tab. No pulse: a steady
+   warning is less aggressive than the update-chip's polite tap-me
+   nudge -- helm doesn't need an animation reminding them every
+   2.4 s that they're read-only. */
+.auth-warning-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--sk-warning, #d97706);
+    border: 1px solid var(--sk-warning, #d97706);
+    color: #fff;
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    margin-left: 8px;
+    text-decoration: none;
+}
+.auth-warning-chip:hover {
+    filter: brightness(1.1);
+    text-decoration: none;
+    color: #fff;
+}
+@media (pointer: coarse) {
+    .auth-warning-chip { min-height: 32px; padding: 6px 14px; font-size: 0.8rem; }
+}
+
 /* Full-screen tap-outside backdrop. Rendered alongside the panel in
    MainLayout so a touch outside the sheet dismisses it; on desktop the
    backdrop is invisible but still there so the Log-button toggle isn't

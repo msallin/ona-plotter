@@ -11,6 +11,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject OnaPlotter.Services.UpdateChecker Updates
+@inject OnaPlotter.Services.Api.IAuthApi AuthApi
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
@@ -66,6 +67,25 @@
                     <span aria-hidden="true">↻</span>
                     Update available
                 </button>
+            }
+
+            @* Not-logged-in chip. Probed once at app start via
+               IAuthApi.GetLoginStatusAsync. Visible only when the
+               server has security ENABLED and the current session is
+               read-only (auth flag stale, never logged in, etc.); a
+               no-auth dev / homelab server returns
+               authenticationRequired=false and the chip stays hidden.
+               Tap opens the SK admin UI in a new tab so the helm can
+               log in there; on return they reload OnaPlotter to pick
+               up the cookie. *@
+            @if (_loginStatus is { ShouldShowLoginWarning: true })
+            {
+                <a class="auth-warning-chip"
+                   href="@(_baseUri + SkAdminLoginPath)" target="_blank" rel="noreferrer"
+                   title="Read-only session: saves and edits will fail until you sign in. Tap to open the SK admin login.">
+                    <span aria-hidden="true">⚠</span>
+                    Not logged in
+                </a>
             }
 
             @* Zoom in / out. Only rendered when the Map page is
@@ -395,6 +415,23 @@
     private volatile bool wasStale;
     private bool alarmLogOpen;
     private bool firstRunOfflineToastShown;
+    /// <summary>Cached login-status snapshot. Probed once at app
+    /// start via IAuthApi.GetLoginStatusAsync and refreshed every
+    /// 5 minutes thereafter -- short enough that the helm sees the
+    /// chip clear within a few minutes after they sign in via the
+    /// SK admin tab, long enough that the probe doesn't add
+    /// measurable network noise. Null means "haven't probed yet"
+    /// or "endpoint absent / failed"; the chip stays hidden in
+    /// either case.</summary>
+    private LoginStatus? _loginStatus;
+    private System.Threading.Timer? authPollTimer;
+    /// <summary>Browser origin used to build the
+    /// <c>/skServer/login</c> link in the not-logged-in chip.
+    /// Captured once at OnInitialized; the chip's href is built
+    /// against this so a same-origin SK install (the common case)
+    /// gets a relative-ish link the helm can open in a new tab.</summary>
+    private string _baseUri = "";
+    private const string SkAdminLoginPath = "/admin/#/login";
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -433,6 +470,23 @@
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
+
+        // Capture the SK admin link target once. NavigationManager.BaseUri
+        // is the page origin (e.g. https://openplotter.local/) -- the SK
+        // admin lives at /admin/#/login on the same origin in the typical
+        // signalk-server install.
+        _baseUri = Nav.BaseUri.TrimEnd('/');
+
+        // Probe login status. One-shot at app start, then every 5 min
+        // so a helm who signs in via the SK admin tab sees the chip
+        // clear within a few minutes without a manual reload. The
+        // probe degrades to null (chip hidden) on 404 / transport
+        // failure -- third-party SK servers without /skServer/loginStatus
+        // see no chip rather than a "broken auth" warning.
+        _ = RefreshLoginStatusAsync();
+        authPollTimer = new System.Threading.Timer(
+            _ => _ = RefreshLoginStatusAsync(), null,
+            TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         // Snoozed-chip countdown refresh: updates the "7m" label each
         // minute. Separate from the stale check to keep the two concerns
         // independent.
@@ -1031,6 +1085,38 @@
         catch (ObjectDisposedException) { }
     }
 
+    /// <summary>Probe the login-status endpoint and stash for the
+    /// not-logged-in chip. Called once on init and every 5 min from
+    /// the auth poll timer. Failure / 404 (third-party SK server
+    /// without /skServer/loginStatus) leaves the cached value null
+    /// and the chip stays hidden -- "we can't tell" is a more
+    /// honest UX than a chip that lies.</summary>
+    private async Task RefreshLoginStatusAsync()
+    {
+        try
+        {
+            var status = await AuthApi.GetLoginStatusAsync();
+            // Only re-render when the warning state changed -- avoids
+            // a free StateHasChanged on every 5-min poll for the
+            // common "still logged in" path. Toggle vs the current
+            // _loginStatus's effective banner state.
+            bool wasShowing = _loginStatus is { ShouldShowLoginWarning: true };
+            bool nowShowing = status is { ShouldShowLoginWarning: true };
+            _loginStatus = status;
+            if (wasShowing != nowShowing)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (ObjectDisposedException) { }
+        catch (Exception)
+        {
+            // Auth probe is best-effort; never let it crash the
+            // page. Worst case is the chip stays at its previous
+            // state until the next poll.
+        }
+    }
+
     private static string FormatRemaining(DateTime expiresAt)
     {
         var remaining = expiresAt - DateTime.UtcNow;
@@ -1098,6 +1184,7 @@
         if (staleCheckTimer is not null) await staleCheckTimer.DisposeAsync();
         if (snoozeCountdownTimer is not null) await snoozeCountdownTimer.DisposeAsync();
         if (firstRunOfflineTimer is not null) await firstRunOfflineTimer.DisposeAsync();
+        if (authPollTimer is not null) await authPollTimer.DisposeAsync();
         if (audioModule is not null)
         {
             try
