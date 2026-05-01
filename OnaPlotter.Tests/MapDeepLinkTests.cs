@@ -15,9 +15,10 @@ public class MapDeepLinkTests
     {
         var t = MapDeepLink.Parse("?focus=route:abc123");
         await Assert.That(t).IsNotNull();
-        await Assert.That(t!.Value.Kind).IsEqualTo("route");
-        await Assert.That(t!.Value.Id).IsEqualTo("abc123");
-        await Assert.That(t!.Value.IsEdit).IsFalse();
+        var hit = t!.Value;
+        await Assert.That(hit.Kind).IsEqualTo("route");
+        await Assert.That(hit.Id).IsEqualTo("abc123");
+        await Assert.That(hit.IsEdit).IsFalse();
     }
 
     [Test]
@@ -25,21 +26,37 @@ public class MapDeepLinkTests
     {
         var t = MapDeepLink.Parse("?edit=region:xyz");
         await Assert.That(t).IsNotNull();
-        await Assert.That(t!.Value.Kind).IsEqualTo("region");
-        await Assert.That(t!.Value.Id).IsEqualTo("xyz");
-        await Assert.That(t!.Value.IsEdit).IsTrue();
+        var hit = t!.Value;
+        await Assert.That(hit.Kind).IsEqualTo("region");
+        await Assert.That(hit.Id).IsEqualTo("xyz");
+        await Assert.That(hit.IsEdit).IsTrue();
     }
 
     [Test]
-    public async Task Parse_EditWinsOverFocus_WhenBothPresent()
+    public async Task Parse_EditWinsOverFocus_WhenFocusFirst()
     {
         // Real-world case: a deep link the helm constructed by hand
         // mixing both keys. Prefer the editor invocation so the
-        // editor link "wins" when ambiguous.
+        // editor link "wins" when ambiguous. This direction exercises
+        // the "set focus, then overwrite with edit" path.
         var t = MapDeepLink.Parse("?focus=route:r1&edit=region:r2");
-        await Assert.That(t!.Value.Kind).IsEqualTo("region");
-        await Assert.That(t!.Value.Id).IsEqualTo("r2");
-        await Assert.That(t!.Value.IsEdit).IsTrue();
+        var hit = t!.Value;
+        await Assert.That(hit.Kind).IsEqualTo("region");
+        await Assert.That(hit.Id).IsEqualTo("r2");
+        await Assert.That(hit.IsEdit).IsTrue();
+    }
+
+    [Test]
+    public async Task Parse_EditWinsOverFocus_WhenEditFirst()
+    {
+        // Mirror of the above; this direction exercises the "edit
+        // matched first, break out of the loop" path. Both code paths
+        // must produce the same answer or the precedence is leaky.
+        var t = MapDeepLink.Parse("?edit=region:r1&focus=route:r2");
+        var hit = t!.Value;
+        await Assert.That(hit.Kind).IsEqualTo("region");
+        await Assert.That(hit.Id).IsEqualTo("r1");
+        await Assert.That(hit.IsEdit).IsTrue();
     }
 
     [Test]

@@ -326,6 +326,35 @@ async function resolveVesselName(_context, _mmsi) {
 // --- popup builder ---
 
 /**
+ * Resolves the popup-title string for an AIS vessel given the
+ * available name signals. Pure function — no DOM, no module state —
+ * so the precedence is testable from Node.
+ *
+ * Precedence (top wins):
+ *   1. C# canonical `displayName` when SK delivered a real name.
+ *      The canonical already has the buddy-star prefix baked in, so
+ *      this branch returns it verbatim.
+ *   2. `cachedName` (JS-only enrichment via external-lookup cache;
+ *      only meaningful when SK gave us only an MMSI).
+ *   3. `callsign` (last readable fallback before bare numerics).
+ *   4. `MMSI <id>` — the "MMSI " prefix is JS-side disambiguation so
+ *      a bare 9-digit number doesn't read as a coordinate or distance.
+ *   5. `Unknown` — final fallback.
+ *
+ * Branches 2-5 add the `★ ` buddy prefix here since they don't go
+ * through C#. The return value is RAW (un-escaped); callers that
+ * inject into HTML must escape.
+ */
+export function resolveAisPopupTitle({ displayName, name, callsign, mmsi, buddy, cachedName }) {
+    const star = buddy ? '★ ' : '';
+    if (name && displayName) return displayName;
+    if (cachedName) return star + cachedName;
+    if (callsign) return star + callsign;
+    if (mmsi) return star + 'MMSI ' + mmsi;
+    return star + 'Unknown';
+}
+
+/**
  * Builds the full AIS popup HTML string from a vessel snapshot.
  * Called lazily -- only when the popup is actually about to open or
  * is already open and the data changed. Building 200+ of these
@@ -334,7 +363,6 @@ async function resolveVesselName(_context, _mmsi) {
  */
 function buildAisPopupHtml(snap) {
     const { v, selfLat: _selfLat, selfLon: _selfLon, cpaInfo, isDangerEff, isWarning } = snap;
-    const name = esc(v.name || '');
     const mmsi = v.mmsi || '';
     const callsign = v.callsign ? esc(v.callsign) : '';
     const sog = v.sogMs != null ? (v.sogMs * 1.94384).toFixed(1) : '--';
@@ -344,21 +372,19 @@ function buildAisPopupHtml(snap) {
     const dist = haversineMeters(_selfLat, _selfLon, v.lat, v.lon) * NM_PER_METER;
     const brg = bearingDeg(_selfLat, _selfLon, v.lat, v.lon);
 
-    // Title preference: v.displayName is the C#-side canonical (SK
-    // name -> MMSI fallback, with buddy-star prefix already applied).
-    // Two JS-only enrichments slot in ABOVE the canonical when SK gave
-    // us only an MMSI: an external-lookup cache that may have resolved
-    // it to a real name (the C# layer can't see this cache), and the
-    // callsign as a last readable fallback. 'Unknown' covers the rare
-    // case where neither SK nor any fallback delivered anything.
+    // Title resolution lives in resolveAisPopupTitle so the precedence
+    // is testable in isolation (Node, no DOM). The resolver returns a
+    // raw string; we esc() at the call site since the popup template
+    // is HTML.
     const cachedName = (!v.name && mmsi) ? vesselNameCacheGet(mmsi) : undefined;
-    const buddyStar = v.buddy ? '★ ' : '';
-    let displayTitle;
-    if (v.displayName && v.name) displayTitle = esc(v.displayName);
-    else if (cachedName)         displayTitle = buddyStar + esc(cachedName);
-    else if (callsign)           displayTitle = buddyStar + callsign;
-    else if (v.displayName)      displayTitle = esc(v.displayName);
-    else                         displayTitle = buddyStar + 'Unknown';
+    const displayTitle = esc(resolveAisPopupTitle({
+        displayName: v.displayName,
+        name: v.name,
+        callsign: v.callsign,
+        mmsi,
+        buddy: !!v.buddy,
+        cachedName,
+    }));
 
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {

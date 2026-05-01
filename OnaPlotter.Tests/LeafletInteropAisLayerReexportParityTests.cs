@@ -55,11 +55,14 @@ public class LeafletInteropAisLayerReexportParityTests
         // by leafletInterop.js itself during init / teardown
         // (aisLayerMod.init(...), aisLayerMod.dispose()). `setBoatPosition`
         // is invoked from the mux via the imported module reference
-        // when own-vessel position updates. None of these are reachable
-        // from C#, so they don't need a top-level re-export.
+        // when own-vessel position updates. `resolveAisPopupTitle` is a
+        // pure helper exported only so the Node-driven aisLayer.test.js
+        // can pin its precedence chain; the C# side never calls it.
+        // None of these are reachable from C#, so they don't need a
+        // top-level re-export.
         var skipList = new HashSet<string>(StringComparer.Ordinal)
         {
-            "init", "dispose", "setBoatPosition",
+            "init", "dispose", "setBoatPosition", "resolveAisPopupTitle",
         };
 
         await Assert.That(aisLayerExports.Count)
