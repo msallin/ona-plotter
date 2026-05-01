@@ -1379,6 +1379,65 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    [Arguments(true, 0)]
+    [Arguments(true, 1)]
+    [Arguments(true, 2)]
+    [Arguments(true, 3)]
+    [Arguments(false, 0)]
+    [Arguments(false, 2)]
+    [Arguments(false, 3)]
+    public async Task ChartUpscale_RoundTripMatrix(bool enabled, int levels)
+    {
+        // Pins every (enabled, levels) pair through Set + reload. A
+        // hypothetical "if (value == _current) return early" optimisation
+        // in the setters would fail on the case where the helm's first
+        // explicit toggle matches the default (true, 2) -- write would
+        // be skipped, the second instance would read default-true, and
+        // a later default flip would silently change the behaviour.
+        // Same for the false-side: a helm who explicitly opts out today
+        // would silently get re-enabled if the early-return shortcut
+        // were ever introduced and the default flipped again.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetChartUpscaleEnabledAsync(enabled);
+        await svc.SetChartUpscaleLevelsAsync(levels);
+
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.ChartUpscaleEnabled).IsEqualTo(enabled);
+        await Assert.That(svc2.ChartUpscaleLevels).IsEqualTo(levels);
+    }
+
+    [Test]
+    public async Task SetChartUpscaleEnabledAsync_StorageThrows_KeepsInMemoryStateAndDoesNotCrash()
+    {
+        // Private-mode / quota-exceeded path. The setter must update
+        // the in-memory value (so the layer renders correctly within
+        // the session) but swallow the persistence failure. Without
+        // this, a fresh user toggling the master flag in private mode
+        // would freeze the Settings page on a JSException bubble-up.
+        var svc = new AppSettingsService(new ThrowingKv());
+        await svc.InitializeAsync();
+
+        await svc.SetChartUpscaleEnabledAsync(false);
+
+        await Assert.That(svc.ChartUpscaleEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task SetChartUpscaleLevelsAsync_StorageThrows_KeepsInMemoryStateAndDoesNotCrash()
+    {
+        var svc = new AppSettingsService(new ThrowingKv());
+        await svc.InitializeAsync();
+
+        await svc.SetChartUpscaleLevelsAsync(3);
+
+        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(3);
+    }
+
+    [Test]
     public async Task SetChartUpscaleLevels_BelowFloor_ClampsToZero()
     {
         var kv = new InMemoryKv();
@@ -1405,6 +1464,8 @@ public class AppSettingsServiceTests
     }
 
     [Test]
+    // -------------------- pinned-by-cast cases --------------------
+    // (these would surface if (int)LoadDouble changed truncation rules)
     [Arguments("-5", 0)]            // below floor -> clamp 0
     [Arguments("-1", 0)]
     [Arguments("0", 0)]
@@ -1414,20 +1475,51 @@ public class AppSettingsServiceTests
     [Arguments("4", 3)]             // above ceiling -> clamp 3
     [Arguments("99", 3)]
     [Arguments("2.7", 2)]           // double truncates toward zero
+    [Arguments("-2.7", 0)]          // truncation gives -2 then clamp -> 0
     [Arguments("-0.4", 0)]
+    // -------------------- pinned-by-clamp cases --------------------
+    // (LoadDouble accepts these; the clamp catches the overflow)
+    [Arguments("Infinity", 3)]      // (int)+Inf saturates to int.MaxValue, clamp -> 3
+    [Arguments("-Infinity", 0)]     // (int)-Inf saturates to int.MinValue, clamp -> 0
+    [Arguments("1e308", 3)]         // double-overflow region
+    [Arguments("-1e308", 0)]
+    [Arguments("9999999999999", 3)] // long > int.MaxValue, cast then clamp
+    [Arguments("-9999999999999", 0)]
     public async Task ChartUpscaleLevels_StoredValue_LoadsClamped(
         string stored, int expected)
     {
         // Feeds literal localStorage values through the InitializeAsync
         // load path. Covers the "(int)await LoadDouble" cast plus the
-        // ClampLevels guard. A user on de-CH whose older buggy build
-        // wrote "2,7" instead of "2.7" hits the comma-rejected branch
-        // and falls back to DefaultLevels (covered by a separate test).
+        // ClampLevels guard. The arguments are split into two visual
+        // groups by the comments above: the first group is "pinned by
+        // cast semantics" (a refactor that switched to Math.Floor or
+        // dropped IsFinite would surface); the second is "pinned by
+        // clamp" (LoadDouble currently accepts these but ClampLevels
+        // catches the result -- a regression that drops Math.Clamp
+        // would surface).
         var kv = new InMemoryKv();
         await kv.SetAsync("chartUpscaleLevels.v1", stored);
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
         await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("NaN")]              // double.TryParse accepts; (int)NaN = 0; clamp -> 0
+    public async Task ChartUpscaleLevels_NaNStored_LoadsAsZero(string stored)
+    {
+        // Carved out from the parametrized test above because NaN's
+        // expected value (0 on .NET) is technically "implementation-
+        // defined" by the C# spec and worth its own narrative comment.
+        // .NET 5+ fixed (int)NaN -> 0 to match ECMA-335; older runtimes
+        // could differ. Pin so a runtime upgrade that flipped this
+        // would be a visible test change rather than a silent default
+        // shift.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("chartUpscaleLevels.v1", stored);
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(0);
     }
 
     [Test]

@@ -15,6 +15,7 @@ import * as atonLayerMod from './atonLayer.js';
 import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
 import { withOverzoom } from './overzoomLayer.js';
+import { decideDownshift } from './chartDownshift.js';
 import * as activeRouteLayerMod from './activeRouteLayer.js';
 import * as courseLineLayerMod from './courseLineLayer.js';
 import * as routeEditLayerMod from './routeEditLayer.js';
@@ -1220,15 +1221,10 @@ const chartTileErrors = new Map();   // id -> total count
 // idempotent: once we drop to the chart's actual native zoom,
 // errors stop and the calibrator goes quiet.
 const chartZoomErrors = new Map();   // id -> Map<zoom, count>
-// Threshold: the chart needs to fail at its declared cap this many
-// times in a row before we believe the metadata is lying. 2 is the
-// sweet spot -- 1 trips on a single transient 404, 3+ delays the
-// downshift longer than the helm wants to see blank tiles. Per-zoom
-// counter is reset to 0 after each downshift, so a chart claiming
-// maxzoom 18 but actually having 16 needs 2*2=4 errors total to
-// settle (z18 fails twice -> drop to 17, z17 fails twice -> drop
-// to 16). That happens within seconds of the helm zooming in.
-const CHART_DOWNSHIFT_THRESHOLD = 2;
+// Threshold + decision logic live in chartDownshift.js so they can
+// be unit-tested without a Leaflet TileLayer instance. The handler
+// below stays thin: read state, call decideDownshift, apply
+// side-effects on a downshift result.
 
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution) {
     if (!map || chartLayers.has(id)) return false;
@@ -1317,39 +1313,40 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         // resurrect the deleted entry via the `?? 0` fallback and
         // grow chartTileErrors unboundedly across many add/remove
         // cycles. Guard with .has(id) so a removed chart's in-flight
-        // <img>.error events stop being counted. The chartZoomErrors
-        // path below has the symmetric guard at line ~1310.
+        // <img>.error events stop being counted.
         if (!chartTileErrors.has(id)) return;
         chartTileErrors.set(id, chartTileErrors.get(id) + 1);
-        // Downshift calibrator. Only act when:
-        //   1. the error carries a coords.z (Leaflet always sets it
-        //      on a real tile-fetch failure; defend defensively),
-        //   2. the error is AT the layer's current maxNativeZoom
-        //      (a sub-cap error is a server hiccup, not a metadata
-        //      lie -- we're not interested),
-        //   3. we've seen the threshold of errors at this zoom,
-        //   4. dropping the cap wouldn't push us below minZoom + 1
-        //      (which would erase the chart entirely).
-        const z = ev?.coords?.z;
-        if (typeof z !== 'number') return;
-        const native = layer.options?.maxNativeZoom;
-        if (typeof native !== 'number' || z !== native) return;
+        // Downshift calibrator. Pure decision logic in chartDownshift.js;
+        // this handler reads layer state, asks decideDownshift what to
+        // do, then applies side-effects. Refactor preserves the
+        // historical behaviour (idempotent, only acts at the cap, only
+        // on bonafide tileerror events) -- pinned by chartDownshift.test.js.
         const zoomMap = chartZoomErrors.get(id);
         if (!zoomMap) return;
-        zoomMap.set(z, (zoomMap.get(z) ?? 0) + 1);
-        if ((zoomMap.get(z) ?? 0) < CHART_DOWNSHIFT_THRESHOLD) return;
+        const z = ev?.coords?.z;
+        const native = layer.options?.maxNativeZoom;
         const minZ = layer.options.minZoom ?? 1;
-        if (native <= minZ + 1) return;
-        const newNative = native - 1;
-        layer.options.maxNativeZoom = newNative;
-        // Reset the per-zoom counter for the OLD cap. The next
-        // downshift (if the metadata was off by 2+) starts counting
-        // fresh against the NEW cap.
-        zoomMap.delete(z);
-        layer.redraw();
-        console.warn(
-            `[chart] ${id}: declared maxzoom ${native} returns 404; ` +
-            `downshifted maxNativeZoom to ${newNative}`);
+        const priorErrorsAtZ = (typeof z === 'number') ? (zoomMap.get(z) ?? 0) : 0;
+        const decision = decideDownshift({
+            errorZ: z, currentNative: native, minZoom: minZ, priorErrorsAtZ
+        });
+        if (decision.reason === 'bad-coords' || decision.reason === 'bad-native' ||
+            decision.reason === 'not-at-cap') {
+            return;
+        }
+        if (decision.shouldDownshift) {
+            layer.options.maxNativeZoom = decision.newNative;
+            // Reset the per-zoom counter for the OLD cap so the next
+            // downshift (if the metadata was off by 2+) starts counting
+            // fresh against the NEW cap.
+            zoomMap.delete(z);
+            layer.redraw();
+            console.warn(
+                `[chart] ${id}: declared maxzoom ${native} returns 404; ` +
+                `downshifted maxNativeZoom to ${decision.newNative}`);
+        } else {
+            zoomMap.set(z, decision.nextErrorsAtZ);
+        }
     });
     restackChartOpacities();
     return true;
