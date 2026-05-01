@@ -544,9 +544,12 @@ export function updateAisTargets(vessels) {
                     L.DomEvent.stopPropagation(ev);
                     L.DomEvent.preventDefault(ev);
                     const ll = ev.latlng || marker.getLatLng();
-                    if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
+                    // Measure beats route / polygon edit (helm
+                    // priority: a started measurement always wins
+                    // a click).
+                    if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
+                    else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
                     else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
-                    else                         editModeAddPoint('measure', ll.lat, ll.lng);
                     marker.closePopup();
                 }
             });
