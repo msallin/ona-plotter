@@ -1,8 +1,10 @@
 // Note markers: geolocated text annotations (SignalK
 // /resources/notes). Rendered as a small folded-page pin that reads
-// distinct from waypoints (circular) and routes (amber line). Click
-// opens a popup with title + description and a Delete button (two-
-// step confirm) that round-trips to C# via the cached dotNetRef.
+// distinct from waypoints (circular) and routes (amber line). Hover
+// shows the title (so the helm can scan a chart full of pins without
+// clicking each one), click opens a popup with title + description +
+// coordinates + created-at + four action buttons (Go / Edit / Share /
+// Delete). Each button round-trips to C# via the cached dotNetRef.
 //
 // Note pin colour: darker amber in the same user-annotation family
 // as routes and waypoints. Shape (folded-page vs circle vs line)
@@ -73,23 +75,88 @@ function getNoteIcon() {
     return noteIconCached;
 }
 
-function buildNotePopupHtml(_id, title, description) {
+/** Format a [lat, lon] pair as "47.40123°N, 8.50456°E" for the popup
+ *  body. Hemisphere letters keep it readable for a helm who isn't
+ *  used to signed decimal degrees; 5 fractional digits = ~1 m on
+ *  any latitude, matching what GPS feeds typically resolve. */
+function formatLatLon(lat, lon) {
+    const ns = lat >= 0 ? 'N' : 'S';
+    const ew = lon >= 0 ? 'E' : 'W';
+    return `${Math.abs(lat).toFixed(5)}°${ns}, ${Math.abs(lon).toFixed(5)}°${ew}`;
+}
+
+/** Format an ISO-8601 timestamp string for the popup. Local-tz
+ *  rendering because the helm is reading the helm clock; UTC would
+ *  be a foreign reference. Empty / unparseable input -> dash so the
+ *  caller doesn't need to guard. */
+function formatCreatedAt(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    // ddd, yyyy-MM-dd HH:mm matches the trips-table style on the
+    // History page so muscle memory carries.
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${days[d.getDay()]} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+        + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function buildNotePopupHtml(_id, title, description, lat, lon, createdAtIso) {
     const safeTitle = esc(title || '(untitled)');
     const safeDesc = description ? esc(description).replace(/\n/g, '<br/>') : '';
+    const coords = formatLatLon(lat, lon);
+    const created = formatCreatedAt(createdAtIso);
     return `
         <div class="note-popup-inner">
             <div class="note-popup-title">${safeTitle}</div>
             ${safeDesc ? `<div class="note-popup-body">${safeDesc}</div>` : ''}
-            <button class="note-delete-btn" type="button">Delete</button>
+            <div class="note-popup-meta">
+                <div><span class="note-popup-meta-label">Coords:</span> <code>${esc(coords)}</code></div>
+                <div><span class="note-popup-meta-label">Created:</span> ${esc(created)}</div>
+            </div>
+            <div class="note-popup-actions">
+                <button class="note-go-btn map-btn" type="button"
+                        title="Set this note's position as the navigation destination">Go</button>
+                <button class="note-edit-btn map-btn" type="button"
+                        title="Rename this note">Edit</button>
+                <button class="note-share-btn map-btn" type="button"
+                        title="Share this note via system share or copy to clipboard">Share</button>
+                <button class="note-delete-btn map-btn" type="button">Delete</button>
+            </div>
         </div>`;
 }
 
-export function addNoteMarker(id, lat, lon, title, description) {
+/** Wire a single-click button in the popup to a [JSInvokable] method.
+ *  Mirror of wireDeleteConfirm minus the two-step confirm: Go / Edit
+ *  / Share aren't destructive enough to need it, and an extra tap on
+ *  every action would wear out fast. _wired flag so re-opening the
+ *  popup doesn't double-bind. */
+function wireSimpleClick(popup, selector, dotNetMethod, id) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector(selector);
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', () => {
+        const dotNetRef = getDotNetRef();
+        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id).catch(() => {});
+    });
+}
+
+export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
     if (!mapRef || noteMarkers.has(id)) return;
     const marker = L.marker([lat, lon], { icon: getNoteIcon() }).addTo(mapRef);
-    marker.bindPopup(buildNotePopupHtml(id, title, description), {
+    // Hover tooltip showing the title. Helps the helm scan a chart
+    // dotted with notes without clicking each pin. Empty title falls
+    // through to "(untitled)" so the tooltip always carries something.
+    marker.bindTooltip(title || '(untitled)', {
+        direction: 'top',
+        offset: [0, -22],   // matches popupAnchor so tooltip clears the icon
+        opacity: 0.95,
+    });
+    marker.bindPopup(buildNotePopupHtml(id, title, description, lat, lon, createdAtIso), {
         className: 'note-popup',
-        maxWidth: 280,
+        maxWidth: 320,
         autoClose: true,
     });
     // During edit modes, swallow the click and append to whatever
@@ -105,10 +172,15 @@ export function addNoteMarker(id, lat, lon, title, description) {
             marker.closePopup();
         }
     });
-    // Wire up the delete button when the popup opens. We query within
-    // the popup DOM so an id collision with something else on the
-    // page can't hijack the click.
-    marker.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.note-delete-btn', 'DeleteNote', id, getDotNetRef));
+    // Wire the four action buttons when the popup opens. Querying
+    // INSIDE the popup DOM (not document-wide) means an id collision
+    // with another element can't hijack the click.
+    marker.on('popupopen', (ev) => {
+        wireSimpleClick(ev.popup, '.note-go-btn', 'NoteGoTo', id);
+        wireSimpleClick(ev.popup, '.note-edit-btn', 'NoteEdit', id);
+        wireSimpleClick(ev.popup, '.note-share-btn', 'NoteShare', id);
+        wireDeleteConfirm(ev.popup, '.note-delete-btn', 'DeleteNote', id, getDotNetRef);
+    });
     noteMarkers.set(id, marker);
 }
 

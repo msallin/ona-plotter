@@ -6804,6 +6804,54 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     white-space: pre-wrap;
     word-break: break-word;
 }
+/* Coordinates + Created-At meta block. Dimmer + smaller than the
+   body so it reads as reference data, not the primary content.
+   tabular-nums keeps the coord pair from jittering when adjacent
+   notes are compared. <code> children inherit; we rely on the
+   container's font-variant for the lat/lon line. */
+.note-popup-meta {
+    font-size: 0.72rem;
+    color: var(--panel-text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 8px;
+    line-height: 1.35;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.note-popup-meta code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: 0.72rem;
+}
+.note-popup-meta-label {
+    color: var(--sk-text-muted);
+    font-weight: 500;
+    margin-right: 4px;
+}
+/* Action-button row at the foot of the popup. flex-wrap so the
+   four buttons reflow to two rows on a narrow popup (iPad
+   portrait); gap matches the layers-panel row spacing so the
+   helm sees a consistent button rhythm across surfaces. */
+.note-popup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.note-popup-actions .map-btn {
+    font-size: 0.72rem;
+    padding: 3px 10px;
+    min-width: 0;
+}
+@media (pointer: coarse) {
+    .note-popup-actions .map-btn {
+        min-height: 36px;
+        padding: 8px 14px;
+        font-size: 0.85rem;
+    }
+}
 .note-delete-btn {
     background: transparent;
     color: var(--sk-text-muted);

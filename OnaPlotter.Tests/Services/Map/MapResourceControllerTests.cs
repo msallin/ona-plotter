@@ -14,7 +14,7 @@ public class MapResourceControllerTests
     {
         public List<(string id, double? lat, double? lon, string? name)> Waypoints { get; } = [];
         public List<string> WaypointRemoves { get; } = [];
-        public List<(string id, double lat, double lon, string? title, string? desc)> Notes { get; } = [];
+        public List<(string id, double lat, double lon, string? title, string? desc, string? createdAtIso)> Notes { get; } = [];
         public List<string> NoteRemoves { get; } = [];
         public int NoteClears { get; private set; }
         public List<string> NoteOpens { get; } = [];
@@ -37,9 +37,9 @@ public class MapResourceControllerTests
             return Task.CompletedTask;
         }
 
-        public Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description)
+        public Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description, string? createdAtIso)
         {
-            Notes.Add((id, lat, lon, title, description));
+            Notes.Add((id, lat, lon, title, description, createdAtIso));
             return Task.CompletedTask;
         }
 

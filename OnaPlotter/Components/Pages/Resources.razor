@@ -177,8 +177,13 @@
                                 <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => OpenOnMap(TypeNote, n.Id, edit: false)">View</button>
                                 <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => EditNoteTitle(n)">Edit</button>
+                                <button class="btn btn-sm btn-outline-secondary"
                                         @onclick="() => ExportNote(n)"
                                         title="Export (asks GPX or GeoJSON)">Export</button>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        @onclick="() => ShareNote(n)"
+                                        title="Share via system share or copy GeoJSON to clipboard">Share</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                         @onclick="() => DeleteNote(n.Id, n.Title)">Delete</button>
                             </div>
@@ -575,6 +580,86 @@
             ? ResourceExporter.NoteGeoJson(n)
             : ResourceExporter.NoteGpx(n);
         await DownloadAsync(content, NameOrId(n.Title, n.Id), format);
+    }
+
+    /// <summary>Resources-page rename for notes. Mirrors
+    /// <see cref="EditWaypointName"/>: themed prompt via the shared
+    /// confirmation service, optimistic local mutation so the row
+    /// reflects the new title without a list refresh. Description is
+    /// untouched -- single-field rename matches the layers-panel
+    /// edit affordance, multi-field edit deferred to a dedicated
+    /// dialog.</summary>
+    private async Task EditNoteTitle(SignalkNote n)
+    {
+        var current = n.Title ?? "";
+        var updated = await Confirmations.PromptAsync(
+            "New note title:", current,
+            confirmLabel: "Rename");
+        if (updated is null) return;            // cancelled
+        var trimmed = updated.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+        if (trimmed == current) return;          // no-op
+        ApiResult r;
+        try { r = await NoteApi.UpdateAsync(n, trimmed, n.Description); }
+        catch (Exception ex) { Toasts.Error($"Rename failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Rename failed: {r.Error ?? "server rejected"}"); return; }
+        Toasts.Success($"Renamed to '{trimmed}'");
+        n.Title = trimmed;
+        StateHasChanged();
+    }
+
+    /// <summary>Resources-page Share for notes. Builds a GeoJSON
+    /// Feature (point + title / description / createdAt properties)
+    /// and routes through the file-transfer helper's shareOrCopy --
+    /// system share sheet on iPad / Android, clipboard fallback on
+    /// desktop. Mirror of the popup-side <c>NoteShare</c> JSInvokable
+    /// on Map.razor.cs so the helm gets the same affordance from
+    /// either surface.</summary>
+    private async Task ShareNote(SignalkNote n)
+    {
+        if (n.Position is null)
+        {
+            Toasts.Error("Nothing to share -- this note has no position.");
+            return;
+        }
+        var feature = new
+        {
+            type = "Feature",
+            geometry = new
+            {
+                type = "Point",
+                coordinates = new[] { n.Position.Longitude, n.Position.Latitude },
+            },
+            properties = new
+            {
+                title = n.Title,
+                description = n.Description,
+                createdAt = n.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            },
+        };
+        string json = System.Text.Json.JsonSerializer.Serialize(feature,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string title = NameOrId(n.Title, n.Id);
+            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Copied to clipboard"); break;
+                case "cancelled":   /* helm tapped cancel */ break;
+                default:            Toasts.Error("Couldn't share or copy."); break;
+            }
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
     }
 
     /// <summary>Regions always export as GeoJSON (GPX 1.1 has no

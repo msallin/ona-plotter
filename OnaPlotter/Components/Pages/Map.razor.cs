@@ -106,7 +106,16 @@ public partial class Map
         string id = r.Value;
 
         if (module is not null)
-            await module.InvokeVoidAsync("addNoteMarker", id, contextMenuLat, contextMenuLon, title, description);
+        {
+            // CreatedAt: stamp with the same instant the server saw
+            // (close enough to the server's actual createdAt that the
+            // round-trip on next reload will agree). The marker
+            // popup formats this for display; ISO-8601 round-trips
+            // through JSInterop without DateTime fuzz.
+            string createdAtIso = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            await module.InvokeVoidAsync("addNoteMarker",
+                id, contextMenuLat, contextMenuLon, title, description, createdAtIso);
+        }
         loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? loadedNotes;
         Toasts.Success($"Saved note '{title}'");
     }
@@ -126,6 +135,142 @@ public partial class Map
             await module.InvokeVoidAsync("removeNoteMarker", id);
         loadedNotes = loadedNotes.Where(n => n.Id != id).ToList();
         Toasts.Info("Note deleted");
+    }
+
+    /// <summary>Invoked from the JS popup's Go button: PUT the note's
+    /// position as the SignalK course destination. Mirrors the
+    /// layers-panel NavigateToNote on Map.razor; lives here as a
+    /// JSInvokable so the popup-side action can call straight from
+    /// the marker without round-tripping through the parent page's
+    /// EventCallback chain.</summary>
+    [JSInvokable]
+    public async Task NoteGoTo(string id)
+    {
+        var note = loadedNotes.FirstOrDefault(n => n.Id == id);
+        if (note?.Position is null)
+        {
+            Toasts.Warning("Note not found"); return;
+        }
+        try
+        {
+            var r = await CourseApi.SetDestinationPositionAsync(note.Position.Latitude, note.Position.Longitude);
+            if (!r.Success)
+            {
+                Toasts.Error($"Navigate failed: {r.Error ?? "server rejected"}");
+                return;
+            }
+            Toasts.Success($"Navigating to {(string.IsNullOrWhiteSpace(note.Title) ? "note" : note.Title)}");
+        }
+        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+    }
+
+    /// <summary>Invoked from the JS popup's Edit button: prompts for
+    /// a new title (description left untouched, same scope as the
+    /// layers-panel rename) and PUTs it. Optimistic local rename so
+    /// the popup re-opens with the new value if the helm taps the
+    /// same pin again before the next resource poll.</summary>
+    [JSInvokable]
+    public async Task NoteEdit(string id)
+    {
+        var note = loadedNotes.FirstOrDefault(n => n.Id == id);
+        if (note is null) { Toasts.Warning("Note not found"); return; }
+
+        var newTitle = await Confirmations.PromptAsync(
+            "Note title:",
+            initialValue: note.Title ?? "",
+            confirmLabel: "Save");
+        if (newTitle is null) return;
+        var trimmed = newTitle.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+        if (trimmed == (note.Title ?? "")) return;
+
+        ApiResult r;
+        try { r = await NoteApi.UpdateAsync(note, trimmed, note.Description); }
+        catch (Exception ex) { Toasts.Error($"Rename note failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Rename note failed: {r.Error ?? "server rejected"}"); return; }
+
+        var updated = loadedNotes.Select(x =>
+        {
+            if (x.Id != id) return x;
+            return new SignalkNote
+            {
+                Id = x.Id,
+                Title = trimmed,
+                Description = x.Description,
+                Position = x.Position,
+                MimeType = x.MimeType,
+                Url = x.Url,
+                CreatedAt = x.CreatedAt,
+            };
+        }).ToList();
+        loadedNotes = updated;
+        // Re-render the marker so the next click shows the new title
+        // in both the hover tooltip and the popup body. Cheaper than
+        // a full notes-layer reload.
+        if (module is not null && note.Position is not null)
+        {
+            await module.InvokeVoidAsync("removeNoteMarker", id);
+            await module.InvokeVoidAsync("addNoteMarker",
+                id, note.Position.Latitude, note.Position.Longitude,
+                trimmed, note.Description,
+                note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        Toasts.Success("Note renamed");
+    }
+
+    /// <summary>Invoked from the JS popup's Share button: build a
+    /// GeoJSON Feature for the note (point geometry + title /
+    /// description / createdAt properties) and hand it to the file-
+    /// transfer module's shareOrCopy helper. The helm gets the
+    /// system share sheet on iPad / Android Chrome; on the desktop
+    /// the JSON copies to clipboard with a toast.</summary>
+    [JSInvokable]
+    public async Task NoteShare(string id)
+    {
+        var note = loadedNotes.FirstOrDefault(n => n.Id == id);
+        if (note?.Position is null) { Toasts.Warning("Note not found"); return; }
+
+        // Inline GeoJSON build: notes are a small one-off shape, no
+        // benefit to reusing ResourceExporter (which targets routes /
+        // tracks). Coordinates per GeoJSON spec are [lon, lat].
+        var feature = new
+        {
+            type = "Feature",
+            geometry = new
+            {
+                type = "Point",
+                coordinates = new[] { note.Position.Longitude, note.Position.Latitude },
+            },
+            properties = new
+            {
+                title = note.Title,
+                description = note.Description,
+                createdAt = note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            },
+        };
+        string json = System.Text.Json.JsonSerializer.Serialize(feature,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string title = string.IsNullOrWhiteSpace(note.Title) ? "Note" : note.Title!;
+            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Copied to clipboard"); break;
+                case "cancelled":   /* helm tapped cancel */ break;
+                default:            Toasts.Error("Couldn't share or copy."); break;
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
     }
 
     private async Task FocusNote(SignalkNote note)

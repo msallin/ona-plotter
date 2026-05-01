@@ -39,11 +39,18 @@ public sealed class NoteApi : INoteApi
 
     public Task<ApiResult<string>> CreateAsync(string title, string description, double lat, double lon, CancellationToken ct = default)
     {
+        // Stamp createdAt on first PUT so the note popup can show
+        // "when did this appear" without standing up a sidecar
+        // resource. ISO-8601 UTC ("o" format) round-trips through
+        // System.Text.Json's DateTime parser unambiguously. Notes
+        // authored elsewhere (Freeboard, KIP) won't carry this and
+        // the UI renders a dash; that's the honest "we don't know".
         var body = new
         {
             title,
             description,
-            position = new { latitude = lat, longitude = lon }
+            position = new { latitude = lat, longitude = lon },
+            createdAt = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
         };
         var url = _baseUrl.Combine(SignalKUrls.NotesPath);
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
@@ -55,6 +62,9 @@ public sealed class NoteApi : INoteApi
         // replaces the whole resource on PUT (no PATCH). Position must
         // round-trip from the existing note so the helm doesn't lose
         // the anchor when they only meant to fix a typo.
+        // CreatedAt similarly round-trips so an Edit doesn't reset
+        // the "first seen" timestamp -- the UI is "when was this
+        // pinned", not "when did the title change".
         if (note.Position is null) return Task.FromResult(ApiResult.Fail("note has no position"));
         var body = new
         {
@@ -65,6 +75,7 @@ public sealed class NoteApi : INoteApi
                 latitude = note.Position.Latitude,
                 longitude = note.Position.Longitude,
             },
+            createdAt = note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
         };
         var url = _baseUrl.Combine(SignalKUrls.Note(note.Id));
         return ResourceHttp.PutAsync(_http, url, body, ct);
