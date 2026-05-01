@@ -15,9 +15,7 @@
 // CPA threat band) are resolved on the C# side; JS just draws them.
 
 import { DEG, NM_PER_METER, haversineMeters, bearingDeg, destPoint, vectorEnd } from './geoMath.js';
-
-// HTML-escape untrusted strings for popup content.
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+import { esc } from './popupHelpers.js';
 
 let mapRef = null;
 let colors = null;
@@ -296,15 +294,6 @@ function vesselNameCacheGet(mmsi) {
     return v;
 }
 
-function vesselNameCacheSet(mmsi, name) {
-    if (vesselNameCache.has(mmsi)) vesselNameCache.delete(mmsi);
-    vesselNameCache.set(mmsi, name);
-    while (vesselNameCache.size > VESSEL_NAME_CACHE_MAX) {
-        const oldest = vesselNameCache.keys().next().value;
-        vesselNameCache.delete(oldest);
-    }
-}
-
 function vesselNameCacheHas(mmsi) { return vesselNameCache.has(mmsi); }
 
 // Vessel-name enrichment is disabled. The previous implementation
@@ -316,9 +305,9 @@ function vesselNameCacheHas(mmsi) { return vesselNameCache.has(mmsi); }
 // shows up". A proper long-term home for this lookup is a SignalK
 // server-side plugin.
 //
-// The function is kept as a no-op so call sites remain; the
-// per-MMSI cache is still honored for any externally injected
-// values.
+// resolveVesselName is kept as a no-op so call sites remain; the
+// vesselNameCache is honoured for any future external injector that
+// reaches in via the module reference.
 async function resolveVesselName(_context, _mmsi) {
     return null;
 }
