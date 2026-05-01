@@ -51,7 +51,15 @@ public partial class Map
         string id = r.Value;
 
         if (module is not null)
-            await module.InvokeVoidAsync("addWaypointMarker", id, contextMenuLat, contextMenuLon, name);
+        {
+            // Stamp createdAt with the same instant we just sent on
+            // the POST so the marker popup shows the right value
+            // immediately. The server's round-trip on next reload
+            // will agree (resources-fs preserves the body verbatim).
+            string createdAtIso = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            await module.InvokeVoidAsync("addWaypointMarker",
+                id, contextMenuLat, contextMenuLon, name, createdAtIso);
+        }
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         Toasts.Success($"Saved waypoint '{name}'");
     }
@@ -72,6 +80,134 @@ public partial class Map
             await module.InvokeVoidAsync("removeWaypointMarker", id);
         loadedWaypoints = loadedWaypoints.Where(w => w.Id != id).ToList();
         Toasts.Info("Waypoint deleted");
+    }
+
+    /// <summary>Popup-side Focus: pan the map to the waypoint and
+    /// dismiss other panels. Mirror of <see cref="FocusWaypoint"/>
+    /// (the layers-panel button), exposed as a JSInvokable so the
+    /// popup-side action can call it directly without round-tripping
+    /// through the parent page's EventCallback chain.</summary>
+    [JSInvokable]
+    public async Task WaypointFocus(string id)
+    {
+        var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
+        if (wp is null) { Toasts.Warning("Waypoint not found"); return; }
+        await FocusWaypoint(wp);
+    }
+
+    /// <summary>Popup-side Go: PUT the waypoint as the SignalK
+    /// course destination. Mirror of <see cref="NavigateToWaypoint"/>
+    /// so the affordance is identical from the layers panel and the
+    /// popup.</summary>
+    [JSInvokable]
+    public async Task WaypointGoTo(string id)
+    {
+        var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
+        if (wp is null) { Toasts.Warning("Waypoint not found"); return; }
+        await NavigateToWaypoint(wp);
+    }
+
+    /// <summary>Popup-side Edit: prompt for a new name (description
+    /// untouched, same single-field rename scope as notes) and
+    /// re-render the marker with the new name + same createdAt.
+    /// Optimistic local rename so the popup re-opens with the new
+    /// value if the helm taps the same pin again before the next
+    /// resource poll.</summary>
+    [JSInvokable]
+    public async Task WaypointEdit(string id)
+    {
+        var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
+        if (wp is null) { Toasts.Warning("Waypoint not found"); return; }
+        var newName = await Confirmations.PromptAsync(
+            "Waypoint name:",
+            initialValue: wp.Name ?? "",
+            confirmLabel: "Save");
+        if (newName is null) return;
+        var trimmed = newName.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+        if (trimmed == (wp.Name ?? "")) return;
+
+        ApiResult r;
+        try { r = await WaypointApi.UpdateAsync(wp, trimmed); }
+        catch (Exception ex) { Toasts.Error($"Rename failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Rename failed: {r.Error ?? "server rejected"}"); return; }
+
+        // Optimistic local rename + marker re-render so the next
+        // popup open shows the new name in title + tooltip.
+        var updated = loadedWaypoints.Select(w =>
+        {
+            if (w.Id != id) return w;
+            return new SignalkWaypoint
+            {
+                Id = w.Id,
+                Name = trimmed,
+                Feature = w.Feature,
+                Latitude = w.Latitude,
+                Longitude = w.Longitude,
+                CreatedAt = w.CreatedAt,
+            };
+        }).ToList();
+        loadedWaypoints = updated;
+        if (module is not null && wp.Latitude is double lat && wp.Longitude is double lon)
+        {
+            await module.InvokeVoidAsync("removeWaypointMarker", id);
+            await module.InvokeVoidAsync("addWaypointMarker",
+                id, lat, lon, trimmed,
+                wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        Toasts.Success("Waypoint renamed");
+    }
+
+    /// <summary>Popup-side Share: build a GeoJSON Feature for the
+    /// waypoint (point + name / createdAt properties) and route
+    /// through the file-transfer helper's shareOrCopy. Mirrors
+    /// <see cref="NoteShare"/> -- different resource, same
+    /// surface.</summary>
+    [JSInvokable]
+    public async Task WaypointShare(string id)
+    {
+        var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
+        if (wp?.Latitude is null || wp.Longitude is null)
+        {
+            Toasts.Warning("Waypoint not found"); return;
+        }
+        var feature = new
+        {
+            type = "Feature",
+            geometry = new
+            {
+                type = "Point",
+                coordinates = new[] { wp.Longitude.Value, wp.Latitude.Value },
+            },
+            properties = new
+            {
+                name = wp.Name,
+                createdAt = wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            },
+        };
+        string json = System.Text.Json.JsonSerializer.Serialize(feature,
+            new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            });
+
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/fileTransfer.js");
+            string title = string.IsNullOrWhiteSpace(wp.Name) ? "Waypoint" : wp.Name!;
+            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Copied to clipboard"); break;
+                case "cancelled":   /* helm tapped cancel */ break;
+                default:            Toasts.Error("Couldn't share or copy."); break;
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
     }
 
     // ---- Note (create, save, delete, focus, show/hide) ---------------

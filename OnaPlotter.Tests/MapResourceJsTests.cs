@@ -16,14 +16,18 @@ public class MapResourceJsTests
         var fake = new RecordingJsRef();
         var sut = new MapResourceJs(fake);
 
-        await sut.AddWaypointMarkerAsync("w1", 54.5, 11.2, "Buoy A");
+        await sut.AddWaypointMarkerAsync("w1", 54.5, 11.2, "Buoy A", "2026-04-25T12:00:00Z");
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("addWaypointMarker");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(4);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(5);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("w1");
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(11.2);
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo("Buoy A");
+        // Fifth slot is the createdAt ISO string -- pinned by
+        // position so a future shape change shows up here, not at
+        // runtime as a misplaced popup field.
+        await Assert.That(fake.Calls[0].args[4]).IsEqualTo("2026-04-25T12:00:00Z");
     }
 
     [Test]
@@ -36,11 +40,12 @@ public class MapResourceJsTests
         double? lat = 54.5;
         double? lon = 11.2;
 
-        await sut.AddWaypointMarkerAsync("w1", lat, lon, null);
+        await sut.AddWaypointMarkerAsync("w1", lat, lon, null, createdAtIso: null);
 
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(11.2);
         await Assert.That(fake.Calls[0].args[3]).IsNull();
+        await Assert.That(fake.Calls[0].args[4]).IsNull();
     }
 
     [Test]
@@ -207,7 +212,7 @@ public class MapResourceJsTests
         var sut = new MapResourceJs(fake);
 
         sut.MarkDisposed();
-        await sut.AddWaypointMarkerAsync("w", 0, 0, null);
+        await sut.AddWaypointMarkerAsync("w", 0, 0, null, null);
         await sut.RemoveWaypointMarkerAsync("w");
         await sut.AddNoteMarkerAsync("n", 0, 0, null, null, null);
         await sut.ClearNotesAsync();
@@ -244,6 +249,6 @@ public class MapResourceJsTests
         var sut = new MapResourceJs(fake);
 
         await Assert.ThrowsAsync<JSException>(() =>
-            sut.AddWaypointMarkerAsync("w", 0, 0, null));
+            sut.AddWaypointMarkerAsync("w", 0, 0, null, null));
     }
 }

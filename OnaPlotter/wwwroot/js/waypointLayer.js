@@ -37,7 +37,17 @@ function formatWaypointTooltip(name, id, lat, lon) {
            `<div class="wp-tooltip-coords">${esc(coords)}</div>`;
 }
 
-function buildWaypointPopupHtml(id, name, lat, lon) {
+function formatCreatedAt(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '—';
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${days[d.getDay()]} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} `
+        + `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
     const safeName = esc(name || id.substring(0, 8));
     // Coords mirror the hover-tooltip format (5dp ~ 1 m, hemisphere
     // letters) so hover-then-tap doesn't show two conflicting
@@ -45,16 +55,51 @@ function buildWaypointPopupHtml(id, name, lat, lon) {
     // need the coords here because they never trigger hover.
     const ns = lat >= 0 ? 'N' : 'S';
     const ew = lon >= 0 ? 'E' : 'W';
-    const coords = `${Math.abs(lat).toFixed(5)}° ${ns}, ${Math.abs(lon).toFixed(5)}° ${ew}`;
+    const coords = `${Math.abs(lat).toFixed(5)}°${ns}, ${Math.abs(lon).toFixed(5)}°${ew}`;
+    const created = formatCreatedAt(createdAtIso);
+    // Mirror of the note popup so the helm gets the same affordance
+    // grid (Focus / Go / Edit / Share / Delete) on either resource
+    // type. Marker icon stays distinct (circle vs folded-page) so
+    // the at-a-glance "navigable target vs annotation" cue survives.
     return `
-        <div class="note-popup-inner">
+        <div class="note-popup-inner waypoint-popup-inner">
             <div class="note-popup-title">${safeName}</div>
-            <div class="note-popup-coords">${esc(coords)}</div>
-            <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
+            <div class="note-popup-meta">
+                <div><span class="note-popup-meta-label">Coords:</span> <code>${esc(coords)}</code></div>
+                <div><span class="note-popup-meta-label">Created:</span> ${esc(created)}</div>
+            </div>
+            <div class="note-popup-actions">
+                <button class="waypoint-focus-btn map-btn" type="button"
+                        title="Center the map on this waypoint">Focus</button>
+                <button class="waypoint-go-btn map-btn" type="button"
+                        title="Navigate to this waypoint">Go</button>
+                <button class="waypoint-edit-btn map-btn" type="button"
+                        title="Rename this waypoint">Edit</button>
+                <button class="waypoint-share-btn map-btn" type="button"
+                        title="Share this waypoint via system share or copy to clipboard">Share</button>
+                <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
+            </div>
         </div>`;
 }
 
-export function addWaypointMarker(id, lat, lon, name) {
+/** Single-click button wiring -- same shape as noteLayer's
+ *  wireSimpleClick. Inlined here rather than promoted to popupHelpers
+ *  because both note and waypoint layers will gain different
+ *  destination methods and a shared helper would force a "method
+ *  name + id" tuple convention that's not actually shared yet. */
+function wireSimpleClick(popup, selector, dotNetMethod, id) {
+    const el = popup.getElement();
+    if (!el) return;
+    const btn = el.querySelector(selector);
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', () => {
+        const dotNetRef = getDotNetRef();
+        if (dotNetRef) dotNetRef.invokeMethodAsync(dotNetMethod, id).catch(() => {});
+    });
+}
+
+export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
     if (!mapRef || waypointMarkers.has(id)) return;
     const marker = L.circleMarker([lat, lon], {
         radius: 6, color: colors.waypoint, fillColor: colors.waypoint, fillOpacity: 1, weight: 2,
@@ -83,9 +128,9 @@ export function addWaypointMarker(id, lat, lon, name) {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
-    hit.bindPopup(buildWaypointPopupHtml(id, name, lat, lon), {
+    hit.bindPopup(buildWaypointPopupHtml(id, name, lat, lon, createdAtIso), {
         className: 'note-popup',
-        maxWidth: 280,
+        maxWidth: 320,
         autoClose: true,
         closeButton: false,
     });
@@ -103,7 +148,13 @@ export function addWaypointMarker(id, lat, lon, name) {
             hit.closePopup();
         }
     });
-    hit.on('popupopen', (ev) => wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id, getDotNetRef));
+    hit.on('popupopen', (ev) => {
+        wireSimpleClick(ev.popup, '.waypoint-focus-btn', 'WaypointFocus', id);
+        wireSimpleClick(ev.popup, '.waypoint-go-btn', 'WaypointGoTo', id);
+        wireSimpleClick(ev.popup, '.waypoint-edit-btn', 'WaypointEdit', id);
+        wireSimpleClick(ev.popup, '.waypoint-share-btn', 'WaypointShare', id);
+        wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id, getDotNetRef);
+    });
     // Group + add-to-map so remove/clear takes both layers down
     // together. MarkerLayer.remove -> map.removeLayer(group) which
     // removes its children.

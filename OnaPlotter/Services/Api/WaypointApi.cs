@@ -46,7 +46,12 @@ public sealed class WaypointApi : IWaypointApi
         // refuse feature documents without a `properties` block, so
         // the helper always emits one (empty description is the
         // spec-friendly "no description" value, not a missing key).
-        var body = GeoJsonBuilder.FeatureBody(name, GeoJsonBuilder.Point(lat, lon), description);
+        // CreatedAt is stamped on first PUT so the popup can show
+        // "when was this pinned" without a sidecar resource. Same
+        // approach as SignalkNote -- relies on resources-fs round-
+        // tripping arbitrary top-level body fields.
+        var body = GeoJsonBuilder.FeatureBody(
+            name, GeoJsonBuilder.Point(lat, lon), description, createdAt: DateTime.UtcNow);
         var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
@@ -60,8 +65,11 @@ public sealed class WaypointApi : IWaypointApi
         if (wp.Latitude is not double lat || wp.Longitude is not double lon)
             return Task.FromResult(ApiResult.Fail("waypoint position required"));
         // Same envelope as Create; PUT at the waypoint's id URL is
-        // the v2 resources-api in-place update verb.
-        var body = GeoJsonBuilder.FeatureBody(name, GeoJsonBuilder.Point(lat, lon), description);
+        // the v2 resources-api in-place update verb. CreatedAt
+        // round-trips from the existing waypoint so an Edit doesn't
+        // reset the "first pinned" timestamp.
+        var body = GeoJsonBuilder.FeatureBody(
+            name, GeoJsonBuilder.Point(lat, lon), description, createdAt: wp.CreatedAt);
         var url = _baseUrl.Combine(SignalKUrls.Waypoint(wp.Id));
         return ResourceHttp.PutAsync(_http, url, body, ct);
     }

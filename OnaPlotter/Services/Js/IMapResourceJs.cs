@@ -14,8 +14,11 @@ public interface IMapResourceJs
 
     /// <summary>Draw a waypoint pin at the given lat/lon. Nullable
     /// coords mirror the call sites that pass <see cref="double?"/>
-    /// straight through after a non-null gate.</summary>
-    Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name);
+    /// straight through after a non-null gate. <paramref name="createdAtIso"/>
+    /// renders in the popup as the "Created" line; null = dash
+    /// (Freeboard / KIP / pre-feature OnaPlotter waypoints don't
+    /// carry the field).</summary>
+    Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name, string? createdAtIso);
 
     /// <summary>Remove a previously-drawn waypoint pin.</summary>
     Task RemoveWaypointMarkerAsync(string id);
