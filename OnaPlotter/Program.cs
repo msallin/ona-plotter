@@ -106,6 +106,11 @@ builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // the app startup.
 builder.Services.AddSingleton<IAnchorAlarmApi, AnchorAlarmApi>();
 builder.Services.AddSingleton<IPathApi, PathApi>();
+// Auth probe for the not-logged-in banner. signalk-server's
+// /skServer/loginStatus is the de-facto source of truth for "can
+// this session write?"; banner reads from it and hides when the
+// server has security disabled (open homelab / dev installs).
+builder.Services.AddSingleton<IAuthApi, AuthApi>();
 // Session-scoped chunk cache for the History API. WASM is single-
 // process so AddSingleton is effectively scope-equivalent; the cache
 // lives until tab close. Registered BEFORE TrackApi so DI's
