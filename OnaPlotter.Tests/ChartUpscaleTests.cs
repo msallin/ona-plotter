@@ -74,4 +74,71 @@ public class ChartUpscaleTests
         await Assert.That(ChartUpscale.Effective(true, -1)).IsEqualTo(0);
         await Assert.That(ChartUpscale.Effective(true, 99)).IsEqualTo(3);
     }
+
+    [Test]
+    public async Task ClampLevels_AlwaysWithinRange_Property()
+    {
+        // Property: for every int input, ClampLevels returns a value in
+        // [MinLevels, MaxLevels]. Catches a regression that flips
+        // MinLevels / MaxLevels constants or replaces Math.Clamp with a
+        // hand-rolled branch that mishandles a boundary.
+        //
+        // Mix of seeded random + known-evil values: int.MinValue,
+        // int.MaxValue, exact boundaries, off-by-one.
+        var rng = new Random(0x1B_AD_F0_0D);
+        var corners = new[] {
+            int.MinValue, int.MinValue + 1,
+            -1, 0, 1, 2, 3, 4,
+            ChartUpscale.MinLevels - 1, ChartUpscale.MinLevels, ChartUpscale.MinLevels + 1,
+            ChartUpscale.MaxLevels - 1, ChartUpscale.MaxLevels, ChartUpscale.MaxLevels + 1,
+            int.MaxValue - 1, int.MaxValue,
+        };
+        foreach (var v in corners)
+        {
+            int r = ChartUpscale.ClampLevels(v);
+            await Assert.That(r).IsGreaterThanOrEqualTo(ChartUpscale.MinLevels);
+            await Assert.That(r).IsLessThanOrEqualTo(ChartUpscale.MaxLevels);
+        }
+        for (int i = 0; i < 1000; i++)
+        {
+            int v = rng.Next(int.MinValue, int.MaxValue);
+            int r = ChartUpscale.ClampLevels(v);
+            await Assert.That(r).IsGreaterThanOrEqualTo(ChartUpscale.MinLevels);
+            await Assert.That(r).IsLessThanOrEqualTo(ChartUpscale.MaxLevels);
+        }
+    }
+
+    [Test]
+    public async Task Effective_DisabledAlwaysReturnsZero_Property()
+    {
+        // Property: master flag off -> always 0, regardless of levels.
+        // A regression that ANDs with the levels rather than gating
+        // would surface (e.g. Effective(false, 5) returning 5).
+        var rng = new Random(0x42_42_42_42);
+        var corners = new[] { int.MinValue, -1, 0, 2, 3, int.MaxValue };
+        foreach (var v in corners)
+        {
+            await Assert.That(ChartUpscale.Effective(false, v)).IsEqualTo(0);
+        }
+        for (int i = 0; i < 500; i++)
+        {
+            int v = rng.Next(int.MinValue, int.MaxValue);
+            await Assert.That(ChartUpscale.Effective(false, v)).IsEqualTo(0);
+        }
+    }
+
+    [Test]
+    public async Task Effective_EnabledIsClampLevels_Property()
+    {
+        // Property: master flag on -> result equals ClampLevels(levels).
+        // A regression that decouples Effective from ClampLevels (e.g.
+        // a separate branch that drops the upper clamp) would surface.
+        var rng = new Random(0x07_77_77_77);
+        for (int i = 0; i < 500; i++)
+        {
+            int v = rng.Next(int.MinValue, int.MaxValue);
+            await Assert.That(ChartUpscale.Effective(true, v))
+                .IsEqualTo(ChartUpscale.ClampLevels(v));
+        }
+    }
 }
