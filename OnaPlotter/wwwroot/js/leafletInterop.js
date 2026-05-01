@@ -460,9 +460,12 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // ceiling for what L.tileLayer.maxZoom can deliver, and a
     // hardcoded 19 here would silently cap the upscale feature
     // before the decorator even runs (the symptom the helm reported
-    // as "overzoom doesn't work"). OSM / OpenSeaMap below are also
-    // bumped with maxNativeZoom: 19 so the basemap upscales
-    // alongside the chart instead of going blank past 19.
+    // as "overzoom doesn't work"). OSM / OpenSeaMap (synthesised in
+    // OnaPlotter/Utilities/BuiltInCharts.cs) deliberately ship with
+    // AllowUpscale=false and MaxZoom=19, so they cap at native and
+    // go blank past 19 -- this is intentional, so the upscaled SK
+    // chart on top dominates and a frame-late basemap upscale
+    // doesn't compete with it (helm field-tested as flicker).
     //
     // Removable contract for ChartUpscale: revert this to 19 if
     // the feature is ripped out (the constant is part of the 6
@@ -1186,12 +1189,18 @@ export function setNightMode(enabled) {
 // Add a chart tile layer from SignalK.
 // bounds is [west, south, east, north] or null.
 //
-// Overzoom was removed: no probe, no tile-error calibrator, no
-// cross-layer maxZoom race. Each chart simply gets maxZoom set to its
-// declared maxZoom. When a chart's metadata lies (declared z18 but
-// server only has z15), tiles above the real max 404 and the base
-// layer shows through. Honest but simple; the feature is on the
-// backlog to revisit.
+// Overzoom is applied via withOverzoom() below: the decorator bumps
+// the layer's maxZoom past maxNativeZoom by ChartUpscale.Effective
+// levels so Leaflet GPU-upscales the last-fetched tile instead of
+// going blank. Native zoom is preserved so the actual fetch budget
+// stays at the chart's real tile pyramid.
+//
+// A tileerror-driven downshift calibrator (see chartZoomErrors and
+// the layer.on('tileerror', ...) handler below) handles the case
+// where a chart's metadata over-declares maxzoom: after N 404s at
+// the current cap, drop maxNativeZoom by 1 and redraw. Idempotent --
+// once we drop to the chart's actual native zoom, errors stop.
+//
 // Per-chart tile-error counter, surfaced via getChartTileErrors() for
 // the Settings dev section. Counts the `tileerror` Leaflet event for
 // each chart layer. Helm-facing diagnostic; also drives the
@@ -1231,9 +1240,18 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     // stacking + chart-upscale opt-out that SignalK-served charts do.
     // Tile URLs still point at the public internet endpoints for OSM
     // and OpenSeaMap so the boat doesn't need to host basemaps.
-    const native = maxZoom || 18;
+    //
+    // Defensive numeric validation: a hostile or buggy SK chart
+    // provider sending negative or NaN MaxZoom passes the C#-side
+    // ?? 18 fallback (which only catches null) but would land here
+    // as a truthy negative. The `|| 18` falsy idiom doesn't catch
+    // it either. Force a positive finite int; otherwise the layer
+    // renders nothing and the calibrator's `native <= minZ + 1`
+    // floor misfires.
+    const native = (Number.isFinite(maxZoom) && maxZoom > 0) ? (maxZoom | 0) : 18;
+    const minZ = (Number.isFinite(minZoom) && minZoom > 0) ? (minZoom | 0) : 1;
     let opts = {
-        minZoom: minZoom || 1,
+        minZoom: minZ,
         maxNativeZoom: native,
         maxZoom: native,
         opacity: opacity || 0.8,
@@ -1265,8 +1283,19 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         referrerPolicy: 'strict-origin-when-cross-origin',
         errorTileUrl: ''  // Suppress broken tile images for out-of-bounds requests.
     };
-    // Constrain tile requests to the chart's coverage area.
-    if (bounds && bounds.length === 4) {
+    // Constrain tile requests to the chart's coverage area. A SK
+    // provider sending [NaN, NaN, NaN, NaN] or [Infinity, ...] or
+    // out-of-range lat/lon would otherwise reach L.latLngBounds and
+    // produce a degenerate object whose tile-intersection check
+    // returns false for everything -- silent blank chart. Match the
+    // sanity range LoadMapView uses (-90 <= lat <= 90; lon clamped
+    // generously since wrap-around mid-pacific charts are real).
+    if (bounds && bounds.length === 4 &&
+        bounds.every(Number.isFinite) &&
+        bounds[1] >= -90 && bounds[1] <= 90 &&    // south
+        bounds[3] >= -90 && bounds[3] <= 90 &&    // north
+        bounds[0] >= -540 && bounds[0] <= 540 &&  // west
+        bounds[2] >= -540 && bounds[2] <= 540) {  // east
         opts.bounds = L.latLngBounds(
             [bounds[1], bounds[0]],  // SW: [south, west]
             [bounds[3], bounds[2]]   // NE: [north, east]
@@ -1284,7 +1313,14 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     chartTileErrors.set(id, 0);
     chartZoomErrors.set(id, new Map());
     layer.on('tileerror', (ev) => {
-        chartTileErrors.set(id, (chartTileErrors.get(id) ?? 0) + 1);
+        // A late tileerror after removeChartLayer(id) would otherwise
+        // resurrect the deleted entry via the `?? 0` fallback and
+        // grow chartTileErrors unboundedly across many add/remove
+        // cycles. Guard with .has(id) so a removed chart's in-flight
+        // <img>.error events stop being counted. The chartZoomErrors
+        // path below has the symmetric guard at line ~1310.
+        if (!chartTileErrors.has(id)) return;
+        chartTileErrors.set(id, chartTileErrors.get(id) + 1);
         // Downshift calibrator. Only act when:
         //   1. the error carries a coords.z (Leaflet always sets it
         //      on a real tile-fetch failure; defend defensively),
@@ -1351,6 +1387,15 @@ export function resetChartTileErrors(id) {
 }
 
 export function removeChartLayer(id) {
+    // Stop the layer's tileerror handler before MarkerLayer.remove
+    // detaches it. Leaflet doesn't unbind layer-level listeners on
+    // _onRemove, and an in-flight <img> that 404s after detach would
+    // otherwise still fire the handler -- the .has(id) guard inside
+    // the handler defends against the resulting deleted-then-re-set
+    // entry, but turning the dispatch off entirely is the simpler
+    // belt-and-suspenders.
+    const layer = chartLayers.get(id);
+    if (layer && typeof layer.off === 'function') layer.off('tileerror');
     chartLayers.remove(id);
     chartTileErrors.delete(id);
     chartZoomErrors.delete(id);

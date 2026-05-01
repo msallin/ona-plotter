@@ -48,6 +48,16 @@ public sealed class AppSettingsService : IAppSettings
     // works either direction. OSM + OpenSeaMap opt out via AllowUpscale
     // = false so the basemap doesn't compete with a GPU-upscaled SK
     // chart on top -- field-tested as visual flicker.
+    //
+    // Asymmetry vs the default-on flip: LoadBool below treats any
+    // stored value other than the literal "true" as false (it doesn't
+    // fall back to the default for non-"true" values). So a corrupted
+    // localStorage entry (older build with a different write format,
+    // hand-edited, browser-extension synced from a different OS
+    // variant) lands the helm in upscale-OFF rather than this new
+    // default-on. Pinned by AppSettingsServiceTests.ChartUpscaleEnabled
+    // _GarbageStored_LoadsAsFalse: corruption-path helms can recover
+    // by toggling the master flag in Settings.
     public bool ChartUpscaleEnabled { get; private set; } = true;
     public int ChartUpscaleLevels { get; private set; } = OnaPlotter.Utilities.ChartUpscale.DefaultLevels;
     /// <summary>In-memory only -- never persisted, never restored.

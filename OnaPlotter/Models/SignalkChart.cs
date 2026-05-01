@@ -72,9 +72,30 @@ public sealed class SignalkChart
     /// The built-in OSM + OpenSeaMap charts populate this with the
     /// ODbL / CC-BY-SA-required credit + link so the helm satisfies
     /// the licence as soon as a basemap is enabled.
+    ///
+    /// <para>NOTE: this string lands in Leaflet's <c>AttributionControl</c>
+    /// which uses <c>innerHTML</c>. Untrusted SK-server-supplied
+    /// values are HTML-escaped via
+    /// <see cref="OnaPlotter.Utilities.AttributionSanitizer"/> before
+    /// forwarding; only entries with
+    /// <see cref="IsTrustedAttribution"/> = true are passed through
+    /// raw. See the sanitizer doc for the trust-boundary rationale.</para>
     /// </summary>
     [JsonPropertyName("attribution")]
     public string Attribution { get; set; } = "";
+
+    /// <summary>
+    /// Marks the <see cref="Attribution"/> string as safe to render
+    /// as HTML. Defaults to false so any value coming over the wire
+    /// from an SK chart provider is treated as untrusted text and
+    /// HTML-escaped before reaching Leaflet's <c>innerHTML</c> sink.
+    /// Set explicitly to true only for entries synthesised inside
+    /// the WASM bundle (the built-in OSM + OpenSeaMap entries in
+    /// <see cref="OnaPlotter.Utilities.BuiltInCharts"/>). JSON-ignored
+    /// so a hostile chart provider can't set it themselves.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsTrustedAttribution { get; set; } = false;
 
     /// <summary>
     /// Per-tile opacity (0..1). SK chart-server charts default to 0.8

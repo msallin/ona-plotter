@@ -1482,18 +1482,28 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task ChartUpscaleEnabled_GarbageStored_LoadsAsFalse()
+    [Arguments("yes please")]   // free-form garbage
+    [Arguments("True")]         // wrong case
+    [Arguments("TRUE")]         // shouting case
+    [Arguments("1")]            // C-style truthy
+    [Arguments("")]             // empty string (distinct from missing key)
+    [Arguments(" true")]        // leading whitespace
+    [Arguments("true ")]        // trailing whitespace
+    [Arguments("yes")]          // i18n / aliasing attempt
+    public async Task ChartUpscaleEnabled_NonExactTrueStored_LoadsAsFalse(string stored)
     {
         // LoadBool returns false for any stored value that isn't the
-        // literal "true" (and only falls back to the default when the
-        // key is absent). So a corrupt entry like "yes please" maps to
-        // false even though the default flipped to true. Helms hitting
-        // this end up with overzoom off rather than the new default,
-        // but the only ways to hit it are external tampering or a
-        // legacy persistence bug; preserving the LoadBool contract
-        // keeps every other bool setting honest.
+        // exact literal "true" (and only falls back to the default
+        // when the key is absent). The asymmetry matters under the
+        // PR #160 default-on flip: corruption-path helms land in
+        // upscale-off rather than the new default. Pinned across the
+        // boundary cases a future "loosen LoadBool" change would
+        // most plausibly hit -- a switch to OrdinalIgnoreCase, a
+        // .Trim(), or bool.TryParse -- so the asymmetry is visible
+        // in tests rather than only in the docstring on
+        // ChartUpscaleEnabled.
         var kv = new InMemoryKv();
-        await kv.SetAsync("chartUpscaleEnabled.v1", "yes please");
+        await kv.SetAsync("chartUpscaleEnabled.v1", stored);
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
         await Assert.That(svc.ChartUpscaleEnabled).IsFalse();
