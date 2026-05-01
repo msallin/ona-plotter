@@ -3,10 +3,12 @@ namespace OnaPlotter.Utilities;
 /// <summary>
 /// Pure helpers for approximating geographic circles as closed polygon
 /// rings. Used by <see cref="OnaPlotter.Services.Api.RegionApi"/> to
-/// emit GeoJSON-compatible circle regions, and (potentially) by other
-/// rendering paths that need a circle as a polyline. Lifted out of
-/// RegionApi so the math has its own home and is testable without a
-/// running HttpClient.
+/// emit GeoJSON-compatible circle regions; any future rendering path
+/// that needs a circle-as-polyline reuses the same builder.
+/// <para>The geometry constants (metres-per-degree, default vertex
+/// count) live here alongside the algorithm so callers consume the
+/// pair as a coherent unit rather than reaching into RegionApi for
+/// numbers that have nothing to do with HTTP.</para>
 /// </summary>
 public static class CircleGeometry
 {
@@ -30,9 +32,18 @@ public static class CircleGeometry
     /// <param name="lon">Centre longitude, degrees.</param>
     /// <param name="radiusMeters">Circle radius, metres.</param>
     /// <param name="vertices">Vertex count. 32 is the practical default
-    /// (see <see cref="DefaultVertexCount"/>).</param>
+    /// (see <see cref="DefaultVertexCount"/>). Must be >= 3 — fewer
+    /// vertices either NPE the close-the-ring step (0) or produce a
+    /// degenerate "circle" (1, 2) that no consumer wants. We throw
+    /// rather than silently returning garbage.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when
+    /// <paramref name="vertices"/> is below 3.</exception>
     public static double[][] BuildRing(double lat, double lon, double radiusMeters, int vertices)
     {
+        if (vertices < 3)
+            throw new ArgumentOutOfRangeException(nameof(vertices), vertices,
+                "A circle ring needs at least 3 vertices.");
+
         double cosLat = Math.Cos(lat * Math.PI / 180.0);
         double metersPerDegLon = MetersPerDegLatitude * cosLat;
         // Pole safety: cos(lat) approaches 0 near the poles, so dividing

@@ -46,6 +46,8 @@ public static class MapDeepLink
             string key = seg[..eq];
             string val = Uri.UnescapeDataString(seg[(eq + 1)..]);
             if (key == "edit") { raw = val; isEdit = true; break; }
+            // No break here: a later edit= must still win, even when
+            // focus= appears earlier in the query string.
             if (key == "focus") { raw = val; isEdit = false; }
         }
         if (raw is null) return null;
