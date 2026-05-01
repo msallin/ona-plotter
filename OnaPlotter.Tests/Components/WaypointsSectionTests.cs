@@ -73,7 +73,10 @@ public class WaypointsSectionTests
                 this, w => captured = w)));
         cut.Find(".section-toggle").Click();
 
-        cut.FindAll(".route-action-btn")[0].Click();
+        // Pin the Go button by its title attribute rather than slot
+        // index so a future button-order tweak (e.g. Focus moves
+        // ahead of Go) doesn't false-fail this test.
+        cut.Find("button[title='Navigate to this waypoint']").Click();
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Id).IsEqualTo("w1");
     }
@@ -94,7 +97,7 @@ public class WaypointsSectionTests
                 this, t => captured = t)));
         cut.Find(".section-toggle").Click();
 
-        cut.FindAll(".route-action-btn")[1].Click();
+        cut.Find("button[title='Rename this waypoint']").Click();
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Value.wp.Id).IsEqualTo("w1");
         await Assert.That(captured.Value.newName).IsEqualTo("New Harbor");
@@ -113,7 +116,7 @@ public class WaypointsSectionTests
                 this, _ => fired = true)));
         cut.Find(".section-toggle").Click();
 
-        cut.FindAll(".route-action-btn")[1].Click();
+        cut.Find("button[title='Rename this waypoint']").Click();
         await Assert.That(fired).IsFalse();
     }
 
@@ -130,7 +133,7 @@ public class WaypointsSectionTests
                 this, _ => fired = true)));
         cut.Find(".section-toggle").Click();
 
-        cut.FindAll(".route-action-btn")[1].Click();
+        cut.Find("button[title='Rename this waypoint']").Click();
         await Assert.That(fired).IsFalse();
     }
 
@@ -147,7 +150,7 @@ public class WaypointsSectionTests
                 this, w => captured = w)));
         cut.Find(".section-toggle").Click();
 
-        cut.FindAll(".route-action-btn")[2].Click();
+        cut.Find("button[title='Delete waypoint']").Click();
         await Assert.That(captured).IsNotNull();
         await Assert.That(captured!.Id).IsEqualTo("w1");
     }
@@ -165,7 +168,28 @@ public class WaypointsSectionTests
                 this, _ => fired = true)));
         cut.Find(".section-toggle").Click();
 
-        cut.FindAll(".route-action-btn")[2].Click();
+        cut.Find("button[title='Delete waypoint']").Click();
         await Assert.That(fired).IsFalse();
+    }
+
+    [Test]
+    public async Task FocusButton_FiresOnFocus_WithSameWaypoint()
+    {
+        // The new Focus button (slot 0) feeds the Map page's
+        // FocusWaypoint, which centres the chart on the wp's
+        // lat/lon. Pin the wiring; the pan-to-position itself is
+        // a Map-page concern.
+        var (ctx, _) = Context();
+        using var _ctx = ctx;
+        SignalkWaypoint? captured = null;
+        var cut = ctx.RenderComponent<WaypointsSection>(p => p
+            .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
+            .Add(x => x.OnFocus, EventCallback.Factory.Create<SignalkWaypoint>(
+                this, w => captured = w)));
+        cut.Find(".section-toggle").Click();
+
+        cut.Find("button[title='Center the map on this waypoint']").Click();
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.Id).IsEqualTo("w1");
     }
 }

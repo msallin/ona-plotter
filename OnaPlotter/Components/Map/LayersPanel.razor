@@ -12,8 +12,15 @@
         // (charts + routes + waypoints + notes + regions). Cutoff at
         // 6 is still enough to want a search box; below that, scrolling
         // the list is faster than typing.
+        // Counts the lists the filter actually targets: charts,
+        // routes, waypoints (bbox-filtered), notes (bbox-filtered),
+        // regions. The waypoints / notes counts use the filtered
+        // collections so the filter input shows up only when there's
+        // enough nearby content to warrant it; a chart full of
+        // distant pins doesn't surface a search the helm doesn't
+        // need.
         int filterableTotal = AvailableCharts.Count + AvailableRoutes.Count
-            + LoadedWaypoints.Count + LoadedNotes.Count + LoadedRegions.Count;
+            + FilteredWaypoints.Count + FilteredNotes.Count + LoadedRegions.Count;
     }
     @if (filterableTotal > 6)
     {
@@ -43,17 +50,19 @@
                    OnNavigate="OnNavigateRoute"
                    OnDelete="OnDeleteRoute" />
 
-    <WaypointsSection Waypoints="LoadedWaypoints"
+    <WaypointsSection Waypoints="FilteredWaypoints"
                       LayerFilter="@LayerFilter"
+                      OnFocus="OnFocusWaypoint"
                       OnNavigate="OnNavigateToWaypoint"
                       OnRename="OnRenameWaypoint"
                       OnDelete="OnDeleteWaypoint" />
 
-    <NotesSection Notes="LoadedNotes"
-                  Visible="NotesVisible"
+    <NotesSection Notes="FilteredNotes"
                   LayerFilter="@LayerFilter"
                   OnFocus="OnFocusNote"
-                  OnToggleVisible="OnToggleNotesVisible" />
+                  OnNavigate="OnNavigateToNote"
+                  OnRename="OnRenameNote"
+                  OnDelete="OnDeleteNote" />
 
     <RegionsSection Regions="LoadedRegions"
                     Visible="RegionsVisible"
@@ -114,8 +123,18 @@
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> AvailableRoutes { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkChart> FilteredCharts { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyList<SignalkRoute> FilteredRoutes { get; set; } = [];
-    [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> LoadedWaypoints { get; set; } = [];
-    [Parameter] public IReadOnlyList<SignalkNote> LoadedNotes { get; set; } = [];
+    /// <summary>Waypoints inside the current viewport (parent applies
+    /// the bbox filter using the same machinery as
+    /// <see cref="FilteredCharts"/>). The Layers panel never sees the
+    /// full <c>loadedWaypoints</c> list -- helms field-tested that on
+    /// long charter days the list balloons to dozens of pins, all
+    /// from passages they're not currently on, and scrolling past
+    /// them to find the relevant one wins nobody anything.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<SignalkWaypoint> FilteredWaypoints { get; set; } = [];
+    /// <summary>Notes inside the current viewport. Same reasoning as
+    /// <see cref="FilteredWaypoints"/>: replaces the previous "Show"
+    /// global toggle, the bbox filter is the natural relevance cue.</summary>
+    [Parameter] public IReadOnlyList<SignalkNote> FilteredNotes { get; set; } = [];
     [Parameter] public IReadOnlyList<SignalkRegion> LoadedRegions { get; set; } = [];
     [Parameter] public IReadOnlyList<VesselListEntry> Vessels { get; set; } = [];
     [Parameter] public IReadOnlyList<SignalkBuddy> Buddies { get; set; } = [];
@@ -129,7 +148,6 @@
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;
-    [Parameter] public bool NotesVisible { get; set; } = true;
     [Parameter] public bool RegionsVisible { get; set; } = true;
     [Parameter] public bool AtonsVisible { get; set; } = true;
     [Parameter] public bool GuardZoneVisible { get; set; } = true;
@@ -151,11 +169,14 @@
     [Parameter] public EventCallback<SignalkRoute> OnEditRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnNavigateRoute { get; set; }
     [Parameter] public EventCallback<SignalkRoute> OnDeleteRoute { get; set; }
+    [Parameter] public EventCallback<SignalkWaypoint> OnFocusWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
     [Parameter] public EventCallback<(SignalkWaypoint wp, string newName)> OnRenameWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnDeleteWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnFocusNote { get; set; }
-    [Parameter] public EventCallback<bool> OnToggleNotesVisible { get; set; }
+    [Parameter] public EventCallback<SignalkNote> OnNavigateToNote { get; set; }
+    [Parameter] public EventCallback<(SignalkNote note, string newTitle)> OnRenameNote { get; set; }
+    [Parameter] public EventCallback<SignalkNote> OnDeleteNote { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnFocusRegion { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnEditRegion { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnDeleteRegion { get; set; }

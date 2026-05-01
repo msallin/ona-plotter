@@ -49,6 +49,27 @@ public sealed class NoteApi : INoteApi
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
 
+    public Task<ApiResult> UpdateAsync(SignalkNote note, string title, string? description, CancellationToken ct = default)
+    {
+        // Re-PUT the full note shape: SignalK's resources-fs provider
+        // replaces the whole resource on PUT (no PATCH). Position must
+        // round-trip from the existing note so the helm doesn't lose
+        // the anchor when they only meant to fix a typo.
+        if (note.Position is null) return Task.FromResult(ApiResult.Fail("note has no position"));
+        var body = new
+        {
+            title,
+            description,
+            position = new
+            {
+                latitude = note.Position.Latitude,
+                longitude = note.Position.Longitude,
+            },
+        };
+        var url = _baseUrl.Combine(SignalKUrls.Note(note.Id));
+        return ResourceHttp.PutAsync(_http, url, body, ct);
+    }
+
     public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Note(id)), ct);
 }

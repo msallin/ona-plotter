@@ -431,11 +431,13 @@
                      AvailableRoutes="availableRoutes"
                      FilteredCharts="FilteredCharts"
                      FilteredRoutes="FilteredRoutes"
-                     LoadedWaypoints="loadedWaypoints"
-                     LoadedNotes="loadedNotes"
-                     NotesVisible="@(_resources?.NotesVisible ?? true)"
+                     FilteredWaypoints="FilteredWaypoints"
+                     FilteredNotes="FilteredNotes"
+                     OnFocusWaypoint="FocusWaypoint"
                      OnFocusNote="FocusNote"
-                     OnToggleNotesVisible="ToggleNotesVisible"
+                     OnNavigateToNote="NavigateToNote"
+                     OnRenameNote="(t) => RenameNoteFromLayers(t.note, t.newTitle)"
+                     OnDeleteNote="DeleteNoteFromLayers"
                      LoadedRegions="loadedRegions"
                      RegionsVisible="@(_resources?.RegionsVisible ?? true)"
                      OnFocusRegion="FocusRegion"
@@ -622,10 +624,23 @@
     // Cached filtered lists, rebuilt only when inputs change.
     private SignalkChart[] cachedFilteredCharts = [];
     private SignalkRoute[] cachedFilteredRoutes = [];
+    private SignalkWaypoint[] cachedFilteredWaypoints = [];
+    private SignalkNote[] cachedFilteredNotes = [];
     private string lastFilterKey = "";
 
     private SignalkChart[] FilteredCharts => cachedFilteredCharts;
     private SignalkRoute[] FilteredRoutes => cachedFilteredRoutes;
+    /// <summary>Waypoints inside the current Leaflet viewport, narrowed
+    /// further by the panel's text filter. The Layers-panel waypoints
+    /// list reads this (not the full <c>loadedWaypoints</c>) so the
+    /// helm only sees waypoints they could currently navigate to,
+    /// matching the chart-picker / route-picker contracts.</summary>
+    private SignalkWaypoint[] FilteredWaypoints => cachedFilteredWaypoints;
+    /// <summary>Notes inside the current viewport, with the same text
+    /// filter as the rest. Replaces the previous "Show" global toggle
+    /// on the panel: the helm only sees notes near where they're
+    /// looking, and panning the chart updates the list automatically.</summary>
+    private SignalkNote[] FilteredNotes => cachedFilteredNotes;
 
     // Pre-computed route bounding boxes (avoids re-parsing GeoJSON on every filter).
     private readonly Dictionary<string, (double MinLat, double MaxLat, double MinLon, double MaxLon)?> routeBounds = [];
@@ -770,6 +785,86 @@
         loadedWaypoints = updated;
         Toasts.Success("Waypoint renamed");
     }
+
+    /// <summary>Center the map on a waypoint and dismiss the layers
+    /// panel so the helm can see what they just picked. Mirrors
+    /// <see cref="FocusNote"/>; no popup-open call because waypoint
+    /// markers don't carry a leafletInterop "openPopup" entry point
+    /// today and the centred view is the field-tested win on its
+    /// own (helm can tap the marker if they want the popup).</summary>
+    private async Task FocusWaypoint(SignalkWaypoint wp)
+    {
+        if (module is null) return;
+        if (wp.Latitude is not double lat || wp.Longitude is not double lon) return;
+        chartPanelOpen = false;
+        await DisableFollowAsync();
+        try
+        {
+            await module.InvokeVoidAsync("panTo", lat, lon);
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Layers-panel "Go" button for notes: PUT the note's
+    /// lat/lon as the SignalK course destination via the existing
+    /// position-destination API. No throwaway waypoint resource is
+    /// created -- SignalK's course endpoint accepts a bare position
+    /// directly, which keeps the helm's waypoint list uncluttered.
+    /// </summary>
+    private async Task NavigateToNote(SignalkNote n)
+    {
+        if (n.Position is null) return;
+        try
+        {
+            var r = await CourseApi.SetDestinationPositionAsync(n.Position.Latitude, n.Position.Longitude);
+            if (!r.Success)
+            {
+                Toasts.Error($"Navigate failed: {r.Error ?? "server rejected"}");
+                return;
+            }
+            Toasts.Success($"Navigating to {(string.IsNullOrWhiteSpace(n.Title) ? "note" : n.Title)}");
+        }
+        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+    }
+
+    /// <summary>Layers-panel "Edit" button for notes: PUT a new
+    /// title (description preserved). Mirrors
+    /// <see cref="RenameWaypointAsync"/>: optimistic local rename so
+    /// the list updates instantly; the next resource poll
+    /// authoritatively overwrites if the server normalised the
+    /// value.</summary>
+    private async Task RenameNoteFromLayers(SignalkNote n, string newTitle)
+    {
+        if (string.IsNullOrEmpty(n.Id) || string.IsNullOrWhiteSpace(newTitle)) return;
+        ApiResult r;
+        try { r = await NoteApi.UpdateAsync(n, newTitle.Trim(), n.Description); }
+        catch (Exception ex) { Toasts.Error($"Rename note failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Rename note failed: {r.Error ?? "server rejected"}"); return; }
+
+        var updated = loadedNotes.Select(x =>
+        {
+            if (x.Id != n.Id) return x;
+            return new SignalkNote
+            {
+                Id = x.Id,
+                Title = newTitle.Trim(),
+                Description = x.Description,
+                Position = x.Position,
+                MimeType = x.MimeType,
+                Url = x.Url,
+            };
+        }).ToList();
+        loadedNotes = updated;
+        Toasts.Success("Note renamed");
+    }
+
+    /// <summary>Layers-panel "Delete" button for notes. The
+    /// confirmation prompt lives in <see cref="NotesSection"/>; this
+    /// is the wrapper that re-uses the existing
+    /// <see cref="DeleteNote"/> JSInvokable's body so the REST + JS
+    /// + toast flow stays in one place.</summary>
+    private Task DeleteNoteFromLayers(SignalkNote n) => DeleteNote(n.Id);
 
     // The radar overlay's session state, the auto-toggle policy, and
     // the JS interop all live in RadarOverlayManager. The page just
@@ -1042,7 +1137,9 @@
     private void RebuildFilteredLayers()
     {
         // Build a cache key from the inputs that affect filtering.
-        var key = $"{layerFilter}|{viewWest:F4}|{viewSouth:F4}|{viewEast:F4}|{viewNorth:F4}|{availableCharts.Count}|{availableRoutes.Count}";
+        var key = $"{layerFilter}|{viewWest:F4}|{viewSouth:F4}|{viewEast:F4}|{viewNorth:F4}|"
+                + $"{availableCharts.Count}|{availableRoutes.Count}|"
+                + $"{loadedWaypoints.Count}|{loadedNotes.Count}";
         if (key == lastFilterKey) return;
         lastFilterKey = key;
 
@@ -1055,6 +1152,50 @@
             .Where(r => (string.IsNullOrEmpty(layerFilter) || (r.Name ?? r.Id).Contains(layerFilter, StringComparison.OrdinalIgnoreCase))
                      && RouteIntersectsViewport(r))
             .ToArray();
+
+        cachedFilteredWaypoints = loadedWaypoints
+            .Where(wp => (string.IsNullOrEmpty(layerFilter)
+                          || (wp.Name?.Contains(layerFilter, StringComparison.OrdinalIgnoreCase) ?? false)
+                          || wp.Id.Contains(layerFilter, StringComparison.OrdinalIgnoreCase))
+                     && WaypointIntersectsViewport(wp))
+            .ToArray();
+
+        cachedFilteredNotes = loadedNotes
+            .Where(n => (string.IsNullOrEmpty(layerFilter)
+                         || (n.Title?.Contains(layerFilter, StringComparison.OrdinalIgnoreCase) ?? false)
+                         || (n.Description?.Contains(layerFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+                     && NoteIntersectsViewport(n))
+            .ToArray();
+    }
+
+    /// <summary>Point-in-bbox test for a waypoint. Mirrors
+    /// ChartIntersectsViewport / RouteIntersectsViewport: when bounds
+    /// haven't been observed yet (first paint, before the initial
+    /// moveend), fall through to "always show" so the panel isn't
+    /// briefly empty. Waypoints with missing lat/lon are treated as
+    /// "show always" too -- a waypoint without a fix is degenerate
+    /// data and hiding it would leave the helm wondering where it
+    /// went.</summary>
+    private bool WaypointIntersectsViewport(SignalkWaypoint wp)
+    {
+        if (viewWest is null) return true;
+        if (wp.Latitude is not double lat || wp.Longitude is not double lon) return true;
+        return lat >= viewSouth && lat <= viewNorth
+            && lon >= viewWest && lon <= viewEast;
+    }
+
+    /// <summary>Point-in-bbox test for a note. Same fallback rules as
+    /// the waypoint variant -- missing position or pre-bounds state
+    /// keeps the note in the panel rather than dropping it silently.
+    /// </summary>
+    private bool NoteIntersectsViewport(SignalkNote note)
+    {
+        if (viewWest is null) return true;
+        if (note.Position is null) return true;
+        double lat = note.Position.Latitude;
+        double lon = note.Position.Longitude;
+        return lat >= viewSouth && lat <= viewNorth
+            && lon >= viewWest && lon <= viewEast;
     }
 
 
