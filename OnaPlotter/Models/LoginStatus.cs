@@ -32,18 +32,32 @@ public sealed class LoginStatus
     [JsonPropertyName("authenticationRequired")]
     public bool AuthenticationRequired { get; set; }
 
-    /// <summary>True when the current session can read but not
-    /// write. The condition the banner actually cares about: any
-    /// save attempt will fail.</summary>
+    /// <summary>Server-config flag, NOT a per-user authority.
+    /// signalk-server returns this true when the server's default
+    /// is "sessions are read-only unless explicitly granted" --
+    /// even for a logged-in admin. Treating it as the gate (the
+    /// original implementation did) made the chip light up for an
+    /// admin helm who was, in fact, fully logged in. Kept as a
+    /// model field for parser-shape parity, but excluded from
+    /// <see cref="ShouldShowLoginWarning"/>.</summary>
     [JsonPropertyName("readOnlyAccess")]
     public bool ReadOnlyAccess { get; set; }
 
     /// <summary>"Show the not-logged-in banner" rule, centralised
-    /// here so call sites don't repeat the boolean math. Banner
-    /// shows when the server has auth enabled AND the current
-    /// session is read-only OR explicitly not-logged-in.</summary>
+    /// here so call sites don't repeat the boolean math.
+    ///
+    /// <para>Banner shows when the server has security enabled AND
+    /// the current session is NOT logged in. Field-tested against
+    /// signalk-server: when the helm IS logged in (status =
+    /// "loggedIn", username present), the response can still carry
+    /// <c>readOnlyAccess: true</c> -- that flag is a server-config
+    /// signal ("by default sessions are read-only"), not a
+    /// per-user authority. The corrected rule trusts
+    /// <c>status == "loggedIn"</c> as the single source of truth
+    /// for the per-session state.</para>
+    /// </summary>
     [JsonIgnore]
     public bool ShouldShowLoginWarning =>
-        AuthenticationRequired &&
-        (ReadOnlyAccess || !string.Equals(Status, "loggedIn", System.StringComparison.OrdinalIgnoreCase));
+        AuthenticationRequired
+        && !string.Equals(Status, "loggedIn", System.StringComparison.OrdinalIgnoreCase);
 }
