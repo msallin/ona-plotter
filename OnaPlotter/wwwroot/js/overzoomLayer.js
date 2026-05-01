@@ -8,16 +8,19 @@
 // Removable in one go: drop this file + the addChartLayer call site
 // + the Settings flag and the feature is gone.
 //
-// Why no probe: see docs/design/overzoom.md (and the design draft).
-// The previous implementation tried to detect missing tiles at
-// runtime via 404 / 200-empty-PNG / redirect heuristics. Each
-// SignalK chart-plugin variant behaves differently. The probe
-// jittered, the calibrator settled at unstable values, and the
-// helm saw tiles popping in and out. v2 trusts the metadata: if
-// MBTiles says maxzoom 18, we believe it. The downshift calibrator
-// in leafletInterop.js (driven by bonafide `tileerror` 404s, only
-// at the current cap) handles the metadata-lies-about-maxzoom
-// case without re-introducing the probe instability.
+// History: see docs/design/overzoom.md. v1 detected missing tiles at
+// runtime via 404 / 200-empty-PNG / redirect heuristics; the probe
+// jittered, settled at unstable values, and the helm saw tiles
+// popping in and out. v2 trusted the metadata but ran a tileerror-
+// driven downshift calibrator to compensate when chart servers over-
+// declared maxzoom -- which broke MBTiles files that legitimately
+// have *holes* at high zoom (regional coverage variation: z18 in
+// harbours, z14 offshore). v3 (current) drops the calibrator: tiles
+// past the chart's declared native maxzoom are not fetched, holes
+// at the current zoom 404 silently and the basemap below shows
+// through. Honest signal where the data ends. The decorator below
+// is what makes a low declared maxzoom still readable at the helm's
+// view zoom (GPU-upscaled tile from native cap).
 
 /**
  * Wrap a Leaflet TileLayer options bag for chart upscaling.

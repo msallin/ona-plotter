@@ -15,7 +15,6 @@ import * as atonLayerMod from './atonLayer.js';
 import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
 import { withOverzoom } from './overzoomLayer.js';
-import { decideDownshift } from './chartDownshift.js';
 import * as activeRouteLayerMod from './activeRouteLayer.js';
 import * as courseLineLayerMod from './courseLineLayer.js';
 import * as routeEditLayerMod from './routeEditLayer.js';
@@ -1190,41 +1189,39 @@ export function setNightMode(enabled) {
 // Add a chart tile layer from SignalK.
 // bounds is [west, south, east, north] or null.
 //
-// Overzoom is applied via withOverzoom() below: the decorator bumps
-// the layer's maxZoom past maxNativeZoom by ChartUpscale.Effective
-// levels so Leaflet GPU-upscales the last-fetched tile instead of
-// going blank. Native zoom is preserved so the actual fetch budget
-// stays at the chart's real tile pyramid.
+// Behaviour for tiles past native maxzoom:
 //
-// A tileerror-driven downshift calibrator (see chartZoomErrors and
-// the layer.on('tileerror', ...) handler below) handles the case
-// where a chart's metadata over-declares maxzoom: after N 404s at
-// the current cap, drop maxNativeZoom by 1 and redraw. Idempotent --
-// once we drop to the chart's actual native zoom, errors stop.
+// 1. If the helm has chart-upscale ON (the default), the withOverzoom
+//    decorator below bumps maxZoom past maxNativeZoom by
+//    ChartUpscale.Effective levels. Leaflet GPU-upscales the last-
+//    fetched native tile -- pixelated but readable -- so a chart with
+//    a true maxzoom of 16 still renders something at the helm's z18.
 //
-// Per-chart tile-error counter, surfaced via getChartTileErrors() for
-// the Settings dev section. Counts the `tileerror` Leaflet event for
-// each chart layer. Helm-facing diagnostic; also drives the
-// downshift-on-404 calibrator below.
+// 2. Native zoom is preserved so Leaflet's fetch budget never exceeds
+//    the chart's declared cap. A request that would land above native
+//    is never made.
+//
+// 3. Where the tile pyramid has *holes* (an MBTiles file with z18
+//    coverage in harbours but only z16 offshore is the canonical
+//    case), 404s at the helm's current zoom are absorbed by
+//    `errorTileUrl: ''` (suppresses the broken-image icon) and the
+//    OSM / OpenSeaMap basemap below shows through. Honest signal:
+//    "no data here at this zoom" rather than a global ratchet that
+//    would degrade the chart's high-zoom regions after one pan
+//    through a hole.
+//
+// 4. Where the chart's metadata UNIFORMLY lies (declares z18 but
+//    has nothing past z16 anywhere), the helm sees the basemap with
+//    the upscaled chart only down to its true native cap. The
+//    upstream fix is the SK chart-plugin author publishing accurate
+//    maxzoom; the previous on-plotter calibrator papered over that
+//    bug at the cost of breaking case (3) above.
+//
+// Per-chart tile-error counter for the Settings dev section. Counts
+// the `tileerror` Leaflet event for each chart layer. Helm-facing
+// diagnostic only -- not consumed by any decision logic. A high
+// count is the helm's signal to investigate the chart's metadata.
 const chartTileErrors = new Map();   // id -> total count
-
-// Per-chart per-zoom error tally for the downshift calibrator. When
-// N errors land at the layer's current `maxNativeZoom`, we drop the
-// cap by 1 and redraw -- the helm's chart server claims a maxzoom
-// the tile pyramid doesn't actually reach (common with MBTiles
-// providers that publish the requested-build maxzoom even when the
-// build truncated earlier). v1 of the overzoom feature avoided
-// runtime probes precisely because mixed signals (404 vs 200-empty
-// vs redirect) made the calibrator unstable; this iteration only
-// listens to bonafide `tileerror` events (the 404 case) and only
-// downshifts when the error is AT the current cap, so the fix is
-// idempotent: once we drop to the chart's actual native zoom,
-// errors stop and the calibrator goes quiet.
-const chartZoomErrors = new Map();   // id -> Map<zoom, count>
-// Threshold + decision logic live in chartDownshift.js so they can
-// be unit-tested without a Leaflet TileLayer instance. The handler
-// below stays thin: read state, call decideDownshift, apply
-// side-effects on a downshift result.
 
 export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, upscaleLevels, attribution) {
     if (!map || chartLayers.has(id)) return false;
@@ -1241,9 +1238,8 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     // provider sending negative or NaN MaxZoom passes the C#-side
     // ?? 18 fallback (which only catches null) but would land here
     // as a truthy negative. The `|| 18` falsy idiom doesn't catch
-    // it either. Force a positive finite int; otherwise the layer
-    // renders nothing and the calibrator's `native <= minZ + 1`
-    // floor misfires.
+    // it either. Force a positive finite int so the layer always
+    // has a sane fetch budget.
     const native = (Number.isFinite(maxZoom) && maxZoom > 0) ? (maxZoom | 0) : 18;
     const minZ = (Number.isFinite(minZoom) && minZoom > 0) ? (minZoom | 0) : 1;
     let opts = {
@@ -1307,8 +1303,7 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     layer.setZIndex(50);
     chartLayers.set(id, layer);
     chartTileErrors.set(id, 0);
-    chartZoomErrors.set(id, new Map());
-    layer.on('tileerror', (ev) => {
+    layer.on('tileerror', () => {
         // A late tileerror after removeChartLayer(id) would otherwise
         // resurrect the deleted entry via the `?? 0` fallback and
         // grow chartTileErrors unboundedly across many add/remove
@@ -1316,37 +1311,6 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         // <img>.error events stop being counted.
         if (!chartTileErrors.has(id)) return;
         chartTileErrors.set(id, chartTileErrors.get(id) + 1);
-        // Downshift calibrator. Pure decision logic in chartDownshift.js;
-        // this handler reads layer state, asks decideDownshift what to
-        // do, then applies side-effects. Refactor preserves the
-        // historical behaviour (idempotent, only acts at the cap, only
-        // on bonafide tileerror events) -- pinned by chartDownshift.test.js.
-        const zoomMap = chartZoomErrors.get(id);
-        if (!zoomMap) return;
-        const z = ev?.coords?.z;
-        const native = layer.options?.maxNativeZoom;
-        const minZ = layer.options.minZoom ?? 1;
-        const priorErrorsAtZ = (typeof z === 'number') ? (zoomMap.get(z) ?? 0) : 0;
-        const decision = decideDownshift({
-            errorZ: z, currentNative: native, minZoom: minZ, priorErrorsAtZ
-        });
-        if (decision.reason === 'bad-coords' || decision.reason === 'bad-native' ||
-            decision.reason === 'not-at-cap') {
-            return;
-        }
-        if (decision.shouldDownshift) {
-            layer.options.maxNativeZoom = decision.newNative;
-            // Reset the per-zoom counter for the OLD cap so the next
-            // downshift (if the metadata was off by 2+) starts counting
-            // fresh against the NEW cap.
-            zoomMap.delete(z);
-            layer.redraw();
-            console.warn(
-                `[chart] ${id}: declared maxzoom ${native} returns 404; ` +
-                `downshifted maxNativeZoom to ${decision.newNative}`);
-        } else {
-            zoomMap.set(z, decision.nextErrorsAtZ);
-        }
     });
     restackChartOpacities();
     return true;
@@ -1395,7 +1359,6 @@ export function removeChartLayer(id) {
     if (layer && typeof layer.off === 'function') layer.off('tileerror');
     chartLayers.remove(id);
     chartTileErrors.delete(id);
-    chartZoomErrors.delete(id);
     // OSM + OpenSeaMap were never removed in addChartLayer (see the
     // comment there for why), so nothing to re-add here.
     restackChartOpacities();
