@@ -326,13 +326,16 @@ public class TrackApiTests
         // Helm picks an absolute date range -> the URL must carry
         // from + to in ISO 8601 + UTC, NOT a relative duration. Pin
         // both ends so a future refactor can't accidentally drop one.
+        // Window deliberately stays well under the chunking cap
+        // (500 × 30s = 4 h) so this test exercises the single-
+        // request path; pagination is covered by its own tests.
         string? capturedQuery = null;
         string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
         var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
 
         await api.GetServerTrackPointsAsync(
             from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
-            to: new DateTimeOffset(2026, 4, 7, 0, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 1, 1, 0, 0, TimeSpan.Zero),
             timespan: null);
 
         await Assert.That(capturedQuery).IsNotNull();
@@ -352,14 +355,17 @@ public class TrackApiTests
     {
         // No absolute window supplied -> falls back to duration. This
         // is the History-page default-load path (timespan dropdown).
+        // 1 h at 30 s = 120 rows, comfortably under the 500-row cap,
+        // so the single-request path with `duration=` is preserved
+        // (paginated windows convert to absolute from / to chunks).
         string? capturedQuery = null;
         string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
         var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
 
-        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "6h");
+        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
 
         await Assert.That(capturedQuery).IsNotNull();
-        await Assert.That(capturedQuery!).Contains("duration=PT6H");
+        await Assert.That(capturedQuery!).Contains("duration=PT1H");
         await Assert.That(capturedQuery!.Contains("from=")).IsFalse();
     }
 
@@ -521,6 +527,177 @@ public class TrackApiTests
         await Assert.That(match.Success).IsTrue();
         var raw = Uri.UnescapeDataString(match.Groups[1].Value);
         await Assert.That(raw).IsEqualTo("47.3,8.4,47.5,8.6");
+    }
+
+    // -----------------------------------------------------------------
+    // Pagination: signalk-parquet caps each response at 500 rows. For
+    // long windows (e.g. 7 d at 30 s = 20 160 expected rows) we split
+    // the request into chunks so each sub-request stays inside the
+    // cap and the server returns the requested resolution unaltered.
+    // -----------------------------------------------------------------
+
+    [Test]
+    public async Task RichFetch_LargeWindow_AbsoluteRange_PaginatesIntoMultipleRequests()
+    {
+        // Helm picks 7 d at 30 s. Without chunking the response would
+        // be silently re-bucketed by the server, leaving ~20-min
+        // sample gaps that the segmenter then surfaces as fictitious
+        // 20-min holes between trips. Pin the chunked URL count so a
+        // refactor that drops the loop goes red.
+        var queries = new List<string>();
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req =>
+        {
+            if (req.RequestUri?.Query is string q) queries.Add(q);
+        });
+
+        await api.GetServerTrackPointsAsync(
+            from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 8, 0, 0, 0, TimeSpan.Zero),
+            timespan: null,
+            resolution: "30s");
+
+        // Chunk width = 500 × 0.95 × 30 s = 14 250 s ≈ 3.96 h. Over
+        // a 7-day window that's ~42 chunks. Anything in [40, 50] is
+        // fine; pinning a tight upper / lower bound keeps the test
+        // honest without coupling to the safety fraction's exact value.
+        await Assert.That(queries.Count).IsGreaterThan(40);
+        await Assert.That(queries.Count).IsLessThan(50);
+
+        // Every chunk uses absolute from/to (NOT relative duration);
+        // the relative form is what gets the cap applied server-side
+        // because the plugin can't predict bucket counts without the
+        // explicit bounds. Belt-and-braces vs the sub-window assertion.
+        foreach (var q in queries)
+        {
+            await Assert.That(q.Contains("from=")).IsTrue();
+            await Assert.That(q.Contains("to=")).IsTrue();
+            await Assert.That(q.Contains("duration=")).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task RichFetch_LargeWindow_RelativeTimespan_AlsoPaginates()
+    {
+        // Relative window over the cap (e.g. 7 d at 30 s) collapses
+        // to absolute "now-relative" chunks. Without that conversion
+        // the server bucket-decimates the same way the absolute path
+        // would; the helm sees the same trip-table holes. Pin the
+        // multi-request shape for the relative path too because
+        // History.razor's preset dropdown emits this code path.
+        int requestCount = 0;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, _ => requestCount++);
+
+        await api.GetServerTrackPointsAsync(
+            from: null, to: null,
+            timespan: "7d",
+            resolution: "30s");
+
+        // Same arithmetic as the absolute test; pinned independently
+        // because the relative-to-absolute conversion runs through a
+        // different code path inside TryComputeWindowSpan.
+        await Assert.That(requestCount).IsGreaterThan(40);
+    }
+
+    [Test]
+    public async Task RichFetch_SmallWindow_BothTimespanAndAbsolute_StaysSingleRequest()
+    {
+        // Belt-and-braces against an over-eager paginator: 1 h at 30 s
+        // = 120 rows, comfortably under the 500-row cap. Both shapes
+        // (timespan and absolute) must hit the server exactly once
+        // each. The single-request fast path keeps URL shapes
+        // unchanged for callers that pinned them.
+        int absoluteCalls = 0;
+        int relativeCalls = 0;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api1 = HistoryApi(body, _ => absoluteCalls++);
+        var api2 = HistoryApi(body, _ => relativeCalls++);
+
+        await api1.GetServerTrackPointsAsync(
+            from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 1, 1, 0, 0, TimeSpan.Zero),
+            timespan: null);
+        await api2.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: "1h");
+
+        await Assert.That(absoluteCalls).IsEqualTo(1);
+        await Assert.That(relativeCalls).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task RichFetch_PaginatedChunks_ConcatenateAndDedupeBoundary()
+    {
+        // The seam between two chunks: SignalK's `from`/`to` are
+        // documented inclusive on both ends, so a sample at the seam
+        // instant comes back in BOTH the previous chunk's tail and
+        // the next chunk's head. The aggregator must skip the
+        // duplicated head sample so the segmenter doesn't see a
+        // zero-distance "hop" right at the seam (which would emit a
+        // 1-point segment on every chunk boundary).
+        // Pick a window + resolution that produces EXACTLY two chunks
+        // so the assertion can be precise. Chunk width = 500 × 0.95 ×
+        // resolution = 475 × resolution. Resolution 1 s → 475 s wide
+        // chunks; window 950 s spans two chunks. The dedup contract:
+        // chunk-1's last sample timestamp matches chunk-2's first
+        // sample timestamp, so the aggregator drops the head of
+        // chunk 2 to keep the segmenter from seeing a 1-point seam
+        // segment. Empty response for any further chunk so a
+        // miscalculation in chunk count doesn't silently inflate
+        // the asserted total.
+        int callIndex = 0;
+        var bodies = new[]
+        {
+            // Chunk 1: two samples; the second is the seam.
+            """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-01T00:00:00Z",[-76,24]],["2026-04-01T00:07:55Z",[-76,24.01]]]}""",
+            // Chunk 2: starts AT the seam (duplicate ts), then a fresh sample.
+            """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-01T00:07:55Z",[-76,24.01]],["2026-04-01T00:15:00Z",[-76,24.02]]]}""",
+            // Any further chunk: empty so unexpected extra calls
+            // can't pad the result and mask a logic error.
+            """{"values":[{"path":"navigation.position","method":"first"}],"data":[]}""",
+        };
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            var body = bodies[Math.Min(callIndex++, bodies.Length - 1)];
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+            };
+        });
+        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        // 950 s @ 1 s = 950 expected rows. Cap × safety = 500 × 0.95
+        // = 475 → two chunks; 950 > 475 triggers pagination.
+        var pts = await api.GetServerTrackPointsAsync(
+            from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
+            to: new DateTimeOffset(2026, 4, 1, 0, 15, 50, TimeSpan.Zero),
+            timespan: null, resolution: "1s");
+
+        await Assert.That(pts).IsNotNull();
+        // 2 chunks × 2 samples each = 4 raw, minus 1 seam dupe = 3.
+        await Assert.That(pts!.Length).IsEqualTo(3);
+        await Assert.That(pts[0].Timestamp).IsEqualTo(
+            new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc));
+        await Assert.That(pts[1].Timestamp).IsEqualTo(
+            new DateTime(2026, 4, 1, 0, 7, 55, DateTimeKind.Utc));
+        await Assert.That(pts[2].Timestamp).IsEqualTo(
+            new DateTime(2026, 4, 1, 0, 15, 0, DateTimeKind.Utc));
+    }
+
+    [Test]
+    public async Task TryParseResolutionToSpan_AcceptsShorthandAndIsoForms()
+    {
+        // Pinned because the chunking decision relies on this helper
+        // returning a positive TimeSpan; an unparseable string falls
+        // back to a single request. Keep both forms parsing so a
+        // future caller wiring `PT30S` directly stays supported.
+        await Assert.That(TrackApi.TryParseResolutionToSpan("30s")).IsEqualTo(TimeSpan.FromSeconds(30));
+        await Assert.That(TrackApi.TryParseResolutionToSpan("5m")).IsEqualTo(TimeSpan.FromMinutes(5));
+        await Assert.That(TrackApi.TryParseResolutionToSpan("2h")).IsEqualTo(TimeSpan.FromHours(2));
+        await Assert.That(TrackApi.TryParseResolutionToSpan("1d")).IsEqualTo(TimeSpan.FromDays(1));
+        await Assert.That(TrackApi.TryParseResolutionToSpan("PT30S")).IsEqualTo(TimeSpan.FromSeconds(30));
+        await Assert.That(TrackApi.TryParseResolutionToSpan("")).IsNull();
+        await Assert.That(TrackApi.TryParseResolutionToSpan("nonsense")).IsNull();
     }
 
     [Test]
