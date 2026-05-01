@@ -271,8 +271,8 @@ public class ChartLayerControllerTests
     {
         // A hostile or buggy chart provider sending negative MinZoom
         // would otherwise reach the JS layer where the `|| 1` falsy
-        // idiom doesn't catch negatives -- the layer would configure
-        // with negative zoom limits and Leaflet's tile math misfires.
+        // idiom doesn't catch negatives -- the layer's calibrator
+        // floor (`native <= minZ + 1`) would misfire.
         var (ctrl, js, _, _, _) = New();
         var chart = Chart("c1");
         chart.MinZoom = input;

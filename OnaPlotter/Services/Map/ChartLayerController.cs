@@ -99,8 +99,8 @@ public sealed class ChartLayerController
                 // pass the null-coalescing fallback (which only catches
                 // null) and reach the JS layer where the `|| 18` falsy
                 // idiom doesn't catch negatives either; the layer would
-                // configure with negative zoom limits and render
-                // nothing. Force a positive int with a sane default
+                // render nothing and the calibrator's floor would
+                // misfire. Force a positive int with a sane default
                 // before crossing the JS boundary.
                 int safeMin = chart.MinZoom is int mn and > 0 ? mn : 1;
                 int safeMax = chart.MaxZoom is int mx and > 0 ? mx : 18;
