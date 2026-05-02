@@ -100,17 +100,24 @@ public sealed class AisStore
 
         // Pre-sized array + manual foreach so the snapshot rebuild
         // (called per-AIS-push tick from the map page) doesn't allocate
-        // an enumerator + iterator pair on every invocation. Upper-
-        // bound size is the dictionary count; the actual count after
-        // the position-filter is usually a hair under that, so we
-        // build into a local with possible trailing slack and trim.
-        // _vessels is never mutated under us (single-thread WASM)
-        // so the count snapshot is stable for the duration.
+        // an enumerator + iterator pair on every invocation.
+        //
+        // Concurrency: production runs single-threaded WASM, but the
+        // test fixture (`GetVessels_ConcurrentApplyAndRead_*`) drives
+        // Apply() on parallel threads to assert the snapshot doesn't
+        // tear. ConcurrentDictionary.Values enumerates the LIVE state,
+        // so a concurrent Apply() may grow the dictionary mid-foreach
+        // and our pre-sized buf can fall short. The `n >= buf.Length`
+        // guard backstops the count snapshot; whatever doesn't fit
+        // this tick lands on the next one (the version counter then
+        // forces a fresh rebuild). The earlier "single-thread WASM"
+        // comment was wrong about test-time invariants.
         int max = _vessels.Count;
         var buf = new AisVessel[max];
         int n = 0;
         foreach (var v in _vessels.Values)
         {
+            if (n >= buf.Length) break;
             if (v.Latitude is not null && v.Longitude is not null)
                 buf[n++] = v;
         }

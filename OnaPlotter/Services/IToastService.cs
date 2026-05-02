@@ -42,17 +42,31 @@ public interface IToastService
     /// (type + message + stack) to the browser console at error level,
     /// then show a generic toast that does NOT leak <c>ex.Message</c>
     /// into the helm-facing UI. Use this in catch blocks where the
-    /// exception is already-handled-but-informative; the helm sees
-    /// "{action} failed -- check the browser console" and devs see
-    /// the full trace in DevTools (or in the SignalK plugin log via
-    /// the error-relay bootstrap).
+    /// exception is already-handled-but-informative.
+    /// <para>
+    /// LOG REACH: the <c>Console.Error</c> write is intercepted by
+    /// <c>wwwroot/js/errorRelayBoot.js</c> and POSTed to the SignalK
+    /// server's <c>/log</c> endpoint (bounded at 800 chars message +
+    /// 8000 chars stack). So a dev with SSH access to the boat reads
+    /// the trace from the SK plugin log without the helm ever opening
+    /// DevTools. The toast itself stays helm-facing only -- "{action}
+    /// failed" with no exception text.
+    /// </para>
+    /// <para>
+    /// SANITISATION: <paramref name="action"/> is stripped of newlines
+    /// and control characters before logging. Without that strip a
+    /// caller passing user-controlled text (e.g. a waypoint name with
+    /// embedded \n) could split the SK server's log entry into two
+    /// records, confusing log-aggregation downstream.
+    /// </para>
     /// </summary>
     /// <param name="ex">The caught exception. Stack + type are
     /// console-logged; only a generic message reaches the toast.</param>
     /// <param name="action">Verb phrase describing what failed
     /// (e.g. "Save route", "Load chart"). Renders as the toast's
     /// subject so the helm knows which operation broke without seeing
-    /// the raw exception text.</param>
+    /// the raw exception text. Newlines + control chars stripped
+    /// before logging.</param>
     void LogException(Exception ex, string action);
 
     void Dismiss(Guid id);

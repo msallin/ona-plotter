@@ -56,9 +56,21 @@ public static class Icons
     /// <summary>
     /// Build the full <c>&lt;svg&gt;</c> wrapper at an arbitrary
     /// pixel size around the given inner path. Use sparingly; prefer
-    /// the pre-rendered <see cref="Default"/> 20-px and
-    /// <see cref="Small"/> 14-px constants to keep the icon size
-    /// pool small.
+    /// the pre-rendered 20-px and <see cref="Small"/> 14-px constants
+    /// to keep the icon size pool small.
+    /// <para>
+    /// SECURITY NOTE: <paramref name="innerPath"/> MUST be a developer-
+    /// controlled literal -- never user / server input. The result is
+    /// consumed by callers as <c>@((MarkupString)Icons.X)</c>, which
+    /// bypasses Razor escaping; passing a server-supplied glyph name
+    /// would create an XSS sink. Today every caller passes a private
+    /// const fragment defined in this file, which is safe; the
+    /// signature is public only because the <c>Small</c> nested class
+    /// builds its variants by calling Render with the same private
+    /// path consts. If a future caller wants dynamic icon content,
+    /// add a sanitised overload rather than passing untrusted strings
+    /// here.
+    /// </para>
     /// </summary>
     public static string Render(string innerPath, int size) =>
         $"<svg width=\"{size}\" height=\"{size}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">{innerPath}</svg>";

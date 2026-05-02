@@ -96,19 +96,48 @@ public sealed class ToastService : IToastService
     public void LogException(Exception ex, string action)
     {
         // Console.Error in Blazor WASM lands in the browser DevTools'
-        // console at error level -- same channel a developer reads
-        // when triaging. The errorRelayBoot.js bootstrap also picks
-        // up these console.error writes and POSTs them to the SK
-        // server's /log endpoint, so a dev with SSH access to the
-        // boat can read the trace without the helm opening DevTools.
-        // The helm-facing toast stays a plain "X failed": telling a
-        // sailor on a touch chartplotter to "check the browser
-        // console" was actionable for nobody (they can't open DevTools
-        // on iPad / Android, and on a desktop helm in the cockpit
-        // the suggestion still offered no path to fix the problem).
-        // Devs see everything via the relay; helms see the verb.
-        Console.Error.WriteLine($"OnaPlotter: {action} failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+        // console at error level. The errorRelayBoot.js bootstrap also
+        // picks these console.error writes up and POSTs them to the
+        // SignalK server's /log endpoint, so a dev with SSH access to
+        // the boat reads the trace from the SK plugin log without the
+        // helm opening DevTools. The toast stays helm-facing only.
+        //
+        // Sanitise the action subject: newlines and control chars in
+        // user-supplied verb phrases (e.g. a waypoint name interpolated
+        // into a "Save waypoint 'X' failed" call) would otherwise split
+        // the SK server's log entry into two records, confusing log
+        // aggregation. Strip them at the boundary; the toast itself
+        // is auto-encoded by Blazor at render time.
+        var safeAction = SanitiseLogText(action);
+        Console.Error.WriteLine($"OnaPlotter: {safeAction} failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         Show($"{action} failed", ToastLevel.Error, durationSec: 6);
+    }
+
+    /// <summary>Strip newlines and ASCII control characters (excluding
+    /// tab) from a string before it's written to a single-line log
+    /// channel. Pure helper, no allocation when the input is already
+    /// clean.</summary>
+    private static string SanitiseLogText(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return "";
+        bool needsScrub = false;
+        foreach (var c in input)
+        {
+            if (c == '\n' || c == '\r' || (c < 0x20 && c != '\t'))
+            {
+                needsScrub = true;
+                break;
+            }
+        }
+        if (!needsScrub) return input;
+        var sb = new System.Text.StringBuilder(input.Length);
+        foreach (var c in input)
+        {
+            if (c == '\n' || c == '\r') sb.Append(' ');
+            else if (c < 0x20 && c != '\t') sb.Append(' ');
+            else sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     public void Dismiss(Guid id)
@@ -141,6 +170,14 @@ public sealed class ToastService : IToastService
             // to propagate to TaskScheduler.UnobservedTaskException.
             try
             {
+                // The !IsPinned guard is defense-in-depth -- this
+                // helper is only ever called from Show / ShowAction
+                // (neither creates a pinned toast) and Toast is a
+                // record so IsPinned can't flip after construction
+                // without a `with` expression. If a future caller
+                // does start scheduling auto-dismiss for pinned
+                // toasts, this guard prevents the obvious bug and
+                // forces the question "should this even be scheduled?"
                 _toasts.RemoveAll(x => x.Id == id
                                        && !x.IsPinned
                                        && x.ExpiresAt <= DateTime.UtcNow);

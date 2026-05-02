@@ -163,4 +163,33 @@ public class RadarSpokeMathTests
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#0000FF", 1, null)).IsTrue();
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#FFFFFF", 1, null)).IsFalse();
     }
+
+    [Test]
+    public async Task ShouldSuppressLowReturn_LegendMediumZero_NoIndexBranch()
+    {
+        // legendMediumReturn=0 means the `index >= 1 && index < 0`
+        // expression is always false, so the metadata branch never
+        // fires; only the colour rule decides. Pin the strict-less-
+        // than boundary so a refactor to `index <= medium` doesn't
+        // shift the cutoff silently.
+        await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#FF0000", 0, 0)).IsFalse();
+        await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#FF0000", 1, 0)).IsFalse();
+        // Blue-dominant still suppressed via the colour fallback.
+        await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#0000FF", 1, 0)).IsTrue();
+    }
+
+    [Test]
+    public async Task ParseHexRgba_ZeroAlpha_DistinguishedFromError()
+    {
+        // The Transparent constant is Rgba(0,0,0,0), but a valid
+        // 8-digit parse with zero alpha should NOT collapse to
+        // Transparent if RGB differ -- that's the difference
+        // between "parsed and intentionally transparent" and
+        // "parser failed and returned the sentinel". Pin the
+        // distinction so a future refactor of the parser's failure
+        // path can't conflate them.
+        var c = RadarSpokeMath.ParseHexRgba("#11223300");
+        await Assert.That(c).IsEqualTo(new RadarSpokeMath.Rgba(0x11, 0x22, 0x33, 0x00));
+        await Assert.That(c).IsNotEqualTo(RadarSpokeMath.Transparent);
+    }
 }
