@@ -2666,51 +2666,74 @@
     // TaskCompletionSource-backed modal is gone; ToggleMob is called
     // only after the user has already armed + confirmed.
 
+    /// <summary>Re-entry guard for the MOB drop / clear path. A slow
+    /// JS interop or chime playback shouldn't let a second tap fire
+    /// SetMobAsync / ClearMobAsync before the first finished -- helm
+    /// would see two MOB markers or a clear-then-set race.</summary>
+    private bool _mobOpInFlight;
+
     private async Task ToggleMob()
     {
         if (_controlsJs is null) return;
-
-        if (!mobActive)
+        if (_mobOpInFlight) return;
+        _mobOpInFlight = true;
+        try
         {
-            // If the GPS is dead at the exact moment the user taps MOB,
-            // silently doing nothing is the worst outcome. Better to
-            // tell them immediately so they can try again, raise VHF,
-            // or use a handheld GPS. Don't set mobActive either, so the
-            // button UI reflects the un-set state.
-            if (Data.Latitude is not double lat || Data.Longitude is not double lon)
+            if (!mobActive)
             {
-                Toasts.Error("MOB: no GPS position -- use VHF and handheld");
-                return;
+                // If the GPS is dead at the exact moment the user taps
+                // MOB, silently doing nothing is the worst outcome.
+                // Better to tell them immediately so they can try again,
+                // raise VHF, or use a handheld GPS. Don't set mobActive
+                // either, so the button UI reflects the un-set state.
+                if (Data.Latitude is not double lat || Data.Longitude is not double lon)
+                {
+                    Toasts.Error("MOB: no GPS position -- use VHF and handheld");
+                    return;
+                }
+                await _controlsJs.SetMobAsync(lat, lon);
+                mobActive = true;
+                // setMob also plays a two-tone chime so the helm has
+                // audio confirmation even if they were looking overboard
+                // when the button was pressed. Persistent toast carries
+                // the exact lat/lon so the helm can read it on the radio.
+                var ns = lat >= 0 ? 'N' : 'S';
+                var ew = lon >= 0 ? 'E' : 'W';
+                Toasts.Show(
+                    $"MOB dropped {DateTime.Now:HH:mm:ss} -- {Math.Abs(lat):F5}\u00B0{ns}, {Math.Abs(lon):F5}\u00B0{ew}",
+                    ToastLevel.Success,
+                    durationSec: 30);
             }
-            await _controlsJs.SetMobAsync(lat, lon);
-            mobActive = true;
-            // setMob also plays a two-tone chime so the helm has
-            // audio confirmation even if they were looking overboard
-            // when the button was pressed. Persistent toast carries
-            // the exact lat/lon so the helm can read it on the radio.
-            var ns = lat >= 0 ? 'N' : 'S';
-            var ew = lon >= 0 ? 'E' : 'W';
-            Toasts.Show(
-                $"MOB dropped {DateTime.Now:HH:mm:ss} -- {Math.Abs(lat):F5}\u00B0{ns}, {Math.Abs(lon):F5}\u00B0{ew}",
-                ToastLevel.Success,
-                durationSec: 30);
+            else
+            {
+                // Guard against false-trigger clears handled in MapControls
+                // via the two-tap confirm pattern (parallel to Stop-
+                // Navigation). By the time ToggleMob fires for a clear,
+                // the user has already armed + confirmed. No second prompt
+                // needed here.
+                await _controlsJs.ClearMobAsync();
+                mobActive = false;
+            }
         }
-        else
+        finally
         {
-            // Guard against false-trigger clears: a kid leaning on the button,
-            // Guard against false-trigger clears handled in MapControls
-            // via the two-tap confirm pattern (parallel to Stop-
-            // Navigation). By the time ToggleMob fires for a clear,
-            // the user has already armed + confirmed. No second prompt
-            // needed here.
-            await _controlsJs.ClearMobAsync();
-            mobActive = false;
+            _mobOpInFlight = false;
         }
     }
+
+    /// <summary>Re-entry guard for the anchor raise / clear path. With
+    /// the singleton HttpClient capped at 8 s, a flaky plugin response
+    /// is no longer minutes-long, but the helm can still complete the
+    /// arm+confirm sequence twice while one RaiseAsync is in flight.
+    /// Without the guard, two POSTs land back-to-back; the helm sees
+    /// the anchor flag bounce in the HUD as both responses come back.
+    /// </summary>
+    private bool _anchorRaiseInFlight;
 
     private async Task ToggleAnchor()
     {
         if (_anchorJs is null) return;
+        if (_anchorRaiseInFlight) return;
 
         // Confirmation for raising the watch lives on the Anchor button
         // itself as a two-tap arm-then-confirm pattern (parallel to
@@ -2722,24 +2745,32 @@
             // Server-side anchor (signalk-anchoralarm-plugin). Raise
             // via REST so the alarm actually stops on the server side
             // rather than just on the client.
+            _anchorRaiseInFlight = true;
             ApiResult r;
-            try { r = await AnchorAlarmApi.RaiseAsync(); }
-            catch (Exception ex) { Toasts.Error($"Raise anchor failed: {ex.Message}"); return; }
-
-            if (!r.Success)
+            try
             {
-                // 404 usually means the plugin isn't installed on this
-                // server. Surface the reason so the helm knows whether
-                // to fall back to the plugin's own UI.
-                Toasts.Error($"Raise anchor failed: {r.Error ?? "server rejected"}");
-                return;
+                try { r = await AnchorAlarmApi.RaiseAsync(); }
+                catch (Exception ex) { Toasts.Error($"Raise anchor failed: {ex.Message}"); return; }
+
+                if (!r.Success)
+                {
+                    // 404 usually means the plugin isn't installed on this
+                    // server. Surface the reason so the helm knows whether
+                    // to fall back to the plugin's own UI.
+                    Toasts.Error($"Raise anchor failed: {r.Error ?? "server rejected"}");
+                    return;
+                }
+                Toasts.Success("Anchor raised");
+                // Visual "raising in progress" feedback until the SK delta
+                // confirms (Data.AnchorActive flips false). Same pattern as
+                // the route-activate auto-raise path.
+                _anchorSync?.MarkRaisePending();
+                await _anchorJs.SetAnchorRaisingAsync(true);
             }
-            Toasts.Success("Anchor raised");
-            // Visual "raising in progress" feedback until the SK delta
-            // confirms (Data.AnchorActive flips false). Same pattern as
-            // the route-activate auto-raise path.
-            _anchorSync?.MarkRaisePending();
-            await _anchorJs.SetAnchorRaisingAsync(true);
+            finally
+            {
+                _anchorRaiseInFlight = false;
+            }
             return;
         }
 
