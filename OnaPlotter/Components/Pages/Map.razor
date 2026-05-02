@@ -692,6 +692,18 @@
 
     // Pre-computed route bounding boxes (avoids re-parsing GeoJSON on every filter).
     private readonly Dictionary<string, (double MinLat, double MaxLat, double MinLon, double MaxLon)?> routeBounds = [];
+    /// <summary>Per-route parsed coordinate cache: keyed by route id,
+    /// holds the [lat, lon] pairs already converted from the
+    /// route.Feature.Geometry JsonElement coordinates. Two callers
+    /// (PrecomputeRouteBounds and AddRouteToMap) used to walk that
+    /// JsonElement enumerator independently for every route on every
+    /// invocation, allocating a fresh double[2] per point per call.
+    /// On a 50-route, 200-waypoint chart that's 10k allocations per
+    /// availableRoutes refresh; the cache collapses both readers to
+    /// one parse + a dictionary lookup. Cleared in PrecomputeRouteBounds
+    /// when availableRoutes mutates so a route edit picks up new
+    /// geometry.</summary>
+    private readonly Dictionary<string, double[][]> routeCoordsCache = [];
 
     private void OnLayerFilterChanged(string v)
     {
@@ -1826,25 +1838,26 @@
     }
 
     // Pre-compute bounding boxes for all routes (called once after loading).
+    // Also seeds routeCoordsCache so AddRouteToMap doesn't re-parse the
+    // JsonElement enumerator. Both reads off one parse pass.
     private void PrecomputeRouteBounds()
     {
         routeBounds.Clear();
+        routeCoordsCache.Clear();
         foreach (var route in availableRoutes)
         {
             if (route.Feature?.Geometry is null) { routeBounds[route.Id] = null; continue; }
             try
             {
+                var coords = ParseRouteCoords(route);
+                routeCoordsCache[route.Id] = coords;
+                if (coords.Length == 0) { routeBounds[route.Id] = null; continue; }
+
                 double minLat = double.MaxValue, maxLat = double.MinValue;
                 double minLon = double.MaxValue, maxLon = double.MinValue;
-                foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+                foreach (var ll in coords)
                 {
-                    var arr = new double[2];
-                    int i = 0;
-                    foreach (var val in point.EnumerateArray())
-                    {
-                        if (i < 2) arr[i++] = val.GetDouble();
-                    }
-                    double lon = arr[0], lat = arr[1];
+                    double lat = ll[0], lon = ll[1];
                     if (lat < minLat) minLat = lat;
                     if (lat > maxLat) maxLat = lat;
                     if (lon < minLon) minLon = lon;
@@ -1857,6 +1870,29 @@
                 routeBounds[route.Id] = null;
             }
         }
+    }
+
+    /// <summary>Parse a route's GeoJSON Coordinates into Leaflet-ordered
+    /// [lat, lon] pairs. Used by both PrecomputeRouteBounds (which
+    /// seeds the cache) and AddRouteToMap (which reads from it for
+    /// routes already cached, parses fresh for ad-hoc routes that
+    /// arrive after the seed). Pure helper; no side effects.</summary>
+    private static double[][] ParseRouteCoords(SignalkRoute route)
+    {
+        if (route.Feature?.Geometry is null) return [];
+        var coords = new List<double[]>();
+        foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+        {
+            var arr = new double[2];
+            int i = 0;
+            foreach (var val in point.EnumerateArray())
+            {
+                if (i < 2) arr[i++] = val.GetDouble();
+            }
+            // GeoJSON [lon, lat] -> Leaflet [lat, lon].
+            coords.Add([arr[1], arr[0]]);
+        }
+        return [.. coords];
     }
 
     // Cached HUD values for change detection. Only re-render when these
@@ -2772,20 +2808,17 @@
     {
         if (_routeJs is null || route.Feature?.Geometry is null) return;
 
-        // Convert GeoJSON [lon, lat] to Leaflet [lat, lon].
-        var coords = new List<double[]>();
-        foreach (var point in route.Feature.Geometry.Coordinates.EnumerateArray())
+        // Re-use the parsed coords from PrecomputeRouteBounds when
+        // possible. ad-hoc routes that arrive after the seed (e.g.
+        // a fresh save before the next list refresh) parse on the
+        // spot; cache them for the next call.
+        if (!routeCoordsCache.TryGetValue(route.Id, out var coordsArr))
         {
-            var arr = new double[2];
-            int i = 0;
-            foreach (var val in point.EnumerateArray())
-            {
-                if (i < 2) arr[i++] = val.GetDouble();
-            }
-            coords.Add([arr[1], arr[0]]); // [lat, lon]
+            coordsArr = ParseRouteCoords(route);
+            routeCoordsCache[route.Id] = coordsArr;
         }
+        if (coordsArr.Length == 0) return;
 
-        var coordsArr = coords.ToArray();
         // Compute the route's total distance C#-side via the shared
         // haversine sum so the JS render path doesn't re-derive it.
         // RouteProgress.TotalDistanceMeters is the canonical source;

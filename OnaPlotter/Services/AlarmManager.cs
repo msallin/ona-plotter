@@ -314,17 +314,30 @@ public sealed class AlarmManager : IAlarmManager
         // Remove alarms that didn't fire this tick and whose rule wants
         // auto-clear. Latching rules (WIND SHIFT) stay in the stack until
         // the user dismisses them, matching the pre-refactor behaviour.
-        var toDrop = _active
-            .Where(kv => !thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear)
-            .Select(kv => kv.Key)
-            .ToList();
-        foreach (var key in toDrop)
+        // The previous Where + Select + ToList allocated an enumerator
+        // chain + a List per Evaluate tick (every alarm evaluation,
+        // multi-Hz under bursty SK feeds), even when no alarms were
+        // up. Defer the list allocation to the case where something
+        // actually needs dropping.
+        List<AlarmKey>? toDrop = null;
+        foreach (var kv in _active)
         {
-            LogHistory(_active[key].Info, now, DismissReason.AutoCleared);
-            _active.Remove(key);
-            changed = true;
+            if (!thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear)
+            {
+                toDrop ??= new List<AlarmKey>(2);
+                toDrop.Add(kv.Key);
+            }
         }
-        if (toDrop.Count > 0) InvalidateActiveCache();
+        if (toDrop is not null)
+        {
+            foreach (var key in toDrop)
+            {
+                LogHistory(_active[key].Info, now, DismissReason.AutoCleared);
+                _active.Remove(key);
+                changed = true;
+            }
+            InvalidateActiveCache();
+        }
 
         // Add-or-update from this tick's hits.
         foreach (var (key, (info, rule)) in thisTick)
@@ -444,22 +457,46 @@ public sealed class AlarmManager : IAlarmManager
 
         // Remove every active alarm referring to this target, not just the
         // snoozed one - all CPA fields for "vessels.a" should go quiet
-        // together.
-        var toDrop = _active.Where(kv => kv.Key.TargetKey == alarm.TargetKey)
-                            .Select(kv => kv.Key).ToList();
-        foreach (var key in toDrop)
+        // together. Manual scan to avoid the LINQ enumerator + List
+        // alloc on a path the helm hits routinely (one snooze tap
+        // per alarm). Preserves the original no-cleanup-when-empty
+        // semantics: when no active alarms match, the rest of the
+        // method (cooldown drop, FireAlarmsChanged, persistence)
+        // still runs -- the snooze itself is the meaningful change.
+        List<AlarmKey>? toDrop = null;
+        foreach (var kv in _active)
         {
-            LogHistory(_active[key].Info, now, DismissReason.UserSnoozed);
-            _active.Remove(key);
+            if (kv.Key.TargetKey == alarm.TargetKey)
+            {
+                toDrop ??= new List<AlarmKey>(2);
+                toDrop.Add(kv.Key);
+            }
         }
-        if (toDrop.Count > 0) InvalidateActiveCache();
+        if (toDrop is not null)
+        {
+            foreach (var key in toDrop)
+            {
+                LogHistory(_active[key].Info, now, DismissReason.UserSnoozed);
+                _active.Remove(key);
+            }
+            InvalidateActiveCache();
+        }
 
         // Snooze is stronger than dismiss-cooldown; drop any cooldowns
         // for this target so the UI state doesn't carry stale "I saw
-        // this" records behind the longer snooze window.
-        var coolKeys = _dismissCooldown.Keys
-            .Where(k => k.TargetKey == alarm.TargetKey).ToList();
-        foreach (var k in coolKeys) _dismissCooldown.Remove(k);
+        // this" records behind the longer snooze window. Same lazy-
+        // alloc pattern as toDrop above.
+        List<AlarmKey>? coolKeys = null;
+        foreach (var k in _dismissCooldown.Keys)
+        {
+            if (k.TargetKey == alarm.TargetKey)
+            {
+                coolKeys ??= new List<AlarmKey>(2);
+                coolKeys.Add(k);
+            }
+        }
+        if (coolKeys is not null)
+            foreach (var k in coolKeys) _dismissCooldown.Remove(k);
 
         FireAlarmsChanged();
         return PersistSnoozesAsync();
