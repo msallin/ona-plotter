@@ -54,6 +54,13 @@ let nightMode = false;
 let dotNetRef = null;
 let suppressMoveEnd = false;  // Suppress moveend during programmatic panTo.
 
+// Document-level event listeners attached in initMap(); held at module
+// scope so dispose() can detach them. Without these handles every Map
+// page mount (helm flipping Chart <-> any-other-page) accumulates a new
+// pointerdown listener; over a long passage the input pipeline stacks
+// dozens of dead callbacks each holding a closure over a disposed map.
+let _alarmBannerPointerDown = null;
+
 // AIS state lives in aisLayer.js.
 
 // SignalK server base URL (scheme+host+port, no trailing slash).
@@ -757,11 +764,17 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // dismisses the alarm and the map's context menu fires a beat
     // later at the original coordinate. Pointerdown on the alarm
     // is a stronger signal of intent than the lingering map timer.
-    document.addEventListener('pointerdown', (e) => {
+    // Held in the module-scoped `_alarmBannerPointerDown` so dispose()
+    // can call removeEventListener -- without that, every Map mount /
+    // unmount cycle (helm flipping between Chart and Settings) leaks
+    // a fresh listener that holds a closure over the disposed map's
+    // cancelLongPress.
+    _alarmBannerPointerDown = (e) => {
         if (e.target && e.target.closest && e.target.closest('.alarm-banner-stack')) {
             cancelLongPress();
         }
-    }, { passive: true });
+    };
+    document.addEventListener('pointerdown', _alarmBannerPointerDown, { passive: true });
 
     mapEl.addEventListener('touchstart', (e) => {
         cancelLongPress();
@@ -2115,6 +2128,14 @@ export function dispose() {
     // Clear any pending move-end debounce before tearing down so a
     // straggling setTimeout can't resume into a disposed map.
     if (boundsTimer) { clearTimeout(boundsTimer); boundsTimer = null; }
+    // Detach the document-level alarm-banner pointerdown handler
+    // attached in initMap. Without this, every Map mount/unmount cycle
+    // (helm flipping pages) leaves a fresh listener attached to
+    // document, and they pile up across long sessions.
+    if (_alarmBannerPointerDown) {
+        document.removeEventListener('pointerdown', _alarmBannerPointerDown);
+        _alarmBannerPointerDown = null;
+    }
     // Null dotNetRef BEFORE tearing down the map. Leaflet's map.remove()
     // fires 'unload' synchronously; any handler that tries to call
     // dotNetRef.invokeMethodAsync during unload would otherwise hit a
