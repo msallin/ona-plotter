@@ -1074,7 +1074,7 @@
             // out, AIS filter hid it, or the list was stale.
             // Toast + put follow back where it was so the helm
             // doesn't lose their view for a no-op tap.
-            Toasts.Info("Vessel no longer on the chart");
+            Toasts.Info("Vessel out of range or AIS feed lost");
             if (wasFollowing)
             {
                 follow = true;
