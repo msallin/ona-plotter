@@ -97,7 +97,7 @@
            the numeric reading stays single + uncluttered. TWA / TWS
            are spelled out in the expanded view for when the helm
            wants the precise true-wind numbers. *@
-        <div class="hud-label">AW</div>
+        <div class="hud-label" title="Apparent Wind: the wind you feel underway (true wind plus the wind the boat creates moving through air).">AW</div>
         @* Same dial radius as the HDG compass (r=24 in a -26..26 viewBox)
            so the two dials read as a matched pair across the right column. *@
         <svg width="52" height="52" viewBox="-26 -26 52 52" class="wind-dial"
@@ -138,38 +138,44 @@
         @if (IsExpanded(CornerTopRight))
         {
             <div class="hud-extra">
+                @* Glossary tooltips: helms onboarding from a non-sailing
+                   background asked what AWA / AWS / TWA / TWS / TWD
+                   meant. Hovering / long-pressing the row label spells
+                   it out. The two-letter prefix is too compact to
+                   spell out inline without breaking the column-aligned
+                   readout, so the title attribute carries it. *@
                 @if (SignedAwa is string awa)
                 {
                     <div class="hud-extra-row">
-                        <span class="hud-extra-k">AWA</span>
+                        <span class="hud-extra-k" title="Apparent Wind Angle: angle off the bow (P/S) of the wind you feel underway.">AWA</span>
                         <span class="hud-extra-v">@awa</span>
                     </div>
                 }
                 @if (Data.WindSpeedApparent is not null)
                 {
                     <div class="hud-extra-row">
-                        <span class="hud-extra-k">AWS</span>
+                        <span class="hud-extra-k" title="Apparent Wind Speed: wind you feel underway (vector sum of true wind + boat motion).">AWS</span>
                         <span class="hud-extra-v">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></span>
                     </div>
                 }
                 @if (SignedTwa is string twa)
                 {
                     <div class="hud-extra-row">
-                        <span class="hud-extra-k">TWA</span>
+                        <span class="hud-extra-k" title="True Wind Angle: angle off the bow (P/S) of the wind a stationary observer would measure.">TWA</span>
                         <span class="hud-extra-v">@twa</span>
                     </div>
                 }
                 @if (Data.WindSpeedTrue is not null)
                 {
                     <div class="hud-extra-row">
-                        <span class="hud-extra-k">TWS</span>
+                        <span class="hud-extra-k" title="True Wind Speed: wind speed independent of boat motion.">TWS</span>
                         <span class="hud-extra-v">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></span>
                     </div>
                 }
                 @if (Data.WindDirectionTrue is not null)
                 {
                     <div class="hud-extra-row" title="True wind direction (compass, from)">
-                        <span class="hud-extra-k">TWD</span>
+                        <span class="hud-extra-k" title="True Wind Direction: compass bearing the true wind is coming FROM.">TWD</span>
                         <span class="hud-extra-v">@Format.Degrees(Data.WindDirectionTrue)&deg;</span>
                     </div>
                 }

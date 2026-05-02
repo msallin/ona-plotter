@@ -114,21 +114,12 @@
                 <button class="btn btn-sm btn-outline-secondary topbar-icon-btn ms-auto"
                         @onclick="ZoomInAsync"
                         title="Zoom in" aria-label="Zoom in">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                         stroke-linejoin="round" aria-hidden="true">
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
+                    @((MarkupString)OnaPlotter.Utilities.Icons.Small.Plus)
                 </button>
                 <button class="btn btn-sm btn-outline-secondary topbar-icon-btn"
                         @onclick="ZoomOutAsync"
                         title="Zoom out" aria-label="Zoom out">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                         stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                         stroke-linejoin="round" aria-hidden="true">
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
+                    @((MarkupString)OnaPlotter.Utilities.Icons.Small.Minus)
                 </button>
             }
 
@@ -146,18 +137,11 @@
                     aria-label="@(Settings.NightMode ? "Switch to day mode" : "Switch to night mode")">
                 @if (Settings.NightMode)
                 {
-                    @* Sun *@
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <circle cx="12" cy="12" r="4" />
-                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-                    </svg>
+                    @((MarkupString)OnaPlotter.Utilities.Icons.Small.Sun)
                 }
                 else
                 {
-                    @* Moon *@
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                    </svg>
+                    @((MarkupString)OnaPlotter.Utilities.Icons.Small.Moon)
                 }
             </button>
 
@@ -182,21 +166,11 @@
                     aria-label="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")">
                 @if (isFullscreen)
                 {
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M8 3v4a1 1 0 0 1-1 1H3" />
-                        <path d="M21 8h-4a1 1 0 0 1-1-1V3" />
-                        <path d="M3 16h4a1 1 0 0 1 1 1v4" />
-                        <path d="M16 21v-4a1 1 0 0 1 1-1h4" />
-                    </svg>
+                    @((MarkupString)OnaPlotter.Utilities.Icons.Small.FullscreenExit)
                 }
                 else
                 {
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M3 8V5a2 2 0 0 1 2-2h3" />
-                        <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-                        <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
-                        <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-                    </svg>
+                    @((MarkupString)OnaPlotter.Utilities.Icons.Small.FullscreenEnter)
                 }
             </button>
         </div>
