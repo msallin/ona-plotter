@@ -546,6 +546,12 @@
         daily = [];
         loading = true;
         StateHasChanged();
+        // 30 s timeout backstops a wedged or under-provisioned history
+        // server. Aggregate computes can hit that cap on long
+        // (year-scale) windows at 30 s resolution; the helm is asked
+        // to dial the resolution coarser via the dropdown when this
+        // fires. Matches the History page's timeout for consistency.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
             // Resolve window. Custom mode swaps inverted ranges
@@ -581,7 +587,7 @@
             // under-count the helm's nautical miles.
             var points = await TrackApi.GetServerTrackPointsAsync(
                 from: fromUtc, to: toUtc, timespan: span,
-                resolution: resolution, bbox: null);
+                resolution: resolution, bbox: null, ct: cts.Token);
 
             if (points is null || points.Length < 2)
             {
@@ -596,6 +602,10 @@
             // mid-Compute would otherwise drop the freshly computed
             // result. DisposeAsync's save catches the slow path.
             SaveToState();
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            errorMessage = "Stats fetch timed out after 30 s. Try a coarser resolution or shorter window.";
         }
         catch (HttpRequestException ex)
         {

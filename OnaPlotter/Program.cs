@@ -124,11 +124,6 @@ builder.Services.AddSingleton<IPathApi, PathApi>();
 // this session write?"; banner reads from it and hides when the
 // server has security disabled (open homelab / dev installs).
 builder.Services.AddSingleton<IAuthApi, AuthApi>();
-// Session-scoped chunk cache for the History API. WASM is single-
-// process so AddSingleton is effectively scope-equivalent; the cache
-// lives until tab close. Registered BEFORE TrackApi so DI's
-// constructor injection sees it.
-builder.Services.AddSingleton<OnaPlotter.Services.Api.HistoryCache>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.
 builder.Services.AddSingleton<IRadarApi, RadarApi>();

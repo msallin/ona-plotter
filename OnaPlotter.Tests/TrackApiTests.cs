@@ -530,377 +530,45 @@ public class TrackApiTests
     }
 
     // -----------------------------------------------------------------
-    // Pagination: signalk-parquet caps each response at 500 rows. For
-    // long windows (e.g. 7 d at 30 s = 20 160 expected rows) we split
-    // the request into chunks so each sub-request stays inside the
-    // cap and the server returns the requested resolution unaltered.
+    // Single-request contract: every (from, to, timespan, resolution,
+    // bbox) shape lands on exactly one HTTP request. The client used to
+    // chunk large windows to dodge a 500-row response cap that older
+    // signalk-parquet builds enforced; helm field-tested that current
+    // providers honour the requested resolution and the chunking added
+    // latency for no benefit. Page-level CancellationToken (Cancel
+    // button + 30 s timeout) handles the slow-server case.
     // -----------------------------------------------------------------
 
     [Test]
-    public async Task RichFetch_LargeWindow_AbsoluteRange_PaginatesIntoMultipleRequests()
+    public async Task RichFetch_AnyWindow_StaysSingleRequest()
     {
-        // Helm picks 7 d at 30 s. Without chunking the response would
-        // be silently re-bucketed by the server, leaving ~20-min
-        // sample gaps that the segmenter then surfaces as fictitious
-        // 20-min holes between trips. Pin the chunked URL count so a
-        // refactor that drops the loop goes red.
-        var queries = new List<string>();
+        // Both the small-window (fits-anywhere) and the previously-
+        // chunked large-window (7 d at 30 s) shapes must each land on
+        // exactly one HTTP request. Replaces the earlier paginating
+        // tests; a regression that re-introduces chunking goes red here.
+        int absoluteSmall = 0, relativeSmall = 0, absoluteLarge = 0, relativeLarge = 0;
         string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
-        var api = HistoryApi(body, req =>
-        {
-            if (req.RequestUri?.Query is string q) queries.Add(q);
-        });
-
-        await api.GetServerTrackPointsAsync(
-            from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
-            to: new DateTimeOffset(2026, 4, 8, 0, 0, 0, TimeSpan.Zero),
-            timespan: null,
-            resolution: "30s");
-
-        // Chunk width = 500 × 0.95 × 30 s = 14 250 s ≈ 3.96 h. Over
-        // a 7-day window that's ~42 chunks. Anything in [40, 50] is
-        // fine; pinning a tight upper / lower bound keeps the test
-        // honest without coupling to the safety fraction's exact value.
-        await Assert.That(queries.Count).IsGreaterThan(40);
-        await Assert.That(queries.Count).IsLessThan(50);
-
-        // Every chunk uses absolute from/to (NOT relative duration);
-        // the relative form is what gets the cap applied server-side
-        // because the plugin can't predict bucket counts without the
-        // explicit bounds. Belt-and-braces vs the sub-window assertion.
-        foreach (var q in queries)
-        {
-            await Assert.That(q.Contains("from=")).IsTrue();
-            await Assert.That(q.Contains("to=")).IsTrue();
-            await Assert.That(q.Contains("duration=")).IsFalse();
-        }
-    }
-
-    [Test]
-    public async Task RichFetch_LargeWindow_RelativeTimespan_AlsoPaginates()
-    {
-        // Relative window over the cap (e.g. 7 d at 30 s) collapses
-        // to absolute "now-relative" chunks. Without that conversion
-        // the server bucket-decimates the same way the absolute path
-        // would; the helm sees the same trip-table holes. Pin the
-        // multi-request shape for the relative path too because
-        // History.razor's preset dropdown emits this code path.
-        int requestCount = 0;
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
-        var api = HistoryApi(body, _ => requestCount++);
-
-        await api.GetServerTrackPointsAsync(
-            from: null, to: null,
-            timespan: "7d",
-            resolution: "30s");
-
-        // Same arithmetic as the absolute test; pinned independently
-        // because the relative-to-absolute conversion runs through a
-        // different code path inside TryComputeWindowSpan.
-        await Assert.That(requestCount).IsGreaterThan(40);
-    }
-
-    [Test]
-    public async Task RichFetch_SmallWindow_BothTimespanAndAbsolute_StaysSingleRequest()
-    {
-        // Belt-and-braces against an over-eager paginator: 1 h at 30 s
-        // = 120 rows, comfortably under the 500-row cap. Both shapes
-        // (timespan and absolute) must hit the server exactly once
-        // each. The single-request fast path keeps URL shapes
-        // unchanged for callers that pinned them.
-        int absoluteCalls = 0;
-        int relativeCalls = 0;
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
-        var api1 = HistoryApi(body, _ => absoluteCalls++);
-        var api2 = HistoryApi(body, _ => relativeCalls++);
+        var api1 = HistoryApi(body, _ => absoluteSmall++);
+        var api2 = HistoryApi(body, _ => relativeSmall++);
+        var api3 = HistoryApi(body, _ => absoluteLarge++);
+        var api4 = HistoryApi(body, _ => relativeLarge++);
 
         await api1.GetServerTrackPointsAsync(
             from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
             to: new DateTimeOffset(2026, 4, 1, 1, 0, 0, TimeSpan.Zero),
             timespan: null);
-        await api2.GetServerTrackPointsAsync(
-            from: null, to: null, timespan: "1h");
-
-        await Assert.That(absoluteCalls).IsEqualTo(1);
-        await Assert.That(relativeCalls).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task RichFetch_PaginatedChunks_ConcatenateAndDedupeBoundary()
-    {
-        // The seam between two chunks: SignalK's `from`/`to` are
-        // documented inclusive on both ends, so a sample at the seam
-        // instant comes back in BOTH the previous chunk's tail and
-        // the next chunk's head. The aggregator must skip the
-        // duplicated head sample so the segmenter doesn't see a
-        // zero-distance "hop" right at the seam (which would emit a
-        // 1-point segment on every chunk boundary).
-        // Pick a window + resolution that produces EXACTLY two chunks
-        // so the assertion can be precise. Chunk width = 500 × 0.95 ×
-        // resolution = 475 × resolution. Resolution 1 s → 475 s wide
-        // chunks; window 950 s spans two chunks. The dedup contract:
-        // chunk-1's last sample timestamp matches chunk-2's first
-        // sample timestamp, so the aggregator drops the head of
-        // chunk 2 to keep the segmenter from seeing a 1-point seam
-        // segment. Empty response for any further chunk so a
-        // miscalculation in chunk count doesn't silently inflate
-        // the asserted total.
-        int callIndex = 0;
-        var bodies = new[]
-        {
-            // Chunk 1: two samples; the second is the seam.
-            """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-01T00:00:00Z",[-76,24]],["2026-04-01T00:07:55Z",[-76,24.01]]]}""",
-            // Chunk 2: starts AT the seam (duplicate ts), then a fresh sample.
-            """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-01T00:07:55Z",[-76,24.01]],["2026-04-01T00:15:00Z",[-76,24.02]]]}""",
-            // Any further chunk: empty so unexpected extra calls
-            // can't pad the result and mask a logic error.
-            """{"values":[{"path":"navigation.position","method":"first"}],"data":[]}""",
-        };
-        var http = ApiTestHelpers.MockClient(req =>
-        {
-            var body = bodies[Math.Min(callIndex++, bodies.Length - 1)];
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
-            };
-        });
-        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl());
-
-        // 950 s @ 1 s = 950 expected rows. Cap × safety = 500 × 0.95
-        // = 475 → two chunks; 950 > 475 triggers pagination.
-        var pts = await api.GetServerTrackPointsAsync(
+        await api2.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+        await api3.GetServerTrackPointsAsync(
             from: new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero),
-            to: new DateTimeOffset(2026, 4, 1, 0, 15, 50, TimeSpan.Zero),
-            timespan: null, resolution: "1s");
+            to: new DateTimeOffset(2026, 4, 8, 0, 0, 0, TimeSpan.Zero),
+            timespan: null,
+            resolution: "30s");
+        await api4.GetServerTrackPointsAsync(from: null, to: null, timespan: "7d", resolution: "30s");
 
-        await Assert.That(pts).IsNotNull();
-        // 2 chunks × 2 samples each = 4 raw, minus 1 seam dupe = 3.
-        await Assert.That(pts!.Length).IsEqualTo(3);
-        await Assert.That(pts[0].Timestamp).IsEqualTo(
-            new DateTime(2026, 4, 1, 0, 0, 0, DateTimeKind.Utc));
-        await Assert.That(pts[1].Timestamp).IsEqualTo(
-            new DateTime(2026, 4, 1, 0, 7, 55, DateTimeKind.Utc));
-        await Assert.That(pts[2].Timestamp).IsEqualTo(
-            new DateTime(2026, 4, 1, 0, 15, 0, DateTimeKind.Utc));
-    }
-
-    [Test]
-    public async Task TryParseResolutionToSpan_AcceptsShorthandAndIsoForms()
-    {
-        // Pinned because the chunking decision relies on this helper
-        // returning a positive TimeSpan; an unparseable string falls
-        // back to a single request. Keep both forms parsing so a
-        // future caller wiring `PT30S` directly stays supported.
-        await Assert.That(TrackApi.TryParseResolutionToSpan("30s")).IsEqualTo(TimeSpan.FromSeconds(30));
-        await Assert.That(TrackApi.TryParseResolutionToSpan("5m")).IsEqualTo(TimeSpan.FromMinutes(5));
-        await Assert.That(TrackApi.TryParseResolutionToSpan("2h")).IsEqualTo(TimeSpan.FromHours(2));
-        await Assert.That(TrackApi.TryParseResolutionToSpan("1d")).IsEqualTo(TimeSpan.FromDays(1));
-        await Assert.That(TrackApi.TryParseResolutionToSpan("PT30S")).IsEqualTo(TimeSpan.FromSeconds(30));
-        await Assert.That(TrackApi.TryParseResolutionToSpan("")).IsNull();
-        await Assert.That(TrackApi.TryParseResolutionToSpan("nonsense")).IsNull();
-    }
-
-    // -----------------------------------------------------------------
-    // Cache integration: paginated chunks consult HistoryCache. First
-    // load fills the cache; second load with the same window reuses
-    // every chunk (zero HTTP requests on warm cache). Live-tail
-    // chunks (within 1 min of "now") refetch every time.
-    // -----------------------------------------------------------------
-
-    /// <summary>Frozen-clock TimeProvider so the live-tail rule fires
-    /// deterministically in cache integration tests. Same shape as
-    /// the one in <c>HistoryCacheTests</c>; duplicated here rather
-    /// than promoted to a shared helper because the two test classes
-    /// only have this one type in common, and a shared file would
-    /// hide the pin from a future reader.</summary>
-    private sealed class FrozenTime(DateTimeOffset now) : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = now;
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
-
-    /// <summary>Paginating TrackApi wired to a fresh cache + a request
-    /// counter. The mock returns the supplied body for every chunk,
-    /// which is fine for cache-behaviour assertions where we only
-    /// care about HOW MANY times the server was hit, not which
-    /// chunks came back with which data.</summary>
-    private static (TrackApi api, HistoryCache cache, Func<int> getRequestCount)
-        CachedHistoryApi(string body, FrozenTime time)
-    {
-        int count = 0;
-        var http = ApiTestHelpers.MockClient(req =>
-        {
-            count++;
-            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
-            };
-        });
-        var cache = new HistoryCache(time);
-        var api = new TrackApi(http, ApiTestHelpers.FixedBaseUrl(), cache);
-        return (api, cache, () => count);
-    }
-
-    [Test]
-    public async Task Cache_FirstLoad_PopulatesCache_SecondLoad_ServesFromCache()
-    {
-        // Frozen at a "now" far past the queried window so every
-        // chunk is OUTSIDE the live-tail freshness band. Otherwise
-        // the cache's HeadFreshness rule would refuse to store the
-        // chunks and the second load would still hit the server.
-        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
-        // Two-sample body; passes the segmenter contract but the
-        // cache test only cares about request count.
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
-        var (api, cache, getCount) = CachedHistoryApi(body, time);
-
-        // 950 s @ 1 s = 950 expected rows -> 2 chunks at the cap.
-        var window = (
-            from: new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero),
-            to: new DateTimeOffset(2026, 4, 25, 12, 15, 50, TimeSpan.Zero));
-
-        var first = await api.GetServerTrackPointsAsync(
-            from: window.from, to: window.to, timespan: null, resolution: "1s");
-
-        int afterFirst = getCount();
-        await Assert.That(first).IsNotNull();
-        await Assert.That(afterFirst).IsEqualTo(2);
-        await Assert.That(cache.Count).IsEqualTo(2);
-        await Assert.That(cache.Hits).IsEqualTo(0);
-        await Assert.That(cache.Misses).IsGreaterThanOrEqualTo(2);
-
-        // Second load with the EXACT same window: every chunk is
-        // already cached. Request count must NOT advance, and the
-        // cache hit counter must rise by the chunk count.
-        var second = await api.GetServerTrackPointsAsync(
-            from: window.from, to: window.to, timespan: null, resolution: "1s");
-
-        int afterSecond = getCount();
-        await Assert.That(second).IsNotNull();
-        await Assert.That(afterSecond)
-            .IsEqualTo(afterFirst)
-            .Because("warm cache must serve every chunk without hitting the server");
-        await Assert.That(cache.Hits).IsGreaterThanOrEqualTo(2);
-    }
-
-    [Test]
-    public async Task Cache_DifferentResolution_Misses()
-    {
-        // Resolution is part of the cache key. Re-issuing the same
-        // window at a different resolution must NOT serve cached
-        // 30s chunks as if they were 5m chunks (the buckets are
-        // different and the server's response would differ).
-        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
-        var (api, cache, getCount) = CachedHistoryApi(body, time);
-        var window = (
-            from: new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero),
-            to: new DateTimeOffset(2026, 4, 25, 12, 15, 50, TimeSpan.Zero));
-
-        await api.GetServerTrackPointsAsync(
-            from: window.from, to: window.to, timespan: null, resolution: "1s");
-        int afterFirst = getCount();
-
-        // Same window, different resolution: must hit the server again.
-        await api.GetServerTrackPointsAsync(
-            from: window.from, to: window.to, timespan: null, resolution: "5s");
-
-        int afterSecond = getCount();
-        await Assert.That(afterSecond - afterFirst).IsGreaterThan(0);
-    }
-
-    [Test]
-    public async Task Cache_DifferentBbox_Misses()
-    {
-        // bbox is part of the cache key. A re-load with a different
-        // bbox (e.g. helm panned the History map) must refetch
-        // because the server may return different points for the
-        // narrowed area.
-        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
-        var (api, cache, getCount) = CachedHistoryApi(body, time);
-        var window = (
-            from: new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero),
-            to: new DateTimeOffset(2026, 4, 25, 12, 15, 50, TimeSpan.Zero));
-
-        await api.GetServerTrackPointsAsync(
-            from: window.from, to: window.to, timespan: null, resolution: "1s",
-            bbox: new TrackBbox(South: 47.0, West: 8.0, North: 48.0, East: 9.0));
-        int afterFirst = getCount();
-
-        await api.GetServerTrackPointsAsync(
-            from: window.from, to: window.to, timespan: null, resolution: "1s",
-            bbox: new TrackBbox(South: 24.0, West: -77.0, North: 25.0, East: -76.0));
-
-        int afterSecond = getCount();
-        await Assert.That(afterSecond - afterFirst).IsGreaterThan(0);
-    }
-
-    [Test]
-    public async Task Cache_LiveTailChunk_RefetchesEveryTime()
-    {
-        // Live-tail rule: chunks whose `to` is within HeadFreshness
-        // (60 s) of "now" must NOT be cached and must NOT be served
-        // from cache. If the boat is currently underway, the head
-        // chunk is still being filled; a cached "you're stationary"
-        // entry would be stale. Pin both directions: cache stays
-        // empty after the first load, and the second load hits the
-        // server the same number of times.
-        //
-        // Setup math: 510 s window @ 1 s resolution. Chunking
-        // triggers (>500 expected rows). Chunk size = 475 s
-        // (= 500 × 0.95 × 1 s):
-        //   chunk 1: [t, t+475]   -> to = t + 475 s
-        //   chunk 2: [t+475, t+510] -> to = t + 510 s
-        // Set "now" = t + 510 s (= window end). Live-tail boundary
-        // = now - 60 s = t + 450 s. Both chunk `to`s (475 and 510)
-        // are AFTER 450, so both are live-tail.
-        var windowStart = new DateTimeOffset(2026, 4, 25, 12, 0, 0, TimeSpan.Zero);
-        var windowEnd = windowStart.AddSeconds(510);
-        var time = new FrozenTime(windowEnd);
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]],["2026-04-25T12:00:30Z",[-76.0,24.01]]]}""";
-        var (api, cache, getCount) = CachedHistoryApi(body, time);
-
-        await api.GetServerTrackPointsAsync(
-            from: windowStart, to: windowEnd, timespan: null, resolution: "1s");
-        int afterFirst = getCount();
-        await Assert.That(afterFirst)
-            .IsEqualTo(2)
-            .Because("510 s @ 1 s exceeds the 500-row cap -> chunked into 2 sub-requests");
-
-        // Cache must be EMPTY after the first load: every chunk
-        // is in the tail and HistoryCache.Set silently no-ops.
-        await Assert.That(cache.Count).IsEqualTo(0);
-
-        // Second identical load: cache stays empty, server is hit
-        // again the same number of times.
-        await api.GetServerTrackPointsAsync(
-            from: windowStart, to: windowEnd, timespan: null, resolution: "1s");
-
-        int afterSecond = getCount();
-        await Assert.That(afterSecond)
-            .IsEqualTo(afterFirst * 2)
-            .Because("live-tail chunks must refetch unconditionally; " +
-                     "caching them would surface stale 'boat hasn't moved' data");
-        await Assert.That(cache.Count).IsEqualTo(0);
-    }
-
-    [Test]
-    public async Task Cache_SmallSingleRequestWindow_DoesNotCache()
-    {
-        // Below-cap windows take the original single-request path
-        // (`duration=PT1H`, no chunking). That path bypasses the
-        // cache entirely because the relative form would always
-        // miss against absolute-bound cache keys. Pin the
-        // bypass: cache stays empty even after a small fetch.
-        var time = new FrozenTime(DateTimeOffset.Parse("2030-01-01T00:00:00Z"));
-        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-25T12:00:00Z",[-76.0,24.0]]]}""";
-        var (api, cache, _) = CachedHistoryApi(body, time);
-
-        await api.GetServerTrackPointsAsync(
-            from: null, to: null, timespan: "1h", resolution: "30s");
-
-        await Assert.That(cache.Count).IsEqualTo(0);
+        await Assert.That(absoluteSmall).IsEqualTo(1);
+        await Assert.That(relativeSmall).IsEqualTo(1);
+        await Assert.That(absoluteLarge).IsEqualTo(1);
+        await Assert.That(relativeLarge).IsEqualTo(1);
     }
 
     [Test]
