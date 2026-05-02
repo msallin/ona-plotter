@@ -644,7 +644,7 @@
         catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
         catch (Exception ex)
         {
-            Toasts.Error($"Share failed: {ex.Message}");
+            Toasts.LogException(ex, "Share");
         }
         finally
         {
