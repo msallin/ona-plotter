@@ -101,7 +101,12 @@
                         @onpointercancel="EndNightHold"
                         title="Night mode (N) -- hold for Dark Ops">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
-                    <span>Night @(NightMode ? "(on)" : "")</span>
+                    @* "(hold)" inline so touch users (no title-attribute
+                       hover) discover the long-press shortcut to Dark
+                       Ops. Falls away once Night is on -- the helm has
+                       already engaged the mode and doesn't need the
+                       discovery hint. *@
+                    <span>Night @(NightMode ? "(on)" : "(tap = soft, hold = Dark Ops)")</span>
                 </button>
                 @* Harbor mode: a single switch that bundles AIS / collision
                    suppressions for entering a busy port -- moored vessels
@@ -124,6 +129,18 @@
                         title="Map orientation (O)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Compass)</span>
                     <span>Orient (@OrientationLabel)@(ShowKeyboardHints ? " (O)" : "")</span>
+                </button>
+                @* Tips / Shortcuts: surfaces MapShortcutsOverlay for
+                   touch users who can't tap "?" on a keyboard. The
+                   overlay lists every shortcut (F = follow, A = anchor,
+                   M = MOB, ...) plus pointer / touch tips. Gated on
+                   the same callback the keyboard handler uses so a
+                   helm with both inputs sees one entry point. *@
+                <button class="ctrl-more-item"
+                        @onclick="() => Select(OnShowShortcuts)"
+                        title="Tips and keyboard shortcuts">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
+                    <span>Tips / Shortcuts</span>
                 </button>
             </div>
         }
@@ -313,6 +330,10 @@
     [Parameter] public EventCallback OnToggleRaceTimer { get; set; }
     [Parameter] public EventCallback OnToggleLayers { get; set; }
     [Parameter] public EventCallback OnToggleLegend { get; set; }
+    /// <summary>Open the keyboard-shortcuts overlay. Wired to a More-
+    /// menu row so touch users (no keyboard "?" affordance) can
+    /// surface the shortcuts list at all.</summary>
+    [Parameter] public EventCallback OnShowShortcuts { get; set; }
     [Parameter] public EventCallback OnToggleFab { get; set; }
     [Parameter] public EventCallback OnFabCreateWaypoint { get; set; }
     [Parameter] public EventCallback OnFabCreateNote { get; set; }
