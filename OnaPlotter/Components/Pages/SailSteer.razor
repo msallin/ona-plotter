@@ -572,8 +572,21 @@
         if (SignalkClient.IsDataStale)
             return ("SignalK feed stale",
                     "Connected, but no message has arrived for several seconds.");
-        return ("Awaiting wind / heading",
-                "Connected. SailSteer needs environment.wind.* and navigation.headingTrue from the server.");
+        // Connected + live, but the wind / heading paths haven't
+        // landed. Two flavours, distinguished by whether ANY non-wind
+        // navigation data has arrived: if position / SOG / COG are
+        // present but wind isn't, the server is feeding -- the wind
+        // sensor itself is the missing piece. Helm-feedback: a vague
+        // "Awaiting wind / heading" sent boat owners hunting for SK
+        // server bugs when the actual fix was at the masthead.
+        bool hasNonWindNav = Data.Latitude is not null
+            || Data.SpeedOverGround is not null
+            || Data.CourseOverGroundTrue is not null;
+        if (hasNonWindNav)
+            return ("No wind / heading sensor",
+                    "SignalK is feeding, but environment.wind.* and navigation.headingTrue paths haven't arrived. Check the wind / compass instrument is powered and reporting.");
+        return ("Awaiting first sample",
+                "Connected. Waiting for SignalK to deliver environment.wind.* and navigation.headingTrue.");
     }
 
     /// <summary>

@@ -116,7 +116,7 @@
                the second tap will racetrack a duplicate request. *@
             <button class="map-btn @(loading ? "loading-cancel" : "")"
                     @onclick="LoadTrack"
-                    title="@(loading ? "Loading… tap to cancel" : "Load track for the chosen window")">
+                    title="@(loading ? "Loading... tap to cancel" : "Load track for the chosen window")">
                 @if (loading)
                 {
                     <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
@@ -367,6 +367,17 @@
                         </select>
                     </label>
                 </div>
+            }
+            else if (loadAttempted && !SignalkClient.IsConnected)
+            {
+                @* Offline at result time -- the fetch failed because the
+                   SK server wasn't reachable, not because the time window
+                   has no data. Distinguishing this matters: a helm seeing
+                   "no track data" who actually has plenty would otherwise
+                   spend minutes fiddling the date picker. *@
+                <EmptyState Compact="true"
+                            Title="Couldn't reach the SignalK server"
+                            Message="Check the connection and tap Load again." />
             }
             else if (loadAttempted)
             {

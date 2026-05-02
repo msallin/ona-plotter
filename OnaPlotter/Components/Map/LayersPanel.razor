@@ -7,6 +7,16 @@
    with its own expand/collapse state. *@
 
 <div class="chart-panel" @onclick:stopPropagation>
+    @* Top-level offline banner. When the SK websocket is down every
+       section below shows its own "no data" empty state, which reads
+       as five separate problems. One banner up top says it once and
+       points the helm at the actual issue. *@
+    @if (Offline)
+    {
+        <EmptyState Compact="true"
+                    Title="Offline"
+                    Message="Not connected to the SignalK server. Sections below show the last cached data; reconnect to refresh." />
+    }
     @{
         // Filter input threshold sums every list the filter now targets
         // (charts + routes + waypoints + notes + regions). Cutoff at
@@ -158,6 +168,11 @@
     [Parameter] public bool ShowRadarHud { get; set; }
     [Parameter] public bool BigType { get; set; }
     [Parameter] public bool ExpandAllHud { get; set; }
+    /// <summary>True when the SignalK websocket is not connected. The
+    /// panel renders a top-level offline banner so the helm sees the
+    /// actual cause once instead of N section-level "nothing here"
+    /// confusions when the server is unreachable.</summary>
+    [Parameter] public bool Offline { get; set; }
 
     [Parameter] public string LayerFilter { get; set; } = "";
     [Parameter] public EventCallback<string> LayerFilterChanged { get; set; }
