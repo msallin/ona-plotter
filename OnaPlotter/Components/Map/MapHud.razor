@@ -2,6 +2,7 @@
 @using OnaPlotter.Utilities
 @using OnaPlotter.Services
 @using OnaPlotter.Services.Api
+@inject IToastService Toasts
 
 @* All the floating HUD panels overlaid on the map:
    top-left (speed/course/position), top-right (wind), bottom-left (depth),
@@ -395,11 +396,23 @@
                     @Format.Degrees(Data.AutopilotTargetHeading)<span class="hud-unit">&deg;</span>
                 </div>
             }
+            @* Heading nudge buttons. Disabled in standby (the boat
+               isn't being steered by the autopilot, so a +10 nudge is
+               meaningless and would mislead the helm into thinking
+               they applied it). When engaged, a tap fires a brief
+               toast with the signed delta -- helm with cold gloves
+               or a brushed sleeve has audit trail of what the boat
+               just got told to do, complementing the chime + visual
+               heading change but surfacing it inline. *@
             <div class="ap-controls">
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-10)'>-10</button>
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(-1)'>-1</button>
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(1)'>+1</button>
-                <button class="ap-btn" @onclick='() => Autopilot.AdjustHeadingAsync(10)'>+10</button>
+                <button class="ap-btn" disabled="@(Data.AutopilotState == "standby")"
+                        @onclick="() => NudgeAutopilotHeading(-10)">-10</button>
+                <button class="ap-btn" disabled="@(Data.AutopilotState == "standby")"
+                        @onclick="() => NudgeAutopilotHeading(-1)">-1</button>
+                <button class="ap-btn" disabled="@(Data.AutopilotState == "standby")"
+                        @onclick="() => NudgeAutopilotHeading(1)">+1</button>
+                <button class="ap-btn" disabled="@(Data.AutopilotState == "standby")"
+                        @onclick="() => NudgeAutopilotHeading(10)">+10</button>
             </div>
             @* Engaging the autopilot into any non-standby mode is potentially
                dangerous on a charter boat where crew can knock a button in
@@ -576,6 +589,27 @@
 
     [Parameter, EditorRequired] public NavigationData Data { get; set; } = null!;
     [Parameter, EditorRequired] public IAutopilotApi Autopilot { get; set; } = null!;
+
+    /// <summary>Wraps Autopilot.AdjustHeadingAsync with a brief
+    /// audit-trail toast so a glove brush in heavy weather doesn't
+    /// silently send the boat 10 deg off course. The standby check
+    /// is also enforced via the disabled binding on the buttons; the
+    /// guard here is belt-and-braces against a future click handler
+    /// re-enabling them without reading the state.</summary>
+    private async Task NudgeAutopilotHeading(int deltaDeg)
+    {
+        if (Data.AutopilotState == "standby") return;
+        try
+        {
+            await Autopilot.AdjustHeadingAsync(deltaDeg);
+            string sign = deltaDeg >= 0 ? "+" : "";
+            Toasts.Show($"Autopilot {sign}{deltaDeg}°", ToastLevel.Info, durationSec: 2);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error($"Autopilot nudge failed: {ex.Message}");
+        }
+    }
 
     /// <summary>Current heading in radians; used to draw the compass needle.</summary>
     [Parameter] public double? LastHeadingRad { get; set; }
