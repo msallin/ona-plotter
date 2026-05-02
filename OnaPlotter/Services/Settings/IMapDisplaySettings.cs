@@ -48,6 +48,30 @@ public interface IMapDisplaySettings
     /// COG vector + current arrow. Defaults to true.</summary>
     bool LocalTrackVisible { get; }
 
+    /// <summary>Server-side ship-track layer visible. Persisted so a
+    /// helm who decluttered last session doesn't see the trail come
+    /// back on the next reload. Defaults to true: a fresh helm gets
+    /// the long trail-of-record on the chart out of the box.</summary>
+    bool ServerTrackVisible { get; }
+
+    /// <summary>Server-side ship-track helm-picked window: <c>1h</c>,
+    /// <c>6h</c>, <c>1d</c>, <c>3d</c>, <c>7d</c>, or <c>all</c>.
+    /// Default <c>all</c> -- a fresh helm sees their full history-of-
+    /// record without having to dig into the dropdown.</summary>
+    string ServerTrackDuration { get; }
+
+    /// <summary>Server-side ship-track sampling resolution (1s..4h
+    /// from the History page ladder). Default <c>15m</c>: pairs with
+    /// the "all time" duration default to keep the payload sane on a
+    /// fresh helm's first load.</summary>
+    string ServerTrackResolution { get; }
+
+    /// <summary>Server-side ship-track clip-to-bounds filter. Default
+    /// true: the long polyline is interesting in the local area, not
+    /// for paint-the-globe; the JS module re-clips on pan/zoom
+    /// without re-fetching.</summary>
+    bool ServerTrackWithinBounds { get; }
+
     /// <summary>AIS Aids to Navigation visible on the map.</summary>
     bool AtonsVisible { get; }
 
@@ -141,6 +165,10 @@ public interface IMapDisplaySettings
     Task SetLaylinesVisibleAsync(bool value);
     Task SetShipLinesVisibleAsync(bool value);
     Task SetLocalTrackVisibleAsync(bool value);
+    Task SetServerTrackVisibleAsync(bool value);
+    Task SetServerTrackDurationAsync(string value);
+    Task SetServerTrackResolutionAsync(string value);
+    Task SetServerTrackWithinBoundsAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
     Task SetGuardZoneVisibleAsync(bool value);
     Task SetGuardZoneWarningRingVisibleAsync(bool value);

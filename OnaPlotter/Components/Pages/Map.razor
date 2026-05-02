@@ -499,10 +499,10 @@
                      OnEditWaypoint="OpenWaypointEditDialog"
                      OnDeleteWaypoint="DeleteWaypointFromLayers"
                      OnFocusVessel="FocusVessel"
-                     OnToggleServerTrack="@(v => _serverTrack?.ToggleAsync(v) ?? Task.CompletedTask)"
-                     OnServerTrackDurationChanged="@(d => _serverTrack?.SetDurationAsync(d) ?? Task.CompletedTask)"
-                     OnServerTrackResolutionChanged="@(r => _serverTrack?.SetResolutionAsync(r) ?? Task.CompletedTask)"
-                     OnServerTrackWithinBoundsChanged="@(b => _serverTrack?.SetWithinBoundsAsync(b) ?? Task.CompletedTask)"
+                     OnToggleServerTrack="OnToggleServerTrack"
+                     OnServerTrackDurationChanged="OnServerTrackDurationChanged"
+                     OnServerTrackResolutionChanged="OnServerTrackResolutionChanged"
+                     OnServerTrackWithinBoundsChanged="OnServerTrackWithinBoundsChanged"
                      OnToggleWeatherOverlay="@(v => _weather?.ToggleAsync(v) ?? Task.CompletedTask)"
                      OnWeatherOpacityPreview="@(p => _weather?.PreviewOpacityAsync(p) ?? Task.CompletedTask)"
                      OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
@@ -1348,8 +1348,13 @@
         _atonPush = new OnaPlotter.Services.Map.AtonPushService(_aisJs, Atons);
         _overlaysJs = new OnaPlotter.Services.Js.MapOverlaysJs(module);
         _weather = new OnaPlotter.Services.Map.WeatherOverlayController(_overlaysJs, Settings);
+        // Seed from persisted settings so a helm's last picked window /
+        // resolution / clip-to-bounds choice carries across reloads.
         _serverTrack = new OnaPlotter.Services.Map.ServerTrackController(
-            _overlaysJs, TrackApi, msg => Toasts.Info(msg));
+            _overlaysJs, TrackApi, msg => Toasts.Info(msg),
+            initialDuration: Settings.ServerTrackDuration,
+            initialResolution: Settings.ServerTrackResolution,
+            initialWithinBounds: Settings.ServerTrackWithinBounds);
         _charts = new OnaPlotter.Services.Map.ChartLayerController(
             _overlaysJs, Settings, Settings,
             toastError: (chartName, msg) => Toasts.Error($"Chart {chartName}: {msg}"))
@@ -1407,6 +1412,14 @@
         // page origin. With the default same-origin setup this
         // pushes "" and existing relative URLs keep working.
         await _controlsJs.SetSignalKBaseUrlAsync(SkBaseUrl.BaseUrl);
+
+        // Auto-enable the server-side ship track if the helm's last
+        // setting was on (default true). The controller fetches +
+        // pushes asynchronously; we don't await so the rest of the
+        // page bootstrap (chart load, route fetch) doesn't block on
+        // a slow history endpoint.
+        if (Settings.ServerTrackVisible && _serverTrack is not null)
+            _ = _serverTrack.ToggleAsync(true);
 
         // Load existing track as speed-colored segments. Skipped when
         // the helm has the local-trail toggle off; we still seed
@@ -2251,6 +2264,38 @@
         await Settings.SetShipLinesVisibleAsync(enabled);
         if (_controlsJs is not null)
             await _controlsJs.SetShipLinesVisibleAsync(enabled);
+    }
+
+    /// <summary>Helm flipped the "Ship track" visibility toggle.
+    /// Persist + delegate to the controller; the controller does the
+    /// fetch / clear interop.</summary>
+    private async Task OnToggleServerTrack(bool enabled)
+    {
+        await Settings.SetServerTrackVisibleAsync(enabled);
+        if (_serverTrack is not null) await _serverTrack.ToggleAsync(enabled);
+    }
+
+    /// <summary>Helm picked a new Ship-track window from the dropdown.
+    /// Persist + delegate; controller re-fetches when the layer is
+    /// visible.</summary>
+    private async Task OnServerTrackDurationChanged(string duration)
+    {
+        await Settings.SetServerTrackDurationAsync(duration);
+        if (_serverTrack is not null) await _serverTrack.SetDurationAsync(duration);
+    }
+
+    /// <summary>Helm picked a new Ship-track resolution.</summary>
+    private async Task OnServerTrackResolutionChanged(string resolution)
+    {
+        await Settings.SetServerTrackResolutionAsync(resolution);
+        if (_serverTrack is not null) await _serverTrack.SetResolutionAsync(resolution);
+    }
+
+    /// <summary>Helm flipped Ship-track "within current view".</summary>
+    private async Task OnServerTrackWithinBoundsChanged(bool enabled)
+    {
+        await Settings.SetServerTrackWithinBoundsAsync(enabled);
+        if (_serverTrack is not null) await _serverTrack.SetWithinBoundsAsync(enabled);
     }
 
     /// <summary>Helm flipped the "Show local trail" toggle. Persists,

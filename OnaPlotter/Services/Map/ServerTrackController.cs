@@ -27,13 +27,13 @@ public sealed class ServerTrackController
     private readonly Action<string> _emptyResultInfo;
 
     private bool _visible;
-    private string _duration = "1d";
-    // Sampling resolution sent to the SK History API. Default "1m"
-    // matches the prior hardcoded value: a sensible balance between
-    // detail and payload at a 1-day window. The History page uses the
-    // same ladder (1s..4h); we pin the same set of values so a helm
-    // who picks "5m" on the History page sees the same sampling here.
-    private string _resolution = "1m";
+    // Helm-picked history window. Settings-seeded; the JS-side render
+    // works the same whichever window applies.
+    private string _duration;
+    // Sampling resolution sent to the SK History API. Settings-seeded;
+    // the History page uses the same ladder (1s..4h) so a helm who
+    // picks "5m" on the History page sees the same sampling here.
+    private string _resolution;
     private bool _withinBounds;
 
     /// <summary>Whether the server-track layer is currently on the
@@ -60,11 +60,17 @@ public sealed class ServerTrackController
     public ServerTrackController(
         IMapOverlaysJs overlaysJs,
         ITrackApi trackApi,
-        Action<string> emptyResultInfo)
+        Action<string> emptyResultInfo,
+        string initialDuration = "1d",
+        string initialResolution = "1m",
+        bool initialWithinBounds = false)
     {
         _overlaysJs = overlaysJs ?? throw new ArgumentNullException(nameof(overlaysJs));
         _trackApi = trackApi ?? throw new ArgumentNullException(nameof(trackApi));
         _emptyResultInfo = emptyResultInfo ?? throw new ArgumentNullException(nameof(emptyResultInfo));
+        _duration = initialDuration;
+        _resolution = initialResolution;
+        _withinBounds = initialWithinBounds;
     }
 
     /// <summary>Toggle the server-track layer. Enabling triggers a

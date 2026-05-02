@@ -42,6 +42,17 @@ public sealed class AppSettingsService : IAppSettings
     /// <summary>Local SOG-coloured trail visible. Default true; helm
     /// can hide via Layers > Own ship.</summary>
     public bool LocalTrackVisible { get; private set; } = true;
+
+    /// <summary>Server-side ship-track layer visible. Default true.</summary>
+    public bool ServerTrackVisible { get; private set; } = true;
+    /// <summary>Helm-picked window (1h..7d / all). Default "all".</summary>
+    public string ServerTrackDuration { get; private set; } = "all";
+    /// <summary>Sampling resolution (1s..4h). Default "15m" so the
+    /// "all time" window stays loadable on first paint.</summary>
+    public string ServerTrackResolution { get; private set; } = "15m";
+    /// <summary>Clip the rendered polyline to the current viewport
+    /// (re-clipped on pan/zoom without a re-fetch). Default true.</summary>
+    public bool ServerTrackWithinBounds { get; private set; } = true;
     public bool AtonsVisible { get; private set; } = true;
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
@@ -165,6 +176,12 @@ public sealed class AppSettingsService : IAppSettings
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             ShipLinesVisible = await LoadBool("shipLinesVisible.v1", true);
             LocalTrackVisible = await LoadBool("localTrackVisible.v1", true);
+            ServerTrackVisible = await LoadBool("serverTrackVisible.v1", true);
+            ServerTrackDuration = NormalizeServerTrackDuration(
+                await LoadString("serverTrackDuration.v1"));
+            ServerTrackResolution = NormalizeServerTrackResolution(
+                await LoadString("serverTrackResolution.v1"));
+            ServerTrackWithinBounds = await LoadBool("serverTrackWithinBounds.v1", true);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
             GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
             GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
@@ -346,6 +363,47 @@ public sealed class AppSettingsService : IAppSettings
         LocalTrackVisible = value;
         await Save("localTrackVisible.v1", value ? "true" : "false");
     }
+
+    public async Task SetServerTrackVisibleAsync(bool value)
+    {
+        ServerTrackVisible = value;
+        await Save("serverTrackVisible.v1", value ? "true" : "false");
+    }
+
+    public async Task SetServerTrackDurationAsync(string value)
+    {
+        ServerTrackDuration = NormalizeServerTrackDuration(value);
+        await Save("serverTrackDuration.v1", ServerTrackDuration);
+    }
+
+    public async Task SetServerTrackResolutionAsync(string value)
+    {
+        ServerTrackResolution = NormalizeServerTrackResolution(value);
+        await Save("serverTrackResolution.v1", ServerTrackResolution);
+    }
+
+    public async Task SetServerTrackWithinBoundsAsync(bool value)
+    {
+        ServerTrackWithinBounds = value;
+        await Save("serverTrackWithinBounds.v1", value ? "true" : "false");
+    }
+
+    /// <summary>Whitelist guard so a corrupted localStorage value
+    /// doesn't pin the helm to an invalid duration that the API
+    /// rejects. Falls back to the new "all" default.</summary>
+    private static string NormalizeServerTrackDuration(string? raw) => raw switch
+    {
+        "1h" or "6h" or "1d" or "3d" or "7d" or "all" => raw,
+        _ => "all",
+    };
+
+    /// <summary>Same whitelist pattern for the resolution ladder;
+    /// matches the values the History page dropdown ships.</summary>
+    private static string NormalizeServerTrackResolution(string? raw) => raw switch
+    {
+        "1s" or "30s" or "1m" or "5m" or "15m" or "30m" or "1h" or "4h" => raw,
+        _ => "15m",
+    };
 
     public async Task SetAtonsVisibleAsync(bool value)
     {

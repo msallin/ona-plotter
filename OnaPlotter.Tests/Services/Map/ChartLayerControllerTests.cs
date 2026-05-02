@@ -139,6 +139,10 @@ public class ChartLayerControllerTests
         public bool LaylinesVisible => false;
         public bool ShipLinesVisible => true;
         public bool LocalTrackVisible => true;
+        public bool ServerTrackVisible => true;
+        public string ServerTrackDuration => "all";
+        public string ServerTrackResolution => "15m";
+        public bool ServerTrackWithinBounds => true;
         public bool AtonsVisible => true;
         public bool GuardZoneVisible => true;
         public bool GuardZoneWarningRingVisible => true;
@@ -156,6 +160,10 @@ public class ChartLayerControllerTests
         public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetShipLinesVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetLocalTrackVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetServerTrackVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetServerTrackDurationAsync(string v) => Task.CompletedTask;
+        public Task SetServerTrackResolutionAsync(string v) => Task.CompletedTask;
+        public Task SetServerTrackWithinBoundsAsync(bool v) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneWarningRingVisibleAsync(bool v) => Task.CompletedTask;
