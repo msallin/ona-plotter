@@ -2015,19 +2015,22 @@ let currentArrow = null;
 
 export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
     if (!map) return;
-    // Arrow length proportional to drift, min 200m, max 2000m visual.
-    // Magnitude is already encoded in the arrow length; the tooltip that
-    // used to print "1.5kn" next to the arrow head was dropped on user
-    // request -- it read like a loose label on the chart and the drift
-    // value is redundant with what the bottom-right HUD already shows.
-    const arrowLen = Math.min(Math.max(driftMs * 600, 200), 2000);
+    // Arrow length proportional to drift. Helm flagged the arrow as
+    // "very prominent but not that important" -- drift magnitude is
+    // already shown in the bottom-right HUD, so the on-chart arrow
+    // is purely a directional cue. Tone it down to the same visual
+    // weight class as the COG vector (thin + dashed + dim) and cap
+    // the length at 1000m visual so a strong tide doesn't paint a
+    // 2km line across the chart.
+    const arrowLen = Math.min(Math.max(driftMs * 400, 200), 1000);
     const endPt = destPoint(selfLat, selfLon, setRad, arrowLen);
 
     if (currentArrow) {
         currentArrow.setLatLngs([[selfLat, selfLon], endPt]);
     } else {
         currentArrow = L.polyline([[selfLat, selfLon], endPt], {
-            color: MapColors.current, weight: 3, opacity: 0.8
+            color: MapColors.current, weight: 1.5, opacity: 0.5,
+            dashArray: '4,3'
         }).addTo(map);
     }
 }
