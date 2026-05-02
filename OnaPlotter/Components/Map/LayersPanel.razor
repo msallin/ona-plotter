@@ -82,15 +82,23 @@
                     OnDelete="OnDeleteRegion"
                     OnToggleVisible="OnToggleRegionsVisible" />
 
-    @* Own-ship informational lines (COG vector, tidal current,
-       laylines). Sits above the vessel + history sections because
-       its toggles are about own-boat chart clutter, the most
-       commonly tweaked group; History (server) stays below since
-       it's a different data source. *@
+    @* Single section for every "about my own boat" chart layer:
+       ship-lines master, local trail, server-side ship track + its
+       window / resolution / within-bounds controls. Consolidating
+       the previous Server-history section here saves the helm a
+       hunt across the panel for the right toggle. *@
     <OwnShipSection ShipLinesVisible="ShipLinesVisible"
                     OnToggleShipLines="OnToggleShipLines"
                     LocalTrackVisible="LocalTrackVisible"
-                    OnToggleLocalTrack="OnToggleLocalTrack" />
+                    OnToggleLocalTrack="OnToggleLocalTrack"
+                    ServerTrackVisible="ServerTrackVisible"
+                    ServerTrackDuration="@ServerTrackDuration"
+                    ServerTrackResolution="@ServerTrackResolution"
+                    ServerTrackWithinBounds="ServerTrackWithinBounds"
+                    OnToggleServerTrack="OnToggleServerTrack"
+                    OnServerTrackDurationChanged="OnServerTrackDurationChanged"
+                    OnServerTrackResolutionChanged="OnServerTrackResolutionChanged"
+                    OnToggleServerTrackWithinBounds="OnServerTrackWithinBoundsChanged" />
 
     <BuddiesSection Buddies="Buddies"
                     Vessels="Vessels"
@@ -98,15 +106,6 @@
 
     <VesselsSection Vessels="Vessels"
                     OnFocus="OnFocusVessel" />
-
-    <TrackHistorySection Visible="ServerTrackVisible"
-                         Duration="@ServerTrackDuration"
-                         Resolution="@ServerTrackResolution"
-                         WithinBounds="ServerTrackWithinBounds"
-                         OnToggle="OnToggleServerTrack"
-                         OnDurationChanged="OnServerTrackDurationChanged"
-                         OnResolutionChanged="OnServerTrackResolutionChanged"
-                         OnWithinBoundsChanged="OnServerTrackWithinBoundsChanged" />
 
     @* HUD visibility toggles -- mirrors the Settings page so the
        helm can declutter the chart without leaving the Map. *@

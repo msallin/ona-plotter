@@ -1,17 +1,14 @@
-@* Own-ship indicator toggles. Master gate for the lines drawn around
-   the boat icon that are info / prediction (not navigation guidance):
-     * COG vector + tip dot + "10 min / N nm" label
-     * Tidal current arrow (drift direction)
-     * Laylines (port + stbd, when sailing)
+@* Own-ship layer toggles. One section gathers every chart layer
+   that is "about my own boat":
+     * Show ship lines  -- COG vector, tidal current arrow, laylines
+                            (master gate for the always-on indicators)
+     * Show local trail -- in-memory SOG-coloured rolling polyline
+     * Ship track       -- server-side history polyline + its window /
+                            resolution / within-bounds controls
 
    Bearing line + XTE tick are intentionally NOT in this group --
    they're navigation guidance, only show when a route is active, and
-   hiding them mid-leg would be a foot-gun.
-
-   Local trail toggle lives here too so all "own-ship-on-the-chart"
-   knobs are in one place. Server history stays in its own section
-   below since it's a different data source with its own duration /
-   resolution dropdowns. *@
+   hiding them mid-leg would be a foot-gun. *@
 
 <SectionHeader Title="Own ship"
                Expanded="@expanded"
@@ -34,6 +31,71 @@
             <div class="chart-desc">Recent SOG-coloured track (in memory)</div>
         </div>
     </label>
+
+    @* Ship track = server-side history polyline. Was a separate
+       Layers-panel section ("Server history" / "History" before
+       that); helm-feedback consolidated all own-ship chart toggles
+       into Own ship so the helm has one section to scan. The
+       duration / resolution / within-bounds sub-controls only
+       render when the layer is on -- "track on / track off, here's
+       how" reads cleaner than three peer-level pickers. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@ServerTrackVisible"
+               @onchange="(e) => OnToggleServerTrack.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Ship track</div>
+            <div class="chart-desc">Position history from SignalK</div>
+        </div>
+    </label>
+
+    @if (ServerTrackVisible)
+    {
+        <div class="track-history-controls">
+            <label class="chart-item track-history-row">
+                <span class="chart-item-label">Duration</span>
+                <select class="form-select form-select-sm track-history-select"
+                        value="@ServerTrackDuration"
+                        @onchange="OnDurationChange"
+                        aria-label="Ship track duration">
+                    <option value="1h">Last 1 hour</option>
+                    <option value="6h">Last 6 hours</option>
+                    <option value="1d">Last 24 hours</option>
+                    <option value="3d">Last 3 days</option>
+                    <option value="7d">Last 7 days</option>
+                    <option value="all">All time</option>
+                </select>
+            </label>
+            @* Resolution ladder mirrors the History page exactly so the
+               helm muscle-memory carries across. The "tacks / cruise"
+               annotations on the extremes hint at the right tool: 1 s
+               for short-window detail, 4 h to make a season-spanning
+               window actually loadable. *@
+            <label class="chart-item track-history-row">
+                <span class="chart-item-label">Resolution</span>
+                <select class="form-select form-select-sm track-history-select"
+                        value="@ServerTrackResolution"
+                        @onchange="OnResolutionChange"
+                        aria-label="Ship track sampling resolution">
+                    <option value="1s">1 s (sub-second tacks)</option>
+                    <option value="30s">30 s</option>
+                    <option value="1m">1 m</option>
+                    <option value="5m">5 m</option>
+                    <option value="15m">15 m</option>
+                    <option value="30m">30 m</option>
+                    <option value="1h">1 h</option>
+                    <option value="4h">4 h (season review)</option>
+                </select>
+            </label>
+            <label class="chart-item">
+                <input type="checkbox" checked="@ServerTrackWithinBounds"
+                       @onchange="(e) => OnToggleServerTrackWithinBounds.InvokeAsync((bool)(e.Value ?? false))" />
+                <div class="chart-item-body">
+                    <div class="chart-name">Within current view</div>
+                    <div class="chart-desc">Filter to the chart area on screen now (no re-fetch)</div>
+                </div>
+            </label>
+        </div>
+    }
 }
 
 @code {
@@ -42,9 +104,30 @@
     [Parameter] public bool LocalTrackVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleLocalTrack { get; set; }
 
+    [Parameter] public bool ServerTrackVisible { get; set; }
+    [Parameter] public string ServerTrackDuration { get; set; } = "1d";
+    /// <summary>Sampling resolution from the SK history ladder
+    /// (1s..4h). Default "1m" matches the prior hardcoded value.</summary>
+    [Parameter] public string ServerTrackResolution { get; set; } = "1m";
+    [Parameter] public bool ServerTrackWithinBounds { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }
+    [Parameter] public EventCallback<string> OnServerTrackDurationChanged { get; set; }
+    [Parameter] public EventCallback<string> OnServerTrackResolutionChanged { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleServerTrackWithinBounds { get; set; }
+
     /// <summary>Default expanded so a fresh helm sees the toggles
-    /// without hunting; collapsing is one tap. The Own ship section
-    /// is shorter than e.g. Charts so default-expanded doesn't bloat
-    /// the panel.</summary>
+    /// without hunting; collapsing is one tap.</summary>
     private bool expanded = true;
+
+    private async Task OnDurationChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? "1d";
+        await OnServerTrackDurationChanged.InvokeAsync(v);
+    }
+
+    private async Task OnResolutionChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? "1m";
+        await OnServerTrackResolutionChanged.InvokeAsync(v);
+    }
 }
