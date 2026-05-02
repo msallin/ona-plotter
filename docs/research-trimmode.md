@@ -59,19 +59,30 @@ To finish the trim-blocker work for these, replace each `new { ... }` with a nam
 1. ~~**Source-gen JsonContext**: add `OnaPlotter/Services/Json/OnaJsonContext.cs` with `[JsonSerializable(typeof(T))]` for each DTO.~~ ✅ Landed in F2/3 for the four named-type sites.
 2. ~~**Migrate hot path first**: switch `SignalkClient.Deserialize<SignalkDelta>(json)` to use the context.~~ ✅ Landed in F2/3.
 3. **Migrate the anon-type Serialize sites**: requires a small refactor (anon record -> named `record`) at each call site. See list above. Pending.
-4. **Audit Activator usage** in `AlarmManager`. Add `[DynamicDependency]` if the pattern actually runs in production.
-5. **Flip `<TrimMode>full</TrimMode>`** in csproj.
+4. **Audit Activator usage** in `AlarmManager`. Verified: no production `Activator.CreateInstance` callers; the test suite uses direct `new AlarmManager(...)` exclusively. The "Activator pattern" comment in `AlarmManager.cs:198` is historical dead text and not a trim blocker.
+5. **Flip `<TrimMode>full</TrimMode>`** in csproj. **Probed and reverted** -- see "Probe results" below.
 6. **Publish + smoke test**: `dotnet publish -c Release` and load the bundle on the helm. Watch DevTools console for any "type/member was not preserved" runtime errors. If the helm hits a screen with a missing type, add `[DynamicDependency]` to the broken site and re-publish.
 7. **Measure**: compare brotli-compressed bundle size pre/post via `du -sb wwwroot/_framework/*.br` (or `dotnet publish` output).
+
+## Probe results (2026-05-02)
+
+Ran a `dotnet publish -c Release` with `<TrimMode>full</TrimMode>` flipped on top of the F2/3 source-gen + lazy-XML setup. Findings:
+
+- **Zero IL trim warnings.** The application code itself is trim-clean under full mode -- the source-gen JsonContext + careful typing did the job. No IL2xxx warnings, no errors from our assemblies.
+- **`BLAZORSDK1001` failure on lazy-load + full-trim.** Without rooting, the trimmer drops `System.Private.Xml.wasm` and `System.Private.Xml.Linq.wasm` entirely (it doesn't follow `<BlazorWebAssemblyLazyLoad>` references when computing the static call graph), then the SDK can't find the files to lazy-package and aborts with `Unable to find ... to be lazy loaded later`.
+- **`<TrimmerRootAssembly>` workaround bloats the lazy assemblies.** Adding `<TrimmerRootAssembly Include="System.Private.Xml" />` (and Linq) lets the publish complete, but the rooted assemblies preserve everything (no member-level dead-code elimination) -- they balloon from ~97 KB brotli (partial-trim + lazy) to ~541 KB brotli combined (505 KB Xml + 36 KB Xml.Linq). Net: the lazy XML download is **larger** under full trim, which inverts the lazy-load win.
+- **The right next step is `<TrimmerRootDescriptor>`**, an XML descriptor file that pins specific types and members rather than the whole assembly. This requires auditing the public surface ResourceImporter / ResourceExporter actually touch (XDocument.Parse, XElement, XAttribute, XNamespace, XmlException, plus their reachable graph). Estimated 3-4 hours plus a manual smoke test on the helm to catch any missed members at runtime.
+
+**Verdict**: TrimMode=full **delivers** on the application-code side (the source-gen migration was the prerequisite, and it landed clean). The remaining blocker is the trim/lazy-load interaction for the XML stack, which needs a `<TrimmerRootDescriptor>` to keep the lazy assemblies small. Until that work lands, partial-trim + lazy-XML stays the smaller boot bundle. The csproj keeps `TrimMode=partial` with a comment pointing here.
 
 ## Other bundle-size opportunities (in priority order)
 
 The v1 backlog also mentioned:
-- ~~**Lazy-load `System.Private.Xml` via Blazor LazyAssemblies**~~ ✅ Landed in F2/2. ~95 KB brotli excluded from the eager boot bundle; the GPX flows in Resources / History pull the assemblies via `XmlAssemblyLoader.EnsureLoadedAsync()` before the first call.
+- ~~**Lazy-load `System.Private.Xml` via Blazor LazyAssemblies**~~ ✅ Landed in F2/2. ~97 KB brotli excluded from the eager boot bundle; the GPX flows in Resources / History pull the assemblies via `XmlAssemblyLoader.EnsureLoadedAsync()` before the first call.
 - **`<UseInterpreter>` for cold paths**: AOT all the hot stuff, interpreter-only the cold paths to claw back AOT bloat. The current `<RunAOTCompilation>true</RunAOTCompilation>` AOTs everything; selective AOT is more nuanced and may not be worth it once full-trim lands.
 
 ## Verdict
 
-`TrimMode=full` is realistic but blocked on a focused migration of the JsonSerializer call sites. Worth it for the cold-start win on marine networks. The csproj has been left at `TrimMode=partial` with a comment cross-referencing this doc so the next contributor finds the context.
+`TrimMode=full` is realistic on the application-code side after F2/3 (source-gen JsonContext landed), but the lazy-XML interaction needs `<TrimmerRootDescriptor>` work before the flip is a net-positive on bundle size. The csproj stays at `TrimMode=partial` with a comment cross-referencing this doc so the next contributor finds the context.
 
-The lazy-XML win is independent and probably easier to land first; recommend doing it as a standalone batch before the JsonContext sweep.
+The anonymous-type `Serialize(new {...})` sweep (step 3) is independent and the next concrete step toward closing this out.
