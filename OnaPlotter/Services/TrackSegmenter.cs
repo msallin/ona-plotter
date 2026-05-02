@@ -104,26 +104,43 @@ public static class TrackSegmenter
     {
         var p = points[i];
         if (p.SpeedOverGround is double sog) return sog > MovingThresholdMs;
-        // SOG missing: estimate inter-sample speed from a neighbour.
-        // For i==0 we look FORWARD to the next sample (because there's
-        // no previous one). Without this, an all-no-SOG passage with
-        // a nominal 3 m/s actual speed would classify point 0 as
-        // stationary and fragment the run -- the run's first sample
-        // would emit a one-point stationary segment that fights the
-        // rest. Looking forward keeps the head sample consistent with
-        // the run.
-        TrackPoint other;
+        // SOG missing: estimate inter-sample speed from a neighbour
+        // with a strictly different timestamp. SignalK providers that
+        // batch several paths into one delta can publish two adjacent
+        // points with identical Timestamps; using a 0-dt neighbour
+        // makes ClassifyPoint return 'stationary' on the head of an
+        // otherwise-moving run, which the merge floor then preserves
+        // as a degenerate stationary head segment that didn't happen.
+        // Walk the obvious direction first (forward for i==0,
+        // backward otherwise) and step further if dt collapses.
+        TrackPoint other = default;
+        bool found = false;
         if (i == 0)
         {
-            if (points.Count < 2) return false;
-            other = points[1];
+            for (int j = 1; j < points.Count; j++)
+            {
+                if (points[j].Timestamp != p.Timestamp) { other = points[j]; found = true; break; }
+            }
         }
         else
         {
-            other = points[i - 1];
+            for (int j = i - 1; j >= 0; j--)
+            {
+                if (points[j].Timestamp != p.Timestamp) { other = points[j]; found = true; break; }
+            }
+            // No earlier point with a different timestamp -- look
+            // forward instead.
+            if (!found)
+            {
+                for (int j = i + 1; j < points.Count; j++)
+                {
+                    if (points[j].Timestamp != p.Timestamp) { other = points[j]; found = true; break; }
+                }
+            }
         }
+        if (!found) return false;
         var dt = Math.Abs((p.Timestamp - other.Timestamp).TotalSeconds);
-        if (dt <= 0) return false;
+        if (dt <= 0) return false;     // belt-and-braces; the loop already filters
         var dm = RouteProgress.HaversineMeters(
             other.Latitude, other.Longitude, p.Latitude, p.Longitude);
         return (dm / dt) > MovingThresholdMs;
