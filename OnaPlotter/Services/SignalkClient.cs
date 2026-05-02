@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Services;
 
@@ -763,7 +764,12 @@ public sealed class SignalkClient : IAsyncDisposable
         try
         {
             // Single parse: deserialize to SignalkDelta, then check for hello message.
-            var delta = JsonSerializer.Deserialize<SignalkDelta>(utf8Bytes);
+            // Source-gen path: OnaJsonContext.Default.SignalkDelta is a
+            // compile-time-generated converter; calling through it skips
+            // the reflection serializer's per-type metadata cache and
+            // (when TrimMode flips to full) lets the linker drop large
+            // chunks of System.Text.Json.Reflection. See OnaJsonContext.
+            var delta = JsonSerializer.Deserialize(utf8Bytes, OnaJsonContext.Default.SignalkDelta);
 
             // The hello message has no updates but contains "self" in the raw JSON.
             // SignalkDelta ignores unknown properties, so check if updates are present.

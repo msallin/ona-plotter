@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OnaPlotter.Models;
+using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Services.Api;
 
@@ -71,8 +72,11 @@ public sealed class AuthApi : IAuthApi
             if (string.IsNullOrWhiteSpace(json)) return null;
             try
             {
-                return JsonSerializer.Deserialize<LoginStatus>(json,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                // Source-gen path. The context-level
+                // PropertyNameCaseInsensitive=true preserves the
+                // earlier per-call option, so a server that capitalises
+                // "Status" or "AuthenticationRequired" still parses.
+                return JsonSerializer.Deserialize(json, OnaJsonContext.Default.LoginStatus);
             }
             catch (JsonException ex)
             {

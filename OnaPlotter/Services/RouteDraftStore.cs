@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OnaPlotter.Models;
+using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Services;
 
@@ -24,7 +25,7 @@ public sealed class RouteDraftStore : IRouteDraftStore
         if (string.IsNullOrEmpty(json)) return null;
         try
         {
-            var draft = JsonSerializer.Deserialize<RouteDraft>(json);
+            var draft = JsonSerializer.Deserialize(json, OnaJsonContext.Default.RouteDraft);
             // Defensive: a draft with no coords is useless and
             // restoring it would land the helm in an empty edit
             // panel. Treat as "nothing to restore" rather than
@@ -67,7 +68,7 @@ public sealed class RouteDraftStore : IRouteDraftStore
 
     public Task SaveAsync(RouteDraft draft, CancellationToken ct = default)
     {
-        var json = JsonSerializer.Serialize(draft);
+        var json = JsonSerializer.Serialize(draft, OnaJsonContext.Default.RouteDraft);
         return _kv.SetAsync(StorageKey, json, ct);
     }
 
