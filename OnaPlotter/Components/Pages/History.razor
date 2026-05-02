@@ -1627,7 +1627,13 @@
                 "if(window._historyMap){window._historyMap.remove();window._historyMap=null;}"
                 + "window._historyDotNet=null;");
         }
-        catch { /* Ignore on disconnect. */ }
+        // Narrow to disconnect / interop errors so a future regression
+        // in the eval string (typo, leaked promise rejection, Leaflet
+        // teardown bug) propagates to the global boundary instead of
+        // being silenced under a long passage's heap leak.
+        catch (Microsoft.JSInterop.JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException) { }
+        catch (TaskCanceledException) { }
         _historyDotNet?.Dispose();
         if (module is not null) await module.DisposeAsync();
     }
