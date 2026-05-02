@@ -1,7 +1,7 @@
 // Leaflet JS interop for the chartplotter map.
 // All map state lives here; Blazor calls exported functions via IJSRuntime.
 
-import { DEG, NM_PER_METER, VECTOR_MINUTES, SPEED_BUCKETS,
+import { DEG, NM_PER_METER, SPEED_BUCKETS,
          haversineMeters, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
 import { MarkerLayer } from './markerLayer.js';
