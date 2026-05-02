@@ -982,12 +982,14 @@
         double sinceLastSec = (DateTime.UtcNow - _lastAutoAdvanceUtc).TotalSeconds;
         if (sinceLastSec < AutoAdvanceCooldownSec)
         {
-            Console.WriteLine($"[AutoAdvance] edge detected (perp={perpEdge} arr={arrEdge}) but cooldown {sinceLastSec:F1}s < {AutoAdvanceCooldownSec}s; skipping");
+            // Cooldown-skip happens on every delta tick during the
+            // 8 s window after a fire; logging it on each call put
+            // 8 string allocations + JS-interop console writes per
+            // advance into the OnDataChanged hot path on Pi 4.
             return;
         }
 
         _lastAutoAdvanceUtc = DateTime.UtcNow;
-        Console.WriteLine($"[AutoAdvance] firing ({(perpEdge ? "perpendicularPassed" : "arrivalCircleEntered")})");
         _ = AutoAdvanceAsync(perpEdge ? "perpendicular passed" : "arrival circle");
     }
 
