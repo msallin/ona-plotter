@@ -1534,6 +1534,13 @@ public sealed class SignalkClient : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Symmetric unsubscribe to the constructor's `+= OnSettingsChangedSync`.
+        // Singleton+singleton lifetime in production means the GC sees both
+        // go down together so the leak is benign there, but a test that
+        // shares a settings stub across multiple SignalkClient instances
+        // would otherwise see handlers accumulate on the settings object.
+        _settings.OnSettingsChanged -= OnSettingsChangedSync;
+
         if (_cts is not null)
         {
             await _cts.CancelAsync();
