@@ -315,6 +315,7 @@
             <div class="alarm-log-panel @(alarmLogOpen ? "alarm-log-open" : "")"
                  role="dialog" aria-modal="true" aria-labelledby="alarm-log-title"
                  tabindex="-1"
+                 @ref="_alarmLogPanelRef"
                  @onclick:stopPropagation
                  @onkeydown="OnAlarmLogKeyDown">
                 @* Tappable on mobile: the grab-handle affordance
@@ -708,26 +709,74 @@
         Toasts.Show("Reconnecting...", ToastLevel.Info, durationSec: 3);
     }
 
+    /// <summary>Reference to the alarm-log dialog root so we can
+    /// focus it on open (entering the focus trap) and so the keydown
+    /// handler can resolve focusable descendants for the Tab cycle.
+    /// </summary>
+    private ElementReference _alarmLogPanelRef;
+
+    /// <summary>True when ToggleAlarmLog just opened the dialog;
+    /// OnAfterRenderAsync uses this latch to push initial focus into
+    /// the panel exactly once per open. Without the latch, every
+    /// re-render while the panel is open would re-focus the dialog
+    /// root and steal focus from whatever the helm tabbed onto.</summary>
+    private bool _alarmLogJustOpened;
+
     private void ToggleAlarmLog()
     {
         alarmLogOpen = !alarmLogOpen;
+        _alarmLogJustOpened = alarmLogOpen;
     }
 
     /// <summary>Keyboard handler for the alarm-log modal dialog.
-    /// Escape closes; nothing else is trapped because the content is
-    /// read-only (a list of past alarms) and tabbing naturally cycles
-    /// the two close buttons. A future content-rich panel should add
-    /// a real focus-trap loop.</summary>
-    private void OnAlarmLogKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    /// Escape closes. Tab / Shift-Tab cycles focus inside the panel
+    /// via a JS focus-trap helper so an external keyboard on iPad
+    /// can't tab into the chart underneath while the dialog is open
+    /// (the aria-modal attribute alone doesn't enforce this --
+    /// browsers don't trap focus, only assistive tech reads it).</summary>
+    private async Task OnAlarmLogKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        if (e.Key == "Escape" && alarmLogOpen)
+        if (!alarmLogOpen) return;
+        if (e.Key == "Escape")
         {
             alarmLogOpen = false;
+            return;
+        }
+        if (e.Key == "Tab")
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("eval",
+                    "(function(panel, back){" +
+                    "if(!panel) return;" +
+                    "var focusables = panel.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex=\"-1\"])');" +
+                    "if(focusables.length===0){panel.focus();return;}" +
+                    "var first = focusables[0], last = focusables[focusables.length-1];" +
+                    "var active = document.activeElement;" +
+                    "if(back && active === first){last.focus();}" +
+                    "else if(!back && active === last){first.focus();}" +
+                    "})(arguments[0], arguments[1]);",
+                    _alarmLogPanelRef, e.ShiftKey);
+            }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
+            catch (Microsoft.JSInterop.JSException) { }
         }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Push initial focus into the alarm-log panel when it opens so
+        // an external keyboard's first Tab cycles within the dialog,
+        // not into the chart underneath. The latch resets on close so
+        // re-renders while the panel is open don't steal focus.
+        if (_alarmLogJustOpened)
+        {
+            _alarmLogJustOpened = false;
+            try { await _alarmLogPanelRef.FocusAsync(preventScroll: true); }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
+            catch (Microsoft.JSInterop.JSException) { }
+        }
+
         if (firstRender)
         {
             await Settings.InitializeAsync();
