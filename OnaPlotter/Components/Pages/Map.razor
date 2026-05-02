@@ -760,15 +760,16 @@
     private async Task DeleteWaypointFromLayers(SignalkWaypoint wp)
     {
         if (string.IsNullOrEmpty(wp.Id)) return;
+        string label = wp.Name ?? wp.Id;
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(wp.Id); }
-        catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
+        catch (Exception ex) { Toasts.Error($"Delete waypoint '{label}' failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (_resourceJs is not null)
             await _resourceJs.RemoveWaypointMarkerAsync(wp.Id);
         loadedWaypoints = loadedWaypoints.Where(w => w.Id != wp.Id).ToList();
-        Toasts.Info("Waypoint deleted");
+        Toasts.Info($"Waypoint '{label}' deleted");
     }
 
     // RenameWaypointAsync used to live here. The layers-panel Edit

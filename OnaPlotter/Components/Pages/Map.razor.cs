@@ -79,8 +79,8 @@ public partial class Map
 
             ApiResult ru;
             try { ru = await WaypointApi.UpdateAsync(existing, name, description); }
-            catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
-            if (!ru.Success) { Toasts.Error($"Save waypoint failed: {ru.Error ?? "server rejected"}"); return; }
+            catch (Exception ex) { Toasts.Error($"Save waypoint '{name}' failed: {ex.Message}"); return; }
+            if (!ru.Success) { Toasts.Error($"Save waypoint '{name}' failed: {ru.Error ?? "server rejected"}"); return; }
 
             loadedWaypoints = loadedWaypoints.Select(w =>
             {
@@ -110,11 +110,11 @@ public partial class Map
         // Create branch: POST at the context-menu position.
         ApiResult<string> r;
         try { r = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon, description); }
-        catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.Error($"Save waypoint '{name}' failed: {ex.Message}"); return; }
 
         if (!r.Success || string.IsNullOrEmpty(r.Value))
         {
-            Toasts.Error($"Save waypoint failed: {r.Error ?? "server rejected"}");
+            Toasts.Error($"Save waypoint '{name}' failed: {r.Error ?? "server rejected"}");
             return;
         }
         string id = r.Value;
@@ -146,15 +146,21 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteWaypoint(string id)
     {
+        // Resolve a helm-readable label up front so the failure toasts
+        // can name the waypoint that didn't delete; helm bulk-deleting
+        // shouldn't have to guess which one threw.
+        string label = loadedWaypoints.FirstOrDefault(w => w.Id == id)?.Name
+            ?? id;
+
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
+        catch (Exception ex) { Toasts.Error($"Delete waypoint '{label}' failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
             await module.InvokeVoidAsync("removeWaypointMarker", id);
         loadedWaypoints = loadedWaypoints.Where(w => w.Id != id).ToList();
-        Toasts.Info("Waypoint deleted");
+        Toasts.Info($"Waypoint '{label}' deleted");
     }
 
     /// <summary>Popup-side Focus: pan the map to the waypoint and
@@ -302,8 +308,8 @@ public partial class Map
 
             ApiResult ru;
             try { ru = await NoteApi.UpdateAsync(existing, title, description); }
-            catch (Exception ex) { Toasts.Error($"Save note failed: {ex.Message}"); return; }
-            if (!ru.Success) { Toasts.Error($"Save note failed: {ru.Error ?? "server rejected"}"); return; }
+            catch (Exception ex) { Toasts.Error($"Save note '{title}' failed: {ex.Message}"); return; }
+            if (!ru.Success) { Toasts.Error($"Save note '{title}' failed: {ru.Error ?? "server rejected"}"); return; }
 
             loadedNotes = loadedNotes.Select(x =>
             {
@@ -334,11 +340,11 @@ public partial class Map
         // Create branch: POST at the context-menu position.
         ApiResult<string> r;
         try { r = await NoteApi.CreateAsync(title, description, contextMenuLat, contextMenuLon); }
-        catch (Exception ex) { Toasts.Error($"Save note failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.Error($"Save note '{title}' failed: {ex.Message}"); return; }
 
         if (!r.Success || string.IsNullOrEmpty(r.Value))
         {
-            Toasts.Error($"Save note failed: {r.Error ?? "server rejected"}");
+            Toasts.Error($"Save note '{title}' failed: {r.Error ?? "server rejected"}");
             return;
         }
         string id = r.Value;
@@ -370,10 +376,11 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteNote(string id)
     {
+        string label = loadedNotes.FirstOrDefault(n => n.Id == id)?.Title ?? id;
         ApiResult r;
         try { r = await NoteApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete note failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Delete note failed: {r.Error ?? "server rejected"}"); return; }
+        catch (Exception ex) { Toasts.Error($"Delete note '{label}' failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete note '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
             await module.InvokeVoidAsync("removeNoteMarker", id);
@@ -612,10 +619,10 @@ public partial class Map
                 contextMenuLat, contextMenuLon, newRegionRadiusMeters,
                 newRegionIsHazard);
         }
-        catch (Exception ex) { Toasts.Error($"Save region failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.Error($"Save region '{title}' failed: {ex.Message}"); return; }
         if (!r.Success || string.IsNullOrEmpty(r.Value))
         {
-            Toasts.Error($"Save region failed: {r.Error ?? "server rejected"}");
+            Toasts.Error($"Save region '{title}' failed: {r.Error ?? "server rejected"}");
             return;
         }
         string id = r.Value;
@@ -635,15 +642,16 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteRegion(string id)
     {
+        string label = loadedRegions.FirstOrDefault(rg => rg.Id == id)?.Name ?? id;
         ApiResult r;
         try { r = await RegionApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete region failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Delete region failed: {r.Error ?? "server rejected"}"); return; }
+        catch (Exception ex) { Toasts.Error($"Delete region '{label}' failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete region '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
             await module.InvokeVoidAsync("removeRegion", id);
         loadedRegions = loadedRegions.Where(rg => rg.Id != id).ToList();
-        Toasts.Info("Region deleted");
+        Toasts.Info($"Region '{label}' deleted");
     }
 
     // --- Route popup actions -------------------------------------------
@@ -733,10 +741,11 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteRouteById(string id)
     {
+        string label = loadedRoutes.FirstOrDefault(rt => rt.Id == id)?.Name ?? id;
         ApiResult r;
         try { r = await RouteApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete route failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Delete route failed: {r.Error ?? "server rejected"}"); return; }
+        catch (Exception ex) { Toasts.Error($"Delete route '{label}' failed: {ex.Message}"); return; }
+        if (!r.Success) { Toasts.Error($"Delete route '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         // Strip from enabled + draw order so the UI forgets it too.
         if (enabledRoutes.Remove(id))
