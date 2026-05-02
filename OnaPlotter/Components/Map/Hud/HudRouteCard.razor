@@ -34,7 +34,7 @@
        state mismatch. The dim resolves naturally when the delta
        lands and the whole card unmounts (Snapshot.Visible flips
        false). *@
-    <div class="hud-panel hud-card route-panel @(Snapshot.Stopping ? "route-stopping" : "")">
+    <div class="hud-panel hud-card route-panel @(Snapshot.Stopping ? "route-stopping" : "") @(BigHud ? "" : "route-panel-compact")">
             <div class="hud-card-title">
                 @* Route name in the title row only in Big HUD. The
                    small HUD layout drops it so the metrics row gets
@@ -49,19 +49,24 @@
                 {
                     @* Prev / Next waypoint controls. Disabled at the
                        endpoints so a tap doesn't fire a no-op PUT.
-                       Sit next to the WP-progress chip so they read
-                       as "I'm at WP 3 of 7; tap > to go to 4". The
-                       server owns pointIndex; OnPrevWaypoint /
-                       OnNextWaypoint thread up to Map.razor which
-                       calls CourseApi.SetPointIndexAsync /
-                       AdvanceActiveRouteAsync. *@
+                       The 'WP X of Y' progress chip + the buttons
+                       live next to the route name in Big HUD; in
+                       small HUD only the buttons remain (next to
+                       nothing -- the title row collapses) so the
+                       chart underneath isn't eaten by the chip on
+                       landscape iPad. The buttons themselves are
+                       always present so the helm can always advance
+                       / step back without going to Big HUD first. *@
                     <button class="route-wp-step-btn"
                             disabled="@(idx <= 0)"
                             title="Previous waypoint" aria-label="Previous waypoint"
                             @onclick="OnPrevWaypoint" @onclick:stopPropagation>
                         &lsaquo;
                     </button>
-                    <span class="hud-card-progress">WP @(idx + 1) of @total</span>
+                    @if (BigHud)
+                    {
+                        <span class="hud-card-progress">WP @(idx + 1) of @total</span>
+                    }
                     <button class="route-wp-step-btn"
                             disabled="@(idx + 1 >= total)"
                             title="Next waypoint" aria-label="Next waypoint"

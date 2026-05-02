@@ -4749,6 +4749,42 @@ html.night-mode-global body {
     .route-wp-step-btn { min-width: 36px; height: 32px; }
 }
 
+/* Small HUD layout: route card pulls prev/next buttons OUT of the
+   title row and pins them to the left + right edges of the card so
+   the centre column gets full horizontal real estate for the metric
+   chips. The hud-card-title still hosts them in markup order; the
+   absolute positioning here pulls them visually to the sides. */
+.route-panel-compact {
+    position: relative;
+}
+.route-panel-compact .hud-card-title {
+    /* The compact title row only contains the prev/next buttons in
+       small HUD (route name + WP-progress chip are gated off). Hide
+       it as a flex container; the absolute-positioned buttons render
+       in the gutters anyway. */
+    min-height: 0;
+}
+.route-panel-compact .route-wp-step-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 1;
+}
+.route-panel-compact .route-wp-step-btn:first-of-type {
+    left: 4px;
+}
+.route-panel-compact .route-wp-step-btn:last-of-type {
+    right: 4px;
+}
+/* Pad the metric row + route-total row away from the side buttons
+   so the BRG / DTW / TTG chips don't slide under the prev/next
+   glyphs. */
+.route-panel-compact .route-info-row,
+.route-panel-compact .route-total-row {
+    padding-left: 36px;
+    padding-right: 36px;
+}
+
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
    the card eats width (plentiful on landscape) instead of height
    (scarce on the helm screen). flex-wrap: nowrap keeps every metric
