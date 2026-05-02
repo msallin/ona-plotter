@@ -530,6 +530,17 @@ export function updateAisTargets(vessels) {
         let marker = aisMarkers[v.context];
         if (!marker) {
             marker = L.marker([v.lat, v.lon], { icon }).addTo(mapRef);
+            // Stash the icon ref on the marker so the per-tick path
+            // below can skip setIcon when nothing changed -- the icon
+            // caches return the SAME divIcon reference for the same
+            // (color, category, source) tuple, so a strict-equality
+            // compare detects "no rebuild needed". setIcon detaches
+            // and re-attaches the marker DOM element on every call,
+            // which on a 200-vessel tick is ~5-15 ms wasted in the
+            // marker-pane reflow. The icon is owned by Leaflet
+            // afterwards but the cached ref is what we set, so the
+            // identity check is safe.
+            marker._lastIcon = icon;
             aisMarkers[v.context] = marker;
             // During route / polygon / measurement edit, a tap on a vessel
             // should behave like a tap on empty water: append a waypoint,
@@ -558,7 +569,18 @@ export function updateAisTargets(vessels) {
             });
         } else {
             marker.setLatLng([v.lat, v.lon]);
-            marker.setIcon(icon);
+            // Identity check against the cached ref: the icon caches
+            // (aisIconCache / radarIconCache / sartIconCache) return
+            // the same divIcon for the same input tuple, so a strict-
+            // equality compare detects "nothing to rebuild". setIcon
+            // is a DOM detach/reattach + classList re-apply that on
+            // 200 vessels at 0.33 Hz (the post-version-skip cadence)
+            // would still be ~66 DOM rebuilds/s of work that doesn't
+            // change pixels.
+            if (marker._lastIcon !== icon) {
+                marker.setIcon(icon);
+                marker._lastIcon = icon;
+            }
         }
         if (!isSart) rotateMarker(marker, v.cogRad ?? v.headingRad);
 
@@ -614,7 +636,16 @@ export function updateAisTargets(vessels) {
                 });
                 marker.bindTooltip(aisLabels[v.context]);
             }
-            aisLabels[v.context].setContent(esc(displayName));
+            // Cache last-pushed display string per context so identical
+            // values don't trigger setContent's DOM mutation. esc(name)
+            // is a fresh string each call but the resolved value is
+            // mostly stable (changes only on rename / buddy-star flip).
+            const escapedName = esc(displayName);
+            const tip = aisLabels[v.context];
+            if (tip._lastContent !== escapedName) {
+                tip.setContent(escapedName);
+                tip._lastContent = escapedName;
+            }
         }
 
         // Rich popup with vessel details and external lookup links.
