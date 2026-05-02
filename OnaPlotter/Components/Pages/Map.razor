@@ -2689,7 +2689,7 @@
                 // either, so the button UI reflects the un-set state.
                 if (Data.Latitude is not double lat || Data.Longitude is not double lon)
                 {
-                    Toasts.Error("MOB: no GPS position -- use VHF and handheld");
+                    Toasts.Error("No GPS fix -- use VHF and handheld for MOB");
                     return;
                 }
                 await _controlsJs.SetMobAsync(lat, lon);
@@ -2795,7 +2795,7 @@
             // known position once it has one, but the helm can't
             // verify what was committed. Refuse loudly until we have
             // a fix to commit against.
-            Toasts.Error("Drop anchor: no GPS fix yet");
+            Toasts.Error("No GPS fix -- can't drop anchor");
             return;
         }
         OpenAnchorEditPanel();
@@ -2966,7 +2966,7 @@
         {
             // Silent no-op would look like a dead button at the helm;
             // tell the user WHY the tap did nothing.
-            Toasts.Show("No GPS fix yet");
+            Toasts.Show("No GPS fix");
             return;
         }
         await _controlsJs.PanToAsync(lat, lon);
