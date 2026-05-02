@@ -132,9 +132,9 @@
                the map page the zoom-in button carries the auto-margin
                and Night sits flush with the rest. *@
             <button class="btn btn-sm btn-outline-secondary topbar-icon-btn @(IsMapRoute ? "" : "ms-auto")"
-                    @onclick="ToggleNightMode"
-                    title="@(Settings.NightMode ? "Day mode" : "Night mode")"
-                    aria-label="@(Settings.NightMode ? "Switch to day mode" : "Switch to night mode")">
+                    @onclick="CycleNightMode"
+                    title="@(Settings.NightMode ? $"Night ({Settings.NightModePreset}) -- tap to advance" : "Night mode")"
+                    aria-label="@(Settings.NightMode ? "Advance night-mode preset" : "Switch to night mode")">
                 @if (Settings.NightMode)
                 {
                     @((MarkupString)OnaPlotter.Utilities.Icons.Small.Sun)
@@ -577,9 +577,35 @@
         catch (ObjectDisposedException) { }
     }
 
-    private async Task ToggleNightMode()
+    /// <summary>Advance the night-mode state through a 4-position
+    /// cycle: off -> soft -> amber -> red -> off. Mirrors the Map
+    /// page's More-menu Night button so a helm picking the topbar
+    /// shortcut sees the same behaviour. Dark Ops is Map-only and
+    /// not part of the cycle from here.</summary>
+    private async Task CycleNightMode()
     {
-        await Settings.SetNightModeAsync(!Settings.NightMode);
+        if (!Settings.NightMode)
+        {
+            await Settings.SetNightModeAsync(true);
+            await Settings.SetNightModePresetAsync("soft");
+        }
+        else
+        {
+            string? next = Settings.NightModePreset switch
+            {
+                "soft" => "amber",
+                "amber" => "red",
+                _ => null,
+            };
+            if (next is null)
+            {
+                await Settings.SetNightModeAsync(false);
+            }
+            else
+            {
+                await Settings.SetNightModePresetAsync(next);
+            }
+        }
         StateHasChanged();
     }
 

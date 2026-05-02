@@ -102,7 +102,9 @@
                  ShowKeyboardHints="@Settings.ShowKeyboardHints"
                  OnToggleFollow="ToggleFollow"
                  OnCycleOrientation="CycleMapOrientation"
-                 OnToggleNight="ToggleNightMode"
+                 OnCycleNight="CycleNightMode"
+                 NightModePreset="@Settings.NightModePreset"
+                 DarkOps="darkOps"
                  OnToggleAnchor="ToggleAnchor"
                  OnToggleMob="ToggleMob"
                  OnZoomToTrack="ZoomToTrack"
@@ -1753,7 +1755,7 @@
         switch (key)
         {
             case "m": await ToggleMob(); break;
-            case "n": await ToggleNightMode(); break;
+            case "n": await CycleNightMode(); break;
             case "f": await ToggleFollow(); break;
             case "a": await ToggleAnchor(); break;
             case "t": await ZoomToTrack(); break;
@@ -2830,15 +2832,46 @@
     // ServerTrackController owns the server-track state + interop;
     // wired in OnAfterRenderAsync.
 
-    private async Task ToggleNightMode()
+    /// <summary>Advance the night-mode state through a 4-position
+    /// cycle: off -> soft -> amber -> red -> off. The Night button in
+    /// the More menu and the keyboard "n" shortcut both call this;
+    /// the previous tap-for-soft / hold-for-Dark-Ops gesture pair is
+    /// retired (Dark Ops moved to its own More-menu item).
+    ///
+    /// MarkManualNightToggleAsync sets the 12-h auto-night suppress
+    /// window the same way it always did -- a deliberate cycle
+    /// counts as a manual override.</summary>
+    private async Task CycleNightMode()
     {
-        // Persist the manual-toggle timestamp (12-h auto-suppress window).
-        // Lives in IAppSettings rather than a component field so leaving
-        // and re-entering the Map page doesn't let auto-night flip back
-        // and fight the helm's last choice.
         await Settings.MarkManualNightToggleAsync();
-        nightMode = !nightMode;
-        await Settings.SetNightModeAsync(nightMode);
+        if (!nightMode)
+        {
+            // Off -> soft. Always start the cycle at the gentlest
+            // preset so a helm who tapped expecting a small change
+            // doesn't get red as the first hit.
+            nightMode = true;
+            await Settings.SetNightModeAsync(true);
+            await Settings.SetNightModePresetAsync("soft");
+        }
+        else
+        {
+            // Advance preset; falling off the end turns night off.
+            string? next = Settings.NightModePreset switch
+            {
+                "soft" => "amber",
+                "amber" => "red",
+                _ => null,
+            };
+            if (next is null)
+            {
+                nightMode = false;
+                await Settings.SetNightModeAsync(false);
+            }
+            else
+            {
+                await Settings.SetNightModePresetAsync(next);
+            }
+        }
         if (_controlsJs is not null)
             await _controlsJs.SetNightModeAsync(nightMode);
     }

@@ -93,20 +93,32 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
                     <span>Legend</span>
                 </button>
+                @* Night mode cycle. Each tap advances:
+                       off -> soft -> amber -> red -> off
+                   The helm-feedback was that the previous "tap = soft,
+                   hold = Dark Ops" gesture was non-discoverable + the
+                   inline hint "(tap = soft, hold = Dark Ops)" looked
+                   like noise. Cycling through the three night-mode
+                   presets is muscle-memory: tap until you see what
+                   you like, tap once more to exit. The current preset
+                   is shown after the label so the helm knows where
+                   they are in the cycle without dropping into Settings.
+                   Dark Ops moved to its own menu item below. *@
                 <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
-                        @onclick="NightClicked"
-                        @onpointerdown="StartNightHold"
-                        @onpointerup="EndNightHold"
-                        @onpointerleave="EndNightHold"
-                        @onpointercancel="EndNightHold"
-                        title="Night mode (N) -- hold for Dark Ops">
+                        @onclick="() => Select(OnCycleNight)"
+                        title="Night mode (N) -- tap to cycle off / soft / amber / red">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
-                    @* "(hold)" inline so touch users (no title-attribute
-                       hover) discover the long-press shortcut to Dark
-                       Ops. Falls away once Night is on -- the helm has
-                       already engaged the mode and doesn't need the
-                       discovery hint. *@
-                    <span>Night @(NightMode ? "(on)" : "(tap = soft, hold = Dark Ops)")</span>
+                    <span>Night @(NightMode ? "(" + NightModePreset + ")" : "")@(ShowKeyboardHints ? " (N)" : "")</span>
+                </button>
+                @* Dark Ops: chrome-off mode for offshore watches.
+                   Used to be a long-press on the Night button; now its
+                   own menu item so the helm can find it. Esc + the
+                   dark-ops-exit button still exit it. *@
+                <button class="ctrl-more-item @(DarkOps ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnToggleDarkOps)"
+                        title="Dark Ops (Esc) -- chrome-off offshore mode">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
+                    <span>Dark Ops @(DarkOps ? "(on)" : "")</span>
                 </button>
                 @* Harbor mode: a single switch that bundles AIS / collision
                    suppressions for entering a busy port -- moored vessels
@@ -303,6 +315,13 @@
     [Parameter] public bool Follow { get; set; }
     [Parameter] public string OrientationLabel { get; set; } = "N\u2191";
     [Parameter] public bool NightMode { get; set; }
+    /// <summary>Current night-mode preset ("soft" / "amber" / "red").
+    /// Shown next to the Night menu label so the helm knows where in
+    /// the cycle they are.</summary>
+    [Parameter] public string NightModePreset { get; set; } = "soft";
+    /// <summary>Dark Ops chrome-off mode active. Shown as the
+    /// active-state on the Dark Ops menu item.</summary>
+    [Parameter] public bool DarkOps { get; set; }
     [Parameter] public bool AnchorActive { get; set; }
     [Parameter] public bool MobActive { get; set; }
 
@@ -324,7 +343,10 @@
 
     [Parameter] public EventCallback OnToggleFollow { get; set; }
     [Parameter] public EventCallback OnCycleOrientation { get; set; }
-    [Parameter] public EventCallback OnToggleNight { get; set; }
+    /// <summary>Each click advances the night-mode cycle:
+    /// off -> soft -> amber -> red -> off. Replaces the old
+    /// tap-for-soft / hold-for-Dark-Ops dual gesture.</summary>
+    [Parameter] public EventCallback OnCycleNight { get; set; }
     [Parameter] public EventCallback OnToggleAnchor { get; set; }
     [Parameter] public EventCallback OnToggleMob { get; set; }
     [Parameter] public EventCallback OnStopNavigation { get; set; }
@@ -506,70 +528,10 @@
     // on the callback's own handler to set FabMenuOpen = false on Map.razor.
     private async Task SelectFab(EventCallback cb) => await cb.InvokeAsync();
 
-    // --- Night-button long-press for Dark Ops -----------------------
-    // 700 ms matches the long-press envelope used elsewhere. The hold
-    // runs inside the More menu, because that's where Night now lives.
-    // _nightHoldFired guards the click handler from toggling Night on
-    // top of the dark-ops flip.
-    private const int NightHoldMs = 700;
-    private CancellationTokenSource? _nightHoldCts;
-    private bool _nightHoldFired;
-
-    private void StartNightHold()
-    {
-        // Dispose the prior CTS, don't just cancel-and-drop; matches the
-        // fix for MainLayout's _alarmHoldCts so we don't leak a token
-        // allocation on repeated presses.
-        if (_nightHoldCts is { } prev)
-        {
-            prev.Cancel();
-            prev.Dispose();
-        }
-        _nightHoldCts = new CancellationTokenSource();
-        _nightHoldFired = false;
-        _ = RunNightHoldAsync(_nightHoldCts.Token);
-    }
-
-    private async Task RunNightHoldAsync(CancellationToken ct)
-    {
-        try
-        {
-            await Task.Delay(NightHoldMs, ct);
-            if (ct.IsCancellationRequested) return;
-            _nightHoldFired = true;
-            // MoreMenuOpen is parent-owned; writing it directly would
-            // be overwritten on the next parent render and Blazor logs
-            // a warning. Route through OnToggleMore instead so the
-            // parent flips its own field. The hold only fires while
-            // the menu is open, so toggling closes it.
-            if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
-            await OnToggleDarkOps.InvokeAsync();
-        }
-        catch (OperationCanceledException) { }
-    }
-
-    private void EndNightHold()
-    {
-        if (_nightHoldCts is { } cts)
-        {
-            cts.Cancel();
-            cts.Dispose();
-            _nightHoldCts = null;
-        }
-    }
-
-    private async Task NightClicked()
-    {
-        if (_nightHoldFired)
-        {
-            _nightHoldFired = false;
-            return;
-        }
-        // Route close through the parent toggle so the [Parameter]
-        // stays the source of truth. Mirrors Select(EventCallback).
-        if (MoreMenuOpen) await OnToggleMore.InvokeAsync();
-        await OnToggleNight.InvokeAsync();
-    }
+    // Night long-press for Dark Ops was retired: helms found the
+    // gesture non-discoverable and the inline hint cluttered. Click
+    // now cycles through off -> soft -> amber -> red -> off; Dark
+    // Ops sits next to Night in the menu as its own item.
 
     /// <summary>Dispose the three confirm-window timers when the
     /// component unmounts. Without this, a navigation away during
@@ -581,7 +543,5 @@
         stopConfirmTimer?.Dispose();
         mobConfirmTimer?.Dispose();
         anchorConfirmTimer?.Dispose();
-        _nightHoldCts?.Cancel();
-        _nightHoldCts?.Dispose();
     }
 }
