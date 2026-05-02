@@ -113,32 +113,31 @@ public static class TrackSegmenter
         // as a degenerate stationary head segment that didn't happen.
         // Walk the obvious direction first (forward for i==0,
         // backward otherwise) and step further if dt collapses.
-        TrackPoint other = default;
-        bool found = false;
+        TrackPoint? other = null;
         if (i == 0)
         {
             for (int j = 1; j < points.Count; j++)
             {
-                if (points[j].Timestamp != p.Timestamp) { other = points[j]; found = true; break; }
+                if (points[j].Timestamp != p.Timestamp) { other = points[j]; break; }
             }
         }
         else
         {
             for (int j = i - 1; j >= 0; j--)
             {
-                if (points[j].Timestamp != p.Timestamp) { other = points[j]; found = true; break; }
+                if (points[j].Timestamp != p.Timestamp) { other = points[j]; break; }
             }
             // No earlier point with a different timestamp -- look
             // forward instead.
-            if (!found)
+            if (other is null)
             {
                 for (int j = i + 1; j < points.Count; j++)
                 {
-                    if (points[j].Timestamp != p.Timestamp) { other = points[j]; found = true; break; }
+                    if (points[j].Timestamp != p.Timestamp) { other = points[j]; break; }
                 }
             }
         }
-        if (!found) return false;
+        if (other is null) return false;
         var dt = Math.Abs((p.Timestamp - other.Timestamp).TotalSeconds);
         if (dt <= 0) return false;     // belt-and-braces; the loop already filters
         var dm = RouteProgress.HaversineMeters(
