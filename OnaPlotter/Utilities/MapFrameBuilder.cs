@@ -53,6 +53,16 @@ public sealed class MapFrameBuilder
     // the layline field never populates (no work to do).
     public bool LaylinesVisible { get; set; }
 
+    // True while an active route + visible server-track combo is
+    // managing the on-chart trail. The page sets this on the route-
+    // activation transition so per-tick segment emission is skipped:
+    // the SOG-coloured server polyline is the source of truth, and
+    // the local trail would just overlap it. PrevLat/PrevLon are
+    // also reset on the transition so when the route ends the local
+    // trail picks up cleanly from the current fix instead of drawing
+    // a long bridge segment from the pre-route position.
+    public bool SuppressLocalTrack { get; set; }
+
     // Previous own-boat position; null before first fix. Build()
     // maintains these between calls; callers can also seed PrevLat /
     // PrevLon from the server-side track snapshot on page init, or
@@ -106,7 +116,8 @@ public sealed class MapFrameBuilder
             || (nowTicks - LastTrackEmitTicks) >= intervalTicks;
         if (bLat is not null && bLon is not null
             && PrevLat is not null && PrevLon is not null
-            && gatePassed)
+            && gatePassed
+            && !SuppressLocalTrack)
         {
             track = new[]
             {

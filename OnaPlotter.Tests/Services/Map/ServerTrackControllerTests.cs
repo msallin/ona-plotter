@@ -237,6 +237,33 @@ public class ServerTrackControllerTests
     }
 
     [Test]
+    public async Task Refresh_Refetches_When_Visible()
+    {
+        // The route-active 60 s refresher kicks RefreshAsync; pin
+        // that it actually re-fetches with the current duration /
+        // resolution rather than no-opping.
+        var (ctrl, _, api, _) = New();
+        await ctrl.ToggleAsync(true);
+
+        await ctrl.RefreshAsync();
+
+        await Assert.That(api.Calls.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Refresh_NoOp_When_Hidden()
+    {
+        // Helm has the layer off; a refresh tick from the route-active
+        // refresher should not burn an HTTP round-trip on a polyline
+        // that isn't being rendered.
+        var (ctrl, _, api, _) = New();
+
+        await ctrl.RefreshAsync();
+
+        await Assert.That(api.Calls.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task Within_Bounds_Toggle_Skips_Refetch()
     {
         // The JS module owns the cached coord array; clip-to-bounds

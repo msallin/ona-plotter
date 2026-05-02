@@ -194,4 +194,40 @@ public class MapFrameBuilderTests
         await Assert.That(frame.Track).IsNotNull();
         await Assert.That(frame.Track![3]).IsEqualTo(47.4);
     }
+
+    [Test]
+    public async Task SuppressLocalTrack_Drops_TrackSegment_Even_With_BothEndpoints()
+    {
+        // Map.razor flips SuppressLocalTrack on the route-active /
+        // server-track-on transition so the long server polyline can
+        // be the trail-of-record without the local trail overlapping
+        // it. Pin that the gate kills the segment even when prev +
+        // current are both present and the cadence has elapsed.
+        var b = new MapFrameBuilder
+        {
+            PrevLat = 47.4,
+            PrevLon = 8.5,
+            SuppressLocalTrack = true,
+        };
+        var frame = b.Build(NavAt(47.5, 8.6, sogMs: 4.0));
+        await Assert.That(frame.Track).IsNull();
+        // Pos still fires -- we want the boat icon to keep moving;
+        // it's only the trail polyline that's suppressed.
+        await Assert.That(frame.Pos).IsNotNull();
+    }
+
+    [Test]
+    public async Task SuppressLocalTrack_Off_Resumes_TrackEmission()
+    {
+        // After the route ends and SuppressLocalTrack is dropped, the
+        // trail should resume. PrevLat / PrevLon must be re-seeded by
+        // the parent first (Map.razor does this on the deactivation
+        // transition); without a seed there's no pair to draw from.
+        var b = new MapFrameBuilder { SuppressLocalTrack = true };
+        b.Build(NavAt(47.4, 8.5));    // first fix; suppression on, no segment yet
+        b.SuppressLocalTrack = false;
+        var frame = b.Build(NavAt(47.5, 8.6, sogMs: 4.0));
+        await Assert.That(frame.Track).IsNotNull();
+        await Assert.That(frame.Track![3]).IsEqualTo(47.4);
+    }
 }

@@ -103,6 +103,16 @@ public sealed class ServerTrackController
         if (_visible) await ReloadAsync();
     }
 
+    /// <summary>
+    /// Force a fresh fetch with the current duration / resolution.
+    /// Used by the Map page's route-active 60 s refresher so the
+    /// helm sees server-side history catching up to the active leg
+    /// without having to toggle the layer manually. No-op when the
+    /// layer is hidden -- a refresh on an invisible polyline would
+    /// just burn an HTTP round-trip.
+    /// </summary>
+    public Task RefreshAsync() => _visible ? ReloadAsync() : Task.CompletedTask;
+
     /// <summary>Helm flipped the within-current-view toggle. No
     /// re-fetch: the JS module owns the cached coord array and
     /// re-clips on this toggle and on subsequent pan/zoom events.</summary>

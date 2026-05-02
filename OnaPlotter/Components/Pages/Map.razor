@@ -622,6 +622,24 @@
     // Weather overlay + server track state lives in their controllers
     // (_weather / _serverTrack); markup binds against their Visible /
     // Duration / WithinBounds properties.
+    //
+    // Route-active server-track refresher state. When a route is
+    // active AND the server-track layer is visible, the server-side
+    // polyline becomes the trail-of-record and the local in-memory
+    // trail is suppressed (cleared once + future segments dropped at
+    // MapFrameBuilder.SuppressLocalTrack). _lastServerTrackRefreshUtc
+    // gates the 60 s refresh cadence; null means "no active refresh
+    // window currently". _localTrackSuppressedForRoute is a
+    // per-transition latch so we only clear the local trail once on
+    // activation, not every tick.
+    private DateTimeOffset? _lastServerTrackRefreshUtc;
+    private bool _localTrackSuppressedForRoute;
+    /// <summary>How long between auto-refresh fetches of the server
+    /// track while a route is active. 60 s matches helm field-test
+    /// expectation: at typical sailing speeds (4 - 7 kn) a minute of
+    /// run is roughly 100 - 200 m of trail, plenty of resolution to
+    /// see the recent leg without burning a fetch every few seconds.</summary>
+    private const int RouteServerTrackRefreshIntervalSeconds = 60;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     // Radar overlay state (device list, capabilities cache, enabled
@@ -1954,6 +1972,20 @@
             if (_activeRouteSync is not null)
                 await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes);
 
+            // Route-active server-track stewardship. When a route is
+            // active AND the helm has the server-track layer on, the
+            // server polyline is the long trail-of-record, so the
+            // local in-memory trail is suppressed (cleared on the
+            // activation transition, future segments skipped). A
+            // 60 s refresh keeps the server polyline catching up to
+            // the active leg without the helm having to toggle the
+            // layer manually. When either the route or the
+            // server-track turns off, local emission resumes -- the
+            // trail picks up from the current fix (not bridged from
+            // the pre-route position; the transition resets PrevLat /
+            // PrevLon).
+            await SyncRouteActiveServerTrackAsync();
+
             // Only re-render Blazor component if HUD values actually changed.
             // The snapshot is a record struct -- equality is by value, no
             // string allocation per tick.
@@ -1975,6 +2007,64 @@
             // and the browser console still surfaces the regression for
             // the dev. We fire at 1 Hz; a toast per tick would be spam.
             Console.Error.WriteLine($"[interop] HandleDataChanged: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Per-tick steward for the route-active server-track refresher.
+    /// Runs after <c>_activeRouteSync.SyncAsync</c> so the active-
+    /// course state has settled for the current frame.
+    ///
+    /// Three jobs:
+    /// 1. Activation transition (route + server-track go from "off"
+    ///    to "on"): clear the local trail polyline, reset PrevLat /
+    ///    PrevLon so the next post-route fix doesn't bridge across
+    ///    the pre-route position, latch the suppression flag.
+    /// 2. Deactivation transition: drop the suppression flag so the
+    ///    next per-tick segment-emit pushes again.
+    /// 3. While both still active: every 60 s, kick the server-track
+    ///    controller to refetch so the trail catches up to the
+    ///    active leg without manual intervention.
+    /// </summary>
+    private async Task SyncRouteActiveServerTrackAsync()
+    {
+        bool routeAndServerTrack = Data.HasActiveCourse
+            && (_serverTrack?.Visible ?? false);
+
+        if (routeAndServerTrack && !_localTrackSuppressedForRoute)
+        {
+            // Activation transition: drop the local in-memory trail
+            // (clearLayers via empty-seed) and reset Prev so the
+            // local trail picks up cleanly when the route ends.
+            if (_overlaysJs is not null)
+                await _overlaysJs.SetColoredTrackAsync([]);
+            _frameBuilder.PrevLat = null;
+            _frameBuilder.PrevLon = null;
+            _localTrackSuppressedForRoute = true;
+            _lastServerTrackRefreshUtc = Time.GetUtcNow();
+        }
+        else if (!routeAndServerTrack && _localTrackSuppressedForRoute)
+        {
+            // Deactivation transition: drop the latch + null the
+            // refresh stamp so the next activation triggers a clean
+            // start.
+            _localTrackSuppressedForRoute = false;
+            _lastServerTrackRefreshUtc = null;
+        }
+        _frameBuilder.SuppressLocalTrack = _localTrackSuppressedForRoute;
+
+        if (routeAndServerTrack
+            && _lastServerTrackRefreshUtc is DateTimeOffset last
+            && (Time.GetUtcNow() - last).TotalSeconds >= RouteServerTrackRefreshIntervalSeconds)
+        {
+            _lastServerTrackRefreshUtc = Time.GetUtcNow();
+            // Fire-and-forget: the controller's RefreshAsync is
+            // self-contained (toasts on empty result, swallows JS
+            // disconnects on its own). Awaiting it here would block
+            // the per-tick frame-emit on a server round-trip --
+            // the helm shouldn't see the position update halt while
+            // history fetches.
+            _ = _serverTrack!.RefreshAsync();
         }
     }
 
