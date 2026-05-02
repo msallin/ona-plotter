@@ -1,4 +1,5 @@
 using OnaPlotter.Models;
+using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Services;
 
@@ -230,7 +231,7 @@ public sealed class AlarmManager : IAlarmManager
         {
             var raw = await _kv.GetAsync(SnoozeStorageKey);
             if (string.IsNullOrWhiteSpace(raw)) return;
-            var loaded = System.Text.Json.JsonSerializer.Deserialize<SnoozedTarget[]>(raw);
+            var loaded = System.Text.Json.JsonSerializer.Deserialize(raw, OnaJsonContext.Default.SnoozedTargetArray);
             if (loaded is null) return;
             var now = _now();
             foreach (var s in loaded)
@@ -266,7 +267,7 @@ public sealed class AlarmManager : IAlarmManager
         try
         {
             var arr = _snoozed.Values.ToArray();
-            var json = System.Text.Json.JsonSerializer.Serialize(arr);
+            var json = System.Text.Json.JsonSerializer.Serialize(arr, OnaJsonContext.Default.SnoozedTargetArray);
             await _kv.SetAsync(SnoozeStorageKey, json);
         }
         catch (System.Text.Json.JsonException ex)

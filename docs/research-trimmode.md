@@ -16,29 +16,33 @@ Stacking with what's already enabled (`InvariantGlobalization=true`, `WasmStripI
 
 Three reflection-flavoured surfaces would generate trim warnings or runtime "type was not preserved" failures the moment `TrimMode=full` ships:
 
-### 1. JsonSerializer.Deserialize / Serialize (10 call sites)
+### 1. JsonSerializer.Deserialize / Serialize call sites
+
+**Status (post F2/3)**: the four named-type deserialise sites are migrated to source-gen via `OnaPlotter/Services/Json/OnaJsonContext.cs`. The remaining sites are anonymous-type serialisations only -- they need a separate refactor to named records before the trim flip.
+
+Migrated (source-gen now):
 
 ```
-OnaPlotter/Components/Pages/Map.razor.cs:234,465  -- Serialize(feature, ...)
-OnaPlotter/Models/RadarDtos.cs:501                -- SerializeToElement(...)
-OnaPlotter/Services/AlarmManager.cs:233,269       -- snooze persist round-trip
+OnaPlotter/Services/SignalkClient.cs:766          -- SignalkDelta deser  *** hot path
+OnaPlotter/Services/AlarmManager.cs:233,269       -- SnoozedTarget[] round-trip
 OnaPlotter/Services/Api/AuthApi.cs:74             -- LoginStatus deser
 OnaPlotter/Services/RouteDraftStore.cs:27,70      -- RouteDraft round-trip
-OnaPlotter/Services/SignalkClient.cs:704          -- SignalkDelta deser  *** hot path
 ```
 
-Each call uses the reflection-based serializer. Migration: declare a `JsonSerializerContext`-derived class with `[JsonSerializable(typeof(SignalkDelta))]` etc. for every type, then replace each call site:
+Still reflection (anonymous-type serialise; not a blocker for partial-trim, blocks the full-trim flip):
 
-```csharp
-// Before
-JsonSerializer.Deserialize<SignalkDelta>(json);
-// After
-JsonSerializer.Deserialize(json, OnaJsonContext.Default.SignalkDelta);
+```
+OnaPlotter/Components/Pages/Map.razor.cs:234,465  -- share-feature Serialize(new {...})
+OnaPlotter/Components/Pages/Resources.razor:682,773 -- share-feature Serialize(new {...})
+OnaPlotter/Components/Pages/History.razor:1134,1145,1147,1167,1375,1477 -- JS-interop literal embedding
+OnaPlotter/Models/RadarDtos.cs:501                -- SerializeToElement(...) of an anon shape
+OnaPlotter/Services/SignalkClient.cs:1436,1453    -- WS subscribe / unsubscribe envelope
+OnaPlotter/Utilities/ResourceExporter.cs:108,139,175,259,294 -- per-feature GPX-twin GeoJSON
 ```
 
-The `SignalkDelta` deserialize is the hot path (every WS frame). Source-gen would also remove a ~50 KB chunk of `System.Text.Json.Reflection` from the bundle as a side benefit.
+To finish the trim-blocker work for these, replace each `new { ... }` with a named `record` (e.g. `SubscribeRequest(string Context, SubscribePath[] Paths)`) and add `[JsonSerializable(typeof(SubscribeRequest))]` to `OnaJsonContext`. Mechanical, but spread across many files; left out of F2 to keep that batch focused.
 
-**Estimated effort**: 2-3 hours. Mechanical once the context is set up.
+**Estimated effort for the anonymous-type sweep**: 2-3 hours.
 
 ### 2. AlarmManager Activator-based test ctor
 
@@ -52,9 +56,9 @@ The `SignalkDelta` deserialize is the hot path (every WS frame). Source-gen woul
 
 ## Step-by-step migration plan
 
-1. **Source-gen JsonContext**: add `OnaPlotter/Services/Json/OnaJsonContext.cs` with `[JsonSerializable(typeof(T))]` for each DTO. Verify build is clean (the analyzer surfaces missing types).
-2. **Migrate hot path first**: switch `SignalkClient.Deserialize<SignalkDelta>(json)` to use the context. Run the suite + manually test against a live SK feed. If green, the contract is validated.
-3. **Migrate the rest**: each of the 10 call sites in turn.
+1. ~~**Source-gen JsonContext**: add `OnaPlotter/Services/Json/OnaJsonContext.cs` with `[JsonSerializable(typeof(T))]` for each DTO.~~ ✅ Landed in F2/3 for the four named-type sites.
+2. ~~**Migrate hot path first**: switch `SignalkClient.Deserialize<SignalkDelta>(json)` to use the context.~~ ✅ Landed in F2/3.
+3. **Migrate the anon-type Serialize sites**: requires a small refactor (anon record -> named `record`) at each call site. See list above. Pending.
 4. **Audit Activator usage** in `AlarmManager`. Add `[DynamicDependency]` if the pattern actually runs in production.
 5. **Flip `<TrimMode>full</TrimMode>`** in csproj.
 6. **Publish + smoke test**: `dotnet publish -c Release` and load the bundle on the helm. Watch DevTools console for any "type/member was not preserved" runtime errors. If the helm hits a screen with a missing type, add `[DynamicDependency]` to the broken site and re-publish.
@@ -63,7 +67,7 @@ The `SignalkDelta` deserialize is the hot path (every WS frame). Source-gen woul
 ## Other bundle-size opportunities (in priority order)
 
 The v1 backlog also mentioned:
-- **Lazy-load `System.Private.Xml` via Blazor LazyAssemblies** (-500 KB raw, -100 KB brotli; loaded only when GPX import/export runs). The XML usage is concentrated in `OnaPlotter/Services/GpxService.cs` -- the call site is gated behind a Razor handler that only runs on the Resources page. Wrap in `LazyAssembly` + an awaiting load before the first GpxService call. Lower risk than TrimMode=full and orthogonal to it.
+- ~~**Lazy-load `System.Private.Xml` via Blazor LazyAssemblies**~~ ✅ Landed in F2/2. ~95 KB brotli excluded from the eager boot bundle; the GPX flows in Resources / History pull the assemblies via `XmlAssemblyLoader.EnsureLoadedAsync()` before the first call.
 - **`<UseInterpreter>` for cold paths**: AOT all the hot stuff, interpreter-only the cold paths to claw back AOT bloat. The current `<RunAOTCompilation>true</RunAOTCompilation>` AOTs everything; selective AOT is more nuanced and may not be worth it once full-trim lands.
 
 ## Verdict
