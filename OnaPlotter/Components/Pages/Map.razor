@@ -775,7 +775,7 @@
 
         if (_resourceJs is not null)
             await _resourceJs.RemoveWaypointMarkerAsync(wp.Id);
-        loadedWaypoints = loadedWaypoints.Where(w => w.Id != wp.Id).ToList();
+        loadedWaypoints.RemoveAll(w => w.Id == wp.Id);
         Toasts.Info($"Waypoint '{label}' deleted");
     }
 

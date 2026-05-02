@@ -159,7 +159,7 @@ public partial class Map
 
         if (module is not null)
             await module.InvokeVoidAsync("removeWaypointMarker", id);
-        loadedWaypoints = loadedWaypoints.Where(w => w.Id != id).ToList();
+        loadedWaypoints.RemoveAll(w => w.Id == id);
         Toasts.Info($"Waypoint '{label}' deleted");
     }
 
@@ -384,7 +384,7 @@ public partial class Map
 
         if (module is not null)
             await module.InvokeVoidAsync("removeNoteMarker", id);
-        loadedNotes = loadedNotes.Where(n => n.Id != id).ToList();
+        loadedNotes.RemoveAll(n => n.Id == id);
         Toasts.Info("Note deleted");
     }
 
@@ -650,7 +650,7 @@ public partial class Map
 
         if (module is not null)
             await module.InvokeVoidAsync("removeRegion", id);
-        loadedRegions = loadedRegions.Where(rg => rg.Id != id).ToList();
+        loadedRegions.RemoveAll(rg => rg.Id == id);
         Toasts.Info($"Region '{label}' deleted");
     }
 
@@ -755,7 +755,7 @@ public partial class Map
             try { await module.InvokeVoidAsync("removeRoute", id); }
             catch (JSDisconnectedException) { }
 
-        availableRoutes = availableRoutes.Where(rt => rt.Id != id).ToList();
+        availableRoutes.RemoveAll(rt => rt.Id == id);
         Toasts.Info("Route deleted");
         RebuildFilteredLayers();
     }
