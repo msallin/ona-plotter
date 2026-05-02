@@ -4,7 +4,12 @@
    when a long window (7d / all) is too dense to render fluidly, or
    when the SK history endpoint times out on a fine-grained span. *@
 
-<SectionHeader Title="History"
+@* "Server history" rather than just "History": the section name
+   used to read as a generic "history" alongside the in-memory local
+   trail toggle in Own ship, which made it ambiguous which trail a
+   helm was about to enable. The "Server" qualifier names the data
+   source and disambiguates the two. *@
+<SectionHeader Title="Server history"
                Expanded="@expanded"
                OnToggle="() => expanded = !expanded" />
 @if (expanded)
