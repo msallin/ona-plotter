@@ -632,12 +632,14 @@ public sealed class AppSettingsService : IAppSettings
     {
         try { await _store.SetAsync(key, value); }
         catch (Microsoft.JSInterop.JSException) { /* storage disabled - user sees nothing persisted; acceptable. */ }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { /* page tear-down race; tab closing while a settings toggle is in flight. */ }
     }
 
     private async Task<string?> LoadString(string key)
     {
         try { return await _store.GetAsync(key); }
         catch (Microsoft.JSInterop.JSException) { return null; }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { return null; }
     }
 
     private async Task<bool> LoadBool(string key, bool fallback)
