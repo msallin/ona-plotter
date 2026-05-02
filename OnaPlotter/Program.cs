@@ -8,8 +8,16 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// Shared HttpClient used by every *Api.
-builder.Services.AddSingleton(new HttpClient());
+// Shared HttpClient used by every *Api. The 8-second timeout caps the
+// .NET default of 100s so a half-baked TLS handshake on flaky LTE / a
+// dropped sat link surfaces as a fast Toast.Error instead of a frozen
+// UI -- Stop Nav, Drop / Raise Anchor, Activate Route, MOB position
+// write would otherwise sit on a dead socket up to 100s before the
+// helm's tap registers a failure. Per-call timeouts on hot paths
+// (NotificationsApi.CallTimeout) override this when they need a tighter
+// budget; longer flows (TrackApi history pages, GPX import) pass an
+// explicit CancellationToken with their own deadline.
+builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(8) });
 
 // Storage + settings.
 builder.Services.AddSingleton<IKeyValueStore, LocalStorageKeyValueStore>();
