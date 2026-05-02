@@ -195,13 +195,13 @@ public sealed class AlarmManager : IAlarmManager
         : this(rules, () => DateTime.UtcNow, kv, settings) { }
 
     // Two-arg overload for tests that don't care about persistence.
-    // Keeps the `args: [rules, now]` Activator.CreateInstance pattern
-    // working.
+    // Production wiring uses the public 3-arg ctor above; this and
+    // the 3-arg internal sibling below let the test fixtures call
+    // `new AlarmManager(rules, () => clock.Now)` (and `+ kv`) without
+    // having to thread a settings object through every test.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now)
         : this(rules, now, null, null) { }
 
-    // Three-arg overload kept so existing tests invoking Activator with
-    // `(rules, now, kv)` still resolve.
     internal AlarmManager(IEnumerable<IAlarmRule> rules, Func<DateTime> now,
         IKeyValueStore? kv)
         : this(rules, now, kv, null) { }

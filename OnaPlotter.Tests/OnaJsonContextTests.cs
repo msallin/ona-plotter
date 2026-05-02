@@ -5,13 +5,17 @@ using OnaPlotter.Services.Json;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins that the source-gen <see cref="OnaJsonContext"/> serialiser
-/// produces results that round-trip cleanly and (for the types where
-/// it matters) match the reflection-based behaviour the codebase
-/// previously depended on. We don't compare byte-for-byte against
-/// reflection output -- ordering of properties is implementation-
-/// detail -- but every type round-trips and every documented
-/// case-insensitivity contract holds.
+/// Pins the source-gen behaviour of both
+/// <see cref="OnaJsonContext"/> (compact wire-protocol DTOs) and
+/// <see cref="OnaPlotter.Services.Json.OnaGeoJsonContext"/>
+/// (indented helm-facing GeoJSON exports + share blobs). The cases
+/// here cover round-trip, case-insensitive deserialisation, wire-
+/// shape conformance with downstream specs (SignalK subscribe
+/// envelopes), and the null-elision contract that share blobs
+/// inherit from the previous per-call <c>DefaultIgnoreCondition</c>
+/// option. We don't compare byte-for-byte against reflection
+/// output -- property ordering is an implementation detail -- but
+/// every type round-trips and every documented contract holds.
 /// </summary>
 public class OnaJsonContextTests
 {

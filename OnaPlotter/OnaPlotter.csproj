@@ -23,20 +23,22 @@
          thread. -->
     <RunAOTCompilation>true</RunAOTCompilation>
     <!-- TrimMode investigation gate. Default Blazor WASM trim mode
-         is 'partial'; switching to 'full' would shave another
-         100-200 KB brotli but requires every reflection / dynamic
-         path to be annotated. Today the codebase has ~10 reflection-
-         based JsonSerializer.Deserialize calls (SignalkClient,
-         AlarmManager snooze persist, RouteDraftStore, AuthApi, ...)
-         that would each need a source-generated JsonSerializerContext
-         + a typed Deserialize overload, plus AlarmManager has an
-         Activator-based ctor pattern that needs [DynamicDependency]
-         hints. See docs/research-trimmode.md for the audit + a
-         step-by-step migration outline.
-         Setting TrimMode=full prematurely causes the published
-         bundle to crash at boot ("type X was not preserved" or
-         "Method Y was trimmed"); leaving the default 'partial'
-         until the migration is done. -->
+         is 'partial'; full mode would shave another 100-200 KB
+         brotli but requires every reflection-resolved path to be
+         annotated. Application code IS source-gen-clean as of F2
+         (every JsonSerializer call routes through OnaJsonContext or
+         OnaGeoJsonContext). The remaining blocker is the
+         lazy-loaded XML stack: trim-full removes assemblies the
+         trimmer can't see being statically used, and our
+         <BlazorWebAssemblyLazyLoad> entries fall in that gap. The
+         <TrimmerRootAssembly> workaround compiles but inflates the
+         lazy XML download (~97 -> ~541 KB brotli) by preserving
+         the rooted assemblies whole. The fix is a
+         <TrimmerRootDescriptor> XML pinning only the specific
+         types ResourceImporter / ResourceExporter touch; estimated
+         3-4 hours plus a manual smoke test on the helm. See
+         docs/research-trimmode.md for the audit + the descriptor-
+         design notes. Until that lands, leaving 'partial'. -->
     <TrimMode>partial</TrimMode>
     <!-- Strip the source IL from the published bundle after AOT. The
          WASM runtime can execute the native code alone; the IL would

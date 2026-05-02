@@ -5,37 +5,35 @@ namespace OnaPlotter.Services.Json;
 
 /// <summary>
 /// Source-generated <see cref="JsonSerializerContext"/> for the named
-/// DTO types we deserialise (or round-trip) at hot or trim-sensitive
-/// call sites. Each type listed here gets a compile-time-generated
-/// converter pair; calls of the form
+/// DTO types and primitive shapes used at hot or trim-sensitive
+/// JSON call sites. Each type listed here gets a compile-time-
+/// generated converter pair; calls of the form
 /// <c>JsonSerializer.Deserialize(span, OnaJsonContext.Default.SignalkDelta)</c>
-/// skip the reflection-based serializer entirely.
+/// skip reflection entirely.
 /// <para>
 /// Why this exists:
 /// </para>
 /// <list type="number">
 ///   <item><description><b>Hot path</b>:
 ///     <see cref="SignalkDelta"/> is deserialised once per WebSocket
-///     frame (every SK delta on a steady feed). The reflection
-///     serializer's per-type metadata cache is fast on warm runs
-///     but still costs allocation; the source-gen converter is a
-///     hand-written switch on property name, no reflection.</description></item>
-///   <item><description><b>Trim-blocker</b>: enabling
+///     frame (every SK delta on a steady feed). The runtime
+///     reflection serializer's per-type metadata cache is fast on
+///     warm runs but still costs allocation; the source-gen
+///     converter is a hand-written switch on property name, no
+///     reflection.</description></item>
+///   <item><description><b>Trim-readiness</b>: enabling
 ///     <c>TrimMode=full</c> (see docs/research-trimmode.md) requires
-///     every reflection-based <c>Deserialize&lt;T&gt;</c> to either
-///     move to source-gen or carry a <c>[DynamicDependency]</c> hint.
-///     Source-gen is the canonical fix; this context covers the
-///     named-type deserialise sites. Anonymous-type serialisations
-///     (Map.razor.cs share blobs, Resources.razor share blobs,
-///     ResourceExporter feature payloads) still go through the
-///     reflection path; converting them needs replacing the
-///     anon-record-builder with a named record per shape, which is
-///     a separate refactor.</description></item>
-///   <item><description><b>Bundle size</b>: when every
-///     <c>Deserialize&lt;T&gt;</c> uses source-gen, the linker can
-///     drop large parts of <c>System.Text.Json.Reflection</c> and
-///     friends. Concrete win measured at TrimMode flip time;
-///     the doc audit estimates ~50 KB.</description></item>
+///     every <c>Serialize&lt;T&gt;</c> / <c>Deserialize&lt;T&gt;</c>
+///     to either move to source-gen or carry a
+///     <c>[DynamicDependency]</c> hint. The application code is
+///     fully migrated as of F2: this context covers wire-protocol
+///     DTOs (compact output) and primitive shapes used at JS-interop
+///     literal-embed sites; <see cref="OnaGeoJsonContext"/> covers
+///     the helm-facing GeoJSON exports + share blobs (indented
+///     output).</description></item>
+///   <item><description><b>Bundle size</b>: source-gen lets the
+///     linker drop large parts of <c>System.Text.Json.Reflection</c>
+///     once <c>TrimMode=full</c> ships. Audit estimates ~50 KB.</description></item>
 /// </list>
 /// <para>
 /// Adding a new type: drop a <c>[JsonSerializable(typeof(T))]</c>

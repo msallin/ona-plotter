@@ -20,8 +20,8 @@ namespace OnaPlotter.Services.Json;
 /// </para>
 /// <para>
 /// Adding a new export shape: drop a <c>[JsonSerializable(typeof(T))]</c>
-/// line and add the matching test case in
-/// <c>OnaGeoJsonContextTests</c>.
+/// line and add the matching wire-shape test in
+/// <c>OnaJsonContextTests</c> (which covers both contexts).
 /// </para>
 /// </summary>
 [JsonSourceGenerationOptions(WriteIndented = true)]
