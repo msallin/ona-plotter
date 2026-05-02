@@ -189,10 +189,21 @@ public sealed class AisPushService
                     tcpaMin = c.TcpaMin;
                 }
 
+                // Type-aware classification: own from
+                // IAppSettings.OwnVesselType (helm-picked), target from
+                // design.aisShipType. When propulsion differs the
+                // role is overridden by Rule 18 so the helm sees
+                // 'sail stands on / power gives way' on a mixed
+                // encounter regardless of geometry.
+                var ownType = _settings.OwnVesselType == "sail"
+                    ? Colregs.VesselType.Sail
+                    : Colregs.VesselType.Power;
+                var tgtType = Colregs.FromAisShipType(v.ShipType);
                 var r = Colregs.Classify(
                     ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
                     v.Latitude!.Value, v.Longitude!.Value,
-                    v.CourseOverGround.Value, v.SpeedOverGround.Value);
+                    v.CourseOverGround.Value, v.SpeedOverGround.Value,
+                    ownType, tgtType);
                 if (r.Category != Colregs.Category.Indeterminate)
                 {
                     colregsLabel = Colregs.ShortLabel(r.Category);

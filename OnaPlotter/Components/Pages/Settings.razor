@@ -85,6 +85,35 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
+                <label class="form-label">Own vessel type</label>
+                <div class="btn-group w-100" role="group" aria-label="Own vessel type">
+                    <input type="radio" class="btn-check" name="own-vessel-type"
+                           id="vessel-power" autocomplete="off"
+                           checked="@(AppSettings.OwnVesselType == "power")"
+                           @onchange="@(() => OnOwnVesselTypeChanged("power"))" />
+                    <label class="btn btn-outline-secondary btn-sm" for="vessel-power"
+                           title="Power-driven vessel under way">Power</label>
+
+                    <input type="radio" class="btn-check" name="own-vessel-type"
+                           id="vessel-sail" autocomplete="off"
+                           checked="@(AppSettings.OwnVesselType == "sail")"
+                           @onchange="@(() => OnOwnVesselTypeChanged("sail"))" />
+                    <label class="btn btn-outline-secondary btn-sm" for="vessel-sail"
+                           title="Sailing vessel under way">Sail</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Drives COLREGS Rule 18 priority on the AIS popup + CPA banner. Set to "sail" when
+                    you're under sail (engine off); leave at "power" when motoring or motor-sailing.
+                    A sail-vs-power encounter resolves as power-gives-way regardless of crossing
+                    geometry; same-type encounters use the standard Rule 13-15 classifier.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
                 <label class="form-check form-switch" style="margin:0;">
                     <input class="form-check-input" type="checkbox" role="switch"
                            checked="@AppSettings.KeepScreenAwake"
@@ -1099,6 +1128,9 @@
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetAnchorTideSafetyMarginAsync(val);
     }
+
+    private async Task OnOwnVesselTypeChanged(string value)
+        => await AppSettings.SetOwnVesselTypeAsync(value);
 
     private async Task OnSailingModeChanged(string value)
         => await AppSettings.SetSailingModeAsync(value);

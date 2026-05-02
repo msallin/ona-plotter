@@ -46,6 +46,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool BigType { get; set; } = false;
     public bool ExpandAllHud { get; set; } = false;
     public string SailingMode { get; set; } = "cruise";
+    public string OwnVesselType { get; set; } = "power";
     public bool KeepScreenAwake { get; set; } = true;
     public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
     public bool ShowKeyboardHints { get; set; } = false;
@@ -111,6 +112,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetBigTypeAsync(bool v) => Task.CompletedTask;
     public Task SetExpandAllHudAsync(bool v) { ExpandAllHud = v; return Task.CompletedTask; }
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
+    public Task SetOwnVesselTypeAsync(string v) { OwnVesselType = v; return Task.CompletedTask; }
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;
     public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetShowKeyboardHintsAsync(bool v) { ShowKeyboardHints = v; return Task.CompletedTask; }

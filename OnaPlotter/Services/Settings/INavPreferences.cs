@@ -28,8 +28,18 @@ public interface INavPreferences
     /// doesn't toggle a mode flag on every switch.</summary>
     string SailingMode { get; }
 
+    /// <summary>Own vessel propulsion category for COLREGS Rule 18
+    /// priority. "power" (default) or "sail". When the helm sets
+    /// this to "sail" and an AIS target is power-driven, the CPA
+    /// banner / popup classifies the encounter as
+    /// power-gives-way-to-sail; when set to "power" and the target
+    /// is sailing, we are the give-way vessel. Same-category pairs
+    /// fall back to the Rule 13-15 geometry classifier.</summary>
+    string OwnVesselType { get; }
+
     Task SetPreferMagneticHeadingAsync(bool value);
     Task SetPreferMagneticCourseAsync(bool value);
     Task SetAutoAdvanceWaypointsAsync(bool value);
     Task SetSailingModeAsync(string value);
+    Task SetOwnVesselTypeAsync(string value);
 }

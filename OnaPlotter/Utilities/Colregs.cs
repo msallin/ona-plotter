@@ -41,6 +41,43 @@ public static class Colregs
         StandOn,
     }
 
+    /// <summary>Propulsion category used for Rule 18 priority. The
+    /// classifier reads this off both vessels (from
+    /// <c>IAppSettings.OwnVesselType</c> for own, from the target's
+    /// <c>design.aisShipType</c> via <see cref="VesselType.FromAisShipType"/>
+    /// for AIS targets). Unknown collapses to Power so the existing
+    /// Rule 13-15 geometry classification still applies -- never
+    /// silently downgrade a give-way to stand-on just because a type
+    /// field was empty.</summary>
+    public enum VesselType
+    {
+        /// <summary>Power-driven vessel under way (default for own
+        /// when the helm hasn't selected sail mode).</summary>
+        Power,
+        /// <summary>Sailing vessel under way (Rule 12 applies between
+        /// two sailing vessels; Rule 18 gives sail priority over
+        /// power-driven in normal conditions).</summary>
+        Sail,
+    }
+
+    /// <summary>Classify a SignalK <c>design.aisShipType</c> string into
+    /// the propulsion category Rule 18 cares about. Conservative: only
+    /// returns <see cref="VesselType.Sail"/> when the string clearly
+    /// names a sailing vessel; anything else collapses to Power so a
+    /// pleasure-yacht-with-sail-aboard-but-motoring isn't given sail
+    /// priority by mistake. Null / unknown -&gt; Power.</summary>
+    public static VesselType FromAisShipType(string? shipType)
+    {
+        if (string.IsNullOrEmpty(shipType)) return VesselType.Power;
+        var t = shipType.ToLowerInvariant();
+        // SignalK / AIS type 36 ("Sailing"). Match also "sailing
+        // vessel" + the lowercase substring "sail" only when it's a
+        // standalone word (avoid matching "passenger", "fishing").
+        if (t == "sailing" || t.Contains("sailing vessel") || t.StartsWith("sail "))
+            return VesselType.Sail;
+        return VesselType.Power;
+    }
+
     public readonly record struct Result(Category Category, Role Role);
 
     private const double DegToRad = Math.PI / 180.0;
@@ -52,6 +89,23 @@ public static class Colregs
     public static Result Classify(
         double ownLat, double ownLon, double ownCogRad, double ownSogMs,
         double tgtLat, double tgtLon, double tgtCogRad, double tgtSogMs)
+        => Classify(ownLat, ownLon, ownCogRad, ownSogMs,
+                    tgtLat, tgtLon, tgtCogRad, tgtSogMs,
+                    VesselType.Power, VesselType.Power);
+
+    /// <summary>Type-aware overload: applies Rule 18 (priority order)
+    /// when own + target propulsion differ. Sail-vs-power encounters
+    /// resolve as power-gives-way regardless of geometry; the
+    /// CATEGORY (head-on / crossing / overtaking) still describes the
+    /// approach geometry so the helm sees both 'why we meet' and
+    /// 'who turns'. Same-type encounters fall through to the
+    /// power-driven Rules 13-15 classifier, which is also the
+    /// pragmatic stand-in for Rule 12 sail-vs-sail when wind data
+    /// isn't reliable enough to apply the windward / leeward rule.</summary>
+    public static Result Classify(
+        double ownLat, double ownLon, double ownCogRad, double ownSogMs,
+        double tgtLat, double tgtLon, double tgtCogRad, double tgtSogMs,
+        VesselType ownType, VesselType tgtType)
     {
         // Either boat stationary -> don't issue give-way / stand-on labels.
         // COLREGS assumes both vessels are under way with steerage. A drifting
@@ -87,11 +141,31 @@ public static class Colregs
         bool targetOnStbd = relBearing >= HeadOnCone && relBearing <= 180 - OvertakingCone;
         bool targetOnPort = relBearing >= 180 + OvertakingCone && relBearing <= 360 - HeadOnCone;
 
+        // Rule 18 propulsion override: when own + target propulsion
+        // differ, sail has priority over power. The CATEGORY is still
+        // determined by encounter geometry (head-on / crossing /
+        // overtaking) so the helm knows what kind of meeting it is;
+        // the ROLE is overridden by Rule 18 because that's what
+        // priority-of-vessels resolves it to. Same-type pairs return
+        // Role.None and the geometry's role wins. Rule 13 (overtaking)
+        // is special: it explicitly overrides Rule 18, so the
+        // overtaking branches below skip the override.
+        Role rule18Role = (ownType, tgtType) switch
+        {
+            (VesselType.Power, VesselType.Sail) => Role.GiveWay,
+            (VesselType.Sail, VesselType.Power) => Role.StandOn,
+            _ => Role.None,    // sentinel: no override, use geometry
+        };
+        Role HeadOnOrCrossing(Role geometryRole) =>
+            rule18Role == Role.None ? geometryRole : rule18Role;
+
         // Head-on: target ahead AND heading roughly reciprocal.
         if (targetAhead && headingDiff > 180 - HeadOnCone)
-            return new Result(Category.HeadOn, Role.GiveWay);
+            return new Result(Category.HeadOn, HeadOnOrCrossing(Role.GiveWay));
 
         // Overtaking / being overtaken: headings roughly aligned.
+        // Rule 13: overtaking overrides Rule 18 (the overtaker always
+        // gives way regardless of propulsion).
         if (headingDiff < OvertakingCone)
         {
             if (targetAhead && ownSogMs > tgtSogMs)
@@ -102,9 +176,9 @@ public static class Colregs
 
         // Crossing: target on one side of our beam, heading not aligned.
         if (targetOnStbd)
-            return new Result(Category.CrossingFromStarboard, Role.GiveWay);
+            return new Result(Category.CrossingFromStarboard, HeadOnOrCrossing(Role.GiveWay));
         if (targetOnPort)
-            return new Result(Category.CrossingFromPort, Role.StandOn);
+            return new Result(Category.CrossingFromPort, HeadOnOrCrossing(Role.StandOn));
 
         return new Result(Category.Indeterminate, Role.None);
     }

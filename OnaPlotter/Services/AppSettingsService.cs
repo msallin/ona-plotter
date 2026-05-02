@@ -84,6 +84,10 @@ public sealed class AppSettingsService : IAppSettings
     public bool BigType { get; private set; } = false;
     public bool ExpandAllHud { get; private set; } = false;
     public string SailingMode { get; private set; } = "cruise";
+    /// <summary>Own propulsion category for COLREGS Rule 18 priority.
+    /// "power" (default) or "sail". Stored as a string rather than an
+    /// enum so persistence + the Settings select bind directly.</summary>
+    public string OwnVesselType { get; private set; } = "power";
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
     public bool ShowKeyboardHints { get; private set; } = false;
@@ -190,6 +194,7 @@ public sealed class AppSettingsService : IAppSettings
             BigType = await LoadBool("bigType.v1", false);
             ExpandAllHud = await LoadBool("expandAllHud.v1", false);
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
+            OwnVesselType = NormalizeOwnVesselType(await LoadString("ownVesselType.v1"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
@@ -613,6 +618,19 @@ public sealed class AppSettingsService : IAppSettings
         "cruise" or "race" => raw,
         _ => "cruise",
     };
+
+    private static string NormalizeOwnVesselType(string? raw) => raw switch
+    {
+        "power" or "sail" => raw,
+        _ => "power",
+    };
+
+    public async Task SetOwnVesselTypeAsync(string value)
+    {
+        OwnVesselType = NormalizeOwnVesselType(value);
+        await Save("ownVesselType.v1", OwnVesselType);
+        OnSettingsChanged?.Invoke();
+    }
 
     public async Task SetEnabledChartsAsync(IEnumerable<string> ids)
     {

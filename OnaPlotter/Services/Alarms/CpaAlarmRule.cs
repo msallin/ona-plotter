@@ -142,11 +142,22 @@ public sealed class CpaAlarmRule : IAlarmRule
             // so a parallel-course encounter doesn't get a
             // misleading "Indeterminate" appended.
             string suffix = "";
+            // Plumb own + target propulsion category into the
+            // classifier so Rule 18 priority resolves the role
+            // ("power gives way to sail") on the alarm banner the
+            // same way the AIS popup does. Helm sets own type via
+            // IAppSettings.OwnVesselType ('power' default / 'sail');
+            // target type derives from design.aisShipType.
+            var ownType = ctx.Settings.OwnVesselType == "sail"
+                ? Colregs.VesselType.Sail
+                : Colregs.VesselType.Power;
+            var tgtType = Colregs.FromAisShipType(v.ShipType);
             var colregs = Colregs.Classify(
                 data.Latitude.Value, data.Longitude.Value,
                 data.CourseOverGround.Value, data.SpeedOverGround.Value,
                 v.Latitude.Value, v.Longitude.Value,
-                v.CourseOverGround.Value, v.SpeedOverGround.Value);
+                v.CourseOverGround.Value, v.SpeedOverGround.Value,
+                ownType, tgtType);
             string? colregsShort = Colregs.ShortLabel(colregs.Category);
             string? colregsRole = Colregs.RoleLabel(colregs.Role);
             if (colregsShort is not null && colregsRole is not null)
