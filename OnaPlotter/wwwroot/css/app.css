@@ -1776,7 +1776,17 @@ html:fullscreen .hud-stack-br {
 
 .map-controls {
     position: absolute;
-    bottom: 12px;
+    /* `bottom: max(12px, env(safe-area-inset-bottom))` keeps the
+       baseline 12 px gap on screens without a home-indicator AND
+       lifts the bar above the iPad / iPhone home-indicator strip in
+       Safari + standalone PWAs. Earlier the bar at bottom: 12px sat
+       under the indicator on hand-held iPads in landscape, where
+       Safari's bottom toolbar collapses but the indicator stays --
+       the helm's tap landed on the indicator's swipe-up gesture
+       instead of the button. The map-container's own
+       safe-area-inset-bottom padding still applies inside fullscreen;
+       this rule covers the inverse case (non-fullscreen, hand-held). */
+    bottom: max(12px, env(safe-area-inset-bottom));
     left: 50%;
     transform: translateX(-50%);
     z-index: var(--z-controls);
@@ -2579,6 +2589,29 @@ html, body {
     color: var(--sk-text);
     font-size: 0.85rem;
     font-weight: 500;
+}
+
+/* Touch-target floor for Settings page inputs. Bootstrap's default
+   .form-control sits at ~38 px and form-control-sm at ~31 px; both
+   are below the WCAG 2.5.5 / iOS HIG 44 px target. The Settings page
+   has the densest cluster of inputs in the app (every alarm
+   threshold + a dozen toggles); a wrong-tap on a phone cracks the
+   wrong setting under glove. Scoped to .app-page so the dense
+   filter inputs in toolbars (Resources tab filter, History date
+   range) keep their compact look while the genuine form fields
+   land 44 px tall. */
+@media (pointer: coarse) {
+    .app-page .form-control,
+    .app-page .form-select,
+    .app-page select,
+    .app-page input[type="text"],
+    .app-page input[type="number"],
+    .app-page input[type="search"],
+    .app-page input[type="email"],
+    .app-page input[type="password"],
+    .app-page input[type="datetime-local"] {
+        min-height: 44px;
+    }
 }
 .form-check-input {
     background-color: var(--sk-surface);
