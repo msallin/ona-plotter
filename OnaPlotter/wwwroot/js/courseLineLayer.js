@@ -20,6 +20,21 @@ let colors = null;
 let courseLineLeg = null;
 let courseLineBearing = null;
 let courseLineXte = null;
+// Pulsing marker at the destination waypoint. Drawn here (not just
+// in activeRouteLayer.js) so the "Navigate Here" flow -- which
+// drops a course destination but never creates a route -- still
+// gets the active-WP visual cue. When a route IS active, the
+// activeRouteLayer's nextWpMarker pulses at the same coord with a
+// higher zIndex; both are L.divIcon-based with the same CSS
+// .active-wp-pulse animation, so a coincident render reads as a
+// single pulse rather than two.
+let courseLinePulse = null;
+const courseLinePulseIcon = L.divIcon({
+    className: 'active-wp-icon',
+    html: '<div class="active-wp-pulse"></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+});
 
 export function init(map, deps) {
     mapRef = map;
@@ -75,12 +90,27 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, 
         mapRef.removeLayer(courseLineXte);
         courseLineXte = null;
     }
+
+    // Pulse marker at the destination. Re-position when present;
+    // create when absent. zIndexOffset 800 -- below the active-route
+    // layer's nextWpMarker (900) so a route-active render lets the
+    // route's marker (with its "WP N" tooltip) win when they collide.
+    if (courseLinePulse) {
+        courseLinePulse.setLatLng([wpLat, wpLon]);
+    } else {
+        courseLinePulse = L.marker([wpLat, wpLon], {
+            icon: courseLinePulseIcon,
+            zIndexOffset: 800,
+            interactive: false,
+        }).addTo(mapRef);
+    }
 }
 
 export function clearCourseLine() {
     if (courseLineLeg && mapRef) { mapRef.removeLayer(courseLineLeg); courseLineLeg = null; }
     if (courseLineBearing && mapRef) { mapRef.removeLayer(courseLineBearing); courseLineBearing = null; }
     if (courseLineXte && mapRef) { mapRef.removeLayer(courseLineXte); courseLineXte = null; }
+    if (courseLinePulse && mapRef) { mapRef.removeLayer(courseLinePulse); courseLinePulse = null; }
 }
 
 // Dim/restore opacity. Called by setActiveRouteStopping in the mux
@@ -98,12 +128,16 @@ export function setStoppingDim(stopping) {
     if (courseLineXte) {
         try { courseLineXte.setStyle({ opacity }); } catch (_) { }
     }
+    if (courseLinePulse) {
+        try { courseLinePulse.setOpacity(opacity); } catch (_) { }
+    }
 }
 
 export function dispose() {
     courseLineLeg = null;
     courseLineBearing = null;
     courseLineXte = null;
+    courseLinePulse = null;
     mapRef = null;
     colors = null;
 }
