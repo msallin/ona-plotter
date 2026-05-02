@@ -29,9 +29,19 @@ public sealed class ToastService : IToastService
 
         _ = Task.Delay(durationSec * 1000).ContinueWith(_ =>
         {
-            _toasts.RemoveAll(x => x.Id == t.Id);
-            OnChanged?.Invoke();
-        });
+            // Swallow ObjectDisposedException explicitly: app shutdown
+            // can fire OnChanged against an already-disposed
+            // MainLayout subscriber. The previous fire-and-forget
+            // continuation surfaced these as caught exceptions in the
+            // dev console; harmless but noisy. Other exception types
+            // continue to propagate to TaskScheduler.UnobservedTaskException.
+            try
+            {
+                _toasts.RemoveAll(x => x.Id == t.Id);
+                OnChanged?.Invoke();
+            }
+            catch (ObjectDisposedException) { /* tear-down race */ }
+        }, TaskScheduler.Default);
     }
 
     public void Success(string message) => Show(message, ToastLevel.Success);
@@ -57,9 +67,19 @@ public sealed class ToastService : IToastService
 
         _ = Task.Delay(durationSec * 1000).ContinueWith(_ =>
         {
-            _toasts.RemoveAll(x => x.Id == t.Id);
-            OnChanged?.Invoke();
-        });
+            // Swallow ObjectDisposedException explicitly: app shutdown
+            // can fire OnChanged against an already-disposed
+            // MainLayout subscriber. The previous fire-and-forget
+            // continuation surfaced these as caught exceptions in the
+            // dev console; harmless but noisy. Other exception types
+            // continue to propagate to TaskScheduler.UnobservedTaskException.
+            try
+            {
+                _toasts.RemoveAll(x => x.Id == t.Id);
+                OnChanged?.Invoke();
+            }
+            catch (ObjectDisposedException) { /* tear-down race */ }
+        }, TaskScheduler.Default);
         return t.Id;
     }
 
