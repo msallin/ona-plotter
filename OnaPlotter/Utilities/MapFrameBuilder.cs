@@ -53,6 +53,13 @@ public sealed class MapFrameBuilder
     // the layline field never populates (no work to do).
     public bool LaylinesVisible { get; set; }
 
+    // Helm-configured waypoint arrival radius in metres. Threaded
+    // into FrameCourseLine each tick so the JS course-line layer can
+    // draw a circle of this radius at the active WP. Settings-sourced
+    // value; the page sets this once per tick from
+    // Settings.WaypointArrivalRadiusMeters.
+    public double ArrivalRadiusMeters { get; set; }
+
     // True while an active route + visible server-track combo is
     // managing the on-chart trail. The page sets this on the route-
     // activation transition so per-tick segment emission is skipped:
@@ -162,7 +169,8 @@ public sealed class MapFrameBuilder
                 data.CoursePreviousPointLatitude,
                 data.CoursePreviousPointLongitude,
                 data.CrossTrackError,
-                xteSeverity);
+                xteSeverity,
+                ArrivalRadiusMeters);
             CourseLineDrawn = true;
         }
         else if (CourseLineDrawn)
@@ -226,7 +234,14 @@ public readonly record struct FrameCourseLine(
     double WpLat, double WpLon,
     double? PrevLat, double? PrevLon,
     double? Xte,
-    string XteSeverity);
+    string XteSeverity,
+    /// <summary>Helm-configured waypoint arrival radius in metres. Drives
+    /// the visible circle around the destination so the helm sees what
+    /// distance counts as "arrived" without checking Settings. 0 (or
+    /// negative) suppresses the ring -- the route HUD also shows an
+    /// "APPROACH alarm off (radius 0 m)" banner in that case so the
+    /// helm knows the alarm is disabled.</summary>
+    double ArrivalRadiusMeters);
 
 public readonly record struct FrameCurrentArrow(
     double Lat, double Lon,

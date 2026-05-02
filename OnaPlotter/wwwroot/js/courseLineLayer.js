@@ -29,6 +29,11 @@ let courseLineXte = null;
 // .active-wp-pulse animation, so a coincident render reads as a
 // single pulse rather than two.
 let courseLinePulse = null;
+// Helm-configured arrival-radius circle around the destination WP.
+// Hidden when ArrivalRadiusMeters <= 0 (the helm explicitly
+// disables the APPROACH alarm by setting the radius to 0; the
+// route HUD shows a "APPROACH alarm off" banner in that case).
+let courseLineArrivalRing = null;
 const courseLinePulseIcon = L.divIcon({
     className: 'active-wp-icon',
     html: '<div class="active-wp-pulse"></div>',
@@ -41,8 +46,9 @@ export function init(map, deps) {
     colors = deps.colors;
 }
 
-// Draw/update course line: bearing line + XTE tick.
-export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
+// Draw/update course line: bearing line + XTE tick + arrival-radius
+// ring around the destination.
+export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity, arrivalRadiusMeters) {
     if (!mapRef) return;
 
     // Tear down any leftover leg line from a previous build that
@@ -104,6 +110,32 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, 
             interactive: false,
         }).addTo(mapRef);
     }
+
+    // Arrival-radius ring at the destination. L.circle takes a radius
+    // in metres and projects properly across zooms, so the ring
+    // always represents the helm-configured "arrived" distance to
+    // scale. Radius 0 (or negative) means the helm disabled the
+    // APPROACH alarm; tear down the ring in that case so the chart
+    // doesn't suggest an alarm that won't fire.
+    if (typeof arrivalRadiusMeters === 'number' && arrivalRadiusMeters > 0) {
+        if (courseLineArrivalRing) {
+            courseLineArrivalRing.setLatLng([wpLat, wpLon]);
+            courseLineArrivalRing.setRadius(arrivalRadiusMeters);
+        } else {
+            courseLineArrivalRing = L.circle([wpLat, wpLon], {
+                radius: arrivalRadiusMeters,
+                color: colors.bearing,
+                weight: 1,
+                opacity: 0.55,
+                dashArray: '4,4',
+                fill: false,
+                interactive: false,
+            }).addTo(mapRef);
+        }
+    } else if (courseLineArrivalRing) {
+        mapRef.removeLayer(courseLineArrivalRing);
+        courseLineArrivalRing = null;
+    }
 }
 
 export function clearCourseLine() {
@@ -111,6 +143,7 @@ export function clearCourseLine() {
     if (courseLineBearing && mapRef) { mapRef.removeLayer(courseLineBearing); courseLineBearing = null; }
     if (courseLineXte && mapRef) { mapRef.removeLayer(courseLineXte); courseLineXte = null; }
     if (courseLinePulse && mapRef) { mapRef.removeLayer(courseLinePulse); courseLinePulse = null; }
+    if (courseLineArrivalRing && mapRef) { mapRef.removeLayer(courseLineArrivalRing); courseLineArrivalRing = null; }
 }
 
 // Dim/restore opacity. Called by setActiveRouteStopping in the mux
@@ -131,6 +164,9 @@ export function setStoppingDim(stopping) {
     if (courseLinePulse) {
         try { courseLinePulse.setOpacity(opacity); } catch (_) { }
     }
+    if (courseLineArrivalRing) {
+        try { courseLineArrivalRing.setStyle({ opacity }); } catch (_) { }
+    }
 }
 
 export function dispose() {
@@ -138,6 +174,7 @@ export function dispose() {
     courseLineBearing = null;
     courseLineXte = null;
     courseLinePulse = null;
+    courseLineArrivalRing = null;
     mapRef = null;
     colors = null;
 }

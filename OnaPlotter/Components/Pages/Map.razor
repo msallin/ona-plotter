@@ -2053,6 +2053,12 @@
             // want laylines; helms who race want them visible
             // independently of the always-on indicators.
             _frameBuilder.LaylinesVisible = Settings.LaylinesVisible;
+            // Push the helm-configured arrival radius each tick so
+            // the JS course-line layer can draw the ring at the
+            // active WP. Per-tick rather than at-init because the
+            // helm can change the value via Settings while the page
+            // is open.
+            _frameBuilder.ArrivalRadiusMeters = Settings.WaypointArrivalRadiusMeters;
             var frame = _frameBuilder.Build(Data);
             if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
 

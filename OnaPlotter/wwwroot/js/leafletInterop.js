@@ -974,7 +974,7 @@ export function applyFrame(frame) {
         // when the C# side calls setActiveOverlayHidden(false) on
         // edit cancel / save.
         if (selfLat != null && selfLon != null && !activeRouteLayerMod.isOverlayHidden()) {
-            setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity);
+            setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity, c.arrivalRadiusMeters);
         }
     } else if (frame.clearCourse) {
         clearCourseLine();
@@ -1918,8 +1918,8 @@ export const setActiveRoute = (coords, wpIdx, routeId, routeName) =>
     activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName);
 export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
 export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
-export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
-    return courseLineLayerMod.setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity);
+export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity, arrivalRadiusMeters) {
+    return courseLineLayerMod.setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity, arrivalRadiusMeters);
 }
 export function clearCourseLine() { return courseLineLayerMod.clearCourseLine(); }
 
