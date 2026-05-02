@@ -638,7 +638,14 @@
     private SignalkRoute[] cachedFilteredRoutes = [];
     private SignalkWaypoint[] cachedFilteredWaypoints = [];
     private SignalkNote[] cachedFilteredNotes = [];
-    private string lastFilterKey = "";
+    /// <summary>Filter cache key. record-struct comparison via .Equals
+    /// so a pan/zoom that doesn't move the visible filter set (string
+    /// formatting buckets the bounds at 4 decimals) skips the rebuild
+    /// without allocating a key string per frame.</summary>
+    private readonly record struct FilterCacheKey(
+        string LayerFilter, double West, double South, double East, double North,
+        int CharCount, int RouteCount, int WaypointCount, int NoteCount);
+    private FilterCacheKey lastFilterKey;
 
     private SignalkChart[] FilteredCharts => cachedFilteredCharts;
     private SignalkRoute[] FilteredRoutes => cachedFilteredRoutes;
@@ -1101,11 +1108,17 @@
 
     private void RebuildFilteredLayers()
     {
-        // Build a cache key from the inputs that affect filtering.
-        var key = $"{layerFilter}|{viewWest:F4}|{viewSouth:F4}|{viewEast:F4}|{viewNorth:F4}|"
-                + $"{availableCharts.Count}|{availableRoutes.Count}|"
-                + $"{loadedWaypoints.Count}|{loadedNotes.Count}";
-        if (key == lastFilterKey) return;
+        // Bucket the bounds at 4 decimals so a 1 m pan jitter doesn't
+        // invalidate the cache. Same shape as the previous string-
+        // interpolated key but compares via record-struct .Equals
+        // without the per-call string allocation.
+        static double R(double? v) => v is double x ? Math.Round(x, 4) : 0;
+        var key = new FilterCacheKey(
+            layerFilter ?? "",
+            R(viewWest), R(viewSouth), R(viewEast), R(viewNorth),
+            availableCharts.Count, availableRoutes.Count,
+            loadedWaypoints.Count, loadedNotes.Count);
+        if (key.Equals(lastFilterKey)) return;
         lastFilterKey = key;
 
         cachedFilteredCharts = availableCharts
@@ -2530,7 +2543,7 @@
         availableCharts = _charts.ApplyOrder(availableCharts);
         // RebuildFilteredLayers's cache key is count-based; flush
         // explicitly so an order-only change forces a rebuild.
-        lastFilterKey = "";
+        lastFilterKey = default;
         RebuildFilteredLayers();
     }
 
