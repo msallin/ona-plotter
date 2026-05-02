@@ -103,16 +103,38 @@ public class NavigationDataFuzzTests
     }
 
     [Test]
-    public async Task ActiveRoutePointIndex_FractionalServerValue_TruncatedToInt()
+    public async Task ActiveRoutePointIndex_FractionalServerValue_RoundedToNearest()
     {
         // SK path pointIndex is spec'd as integer but some servers
-        // push 0.0 / 1.0 as a double. NavigationData.Apply receives it
-        // as a double and casts to int. 1.9 -> 1 (truncation) is fine;
-        // the test pins that behaviour so a future server version
-        // rounding up doesn't silently change the "WP 2 of 7" label.
+        // push 0.0 / 1.0 as a double; some publish 2.999999 (round-trip
+        // artefacts). NavigationData.Apply rounds to nearest so that
+        // 2.999999 -> 3 (matches the helm's intent of "WP 3"). The
+        // boundary case 1.9 lands at 2 under banker's rounding too.
         var nav = new NavigationData();
         nav.Apply("navigation.course.activeRoute.pointIndex", 1.9);
-        await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(1);
+        await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task ActiveRoutePointIndex_RoundTripArtefact_RoundsUp()
+    {
+        // The case the FUNC-004 finding raised: a server publishing
+        // 2.999999 (floating-point round-trip) MUST land as 3, not 2.
+        var nav = new NavigationData();
+        nav.Apply("navigation.course.activeRoute.pointIndex", 2.999999);
+        await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task ActiveRoutePointIndex_NaN_LeavesUnknown()
+    {
+        // NaN must NOT cast to 0 (which used to dim the route's
+        // already-passed history mid-passage). Treat as "unknown".
+        var nav = new NavigationData();
+        nav.Apply("navigation.course.activeRoute.pointIndex", 5.0);
+        await Assert.That(nav.ActiveRoutePointIndex).IsEqualTo(5);
+        nav.Apply("navigation.course.activeRoute.pointIndex", double.NaN);
+        await Assert.That(nav.ActiveRoutePointIndex).IsNull();
     }
 
     [Test]
