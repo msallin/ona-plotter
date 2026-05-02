@@ -70,15 +70,27 @@ public sealed class AisSartAlarmRule : IAlarmRule
 
     /// <summary>Equirectangular approximation, fine for at-a-glance
     /// distance display. Returns <c>double.MaxValue</c> when either
-    /// side lacks a position so the caller can still pick a target.</summary>
+    /// side lacks a position so the caller can still pick a target.
+    /// <para>The longitude delta is unwrapped through (-180, 180]
+    /// so a SART beacon near the dateline doesn't read as ~21580 nm
+    /// (own at 179.9, beacon at -179.9 raw = -359.8 deg). Pacific-
+    /// passage life-safety beacons are exactly the case where this
+    /// matters, even though the helm-friendly distance display
+    /// itself is the secondary concern after the alarm firing.</para>
+    /// </summary>
     private static double DistanceNm(NavigationData own, AisVessel v)
     {
         if (own.Latitude is not double ownLat || own.Longitude is not double ownLon
             || v.Latitude is not double vLat || v.Longitude is not double vLon)
             return double.MaxValue;
         const double NmPerDegLat = 60.0;
+        // Wrap dLonDeg into (-180, 180]. Worked example: ownLon=179.9,
+        // vLon=-179.9 -> raw delta -359.8 -> wrap to +0.2 (the actual
+        // 0.2 deg short-way distance across the dateline). Same shape
+        // as the unwrap in Utilities/Cpa.cs:50.
+        double dLonDeg = ((vLon - ownLon + 540.0) % 360.0) - 180.0;
         double dLat = (vLat - ownLat) * NmPerDegLat;
-        double dLon = (vLon - ownLon) * NmPerDegLat * Math.Cos((ownLat + vLat) * 0.5 * Math.PI / 180);
+        double dLon = dLonDeg * NmPerDegLat * Math.Cos((ownLat + vLat) * 0.5 * Math.PI / 180);
         return Math.Sqrt(dLat * dLat + dLon * dLon);
     }
 }
