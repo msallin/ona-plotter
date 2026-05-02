@@ -4735,6 +4735,18 @@ html.night-mode-global body {
     top: 50%;
     transform: translateY(-50%);
     z-index: 1;
+    /* Slimmer than the desktop default + the @media (pointer:coarse)
+       override so the metric row gets the horizontal real estate.
+       The card-edge gutter around the button is itself slack tap
+       area, so a 28x24 hit-box still clears finger-zone in the
+       small-HUD landscape layout where the buttons compete with
+       DTW / BRG / VMG / TTG / ETA for width. */
+    min-width: 28px;
+    width: 28px;
+    height: 24px;
+    padding: 0 4px;
+    margin: 0;
+    font-size: 0.85rem;
 }
 .route-panel-compact .route-wp-step-btn:first-of-type {
     left: 4px;
@@ -4742,13 +4754,19 @@ html.night-mode-global body {
 .route-panel-compact .route-wp-step-btn:last-of-type {
     right: 4px;
 }
-/* Pad the metric row + route-total row away from the side buttons
-   so the BRG / DTW / TTG chips don't slide under the prev/next
-   glyphs. */
+/* MARGIN, not padding, on the metric rows: the row's flex children
+   are flex-shrink:0; white-space:nowrap, so an inner-padding
+   approach left them overflowing into the gutter where the prev /
+   next buttons live -- the right "ETA 14:01" cell visibly slid
+   under the > glyph on a tight metric set. Margin shrinks the row's
+   own outer width so the flex items have a narrower container and
+   their right edge lands inside the button-clear zone. */
 .route-panel-compact .route-info-row,
 .route-panel-compact .route-total-row {
-    padding-left: 36px;
-    padding-right: 36px;
+    margin-left: 36px;
+    margin-right: 36px;
+    padding-left: 0;
+    padding-right: 0;
 }
 
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
