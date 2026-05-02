@@ -142,14 +142,15 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
         if (flags.routeEdit || flags.polygonEdit || flags.measure) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng || marker.getLatLng();
-            // Measure takes priority over route / polygon edit:
-            // the helm field-tested that starting a measurement
-            // while a route was open mid-edit was impossible
-            // because every click landed on the route, not the
-            // ruler. Now ANY active measure mode wins.
-            if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
-            else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
+            // A click ON a marker is unambiguous: the helm tapped a
+            // specific waypoint. Edit-mode dispatch follows the
+            // historical priority (route -> polygon -> measure); the
+            // measure-first override only applies to empty-map clicks
+            // (see leafletInterop.js::map.on('click')) where intent
+            // is "I clicked a free spot, what mode am I in?".
+            if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
             else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
+            else                         editModeAddPoint('measure', ll.lat, ll.lng);
             hit.closePopup();
         }
     });

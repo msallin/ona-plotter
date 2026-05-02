@@ -65,12 +65,14 @@ export function addRegion(id, rings, title, description) {
                 L.DomEvent.stopPropagation(ev);
                 const ll = ev.latlng;
                 if (!ll) return;
-                // Measure priority: see waypointLayer / noteLayer
-                // for the helm-side reasoning (started measurement
-                // always wins).
-                if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
-                else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
+                // A click ON a region is unambiguous: the helm tapped
+                // a specific polygon. Edit-mode dispatch follows the
+                // historical priority (route -> polygon -> measure);
+                // the measure-first override only applies to empty-map
+                // clicks (see leafletInterop.js::map.on('click')).
+                if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
                 else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
+                else                         editModeAddPoint('measure', ll.lat, ll.lng);
                 poly.closePopup();
             }
         });
