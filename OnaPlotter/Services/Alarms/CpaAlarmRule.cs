@@ -132,9 +132,30 @@ public sealed class CpaAlarmRule : IAlarmRule
             // signed leading dash so it reads as "time-minus-N"
             // rather than "T plus N". Helm reads CPA distance +
             // time-to-encounter as one phrase.
+            //
+            // Append the COLREGS classification + role when the
+            // encounter resolves into a rule -- the helm reads the
+            // banner exactly when a decision is needed and the
+            // "Crossing -- give way" hint shaves seconds off the
+            // 'who turns?' lookup that otherwise lives in the AIS
+            // popup. Indeterminate / no-role cases skip the suffix
+            // so a parallel-course encounter doesn't get a
+            // misleading "Indeterminate" appended.
+            string suffix = "";
+            var colregs = Colregs.Classify(
+                data.Latitude.Value, data.Longitude.Value,
+                data.CourseOverGround.Value, data.SpeedOverGround.Value,
+                v.Latitude.Value, v.Longitude.Value,
+                v.CourseOverGround.Value, v.SpeedOverGround.Value);
+            string? colregsShort = Colregs.ShortLabel(colregs.Category);
+            string? colregsRole = Colregs.RoleLabel(colregs.Role);
+            if (colregsShort is not null && colregsRole is not null)
+                suffix = $" -- {colregsShort}, {colregsRole}";
+            else if (colregsShort is not null)
+                suffix = $" -- {colregsShort}";
             return new AlarmInfo(
                 Title: Title,
-                Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm T -{cpa.Value.TcpaMin:F0}′",
+                Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm T -{cpa.Value.TcpaMin:F0}′{suffix}",
                 Severity: AlarmSeverity.Danger,
                 TargetKey: v.Context,
                 TargetLabel: name,
