@@ -106,7 +106,7 @@
                    Dark Ops moved to its own menu item below. *@
                 <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnCycleNight)"
-                        title="Night mode (N) -- tap to cycle off / soft / amber / red">
+                        title="Night mode (N) -- tap to cycle off / dusk / soft / amber / red">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
                     <span>Night @(NightMode ? "(" + NightModePreset + ")" : "")@(ShowKeyboardHints ? " (N)" : "")</span>
                 </button>

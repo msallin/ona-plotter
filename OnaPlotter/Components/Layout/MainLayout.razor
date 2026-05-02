@@ -577,22 +577,25 @@
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>Advance the night-mode state through a 4-position
-    /// cycle: off -> soft -> amber -> red -> off. Mirrors the Map
-    /// page's More-menu Night button so a helm picking the topbar
-    /// shortcut sees the same behaviour. Dark Ops is Map-only and
-    /// not part of the cycle from here.</summary>
+    /// <summary>Advance the night-mode state through the preset
+    /// cycle: off -> dusk -> soft -> amber -> red -> off. Mirrors
+    /// the Map page's More-menu Night button so a helm picking the
+    /// topbar shortcut sees the same behaviour. Dusk is the
+    /// non-red-shifted intermediate; soft / amber / red are the
+    /// progressively-redder presets. Dark Ops is Map-only and not
+    /// part of the cycle from here.</summary>
     private async Task CycleNightMode()
     {
         if (!Settings.NightMode)
         {
             await Settings.SetNightModeAsync(true);
-            await Settings.SetNightModePresetAsync("soft");
+            await Settings.SetNightModePresetAsync("dusk");
         }
         else
         {
             string? next = Settings.NightModePreset switch
             {
+                "dusk" => "soft",
                 "soft" => "amber",
                 "amber" => "red",
                 _ => null,

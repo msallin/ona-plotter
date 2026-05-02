@@ -3766,6 +3766,54 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-top-row-text: #ffcccc;
 }
 
+/* Preset: Dusk. Desaturated dark theme with NO red-shift -- the
+   gap between full day-mode and the existing red-shifted "soft"
+   preset for the "sun-just-set" window when the cockpit isn't
+   bright enough for day mode but the helm doesn't need night-
+   vision yet. All tokens flip to neutral slate so the chrome
+   reads as "dimmer", not "redder". The tile-pane override below
+   skips the red sepia filter for the same reason. */
+.night-mode-global.night-mode-dusk {
+    --sk-bg: #0f172a;
+    --sk-surface: #1e293b;
+    --sk-surface-hover: #2a3a52;
+    --sk-border: #334155;
+    --sk-text: #cbd5e1;
+    --sk-text-muted: #94a3b8;
+    --sk-accent: #94a3b8;
+    --sk-accent-dim: rgba(148, 163, 184, 0.85);
+    --sk-green: #86efac;
+    --sk-red: #fca5a5;
+    --sk-orange: #fdba74;
+    --sk-cyan: #7dd3fc;
+    --sk-purple: #c4b5fd;
+
+    --sev-ok: #86efac;
+    --sev-warn: #fdba74;
+    --sev-danger: #fca5a5;
+
+    /* Map overlay tokens revert to their dark-theme defaults so
+       the active route + current arrow keep their cyan / violet
+       semantic colours -- the dusk palette is "dim, not red". */
+    --map-bearing: #06b6d4;
+    --map-current: #a78bfa;
+    --map-buddy: #e9c46a;
+    --map-course-leg: #e2e8f0;
+    --map-anchor-ok: #22c55e;
+    --map-own: #ec4899;
+    --map-cog-vector: #f9a8d4;
+
+    --sk-sidebar-bg: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    --sk-sidebar-border: #334155;
+    --sk-sidebar-text: #cbd5e1;
+    --sk-sidebar-text-active: #e2e8f0;
+    --sk-sidebar-hover-bg: #2a3a52;
+    --sk-sidebar-active-bg: #334155;
+    --sk-top-row-bg: #0f172a;
+    --sk-top-row-border: #334155;
+    --sk-top-row-text: #cbd5e1;
+}
+
 /* Preset: Amber. Brighter, warmer than soft; good around dusk when the
    eye is still partly day-adapted and pure red feels dim. Both the
    page-wide tokens and the topbar/sidebar tokens flip together so the
@@ -3840,6 +3888,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .night-mode-global article svg {
     filter: hue-rotate(-30deg) saturate(0.6) brightness(0.8);
 }
+.night-mode-global.night-mode-dusk article svg {
+    /* Same desaturate-but-no-red approach as the tile-pane override
+       above: dimmer + less saturated SVG instruments without
+       collapsing the hues to a single channel. */
+    filter: saturate(0.7) brightness(0.85);
+}
 .night-mode-global.night-mode-amber article svg {
     filter: hue-rotate(-45deg) saturate(0.8) brightness(0.85);
 }
@@ -3849,6 +3903,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* Opt-out: map markers keep their semantic colours in all night presets.
    Higher specificity (three class tokens) beats the rules above. */
 .night-mode-global .leaflet-container svg,
+.night-mode-global.night-mode-dusk .leaflet-container svg,
 .night-mode-global.night-mode-amber .leaflet-container svg,
 .night-mode-global.night-mode-red .leaflet-container svg {
     filter: none;
@@ -5825,6 +5880,13 @@ html.night-mode-global .route-action-danger:hover {
    course line keep their hues. */
 .night-mode-global .leaflet-tile-pane {
     filter: brightness(0.4) sepia(0.8) hue-rotate(-30deg) saturate(1.4);
+}
+/* Dusk: dim the chart tiles without the red sepia. The helm wants
+   the chart darker, not redder -- the whole point of the dusk
+   preset is to leave dark-adaptation alone for the in-between
+   window when night vision isn't required yet. */
+.night-mode-global.night-mode-dusk .leaflet-tile-pane {
+    filter: brightness(0.55) saturate(0.75);
 }
 
 /* Big-type mode: scales the four corner HUD values up so they read

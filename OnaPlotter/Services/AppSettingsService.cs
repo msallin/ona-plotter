@@ -342,7 +342,7 @@ public sealed class AppSettingsService : IAppSettings
 
     private static string NormalizeNightPreset(string? raw) => raw switch
     {
-        "soft" or "amber" or "red" => raw,
+        "dusk" or "soft" or "amber" or "red" => raw,
         _ => "soft",
     };
 

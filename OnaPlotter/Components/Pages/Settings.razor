@@ -805,8 +805,9 @@
                         }
                     </div>
                     <small class="text-muted d-block mt-1">
-                        Soft: warm low-contrast. Amber: brighter for dusk. Red: single-channel, preserves
-                        dark-adapted vision.
+                        Dusk: dim + desaturated, no red-shift -- for the sun-just-set window.
+                        Soft / Amber / Red: progressively-redder presets that preserve dark-adapted
+                        vision.
                     </small>
                 }
                 <div class="form-check form-switch mt-2">
@@ -1279,8 +1280,9 @@
 
     private static readonly (string val, string label, string tip)[] NightPresets =
     [
-        ("soft",  "Soft",  "Warm low-contrast red shift; default."),
-        ("amber", "Amber", "Brighter amber, good around dusk."),
+        ("dusk",  "Dusk",  "Desaturated dark, no red-shift; for the sun-just-set window."),
+        ("soft",  "Soft",  "Warm low-contrast red shift."),
+        ("amber", "Amber", "Brighter amber for fading daylight."),
         ("red",   "Red",   "Pure red, preserves dark-adapted vision."),
     ];
 
