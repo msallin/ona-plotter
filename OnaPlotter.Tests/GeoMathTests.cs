@@ -107,6 +107,22 @@ public class GeoMathTests
     }
 
     [Test]
+    public async Task VectorEnd_NullCog_ReturnsNull()
+    {
+        // Mirrors geoMath.js: a vessel without a reported COG produces
+        // no vector. Earlier C# port silently treated default(double)
+        // as cogRad=0 and rendered a misleading due-north stub.
+        await Assert.That(GeoMath.VectorEnd(48.0, -123.0, cogRad: null, sogMs: 5.0)).IsNull();
+    }
+
+    [Test]
+    public async Task VectorEnd_NullSog_ReturnsNull()
+    {
+        // Same contract for missing SOG.
+        await Assert.That(GeoMath.VectorEnd(48.0, -123.0, cogRad: 0, sogMs: null)).IsNull();
+    }
+
+    [Test]
     public async Task VectorEnd_AtSpeedThreshold_ReturnsNonNull()
     {
         // Exactly 0.1 m/s is the boundary the JS uses (sogMs < 0.1

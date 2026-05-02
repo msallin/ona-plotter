@@ -97,11 +97,18 @@ public sealed class ToastService : IToastService
     {
         // Console.Error in Blazor WASM lands in the browser DevTools'
         // console at error level -- same channel a developer reads
-        // when triaging from Settings' "Send test log". The exception
-        // type + message + stack go there; the helm-facing toast
-        // stays generic.
+        // when triaging. The errorRelayBoot.js bootstrap also picks
+        // up these console.error writes and POSTs them to the SK
+        // server's /log endpoint, so a dev with SSH access to the
+        // boat can read the trace without the helm opening DevTools.
+        // The helm-facing toast stays a plain "X failed": telling a
+        // sailor on a touch chartplotter to "check the browser
+        // console" was actionable for nobody (they can't open DevTools
+        // on iPad / Android, and on a desktop helm in the cockpit
+        // the suggestion still offered no path to fix the problem).
+        // Devs see everything via the relay; helms see the verb.
         Console.Error.WriteLine($"OnaPlotter: {action} failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
-        Show($"{action} failed -- check the browser console", ToastLevel.Error, durationSec: 6);
+        Show($"{action} failed", ToastLevel.Error, durationSec: 6);
     }
 
     public void Dismiss(Guid id)
@@ -112,7 +119,18 @@ public sealed class ToastService : IToastService
 
     /// <summary>Fire-and-forget delayed removal. Pulled into a helper
     /// so Show / ShowAction share one body. Pinned toasts skip this
-    /// path entirely (no auto-dismiss).</summary>
+    /// path entirely (no auto-dismiss).
+    /// <para>
+    /// ExpiresAt re-check is the load-bearing detail: Show()'s dedup
+    /// branch refreshes the toast's ExpiresAt without cancelling this
+    /// timer (the Id is preserved, so we can't tell from out here
+    /// that a refresh happened). If the original timer fires while
+    /// the refreshed expiry is still in the future, we MUST NOT
+    /// remove the toast -- the helm sees the latest occurrence's
+    /// dwell time, not the first occurrence's. The previous version
+    /// (id-only RemoveAll) silently defeated the dedup-refresh in
+    /// exactly the flaky-transport scenario the feature exists for.
+    /// </para></summary>
     private void ScheduleAutoDismiss(Guid id, int durationSec)
     {
         _ = Task.Delay(durationSec * 1000).ContinueWith(_ =>
@@ -123,12 +141,9 @@ public sealed class ToastService : IToastService
             // to propagate to TaskScheduler.UnobservedTaskException.
             try
             {
-                // Pinned guard: the dedup-refresh path may have flipped
-                // a non-pinned toast's expiry, but pinned toasts are
-                // only ever created via Pinned() (which never schedules
-                // a sweep). Belt-and-suspenders: never auto-dismiss a
-                // toast that is now pinned.
-                _toasts.RemoveAll(x => x.Id == id && !x.IsPinned);
+                _toasts.RemoveAll(x => x.Id == id
+                                       && !x.IsPinned
+                                       && x.ExpiresAt <= DateTime.UtcNow);
                 OnChanged?.Invoke();
             }
             catch (ObjectDisposedException) { /* tear-down race */ }

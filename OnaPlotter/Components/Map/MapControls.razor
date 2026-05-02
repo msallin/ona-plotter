@@ -139,7 +139,9 @@
                 <button class="ctrl-more-item"
                         @onclick="() => Select(OnShowShortcuts)"
                         title="Tips and keyboard shortcuts">
-                    <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
+                    @* Help glyph (?-in-circle) NOT Legend so this row
+                       doesn't share an icon with the Legend row above. *@
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Help)</span>
                     <span>Tips / Shortcuts</span>
                 </button>
             </div>
@@ -185,9 +187,13 @@
         @* Two-step confirm: an accidental tap on the red button in a
            rolling cockpit would silently kill the active route. First
            tap flips the button into confirm state; second tap within
-           3 s actually stops. Matches the waypoint/note/region popup
-           delete pattern already used elsewhere. *@
+           ConfirmWindowMs actually stops. Matches the waypoint/note/
+           region popup delete pattern already used elsewhere. The
+           --confirm-window inline custom property drives the CSS
+           countdown bar's animation-duration so the bar reaches zero
+           exactly when the C# timer fires; one constant, one source. *@
         <button class="ctrl-btn ctrl-btn-danger @(stopConfirming ? "ctrl-btn-confirming" : "")"
+                style="--confirm-window: @(ConfirmWindowMs)ms;"
                 @onclick="OnStopClicked"
                 title="@(stopConfirming ? "Tap again to confirm" : "Stop navigation -- clear the active route / destination")">
             <span class="ctrl-ico">@((MarkupString)Icons.X)</span>
@@ -355,6 +361,11 @@
     private System.Threading.Timer? stopConfirmTimer;
     private System.Threading.Timer? mobConfirmTimer;
     private System.Threading.Timer? anchorConfirmTimer;
+    /// <summary>Two-step confirm window for the destructive bar
+    /// buttons (Stop-Navigation, MOB-clear, Anchor-raise). Drives
+    /// the C# timer AND the CSS countdown bar via a custom property
+    /// passed inline as --confirm-window so the visual countdown
+    /// reaches zero at the exact moment the timer fires.</summary>
     private const int ConfirmWindowMs = 3000;
 
     private async Task OnStopClicked()

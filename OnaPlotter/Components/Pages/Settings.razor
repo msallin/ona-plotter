@@ -12,6 +12,7 @@
 @inject IJSRuntime JS
 @inject ClientErrorRelay ErrorRelay
 @inject INotificationsApi NotificationsApi
+@inject NavigationManager Nav
 
 <PageTitle>Settings</PageTitle>
 
@@ -149,13 +150,20 @@
                 </small>
                 @* Re-open the welcome card. The card is normally one-shot
                    per device; helms who want to re-read the onboarding
-                   click here. The page navigates to /map and chains a
-                   query param the Map page picks up to surface the card
-                   immediately, regardless of the dismissed flag. *@
-                <a href="/map?welcome=1" class="d-inline-block mt-2"
-                   style="font-size:0.85rem;">
+                   click here. The page navigates to map?welcome=1 (NO
+                   leading slash -- absolute /map jumps off-mount under
+                   the SignalK plugin path, e.g. /signalk-onaplotter/.
+                   Same convention Resources.razor uses for its View /
+                   Edit links). The Map page picks up the welcome=1
+                   query in OnInitializedAsync, surfaces the card
+                   regardless of the dismissed flag, and strips the
+                   query in ApplyMapDeepLinkAsync after consume so a
+                   reload doesn't loop. *@
+                <button type="button" class="btn btn-link p-0 mt-2"
+                        style="font-size:0.85rem;"
+                        @onclick="@(() => Nav.NavigateTo("map?welcome=1"))">
                     Show welcome card again on the Map page
-                </a>
+                </button>
             </div>
         </div>
     </div>

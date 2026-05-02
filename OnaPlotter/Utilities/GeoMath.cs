@@ -109,24 +109,33 @@ public static class GeoMath
     /// <summary>
     /// Course-vector endpoint: the position the boat would reach if
     /// it held its current SOG + COG for <paramref name="minutes"/>.
-    /// Returns null when the speed is below the minimum the JS layer
-    /// uses (0.1 m/s) -- a stationary or near-stationary boat
-    /// produces a meaningless vector tip. Pass <c>null</c> for
-    /// <paramref name="minutes"/> to use <see cref="DefaultVectorMinutes"/>;
-    /// pass an explicit value (typically <c>OwnCogVectorMinutes</c> or
-    /// <c>AisCogVectorMinutes</c>) to use the per-vessel-class horizon.
+    /// Returns null when COG or SOG is missing (a vessel without a
+    /// reported heading or speed produces no meaningful vector) OR
+    /// when the speed is below the minimum the JS layer uses
+    /// (0.1 m/s) -- a stationary boat would otherwise render a stub
+    /// pointing some arbitrary way. Mirrors the JS contract in
+    /// <c>geoMath.js</c>: <c>cogRad == null || sogMs == null</c>
+    /// returns null on both sides; the C# port previously took
+    /// non-nullable doubles and silently rendered a due-north vector
+    /// when a caller passed default(0,0).
+    /// <para>Pass <c>null</c> for <paramref name="minutes"/> to use
+    /// <see cref="DefaultVectorMinutes"/>; pass an explicit value
+    /// (typically <c>OwnCogVectorMinutes</c> or
+    /// <c>AisCogVectorMinutes</c>) to use the per-vessel-class horizon.</para>
     /// </summary>
     public static (double Lat, double Lon)? VectorEnd(
-        double lat, double lon, double cogRad, double sogMs, double? minutes = null)
+        double lat, double lon, double? cogRad, double? sogMs, double? minutes = null)
     {
+        if (cogRad is not double cog) return null;
+        if (sogMs is not double sog) return null;
         // 0.1 m/s threshold mirrors geoMath.js -- below this the
         // vector renders as a hairline that doesn't communicate
         // direction to the helm. Anchored / drifting boats fall here.
-        if (sogMs < 0.1) return null;
+        if (sog < 0.1) return null;
         double m = (minutes is double mm && double.IsFinite(mm) && mm > 0)
             ? mm
             : DefaultVectorMinutes;
-        return DestPoint(lat, lon, cogRad, sogMs * m * 60.0);
+        return DestPoint(lat, lon, cog, sog * m * 60.0);
     }
 }
 

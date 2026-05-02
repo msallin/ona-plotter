@@ -19,15 +19,46 @@ public class ToastServiceTests
         // A flaky transport firing the same "Failed to fetch" 5 times
         // in 200 ms must not pile up. Same (message, level) -> the
         // existing toast's expiry is bumped, no second card appears.
+        // The 100 ms delay clears the Windows DateTime tick (~15.6 ms)
+        // by ~6x so the assertion is safe under CI clock contention.
         var svc = new ToastService();
 
         svc.Show("Failed to fetch", ToastLevel.Error, durationSec: 6);
+        var firstId = svc.Active[0].Id;
         var firstExpiry = svc.Active[0].ExpiresAt;
-        await Task.Delay(20);
+        await Task.Delay(100);
         svc.Show("Failed to fetch", ToastLevel.Error, durationSec: 6);
 
         await Assert.That(svc.Active.Count).IsEqualTo(1);
+        // Same toast (same Id), refreshed expiry. Asserting on Id keeps
+        // the test honest about the refresh-vs-replace contract.
+        await Assert.That(svc.Active[0].Id).IsEqualTo(firstId);
         await Assert.That(svc.Active[0].ExpiresAt).IsGreaterThan(firstExpiry);
+    }
+
+    [Test]
+    public async Task Show_DedupRefreshSurvivesOriginalAutoDismissTick()
+    {
+        // Regression for the "stale-timer kills refreshed toast" race
+        // (review SKEP-001 / PARA-004). Sequence:
+        //   t=0   Show with durationSec=1 -> timer scheduled at t=1
+        //   t=0.6 Show same payload -> dedup-refreshes ExpiresAt to t=1.6
+        //   t=1   ORIGINAL timer fires; if it removes by Id only, the
+        //         toast is gone even though current ExpiresAt is t=1.6
+        // Pin: after the original timer fires the toast must STILL be
+        // present because its refreshed expiry hasn't elapsed yet.
+        var svc = new ToastService();
+        svc.Show("Repeating", ToastLevel.Error, durationSec: 1);
+        await Task.Delay(600);
+        // Refresh: bumps ExpiresAt to ~now+1s.
+        svc.Show("Repeating", ToastLevel.Error, durationSec: 1);
+        // Wait past the ORIGINAL 1s deadline (which fires at ~t=1.0)
+        // but well before the refreshed deadline (~t=1.6).
+        await Task.Delay(500);
+
+        await Assert.That(svc.Active.Count)
+            .IsEqualTo(1)
+            .Because("dedup-refresh must outlive the original auto-dismiss timer");
     }
 
     [Test]
@@ -111,9 +142,13 @@ public class ToastServiceTests
         await Assert.That(toast.Message)
             .DoesNotContain("internal-server-only details")
             .Because("ex.Message must NEVER leak into the helm-facing toast");
+        // The "check browser console" tail used to live in the toast
+        // text. Dropped because it was useless for tablet helms (no
+        // DevTools) and unnecessary for desktop devs (the relay POSTs
+        // the trace to the SK server log via errorRelayBoot.js).
         await Assert.That(toast.Message)
-            .Contains("browser console")
-            .Because("helm needs to know where to look if they want details");
+            .DoesNotContain("browser console")
+            .Because("dev-channel logging is via Console.Error + the SK relay; toast stays helm-facing only");
     }
 
     [Test]
