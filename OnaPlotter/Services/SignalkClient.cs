@@ -670,7 +670,14 @@ public sealed class SignalkClient : IAsyncDisposable
             if (delta?.Updates is null)
             {
                 // Could be the hello message with "self" identifier.
-                if (json.Contains("\"self\"", StringComparison.Ordinal))
+                // Once we already know our self context (the hello message
+                // arrives once per session, not once per non-update tick),
+                // there's no point scanning every empty / unknown delta
+                // for "self". The Contains scan walks the whole raw JSON
+                // and runs at message cadence; on a steady SK feed that
+                // adds up to nontrivial CPU on the Pi.
+                if (string.IsNullOrEmpty(_selfContext)
+                    && json.Contains("\"self\"", StringComparison.Ordinal))
                 {
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("self", out var selfProp))
