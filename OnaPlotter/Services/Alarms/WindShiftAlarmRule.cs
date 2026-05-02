@@ -86,7 +86,6 @@ public sealed class WindShiftAlarmRule : IAlarmRule
         }
 
         double twdDeg = twdRad.Value * 180.0 / Math.PI;
-        if (twdDeg < 0) twdDeg += 360;
 
         double lookback = ctx.Settings.WindShiftLookbackMinutes;
 
@@ -98,8 +97,7 @@ public sealed class WindShiftAlarmRule : IAlarmRule
             AlarmInfo? alarm = null;
             if (_anchorDeg is not null)
             {
-                double shift = Math.Abs(twdDeg - _anchorDeg.Value);
-                if (shift > 180) shift = 360 - shift;
+                double shift = ShortestArcDeg(twdDeg, _anchorDeg.Value);
                 if (shift > ctx.Settings.WindShiftAlarmThreshold)
                 {
                     alarm = new AlarmInfo(
@@ -113,5 +111,19 @@ public sealed class WindShiftAlarmRule : IAlarmRule
             return alarm;
         }
         return null;
+    }
+
+    /// <summary>Shortest unsigned arc between two bearings, in degrees,
+    /// in [0, 180]. Tolerates inputs outside [0, 360) (negative,
+    /// &gt; 360, or NaN-from-bad-server-publish): the modulo-pair
+    /// normalises BOTH operands before subtraction so the result is
+    /// independent of how the SignalK server publishes the wrap-around.
+    /// Worked example: a=350, b=10 -&gt; ShortestArcDeg=20 (the short way
+    /// around, not 340 the long way); a=370, b=-5 -&gt; same 15.</summary>
+    private static double ShortestArcDeg(double a, double b)
+    {
+        if (!double.IsFinite(a) || !double.IsFinite(b)) return 0;
+        double diff = ((a - b) % 360.0 + 540.0) % 360.0 - 180.0;
+        return Math.Abs(diff);
     }
 }
