@@ -746,7 +746,7 @@ html:has(.page.theme-high-contrast) {
     width: 32px;
     height: 32px;
     border: 3px solid rgba(96, 165, 250, 0.18);
-    border-top-color: #60a5fa;
+    border-top-color: var(--sk-accent);
     border-radius: 50%;
     animation: boot-spin 0.9s linear infinite;
 }
@@ -1947,7 +1947,7 @@ html:fullscreen .hud-stack-br {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #ef4444;
+    background: var(--sev-danger);
     animation: mob-ping 1.2s ease-out infinite;
 }
 
@@ -2075,7 +2075,7 @@ html:fullscreen .hud-stack-br {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #ef4444;
+    background: var(--sev-danger);
     animation: mob-ping 1.2s ease-out infinite;
 }
 
@@ -4210,7 +4210,7 @@ html.night-mode-global body {
 .radar-status-standby  { background: rgba(148, 163, 184, 0.25); color: #94a3b8; border-color: rgba(148, 163, 184, 0.45); }
 .radar-status-transmit { background: rgba( 74, 222, 128, 0.18); color: #4ade80; border-color: rgba( 74, 222, 128, 0.45); }
 .radar-status-warming,
-.radar-status-preparing { background: rgba(251, 191,  36, 0.18); color: #fbbf24; border-color: rgba(251, 191,  36, 0.45); }
+.radar-status-preparing { background: rgba(251, 191,  36, 0.18); color: var(--sev-warn); border-color: rgba(251, 191,  36, 0.45); }
 .radar-status-off      { background: rgba(239,  68,  68, 0.18); color: #f87171; border-color: rgba(239,  68,  68, 0.45); }
 
 /* Inline radar control row sitting under the device name. Power
@@ -5312,9 +5312,9 @@ html.night-mode-global body {
     font-weight: 700;
     letter-spacing: 0.1em;
     margin: 2px 0;
-    color: #f59e0b;
+    color: var(--sev-warn);
 }
-.ap-engaged .ap-state { color: #22c55e; }
+.ap-engaged .ap-state { color: var(--sev-ok); }
 
 .ap-controls {
     display: flex;
@@ -6910,7 +6910,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .note-delete-btn:hover {
     background: rgba(239, 68, 68, 0.15);
     color: #f87171;
-    border-color: #ef4444;
+    border-color: var(--sev-danger);
 }
 @media (pointer: coarse) {
     .note-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
@@ -6921,7 +6921,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .region-delete-btn.confirming {
     background: rgba(239, 68, 68, 0.85);
     color: #fff;
-    border-color: #ef4444;
+    border-color: var(--sev-danger);
     font-weight: 600;
     animation: confirm-pulse 0.8s ease-in-out infinite;
 }
@@ -6999,7 +6999,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .region-delete-btn:hover {
     background: rgba(239, 68, 68, 0.15);
     color: #f87171;
-    border-color: #ef4444;
+    border-color: var(--sev-danger);
 }
 @media (pointer: coarse) {
     .region-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
@@ -7085,13 +7085,13 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .route-delete-btn:hover {
     background: rgba(239, 68, 68, 0.15);
     color: #f87171;
-    border-color: #ef4444;
+    border-color: var(--sev-danger);
 }
 /* Two-step destructive-confirm styling matches notes/regions. */
 .route-delete-btn.confirming {
     background: rgba(239, 68, 68, 0.25);
     color: #fecaca;
-    border-color: #ef4444;
+    border-color: var(--sev-danger);
 }
 @media (pointer: coarse) {
     .route-activate-btn,
@@ -7926,8 +7926,8 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .cpa-label strong { font-weight: 700; font-size: 11.5px; }
 .cpa-label::before { display: none !important; }
-.cpa-label.cpa-danger { border-color: #ef4444 !important; color: #fecaca !important; }
-.cpa-label.cpa-warn   { border-color: #f59e0b !important; color: #fde68a !important; }
+.cpa-label.cpa-danger { border-color: var(--sev-danger) !important; color: #fecaca !important; }
+.cpa-label.cpa-warn   { border-color: var(--sev-warn) !important; color: #fde68a !important; }
 /* Light flip via .theme-effective-light: white pill / slate ink, with
    AA-passing darker red / amber for danger / warn. The previous
    theme-system + @media-prefers-dark reverter is gone -- if
@@ -7976,8 +7976,8 @@ main:has(.map-container.big-type) .chart-reorder-btn {
         0 0 2px rgba(0, 0, 0, 0.85),
         0 0 4px rgba(0, 0, 0, 0.55);
 }
-.cpa-x-danger .cpa-x { color: #ef4444; }
-.cpa-x-warn   .cpa-x { color: #f59e0b; }
+.cpa-x-danger .cpa-x { color: var(--sev-danger); }
+.cpa-x-warn   .cpa-x { color: var(--sev-warn); }
 .theme-effective-light .cpa-x-danger .cpa-x { color: #b91c1c; }
 .theme-effective-light .cpa-x-warn   .cpa-x { color: #b45309; }
 /* Slight scale-up on hover -- same affordance hint as the AIS
