@@ -397,7 +397,13 @@ function buildAisPopupHtml(snap) {
         const roleHtml = v.colregsRole
             ? ` <span style="color:${v.colregsRole === 'Give way' ? '#fca5a5' : '#86efac'};font-weight:600">${esc(v.colregsRole)}</span>`
             : '';
-        colregsHtml = `<tr><td style="opacity:0.5">COLREGS</td><td>${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
+        // Two-line layout: label "COLREGS" gets its own row above the
+        // classification + role text. Helm field-tested as cramped on
+        // a narrow popup when "Crossing -- give way to vessel on stbd"
+        // shared a row with the COLREGS label; the role chip wrapped
+        // mid-phrase. Spanning two columns lets the text breathe.
+        colregsHtml = `<tr><td colspan="2" style="opacity:0.5;padding-top:6px">COLREGS</td></tr>` +
+                      `<tr><td colspan="2" style="padding-bottom:4px">${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
     }
 
     // External lookup links (free, no API key needed). VesselFinder's
