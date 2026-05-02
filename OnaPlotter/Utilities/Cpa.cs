@@ -105,14 +105,29 @@ public static class Cpa
     /// <param name="anchorMaxRadiusM">SK-published max swing radius in
     /// metres (<c>NavigationData.AnchorMaxRadius</c>); null when the
     /// plugin hasn't pushed a value yet.</param>
+    /// <summary>Default CPA threshold used when storage corruption / a
+    /// schema migration leaves the helm-configured value as NaN or
+    /// non-positive. Matches IAppSettings's default-on-fresh-install
+    /// (0.5 nm) so a recovery from a bad localStorage entry doesn't
+    /// silently disable CPA classification entirely.</summary>
+    private const double DefaultCpaThresholdNm = 0.5;
+
     public static double EffectiveRadiusNm(
         double underwayNm, bool anchorActive, double? anchorMaxRadiusM)
     {
-        if (!anchorActive) return underwayNm;
-        if (anchorMaxRadiusM is not double maxM) return underwayNm;
-        if (!double.IsFinite(maxM) || maxM <= 0) return underwayNm;
+        // Storage corruption / schema-migration mishap can land
+        // underwayNm as NaN / Infinity / non-positive. Without the
+        // guard, Math.Min(NaN, anchorNm) = NaN and ClassifyThreat
+        // then sees `cpaNm < NaN` = false on every vessel -- the CPA
+        // alarm + threat ring go DARK with no helm-visible signal.
+        // Recover to the spec default rather than fail-silent.
+        double safeUnderway = (double.IsFinite(underwayNm) && underwayNm > 0)
+            ? underwayNm : DefaultCpaThresholdNm;
+        if (!anchorActive) return safeUnderway;
+        if (anchorMaxRadiusM is not double maxM) return safeUnderway;
+        if (!double.IsFinite(maxM) || maxM <= 0) return safeUnderway;
         double anchorNm = maxM / 1852.0;
-        return Math.Min(underwayNm, anchorNm);
+        return Math.Min(safeUnderway, anchorNm);
     }
 
     /// <summary>
