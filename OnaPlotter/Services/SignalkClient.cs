@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -17,7 +18,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private const int InitialBackoffMs = 1_000;
     private const int MaxBackoffMs = 30_000;
     private const int ReceiveBufferBytes = 8 * 1024;
-    /// <summary>Cap on the per-message StringBuilder used to assemble
+    /// <summary>Cap on the per-message ArrayBufferWriter used to assemble
     /// fragmented WebSocket frames. Above this we drop the buffer +
     /// force a reconnect rather than let a misbehaving server / debug
     /// endpoint exhaust the WASM heap. 4 MB is well above any plausible
@@ -562,7 +563,19 @@ public sealed class SignalkClient : IAsyncDisposable
                 _ = _draftSeeder.SeedAsync(ct);
 
                 var buffer = new byte[ReceiveBufferBytes];
-                var messageBuffer = new StringBuilder();
+                // Accumulate UTF-8 bytes directly. Earlier shape
+                // decoded each frame to a string + appended to a
+                // StringBuilder; that allocated a UTF-16 string per
+                // frame (2x the byte payload) just to throw it away
+                // after deserialise. The byte buffer feeds
+                // JsonSerializer.Deserialize<T>(ReadOnlySpan<byte>)
+                // directly; the string allocation only happens when
+                // an OnRawMessage subscriber needs the text (mostly
+                // unsubscribed -- the RawStream page is rarely open).
+                // ArrayBufferWriter handles the grow-on-demand without
+                // the LOH thrash a single contiguous reallocation
+                // would cause for the pathological 4 MB cap case.
+                var messageBuffer = new ArrayBufferWriter<byte>(ReceiveBufferBytes);
 
                 while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
                 {
@@ -571,31 +584,37 @@ public sealed class SignalkClient : IAsyncDisposable
                     if (result.MessageType == WebSocketMessageType.Close)
                         break;
 
-                    messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                    messageBuffer.Write(buffer.AsSpan(0, result.Count));
 
                     // Cap the per-message buffer at 4 MB. A buggy or
                     // malicious server emitting a fragmented stream
                     // without EndOfMessage indefinitely (or a single
                     // >>RAM message from a misbehaving /raw debug
-                    // endpoint) would otherwise grow the StringBuilder
+                    // endpoint) would otherwise grow the buffer
                     // until the WASM heap is exhausted and the tab
                     // dies, with no recovery short of a reload. 4 MB
                     // is well above any plausible delta payload --
                     // even a ~200-vessel AIS bulk update is single-
-                    // digit KB.
-                    if (messageBuffer.Length > MaxMessageBufferBytes)
+                    // digit KB. Note: the cap counts bytes here; the
+                    // earlier StringBuilder version counted UTF-16
+                    // chars (which were 2x for ASCII / 1x for BMP);
+                    // for typical SK JSON (mostly ASCII) the byte
+                    // count is half the previous char count, so a
+                    // 4 MB byte cap is roughly equivalent to the
+                    // earlier 4 MB char cap on payload size in practice.
+                    if (messageBuffer.WrittenCount > MaxMessageBufferBytes)
                     {
                         _logger.LogWarning(
                             "Message buffer exceeded {Limit} bytes (got {Got}) -- dropping and forcing reconnect",
-                            MaxMessageBufferBytes, messageBuffer.Length);
-                        messageBuffer.Clear();
+                            MaxMessageBufferBytes, messageBuffer.WrittenCount);
+                        messageBuffer.ResetWrittenCount();
                         break;
                     }
 
                     if (result.EndOfMessage)
                     {
-                        ProcessMessage(messageBuffer.ToString());
-                        messageBuffer.Clear();
+                        ProcessMessageBytes(messageBuffer.WrittenSpan);
+                        messageBuffer.ResetWrittenCount();
                     }
                 }
             }
@@ -693,15 +712,58 @@ public sealed class SignalkClient : IAsyncDisposable
         IsConnected = true;
     }
 
+    /// <summary>
+    /// Test-facing string entry point. The WebSocket receive loop calls
+    /// <see cref="ProcessMessageBytes"/> directly with the raw UTF-8
+    /// bytes; this overload exists so existing test fixtures that
+    /// hand-craft JSON strings (and the SignalkDelta-fixture replay
+    /// path) keep working without each test having to encode to UTF-8.
+    /// </summary>
     internal void ProcessMessage(string json)
     {
+        // Encode once and reuse: avoids two passes (one for the byte
+        // path, one for the OnRawMessage subscriber path) and keeps
+        // the test surface a one-liner.
+        ProcessMessageBytes(Encoding.UTF8.GetBytes(json));
+    }
+
+    /// <summary>"self" key as UTF-8 literal. The receive loop scans the
+    /// raw byte buffer for this only once per session (until
+    /// <see cref="_selfContext"/> resolves), so the cost is negligible;
+    /// pre-computing as a static UTF-8 byte array avoids re-encoding
+    /// on every guarded check.</summary>
+    private static readonly byte[] SelfKeyUtf8 = "\"self\""u8.ToArray();
+
+    /// <summary>
+    /// Hot path: invoked once per fully-assembled WebSocket frame on a
+    /// live SignalK feed. Takes the raw UTF-8 bytes directly; the older
+    /// shape decoded each frame to a UTF-16 string only to feed the
+    /// reflection-based JSON deserializer. By keeping the bytes as a
+    /// span and calling <c>JsonSerializer.Deserialize&lt;T&gt;(ReadOnlySpan&lt;byte&gt;)</c>,
+    /// we skip the per-frame string allocation entirely on the
+    /// (overwhelmingly common) case where no <see cref="OnRawMessage"/>
+    /// subscriber is listening.
+    /// </summary>
+    internal void ProcessMessageBytes(ReadOnlySpan<byte> utf8Bytes)
+    {
         Interlocked.Exchange(ref _lastMessageTicks, _time.GetUtcNow().UtcTicks);
-        OnRawMessage?.Invoke(json);
+
+        // OnRawMessage is the RawStream debug page subscription. It's
+        // unsubscribed by default; only allocate the UTF-16 string when
+        // someone is actually listening. Cache the materialised string
+        // so we don't transcode twice if the hello-detection path also
+        // needs it (rare; only fires until _selfContext resolves).
+        string? raw = null;
+        if (OnRawMessage is not null)
+        {
+            raw = Encoding.UTF8.GetString(utf8Bytes);
+            OnRawMessage.Invoke(raw);
+        }
 
         try
         {
             // Single parse: deserialize to SignalkDelta, then check for hello message.
-            var delta = JsonSerializer.Deserialize<SignalkDelta>(json);
+            var delta = JsonSerializer.Deserialize<SignalkDelta>(utf8Bytes);
 
             // The hello message has no updates but contains "self" in the raw JSON.
             // SignalkDelta ignores unknown properties, so check if updates are present.
@@ -711,13 +773,15 @@ public sealed class SignalkClient : IAsyncDisposable
                 // Once we already know our self context (the hello message
                 // arrives once per session, not once per non-update tick),
                 // there's no point scanning every empty / unknown delta
-                // for "self". The Contains scan walks the whole raw JSON
+                // for "self". The IndexOf scan walks the whole raw payload
                 // and runs at message cadence; on a steady SK feed that
-                // adds up to nontrivial CPU on the Pi.
+                // adds up to nontrivial CPU on the Pi. Comparing UTF-8
+                // bytes against a UTF-8 literal keeps us off the string-
+                // allocation path that the earlier String.Contains needed.
                 if (string.IsNullOrEmpty(_selfContext)
-                    && json.Contains("\"self\"", StringComparison.Ordinal))
+                    && utf8Bytes.IndexOf(SelfKeyUtf8) >= 0)
                 {
-                    using var doc = JsonDocument.Parse(json);
+                    using var doc = JsonDocument.Parse(utf8Bytes.ToArray());
                     if (doc.RootElement.TryGetProperty("self", out var selfProp))
                     {
                         SetSelfContext(selfProp.GetString());
