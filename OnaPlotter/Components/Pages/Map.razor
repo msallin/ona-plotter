@@ -41,7 +41,7 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="map-container @(nightMode ? "night-mode" : "") @(darkOps ? "dark-ops" : "") @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode"
+<div class="map-container @(darkOps ? "dark-ops" : "") @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode"
      @onpointerdown="TouchDeadman"
      @onkeydown="TouchDeadman">
     <div id="mapDiv"></div>

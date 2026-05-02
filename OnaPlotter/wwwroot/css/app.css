@@ -316,61 +316,17 @@
 /* === Night mode token overrides ===
    Night mode is a red-shifted helm palette: the display drops to
    warm reds so the helmsman's dark-adapted vision isn't wiped by
-   the next glance at the HUD. Earlier every night-mode rule
-   hand-painted a specific rgba at the component level (see the
-   dozen ".night-mode .hud-* { color: rgba(255,130,130,...) }"
-   blocks below). That's fine for the components written in 2025
-   but any NEW component that just reads the shared tokens
-   (--sk-text / --sk-text-muted / --sk-accent / --sev-*) would
-   render in day-mode colours regardless.
+   the next glance at the HUD.
 
-   Redefining the tokens inside .night-mode means every component
-   using var(--sk-text) etc. automatically follows the palette
-   swap. The individual overrides below still apply on top where
-   they paint something token-reading would miss (backgrounds,
-   border tints). Goal is: the overrides eventually shrink as
-   components migrate to variables, without an atomic rewrite. */
-.night-mode {
-    --sk-text:          #ffdddd;
-    /* 0.85 alpha (was 0.6) so muted labels survive helm-glance under
-       low brightness; below 0.6 they vanished into the dark surface
-       and alarm severity badges read flat compared to day mode. */
-    --sk-text-muted:    rgba(255, 130, 130, 0.85);
-    --sk-accent:        #ff8080;
-    --sk-accent-dim:    rgba(255, 120, 120, 0.85);
-    --sk-green:         #ff9a9a;  /* collapse to red family */
-    --sk-red:           #ff6060;
-    --sk-orange:        #ff8c6a;
-    --sk-cyan:          #ff9a6b;
-    --sk-purple:        #ff9090;
-
-    --sev-ok:           #ff9a9a;
-    --sev-warn:         #ffb08c;
-    --sev-danger:       #ff6060;
-
-    /* Map overlays (active-route polyline, current arrow, etc.)
-       stay on the map layer which is kept dark-ish by dedicated
-       background rules, but the palette-derived colours still
-       want red-shifting so a toolbar glance doesn't jar. */
-    --map-bearing:      #ff9a6b;
-    --map-current:      #ffa07d;
-    --map-buddy:        #ffb06a;
-    --map-course-leg:   #ffe0e0;
-    /* Night-mode --map-mob redefinition was needed when --map-mob was
-       a hard hex; since the default block now aliases --sev-danger,
-       the night-mode override of --sev-danger (above) cascades and
-       this redefinition is no longer needed. Kept the line removed
-       deliberately; an alias-only token doesn't need re-declaring
-       per theme. */
-    --map-anchor-ok:    #ff9a9a;
-    /* --map-anchor-drag aliases --sev-danger in the default block;
-       the night-mode override of --sev-danger above cascades, so
-       this re-declaration is dropped (alias-only tokens shouldn't
-       fork per theme). */
-    --map-own:          #ff6f6f;
-    --map-cog-vector:   #ffa0a0;
-}
-
+   The token block lives at the bottom of this file under
+   `.night-mode-global` (the class themeApply.js writes to <html>);
+   redefining the tokens there means every component using
+   var(--sk-text) / var(--sev-*) / var(--map-*) etc. automatically
+   follows the palette swap on EVERY page (Map / Dashboard /
+   Settings / SailSteer / WindRose / History / Stats), not just
+   inside the chart container. The component-level overrides
+   further down still apply on top where they paint something a
+   token swap would miss (backgrounds, border tints, opacity). */
 /* === Light theme ===
    Applied when the user picks "Light" in Settings, or when "System" is
    chosen and the OS prefers a light color scheme. Scoped to the outer
@@ -1744,7 +1700,7 @@ html:fullscreen .hud-stack-br {
     border-top: 1px solid var(--hud-divider);
     letter-spacing: 0.02em;
 }
-.night-mode .hud-position { color: rgba(255,130,130,0.4); }
+.night-mode-global .hud-position { color: rgba(255,130,130,0.4); }
 
 /* Depth color states */
 .depth-ok { color: var(--sk-green); }
@@ -1834,13 +1790,13 @@ html:fullscreen .hud-stack-br {
 }
 
 /* Night mode: red tint on HUD, high opacity for readability */
-.night-mode .hud-panel {
+.night-mode-global .hud-panel {
     background: rgba(30, 5, 5, 0.92);
     color: #ffcccc;
 }
-.night-mode .hud-label { color: rgba(255,130,130,0.6); }
-.night-mode .hud-unit { color: rgba(255,130,130,0.5); }
-.night-mode .hud-value { color: #ffdddd; }
+.night-mode-global .hud-label { color: rgba(255,130,130,0.6); }
+.night-mode-global .hud-unit { color: rgba(255,130,130,0.5); }
+.night-mode-global .hud-value { color: #ffdddd; }
 
 /* ===== Map Control Bar ===== */
 
@@ -2129,38 +2085,31 @@ html:fullscreen .hud-stack-br {
 }
 
 /* Night mode button */
-.night-mode .map-btn,
 .night-mode-global .map-btn {
     background: rgba(30, 5, 5, 0.9);
     color: #ffb8b8;
     border-color: rgba(255, 100, 100, 0.2);
 }
-.night-mode .map-btn:hover,
 .night-mode-global .map-btn:hover {
     color: #ffd4d4;
 }
-.night-mode .map-btn.active,
 .night-mode-global .map-btn.active {
     background: rgba(180, 40, 40, 0.3);
     border-color: rgba(180, 40, 40, 0.5);
 }
 
 /* Night mode for the new ctrl-btn bar. */
-.night-mode .map-controls,
 .night-mode-global .map-controls {
     background: rgba(30, 5, 5, 0.9);
     border-color: rgba(255, 100, 100, 0.15);
 }
-.night-mode .ctrl-btn,
 .night-mode-global .ctrl-btn {
     color: rgba(255, 180, 180, 0.7);
 }
-.night-mode .ctrl-btn:hover,
 .night-mode-global .ctrl-btn:hover {
     background: rgba(255, 100, 100, 0.1);
     color: #ffd4d4;
 }
-.night-mode .ctrl-btn.active,
 .night-mode-global .ctrl-btn.active {
     background: rgba(200, 60, 60, 0.25);
     color: #fff;
@@ -2172,27 +2121,22 @@ html:fullscreen .hud-stack-br {
    these rules the outline buttons stay white on the red-shifted bg and
    the Night/Day toggle itself becomes the most glaring element in a
    page that's supposed to preserve dark adaptation. */
-.night-mode .btn-outline-secondary,
 .night-mode-global .btn-outline-secondary {
     color: #ffb8b8;
     border-color: rgba(255, 100, 100, 0.3);
     background: rgba(30, 5, 5, 0.5);
 }
-.night-mode .btn-outline-secondary:hover,
 .night-mode-global .btn-outline-secondary:hover,
-.night-mode .btn-check:checked + .btn-outline-secondary,
 .night-mode-global .btn-check:checked + .btn-outline-secondary {
     background: rgba(180, 40, 40, 0.3);
     border-color: rgba(180, 40, 40, 0.6);
     color: #ffd4d4;
 }
-.night-mode .btn-outline-danger,
 .night-mode-global .btn-outline-danger {
     color: #ff8080;
     border-color: rgba(255, 60, 60, 0.4);
     background: rgba(40, 5, 5, 0.5);
 }
-.night-mode .btn-outline-danger:hover,
 .night-mode-global .btn-outline-danger:hover {
     background: rgba(200, 40, 40, 0.25);
     color: #ffb0b0;
@@ -2202,18 +2146,15 @@ html:fullscreen .hud-stack-br {
    panel and use their own .ap-mode-btn class; without these rules they
    stayed white-on-red in night mode while the surrounding panel red-
    shifted, making the buttons stand out awkwardly. */
-.night-mode .ap-mode-btn,
 .night-mode-global .ap-mode-btn {
     color: #ffb8b8;
     border-color: rgba(255, 100, 100, 0.25);
     background: rgba(30, 5, 5, 0.7);
 }
-.night-mode .ap-mode-btn:hover,
 .night-mode-global .ap-mode-btn:hover {
     border-color: rgba(255, 100, 100, 0.5);
     color: #ffd4d4;
 }
-.night-mode .ap-mode-btn.active,
 .night-mode-global .ap-mode-btn.active {
     background: rgba(200, 60, 60, 0.3);
     border-color: rgba(200, 60, 60, 0.6);
@@ -3623,8 +3564,34 @@ main:has(.alarm-banner-stack) .snooze-chips {
     --sk-surface-hover: #2a0a0a;
     --sk-border: #3a1515;
     --sk-text: #ffcccc;
-    --sk-text-muted: #996666;
+    /* 0.85 alpha so muted labels survive helm-glance under low
+       brightness; below 0.6 they vanished into the dark surface and
+       alarm severity badges read flat compared to day mode. */
+    --sk-text-muted: rgba(255, 130, 130, 0.85);
     --sk-accent: #cc4444;
+    --sk-accent-dim: rgba(255, 120, 120, 0.85);
+    --sk-green: #ff9a9a;  /* collapse to red family */
+    --sk-red: #ff6060;
+    --sk-orange: #ff8c6a;
+    --sk-cyan: #ff9a6b;
+    --sk-purple: #ff9090;
+
+    --sev-ok: #ff9a9a;
+    --sev-warn: #ffb08c;
+    --sev-danger: #ff6060;
+
+    /* Map overlays (active-route polyline, current arrow, etc.)
+       stay on the map layer which is kept dark-ish by dedicated
+       background rules, but the palette-derived colours still
+       want red-shifting so a toolbar glance doesn't jar. */
+    --map-bearing: #ff9a6b;
+    --map-current: #ffa07d;
+    --map-buddy: #ffb06a;
+    --map-course-leg: #ffe0e0;
+    --map-anchor-ok: #ff9a9a;
+    --map-own: #ff6f6f;
+    --map-cog-vector: #ffa0a0;
+
     /* Sidebar + topbar token overrides. These are read by the
        SCOPED rules in MainLayout.razor.css (.sidebar / .top-row),
        which Blazor rewrites with the component's scope attribute
@@ -4257,7 +4224,7 @@ html.night-mode-global body {
     border-radius: 4px;
 }
 
-.night-mode .chart-panel {
+.night-mode-global .chart-panel {
     background: rgba(30, 5, 5, 0.92);
 }
 
@@ -4837,7 +4804,7 @@ html.night-mode-global body {
    Anchor, in the "end-the-safety-state" grouping. Leaving .route-stop-btn
    CSS rules behind would just be dead weight, so they're dropped. */
 
-.night-mode .route-panel {
+.night-mode-global .route-panel {
     background: rgba(30, 5, 5, 0.92);
 }
 
@@ -5544,7 +5511,7 @@ html.night-mode-global body {
    cut keeps the chart legible without blowing the helmsman's eyes;
    vector overlays are un-touched so the AIS palette / laylines /
    course line keep their hues. */
-.map-container.night-mode .leaflet-tile-pane {
+.night-mode-global .leaflet-tile-pane {
     filter: brightness(0.4) sepia(0.8) hue-rotate(-30deg) saturate(1.4);
 }
 
@@ -8104,7 +8071,7 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     50% { background: rgba(120, 20, 20, 0.9); }
 }
 
-.night-mode .anchor-panel {
+.night-mode-global .anchor-panel {
     background: rgba(30, 5, 5, 0.92);
 }
 
