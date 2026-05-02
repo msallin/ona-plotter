@@ -15,6 +15,7 @@ import * as atonLayerMod from './atonLayer.js';
 import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
 import { withOverzoom } from './overzoomLayer.js';
+import { pointToSegmentPixels } from './geomPixels.js';
 import { decideDownshift } from './chartDownshift.js';
 import * as activeRouteLayerMod from './activeRouteLayer.js';
 import * as courseLineLayerMod from './courseLineLayer.js';
@@ -1945,19 +1946,9 @@ export const removePolygonEditVertex = (index) => polygonEditLayerMod.removePoly
 export const loadPolygonForEdit = (coords) => polygonEditLayerMod.loadPolygonForEdit(coords);
 function addPolygonVertexInternal(lat, lon) { return polygonEditLayerMod.addPolygonVertexInternal(lat, lon); }
 
-// Euclidean pixel distance from point p to segment ab. Used by
-// routeEditLayer + measureLayer for "find the closest segment to the
-// click" insertion. Kept in the mux because it's a pure helper used
-// by multiple modules; passing as a dep keeps each module hermetic.
-function pointToSegmentPixels(p, a, b) {
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const len2 = dx * dx + dy * dy;
-    if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = a.x + t * dx, cy = a.y + t * dy;
-    return Math.hypot(p.x - cx, p.y - cy);
-}
+// pointToSegmentPixels was extracted to ./geomPixels.js so it can
+// be unit-tested without a Leaflet map. The dep-injection wiring
+// below imports from there; the function lives in one place now.
 
 // Pan the map to a given lat/lon without changing the current zoom.
 // Used by the layers-panel "Focus" button on notes (and potentially
