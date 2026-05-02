@@ -44,11 +44,13 @@ public static class ChartUpscale
     /// even when the master flag is on; useful for A/B comparison.</summary>
     public const int MinLevels = 0;
 
-    /// <summary>Highest levels value. <c>3</c> = 8x upscale; visibly
-    /// pixelated. <c>2</c> is the recommended default; <c>3</c> is
-    /// here because some helms ask for it on harbour-detail charts
-    /// despite the quality cliff.</summary>
-    public const int MaxLevels = 3;
+    /// <summary>Highest levels value. <c>5</c> = 32x upscale. Visibly
+    /// pixelated above <c>3</c> (8x); past that you're really just
+    /// asking Leaflet to bilinear-interpolate further. <c>2</c> stays
+    /// the recommended default for general use; <c>3-5</c> is here
+    /// for helms doing harbour-detail / pilotage who want to drill
+    /// into a chart well past its native max.</summary>
+    public const int MaxLevels = 5;
 
     /// <summary>Default levels when the feature is enabled.</summary>
     public const int DefaultLevels = 2;

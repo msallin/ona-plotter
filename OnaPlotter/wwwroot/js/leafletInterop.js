@@ -470,7 +470,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // Gated on slow-client so desktop / iPad keep the SVG renderer that
     // gives crisper outlines at high DPI.
     //
-    // Map maxZoom is bumped to native + ChartUpscale.MaxLevels (= 22)
+    // Map maxZoom is bumped to native + ChartUpscale.MaxLevels (= 24)
     // so the chart-upscale decorator can actually upscale tiles
     // past the base layers' native cap. The map's view-zoom is the
     // ceiling for what L.tileLayer.maxZoom can deliver, and a
@@ -488,7 +488,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // surfaces listed in OnaPlotter/Utilities/ChartUpscale.cs).
     map = L.map(elementId, {
         zoomControl: false,
-        maxZoom: 19 + 3,         // 3 == ChartUpscale.MaxLevels (mirrored in C#)
+        maxZoom: 19 + 5,         // 5 == ChartUpscale.MaxLevels (mirrored in C#)
         preferCanvas: isSlowClient,
         // Half-step zoom. Default 1.0 jumps a full power-of-two per
         // tap which is too coarse for chart work -- the helm sees a

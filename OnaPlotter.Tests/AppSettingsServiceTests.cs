@@ -1451,7 +1451,7 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task SetChartUpscaleLevels_AboveCeiling_ClampsToThree()
+    public async Task SetChartUpscaleLevels_AboveCeiling_ClampsToMax()
     {
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
@@ -1459,8 +1459,8 @@ public class AppSettingsServiceTests
 
         await svc.SetChartUpscaleLevelsAsync(99);
 
-        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(3);
-        await Assert.That(await kv.GetAsync("chartUpscaleLevels.v1")).IsEqualTo("3");
+        await Assert.That(svc.ChartUpscaleLevels).IsEqualTo(5);
+        await Assert.That(await kv.GetAsync("chartUpscaleLevels.v1")).IsEqualTo("5");
     }
 
     [Test]
@@ -1472,18 +1472,20 @@ public class AppSettingsServiceTests
     [Arguments("1", 1)]
     [Arguments("2", 2)]
     [Arguments("3", 3)]
-    [Arguments("4", 3)]             // above ceiling -> clamp 3
-    [Arguments("99", 3)]
+    [Arguments("4", 4)]
+    [Arguments("5", 5)]
+    [Arguments("6", 5)]             // above ceiling -> clamp 5
+    [Arguments("99", 5)]
     [Arguments("2.7", 2)]           // double truncates toward zero
     [Arguments("-2.7", 0)]          // truncation gives -2 then clamp -> 0
     [Arguments("-0.4", 0)]
     // -------------------- pinned-by-clamp cases --------------------
     // (LoadDouble accepts these; the clamp catches the overflow)
-    [Arguments("Infinity", 3)]      // (int)+Inf saturates to int.MaxValue, clamp -> 3
+    [Arguments("Infinity", 5)]      // (int)+Inf saturates to int.MaxValue, clamp -> 5
     [Arguments("-Infinity", 0)]     // (int)-Inf saturates to int.MinValue, clamp -> 0
-    [Arguments("1e308", 3)]         // double-overflow region
+    [Arguments("1e308", 5)]         // double-overflow region
     [Arguments("-1e308", 0)]
-    [Arguments("9999999999999", 3)] // long > int.MaxValue, cast then clamp
+    [Arguments("9999999999999", 5)] // long > int.MaxValue, cast then clamp
     [Arguments("-9999999999999", 0)]
     public async Task ChartUpscaleLevels_StoredValue_LoadsClamped(
         string stored, int expected)

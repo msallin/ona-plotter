@@ -20,7 +20,7 @@ public class ChartUpscaleTests
         // test time, which is precisely the drift signal we want.
 #pragma warning disable TUnitAssertions0005
         await Assert.That(ChartUpscale.MinLevels).IsEqualTo(0);
-        await Assert.That(ChartUpscale.MaxLevels).IsEqualTo(3);
+        await Assert.That(ChartUpscale.MaxLevels).IsEqualTo(5);
         await Assert.That(ChartUpscale.DefaultLevels).IsEqualTo(2);
 #pragma warning restore TUnitAssertions0005
     }
@@ -33,10 +33,10 @@ public class ChartUpscaleTests
     }
 
     [Test]
-    public async Task ClampLevels_AboveCeiling_ClampsToThree()
+    public async Task ClampLevels_AboveCeiling_ClampsToMax()
     {
-        await Assert.That(ChartUpscale.ClampLevels(4)).IsEqualTo(3);
-        await Assert.That(ChartUpscale.ClampLevels(99)).IsEqualTo(3);
+        await Assert.That(ChartUpscale.ClampLevels(6)).IsEqualTo(5);
+        await Assert.That(ChartUpscale.ClampLevels(99)).IsEqualTo(5);
     }
 
     [Test]
@@ -46,15 +46,17 @@ public class ChartUpscaleTests
         await Assert.That(ChartUpscale.ClampLevels(1)).IsEqualTo(1);
         await Assert.That(ChartUpscale.ClampLevels(2)).IsEqualTo(2);
         await Assert.That(ChartUpscale.ClampLevels(3)).IsEqualTo(3);
+        await Assert.That(ChartUpscale.ClampLevels(4)).IsEqualTo(4);
+        await Assert.That(ChartUpscale.ClampLevels(5)).IsEqualTo(5);
     }
 
     [Test]
     public async Task Effective_DisabledMaster_ReturnsZero()
     {
-        // Even a configured value of 3 must be ignored when the master
+        // Even a configured value of 5 must be ignored when the master
         // flag is off -- the call site uses Effective to collapse the
         // two settings into a single integer the JS decorator can use.
-        await Assert.That(ChartUpscale.Effective(false, 3)).IsEqualTo(0);
+        await Assert.That(ChartUpscale.Effective(false, 5)).IsEqualTo(0);
         await Assert.That(ChartUpscale.Effective(false, 2)).IsEqualTo(0);
         await Assert.That(ChartUpscale.Effective(false, 0)).IsEqualTo(0);
     }
@@ -66,13 +68,14 @@ public class ChartUpscaleTests
         await Assert.That(ChartUpscale.Effective(true, 1)).IsEqualTo(1);
         await Assert.That(ChartUpscale.Effective(true, 2)).IsEqualTo(2);
         await Assert.That(ChartUpscale.Effective(true, 3)).IsEqualTo(3);
+        await Assert.That(ChartUpscale.Effective(true, 5)).IsEqualTo(5);
     }
 
     [Test]
     public async Task Effective_EnabledMaster_ClampsOutOfRange()
     {
         await Assert.That(ChartUpscale.Effective(true, -1)).IsEqualTo(0);
-        await Assert.That(ChartUpscale.Effective(true, 99)).IsEqualTo(3);
+        await Assert.That(ChartUpscale.Effective(true, 99)).IsEqualTo(5);
     }
 
     [Test]

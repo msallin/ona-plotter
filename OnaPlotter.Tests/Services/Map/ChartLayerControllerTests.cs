@@ -305,13 +305,13 @@ public class ChartLayerControllerTests
 
     [Test]
     [Arguments(false, 0, true, 0)]    // master off -> 0
-    [Arguments(false, 3, true, 0)]    // master off, levels irrelevant
-    [Arguments(false, 3, false, 0)]   // both off
+    [Arguments(false, 5, true, 0)]    // master off, levels irrelevant
+    [Arguments(false, 5, false, 0)]   // both off
     [Arguments(true, 0, true, 0)]     // master on, levels=0 -> 0 (A/B path)
     [Arguments(true, 2, true, 2)]     // happy path
-    [Arguments(true, 3, true, 3)]     // max levels
-    [Arguments(true, 3, false, 0)]    // chart opt-out forces 0 even when master on
-    [Arguments(true, 99, true, 3)]    // out-of-range clamps via Effective
+    [Arguments(true, 5, true, 5)]     // max levels
+    [Arguments(true, 5, false, 0)]    // chart opt-out forces 0 even when master on
+    [Arguments(true, 99, true, 5)]    // out-of-range clamps via Effective
     [Arguments(true, -5, true, 0)]    // out-of-range below floor clamps via Effective
     public async Task Toggle_On_UpscaleResolution_CrossProduct(
         bool masterEnabled, int configuredLevels, bool chartAllowUpscale, int expectedJsValue)

@@ -203,16 +203,20 @@
                            value="@AppSettings.ChartUpscaleLevels"
                            @onchange="OnChartUpscaleLevelsChanged" />
                     <small class="text-muted">
-                        @* 2 levels = 4x upscale, 3 levels = 8x. The
-                           helm explicitly asked for 0..3 so power
-                           users with mostly-fine harbour charts can
-                           push to 3 if they want. *@
+                        @* Each level doubles the upscale. 2 = 4x
+                           (default), past 3 the chart is visibly
+                           pixelated; past 4 you're really just
+                           bilinear-interpolating. Helms doing
+                           harbour pilotage sometimes ask for 4-5
+                           anyway. *@
                         @(AppSettings.ChartUpscaleLevels switch
                         {
                             0 => "0 = no upscale (decorator off)",
                             1 => "1 = 2x upscale",
                             2 => "2 = 4x upscale (recommended)",
                             3 => "3 = 8x upscale (visibly pixelated)",
+                            4 => "4 = 16x upscale (mostly mush)",
+                            5 => "5 = 32x upscale (pilotage drill-down)",
                             _ => ""
                         })
                     </small>

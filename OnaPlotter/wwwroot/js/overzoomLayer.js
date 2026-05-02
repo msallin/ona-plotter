@@ -36,7 +36,7 @@
  * Returns a new options object; the input is not mutated.
  */
 export function withOverzoom(opts, levels) {
-    const lv = Math.max(0, Math.min(3, levels | 0));
+    const lv = Math.max(0, Math.min(5, levels | 0));
     if (lv === 0) {
         // Identity: a structural copy keeps callers safe from later
         // mutation of the returned object without paying the bump-
