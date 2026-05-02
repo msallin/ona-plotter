@@ -378,10 +378,10 @@ public sealed class NavigationData
                 // already-passed leg history every time the server
                 // misbehaved.
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex:
-                    ActiveRoutePointIndex = double.IsFinite(value) ? (int)Math.Round(value) : null;
+                    ActiveRoutePointIndex = double.IsFinite(value.Value) ? (int)Math.Round(value.Value) : null;
                     break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal:
-                    ActiveRoutePointTotal = double.IsFinite(value) ? (int)Math.Round(value) : null;
+                    ActiveRoutePointTotal = double.IsFinite(value.Value) ? (int)Math.Round(value.Value) : null;
                     break;
                 default:
                     return false;
