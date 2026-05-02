@@ -5106,15 +5106,60 @@ html.night-mode-global body {
                      border: 1.5px solid rgba(var(--sev-warn-rgb), 0.5);
                      border-radius: 50%; }
 
-/* Violet tidal-current arrow drawn on the map from own-boat along the
-   current set direction. Solid line + arrow shape; swatch is a
-   simplified triangle pointer. */
+/* Violet tidal-current line drawn on the map from own-boat along
+   the set direction. Dashed (4,3) on the chart; the swatch uses a
+   matching repeating gradient so the legend reads as the same
+   visual class. The previous solid + arrow-clip swatch tracked
+   when the on-chart line was solid + heavy; helm field-feedback
+   ("very prominent but not that important") moved both to a
+   thinner dashed style. */
 .legend-current {
-    background: var(--map-current);
+    background: linear-gradient(90deg,
+        var(--map-current) 0 4px,
+        transparent 4px 7px,
+        var(--map-current) 7px 11px,
+        transparent 11px 14px,
+        var(--map-current) 14px 18px,
+        transparent 18px 21px,
+        var(--map-current) 21px 25px);
+    height: 2px;
+    align-self: center;
+    border-radius: 1px;
+    opacity: 0.7;
+}
+/* Laylines: port (green) + stbd (red) dashed close-hauled tack
+   projections. Swatch shows the colour pair at a glance via a
+   bi-colour gradient with a thin gap; matches the on-chart
+   dashArray '10,6' style well enough for the legend (the chart
+   draws each tack as its own polyline, the swatch's job is just
+   "two coloured dashed lines" recognition). */
+.legend-laylines {
+    background:
+        linear-gradient(90deg,
+            var(--map-anchor-ok) 0 6px,
+            transparent 6px 10px,
+            var(--map-anchor-ok) 10px 16px,
+            transparent 16px 100%) 0 30%/100% 2px no-repeat,
+        linear-gradient(90deg,
+            var(--map-mob) 0 6px,
+            transparent 6px 10px,
+            var(--map-mob) 10px 16px,
+            transparent 16px 100%) 0 70%/100% 2px no-repeat;
+    align-self: center;
+    height: 8px;
+    border-radius: 2px;
+}
+/* SOG-coloured trail: gradient blue-to-green-to-yellow mirrors the
+   speedColor() palette in geoMath.js (slow blue 0kn -> green ~3kn
+   -> yellow 8kn+). Same swatch is reused for the local-trail and
+   server-history rows because they share the palette by design. */
+.legend-local-track,
+.legend-server-track {
+    background: linear-gradient(90deg, #3b82f6 0%, #22c55e 50%, #eab308 100%);
     height: 3px;
     align-self: center;
     border-radius: 2px;
-    clip-path: polygon(0 50%, 80% 0, 80% 100%, 0 50%, 100% 50%);
+    opacity: 0.85;
 }
 /* Course-leg line: white dashed between previous and next WP. */
 .legend-course-leg {

@@ -15,12 +15,12 @@
             <li>
                 <span class="legend-swatch legend-own"></span>
                 <span class="legend-name">Own boat</span>
-                <span class="legend-desc">Arrow points along COG.</span>
+                <span class="legend-desc">Arrow points along heading; falls back to COG when heading is unavailable.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-cog-vector"></span>
                 <span class="legend-name">COG vector</span>
-                <span class="legend-desc">Dashed line ahead of own-boat. Length = speed x look-ahead.</span>
+                <span class="legend-desc">Dashed line ahead of own-boat. Length = speed x look-ahead minutes (Settings &rarr; Display). Tip carries a "Nmin / Nnm" label.</span>
             </li>
             <li>
                 <span class="legend-swatch legend-ais-sail"></span>
@@ -89,7 +89,22 @@
             <li>
                 <span class="legend-swatch legend-current"></span>
                 <span class="legend-name">Tidal current</span>
-                <span class="legend-desc">Violet arrow from own-boat; direction shows set, label shows drift in knots.</span>
+                <span class="legend-desc">Violet dashed line from own-boat along the set; length grows with drift. Magnitude in knots is in the bottom-right HUD.</span>
+            </li>
+            <li>
+                <span class="legend-swatch legend-laylines"></span>
+                <span class="legend-name">Laylines</span>
+                <span class="legend-desc">Port (red) + stbd (green) dashed lines from own-boat showing the close-hauled tacks that fetch the active windward waypoint.</span>
+            </li>
+            <li>
+                <span class="legend-swatch legend-local-track"></span>
+                <span class="legend-name">Local trail</span>
+                <span class="legend-desc">Recent ~83 min of own-boat track, coloured by SOG (blue slow &rarr; green &rarr; yellow fast). In-memory only.</span>
+            </li>
+            <li>
+                <span class="legend-swatch legend-server-track"></span>
+                <span class="legend-name">Server history</span>
+                <span class="legend-desc">Same SOG palette as the local trail, fetched from the SignalK history plugin for windows up to "all time". Toggle in Layers &rarr; Server history.</span>
             </li>
             @* The "previous WP -> next WP" white dashed leg line was
                removed (helm reported it as noise -- no actionable info
