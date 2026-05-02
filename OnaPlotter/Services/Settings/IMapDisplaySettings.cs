@@ -18,7 +18,14 @@ public interface IMapDisplaySettings
     /// <summary>When true, the map auto-pans to follow the boat.</summary>
     bool FollowBoat { get; }
 
-    /// <summary>Layline overlay visible on the SailSteer + Map.</summary>
+    /// <summary>Layline overlay visibility. SUPERSEDED on the Map by
+    /// <see cref="ShipLinesVisible"/> (which gates COG vector, tidal
+    /// current arrow, AND laylines as one unit); SailSteer still
+    /// reads this directly because its layline display is independent
+    /// of the Map's ship-lines knob. Kept on the interface + persisted
+    /// for back-compat with helms whose localStorage carries the
+    /// old key. Safe to drop in a future cleanup if SailSteer also
+    /// adopts the master gate.</summary>
     bool LaylinesVisible { get; }
 
     /// <summary>Master gate for own-ship informational lines on the

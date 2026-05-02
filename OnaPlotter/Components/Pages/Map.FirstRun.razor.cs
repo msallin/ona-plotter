@@ -22,7 +22,14 @@ namespace OnaPlotter.Components.Pages;
 /// </summary>
 public partial class Map
 {
-    private const string TouchCoachmarkKey = "hints.mapLongPress.dismissed";
+    // .v1 suffix to match the convention spelled out in
+    // AppSettingsService.InitializeAsync ("any new key MUST follow
+    // <camelCaseName>.vN"). The earlier unversioned key
+    // "hints.mapLongPress.dismissed" is ignored on load so existing
+    // helms see the coachmark once more after upgrade -- acceptable
+    // for a one-shot tutorial; bumps the version every revision so
+    // future copy changes can re-trigger without a schema migration.
+    private const string TouchCoachmarkKey = "hints.mapLongPress.v1.dismissed";
     private bool touchCoachmarkVisible;
     private System.Threading.Timer? touchCoachmarkTimer;
 
@@ -50,20 +57,57 @@ public partial class Map
         await base.OnInitializedAsync();
         // ?welcome=1 (set by the Settings page's "Show welcome card
         // again" link) bypasses the dismissed flag without clearing
-        // it. The deep-link handler in OnAfterRenderAsync drops the
-        // query string after consume so a page reload doesn't loop.
-        bool forceShow = false;
-        try
-        {
-            var uri = new Uri(Nav.Uri);
-            if (!string.IsNullOrEmpty(uri.Query)
-                && uri.Query.Contains("welcome=1", StringComparison.Ordinal))
-            {
-                forceShow = true;
-            }
-        }
-        catch { /* malformed URI: just don't force */ }
+        // it. ApplyMapDeepLinkAsync drops the query after consume so
+        // a page reload doesn't loop (welcome is one of the recognised
+        // deep-link keys it strips). The parsing path is tested in
+        // MapWelcomeQueryTests via the pure helper below.
+        bool forceShow = ShouldForceShowFromUri(Nav.Uri);
         await MaybeShowWelcomeAsync(forceShow: forceShow);
+    }
+
+    /// <summary>
+    /// Pure helper: returns true iff the URI carries an explicit
+    /// <c>welcome=1</c> query parameter (parsed, not substring-matched).
+    /// Earlier code used <c>Contains("welcome=1")</c> which over-matched
+    /// on URLs like <c>/map?other=welcome=1abc</c> -- realistic when
+    /// a chart link or a forwarded URL accumulates query keys. The
+    /// parsed approach also gates on the value being literal "1" so
+    /// <c>?welcome=true</c> or <c>?welcome=yes</c> doesn't trigger.
+    /// Internal-static for direct unit testing.
+    /// </summary>
+    public static bool ShouldForceShowFromUri(string? uriString)
+    {
+        if (string.IsNullOrEmpty(uriString)) return false;
+        Uri uri;
+        try { uri = new Uri(uriString); }
+        catch { return false; }
+        if (string.IsNullOrEmpty(uri.Query)) return false;
+        // Hand-roll the parse rather than reach for
+        // Microsoft.AspNetCore.WebUtilities (not in the WASM bundle's
+        // dependency closure -- adding it would inflate cold-start
+        // download by tens of KB for one query check). The parse rule:
+        // strip the leading '?' if present, split on '&', for each
+        // chunk split on '=' once, and look for an exact key=value
+        // match of welcome=1. Multiple welcome= entries (?welcome=1
+        // &welcome=1) intentionally fail the "one value" gate so a
+        // copy-paste-doubled URL doesn't silently still trigger.
+        ReadOnlySpan<char> q = uri.Query.AsSpan();
+        if (q.Length > 0 && q[0] == '?') q = q[1..];
+        int matches = 0;
+        bool valueIsOne = true;
+        foreach (var range in q.Split('&'))
+        {
+            var kv = q[range];
+            if (kv.IsEmpty) continue;
+            int eq = kv.IndexOf('=');
+            if (eq < 0) continue;
+            var key = kv[..eq];
+            var val = kv[(eq + 1)..];
+            if (!key.SequenceEqual("welcome")) continue;
+            matches++;
+            if (!val.SequenceEqual("1")) valueIsOne = false;
+        }
+        return matches == 1 && valueIsOne;
     }
 
     /// <summary>
@@ -71,11 +115,13 @@ public partial class Map
     /// can gate the coachmark: both on the same first visit piles up,
     /// so we show welcome now and let DismissWelcome chain the
     /// coachmark when the user taps Got it.
-    ///
-    /// Also wired to a "Show welcome again" link in Settings so the
-    /// helm can re-read the onboarding after the first dismissal --
-    /// passing <paramref name="forceShow"/> = true bypasses the KV
-    /// flag without clearing it.
+    /// <para>
+    /// <paramref name="forceShow"/> bypasses the KV "dismissed" flag
+    /// without clearing it -- the Settings page's "Show welcome again"
+    /// link uses this via the ?welcome=1 deep link so the helm can
+    /// re-read the onboarding without losing the persisted dismissed
+    /// state.
+    /// </para>
     /// </summary>
     private async Task<bool> MaybeShowWelcomeAsync(bool forceShow = false)
     {
@@ -92,14 +138,6 @@ public partial class Map
         }
         catch (Exception) { return false; }
     }
-
-    /// <summary>Public re-open hook for the Settings page's "Show
-    /// welcome again" link. Surfaces the card unconditionally
-    /// (regardless of the dismissed KV flag) so the helm can
-    /// re-read the onboarding without nuking the flag itself --
-    /// taps to Got It still close the card; the flag stays as it
-    /// was on entry.</summary>
-    public Task ShowWelcomeAgainAsync() => MaybeShowWelcomeAsync(forceShow: true);
 
     private async Task DismissWelcome()
     {

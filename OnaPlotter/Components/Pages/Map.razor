@@ -1612,6 +1612,21 @@
     private async Task ApplyMapDeepLinkAsync()
     {
         var uri = new Uri(Nav.Uri);
+        // Welcome-card deep link is a separate URL contract from the
+        // focus/edit deep links that MapDeepLink owns: it carries no
+        // target id, just a flag the welcome-card lifecycle picked up
+        // in OnInitializedAsync. We still need to drop the query
+        // string after consume so a page reload doesn't re-trigger
+        // the card. Strips ?welcome=1 cleanly whether or not a
+        // focus/edit deep link is also present.
+        if (Map.ShouldForceShowFromUri(Nav.Uri))
+        {
+            // forceLoad: false keeps the JS map alive across the
+            // navigation; replace: true rewrites history so the
+            // back button doesn't loop.
+            Nav.NavigateTo("map", forceLoad: false, replace: true);
+            return;
+        }
         if (OnaPlotter.Utilities.MapDeepLink.Parse(uri.Query) is not { } target) return;
         string kind = target.Kind;
         string id = target.Id;
@@ -1969,9 +1984,16 @@
             // JSRuntime JsonOptions is CamelCase so the record-struct
             // fields arrive in JS as `pos.lat`, `pos.headingRad`, etc,
             // which is exactly what applyFrame expects.
-            // Laylines piggy-back on the master ship-lines toggle so
-            // the helm has one knob for all own-ship informational
-            // lines instead of three separate ones to remember.
+            // The master ShipLinesVisible toggle gates THREE on-chart
+            // ship lines: COG vector, tidal-current arrow, and
+            // laylines. Two of those (COG, current) are rendered in
+            // JS and gated via setShipLinesVisible below; only
+            // laylines flow through MapFrameBuilder, so the C#-side
+            // field stays narrowly named for its single concern. The
+            // names look mismatched at this assignment but each side
+            // is correct in its own scope: read this line as "the
+            // C# laylines field gets its on/off from the master
+            // ship-lines knob; the JS half lives in setShipLinesVisible".
             _frameBuilder.LaylinesVisible = Settings.ShipLinesVisible;
             var frame = _frameBuilder.Build(Data);
             if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
