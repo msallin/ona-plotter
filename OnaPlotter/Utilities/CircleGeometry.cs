@@ -58,7 +58,14 @@ public static class CircleGeometry
             double angle = 2 * Math.PI * i / vertices;
             double dLat = (radiusMeters * Math.Cos(angle)) / MetersPerDegLatitude;
             double dLon = (radiusMeters * Math.Sin(angle)) / metersPerDegLon;
-            ring[i] = [lon + dLon, lat + dLat];
+            // Wrap longitude into (-180, 180]. A circle whose centre is
+            // within ~radiusMeters of the antimeridian (Pacific
+            // anchorages, dateline crossings) would otherwise emit
+            // vertices at lon=180.04 / lon=-179.96 next to each other,
+            // and Leaflet renders that as a giant globe-girdling shape
+            // smearing across the whole map width.
+            double newLon = ((lon + dLon + 540.0) % 360.0) - 180.0;
+            ring[i] = [newLon, lat + dLat];
         }
         ring[vertices] = ring[0]; // close
         return ring;
