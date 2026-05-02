@@ -30,9 +30,15 @@ export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
     const lineLen = 5 * 1852; // 5 nm in meters
     const absTwa = Math.abs(twaRad);
 
-    // Boat sails INTO the wind: TWD + PI gives the "to" direction, +/- TWA gives tack angles.
-    const stbdBrg = twdRad + Math.PI - absTwa;
-    const portBrg = twdRad + Math.PI + absTwa;
+    // SignalK convention: TWD is the direction the wind is COMING FROM
+    // (radians clockwise from true north). Close-hauled tack bearings
+    // are then TWD ± TWA: starboard tack puts wind on the right of the
+    // bow (boat's heading is TWA degrees LEFT of the wind origin),
+    // port tack puts wind on the left (heading is TWA degrees RIGHT of
+    // the wind origin). Worked example: wind from N (TWD=0), TWA=45° ->
+    // starboard tack heads 315° (NW), port tack heads 045° (NE).
+    const stbdBrg = twdRad - absTwa;
+    const portBrg = twdRad + absTwa;
 
     const stbdEnd = destPoint(boatLat, boatLon, stbdBrg, lineLen);
     const portEnd = destPoint(boatLat, boatLon, portBrg, lineLen);
