@@ -277,11 +277,16 @@
     @* === Waypoint Name + Description Dialog ===
        Mirror of the Add Note layout so the two feel like one flow
        (name required, description optional). Description persists to
-       SignalK's properties.description per the Freeboard-SK schema. *@
+       SignalK's properties.description per the Freeboard-SK schema.
+       Doubles as the Edit dialog (popup-side Edit button calls
+       OpenWaypointEditDialog which sets waypointEditId + pre-fills the
+       inputs); the only visible difference is the header label. *@
     @if (waypointDialogVisible)
     {
         <div class="waypoint-dialog note-dialog">
-            <div class="hud-label" style="margin-bottom:8px;">Create Waypoint</div>
+            <div class="hud-label" style="margin-bottom:8px;">
+                @(waypointEditId is null ? "Create Waypoint" : "Edit Waypoint")
+            </div>
             <input type="text" class="route-name-input" aria-label="Waypoint name"
                    placeholder="Name" @bind="newWaypointName" @bind:event="oninput" />
             <textarea class="route-name-input note-dialog-body" aria-label="Waypoint description"
@@ -289,16 +294,22 @@
                       @bind="newWaypointDescription" @bind:event="oninput"></textarea>
             <div style="display:flex; gap:6px; margin-top:8px;">
                 <button class="map-btn active" @onclick="SaveWaypoint">Save</button>
-                <button class="map-btn" @onclick="() => waypointDialogVisible = false">Cancel</button>
+                <button class="map-btn" @onclick="CancelWaypointDialog">Cancel</button>
             </div>
         </div>
     }
 
-    @* === Note Dialog === *@
+    @* === Note Dialog ===
+       Same dialog backs both Add Note and the popup-side Edit (Edit
+       calls OpenNoteEditDialog which sets noteEditId + pre-fills the
+       inputs). Header label flips between "Add Note" and "Edit
+       Note"; everything else is identical. *@
     @if (noteDialogVisible)
     {
         <div class="waypoint-dialog note-dialog">
-            <div class="hud-label" style="margin-bottom:8px;">Add Note</div>
+            <div class="hud-label" style="margin-bottom:8px;">
+                @(noteEditId is null ? "Add Note" : "Edit Note")
+            </div>
             <input type="text" class="route-name-input" aria-label="Note title"
                    placeholder="Title" @bind="newNoteTitle" @bind:event="oninput" />
             <textarea class="route-name-input note-dialog-body" aria-label="Note description"
@@ -306,7 +317,7 @@
                       @bind="newNoteDescription" @bind:event="oninput"></textarea>
             <div style="display:flex; gap:6px; margin-top:8px;">
                 <button class="map-btn active" @onclick="SaveNote">Save</button>
-                <button class="map-btn" @onclick="() => noteDialogVisible = false">Cancel</button>
+                <button class="map-btn" @onclick="CancelNoteDialog">Cancel</button>
             </div>
         </div>
     }
@@ -437,7 +448,7 @@
                      OnFocusWaypoint="FocusWaypoint"
                      OnFocusNote="FocusNote"
                      OnNavigateToNote="NavigateToNote"
-                     OnRenameNote="(t) => RenameNoteFromLayers(t.note, t.newTitle)"
+                     OnEditNote="OpenNoteEditDialog"
                      OnDeleteNote="DeleteNoteFromLayers"
                      LoadedRegions="loadedRegions"
                      RegionsVisible="@(_resources?.RegionsVisible ?? true)"
@@ -477,7 +488,7 @@
                      OnNavigateRoute="NavigateRoute"
                      OnDeleteRoute="DeleteRouteFromLayers"
                      OnNavigateToWaypoint="NavigateToWaypoint"
-                     OnRenameWaypoint="(t) => RenameWaypointAsync(t.wp, t.newName)"
+                     OnEditWaypoint="OpenWaypointEditDialog"
                      OnDeleteWaypoint="DeleteWaypointFromLayers"
                      OnFocusVessel="FocusVessel"
                      OnToggleServerTrack="@(v => _serverTrack?.ToggleAsync(v) ?? Task.CompletedTask)"
@@ -760,32 +771,10 @@
         Toasts.Info("Waypoint deleted");
     }
 
-    private async Task RenameWaypointAsync(SignalkWaypoint wp, string newName)
-    {
-        if (string.IsNullOrEmpty(wp.Id) || string.IsNullOrWhiteSpace(newName)) return;
-        ApiResult r;
-        try { r = await WaypointApi.UpdateAsync(wp, newName.Trim()); }
-        catch (Exception ex) { Toasts.Error($"Rename waypoint failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Rename waypoint failed: {r.Error ?? "server rejected"}"); return; }
-
-        // Optimistic local rename so the panel reflects the new name
-        // without waiting for the 60 s resource poll. Next refresh
-        // overwrites this with the authoritative value.
-        var updated = loadedWaypoints.Select(w =>
-        {
-            if (w.Id != wp.Id) return w;
-            return new SignalkWaypoint
-            {
-                Id = w.Id,
-                Name = newName.Trim(),
-                Feature = w.Feature,
-                Latitude = w.Latitude,
-                Longitude = w.Longitude,
-            };
-        }).ToList();
-        loadedWaypoints = updated;
-        Toasts.Success("Waypoint renamed");
-    }
+    // RenameWaypointAsync used to live here. The layers-panel Edit
+    // button now opens the same name+description dialog as Create
+    // (see SaveWaypoint's Edit branch in Map.razor.cs); the single-
+    // field rename helper isn't needed any more.
 
     /// <summary>Center the map on a waypoint and dismiss the layers
     /// panel so the helm can see what they just picked. Mirrors
@@ -829,36 +818,10 @@
         catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
     }
 
-    /// <summary>Layers-panel "Edit" button for notes: PUT a new
-    /// title (description preserved). Mirrors
-    /// <see cref="RenameWaypointAsync"/>: optimistic local rename so
-    /// the list updates instantly; the next resource poll
-    /// authoritatively overwrites if the server normalised the
-    /// value.</summary>
-    private async Task RenameNoteFromLayers(SignalkNote n, string newTitle)
-    {
-        if (string.IsNullOrEmpty(n.Id) || string.IsNullOrWhiteSpace(newTitle)) return;
-        ApiResult r;
-        try { r = await NoteApi.UpdateAsync(n, newTitle.Trim(), n.Description); }
-        catch (Exception ex) { Toasts.Error($"Rename note failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Rename note failed: {r.Error ?? "server rejected"}"); return; }
-
-        var updated = loadedNotes.Select(x =>
-        {
-            if (x.Id != n.Id) return x;
-            return new SignalkNote
-            {
-                Id = x.Id,
-                Title = newTitle.Trim(),
-                Description = x.Description,
-                Position = x.Position,
-                MimeType = x.MimeType,
-                Url = x.Url,
-            };
-        }).ToList();
-        loadedNotes = updated;
-        Toasts.Success("Note renamed");
-    }
+    // RenameNoteFromLayers used to live here. The layers-panel Edit
+    // button now opens the same title+description dialog as Add Note
+    // (see SaveNote's Edit branch in Map.razor.cs); the single-field
+    // rename helper isn't needed any more.
 
     /// <summary>Layers-panel "Delete" button for notes. The
     /// confirmation prompt lives in <see cref="NotesSection"/>; this

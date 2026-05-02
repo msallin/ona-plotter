@@ -82,59 +82,27 @@ public class WaypointsSectionTests
     }
 
     [Test]
-    public async Task EditButton_PromptAccepted_Fires_OnRename_WithTrimmedName()
+    public async Task EditButton_Click_Fires_OnEdit_WithWaypoint()
     {
         var (ctx, _) = Context();
         using var _ctx = ctx;
-        // prompt() stays on native JS for now; rename flow hasn't
-        // been promoted to a service yet. Stub it via bUnit's
-        // JSInterop just as before.
-        ctx.JSInterop.Setup<string?>("prompt", _ => true).SetResult("  New Harbor  ");
-        (SignalkWaypoint wp, string newName)? captured = null;
+        // Replaces the older PromptEdit-based EditButton tests:
+        // the layers-panel Edit button no longer surfaces a JS
+        // prompt; it raises OnEdit which the parent wires to open
+        // the create-dialog pre-filled. This test pins the new
+        // contract so a future drift back to a prompt-based flow
+        // surfaces here first.
+        SignalkWaypoint? captured = null;
         var cut = ctx.RenderComponent<WaypointsSection>(p => p
             .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
-            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkWaypoint, string)>(
-                this, t => captured = t)));
+            .Add(x => x.OnEdit, EventCallback.Factory.Create<SignalkWaypoint>(
+                this, w => captured = w)));
         cut.Find(".section-toggle").Click();
 
-        cut.Find("button[title='Rename this waypoint']").Click();
+        cut.Find("button[title='Edit name + description']").Click();
         await Assert.That(captured).IsNotNull();
-        await Assert.That(captured!.Value.wp.Id).IsEqualTo("w1");
-        await Assert.That(captured.Value.newName).IsEqualTo("New Harbor");
-    }
-
-    [Test]
-    public async Task EditButton_PromptCancelled_DoesNotFire()
-    {
-        var (ctx, _) = Context();
-        using var _ctx = ctx;
-        ctx.JSInterop.Setup<string?>("prompt", _ => true).SetResult(null);
-        bool fired = false;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
-            .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
-            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkWaypoint, string)>(
-                this, _ => fired = true)));
-        cut.Find(".section-toggle").Click();
-
-        cut.Find("button[title='Rename this waypoint']").Click();
-        await Assert.That(fired).IsFalse();
-    }
-
-    [Test]
-    public async Task EditButton_EmptyName_DoesNotFire()
-    {
-        var (ctx, _) = Context();
-        using var _ctx = ctx;
-        ctx.JSInterop.Setup<string?>("prompt", _ => true).SetResult("   ");
-        bool fired = false;
-        var cut = ctx.RenderComponent<WaypointsSection>(p => p
-            .Add(x => x.Waypoints, new[] { Wp("w1", "Harbor") })
-            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkWaypoint, string)>(
-                this, _ => fired = true)));
-        cut.Find(".section-toggle").Click();
-
-        cut.Find("button[title='Rename this waypoint']").Click();
-        await Assert.That(fired).IsFalse();
+        await Assert.That(captured!.Id).IsEqualTo("w1");
+        await Assert.That(captured.Name).IsEqualTo("Harbor");
     }
 
     [Test]

@@ -30,6 +30,32 @@ public sealed class GeoJsonFeature
 
     [JsonPropertyName("geometry")]
     public GeoJsonGeometry? Geometry { get; set; }
+
+    /// <summary>The properties block written by
+    /// <c>GeoJsonBuilder.FeatureBody</c>: <c>{ name, description }</c>
+    /// (plus optional hazard flag for regions). Exposed so callers
+    /// can recover the description from a server-round-tripped
+    /// waypoint -- waypoints don't carry a top-level
+    /// <c>description</c> field on the wire (only routes and notes do),
+    /// so without parsing this block the description silently empties
+    /// every time the helm edits the name.</summary>
+    [JsonPropertyName("properties")]
+    public GeoJsonProperties? Properties { get; set; }
+}
+
+public sealed class GeoJsonProperties
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>Region-only marker. Lives here so the same
+    /// <see cref="GeoJsonFeature.Properties"/> shape works for the
+    /// region path; waypoints / routes ignore it.</summary>
+    [JsonPropertyName("isHazard")]
+    public bool? IsHazard { get; set; }
 }
 
 public sealed class GeoJsonGeometry

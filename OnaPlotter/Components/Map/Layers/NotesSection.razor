@@ -4,11 +4,12 @@
 
 @* Server-stored notes filtered to the current viewport. Each row
    has Focus (centre + popup), Go (route to the note's lat/lon via
-   the SignalK course-destination PUT), Edit (rename via the shared
-   confirmation prompt), and Delete (with confirm). The previous
-   global "Show" toggle is gone -- helms field-tested that the
-   bbox-filter is the natural relevance cue, and the global hide
-   was rarely used once notes started being created at all. *@
+   the SignalK course-destination PUT), Edit (opens the same
+   create-dialog with title + description pre-filled), and Delete
+   (with confirm). The previous global "Show" toggle is gone --
+   helms field-tested that the bbox-filter is the natural relevance
+   cue, and the global hide was rarely used once notes started being
+   created at all. *@
 
 <CrudSection TItem="SignalkNote"
              Title="Notes"
@@ -31,8 +32,8 @@
                 @onclick="() => OnNavigate.InvokeAsync(n)"
                 title="Set this note's position as the navigation destination">Go</button>
         <button class="map-btn route-action-btn"
-                @onclick="() => PromptEdit(n)"
-                title="Rename this note">Edit</button>
+                @onclick="() => OnEdit.InvokeAsync(n)"
+                title="Edit title + description">Edit</button>
         <button class="map-btn route-action-btn route-action-danger"
                 @onclick="() => ConfirmDelete(n)"
                 title="Delete note">Delete</button>
@@ -47,13 +48,15 @@
     /// throwaway waypoint first because SignalK's course API accepts
     /// a position destination directly).</summary>
     [Parameter] public EventCallback<SignalkNote> OnNavigate { get; set; }
-    /// <summary>Fires after the helm confirms a title rename. Parent
-    /// does the PUT and refreshes the list so the new title appears
-    /// without a manual reload. Description editing is intentionally
-    /// out of scope here -- the layers panel is the "rename real
-    /// quick" surface; full edits belong in a dedicated dialog
-    /// (separate work).</summary>
-    [Parameter] public EventCallback<(SignalkNote note, string newTitle)> OnRename { get; set; }
+    /// <summary>Fires when the helm taps Edit. Parent opens the
+    /// same dialog used for Add Note pre-filled with the current
+    /// title + description (see <c>Map.OpenNoteEditDialog</c>);
+    /// the dialog round-trips the API call. Replaces the older
+    /// <c>OnRename</c> two-tuple callback that was wired after a
+    /// single-field PromptAsync -- the dialog gives the helm
+    /// description editing in the same surface, which the prompt
+    /// couldn't.</summary>
+    [Parameter] public EventCallback<SignalkNote> OnEdit { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnDelete { get; set; }
     [Parameter] public string LayerFilter { get; set; } = "";
 
@@ -63,25 +66,6 @@
     private static bool MatchesNote(SignalkNote n, string filter) =>
         (n.Title?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
         || (n.Description?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
-
-    /// <summary>Single-field rename via the shared confirmation
-    /// prompt. Mirrors WaypointsSection's PromptEdit shape so a
-    /// helm who knows one knows the other. Cancel = no-op; an
-    /// unchanged title is also a no-op (avoids a PUT that does
-    /// nothing but bumps the resource's last-modified
-    /// timestamp).</summary>
-    private async Task PromptEdit(SignalkNote n)
-    {
-        var newTitle = await Confirmations.PromptAsync(
-            "Note title:",
-            initialValue: n.Title ?? "",
-            confirmLabel: "Save");
-        if (newTitle is null) return;
-        var trimmed = newTitle.Trim();
-        if (string.IsNullOrEmpty(trimmed)) return;
-        if (trimmed == (n.Title ?? "")) return;
-        await OnRename.InvokeAsync((n, trimmed));
-    }
 
     private async Task ConfirmDelete(SignalkNote n)
     {

@@ -34,6 +34,14 @@ public sealed class WaypointApi : IWaypointApi
                     wp.Longitude = latLon.Value.Longitude;
                 }
             }
+            // Lift the description out of the GeoJSON properties block
+            // into a flat field so the popup-Edit dialog can pre-fill
+            // it. Empty string is the absent-description value
+            // GeoJsonBuilder.FeatureBody emits on Create; treat it as
+            // null so the textarea placeholder ("Description (optional)")
+            // surfaces instead of an empty input.
+            var desc = wp.Feature?.Properties?.Description;
+            wp.Description = string.IsNullOrEmpty(desc) ? null : desc;
             waypoints.Add(wp);
         }
         return waypoints;

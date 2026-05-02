@@ -1,12 +1,11 @@
 @using OnaPlotter.Models
 @using OnaPlotter.Services
-@inject IJSRuntime JS
 @inject IConfirmationService Confirmations
 
 @* Server-stored waypoints. Each row has Go (set as active destination),
-   Edit (rename via a browser prompt), and Delete (with confirm). Filters
-   by the shared LayerFilter so the panel's search input finds waypoints
-   alongside charts and routes. *@
+   Edit (opens the same name+description dialog as Create), and Delete
+   (with confirm). Filters by the shared LayerFilter so the panel's
+   search input finds waypoints alongside charts and routes. *@
 
 <CrudSection TItem="SignalkWaypoint"
              Title="Waypoints"
@@ -25,8 +24,8 @@
                 @onclick="() => OnNavigate.InvokeAsync(wp)"
                 title="Navigate to this waypoint">Go</button>
         <button class="map-btn route-action-btn"
-                @onclick="() => PromptEdit(wp)"
-                title="Rename this waypoint">Edit</button>
+                @onclick="() => OnEdit.InvokeAsync(wp)"
+                title="Edit name + description">Edit</button>
         <button class="map-btn route-action-btn route-action-danger"
                 @onclick="() => ConfirmDelete(wp)"
                 title="Delete waypoint">Delete</button>
@@ -42,10 +41,15 @@
     [Parameter] public EventCallback<SignalkWaypoint> OnFocus { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigate { get; set; }
 
-    /// <summary>Fires with the waypoint + new name after the user
-    /// confirms a rename. Parent PUTs the change and refreshes the
-    /// list.</summary>
-    [Parameter] public EventCallback<(SignalkWaypoint wp, string newName)> OnRename { get; set; }
+    /// <summary>Fires when the helm taps Edit. Parent opens the
+    /// create-dialog pre-filled with the waypoint's current
+    /// name + description (see <c>Map.OpenWaypointEditDialog</c>);
+    /// the dialog itself round-trips the API call. Replaces the
+    /// older <c>OnRename</c> two-tuple callback that was wired
+    /// after a single-field JS prompt -- the dialog gives the helm
+    /// description editing in the same surface, which the prompt
+    /// couldn't.</summary>
+    [Parameter] public EventCallback<SignalkWaypoint> OnEdit { get; set; }
 
     /// <summary>Fires after the user confirms deletion. Parent
     /// handles the REST DELETE + map-marker removal.</summary>
@@ -58,24 +62,6 @@
     private static bool MatchesWaypoint(SignalkWaypoint wp, string filter) =>
         (wp.Name?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false)
         || wp.Id.Contains(filter, StringComparison.OrdinalIgnoreCase);
-
-    // JS prompt() is a rudimentary rename UI, but for a single-field
-    // edit (the waypoint's name) it's cheaper than building a modal,
-    // works on touch, and matches the delete-confirm's dialog
-    // affordance for users who already know that one.
-    private async Task PromptEdit(SignalkWaypoint wp)
-    {
-        string? newName;
-        try
-        {
-            newName = await JS.InvokeAsync<string?>("prompt",
-                "Waypoint name:", wp.Name ?? "");
-        }
-        catch (Microsoft.JSInterop.JSDisconnectedException) { return; }
-        if (string.IsNullOrWhiteSpace(newName)) return;
-        if (newName == wp.Name) return;
-        await OnRename.InvokeAsync((wp, newName.Trim()));
-    }
 
     private async Task ConfirmDelete(SignalkWaypoint wp)
     {

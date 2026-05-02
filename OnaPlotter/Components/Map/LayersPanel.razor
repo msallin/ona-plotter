@@ -54,14 +54,14 @@
                       LayerFilter="@LayerFilter"
                       OnFocus="OnFocusWaypoint"
                       OnNavigate="OnNavigateToWaypoint"
-                      OnRename="OnRenameWaypoint"
+                      OnEdit="OnEditWaypoint"
                       OnDelete="OnDeleteWaypoint" />
 
     <NotesSection Notes="FilteredNotes"
                   LayerFilter="@LayerFilter"
                   OnFocus="OnFocusNote"
                   OnNavigate="OnNavigateToNote"
-                  OnRename="OnRenameNote"
+                  OnEdit="OnEditNote"
                   OnDelete="OnDeleteNote" />
 
     <RegionsSection Regions="LoadedRegions"
@@ -171,11 +171,15 @@
     [Parameter] public EventCallback<SignalkRoute> OnDeleteRoute { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnFocusWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnNavigateToWaypoint { get; set; }
-    [Parameter] public EventCallback<(SignalkWaypoint wp, string newName)> OnRenameWaypoint { get; set; }
+    /// <summary>Helm tapped Edit on a waypoint row. Parent opens
+    /// the same dialog used for Create, pre-filled.</summary>
+    [Parameter] public EventCallback<SignalkWaypoint> OnEditWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkWaypoint> OnDeleteWaypoint { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnFocusNote { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnNavigateToNote { get; set; }
-    [Parameter] public EventCallback<(SignalkNote note, string newTitle)> OnRenameNote { get; set; }
+    /// <summary>Helm tapped Edit on a note row. Parent opens the
+    /// same dialog used for Add Note, pre-filled.</summary>
+    [Parameter] public EventCallback<SignalkNote> OnEditNote { get; set; }
     [Parameter] public EventCallback<SignalkNote> OnDeleteNote { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnFocusRegion { get; set; }
     [Parameter] public EventCallback<SignalkRegion> OnEditRegion { get; set; }

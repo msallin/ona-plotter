@@ -153,52 +153,28 @@ public class NotesSectionTests
     }
 
     [Test]
-    public async Task EditButton_FiresRename_WithTrimmedTitle()
+    public async Task EditButton_Click_Fires_OnEdit_WithNote()
     {
-        // PromptAsync returns the new title when the helm confirms;
-        // the section trims and re-fires only when the trimmed value
-        // differs from the current title (a no-change rename would
-        // bump the resource's last-modified timestamp for nothing).
-        (SignalkNote note, string title)? renamed = null;
-        var (ctx, confirm) = Context();
+        // Replaces the older PromptAsync-based EditButton tests:
+        // the layers-panel Edit button no longer surfaces a prompt;
+        // it raises OnEdit which the parent wires to open the
+        // create-dialog pre-filled with title + description. This
+        // test pins the new contract so a future drift back to a
+        // prompt-based flow surfaces here first.
+        SignalkNote? captured = null;
+        var (ctx, _) = Context();
         using var _ctx = ctx;
-        confirm.AutoPromptValue = "  Renamed Title  ";
         var cut = ctx.RenderComponent<NotesSection>(p => p
             .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
-            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkNote, string)>(
-                this, t => renamed = t)));
+            .Add(x => x.OnEdit, EventCallback.Factory.Create<SignalkNote>(
+                this, n => captured = n)));
         Expand(cut);
 
-        cut.FindAll("button[title^='Rename this note']")[0].Click();
-        // Wait one render tick for the async PromptAsync round-trip.
-        await Task.Delay(10);
+        cut.FindAll("button[title^='Edit title']")[0].Click();
 
-        await Assert.That(renamed).IsNotNull();
-        await Assert.That(renamed!.Value.note.Id).IsEqualTo("n1");
-        await Assert.That(renamed.Value.title).IsEqualTo("Renamed Title");
-    }
-
-    [Test]
-    public async Task EditButton_NoChange_DoesNotFireRename()
-    {
-        // Helm types the existing title back -- common when they
-        // open the prompt to read the title and dismiss with Enter.
-        // Don't fire OnRename for a no-op edit; the round-trip would
-        // add nothing but a "renamed" toast that's confusing.
-        (SignalkNote note, string title)? renamed = null;
-        var (ctx, confirm) = Context();
-        using var _ctx = ctx;
-        confirm.AutoPromptValue = "Kelp";
-        var cut = ctx.RenderComponent<NotesSection>(p => p
-            .Add(x => x.Notes, new[] { Note("n1", "Kelp") })
-            .Add(x => x.OnRename, EventCallback.Factory.Create<(SignalkNote, string)>(
-                this, t => renamed = t)));
-        Expand(cut);
-
-        cut.FindAll("button[title^='Rename this note']")[0].Click();
-        await Task.Delay(10);
-
-        await Assert.That(renamed).IsNull();
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.Id).IsEqualTo("n1");
+        await Assert.That(captured.Title).IsEqualTo("Kelp");
     }
 
     [Test]
