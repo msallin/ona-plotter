@@ -2067,6 +2067,25 @@ html:fullscreen .hud-stack-br {
     border-color: rgba(255,255,255,0.1);
 }
 
+/* Loading-cancel state: same .map-btn but the button stays enabled
+   AND signals "tap me to cancel" with an amber accent. Used by the
+   History page Load button while a fetch is in flight; the spinner
+   carries the "still working" message and the colour shift conveys
+   "this tap stops it" without a separate red-button affordance. */
+.map-btn.loading-cancel {
+    border-color: var(--sk-warn, #d18b1f);
+    color: var(--sk-warn, #d18b1f);
+}
+.map-btn.loading-cancel:hover {
+    background: rgba(209, 139, 31, 0.12);
+    border-color: var(--sk-warn, #d18b1f);
+}
+.theme-effective-light .map-btn.loading-cancel {
+    background: var(--sk-surface);
+    border-color: var(--sk-warn, #d18b1f);
+    color: var(--sk-warn, #d18b1f);
+}
+
 /* Light + high-contrast: .map-btn inverts so it reads as a button
    sitting on a white panel (History controls, Settings forms). The
    dark-chrome default is tuned for the always-dark map context; on
