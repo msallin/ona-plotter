@@ -88,16 +88,21 @@
                 <option value="5m"  selected="@(resolution == "5m")">5 m</option>
                 <option value="15m" selected="@(resolution == "15m")">15 m</option>
             </select>
-            @* Loading-aware Load button. Disabled + spinner while a
-               fetch is in flight so a slow History API on a sat link
-               doesn't tempt the helm into machine-gunning Load and
-               racing several requests. *@
-            <button class="map-btn" @onclick="LoadTrack" disabled="@loading"
-                    title="@(loading ? "Loading..." : "Load track for the chosen window")">
+            @* Loading-aware Load button. While a fetch is in flight
+               the same button doubles as Cancel: helm tap signals
+               the in-flight CTS so a slow sat-link fetch can be
+               aborted without waiting it out. The button STAYS
+               enabled while loading (we want the cancel tap), the
+               spinner conveys "still working", and the title text
+               shifts to "tap to cancel" so the helm doesn't think
+               the second tap will racetrack a duplicate request. *@
+            <button class="map-btn @(loading ? "loading-cancel" : "")"
+                    @onclick="LoadTrack"
+                    title="@(loading ? "Loading… tap to cancel" : "Load track for the chosen window")">
                 @if (loading)
                 {
                     <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                    <span>Loading...</span>
+                    <span>Cancel</span>
                 }
                 else
                 {
@@ -383,6 +388,14 @@
     /// (sat-link, large window) doesn't have helms tapping Load
     /// repeatedly thinking the page froze.</summary>
     private bool loading;
+    /// <summary>Cancellation source for the in-flight LoadTrack fetch.
+    /// Tapping the Loading… button (which doubles as Cancel while a
+    /// fetch is in flight) signals this CTS, the History API call
+    /// throws OperationCanceledException, and we drop back to the
+    /// idle state without applying a partial result. Helm-initiated
+    /// cancel is silent (no error toast); a server / network failure
+    /// is still surfaced by the underlying API layer's toast.</summary>
+    private CancellationTokenSource? _loadCts;
     private System.Threading.Timer? playTimer;
     // Custom date-range state. "preset" mode uses selectedTimespan
     // (the dropdown); "custom" uses customFromLocal + customToLocal.
@@ -1149,22 +1162,48 @@
 
     private async Task LoadTrack()
     {
-        if (loading) return;     // re-tap guard
+        // While a fetch is in flight, the same button doubles as
+        // Cancel: cancel the CTS, let the LoadTrackInner await throw
+        // OperationCanceledException, and drop back to idle. The
+        // finally below clears state regardless of which path won.
+        // Helm-initiated cancel is silent; a real transport / server
+        // failure still surfaces through the API layer's toast.
+        if (loading)
+        {
+            _loadCts?.Cancel();
+            return;
+        }
         loadAttempted = true;
         loading = true;
+        // New CTS per fetch -- one-shot CTS objects are simpler than
+        // resetting state on a reused instance, and cheap (no
+        // unmanaged handles in the cancel path here).
+        var cts = new CancellationTokenSource();
+        _loadCts = cts;
         StateHasChanged();
         try
         {
-            await LoadTrackInner();
+            await LoadTrackInner(cts.Token);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Helm tapped Cancel. Keep whatever was previously on
+            // screen (don't blank the map) -- a half-applied fetch
+            // result wouldn't have made it past the throwing await,
+            // so nothing else to clean up here.
         }
         finally
         {
             loading = false;
+            // Defensive: if a sibling tap ran the cancel path and
+            // assigned a new CTS in between, don't clobber that one.
+            if (ReferenceEquals(_loadCts, cts)) _loadCts = null;
+            cts.Dispose();
             StateHasChanged();
         }
     }
 
-    private async Task LoadTrackInner()
+    private async Task LoadTrackInner(CancellationToken ct)
     {
         // Resolve the time window from the current mode. Custom mode
         // sends absolute (from, to) UTC instants -- helm-locale
@@ -1197,9 +1236,11 @@
         // Rich fetch: timestamps + sog + wind in one round-trip.
         // Segmenter splits into stationary/moving runs which JS
         // renders with distinct styling + per-segment hover tooltips.
+        // CT lets the helm cancel a slow sat-link fetch via the
+        // Loading…/Cancel button.
         points = await TrackApi.GetServerTrackPointsAsync(
             from: fromUtc, to: toUtc, timespan: span,
-            resolution: resolution, bbox: bbox);
+            resolution: resolution, bbox: bbox, ct: ct);
         segments = points is { Length: > 0 } ? TrackSegmenter.Segment(points) : null;
         playbackIndex = 0;
         playing = false;
@@ -1527,6 +1568,11 @@
         // Load -- the new range survives.
         SaveToState();
         playing = false;
+        // Abort any in-flight LoadTrack so the API call doesn't
+        // continue past the page being torn down (would StateHasChanged
+        // on a disposed component and surface as a noisy log line).
+        try { _loadCts?.Cancel(); _loadCts?.Dispose(); _loadCts = null; }
+        catch (ObjectDisposedException) { /* already disposed */ }
         if (playTimer is not null) await playTimer.DisposeAsync();
         try
         {
