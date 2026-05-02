@@ -1556,40 +1556,6 @@ html:fullscreen .hud-stack-br {
    to the cross-track-error magnitude (clamped to the bar range).
    Same idea as an aviation ILS localizer -- the bar IS the data, the
    number is confirmation. Range: clamp -100 m .. +100 m. */
-.xte-bar {
-    position: relative;
-    width: 100%;
-    height: 12px;
-    margin: 4px 0;
-}
-.xte-bar-track {
-    position: absolute;
-    inset: 5px 0;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 1px;
-}
-.xte-bar-center {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: rgba(255, 255, 255, 0.4);
-    transform: translateX(-0.5px);
-}
-.xte-bar-marker {
-    position: absolute;
-    top: 50%;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--hud-pulse);
-    transform: translate(-50%, -50%);
-    transition: left var(--hud-dur-med) var(--hud-ease-spring),
-                background-color var(--hud-dur-short) var(--hud-ease-spring);
-}
-.xte-bar.is-warn  .xte-bar-marker { background: var(--hud-warn); }
-.xte-bar.is-alarm .xte-bar-marker { background: var(--hud-alarm); }
 
 /* Three type sizes only -- label, value, primary -- driven by tokens
    so a single density change cascades to every card. Locked-grid digits

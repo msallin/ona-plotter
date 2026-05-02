@@ -48,13 +48,31 @@ public class HudRouteCardTests
     }
 
     [Test]
-    public async Task WpProgress_Shown_WhenBothIndexAndTotalPresent()
+    public async Task WpProgress_Shown_InBigHud_WhenBothIndexAndTotalPresent()
     {
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudRouteCard>(p => p
-            .Add(x => x.Snapshot, Snap(pointIndex: 2, pointTotal: 7)));
-        // pointIndex is 0-based from SK so the label shows idx+1.
+            .Add(x => x.Snapshot, Snap(pointIndex: 2, pointTotal: 7))
+            .Add(x => x.BigHud, true));
+        // pointIndex is 0-based from SK so the label shows idx+1. Only
+        // shown in Big HUD; small HUD drops the chip to free
+        // horizontal real estate on landscape iPad.
         await Assert.That(cut.Markup).Contains("WP 3 of 7");
+    }
+
+    [Test]
+    public async Task WpProgress_Hidden_InSmallHud_EvenWhenIndexAndTotalPresent()
+    {
+        // Small HUD (BigHud=false, the default) drops the WP chip.
+        // The prev/next step buttons are still rendered so the helm
+        // can advance / step back without going to Big HUD first.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudRouteCard>(p => p
+            .Add(x => x.Snapshot, Snap(pointIndex: 2, pointTotal: 7)));
+        await Assert.That(cut.Markup).DoesNotContain("WP 3 of 7");
+        // Prev/next buttons still present.
+        await Assert.That(cut.Markup).Contains("aria-label=\"Previous waypoint\"");
+        await Assert.That(cut.Markup).Contains("aria-label=\"Next waypoint\"");
     }
 
     [Test]
@@ -64,7 +82,8 @@ public class HudRouteCardTests
         // but not pointIndex, or vice versa. Don't render half-info.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudRouteCard>(p => p
-            .Add(x => x.Snapshot, Snap(pointIndex: 1, pointTotal: null)));
+            .Add(x => x.Snapshot, Snap(pointIndex: 1, pointTotal: null))
+            .Add(x => x.BigHud, true));
         await Assert.That(cut.Markup).DoesNotContain("WP");
     }
 

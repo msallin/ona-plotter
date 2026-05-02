@@ -123,27 +123,15 @@
                     </div>
                 }
             </div>
-            @* XTE deviation bar -- ILS-localiser-style read of the same
-               cross-track-error number above. Centerline = on track.
-               Marker position is clamped to +/-100 m so a one-shot
-               GPS hiccup pinning out doesn't make the marker disappear
-               off-screen. The number stays as confirmation. *@
-            @if (Snapshot.Xte is double xteM)
-            {
-                double clamped = Math.Clamp(xteM, -100, 100);
-                double pct = 50 + (clamped / 100) * 50;
-                string posClass = Math.Abs(xteM) >= 50 ? "is-alarm"
-                                : Math.Abs(xteM) >= 25 ? "is-warn" : "";
-                string pctStr = pct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-                string side = xteM < 0 ? "left" : "right";
-                string label = $"Off track {Math.Abs(xteM):F0} m {side}";
-                <div class="xte-bar @posClass" title="@($"Cross-track error: {xteM:F1} m")"
-                     role="img" aria-label="@label">
-                    <div class="xte-bar-track"></div>
-                    <div class="xte-bar-center"></div>
-                    <div class="xte-bar-marker" style="left: @(pctStr)%"></div>
-                </div>
-            }
+            @* The XTE deviation bar (ILS-localiser-style horizontal
+               track + center mark + marker) used to live here. Helm
+               flagged it as visually noisy without proportional
+               value -- the XTE numeric (in Big HUD) and the route
+               polyline + boat icon position on the chart already
+               communicate the same off-track information clearly.
+               Removed so the route card stays a metrics-and-actions
+               surface; the bar wasn't compensating for an unmet
+               need. *@
             @if (Snapshot.RouteDistanceRemaining is not null || Snapshot.RouteTimeToGo is not null)
             {
                 <div class="route-total-row">
