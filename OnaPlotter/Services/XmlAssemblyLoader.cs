@@ -32,10 +32,19 @@ public sealed class XmlAssemblyLoader
         "System.Private.Xml.wasm",
         "System.Private.Xml.Linq.wasm",
     ];
-    private readonly LazyAssemblyLoader _loader;
+
+    // Test seam. The DI ctor wraps LazyAssemblyLoader; the internal
+    // ctor takes the underlying load delegate so unit tests can
+    // exercise the memoisation contract without spinning up the
+    // Blazor WASM host (LazyAssemblyLoader's runtime requires it).
+    private readonly Func<string[], Task> _loadAssemblies;
     private Task? _loadTask;
 
-    public XmlAssemblyLoader(LazyAssemblyLoader loader) => _loader = loader;
+    public XmlAssemblyLoader(LazyAssemblyLoader loader)
+        : this(asms => loader.LoadAssembliesAsync(asms)) { }
+
+    internal XmlAssemblyLoader(Func<string[], Task> loadAssemblies) =>
+        _loadAssemblies = loadAssemblies;
 
     /// <summary>Idempotent. Awaits the single shared load on first call;
     /// subsequent calls return the cached completed task.</summary>
@@ -43,9 +52,9 @@ public sealed class XmlAssemblyLoader
 
     private async Task LoadCoreAsync()
     {
-        // LoadAssembliesAsync returns the loaded assemblies; we don't
-        // need the result -- the side effect (the runtime registers
+        // The underlying loader's return value (the loaded Assembly
+        // list) is unused -- the side effect (the runtime registers
         // the assemblies) is what unlocks XDocument.Parse etc.
-        await _loader.LoadAssembliesAsync(XmlAssemblies);
+        await _loadAssemblies(XmlAssemblies);
     }
 }

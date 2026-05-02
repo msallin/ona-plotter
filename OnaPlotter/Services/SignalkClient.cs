@@ -598,11 +598,16 @@ public sealed class SignalkClient : IAsyncDisposable
                     // even a ~200-vessel AIS bulk update is single-
                     // digit KB. Note: the cap counts bytes here; the
                     // earlier StringBuilder version counted UTF-16
-                    // chars (which were 2x for ASCII / 1x for BMP);
-                    // for typical SK JSON (mostly ASCII) the byte
-                    // count is half the previous char count, so a
-                    // 4 MB byte cap is roughly equivalent to the
-                    // earlier 4 MB char cap on payload size in practice.
+                    // chars. For ASCII payloads the byte count and
+                    // the UTF-16 char count are equal (1 char = 1
+                    // byte after transcode), so 4 MB stays roughly
+                    // 4 MB of meaningful content for typical SK
+                    // JSON (which is overwhelmingly ASCII). Non-
+                    // ASCII BMP code points are 1 UTF-16 char but
+                    // 2-3 UTF-8 bytes, so a 4 MB byte cap is
+                    // strictly tighter than the old char cap on
+                    // those payloads -- still well above plausible
+                    // SK content.
                     if (messageBuffer.WrittenCount > MaxMessageBufferBytes)
                     {
                         _logger.LogWarning(
@@ -754,11 +759,18 @@ public sealed class SignalkClient : IAsyncDisposable
         // someone is actually listening. Cache the materialised string
         // so we don't transcode twice if the hello-detection path also
         // needs it (rare; only fires until _selfContext resolves).
+        // The capture-then-test shape (rather than null-conditional
+        // ?.Invoke) lets us skip the GetString allocation when nothing
+        // is listening; the captured local also pins the snapshot of
+        // the multicast-delegate so a concurrent unsubscribe between
+        // the test and the invoke can't NRE us. WASM today is single-
+        // threaded so this is belt-and-braces; harmless either way.
+        var rawHandler = OnRawMessage;
         string? raw = null;
-        if (OnRawMessage is not null)
+        if (rawHandler is not null)
         {
             raw = Encoding.UTF8.GetString(utf8Bytes);
-            OnRawMessage.Invoke(raw);
+            rawHandler.Invoke(raw);
         }
 
         try
