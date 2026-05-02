@@ -39,6 +39,9 @@ public sealed class AppSettingsService : IAppSettings
     /// (COG vector, tidal current arrow, laylines). Default true so
     /// existing installs see the lines they always saw.</summary>
     public bool ShipLinesVisible { get; private set; } = true;
+    /// <summary>Local SOG-coloured trail visible. Default true; helm
+    /// can hide via Layers > Own ship.</summary>
+    public bool LocalTrackVisible { get; private set; } = true;
     public bool AtonsVisible { get; private set; } = true;
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
@@ -161,6 +164,7 @@ public sealed class AppSettingsService : IAppSettings
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             ShipLinesVisible = await LoadBool("shipLinesVisible.v1", true);
+            LocalTrackVisible = await LoadBool("localTrackVisible.v1", true);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
             GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
             GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
@@ -335,6 +339,12 @@ public sealed class AppSettingsService : IAppSettings
     {
         ShipLinesVisible = value;
         await Save("shipLinesVisible.v1", value ? "true" : "false");
+    }
+
+    public async Task SetLocalTrackVisibleAsync(bool value)
+    {
+        LocalTrackVisible = value;
+        await Save("localTrackVisible.v1", value ? "true" : "false");
     }
 
     public async Task SetAtonsVisibleAsync(bool value)

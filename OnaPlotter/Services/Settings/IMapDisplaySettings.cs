@@ -33,6 +33,14 @@ public interface IMapDisplaySettings
     /// is active.</para></summary>
     bool ShipLinesVisible { get; }
 
+    /// <summary>Local SOG-coloured own-ship trail (the rolling
+    /// ~83 min polyline, in-memory only). Companion to
+    /// <see cref="ShipLinesVisible"/> for the trail layer; helms
+    /// who want a clean chart (racing) or who keep the server-side
+    /// history layer on can hide the local trail without losing the
+    /// COG vector + current arrow. Defaults to true.</summary>
+    bool LocalTrackVisible { get; }
+
     /// <summary>AIS Aids to Navigation visible on the map.</summary>
     bool AtonsVisible { get; }
 
@@ -125,6 +133,7 @@ public interface IMapDisplaySettings
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
     Task SetShipLinesVisibleAsync(bool value);
+    Task SetLocalTrackVisibleAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
     Task SetGuardZoneVisibleAsync(bool value);
     Task SetGuardZoneWarningRingVisibleAsync(bool value);

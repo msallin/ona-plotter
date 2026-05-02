@@ -88,7 +88,9 @@
        commonly tweaked group; History (server) stays below since
        it's a different data source. *@
     <OwnShipSection ShipLinesVisible="ShipLinesVisible"
-                    OnToggleShipLines="OnToggleShipLines" />
+                    OnToggleShipLines="OnToggleShipLines"
+                    LocalTrackVisible="LocalTrackVisible"
+                    OnToggleLocalTrack="OnToggleLocalTrack" />
 
     <BuddiesSection Buddies="Buddies"
                     Vessels="Vessels"
@@ -167,6 +169,8 @@
         new Dictionary<string, RadarCapabilities?>();
     [Parameter] public bool ShipLinesVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
+    [Parameter] public bool LocalTrackVisible { get; set; } = true;
+    [Parameter] public EventCallback<bool> OnToggleLocalTrack { get; set; }
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;

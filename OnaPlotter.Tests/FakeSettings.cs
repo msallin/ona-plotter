@@ -24,6 +24,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool FollowBoat { get; set; } = true;
     public bool LaylinesVisible { get; set; }
     public bool ShipLinesVisible { get; set; } = true;
+    public bool LocalTrackVisible { get; set; } = true;
     public bool AtonsVisible { get; set; } = true;
     public bool GuardZoneVisible { get; set; } = true;
     public bool GuardZoneWarningRingVisible { get; set; } = true;
@@ -86,6 +87,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
     public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
     public Task SetShipLinesVisibleAsync(bool v) { ShipLinesVisible = v; return Task.CompletedTask; }
+    public Task SetLocalTrackVisibleAsync(bool v) { LocalTrackVisible = v; return Task.CompletedTask; }
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }
     public Task SetGuardZoneVisibleAsync(bool v) { GuardZoneVisible = v; return Task.CompletedTask; }

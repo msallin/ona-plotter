@@ -466,6 +466,8 @@
                      RadarCapabilities="RadarOverlay.Capabilities"
                      ShipLinesVisible="Settings.ShipLinesVisible"
                      OnToggleShipLines="OnToggleShipLines"
+                     LocalTrackVisible="Settings.LocalTrackVisible"
+                     OnToggleLocalTrack="OnToggleLocalTrack"
                      ServerTrackVisible="@(_serverTrack?.Visible ?? false)"
                      ServerTrackDuration="@(_serverTrack?.Duration ?? "1d")"
                      ServerTrackResolution="@(_serverTrack?.Resolution ?? "1m")"
@@ -1391,12 +1393,18 @@
         // pushes "" and existing relative URLs keep working.
         await _controlsJs.SetSignalKBaseUrlAsync(SkBaseUrl.BaseUrl);
 
-        // Load existing track as speed-colored segments.
+        // Load existing track as speed-colored segments. Skipped when
+        // the helm has the local-trail toggle off; we still seed
+        // PrevLat / PrevLon so a re-enable later starts the trail
+        // from the correct previous fix without a one-tick gap.
         var points = TrackBuffer.GetSnapshot();
         if (points.Length > 0)
         {
-            var jsPoints = points.Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 }).ToArray();
-            await _overlaysJs.SetColoredTrackAsync(jsPoints);
+            if (Settings.LocalTrackVisible)
+            {
+                var jsPoints = points.Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 }).ToArray();
+                await _overlaysJs.SetColoredTrackAsync(jsPoints);
+            }
             _frameBuilder.PrevLat = points[^1].Latitude;
             _frameBuilder.PrevLon = points[^1].Longitude;
         }
@@ -2067,7 +2075,13 @@
             _localTrackSuppressedForRoute = false;
             _lastServerTrackRefreshUtc = null;
         }
-        _frameBuilder.SuppressLocalTrack = _localTrackSuppressedForRoute;
+        // Suppression has two sources: the route-active latch above
+        // and the helm's "Show local trail" toggle. ORing them keeps
+        // the frame builder ignorant of which path turned the trail
+        // off; the toggle handler below clears the existing JS layer
+        // on its own when the helm flips it.
+        _frameBuilder.SuppressLocalTrack =
+            _localTrackSuppressedForRoute || !Settings.LocalTrackVisible;
 
         if (routeAndServerTrack
             && _lastServerTrackRefreshUtc is DateTimeOffset last
@@ -2174,6 +2188,34 @@
         await Settings.SetShipLinesVisibleAsync(enabled);
         if (_controlsJs is not null)
             await _controlsJs.SetShipLinesVisibleAsync(enabled);
+    }
+
+    /// <summary>Helm flipped the "Show local trail" toggle. Persists,
+    /// then either tears the JS layer down (off) or re-seeds it from
+    /// the in-memory <see cref="TrackBuffer"/> (on) so the helm sees
+    /// the current ~83 min of history immediately, not "starting from
+    /// the next fix". The per-tick suppression flag drives future
+    /// segment emissions either way (see SyncRouteActiveServerTrackAsync).
+    /// </summary>
+    private async Task OnToggleLocalTrack(bool enabled)
+    {
+        await Settings.SetLocalTrackVisibleAsync(enabled);
+        if (_overlaysJs is null) return;
+        if (enabled)
+        {
+            var points = TrackBuffer.GetSnapshot();
+            if (points.Length > 0)
+            {
+                var jsPoints = points
+                    .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
+                    .ToArray();
+                await _overlaysJs.SetColoredTrackAsync(jsPoints);
+            }
+        }
+        else
+        {
+            await _overlaysJs.SetColoredTrackAsync([]);
+        }
     }
 
     /// <summary>

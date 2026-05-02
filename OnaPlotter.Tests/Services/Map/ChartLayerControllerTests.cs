@@ -138,6 +138,7 @@ public class ChartLayerControllerTests
         public bool FollowBoat => true;
         public bool LaylinesVisible => false;
         public bool ShipLinesVisible => true;
+        public bool LocalTrackVisible => true;
         public bool AtonsVisible => true;
         public bool GuardZoneVisible => true;
         public bool GuardZoneWarningRingVisible => true;
@@ -154,6 +155,7 @@ public class ChartLayerControllerTests
         public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
         public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetShipLinesVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetLocalTrackVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneWarningRingVisibleAsync(bool v) => Task.CompletedTask;
