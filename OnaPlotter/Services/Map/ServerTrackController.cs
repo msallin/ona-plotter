@@ -114,20 +114,38 @@ public sealed class ServerTrackController
 
     /// <summary>
     /// Fetches the server track for the current duration and pushes
-    /// it to the JS layer. "all" maps to a 100-year ISO duration
-    /// (P36500D) because the SignalK History API doesn't define an
-    /// "everything" shape -- a span larger than any plausible cruise
-    /// is the pragmatic stand-in. The within-bounds flag rides along
-    /// so the initial render respects the toggle if it was on before
-    /// the duration change.
+    /// it to the JS layer as <c>[lat, lon, sogMs]</c> triples so the
+    /// renderer can colour by speed bucket (same scheme as the
+    /// local own-track polyline). The rich fetch carries SOG; nulls
+    /// (e.g. early-cruise samples before SK derived SOG from the
+    /// position delta) collapse to 0 m/s, which the JS speed bucket
+    /// bins as the slowest band, visually consistent with "we did
+    /// not see the boat moving fast" without dropping the segment.
+    /// "all" maps to a 100-year ISO duration (P36500D) because the
+    /// SignalK History API doesn't define an "everything" shape --
+    /// a span larger than any plausible cruise is the pragmatic
+    /// stand-in. The within-bounds flag rides along so the initial
+    /// render respects the toggle if it was on before the duration
+    /// change.
     /// </summary>
     private async Task ReloadAsync()
     {
         string apiSpan = _duration == "all" ? "P36500D" : _duration;
-        var points = await _trackApi.GetServerTrackAsync(apiSpan, _resolution);
+        var points = await _trackApi.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: apiSpan, resolution: _resolution);
         if (points is not null && points.Length > 0)
         {
-            await _overlaysJs.SetServerTrackAsync(points, _withinBounds);
+            // Project to [lat, lon, sogMs] triples for the JS speed-
+            // colour renderer. The rich fetch returns extra paths
+            // (heading, wind, etc) that the Map overlay doesn't need;
+            // we drop them here to keep the interop payload small.
+            var triples = new double[points.Length][];
+            for (int i = 0; i < points.Length; i++)
+            {
+                triples[i] = [points[i].Latitude, points[i].Longitude,
+                              points[i].SpeedOverGround ?? 0];
+            }
+            await _overlaysJs.SetServerTrackAsync(triples, _withinBounds);
         }
         else
         {

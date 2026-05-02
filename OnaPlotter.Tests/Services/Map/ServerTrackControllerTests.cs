@@ -47,22 +47,36 @@ public class ServerTrackControllerTests
     private sealed class FakeTrackApi : ITrackApi
     {
         public List<(string span, string resolution)> Calls { get; } = [];
-        public double[][]? Result { get; set; } = [[54.5, 11.2], [54.6, 11.3]];
+        public OnaPlotter.Models.TrackPoint[]? Result { get; set; } =
+        [
+            new OnaPlotter.Models.TrackPoint(
+                Timestamp: DateTime.UtcNow.AddMinutes(-2),
+                Latitude: 54.5, Longitude: 11.2,
+                SpeedOverGround: 2.1, CourseOverGround: null, Heading: null,
+                WindAngleApparent: null, WindSpeedApparent: null,
+                WindAngleTrue: null, WindSpeedTrue: null),
+            new OnaPlotter.Models.TrackPoint(
+                Timestamp: DateTime.UtcNow.AddMinutes(-1),
+                Latitude: 54.6, Longitude: 11.3,
+                SpeedOverGround: 2.4, CourseOverGround: null, Heading: null,
+                WindAngleApparent: null, WindSpeedApparent: null,
+                WindAngleTrue: null, WindSpeedTrue: null),
+        ];
 
+        // The light position-only fetch isn't exercised by
+        // ServerTrackController (it switched to the rich fetch so the
+        // map polyline can be SOG-coloured like the local trail).
+        // Unused but required by the interface.
         public Task<double[][]?> GetServerTrackAsync(string timespan = "1d", string resolution = "1m", CancellationToken ct = default)
-        {
-            Calls.Add((timespan, resolution));
-            return Task.FromResult(Result);
-        }
+            => Task.FromResult<double[][]?>(null);
 
-        // The rich fetch isn't exercised by ServerTrackController (the
-        // Map page only needs the lightweight position-only track).
-        // Unused but required by the interface; null-result mirrors
-        // "no data" in production.
         public Task<OnaPlotter.Models.TrackPoint[]?> GetServerTrackPointsAsync(
             DateTimeOffset? from, DateTimeOffset? to, string? timespan,
             string resolution = "30s", OnaPlotter.Models.TrackBbox? bbox = null, CancellationToken ct = default)
-            => Task.FromResult<OnaPlotter.Models.TrackPoint[]?>(null);
+        {
+            Calls.Add((timespan ?? "1d", resolution));
+            return Task.FromResult(Result);
+        }
     }
 
     private static (ServerTrackController ctrl, FakeOverlaysJs js, FakeTrackApi api, List<string> infos)
@@ -165,6 +179,61 @@ public class ServerTrackControllerTests
         await Assert.That(js.Clears).IsEqualTo(1);
         await Assert.That(infos.Count).IsEqualTo(1);
         await Assert.That(infos[0]).Contains("No history points");
+    }
+
+    [Test]
+    public async Task Push_Carries_Sog_Triples_Not_Pairs()
+    {
+        // Server-track parity with the local trail requires the JS
+        // layer to receive [lat, lon, sogMs] triples so it can colour
+        // by speed bucket. Pin the shape so a regression back to
+        // [lat, lon] pairs (and the grey single-line render) breaks
+        // this test.
+        var (ctrl, js, _, _) = New();
+
+        await ctrl.ToggleAsync(true);
+
+        await Assert.That(js.ServerSets.Count).IsEqualTo(1);
+        var pushed = js.ServerSets[0].coords;
+        await Assert.That(pushed.Length).IsEqualTo(2);
+        await Assert.That(pushed[0].Length).IsEqualTo(3);
+        await Assert.That(pushed[0][2]).IsEqualTo(2.1);
+        await Assert.That(pushed[1][2]).IsEqualTo(2.4);
+    }
+
+    [Test]
+    public async Task Resolution_Change_Refetches_When_Visible()
+    {
+        var (ctrl, _, api, _) = New();
+        await ctrl.ToggleAsync(true);
+
+        await ctrl.SetResolutionAsync("5m");
+
+        await Assert.That(api.Calls.Count).IsEqualTo(2);
+        await Assert.That(api.Calls[1].resolution).IsEqualTo("5m");
+        await Assert.That(ctrl.Resolution).IsEqualTo("5m");
+    }
+
+    [Test]
+    public async Task Resolution_Change_Skipped_When_Hidden()
+    {
+        var (ctrl, _, api, _) = New();
+
+        await ctrl.SetResolutionAsync("5m");
+
+        await Assert.That(api.Calls.Count).IsEqualTo(0);
+        await Assert.That(ctrl.Resolution).IsEqualTo("5m");
+    }
+
+    [Test]
+    public async Task Resolution_Change_Same_Value_Is_No_Op()
+    {
+        var (ctrl, _, api, _) = New();
+        await ctrl.ToggleAsync(true);
+
+        await ctrl.SetResolutionAsync("1m");
+
+        await Assert.That(api.Calls.Count).IsEqualTo(1);
     }
 
     [Test]

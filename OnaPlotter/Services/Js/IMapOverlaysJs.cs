@@ -59,8 +59,12 @@ public interface IMapOverlaysJs
     // ---- Server-side track history -----------------------------------
 
     /// <summary>Render the server-fetched track history as a
-    /// polyline. <paramref name="clipToBounds"/> tells the JS side to
-    /// re-clip to the map viewport on pan / zoom without a re-fetch.</summary>
+    /// SOG-coloured polyline (same speed-bucket grouping as the
+    /// own-track layer above). Each entry is <c>[lat, lon, sogMs]</c>
+    /// where <c>sogMs</c> is <c>0</c> when the rich-fetch did not
+    /// have a SOG value for that sample.
+    /// <paramref name="clipToBounds"/> tells the JS side to re-clip
+    /// to the map viewport on pan / zoom without a re-fetch.</summary>
     Task SetServerTrackAsync(double[][] coords, bool clipToBounds);
 
     /// <summary>Toggle the JS-side viewport-clip filter without a

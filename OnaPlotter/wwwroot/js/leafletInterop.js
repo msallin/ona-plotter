@@ -1785,12 +1785,40 @@ function _renderServerTrack() {
     let coords = _serverTrackCoords;
     if (_serverTrackClipToBounds) {
         const b = map.getBounds();
+        // Each entry is [lat, lon, sogMs]; LatLngBounds.contains
+        // accepts [lat, lon] arrays and ignores any trailing values,
+        // so we can pass the triple in directly without rebuilding.
         coords = coords.filter(c => b.contains(c));
         if (coords.length === 0) return;
     }
-    serverTrackLayer = L.polyline(coords, {
-        color: '#94a3b8', weight: 2, opacity: 0.5
-    }).addTo(map);
+    // Group consecutive samples by speed bucket and emit one
+    // polyline per run -- same scheme as setColoredTrack so the
+    // server track and the local trail are visually identical.
+    // Falls back to an L.featureGroup so all runs are added /
+    // removed as one server-track layer.
+    serverTrackLayer = L.featureGroup().addTo(map);
+    if (coords.length < 2) return;
+    let runBucket = speedBucket(coords[1][2] ?? 0);
+    let runCoords = [[coords[0][0], coords[0][1]]];
+    for (let i = 1; i < coords.length; i++) {
+        const b = speedBucket(coords[i][2] ?? 0);
+        const ll = [coords[i][0], coords[i][1]];
+        if (b !== runBucket) {
+            runCoords.push(ll); // bridge point so adjacent runs visually connect
+            L.polyline(runCoords, {
+                color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8
+            }).addTo(serverTrackLayer);
+            runBucket = b;
+            runCoords = [ll];
+        } else {
+            runCoords.push(ll);
+        }
+    }
+    if (runCoords.length >= 2) {
+        L.polyline(runCoords, {
+            color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8
+        }).addTo(serverTrackLayer);
+    }
 }
 
 function _ensureServerTrackMoveHandler() {
