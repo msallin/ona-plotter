@@ -383,44 +383,41 @@ function buildAisPopupHtml(snap) {
         cachedName,
     }));
 
+    // CPA hero block: when there's an inbound CPA, lead the popup
+    // with it. Helms only ever look at an AIS popup to assess "is
+    // this vessel a problem?" -- CPA + TCPA is the answer; demote
+    // MMSI / Call / Type to a metadata footer (see metaHtml below).
+    // Threat-coloured: danger = red, warning = amber, normal = dim.
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {
-        const cls = isDangerEff ? 'color:#f87171;font-weight:600' : 'opacity:0.8';
-        // Compact format (no space before nm / min). Helm reads
-        // "0.15nm in 1min" as one phrase; the spaced version
-        // "0.15 nm in 1 min" wrapped to two lines on a narrow popup.
-        cpaHtml = `<tr><td style="opacity:0.5">CPA</td><td style="${cls}">${cpaInfo.cpa.toFixed(2)}nm in ${cpaInfo.tcpa.toFixed(0)}min</td></tr>`;
+        const cpaCls = isDangerEff ? 'is-danger' : (isWarning ? 'is-warn' : '');
+        cpaHtml = `<div class="ais-popup-cpa ${cpaCls}">` +
+                  `<span class="ais-popup-cpa-label">CPA</span>` +
+                  `<span class="ais-popup-cpa-value">${cpaInfo.cpa.toFixed(2)} nm</span>` +
+                  `<span class="ais-popup-cpa-sep">in</span>` +
+                  `<span class="ais-popup-cpa-value">${cpaInfo.tcpa.toFixed(0)} min</span>` +
+                  `</div>`;
     }
 
+    // COLREGS block: separate from the data table now -- it's
+    // action-information ("which vessel gives way") that wants to
+    // sit next to CPA, not buried under MMSI + dimensions. Two
+    // lines: label + the classification / role text. The "?" link
+    // opens /help/colregs in a new tab so the helm can drill into
+    // the rule meaning without losing the popup.
     let colregsHtml = '';
     if (v.colregsLabel) {
         const roleHtml = v.colregsRole
-            ? ` <span style="color:${v.colregsRole === 'Give way' ? '#fca5a5' : '#86efac'};font-weight:600">${esc(v.colregsRole)}</span>`
+            ? ` <span class="ais-popup-colregs-role ${v.colregsRole === 'Give way' ? 'is-give-way' : 'is-stand-on'}">${esc(v.colregsRole)}</span>`
             : '';
-        // Two-line layout: label "COLREGS" gets its own row above the
-        // classification + role text. Helm field-tested as cramped on
-        // a narrow popup when "Crossing -- give way to vessel on stbd"
-        // shared a row with the COLREGS label; the role chip wrapped
-        // mid-phrase. Spanning two columns lets the text breathe.
-        // The "?" link opens /help/colregs in a new tab so the helm can
-        // drill into the rule + role meaning without losing the popup.
-        //
-        // text-align:left on both rows: a colspan cell is both
-        // first-child AND last-child of its <tr>, and the popup table
-        // styles `td:last-child` with text-align:right (the value
-        // column). Without the explicit left-align here both rows
-        // would right-justify -- wrong: "COLREGS" reads as a label,
-        // not a value, and the classification phrase reads naturally
-        // left-to-right. font-size:11px matches the other labels
-        // (also picked up from td:first-child but pinned here so a
-        // future colspan tweak doesn't silently re-skin it).
-        colregsHtml = `<tr><td colspan="2" style="opacity:0.5;padding-top:6px;text-align:left;font-size:11px">` +
-                      `COLREGS ` +
+        colregsHtml = `<div class="ais-popup-colregs">` +
+                      `<div class="ais-popup-colregs-label">COLREGS ` +
                       `<a href="/help/colregs" target="_blank" rel="noopener" ` +
-                      `style="opacity:0.7;text-decoration:none;font-size:0.85em" ` +
+                      `class="ais-popup-colregs-help" ` +
                       `title="Open COLREGS quick reference">?</a>` +
-                      `</td></tr>` +
-                      `<tr><td colspan="2" style="padding-bottom:4px;text-align:left">${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
+                      `</div>` +
+                      `<div class="ais-popup-colregs-text">${esc(v.colregsLabel)}${roleHtml}</div>` +
+                      `</div>`;
     }
 
     // External lookup links (free, no API key needed). VesselFinder's
@@ -477,21 +474,32 @@ function buildAisPopupHtml(snap) {
         ? `<img class="ais-popup-flag" src="${flagUrl(mmsi)}" alt="" onerror="this.style.display='none'">`
         : '';
 
+    // Identification metadata (MMSI · Call · Type) demoted to a small
+    // footer line below the data table. They're reference info, not
+    // navigational; helms scan to them only when they want to look
+    // the vessel up. The dot separator collapses cleanly when any
+    // of the three is missing.
+    const metaParts = [];
+    if (mmsi) metaParts.push(`MMSI ${esc(mmsi)}`);
+    if (callsign) metaParts.push(`Call ${callsign}`);
+    if (type) metaParts.push(type);
+    const metaHtml = metaParts.length > 0
+        ? `<div class="ais-popup-meta">${metaParts.join(' &middot; ')}</div>`
+        : '';
+
     return (
         `<div class="ais-popup-content">` +
         `<div class="ais-popup-title">${flagHtml}${displayTitle}</div>` +
-        (type ? `<div class="ais-popup-type">${type}</div>` : '') +
+        cpaHtml +     // CPA hero -- lead with the only field that drives action
+        colregsHtml + // crossing-rule classification + role
         `<table class="ais-popup-table">` +
-          (mmsi ? `<tr><td>MMSI</td><td>${esc(mmsi)}</td></tr>` : '') +
-          (callsign ? `<tr><td>Call</td><td>${callsign}</td></tr>` : '') +
           `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
           `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
           `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
           `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
           `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
-          cpaHtml +
-          colregsHtml +
         `</table>` +
+        metaHtml +    // MMSI / Call / Type demoted under the data
         linksHtml +
         `</div>`
     );

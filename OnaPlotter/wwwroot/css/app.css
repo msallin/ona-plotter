@@ -2260,6 +2260,96 @@ html:fullscreen .hud-stack-br {
     font-variant-numeric: tabular-nums;
 }
 
+/* CPA hero block: leads the AIS popup so the helm reads "is this
+   vessel a problem?" without scanning past MMSI / dimensions. The
+   threat colour comes from the same severity tokens the chart-side
+   CPA chip + alarm banner use, so the three surfaces speak the same
+   visual language. Layout: label on the left, two values + "in"
+   separator on the right; flex-wrap so a tight popup wraps to the
+   second line instead of overflowing. */
+.ais-popup-cpa {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin: 4px 0 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.10);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+.ais-popup-cpa-label {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--panel-text-muted);
+    margin-right: 2px;
+}
+.ais-popup-cpa-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--panel-text);
+}
+.ais-popup-cpa-sep {
+    color: var(--panel-text-muted);
+    font-size: 11px;
+}
+.ais-popup-cpa.is-warn {
+    background: rgba(var(--sev-warn-rgb), 0.16);
+}
+.ais-popup-cpa.is-warn .ais-popup-cpa-value { color: var(--sev-warn); }
+.ais-popup-cpa.is-danger {
+    background: rgba(var(--sev-danger-rgb), 0.18);
+}
+.ais-popup-cpa.is-danger .ais-popup-cpa-value { color: var(--sev-danger); }
+
+/* COLREGS classification + role. Sits next to the CPA hero so the
+   helm reads "what's about to happen" + "what should I do" together.
+   Two-line layout (label / classification + role) so the role chip
+   never wraps mid-phrase even on a narrow popup. */
+.ais-popup-colregs {
+    margin: 0 0 6px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.06);
+    font-size: 12px;
+    line-height: 1.35;
+}
+.ais-popup-colregs-label {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--panel-text-muted);
+}
+.ais-popup-colregs-help {
+    color: var(--panel-text-muted);
+    text-decoration: none;
+    font-size: 11px;
+    opacity: 0.7;
+}
+.ais-popup-colregs-text {
+    color: var(--panel-text);
+}
+.ais-popup-colregs-role {
+    font-weight: 600;
+    margin-left: 2px;
+}
+.ais-popup-colregs-role.is-give-way { color: #fca5a5; }
+.ais-popup-colregs-role.is-stand-on { color: #86efac; }
+
+/* Identification metadata footer: MMSI / Call / Type demoted under
+   the data table -- they're reference info, not navigational. Small
+   + dim so they read as "extra context" rather than competing with
+   CPA / COLREGS at the top. */
+.ais-popup-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--panel-text-muted);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
 /* Bearing/distance tooltip */
 .bearing-tooltip {
     background: rgba(30, 34, 44, 0.9) !important;
