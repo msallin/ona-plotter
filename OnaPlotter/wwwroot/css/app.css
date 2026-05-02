@@ -7686,17 +7686,21 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .sailsteer-boat-fill  { fill:   var(--sk-text); opacity: 0.92; }
 .sailsteer-boat-stroke { stroke: var(--sk-text); }
 
-/* HDG pill that sits at the top center of the dial. Background +
-   border tokens match the connection-status chip in MainLayout so
-   the page reads as part of the same instrument family. The pill
-   is purely decorative; the value text overlays it via z-order
-   (SVG document order = paint order, so the rect is rendered before
-   the text in markup). */
+/* HDG pill at top center of the dial. Now rendered AFTER the
+   rotating compass group (markup order = paint order in SVG) so
+   it sits ON TOP of any cardinal label that would otherwise leak
+   through at non-zero headings (the "30" tick label crashed
+   through the previous opacity:0.9 pill at heading 32, per the
+   helm screenshot). Fill uses a flat token so the pill fully
+   masks anything underneath. */
 .sailsteer-hdg-pill {
-    fill: var(--sk-surface, rgba(0, 0, 0, 0.6));
-    stroke: var(--sk-border, rgba(255, 255, 255, 0.18));
-    stroke-width: 1;
-    opacity: 0.9;
+    fill: var(--sk-bg, #14181f);
+    stroke: var(--sk-border, rgba(255, 255, 255, 0.22));
+    stroke-width: 1.5;
+}
+.theme-effective-light .sailsteer-hdg-pill {
+    fill: var(--sk-surface);
+    stroke: var(--sk-border);
 }
 /* Larger value variant for the headline HDG. Same family as
    .sailsteer-value; the size bump is what reads as "primary". */
@@ -7739,6 +7743,59 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 }
 .sailsteer-help-btn-text { fill: var(--sk-text); }
 .sailsteer-help-btn-text-active { fill: var(--sk-bg, #fff); }
+
+/* Help-mode legend panel docked OUTSIDE the SVG, below the dial.
+   Replaces the previous floating in-SVG text overlays which were
+   hard-positioned and ended up nowhere near the symbols they were
+   supposed to explain (helm field-feedback: "Lubber line label
+   floats in the middle of the compass face, not next to the
+   actual lubber line"). HTML + flex grid scales with the
+   container width and each row carries a colour swatch matching
+   the dial element so the legend reads at a glance. */
+.sailsteer-legend {
+    width: 100%;
+    max-width: 520px;
+    margin: 1rem auto 0;
+    padding: 0.75rem 1rem;
+    background: var(--sk-surface);
+    border: 1px solid var(--sk-border);
+    border-radius: 8px;
+    color: var(--sk-text);
+    font-size: 0.85rem;
+    line-height: 1.45;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.sailsteer-legend-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+}
+.sailsteer-legend-swatch {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    margin-top: 0.15rem;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
+/* Split swatch for the no-go zone row (red + green half-circle).
+   Linear-gradient at 90deg gives a clean vertical split. */
+.sailsteer-legend-swatch-split {
+    background: linear-gradient(90deg,
+        var(--sev-danger) 0 50%,
+        var(--sev-ok) 50% 100%);
+}
+/* Dashed swatch for the polar-target row (mimics the dashed inner
+   layline tick on the dial). */
+.sailsteer-legend-swatch-dashed {
+    background:
+        repeating-linear-gradient(90deg,
+            var(--sev-ok) 0 4px,
+            transparent 4px 7px);
+    box-shadow: none;
+}
 
 /* Reads from token (--sk-text-muted) so night-mode + theme switches
    propagate without per-rule overrides. Hard-coded rgba(255,255,255)
