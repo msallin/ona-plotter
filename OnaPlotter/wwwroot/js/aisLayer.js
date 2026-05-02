@@ -404,13 +404,23 @@ function buildAisPopupHtml(snap) {
         // mid-phrase. Spanning two columns lets the text breathe.
         // The "?" link opens /help/colregs in a new tab so the helm can
         // drill into the rule + role meaning without losing the popup.
-        colregsHtml = `<tr><td colspan="2" style="opacity:0.5;padding-top:6px">` +
+        //
+        // text-align:left on both rows: a colspan cell is both
+        // first-child AND last-child of its <tr>, and the popup table
+        // styles `td:last-child` with text-align:right (the value
+        // column). Without the explicit left-align here both rows
+        // would right-justify -- wrong: "COLREGS" reads as a label,
+        // not a value, and the classification phrase reads naturally
+        // left-to-right. font-size:11px matches the other labels
+        // (also picked up from td:first-child but pinned here so a
+        // future colspan tweak doesn't silently re-skin it).
+        colregsHtml = `<tr><td colspan="2" style="opacity:0.5;padding-top:6px;text-align:left;font-size:11px">` +
                       `COLREGS ` +
                       `<a href="/help/colregs" target="_blank" rel="noopener" ` +
                       `style="opacity:0.7;text-decoration:none;font-size:0.85em" ` +
                       `title="Open COLREGS quick reference">?</a>` +
                       `</td></tr>` +
-                      `<tr><td colspan="2" style="padding-bottom:4px">${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
+                      `<tr><td colspan="2" style="padding-bottom:4px;text-align:left">${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
     }
 
     // External lookup links (free, no API key needed). VesselFinder's
