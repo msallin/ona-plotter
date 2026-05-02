@@ -59,6 +59,24 @@
     <InternalsVisibleTo Include="OnaPlotter.Tests" />
   </ItemGroup>
 
+  <!-- Lazy-loaded assemblies. Excluded from the eager-load set the
+       Blazor runtime fetches at boot, then loaded on demand via
+       LazyAssemblyLoader. The XML stack is only used by the GPX
+       import / export paths in Resources.razor + History.razor;
+       on a typical session the helm never opens those flows, so
+       paying ~3 MB raw / ~1 MB gz / ~100 KB brotli on first load
+       to ship XML support is wasteful. The XmlAssemblyLoader
+       wrapper service (Services/XmlAssemblyLoader.cs) awaits the
+       load before the first GPX-touching call.
+       Both pieces are needed: System.Private.Xml is the bulk of
+       the wins (XmlDocument, XmlReader/Writer, XmlException) and
+       System.Private.Xml.Linq is XDocument's implementation which
+       ResourceImporter / ResourceExporter call directly. -->
+  <ItemGroup>
+    <BlazorWebAssemblyLazyLoad Include="System.Private.Xml.wasm" />
+    <BlazorWebAssemblyLazyLoad Include="System.Private.Xml.Linq.wasm" />
+  </ItemGroup>
+
   <!-- Build stamp. Emits obj/BuildInfo.g.cs with the short git hash
        and a UTC build timestamp so the Settings page can render
        "build abc1234 (2026-04-24 12:34 UTC)" and the helm can

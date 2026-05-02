@@ -503,6 +503,13 @@
                 content = await reader.ReadToEndAsync(ct);
             }
 
+            // Sniff format BEFORE the parse so we only fetch the
+            // System.Private.Xml lazy assembly when the payload is
+            // actually GPX. A GeoJSON-only session never pays the
+            // ~100 KB brotli download cost.
+            if (ResourceImporter.DetectFormat(content) == ImportFormat.Gpx)
+                await XmlLoader.EnsureLoadedAsync();
+
             ImportResult parsed;
             try { parsed = ResourceImporter.Parse(content); }
             catch (FormatException fx) { Toasts.Error($"Import failed: {fx.Message}"); return; }
@@ -626,6 +633,9 @@
     {
         var format = await AskFormat($"Export route '{NameOrId(r.Name, r.Id)}' as:");
         if (format is null) return;
+        // Only GPX needs System.Private.Xml; GeoJSON is plain
+        // System.Text.Json which is in the boot bundle anyway.
+        if (format != FormatGeoJson) await XmlLoader.EnsureLoadedAsync();
         var content = format == FormatGeoJson
             ? ResourceExporter.RouteGeoJson(r)
             : ResourceExporter.RouteGpx(r);
@@ -636,6 +646,7 @@
     {
         var format = await AskFormat($"Export waypoint '{NameOrId(w.Name, w.Id)}' as:");
         if (format is null) return;
+        if (format != FormatGeoJson) await XmlLoader.EnsureLoadedAsync();
         var content = format == FormatGeoJson
             ? ResourceExporter.WaypointGeoJson(w)
             : ResourceExporter.WaypointGpx(w);
@@ -697,6 +708,7 @@
     {
         var format = await AskFormat($"Export note '{NameOrId(n.Title, n.Id)}' as:");
         if (format is null) return;
+        if (format != FormatGeoJson) await XmlLoader.EnsureLoadedAsync();
         var content = format == FormatGeoJson
             ? ResourceExporter.NoteGeoJson(n)
             : ResourceExporter.NoteGpx(n);
@@ -901,6 +913,13 @@
     [Inject] private IConfirmationService Confirmations { get; set; } = default!;
     private Task<bool> Confirm(string message) =>
         Confirmations.ConfirmAsync(message);
+
+    // System.Private.Xml is lazy-loaded so the boot bundle stays
+    // smaller; we await EnsureLoadedAsync() inline before any GPX
+    // import or export so XDocument.Parse / XElement is resolvable
+    // when the call site runs. Idempotent + memoised: every call
+    // after the first is a no-op.
+    [Inject] private XmlAssemblyLoader XmlLoader { get; set; } = default!;
 
     private static string NameOrId(string? name, string id) =>
         string.IsNullOrWhiteSpace(name) ? id : name!;
