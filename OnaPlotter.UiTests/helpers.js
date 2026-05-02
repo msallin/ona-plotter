@@ -7,10 +7,29 @@
  */
 export function collectErrors(page) {
     const errors = [];
+    // crit: lines from Blazor are explicitly retained here (they're
+    // skipped from the throw-on-non-empty `errors` array via the
+    // `crit:` filter below) but mirrored into critErrors so the
+    // assertBlazorErrorNotVisible thrower can include the actual
+    // exception text + stack in its message. Without this, every CI
+    // failure surfaces as a generic "Blazor error UI is visible: An
+    // unhandled error has occurred" with no path back to the C#
+    // file:line that threw -- the trace.zip artifact has it but
+    // CI's --reporter=list output drops the trace path. critErrors
+    // is the fallback that puts the stack inline in the test log.
+    const critErrors = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (msg) => {
         if (msg.type() !== 'error') return;
         const text = msg.text();
+        if (text.includes('crit:')) {
+            // Capture for the assertion thrower; don't fail the test
+            // here because Blazor still renders the rest of the page.
+            // Cap each entry so a 5 KB stack trace doesn't dominate
+            // the failure log.
+            critErrors.push(text.slice(0, 4000));
+            return;
+        }
         // Filter expected noise.
         if (text.includes('favicon')) return;
         if (text.includes('websocket') && text.includes('1006')) return;
@@ -44,9 +63,6 @@ export function collectErrors(page) {
         if (text.includes('net::ERR_FAILED')) return;
         if (text.includes('net::ERR_CONNECTION_REFUSED')) return;
         if (text.includes('Failed to load resource: net::ERR')) return;
-        // Blazor logs every unhandled exception through its crit logger; it's
-        // covered separately by assertBlazorErrorNotVisible.
-        if (text.includes('crit:')) return;
         errors.push(`console.error: ${text}`);
     });
     // Blazor renders a fixed-id error UI for unhandled exceptions.
@@ -57,7 +73,16 @@ export function collectErrors(page) {
             const banner = page.locator('#blazor-error-ui');
             if (await banner.isVisible()) {
                 const text = (await banner.textContent()) ?? '(empty)';
-                throw new Error(`Blazor error UI is visible: ${text.trim()}`);
+                // Include captured Blazor crit logs so the test failure
+                // points at the actual C# exception + stack, not just
+                // the generic banner text. Without this the only place
+                // to find the exception is the trace.zip artifact,
+                // which the --reporter=list output doesn't surface
+                // and which isn't always uploaded by CI.
+                const critTail = critErrors.length
+                    ? '\n--- Blazor crit logs ---\n' + critErrors.join('\n---\n')
+                    : '\n(no crit: console output captured -- check trace.zip)';
+                throw new Error(`Blazor error UI is visible: ${text.trim()}${critTail}`);
             }
         }
     };
