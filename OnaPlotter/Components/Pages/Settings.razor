@@ -147,6 +147,15 @@
                     clutter. Turn on if you run OnaPlotter on a desktop with
                     a keyboard.
                 </small>
+                @* Re-open the welcome card. The card is normally one-shot
+                   per device; helms who want to re-read the onboarding
+                   click here. The page navigates to /map and chains a
+                   query param the Map page picks up to surface the card
+                   immediately, regardless of the dismissed flag. *@
+                <a href="/map?welcome=1" class="d-inline-block mt-2"
+                   style="font-size:0.85rem;">
+                    Show welcome card again on the Map page
+                </a>
             </div>
         </div>
     </div>
