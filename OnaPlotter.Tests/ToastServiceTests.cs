@@ -89,6 +89,13 @@ public class ToastServiceTests
         svc.ShowAction("Discarded edit", "Undo", () => Task.CompletedTask);
 
         await Assert.That(svc.Active.Count).IsEqualTo(2);
+        // Both toasts must retain their action character + carry
+        // distinct Ids -- a regression that broke ShowAction to
+        // always strip the ActionLabel would still produce Count == 2
+        // if the timing landed right; this assertion catches it.
+        await Assert.That(svc.Active[0].ActionLabel).IsEqualTo("Undo");
+        await Assert.That(svc.Active[1].ActionLabel).IsEqualTo("Undo");
+        await Assert.That(svc.Active[0].Id).IsNotEqualTo(svc.Active[1].Id);
     }
 
     [Test]

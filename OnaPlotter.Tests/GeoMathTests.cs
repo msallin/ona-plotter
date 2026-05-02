@@ -32,6 +32,56 @@ public class GeoMathTests
     }
 
     [Test]
+    public async Task HaversineMeters_AcrossInternationalDateLine_ReturnsShortPath()
+    {
+        // (0, 179) to (0, -179) is a 2-degree gap straddling the IDL,
+        // not 358 degrees the other way around the planet. Haversine's
+        // dLam = (lon2 - lon1) * RAD applied directly produces the
+        // correct short-path distance because sin/cos of the resulting
+        // ~6.28 rad still resolves to the small-angle answer. Pin so a
+        // refactor that "normalises" longitudes to [0, 360) before the
+        // diff (and then takes the wrong wrap branch) would surface.
+        double d = GeoMath.HaversineMeters(0, 179, 0, -179);
+        // 2 deg of longitude at the equator ≈ 222.4 km.
+        await Assert.That(d).IsBetween(220_000, 225_000);
+    }
+
+    [Test]
+    public async Task BearingDeg_WestwardAcrossInternationalDateLine_ReturnsApproximately270()
+    {
+        // Going west across the IDL: (0, -175) -> (0, 175). The short
+        // path is 10 degrees due west (across the dateline); bearing
+        // should be ~270, not ~90 (the wrap-around-the-planet long
+        // way). Pin so a refactor that "normalises" longitudes before
+        // the diff and takes the wrong wrap branch surfaces here.
+        double b = GeoMath.BearingDeg(0, -175, 0, 175);
+        await Assert.That(b).IsBetween(269.5, 270.5);
+    }
+
+    [Test]
+    public async Task BearingDeg_EastwardAcrossInternationalDateLine_ReturnsApproximately90()
+    {
+        // The opposite direction: (0, 175) -> (0, -175). Short path is
+        // 10 degrees due east across the dateline; bearing ~90, not
+        // ~270.
+        double b = GeoMath.BearingDeg(0, 175, 0, -175);
+        await Assert.That(b).IsBetween(89.5, 90.5);
+    }
+
+    [Test]
+    public async Task HaversineMeters_Antipodal_ReturnsHalfCircumference()
+    {
+        // (0, 0) to (0, 180) -- diametrically opposite on the equator.
+        // Half the great-circle = pi * R = ~20,015 km. Pin so the
+        // numerical degradation at the antipode (sin(pi/2) = 1 case
+        // where the inner product loses precision) doesn't grow
+        // unbounded across refactors.
+        double d = GeoMath.HaversineMeters(0, 0, 0, 180);
+        // Tolerance 1 km on a 20,000 km half-circumference (5 ppm).
+        await Assert.That(d).IsBetween(20_014_000, 20_016_000);
+    }
+
+    [Test]
     public async Task BearingDeg_DueNorth_ReturnsZero()
     {
         // Same lon, higher lat -> north. Atan2-via-sphere rounds
