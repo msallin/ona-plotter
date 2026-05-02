@@ -943,8 +943,8 @@ export function applyFrame(frame) {
         const c = frame.course;
         // Reuse the boat position from the frame -- course line needs
         // it and the C# side already sent it, no reason to duplicate.
-        const boatLat = frame.pos ? frame.pos.lat : null;
-        const boatLon = frame.pos ? frame.pos.lon : null;
+        const selfLat = frame.pos ? frame.pos.lat : null;
+        const selfLon = frame.pos ? frame.pos.lon : null;
         // While editing the active route, suppress the course-line
         // overlay (leg + bearing + XTE tick). The user is actively
         // moving waypoints so the course-line would point at stale
@@ -952,8 +952,8 @@ export function applyFrame(frame) {
         // waypoint marker via setActiveOverlayHidden(true). Re-emerges
         // when the C# side calls setActiveOverlayHidden(false) on
         // edit cancel / save.
-        if (boatLat != null && boatLon != null && !activeRouteLayerMod.isOverlayHidden()) {
-            setCourseLine(boatLat, boatLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity);
+        if (selfLat != null && selfLon != null && !activeRouteLayerMod.isOverlayHidden()) {
+            setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity);
         }
     } else if (frame.clearCourse) {
         clearCourseLine();
@@ -1798,8 +1798,8 @@ export const setActiveRoute = (coords, wpIdx, routeId, routeName) =>
     activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName);
 export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
 export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
-export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
-    return courseLineLayerMod.setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity);
+export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
+    return courseLineLayerMod.setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity);
 }
 export function clearCourseLine() { return courseLineLayerMod.clearCourseLine(); }
 
@@ -1961,7 +1961,7 @@ export function triggerFileDownload(filename, content) {
 
 let currentArrow = null;
 
-export function setCurrentArrow(boatLat, boatLon, setRad, driftMs) {
+export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
     if (!map) return;
     // Arrow length proportional to drift, min 200m, max 2000m visual.
     // Magnitude is already encoded in the arrow length; the tooltip that
@@ -1969,12 +1969,12 @@ export function setCurrentArrow(boatLat, boatLon, setRad, driftMs) {
     // request -- it read like a loose label on the chart and the drift
     // value is redundant with what the bottom-right HUD already shows.
     const arrowLen = Math.min(Math.max(driftMs * 600, 200), 2000);
-    const endPt = destPoint(boatLat, boatLon, setRad, arrowLen);
+    const endPt = destPoint(selfLat, selfLon, setRad, arrowLen);
 
     if (currentArrow) {
-        currentArrow.setLatLngs([[boatLat, boatLon], endPt]);
+        currentArrow.setLatLngs([[selfLat, selfLon], endPt]);
     } else {
-        currentArrow = L.polyline([[boatLat, boatLon], endPt], {
+        currentArrow = L.polyline([[selfLat, selfLon], endPt], {
             color: MapColors.current, weight: 3, opacity: 0.8
         }).addTo(map);
     }
@@ -1986,8 +1986,8 @@ export function clearCurrentArrow() {
 
 // --- Laylines ---
 // Implementation in laylineLayer.js; mux re-exports the C# entries.
-export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
-    return laylineLayerMod.setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon);
+export function setLaylines(selfLat, selfLon, twdRad, twaRad, wpLat, wpLon) {
+    return laylineLayerMod.setLaylines(selfLat, selfLon, twdRad, twaRad, wpLat, wpLon);
 }
 export const clearLaylines = () => laylineLayerMod.clearLaylines();
 

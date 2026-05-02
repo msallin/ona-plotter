@@ -24,7 +24,7 @@ export function init(map, deps) {
 // Draw port/starboard laylines from boat position (and optionally from waypoint).
 // twdRad = true wind direction (radians, FROM north).
 // twaRad = true wind angle (radians, absolute).
-export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
+export function setLaylines(selfLat, selfLon, twdRad, twaRad, wpLat, wpLon) {
     if (!mapRef) return;
 
     const lineLen = 5 * 1852; // 5 nm in meters
@@ -40,19 +40,19 @@ export function setLaylines(boatLat, boatLon, twdRad, twaRad, wpLat, wpLon) {
     const stbdBrg = twdRad - absTwa;
     const portBrg = twdRad + absTwa;
 
-    const stbdEnd = destPoint(boatLat, boatLon, stbdBrg, lineLen);
-    const portEnd = destPoint(boatLat, boatLon, portBrg, lineLen);
+    const stbdEnd = destPoint(selfLat, selfLon, stbdBrg, lineLen);
+    const portEnd = destPoint(selfLat, selfLon, portBrg, lineLen);
 
-    if (laylineStarboard) laylineStarboard.setLatLngs([[boatLat, boatLon], stbdEnd]);
+    if (laylineStarboard) laylineStarboard.setLatLngs([[selfLat, selfLon], stbdEnd]);
     else {
-        laylineStarboard = L.polyline([[boatLat, boatLon], stbdEnd], {
+        laylineStarboard = L.polyline([[selfLat, selfLon], stbdEnd], {
             color: colors.anchorOk, weight: 2, opacity: 0.7, dashArray: '10,6'
         }).addTo(mapRef);
     }
 
-    if (laylinePort) laylinePort.setLatLngs([[boatLat, boatLon], portEnd]);
+    if (laylinePort) laylinePort.setLatLngs([[selfLat, selfLon], portEnd]);
     else {
-        laylinePort = L.polyline([[boatLat, boatLon], portEnd], {
+        laylinePort = L.polyline([[selfLat, selfLon], portEnd], {
             color: colors.mob, weight: 2, opacity: 0.7, dashArray: '10,6'
         }).addTo(mapRef);
     }

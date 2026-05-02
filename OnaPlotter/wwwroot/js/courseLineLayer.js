@@ -27,7 +27,7 @@ export function init(map, deps) {
 }
 
 // Draw/update course line: bearing line + XTE tick.
-export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
+export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity) {
     if (!mapRef) return;
 
     // Tear down any leftover leg line from a previous build that
@@ -40,7 +40,7 @@ export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, 
     }
 
     // Bearing line: boat to next WP.
-    const brgCoords = [[boatLat, boatLon], [wpLat, wpLon]];
+    const brgCoords = [[selfLat, selfLon], [wpLat, wpLon]];
     if (courseLineBearing) {
         courseLineBearing.setLatLngs(brgCoords);
     } else {
@@ -60,8 +60,8 @@ export function setCourseLine(boatLat, boatLon, wpLat, wpLon, prevLat, prevLon, 
         const perpBrg = xteMeters > 0 ? legBrg + Math.PI / 2 : legBrg - Math.PI / 2;
         // Visual length: actual XTE capped at 200m for display.
         const tickLen = Math.min(absXte, 200);
-        const tickEnd = destPoint(boatLat, boatLon, perpBrg, tickLen);
-        const xteCoords = [[boatLat, boatLon], tickEnd];
+        const tickEnd = destPoint(selfLat, selfLon, perpBrg, tickLen);
+        const xteCoords = [[selfLat, selfLon], tickEnd];
 
         if (courseLineXte) {
             courseLineXte.setLatLngs(xteCoords);
