@@ -59,6 +59,8 @@ namespace OnaPlotter.Services.Json;
 [JsonSerializable(typeof(LoginStatus))]
 [JsonSerializable(typeof(RouteDraft))]
 [JsonSerializable(typeof(SnoozedTarget[]))]
+[JsonSerializable(typeof(SignalkSubscribeRequest))]
+[JsonSerializable(typeof(SignalkUnsubscribeRequest))]
 internal partial class OnaJsonContext : JsonSerializerContext
 {
 }
