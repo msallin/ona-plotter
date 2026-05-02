@@ -338,45 +338,24 @@ public partial class Map
         {
             routeEditCoords = coords;
             dirty = true;
-            // Persist a localStorage draft on every coords change while
-            // edit mode is active. The poll runs at RouteStatsPollIntervalMs
-            // (sub-second) so a save that fails (no network, not logged
-            // in, accidental refresh) loses at most one tick's worth of
-            // edit. Empty / single-point edits skip the save -- a
-            // helm who tapped once and walked away shouldn't get a
-            // restore prompt for nothing.
-            if (routeEditMode && coords.Length >= 1)
-            {
-                _ = PersistRouteDraftAsync(coords);
-            }
+            // Draft persistence used to fire on every coords change in
+            // this poll (sub-second). That was wasteful AND surfaced a
+            // restore prompt for edits the helm never tried to save.
+            // Persist now happens once at the start of SaveRouteCoreInner
+            // (so a failed API call leaves the work on disk) and is
+            // cleared on success / cancel. Tap-and-walk-away leaves no
+            // draft.
         }
         if (dirty) await InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>Fire-and-forget draft snapshot. Catches the
-    /// JSDisconnectedException / ObjectDisposedException race when
-    /// the page is being torn down mid-tick; localStorage write
-    /// failures (full disk, quota) silently degrade to "no
-    /// persistence this tick" -- the next tick will retry, and a
-    /// failed write is no worse than the pre-feature behaviour.</summary>
-    private async Task PersistRouteDraftAsync(double[][] coords)
-    {
-        try
-        {
-            var draft = new RouteDraft(
-                RouteId: routeEditId,
-                Name: routeEditName,
-                Coords: coords,
-                SavedAtIso: DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
-            await RouteDraftStore.SaveAsync(draft);
-        }
-        catch (Exception)
-        {
-            // Best-effort persistence. The next coord change will
-            // retry; a permanent failure (storage disabled) just
-            // means the helm doesn't get the restore prompt.
-        }
-    }
+    // PersistRouteDraftAsync used to live here as a per-poll-tick
+    // localStorage write. Removed when the persistence trigger moved
+    // to the save-attempt path (see SaveRouteCoreInner) so an edit
+    // that the helm builds and abandons doesn't leave a draft for the
+    // next page-load to ask about. Inlining the save into
+    // SaveRouteCoreInner kept the surface area small enough that a
+    // dedicated helper wasn't pulling its weight.
 
     private async Task RemoveRouteWaypoint(int index)
     {
@@ -505,6 +484,28 @@ public partial class Map
             // already toasted this error" and silently swallow the
             // save failure).
             bool errorToasted = false;
+
+            // Persist the draft BEFORE the API call so a failed save
+            // (no network, not logged in, server 5xx) leaves the
+            // helm's work on disk for the next-page-load restore
+            // prompt. Cleared on success below; intentionally NOT
+            // cleared on failure -- the whole point of the draft is
+            // that it survives the failure path. Best-effort: a
+            // localStorage write failure (full disk, quota) is
+            // non-fatal; the helm just doesn't get the restore prompt
+            // if the save then also fails, which matches the
+            // pre-feature behaviour.
+            try
+            {
+                var draft = new RouteDraft(
+                    RouteId: existingId,
+                    Name: name,
+                    Coords: coords,
+                    SavedAtIso: DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+                await RouteDraftStore.SaveAsync(draft);
+            }
+            catch (Exception) { /* swallow: see comment above */ }
+
             try
             {
                 if (existingId is not null)

@@ -127,6 +127,88 @@ public class RouteDraftStoreTests
     }
 
     [Test]
+    public async Task LoadAsync_CoordOutOfRange_Lat_ReturnsNull()
+    {
+        // Browser extension or schema-skew tampering can land a
+        // lat outside [-90, 90]. Restoring it would render NaN-
+        // arithmetic in the polyline path and the route would
+        // silently disappear; the helm sees a "restore" prompt
+        // followed by an empty map. Better to drop the draft
+        // entirely.
+        var store = new RouteDraftStore(new InMemoryKv());
+        var bad = NewDraft() with
+        {
+            Coords = [[91.0, 8.5], [47.4, 8.5]],     // first row bad
+        };
+        await store.SaveAsync(bad);
+        await Assert.That(await store.LoadAsync()).IsNull();
+    }
+
+    [Test]
+    public async Task LoadAsync_CoordOutOfRange_Lon_ReturnsNull()
+    {
+        // Lon outside [-180, 180]. Same null-degrade behaviour.
+        var store = new RouteDraftStore(new InMemoryKv());
+        var bad = NewDraft() with
+        {
+            Coords = [[47.4, 8.5], [47.4, 200.0]],     // second row bad
+        };
+        await store.SaveAsync(bad);
+        await Assert.That(await store.LoadAsync()).IsNull();
+    }
+
+    [Test]
+    public async Task LoadAsync_CoordOverflowToInfinity_ReturnsNull()
+    {
+        // A JSON number literal large enough to overflow double
+        // (1e400) deserialises to PositiveInfinity in
+        // System.Text.Json -- IsFinite catches it and we drop the
+        // draft. Pinned because the alternative would be a polyline
+        // anchored at (Inf, 8.5), which the renderer either NaN-
+        // arithmetics into invisibility or, worse, draws a degenerate
+        // line that loses the rest of the draft visually.
+        var kv = new InMemoryKv();
+        await kv.SetAsync(RouteDraftStore.StorageKey,
+            """{"RouteId":"r","Name":"n","Coords":[[1e400,8.5],[47.4,8.5]],"SavedAtIso":"2026-04-25T12:00:00Z"}""");
+        var store = new RouteDraftStore(kv);
+        await Assert.That(await store.LoadAsync()).IsNull();
+    }
+
+    [Test]
+    public async Task LoadAsync_CoordWrongShape_ReturnsNull()
+    {
+        // A coord row with only one value (or three) is malformed.
+        // Treat as no draft.
+        var kv = new InMemoryKv();
+        // Hand-craft json so we can put a length-1 row in (the C#
+        // type would reject this at the model level if double[][]
+        // were length-checked, but it isn't -- the validation
+        // belongs in LoadAsync).
+        await kv.SetAsync(RouteDraftStore.StorageKey,
+            """{"RouteId":"r","Name":"n","Coords":[[47.4]],"SavedAtIso":"2026-04-25T12:00:00Z"}""");
+        var store = new RouteDraftStore(kv);
+        await Assert.That(await store.LoadAsync()).IsNull();
+    }
+
+    [Test]
+    public async Task LoadAsync_BoundaryCoord_AccepedAtPolesAndDateline()
+    {
+        // The exact ±90 / ±180 boundaries are valid (north pole,
+        // south pole, antimeridian). Pin so a future "off by one"
+        // tightening of the validation doesn't reject an otherwise-
+        // legitimate sub-Antarctic / antimeridian-crossing draft.
+        var store = new RouteDraftStore(new InMemoryKv());
+        var ok = NewDraft() with
+        {
+            Coords = [[-90.0, -180.0], [90.0, 180.0]],
+        };
+        await store.SaveAsync(ok);
+        var loaded = await store.LoadAsync();
+        await Assert.That(loaded).IsNotNull();
+        await Assert.That(loaded!.Coords.Length).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task LoadAsync_NewRouteDraft_WithNullRouteId_Roundtrips()
     {
         // Fresh-route drafts (never-saved-before) carry null

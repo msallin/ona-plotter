@@ -31,6 +31,28 @@ public sealed class RouteDraftStore : IRouteDraftStore
             // surfacing a confusing prompt.
             if (draft is null || draft.Coords is null || draft.Coords.Length == 0)
                 return null;
+            // Per-coord shape + range validation. localStorage holds
+            // user-controllable data: a browser extension, a typo in
+            // a manual JSON edit, or a schema-version skew between
+            // builds can land malformed entries here. Without this
+            // check the JS renderer hits NaN-arithmetic on an
+            // unbounded lat/lon and the route polyline silently
+            // disappears, or the in-edit-panel waypoint list shows
+            // "NaN, NaN" rows that look like a regression.
+            //
+            // Each coord is [lat, lon], lat in [-90, 90], lon in
+            // [-180, 180], both finite. A single bad coord taints the
+            // whole draft -- partial restore is worse than "no draft"
+            // because the helm gets a recovery prompt that loads
+            // garbage.
+            foreach (var c in draft.Coords)
+            {
+                if (c is null || c.Length != 2) return null;
+                double lat = c[0], lon = c[1];
+                if (!double.IsFinite(lat) || !double.IsFinite(lon)) return null;
+                if (lat < -90.0 || lat > 90.0) return null;
+                if (lon < -180.0 || lon > 180.0) return null;
+            }
             return draft;
         }
         catch (JsonException)
