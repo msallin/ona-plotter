@@ -58,9 +58,16 @@ function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
     const coords = `${Math.abs(lat).toFixed(5)}°${ns}, ${Math.abs(lon).toFixed(5)}°${ew}`;
     const created = formatCreatedAt(createdAtIso);
     // Mirror of the note popup so the helm gets the same affordance
-    // grid (Focus / Go / Edit / Share / Delete) on either resource
-    // type. Marker icon stays distinct (circle vs folded-page) so
-    // the at-a-glance "navigable target vs annotation" cue survives.
+    // grid (Go / Edit / Share / Delete) on either resource type.
+    // Marker icon stays distinct (circle vs folded-page) so the
+    // at-a-glance "navigable target vs annotation" cue survives.
+    //
+    // No "Focus" button: helm field-feedback was that tapping the
+    // marker already centred enough of the map for the popup to
+    // show the surrounding chart, so a separate Focus button was
+    // visual noise. The layers-panel still has Focus as an explicit
+    // affordance; the popup keeps the four actions a helm actually
+    // wants on a single tap.
     return `
         <div class="note-popup-inner waypoint-popup-inner">
             <div class="note-popup-title">${safeName}</div>
@@ -69,12 +76,10 @@ function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
                 <div><span class="note-popup-meta-label">Created:</span> ${esc(created)}</div>
             </div>
             <div class="note-popup-actions">
-                <button class="waypoint-focus-btn map-btn" type="button"
-                        title="Center the map on this waypoint">Focus</button>
                 <button class="waypoint-go-btn map-btn" type="button"
                         title="Navigate to this waypoint">Go</button>
                 <button class="waypoint-edit-btn map-btn" type="button"
-                        title="Rename this waypoint">Edit</button>
+                        title="Edit name + description">Edit</button>
                 <button class="waypoint-share-btn map-btn" type="button"
                         title="Share this waypoint via system share or copy to clipboard">Share</button>
                 <button class="waypoint-delete-btn note-delete-btn" type="button">Delete</button>
@@ -155,7 +160,10 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
         }
     });
     hit.on('popupopen', (ev) => {
-        wireSimpleClick(ev.popup, '.waypoint-focus-btn', 'WaypointFocus', id);
+        // No .waypoint-focus-btn binding -- the button was removed
+        // per helm field-feedback (see buildPopupHtml). The
+        // C# WaypointFocus JSInvokable stays for the layers-panel
+        // path; it just isn't wired from the popup any more.
         wireSimpleClick(ev.popup, '.waypoint-go-btn', 'WaypointGoTo', id);
         wireSimpleClick(ev.popup, '.waypoint-edit-btn', 'WaypointEdit', id);
         wireSimpleClick(ev.popup, '.waypoint-share-btn', 'WaypointShare', id);

@@ -24,21 +24,90 @@ public partial class Map
     private bool waypointDialogVisible;
     private string newWaypointName = "";
     private string newWaypointDescription = "";
+    /// <summary>Non-null = the dialog is in EDIT mode for this
+    /// waypoint id; null = CREATE mode at <c>contextMenuLat/Lon</c>.
+    /// Drives both the dialog header text ("Edit Waypoint" vs
+    /// "Create Waypoint") and the SaveWaypoint branch
+    /// (UpdateAsync vs CreateAsync). Reset to null on every dialog
+    /// close (Save success, Save failure, Cancel) so the next Create
+    /// flow doesn't accidentally update the previously-edited
+    /// waypoint.</summary>
+    private string? waypointEditId;
     private List<SignalkWaypoint> loadedWaypoints = [];
 
     private void CreateWaypointHere()
     {
         contextMenuVisible = false;
+        waypointEditId = null;
         waypointDialogVisible = true;
         newWaypointName = "";
         newWaypointDescription = "";
     }
 
+    /// <summary>Open the waypoint dialog pre-filled for an in-place
+    /// rename + description edit. Same dialog as Create so the helm
+    /// gets one consistent layout for both flows; the only difference
+    /// is the header text and which API verb the Save button hits.
+    /// </summary>
+    private void OpenWaypointEditDialog(SignalkWaypoint wp)
+    {
+        waypointEditId = wp.Id;
+        newWaypointName = wp.Name ?? "";
+        newWaypointDescription = wp.Description ?? "";
+        waypointDialogVisible = true;
+    }
+
     private async Task SaveWaypoint()
     {
         waypointDialogVisible = false;
+        string? editingId = waypointEditId;
+        // Reset the edit-id BEFORE awaiting any API call so a
+        // concurrent Create flow (helm tap-and-tap-elsewhere) doesn't
+        // race with the in-flight save and reuse the wrong id.
+        waypointEditId = null;
+
         string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
         string? description = string.IsNullOrWhiteSpace(newWaypointDescription) ? null : newWaypointDescription.Trim();
+
+        if (editingId is not null)
+        {
+            // Edit branch: PUT in place. The server keeps the same id,
+            // we update the local list optimistically, and the marker
+            // re-renders with the new text on the next popup open.
+            var existing = loadedWaypoints.FirstOrDefault(w => w.Id == editingId);
+            if (existing is null) { Toasts.Warning("Waypoint not found"); return; }
+
+            ApiResult ru;
+            try { ru = await WaypointApi.UpdateAsync(existing, name, description); }
+            catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
+            if (!ru.Success) { Toasts.Error($"Save waypoint failed: {ru.Error ?? "server rejected"}"); return; }
+
+            loadedWaypoints = loadedWaypoints.Select(w =>
+            {
+                if (w.Id != editingId) return w;
+                return new SignalkWaypoint
+                {
+                    Id = w.Id,
+                    Name = name,
+                    Description = description,
+                    Feature = w.Feature,
+                    Latitude = w.Latitude,
+                    Longitude = w.Longitude,
+                    CreatedAt = w.CreatedAt,
+                };
+            }).ToList();
+            if (module is not null && existing.Latitude is double elat && existing.Longitude is double elon)
+            {
+                await module.InvokeVoidAsync("removeWaypointMarker", editingId);
+                await module.InvokeVoidAsync("addWaypointMarker",
+                    editingId, elat, elon, name,
+                    existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            Toasts.Success($"Saved waypoint '{name}'");
+            return;
+        }
+
+        // Create branch: POST at the context-menu position.
         ApiResult<string> r;
         try { r = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon, description); }
         catch (Exception ex) { Toasts.Error($"Save waypoint failed: {ex.Message}"); return; }
@@ -62,6 +131,12 @@ public partial class Map
         }
         loadedWaypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints") ?? loadedWaypoints;
         Toasts.Success($"Saved waypoint '{name}'");
+    }
+
+    private void CancelWaypointDialog()
+    {
+        waypointDialogVisible = false;
+        waypointEditId = null;
     }
 
     /// <summary>Invoked from the waypoint popup's Delete button.
@@ -107,55 +182,20 @@ public partial class Map
         await NavigateToWaypoint(wp);
     }
 
-    /// <summary>Popup-side Edit: prompt for a new name (description
-    /// untouched, same single-field rename scope as notes) and
-    /// re-render the marker with the new name + same createdAt.
-    /// Optimistic local rename so the popup re-opens with the new
-    /// value if the helm taps the same pin again before the next
-    /// resource poll.</summary>
+    /// <summary>Popup-side Edit: open the same dialog used for
+    /// Create, pre-filled with the waypoint's current name +
+    /// description. Helm field-feedback was that a single-field
+    /// PromptAsync rename hid the description and forced two trips
+    /// (one to rename, a separate flow to edit description); the
+    /// reused dialog gives a single edit surface.</summary>
     [JSInvokable]
-    public async Task WaypointEdit(string id)
+    public Task WaypointEdit(string id)
     {
         var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
-        if (wp is null) { Toasts.Warning("Waypoint not found"); return; }
-        var newName = await Confirmations.PromptAsync(
-            "Waypoint name:",
-            initialValue: wp.Name ?? "",
-            confirmLabel: "Save");
-        if (newName is null) return;
-        var trimmed = newName.Trim();
-        if (string.IsNullOrEmpty(trimmed)) return;
-        if (trimmed == (wp.Name ?? "")) return;
-
-        ApiResult r;
-        try { r = await WaypointApi.UpdateAsync(wp, trimmed); }
-        catch (Exception ex) { Toasts.Error($"Rename failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Rename failed: {r.Error ?? "server rejected"}"); return; }
-
-        // Optimistic local rename + marker re-render so the next
-        // popup open shows the new name in title + tooltip.
-        var updated = loadedWaypoints.Select(w =>
-        {
-            if (w.Id != id) return w;
-            return new SignalkWaypoint
-            {
-                Id = w.Id,
-                Name = trimmed,
-                Feature = w.Feature,
-                Latitude = w.Latitude,
-                Longitude = w.Longitude,
-                CreatedAt = w.CreatedAt,
-            };
-        }).ToList();
-        loadedWaypoints = updated;
-        if (module is not null && wp.Latitude is double lat && wp.Longitude is double lon)
-        {
-            await module.InvokeVoidAsync("removeWaypointMarker", id);
-            await module.InvokeVoidAsync("addWaypointMarker",
-                id, lat, lon, trimmed,
-                wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
-        }
-        Toasts.Success("Waypoint renamed");
+        if (wp is null) { Toasts.Warning("Waypoint not found"); return Task.CompletedTask; }
+        OpenWaypointEditDialog(wp);
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     /// <summary>Popup-side Share: build a GeoJSON Feature for the
@@ -214,22 +254,84 @@ public partial class Map
     private bool noteDialogVisible;
     private string newNoteTitle = "";
     private string newNoteDescription = "";
+    /// <summary>Edit-mode marker for the note dialog. Same role as
+    /// <see cref="waypointEditId"/>: non-null = PUT in place,
+    /// null = POST at <c>contextMenuLat/Lon</c>. Cleared on every
+    /// dialog close so a Cancel followed by a Create doesn't reuse
+    /// the previous edit's id.</summary>
+    private string? noteEditId;
     private List<SignalkNote> loadedNotes = [];
     private bool notesVisible = true;
 
     private void CreateNoteHere()
     {
         contextMenuVisible = false;
+        noteEditId = null;
         noteDialogVisible = true;
         newNoteTitle = "";
         newNoteDescription = "";
     }
 
+    /// <summary>Open the note dialog pre-filled for an in-place edit.
+    /// Same dialog as Add Note so the helm sees one consistent layout
+    /// for both flows; the only difference is the header text and
+    /// the API verb the Save button hits.</summary>
+    private void OpenNoteEditDialog(SignalkNote n)
+    {
+        noteEditId = n.Id;
+        newNoteTitle = n.Title ?? "";
+        newNoteDescription = n.Description ?? "";
+        noteDialogVisible = true;
+    }
+
     private async Task SaveNote()
     {
         noteDialogVisible = false;
+        string? editingId = noteEditId;
+        // Reset BEFORE awaiting (see SaveWaypoint for the rationale).
+        noteEditId = null;
+
         string title = string.IsNullOrWhiteSpace(newNoteTitle) ? $"Note {DateTime.Now:HH:mm}" : newNoteTitle;
         string description = newNoteDescription ?? "";
+
+        if (editingId is not null)
+        {
+            // Edit branch: PUT in place.
+            var existing = loadedNotes.FirstOrDefault(n => n.Id == editingId);
+            if (existing is null) { Toasts.Warning("Note not found"); return; }
+
+            ApiResult ru;
+            try { ru = await NoteApi.UpdateAsync(existing, title, description); }
+            catch (Exception ex) { Toasts.Error($"Save note failed: {ex.Message}"); return; }
+            if (!ru.Success) { Toasts.Error($"Save note failed: {ru.Error ?? "server rejected"}"); return; }
+
+            loadedNotes = loadedNotes.Select(x =>
+            {
+                if (x.Id != editingId) return x;
+                return new SignalkNote
+                {
+                    Id = x.Id,
+                    Title = title,
+                    Description = description,
+                    Position = x.Position,
+                    MimeType = x.MimeType,
+                    Url = x.Url,
+                    CreatedAt = x.CreatedAt,
+                };
+            }).ToList();
+            if (module is not null && existing.Position is not null)
+            {
+                await module.InvokeVoidAsync("removeNoteMarker", editingId);
+                await module.InvokeVoidAsync("addNoteMarker",
+                    editingId, existing.Position.Latitude, existing.Position.Longitude,
+                    title, description,
+                    existing.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            Toasts.Success($"Saved note '{title}'");
+            return;
+        }
+
+        // Create branch: POST at the context-menu position.
         ApiResult<string> r;
         try { r = await NoteApi.CreateAsync(title, description, contextMenuLat, contextMenuLon); }
         catch (Exception ex) { Toasts.Error($"Save note failed: {ex.Message}"); return; }
@@ -254,6 +356,12 @@ public partial class Map
         }
         loadedNotes = await SafeLoad(() => NoteApi.GetAllAsync(), "notes") ?? loadedNotes;
         Toasts.Success($"Saved note '{title}'");
+    }
+
+    private void CancelNoteDialog()
+    {
+        noteDialogVisible = false;
+        noteEditId = null;
     }
 
     /// <summary>Invoked from the JS popup's Delete button. Round-trips
@@ -300,58 +408,21 @@ public partial class Map
         catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
     }
 
-    /// <summary>Invoked from the JS popup's Edit button: prompts for
-    /// a new title (description left untouched, same scope as the
-    /// layers-panel rename) and PUTs it. Optimistic local rename so
-    /// the popup re-opens with the new value if the helm taps the
-    /// same pin again before the next resource poll.</summary>
+    /// <summary>Invoked from the JS popup's Edit button: open the
+    /// same dialog used for Add Note, pre-filled with the current
+    /// title + description. Helm field-feedback was that the
+    /// previous single-field PromptAsync rename hid the description
+    /// and forced two trips (one to rename, a separate flow to edit
+    /// description); the reused dialog gives a single edit surface.
+    /// </summary>
     [JSInvokable]
-    public async Task NoteEdit(string id)
+    public Task NoteEdit(string id)
     {
         var note = loadedNotes.FirstOrDefault(n => n.Id == id);
-        if (note is null) { Toasts.Warning("Note not found"); return; }
-
-        var newTitle = await Confirmations.PromptAsync(
-            "Note title:",
-            initialValue: note.Title ?? "",
-            confirmLabel: "Save");
-        if (newTitle is null) return;
-        var trimmed = newTitle.Trim();
-        if (string.IsNullOrEmpty(trimmed)) return;
-        if (trimmed == (note.Title ?? "")) return;
-
-        ApiResult r;
-        try { r = await NoteApi.UpdateAsync(note, trimmed, note.Description); }
-        catch (Exception ex) { Toasts.Error($"Rename note failed: {ex.Message}"); return; }
-        if (!r.Success) { Toasts.Error($"Rename note failed: {r.Error ?? "server rejected"}"); return; }
-
-        var updated = loadedNotes.Select(x =>
-        {
-            if (x.Id != id) return x;
-            return new SignalkNote
-            {
-                Id = x.Id,
-                Title = trimmed,
-                Description = x.Description,
-                Position = x.Position,
-                MimeType = x.MimeType,
-                Url = x.Url,
-                CreatedAt = x.CreatedAt,
-            };
-        }).ToList();
-        loadedNotes = updated;
-        // Re-render the marker so the next click shows the new title
-        // in both the hover tooltip and the popup body. Cheaper than
-        // a full notes-layer reload.
-        if (module is not null && note.Position is not null)
-        {
-            await module.InvokeVoidAsync("removeNoteMarker", id);
-            await module.InvokeVoidAsync("addNoteMarker",
-                id, note.Position.Latitude, note.Position.Longitude,
-                trimmed, note.Description,
-                note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
-        }
-        Toasts.Success("Note renamed");
+        if (note is null) { Toasts.Warning("Note not found"); return Task.CompletedTask; }
+        OpenNoteEditDialog(note);
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     /// <summary>Invoked from the JS popup's Share button: build a
