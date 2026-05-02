@@ -12,8 +12,8 @@ namespace OnaPlotter.Utilities;
 /// <para>The anchor HUD card uses this to draw the "where is my
 /// anchor" needle without depending on the SignalK plugin to compute
 /// + publish the bearing. Same routine works for any A-to-B bearing
-/// (AIS popup brg, route leg headings) -- this file is the seed of
-/// the broader JS-to-C# port queued in the TODO list.</para>
+/// (AIS popup brg, route leg headings) -- a deliberate landing pad
+/// for further JS-to-C# moves of pure-math helpers.</para>
 ///
 /// <para>Pure function; no allocation. Safe to call per-tick at HUD
 /// cadence -- the trigonometric ops are constant-time.</para>

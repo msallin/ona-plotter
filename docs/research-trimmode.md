@@ -44,11 +44,9 @@ GeoJSON exports use a dedicated `OnaGeoJsonContext` (source-gen with `WriteInden
 
 **Status**: the application-side surface is source-gen-clean. Trim-warning audit on a `TrimMode=full` publish should now produce zero IL2xxx warnings on `OnaPlotter.dll`.
 
-### 2. AlarmManager Activator-based test ctor
+### 2. AlarmManager Activator-based test ctor (resolved)
 
-`AlarmManager.cs:197` has a `// Keeps the args: [rules, now] Activator.CreateInstance pattern` comment. The legacy test reflection path needs a `[DynamicDependency]` hint or the production trim will preserve the wrong members. Verify it's actually still used; if it's pure test scaffolding, mark the test-only entry with `[DynamicallyAccessedMembers(...)]`.
-
-**Estimated effort**: 1 hour audit + tag.
+The original audit flagged a comment in `AlarmManager.cs` referencing an "Activator-based ctor pattern" that supposedly needed a `[DynamicDependency]` hint. Verified during the F2 sweep: **no production code calls `Activator.CreateInstance` against `AlarmManager`, and every test fixture uses direct `new AlarmManager(...)`**. The comment was historical dead text; cleaned up alongside this doc.
 
 ### 3. AlarmRuleMetadataTests reflection (test-only -- not a blocker)
 
@@ -56,11 +54,11 @@ GeoJSON exports use a dedicated `OnaGeoJsonContext` (source-gen with `WriteInden
 
 ## Step-by-step migration plan
 
-1. ~~**Source-gen JsonContext**: add `OnaPlotter/Services/Json/OnaJsonContext.cs` with `[JsonSerializable(typeof(T))]` for each DTO.~~ ✅ Landed in F2/3 for the four named-type sites.
+1. ~~**Source-gen JsonContext**: add `OnaPlotter/Services/Json/OnaJsonContext.cs` with `[JsonSerializable(typeof(T))]` for each DTO.~~ ✅ Landed in F2/3.
 2. ~~**Migrate hot path first**: switch `SignalkClient.Deserialize<SignalkDelta>(json)` to use the context.~~ ✅ Landed in F2/3.
-3. **Migrate the anon-type Serialize sites**: requires a small refactor (anon record -> named `record`) at each call site. See list above. Pending.
-4. **Audit Activator usage** in `AlarmManager`. Verified: no production `Activator.CreateInstance` callers; the test suite uses direct `new AlarmManager(...)` exclusively. The "Activator pattern" comment in `AlarmManager.cs:198` is historical dead text and not a trim blocker.
-5. **Flip `<TrimMode>full</TrimMode>`** in csproj. **Probed and reverted** -- see "Probe results" below.
+3. ~~**Migrate the anon-type Serialize sites**.~~ ✅ Landed in PR #208. Records live in `OnaPlotter/Models/GeoJsonDtos.cs` + `OnaPlotter/Models/SignalkSubscriptionDtos.cs`; the helm-facing GeoJSON shapes use `OnaGeoJsonContext` (indented), the wire-protocol shapes use `OnaJsonContext` (compact).
+4. ~~**Audit Activator usage** in `AlarmManager`.~~ ✅ Verified: no production callers, no test reflection. Stale comment removed.
+5. **Flip `<TrimMode>full</TrimMode>`** in csproj. **Probed and reverted** -- see "Probe results" below. Application code is trim-clean; remaining work is the lazy-XML interaction.
 6. **Publish + smoke test**: `dotnet publish -c Release` and load the bundle on the helm. Watch DevTools console for any "type/member was not preserved" runtime errors. If the helm hits a screen with a missing type, add `[DynamicDependency]` to the broken site and re-publish.
 7. **Measure**: compare brotli-compressed bundle size pre/post via `du -sb wwwroot/_framework/*.br` (or `dotnet publish` output).
 
