@@ -8,7 +8,6 @@ public sealed class TrackApi : ITrackApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
-    private readonly HistoryCache? _cache;
 
     /// <summary>SignalK paths the rich fetch asks for. Order matters
     /// because the response's <c>data</c> rows align element-per-path,
@@ -25,24 +24,10 @@ public sealed class TrackApi : ITrackApi
         OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater,
     ];
 
-    /// <summary>Production ctor: DI hands us the session cache.
-    /// The two-arg overload below is a back-compat hatch for tests
-    /// that don't care about caching -- they pass null and every
-    /// chunk fetch goes through unconditionally.</summary>
-    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl, HistoryCache cache)
+    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
     {
         _http = http;
         _baseUrl = baseUrl;
-        _cache = cache;
-    }
-
-    /// <summary>Test-only overload: skip the cache. Lets pre-cache
-    /// tests keep their original wiring without changing every
-    /// instantiation site. New cache-behavior tests use the
-    /// three-arg ctor with a fresh <see cref="HistoryCache"/>.</summary>
-    public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
-        : this(http, baseUrl, cache: null!)
-    {
     }
 
     /// <summary>
@@ -114,32 +99,17 @@ public sealed class TrackApi : ITrackApi
         }
     }
 
-    /// <summary>
-    /// signalk-parquet (and signalk-to-influxdb2 by report) caps each
-    /// History API response at 500 rows. The cap isn't documented or
-    /// configurable -- the server silently re-buckets the requested
-    /// window so the response fits, dropping the requested
-    /// <c>resolution</c> when window/resolution &gt; 500. The fallout
-    /// is most visible on the History page's segmenter: at 7d / 30s
-    /// the helm asks for ~20 160 samples and gets 500 spaced ~20 min
-    /// apart, so each state transition (stationary ↔ moving) lands
-    /// on a sample boundary that's 20 min wide and the trips table
-    /// shows a 20-min hole between consecutive segments.
-    ///
-    /// <para>We side-step the cap by chunking large windows
-    /// client-side: each sub-request stays under the cap so the
-    /// server returns the requested resolution unaltered. Constants
-    /// are <c>internal</c> so unit tests can cover the chunking
-    /// boundary without timing-dependent live-server calls.</para>
-    /// </summary>
-    internal const int MaxRowsPerRequest = 500;
-
-    /// <summary>Safety margin under the cap. signalk-parquet
-    /// occasionally returns 501 rows on edge windows (off-by-one in
-    /// its own bucketing); 95% of the cap leaves headroom.</summary>
-    internal const double ChunkSafetyFraction = 0.95;
-
     /// <inheritdoc/>
+    /// <remarks>
+    /// Single round-trip per call. Earlier iterations chunked large
+    /// windows client-side to dodge the SignalK history provider's
+    /// 500-row response cap; helm field-tested that the production
+    /// providers (current signalk-parquet, signalk-to-influxdb2)
+    /// return as much data as the requested window+resolution
+    /// implies, so the chunking added latency for no benefit. The
+    /// page-level CancellationToken (helm-tap-Cancel + 30 s timeout)
+    /// guards against a slow / wedged server.
+    /// </remarks>
     public async Task<TrackPoint[]?> GetServerTrackPointsAsync(
         DateTimeOffset? from,
         DateTimeOffset? to,
@@ -149,121 +119,11 @@ public sealed class TrackApi : ITrackApi
         CancellationToken ct = default)
     {
         string resExpr = string.IsNullOrWhiteSpace(resolution) ? "30s" : resolution;
-
-        // Decide single-request vs paginated. The cap kicks in when
-        // (window / resolution) > 500 (rows). For windows that fit
-        // comfortably within the cap we keep the original single-
-        // request shape (relative `duration=` when the caller didn't
-        // pass an absolute range) so existing servers + tests + URL
-        // shapes are unchanged. Only when the cap WOULD bite do we
-        // expand into absolute-windowed chunks.
-        TimeSpan? resSpan = TryParseResolutionToSpan(resExpr);
-        TimeSpan? windowSpan = TryComputeWindowSpan(from, to, timespan);
-        bool needsChunking = resSpan is TimeSpan rs && rs > TimeSpan.Zero
-            && windowSpan is TimeSpan ws
-            && ws.TotalSeconds / rs.TotalSeconds > MaxRowsPerRequest;
-
-        if (!needsChunking)
-        {
-            // Single-request fast path: the URL shape (and its
-            // relative `duration=` form when applicable) is what
-            // every release prior to pagination shipped, so callers
-            // and tests pinning the small-window contract carry
-            // forward unchanged.
-            return await FetchChunkAsync(from, to, timespan, resExpr, bbox, ct);
-        }
-
-        // Resolve absolute bounds for chunking. If the caller went
-        // relative-only (timespan dropdown), pin "now" as the upper
-        // bound; the chunks then walk backwards from there. The
-        // first absolute bound we resolve is what every chunk
-        // shares; computing once avoids per-chunk drift if the wall
-        // clock advances mid-fetch.
-        DateTimeOffset toAbs = to ?? DateTimeOffset.UtcNow;
-        DateTimeOffset fromAbs = from ?? toAbs - windowSpan!.Value;
-
-        // Chunk width: floor(cap × safety × resolution). The
-        // safety fraction is below 1 so a server that off-by-ones
-        // its own bucketing (occasional 501 returns observed) still
-        // lands inside the cap.
-        long chunkSeconds = (long)Math.Max(
-            resSpan!.Value.TotalSeconds,
-            Math.Floor(MaxRowsPerRequest * ChunkSafetyFraction * resSpan.Value.TotalSeconds));
-
-        // Cache key prefix shared by every chunk in this pagination
-        // loop. `paths` and `resolution` are stable across chunks;
-        // only the `from`/`to` instants vary. Computing once avoids
-        // re-joining the rich-paths array per iteration.
-        string pathsKey = string.Join(',', RichPaths);
-
-        var aggregated = new List<TrackPoint>();
-        DateTimeOffset cursor = fromAbs;
-        DateTime? lastBoundaryTimestamp = null;
-        while (cursor < toAbs)
-        {
-            if (ct.IsCancellationRequested) break;
-            DateTimeOffset chunkTo = cursor.AddSeconds(chunkSeconds);
-            if (chunkTo > toAbs) chunkTo = toAbs;
-
-            // Cache lookup. The cache itself enforces the live-tail
-            // skip rule (chunks within HeadFreshness of "now" miss
-            // unconditionally) so we don't have to repeat that test
-            // here. Null cache = test-only ctor; behave as if every
-            // lookup misses.
-            var key = HistoryCache.Key.From(
-                pathsKey, resExpr, cursor.UtcDateTime, chunkTo.UtcDateTime, bbox);
-            var chunk = _cache?.TryGet(key);
-            if (chunk is null)
-            {
-                chunk = await FetchChunkAsync(
-                    from: cursor, to: chunkTo,
-                    timespan: null, resolution: resExpr, bbox: bbox, ct: ct);
-                // Store on success only. Null = transport / parse
-                // failure; storing null would poison subsequent
-                // loads of the same window. The cache's own
-                // live-tail rule will silently no-op the head chunk
-                // even when the response is non-null.
-                if (chunk is { Length: > 0 }) _cache?.Set(key, chunk);
-            }
-            if (chunk is { Length: > 0 })
-            {
-                // Dedupe the seam: consecutive sub-requests can
-                // return the same boundary timestamp because both
-                // include the seam instant (SignalK's `from`/`to`
-                // are documented inclusive on both ends). Skipping
-                // a duplicated head sample keeps the segmenter from
-                // seeing a zero-distance "hop" right at the seam
-                // and emitting a spurious 1-point segment.
-                int skip = 0;
-                if (lastBoundaryTimestamp is DateTime t
-                    && chunk[0].Timestamp == t) skip = 1;
-                for (int i = skip; i < chunk.Length; i++) aggregated.Add(chunk[i]);
-                lastBoundaryTimestamp = chunk[^1].Timestamp;
-            }
-            cursor = chunkTo;
-        }
-        return aggregated.Count == 0 ? null : [.. aggregated];
-    }
-
-    /// <summary>Single-shot fetch. The non-paginated path hits this
-    /// once with the caller's range / timespan unchanged; the
-    /// paginated path hits this N times with absolute windows it
-    /// computed itself. Same URL-building and parsing rules either
-    /// way -- the only thing the caller controls is the time
-    /// expression in the query string.</summary>
-    private async Task<TrackPoint[]?> FetchChunkAsync(
-        DateTimeOffset? from,
-        DateTimeOffset? to,
-        string? timespan,
-        string resolution,
-        TrackBbox? bbox,
-        CancellationToken ct)
-    {
         string pathsParam = string.Join(',', RichPaths);
 
         string url = _baseUrl.Combine(SignalKUrls.HistoryValuesPath)
             + $"?paths={Uri.EscapeDataString(pathsParam)}"
-            + $"&resolution={Uri.EscapeDataString(resolution)}";
+            + $"&resolution={Uri.EscapeDataString(resExpr)}";
 
         if (from is DateTimeOffset fromUtc)
         {
@@ -301,6 +161,7 @@ public sealed class TrackApi : ITrackApi
         HttpResponseMessage response;
         try { response = await _http.GetAsync(url, ct); }
         catch (HttpRequestException) { return null; }
+        catch (TaskCanceledException) { return null; }   // timeout / helm cancel
         using (response)
         {
             if (!response.IsSuccessStatusCode) return null;
@@ -314,52 +175,6 @@ public sealed class TrackApi : ITrackApi
                 return ParseRichResponse(doc);
             }
         }
-    }
-
-    /// <summary>Resolution shorthand → TimeSpan. Accepts the same
-    /// dropdown values the History page emits ("30s", "1m", "5m",
-    /// "15m") plus pass-through ISO 8601 duration strings ("PT30S")
-    /// in case a future caller wires the canonical form. Returns
-    /// null when nothing parseable comes through; the caller falls
-    /// back to the single-request path so an unparseable resolution
-    /// can never be the reason a fetch returns nothing.</summary>
-    internal static TimeSpan? TryParseResolutionToSpan(string s)
-    {
-        if (string.IsNullOrWhiteSpace(s)) return null;
-        if (s.StartsWith('P') || s.StartsWith('p'))
-        {
-            try { return System.Xml.XmlConvert.ToTimeSpan(s.ToUpperInvariant()); }
-            catch (FormatException) { return null; }
-        }
-        if (s.Length < 2) return null;
-        char unit = char.ToLowerInvariant(s[^1]);
-        if (!int.TryParse(s.AsSpan(0, s.Length - 1), out int n) || n <= 0) return null;
-        return unit switch
-        {
-            's' => TimeSpan.FromSeconds(n),
-            'm' => TimeSpan.FromMinutes(n),
-            'h' => TimeSpan.FromHours(n),
-            'd' => TimeSpan.FromDays(n),
-            _ => null,
-        };
-    }
-
-    /// <summary>Window length used by the chunking decision. Picks
-    /// the absolute (to - from) when the caller passed both, else
-    /// the timespan dropdown value, else null. Pure helper so the
-    /// chunking decision and the actual chunk sub-requests share
-    /// one window-shape rule.</summary>
-    internal static TimeSpan? TryComputeWindowSpan(
-        DateTimeOffset? from, DateTimeOffset? to, string? timespan)
-    {
-        if (from is DateTimeOffset f)
-        {
-            var t = to ?? DateTimeOffset.UtcNow;
-            var span = t - f;
-            return span > TimeSpan.Zero ? span : null;
-        }
-        if (string.IsNullOrWhiteSpace(timespan)) return TimeSpan.FromDays(1);
-        return TryParseResolutionToSpan(timespan);
     }
 
     /// <summary>Parses the multi-path response. Walks the
@@ -485,10 +300,11 @@ public sealed class TrackApi : ITrackApi
         return cell.ValueKind == JsonValueKind.Number ? cell.GetDouble() : null;
     }
 
-    // Convert History page dropdown values (1h, 6h, 1d, 3d, 7d) into
-    // ISO 8601 duration strings (PT1H, PT6H, P1D, P3D, P7D). Unknown
-    // shapes pass through unchanged so a caller that already has an
-    // ISO duration (PT15M, P2D) stays valid.
+    // Convert History page dropdown values (1h, 6h, 1d, 3d, 7d, 30d,
+    // 90d, 365d) into ISO 8601 duration strings (PT1H, PT6H, P1D, P3D,
+    // P7D, P30D, P90D, P365D). Unknown shapes pass through unchanged
+    // so a caller that already has an ISO duration (PT15M, P2D) stays
+    // valid.
     internal static string ToIsoDuration(string timespan)
     {
         if (string.IsNullOrWhiteSpace(timespan)) return "P1D";

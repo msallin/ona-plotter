@@ -414,6 +414,12 @@
     /// cancel is silent (no error toast); a server / network failure
     /// is still surfaced by the underlying API layer's toast.</summary>
     private CancellationTokenSource? _loadCts;
+    /// <summary>True when the helm tapped the Cancel button to abort
+    /// the in-flight fetch (vs the 30 s timeout firing on its own).
+    /// Used in the OperationCanceledException catch to decide whether
+    /// to surface a "fetch timed out" toast: helm-tap gets silence
+    /// because they know they tapped; timeout gets explained.</summary>
+    private bool _userInitiatedCancel;
     private System.Threading.Timer? playTimer;
     // Custom date-range state. "preset" mode uses selectedTimespan
     // (the dropdown); "custom" uses customFromLocal + customToLocal.
@@ -1184,22 +1190,35 @@
     private async Task LoadTrack()
     {
         // While a fetch is in flight, the same button doubles as
-        // Cancel: cancel the CTS, let the LoadTrackInner await throw
-        // OperationCanceledException, and drop back to idle. The
-        // finally below clears state regardless of which path won.
-        // Helm-initiated cancel is silent; a real transport / server
-        // failure still surfaces through the API layer's toast.
+        // Cancel: flag the helm-initiated path, cancel the CTS, let
+        // the LoadTrackInner await throw OperationCanceledException,
+        // and drop back to idle. The finally below clears state
+        // regardless of which path won. Helm-initiated cancel is
+        // silent; the 30 s timeout fires a toast so the helm knows
+        // why their fetch stopped without their tap; a real transport
+        // / server failure still surfaces through the API layer.
         if (loading)
         {
+            _userInitiatedCancel = true;
             _loadCts?.Cancel();
             return;
         }
         loadAttempted = true;
         loading = true;
+        _userInitiatedCancel = false;
         // New CTS per fetch -- one-shot CTS objects are simpler than
         // resetting state on a reused instance, and cheap (no
-        // unmanaged handles in the cancel path here).
+        // unmanaged handles in the cancel path here). The 30 s
+        // CancelAfter is a server-stalled-out backstop: a healthy
+        // signalk-parquet (or signalk-to-influxdb2) returns the full
+        // window in one round-trip in well under a second on LAN, a
+        // few seconds on a sat link. Anything past 30 s is the server
+        // wedged or the request shape (e.g. 1 s resolution × 365 d)
+        // exceeding what the provider can stream; either way the helm
+        // wants to know fast rather than waiting out HttpClient's
+        // 100 s default.
         var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
         _loadCts = cts;
         StateHasChanged();
         try
@@ -1208,10 +1227,17 @@
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            // Helm tapped Cancel. Keep whatever was previously on
-            // screen (don't blank the map) -- a half-applied fetch
-            // result wouldn't have made it past the throwing await,
-            // so nothing else to clean up here.
+            // Two paths feed this: helm tap or 30 s timeout. The
+            // helm-tap path sets _userInitiatedCancel above; if that
+            // flag is false, the CancelAfter expired and we owe the
+            // helm a toast explaining why the fetch dropped without
+            // their tap. Either way, leave the previous map / segments
+            // on screen -- a half-applied fetch result wouldn't have
+            // made it past the throwing await.
+            if (!_userInitiatedCancel)
+            {
+                Toasts.Error("History fetch timed out after 30 s. Try a coarser resolution or shorter window.");
+            }
         }
         finally
         {
