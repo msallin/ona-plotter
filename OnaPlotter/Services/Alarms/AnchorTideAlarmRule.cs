@@ -95,6 +95,10 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
 
         var hh = (int)Math.Floor(hoursToLw);
         var mm = (int)Math.Round((hoursToLw - hh) * 60);
+        // mm can land at 60 when hoursToLw rounds up at exactly the
+        // hour boundary (e.g. hoursToLw = 0.999 -> hh=0, mm=Math.Round(59.94)=60).
+        // Carry the rollover so the helm sees "1h00" instead of "60min".
+        if (mm == 60) { hh++; mm = 0; }
         string when = hh == 0 ? $"{mm}min" : $"{hh}h{mm:D2}";
 
         double minutesToLw = hoursToLw * 60;
