@@ -473,9 +473,24 @@
         filterPanelOpen = !filterPanelOpen;
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         SignalkClient.OnRawMessage -= HandleRawMessage;
-        return ValueTask.CompletedTask;
+        // Drop any non-core extra paths the helm subscribed to via the
+        // chip-picker. Without this each visit to /raw + tap-on-path
+        // accumulated entries in SignalkClient._extraPaths that
+        // persisted for the rest of the session AND were re-issued on
+        // every reconnect, multiplying server-side bandwidth on a
+        // flaky LAN over a long passage. Snapshot to a list so the
+        // foreach can mutate selectedPaths transitively.
+        var toDrop = selectedPaths
+            .Where(p => !SignalkClient.CoreSelfPaths.Contains(p))
+            .ToList();
+        foreach (var p in toDrop)
+        {
+            try { await SignalkClient.UnsubscribeExtraPathAsync(p); }
+            catch (System.Net.WebSockets.WebSocketException) { /* socket already torn down */ }
+            catch (InvalidOperationException) { /* already unsubscribed */ }
+        }
     }
 }
