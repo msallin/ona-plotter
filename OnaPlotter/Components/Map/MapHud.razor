@@ -580,6 +580,7 @@
 
     <OnaPlotter.Components.Map.Hud.HudRouteCard
         Snapshot="@BuildRouteSnapshot()"
+        BigHud="@BigType"
         OnPrevWaypoint="OnPrevWaypoint"
         OnNextWaypoint="OnNextWaypoint" />
 </div>
@@ -772,6 +773,13 @@
     /// via Map.razor so a wide helm screen uses its horizontal space
     /// for extra rows instead of hiding them behind a tap.</summary>
     [Parameter] public bool ExpandAllHud { get; set; }
+
+    /// <summary>True when the helm has Big HUD (Settings -- "Big type")
+    /// enabled. Forwarded to HudRouteCard so the route-card layout
+    /// drops fields that are too dense for the small landscape iPad
+    /// layout (XTE numeric, route name, prev/next labels) and adds
+    /// them back when the helm wants cockpit-glance reach.</summary>
+    [Parameter] public bool BigType { get; set; }
 
     // Single source of truth for "is this corner showing its extras".
     // Global toggle wins over per-corner click state; that way enabling

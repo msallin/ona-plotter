@@ -96,7 +96,13 @@
                         <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo)</div>
                     </div>
                 }
-                @if (Snapshot.Xte is not null)
+                @* XTE numeric field: only in Big HUD mode. The XTE
+                   information competes with DTW / BRG / VMG for space
+                   in the small landscape layout, and the helm reading
+                   the smaller HUD typically wants the macro fields
+                   (distance / bearing / TTG). Big HUD mode adds the
+                   field back for cockpit-glance situational awareness. *@
+                @if (Snapshot.Xte is not null && BigHud)
                 {
                     <div class="route-info-item">
                         <div class="hud-label">XTE</div>
@@ -174,6 +180,15 @@
     /// handles by calling CourseApi.AdvanceActiveRouteAsync (server
     /// increments its own pointIndex).</summary>
     [Parameter] public EventCallback OnNextWaypoint { get; set; }
+
+    /// <summary>True when the helm has Big HUD mode enabled (Settings
+    /// page -- "Big type"). Drives the small-vs-big-HUD layout
+    /// trimming on the route card: the small layout drops fields the
+    /// helm doesn't need at a glance (XTE numeric, route name in the
+    /// title row) so the chart underneath isn't swallowed by the
+    /// HUD on landscape iPad. Big HUD adds the trimmed fields back
+    /// for cockpit-glance situational awareness.</summary>
+    [Parameter] public bool BigHud { get; set; }
 
     /// <summary>
     /// Immutable snapshot of every field the route card reads. Record-
