@@ -109,4 +109,117 @@ public class GpxServiceTests
         await Assert.That(xml).Contains("<gpx");
         await Assert.That(xml).Contains("version=\"1.1\"");
     }
+
+    // ---------------------------------------------------------------
+    // Error-path coverage. Helm-feedback (E1 from the backlog): the
+    // import path needs to fail-soft on the kinds of malformation the
+    // public web throws at us. A GPX file from a third-party planner
+    // can ship missing attributes, the wrong namespace, or coords
+    // that don't parse; the import should silently skip the bad
+    // entries rather than crash, so a near-good file still loads its
+    // good half.
+    // ---------------------------------------------------------------
+
+    [Test]
+    public async Task Parse_RouteWithSomeMalformedPoints_KeepsTheGoodOnes()
+    {
+        // Mixed file: two well-formed rtepts and one with a non-numeric
+        // lat. The route survives the bad point because TryReadLatLon
+        // silently skips it; coords.Count >= 2 still passes.
+        const string xml = """
+            <gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+              <rte>
+                <name>Mixed</name>
+                <rtept lat="48.0" lon="-123.0"/>
+                <rtept lat="not-a-number" lon="-123.5"/>
+                <rtept lat="48.5" lon="-123.5"/>
+              </rte>
+            </gpx>
+            """;
+        var data = GpxService.Parse(xml);
+        await Assert.That(data.Routes.Count).IsEqualTo(1);
+        // Two valid points kept; the malformed one is silently dropped
+        // (same shape used by openplotter exports that occasionally
+        // emit empty rtepts in the middle of a route).
+        await Assert.That(data.Routes[0].Coords.Length).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Parse_RouteWithSinglePoint_DroppedEntirely()
+    {
+        // GPX semantics: a route with < 2 points isn't a route, it's a
+        // waypoint-with-extra-syntax. Drop rather than promote.
+        const string xml = """
+            <gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+              <rte>
+                <name>OnePoint</name>
+                <rtept lat="48.0" lon="-123.0"/>
+              </rte>
+            </gpx>
+            """;
+        var data = GpxService.Parse(xml);
+        await Assert.That(data.Routes.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Parse_WaypointWithMissingLat_DroppedSilently()
+    {
+        // Helm shouldn't lose every waypoint just because one is malformed.
+        const string xml = """
+            <gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+              <wpt lon="-123.0"><name>NoLat</name></wpt>
+              <wpt lat="48.5" lon="-123.5"><name>Good</name></wpt>
+            </gpx>
+            """;
+        var data = GpxService.Parse(xml);
+        await Assert.That(data.Waypoints.Count).IsEqualTo(1);
+        await Assert.That(data.Waypoints[0].Name).IsEqualTo("Good");
+    }
+
+    [Test]
+    public async Task Parse_WrongNamespace_ReturnsEmpty()
+    {
+        // GPX 1.0 (different namespace) is not supported by the parser.
+        // Pin: returns empty rather than throwing, so the caller can
+        // surface a "no routes / waypoints" message instead of a crash.
+        const string xml = """
+            <gpx xmlns="http://www.topografix.com/GPX/1/0" version="1.0">
+              <rte>
+                <name>Old</name>
+                <rtept lat="48.0" lon="-123.0"/>
+                <rtept lat="48.5" lon="-123.5"/>
+              </rte>
+            </gpx>
+            """;
+        var data = GpxService.Parse(xml);
+        await Assert.That(data.Routes.Count).IsEqualTo(0);
+        await Assert.That(data.Waypoints.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Parse_EmptyDocument_ReturnsEmpty()
+    {
+        // Just <gpx/> with no rtes/wpts is a legit empty file.
+        const string xml = """<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1"/>""";
+        var data = GpxService.Parse(xml);
+        await Assert.That(data.Routes.Count).IsEqualTo(0);
+        await Assert.That(data.Waypoints.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Parse_LatLonOutOfRange_StillParsed()
+    {
+        // The parser doesn't enforce -90..90 / -180..180; it trusts the
+        // file. Document the looseness so a future maintainer doesn't
+        // assume validation that isn't there. If it changes, this
+        // test surfaces the new contract.
+        const string xml = """
+            <gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
+              <wpt lat="999" lon="-999"><name>Outlandish</name></wpt>
+            </gpx>
+            """;
+        var data = GpxService.Parse(xml);
+        await Assert.That(data.Waypoints.Count).IsEqualTo(1);
+        await Assert.That(data.Waypoints[0].Lat).IsEqualTo(999);
+    }
 }
