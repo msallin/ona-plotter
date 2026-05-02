@@ -762,6 +762,21 @@
     private static string FormatLocalForInput(DateTime t) =>
         t.ToString("yyyy-MM-ddTHH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
+    // JS-interop literal-embed helpers. Each wraps a typed source-gen
+    // Serialize so the eval-template call sites read as
+    // `var x = {JsLit(value)};` instead of carrying the full
+    // `JsonSerializer.Serialize(value, OnaJsonContext.Default.X)`
+    // pipeline inside the interpolation. Pure-function statics; no
+    // allocation beyond the Serialize itself.
+    private static string JsLit(string s) =>
+        System.Text.Json.JsonSerializer.Serialize(s, OnaJsonContext.Default.String);
+    private static string JsLit(double[] v) =>
+        System.Text.Json.JsonSerializer.Serialize(v, OnaJsonContext.Default.DoubleArray);
+    private static string JsLit(double[][] v) =>
+        System.Text.Json.JsonSerializer.Serialize(v, OnaJsonContext.Default.DoubleArrayArray);
+    private static string JsLit(List<OnaPlotter.Utilities.HistorySegmentRender.SegmentPayload> v) =>
+        System.Text.Json.JsonSerializer.Serialize(v, OnaJsonContext.Default.ListSegmentPayload);
+
     private async Task ToggleChartsPanel()
     {
         chartsPanelOpen = !chartsPanelOpen;
@@ -1132,7 +1147,7 @@
                     var m = window._historyMap;
                     if (!m) return;
                     if (!window._historyChartLayers) window._historyChartLayers = {{}};
-                    var id = {System.Text.Json.JsonSerializer.Serialize(chart.Identifier, OnaJsonContext.Default.String)};
+                    var id = {JsLit(chart.Identifier)};
                     if (window._historyChartLayers[id]) return;
                     var opts = {{
                         minZoom: {(chart.MinZoom ?? 1).ToString(System.Globalization.CultureInfo.InvariantCulture)},
@@ -1143,9 +1158,15 @@
                         attribution: '',
                         errorTileUrl: ''
                     }};
-                    var b = {(bounds is { Length: 4 } ? System.Text.Json.JsonSerializer.Serialize(bounds, OnaJsonContext.Default.DoubleArray) : "null")};
+                    // Filter NaN / infinity out of bounds: a chart-resource
+                    // payload from the SK server with non-finite extents
+                    // (rare but seen on hand-rolled tile sets) would otherwise
+                    // serialise as bare NaN (invalid JSON) and crash the
+                    // surrounding eval with SyntaxError. Fall back to the
+                    // literal null if any element trips the finite check.
+                    var b = {(bounds is { Length: 4 } && bounds.All(double.IsFinite) ? JsLit(bounds) : "null")};
                     if (b) opts.bounds = L.latLngBounds([b[1], b[0]], [b[3], b[2]]);
-                    var layer = L.tileLayer({System.Text.Json.JsonSerializer.Serialize(resolved, OnaJsonContext.Default.String)}, opts);
+                    var layer = L.tileLayer({JsLit(resolved)}, opts);
                     layer.setZIndex(50);
                     layer.addTo(m);
                     window._historyChartLayers[id] = layer;
@@ -1165,7 +1186,7 @@
                     if (!m) return;
                     var bag = window._historyChartLayers;
                     if (!bag) return;
-                    var id = {System.Text.Json.JsonSerializer.Serialize(id, OnaJsonContext.Default.String)};
+                    var id = {JsLit(id)};
                     var l = bag[id];
                     if (l) {{ m.removeLayer(l); delete bag[id]; }}
                 }})()
@@ -1373,7 +1394,7 @@
                     // accordingly. A previous version read s.coords and
                     // crashed at L.polyline(undefined, ...) on every
                     // History mount.
-                    var segs = {System.Text.Json.JsonSerializer.Serialize(segPayload, OnaJsonContext.Default.ListSegmentPayload)};
+                    var segs = {JsLit(segPayload)};
                     var statAsDot = {statAsDotJs};
                     var movingBaseColor = getComputedStyle(document.documentElement)
                         .getPropertyValue('--map-own').trim() || '#ec4899';
@@ -1475,7 +1496,7 @@
                     if ({fitBoundsJs} && bounds) m.fitBounds(bounds, {{ padding: [40, 40] }});
 
                     if (window._historyMarker) m.removeLayer(window._historyMarker);
-                    var coords = {System.Text.Json.JsonSerializer.Serialize(coords, OnaJsonContext.Default.DoubleArrayArray)};
+                    var coords = {JsLit(coords)};
                     // Playback marker pulls --map-playback so a future
                     // palette tweak doesn't leave a frozen amber here.
                     var playbackCol = getComputedStyle(document.documentElement)

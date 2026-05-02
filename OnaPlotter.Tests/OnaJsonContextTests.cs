@@ -195,6 +195,35 @@ public class OnaJsonContextTests
     }
 
     [Test]
+    public async Task SegmentPayload_SerializeKeys_StayPascalCase()
+    {
+        // History.razor's playback JS reads s.Coords / s.IsStationary /
+        // s.Tooltip directly (PascalCase, no naming policy). The
+        // SegmentPayload record carries no [JsonPropertyName] so
+        // source-gen emits the C# property names verbatim. A future
+        // contributor adding a [JsonPropertyName("coords")] (camelCase)
+        // would silently break History playback at runtime; this test
+        // catches the rename at CI time before it reaches a helm.
+        var payload = new List<OnaPlotter.Utilities.HistorySegmentRender.SegmentPayload>
+        {
+            new(new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.6 } }, IsStationary: false, Tooltip: "Trip A"),
+        };
+        var json = JsonSerializer.Serialize(payload, OnaJsonContext.Default.ListSegmentPayload);
+
+        using var doc = JsonDocument.Parse(json);
+        var first = doc.RootElement[0];
+        await Assert.That(first.TryGetProperty("Coords", out _)).IsTrue();
+        await Assert.That(first.TryGetProperty("IsStationary", out _)).IsTrue();
+        await Assert.That(first.TryGetProperty("Tooltip", out _)).IsTrue();
+        // Negative assertion: lowercase variants must NOT appear -- a
+        // partial PascalCase migration (only some props renamed) is
+        // worse than a full rename because the JS reads silently fail.
+        await Assert.That(first.TryGetProperty("coords", out _)).IsFalse();
+        await Assert.That(first.TryGetProperty("isStationary", out _)).IsFalse();
+        await Assert.That(first.TryGetProperty("tooltip", out _)).IsFalse();
+    }
+
+    [Test]
     public async Task GeoJsonExportContext_Indents_Output()
     {
         // The indent contract matters: helms occasionally open the

@@ -10,8 +10,21 @@ namespace OnaPlotter.Services.Json;
 /// generated converter pair; calls of the form
 /// <c>JsonSerializer.Deserialize(span, OnaJsonContext.Default.SignalkDelta)</c>
 /// skip reflection entirely.
+///
 /// <para>
-/// Why this exists:
+/// <b>Adding a new type</b> (the common contributor task): drop a
+/// <c>[JsonSerializable(typeof(T))]</c> line below and use
+/// <c>OnaJsonContext.Default.T</c> (where <c>T</c> is the property
+/// name the analyser generates) at the call site. The compile fails
+/// with a clear message when a type is referenced in a typed
+/// Deserialize but not registered here. Also add a round-trip case
+/// to <c>OnaJsonContextTests</c> so a silent regression on the
+/// converter (e.g. a future analyser upgrade dropping a property
+/// attribute) surfaces in CI.
+/// </para>
+///
+/// <para>
+/// <b>Why this exists</b> (the longer story):
 /// </para>
 /// <list type="number">
 ///   <item><description><b>Hot path</b>:
@@ -35,16 +48,6 @@ namespace OnaPlotter.Services.Json;
 ///     linker drop large parts of <c>System.Text.Json.Reflection</c>
 ///     once <c>TrimMode=full</c> ships. Audit estimates ~50 KB.</description></item>
 /// </list>
-/// <para>
-/// Adding a new type: drop a <c>[JsonSerializable(typeof(T))]</c>
-/// line below and use <c>OnaJsonContext.Default.T</c> (where
-/// <c>T</c> is the property name the analyser generates) at the
-/// call site. The compile fails with a clear message when a type
-/// is referenced in a typed Deserialize but not registered here.
-/// Also add a round-trip case to <c>OnaJsonContextTests</c> so a
-/// silent regression on the converter (e.g. a future analyser
-/// upgrade dropping a property attribute) surfaces in CI.
-/// </para>
 /// </summary>
 // PropertyNameCaseInsensitive: matches the previous AuthApi behaviour
 // (the only call site that explicitly enabled it). Other types in the

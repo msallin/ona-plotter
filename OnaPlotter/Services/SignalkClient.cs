@@ -1444,14 +1444,7 @@ public sealed class SignalkClient : IAsyncDisposable
         int periodMs = StandardSubscriptionPeriodMs, string policy = "ideal")
     {
         if (_ws is null || _ws.State != WebSocketState.Open) return;
-
-        // Materialise the path list once so the array carries through
-        // a single concrete shape; source-gen needs a typed array, not
-        // an IEnumerable of an anonymous projection.
-        var rows = paths
-            .Select(p => new SignalkSubscribePath(p, periodMs, policy))
-            .ToArray();
-        var request = new SignalkSubscribeRequest(context, rows);
+        var request = SignalkSubscribeRequest.For(context, paths, periodMs, policy);
         var message = JsonSerializer.Serialize(request, OnaJsonContext.Default.SignalkSubscribeRequest);
         await SendRawAsync(message);
     }
@@ -1459,11 +1452,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private async Task SendUnsubscribeAsync(string context, IEnumerable<string> paths)
     {
         if (_ws is null || _ws.State != WebSocketState.Open) return;
-
-        var rows = paths
-            .Select(p => new SignalkUnsubscribePath(p))
-            .ToArray();
-        var request = new SignalkUnsubscribeRequest(context, rows);
+        var request = SignalkUnsubscribeRequest.For(context, paths);
         var message = JsonSerializer.Serialize(request, OnaJsonContext.Default.SignalkUnsubscribeRequest);
         await SendRawAsync(message);
     }
