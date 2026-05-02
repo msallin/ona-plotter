@@ -29,45 +29,76 @@
     }
     <svg viewBox="0 0 500 500" style="max-width:500px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg">
 
-        @* === Data readouts (fixed, do not rotate) === *@
-        @Txt(70, 32, "TWA", "sailsteer-label")
-        @Txt(70, 54, Format.Degrees(Data.WindAngleTrue), Vcls(Data.WindAngleTrue))
-        @Txt(70, 68, "true", "sailsteer-unit")
+        @* === Data readouts (fixed, do not rotate) ===
+           Layout (helm-feedback, post-KIP comparison):
+             Top-left  : TWA over TWS (true wind, side-by-side cluster)
+             Top-center: HDG (large, primary heading reference)
+             Top-right : AWA over AWS (apparent wind, side-by-side cluster)
+             Bottom-left : SOG (boat speed over ground)
+             Bottom-right: COG (track over ground)
+           VMG-perf-bar lives mid-right, beside the compass ring.
+           HDG was previously bottom-left next to COG; helm wanted it
+           prominent at the top because heading is the primary
+           steering reference and the eye-shift from compass to HDG
+           is shorter at the top than at the bottom-corner. *@
 
-        @Txt(430, 32, "AWA", "sailsteer-label")
-        @Txt(430, 54, Format.Degrees(Data.WindAngleApparent), Vcls(Data.WindAngleApparent))
-        @Txt(430, 68, "app", "sailsteer-unit")
+        @* Top-left: TWA + TWS cluster *@
+        @Txt(70, 22, "TWA", "sailsteer-label")
+        @Txt(70, 44, $"{Format.Degrees(Data.WindAngleTrue)}\u00b0", Vcls(Data.WindAngleTrue))
+        @Txt(70, 70, Format.Speed(Data.WindSpeedTrue), Vcls(Data.WindSpeedTrue))
+        @Txt(70, 84, "TWS knots", "sailsteer-unit")
 
-        @Txt(32, 178, "TWS", "sailsteer-label")
-        @Txt(32, 200, Format.Speed(Data.WindSpeedTrue), Vcls(Data.WindSpeedTrue))
+        @* Top-right: AWA + AWS cluster *@
+        @Txt(430, 22, "AWA", "sailsteer-label")
+        @Txt(430, 44, $"{Format.Degrees(Data.WindAngleApparent)}\u00b0", Vcls(Data.WindAngleApparent))
+        @Txt(430, 70, Format.Speed(Data.WindSpeedApparent), Vcls(Data.WindSpeedApparent))
+        @Txt(430, 84, "AWS knots", "sailsteer-unit")
 
-        @Txt(32, 308, "AWS", "sailsteer-label")
-        @Txt(32, 330, Format.Speed(Data.WindSpeedApparent), Vcls(Data.WindSpeedApparent))
+        @* Top-center: HDG primary heading readout. Pill background
+           pulled from the same token family as the connection chip
+           so it reads as a system value, not a label. Larger font
+           (sailsteer-value-lg) for at-a-glance prominence. *@
+        <rect x="207" y="14" width="86" height="34" rx="6"
+              class="sailsteer-hdg-pill" />
+        @Txt(250, 28, "HDG", "sailsteer-label")
+        @Txt(250, 44, $"{Format.Degrees(Data.Heading)}\u00b0", Data.Heading is null ? "sailsteer-value-lg sailsteer-value-muted" : "sailsteer-value-lg")
 
-        @Txt(468, 178, "SOG", "sailsteer-label")
-        @Txt(468, 200, Format.Speed(Data.SpeedOverGround), Vcls(Data.SpeedOverGround))
+        @* Bottom-left: SOG *@
+        @Txt(70, 440, "SOG", "sailsteer-label")
+        @Txt(70, 462, Format.Speed(Data.SpeedOverGround), Vcls(Data.SpeedOverGround))
 
-        @Txt(468, 308, "VMG", "sailsteer-label")
-        @Txt(468, 330, Format.Speed(Data.CourseNextPointVmg), Vcls(Data.CourseNextPointVmg))
-
-        @Txt(70, 440, "HDG", "sailsteer-label")
-        @Txt(70, 462, $"{Format.Degrees(Data.Heading)}\u00b0", Vcls(Data.Heading))
-
+        @* Bottom-right: COG *@
         @Txt(430, 440, "COG", "sailsteer-label")
         @Txt(430, 462, $"{Format.Degrees(Data.CourseOverGround)}\u00b0", Vcls(Data.CourseOverGround))
 
+        @* Help button (top-right corner of viewport, OUTSIDE the
+           compass). Toggles helpMode which adds explanatory labels
+           next to every symbol in the dial. SVG <title> elements
+           cover desktop hover; helpMode covers touch where hover
+           doesn't fire. *@
+        <g class="sailsteer-help-toggle" @onclick="ToggleHelpMode" role="button"
+           tabindex="0" aria-label="Toggle help labels">
+            <title>Show / hide explanatory labels for the dial symbols</title>
+            <circle cx="478" cy="22" r="14"
+                    class="@(helpMode ? "sailsteer-help-btn-active" : "sailsteer-help-btn")" />
+            <text x="478" y="22" text-anchor="middle" dominant-baseline="central"
+                  font-size="16" font-weight="700"
+                  class="@(helpMode ? "sailsteer-help-btn-text-active" : "sailsteer-help-btn-text")">?</text>
+        </g>
+
         @* === VMG-to-target performance bar ===
-           Under the SOG readout (upper right) when the polar is loaded
-           and we have live TWA+TWS. Shows current-BSP vs polar-target
-           as a horizontal fill: green when matched, amber when off.
-           Inline HTML via foreignObject so the shared .perf-meter CSS
-           applies; keeps the SVG pure for the dial itself. *@
+           Mid-right, sitting between the AWA/AWS cluster and the
+           bottom COG readout. Shows current VMG vs polar-target as
+           a horizontal fill: green when on-polar (within 5%), amber
+           otherwise. Inline HTML via foreignObject so the shared
+           .perf-meter CSS applies; keeps the SVG pure for the dial. *@
         @if (VmgMeter is (double actual, double target, bool onPolar))
         {
-            <foreignObject x="423" y="218" width="90" height="28">
-                <div xmlns="http://www.w3.org/1999/xhtml" class="sailsteer-vmg-bar">
+            <foreignObject x="410" y="232" width="80" height="36">
+                <div xmlns="http://www.w3.org/1999/xhtml" class="sailsteer-vmg-bar"
+                     title="VMG vs polar target">
                     <div class="sailsteer-vmg-bar-label">
-                        <span>@actual.ToString("F1")</span>
+                        <span>VMG @actual.ToString("F1")</span>
                         <span>@target.ToString("F1") tgt</span>
                     </div>
                     <div class="perf-meter">
@@ -124,11 +155,31 @@
                 }
             }
 
+            @* === No-go zone (close-hauled exclusion) ===
+               Two band sectors on the rim either side of the wind
+               direction (TWD): the helm cannot sail closer to the
+               wind than the polar's optimal upwind angle. Stbd half
+               (TWD..TWD+target) is green = "you can be on stbd
+               tack here close-hauled"; port half (TWD-target..TWD)
+               is red = port tack territory. Falls back to a
+               conservative 35° fixed half-width when the polar
+               isn't loaded so the visual still anchors the wind
+               direction. Drawn BEFORE the laylines so the layline
+               ticks sit on top and remain readable. *@
+            @if (Data.WindDirectionTrue is not null)
+            {
+                double twdDeg = Data.WindDirectionTrue.Value * Format.RadToDeg;
+                double noGoHalf = NoGoHalfWidthDeg();
+                @SvgArcBand(Cx, Cy, R, R - 14, twdDeg, twdDeg + noGoHalf, "var(--sev-ok)", 0.55)
+                @SvgArcBand(Cx, Cy, R, R - 14, twdDeg - noGoHalf, twdDeg, "var(--sev-danger)", 0.55)
+            }
+
             @* === True Wind Direction indicator === *@
             @if (Data.WindDirectionTrue is not null)
             {
                 double twdDeg = Data.WindDirectionTrue.Value * Format.RadToDeg;
                 <g transform="rotate(@F(twdDeg), 250, 250)">
+                    <title>True wind direction (where the wind is coming from)</title>
                     <polygon points="250,@F(Cy - R + 5) 244,@F(Cy - R - 12) 256,@F(Cy - R - 12)"
                              style="fill: var(--sk-accent);" opacity="0.9" />
                     @SvgTxt(250, Cy - R - 18, "TWD", "var(--sk-accent)", 10, "600")
@@ -144,11 +195,13 @@
                 double portDeg = twdD + 180 + twaD;
                 double lr = R - 6;
                 <g transform="rotate(@F(stbdDeg), 250, 250)">
+                    <title>Starboard layline (current TWA, actual)</title>
                     <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
                           style="stroke: var(--sev-ok);" stroke-width="3" stroke-linecap="round" />
                     @SvgTxt(250, Cy - lr - 16, "S", "var(--sev-ok)", 9, "600")
                 </g>
                 <g transform="rotate(@F(portDeg), 250, 250)">
+                    <title>Port layline (current TWA, actual)</title>
                     <line x1="250" y1="@F(Cy - lr + 10)" x2="250" y2="@F(Cy - lr - 10)"
                           style="stroke: var(--sev-danger);" stroke-width="3" stroke-linecap="round" />
                     @SvgTxt(250, Cy - lr - 16, "P", "var(--sev-danger)", 9, "600")
@@ -166,12 +219,14 @@
             {
                 double lr = R - 24;
                 <g transform="rotate(@F(targetStbd), 250, 250)">
+                    <title>Starboard polar-target layline (optimal upwind / downwind angle for current TWS)</title>
                     <line x1="250" y1="@F(Cy - lr + 8)" x2="250" y2="@F(Cy - lr - 8)"
                           style="stroke: var(--sev-ok);" stroke-width="2"
                           stroke-dasharray="3,3" opacity="0.75" />
                     @SvgTxt(250, Cy - lr - 14, "tgt", "var(--sev-ok)", 8, "600")
                 </g>
                 <g transform="rotate(@F(targetPort), 250, 250)">
+                    <title>Port polar-target layline (optimal upwind / downwind angle for current TWS)</title>
                     <line x1="250" y1="@F(Cy - lr + 8)" x2="250" y2="@F(Cy - lr - 8)"
                           style="stroke: var(--sev-danger);" stroke-width="2"
                           stroke-dasharray="3,3" opacity="0.75" />
@@ -189,8 +244,11 @@
                 double cogX = Cx + Math.Sin(Data.CourseOverGround.Value) * cogLen;
                 double cogY = Cy - Math.Cos(Data.CourseOverGround.Value) * cogLen;
                 string cogStroke = cogHasSpeed ? "var(--sev-warn)" : "var(--sk-text-muted)";
-                <line x1="250" y1="250" x2="@F(cogX)" y2="@F(cogY)"
-                      style="stroke: @cogStroke;" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />
+                <g>
+                    <title>Course over ground (your actual track, length scaled by speed)</title>
+                    <line x1="250" y1="250" x2="@F(cogX)" y2="@F(cogY)"
+                          style="stroke: @cogStroke;" stroke-width="2" stroke-dasharray="6,4" opacity="0.8" />
+                </g>
             }
 
             @* === Waypoint bearing line === *@
@@ -198,9 +256,13 @@
             {
                 double wpX = Cx + Math.Sin(Data.CourseNextPointBearing.Value) * (R - 20);
                 double wpY = Cy - Math.Cos(Data.CourseNextPointBearing.Value) * (R - 20);
-                <line x1="250" y1="250" x2="@F(wpX)" y2="@F(wpY)"
-                      style="stroke: var(--sk-cyan);" stroke-width="2.5" opacity="0.9" />
+                <g>
+                    <title>Bearing to the active waypoint</title>
+                    <line x1="250" y1="250" x2="@F(wpX)" y2="@F(wpY)"
+                          style="stroke: var(--sk-cyan);" stroke-width="2.5" opacity="0.9" />
+                </g>
                 <g transform="rotate(@F(Data.CourseNextPointBearing.Value * Format.RadToDeg), 250, 250)">
+                    <title>Active waypoint marker</title>
                     <polygon points="250,@F(Cy - R + 24) 245,@F(Cy - R + 36) 255,@F(Cy - R + 36)"
                              style="fill: var(--sk-cyan);" opacity="0.9" />
                 </g>
@@ -208,15 +270,54 @@
 
         </g>
 
+        @* === Apparent Wind Direction indicator ===
+           Drawn OUTSIDE the rotating compass because AWA is already
+           boat-relative -- the boat is always at screen-up, so AWA
+           degrees from screen-up puts the arrow exactly where the
+           wind feels like it's coming from. Distinct from the TWD
+           triangle: thinner, hollow, sits on the inner ring so it
+           reads as "less primary" than the absolute TWD. Helm
+           tunes by the absolute (TWD) at strategic level + the
+           relative (AWD) at tactical level (sheet trim). *@
+        @if (Data.WindAngleApparent is not null)
+        {
+            double awaDeg = Data.WindAngleApparent.Value * Format.RadToDeg;
+            <g transform="rotate(@F(awaDeg), 250, 250)">
+                <title>Apparent wind direction (where the wind feels like it's coming from -- combines true wind + boat speed)</title>
+                <polygon points="250,@F(Cy - R + 22) 246,@F(Cy - R + 6) 254,@F(Cy - R + 6)"
+                         class="sailsteer-awa-arrow" />
+                @SvgTxt(250, Cy - R + 30, "AWD", "var(--sev-warn)", 9, "600")
+            </g>
+        }
+
         @* === Boat icon at center (fixed, always points up) ===
-           Fill / stroke routed through CSS classes so the icon flips
-           with theme. The hardcoded white fill rendered as an
-           invisible boat on the white-card light theme. *@
+           Wider + taller than the previous narrow chevron after
+           helm field-feedback ("the boat is too thin to read at
+           a glance"). Fill / stroke routed through CSS classes so
+           the icon flips with theme. The hardcoded white fill used
+           to render as an invisible boat on the white-card light
+           theme; the class-based palette honours the theme tokens. *@
         <g transform="translate(250, 250)">
-            <polygon points="0,-20 6,14 0,8 -6,14"
+            <title>Your vessel (always points up; the compass rotates underneath)</title>
+            <polygon points="0,-26 11,18 6,14 0,18 -6,14 -11,18"
                      class="sailsteer-boat-fill sailsteer-boat-stroke"
-                     stroke-width="0.8" />
+                     stroke-width="1.2" />
         </g>
+
+        @* === Help-mode labels ===
+           Toggled by the ? button. Visible-text annotations next to
+           every interactive symbol so a tablet helm (no hover) can
+           still learn what each glyph means. Rendered LAST so they
+           sit on top of all dial elements. Each label is screen-
+           positioned (not compass-rotating) so they stay legible
+           regardless of heading. *@
+        @if (helpMode)
+        {
+            @SvgTxt(250, 250 - R + 50, "Wind sectors: red = port no-go, green = stbd no-go", "var(--sk-text)", 10, "600")
+            @SvgTxt(80, 250, "Lubber line", "var(--sev-danger)", 10, "600")
+            @SvgTxt(420, 250, "Boat = always up", "var(--sk-text)", 10, "600")
+            @SvgTxt(250, 250 + R + 30, "Compass rotates with heading", "var(--sk-text-muted)", 10, "400")
+        }
 
     </svg>
 </div>
@@ -226,7 +327,75 @@
     private const double Cy = 250;
     private const double R = 195;
 
+    /// <summary>Conservative fallback half-width (degrees) for the
+    /// no-go zone when the polar isn't loaded yet. ~35° matches a
+    /// typical cruiser-racer's close-hauled angle; the helm can
+    /// override visually by sailing closer (the laylines move with
+    /// real TWA so the no-go visual stays one cue among several).
+    /// Pinned as a const so a future polar-rich re-think can pull
+    /// the fallback up or down without spelunking the markup.</summary>
+    private const double NoGoHalfWidthFallbackDeg = 35.0;
+
+    /// <summary>Toggled by the topbar `?` button. When true, every
+    /// dial symbol gets a visible-text annotation rendered on top
+    /// of the SVG. SVG `&lt;title&gt;` already provides desktop hover
+    /// tooltips; this mode is the touch-device path where hover
+    /// doesn't fire.</summary>
+    private bool helpMode;
+
     private NavigationData Data => SignalkClient.Data;
+
+    private void ToggleHelpMode() => helpMode = !helpMode;
+
+    /// <summary>
+    /// No-go-zone half-width in degrees. Uses the polar's optimal
+    /// upwind TWA when available (so the band tightens for high-
+    /// performance boats and loosens for cruisers); falls back to
+    /// <see cref="NoGoHalfWidthFallbackDeg"/> when the polar isn't
+    /// loaded or TWS is missing. The wind-side rim band runs from
+    /// (TWD - half) to (TWD + half) on the compass.
+    /// </summary>
+    private double NoGoHalfWidthDeg()
+    {
+        if (!Polar.HasPolar) return NoGoHalfWidthFallbackDeg;
+        if (Data.WindSpeedTrue is not double twsMs) return NoGoHalfWidthFallbackDeg;
+        double twsKn = twsMs * Format.MsToKnots;
+        var t = Polar.GetOptimalUpwind(twsKn);
+        return t is OptimalPoint p ? p.TwaDeg : NoGoHalfWidthFallbackDeg;
+    }
+
+    /// <summary>
+    /// SVG path-data band between two angles on the compass.
+    /// Builds an annulus segment: outer arc from
+    /// <paramref name="rOuter"/> at <paramref name="startDeg"/> to
+    /// <paramref name="endDeg"/>, then inner arc back at
+    /// <paramref name="rInner"/>. Used for the no-go zone rim
+    /// band so the helm sees a thick arc (not just a tick) framing
+    /// the wind direction.
+    /// </summary>
+    private MarkupString SvgArcBand(double cx, double cy,
+        double rOuter, double rInner, double startDeg, double endDeg,
+        string fill, double opacity)
+    {
+        double startRad = startDeg * Math.PI / 180.0;
+        double endRad = endDeg * Math.PI / 180.0;
+        double x1 = cx + Math.Sin(startRad) * rOuter;
+        double y1 = cy - Math.Cos(startRad) * rOuter;
+        double x2 = cx + Math.Sin(endRad) * rOuter;
+        double y2 = cy - Math.Cos(endRad) * rOuter;
+        double x3 = cx + Math.Sin(endRad) * rInner;
+        double y3 = cy - Math.Cos(endRad) * rInner;
+        double x4 = cx + Math.Sin(startRad) * rInner;
+        double y4 = cy - Math.Cos(startRad) * rInner;
+        // Sweep flag: 1 for clockwise (since Y is screen-flipped).
+        // large-arc flag: 0 because the band half-width is always
+        // small (a few tens of degrees); a wider span would need
+        // recalc but isn't a meaningful no-go zone anyway.
+        string d = $"M {x1:F1} {y1:F1} A {rOuter:F1} {rOuter:F1} 0 0 1 {x2:F1} {y2:F1} " +
+                   $"L {x3:F1} {y3:F1} A {rInner:F1} {rInner:F1} 0 0 0 {x4:F1} {y4:F1} Z";
+        return new MarkupString(
+            $"<path d=\"{d}\" style=\"fill: {fill}; opacity: {opacity.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)};\" />");
+    }
 
     // True when at least ONE of the fields we rely on is non-null. Drives
     // the empty-state banner. If nothing is live, the SVG still renders

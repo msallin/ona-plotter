@@ -7714,8 +7714,62 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 .sailsteer-cardinal       { fill: var(--sk-text); }
 .sailsteer-cardinal-minor { fill: var(--sk-text-muted); }
 .sailsteer-cardinal-north { fill: var(--sev-danger); }
-.sailsteer-boat-fill  { fill:   var(--sk-text); opacity: 0.85; }
+.sailsteer-boat-fill  { fill:   var(--sk-text); opacity: 0.92; }
 .sailsteer-boat-stroke { stroke: var(--sk-text); }
+
+/* HDG pill that sits at the top center of the dial. Background +
+   border tokens match the connection-status chip in MainLayout so
+   the page reads as part of the same instrument family. The pill
+   is purely decorative; the value text overlays it via z-order
+   (SVG document order = paint order, so the rect is rendered before
+   the text in markup). */
+.sailsteer-hdg-pill {
+    fill: var(--sk-surface, rgba(0, 0, 0, 0.6));
+    stroke: var(--sk-border, rgba(255, 255, 255, 0.18));
+    stroke-width: 1;
+    opacity: 0.9;
+}
+/* Larger value variant for the headline HDG. Same family as
+   .sailsteer-value; the size bump is what reads as "primary". */
+.sailsteer-value-lg {
+    font-size: 22px;
+    fill: var(--sk-text);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Apparent-wind direction arrow: distinct shape (smaller, on the
+   inner ring) and amber colour so the helm can pattern-match
+   "true wind = magenta outer triangle, apparent wind = amber inner
+   feather". Apparent wind is the relevant cue for sail trim, true
+   wind for strategy. */
+.sailsteer-awa-arrow {
+    fill: var(--sev-warn);
+    stroke: var(--sev-warn);
+    stroke-width: 0.5;
+    opacity: 0.85;
+}
+
+/* Help-mode toggle button. Top-right corner of the SVG viewport
+   so it doesn't compete with the dial; circle + ? glyph match the
+   universal help affordance. Active state uses the accent token
+   so the helm sees a clear "labels are on" cue. */
+.sailsteer-help-toggle {
+    cursor: pointer;
+}
+.sailsteer-help-btn {
+    fill: var(--sk-surface);
+    stroke: var(--sk-border);
+    stroke-width: 1;
+    opacity: 0.85;
+}
+.sailsteer-help-btn-active {
+    fill: var(--sk-accent);
+    stroke: var(--sk-accent);
+    stroke-width: 1;
+}
+.sailsteer-help-btn-text { fill: var(--sk-text); }
+.sailsteer-help-btn-text-active { fill: var(--sk-bg, #fff); }
 
 /* Reads from token (--sk-text-muted) so night-mode + theme switches
    propagate without per-rule overrides. Hard-coded rgba(255,255,255)
