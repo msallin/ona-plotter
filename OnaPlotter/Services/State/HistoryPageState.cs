@@ -21,10 +21,15 @@ namespace OnaPlotter.Services.State;
 public sealed class HistoryPageState
 {
     public string RangeMode { get; set; } = "preset";
+    // Defaults match the page's first-visit defaults so an empty cache
+    // and the page-level field initialisers read the same values.
+    // SelectedTimespan = "1d" + Resolution = "5m" pair to ~288 rows
+    // for the default Today window, keeping the load to a single
+    // round-trip on every link the helm is likely to use.
     public string SelectedTimespan { get; set; } = "1d";
     public DateTime CustomFromLocal { get; set; } = DateTime.Now.AddHours(-6);
     public DateTime CustomToLocal { get; set; } = DateTime.Now;
-    public string Resolution { get; set; } = "30s";
+    public string Resolution { get; set; } = "5m";
 
     /// <summary>"map" or "table". Persists the helm's last view
     /// pick across navigation so a helm who was reading the trip
