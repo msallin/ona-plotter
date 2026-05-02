@@ -31,15 +31,14 @@ public interface IMapEditJs
     /// <summary>Flip the route-edit waypoint order in place.</summary>
     Task ReverseEditRouteAsync();
 
-    /// <summary>Returns <c>[waypointCount, totalDistanceNm]</c> for the
-    /// current route-edit overlay. Returns null when the JS side has
-    /// torn down (page unmounting); callers skip the stats refresh in
-    /// that case.</summary>
-    Task<double[]?> GetEditRouteStatsAsync();
-
     /// <summary>Returns the current route-edit vertices as
     /// Leaflet-ordered <c>[lat, lon]</c> pairs. Returns null when the
-    /// JS side has torn down.</summary>
+    /// JS side has torn down. The C# poll derives stats (count +
+    /// total NM) from this directly via
+    /// <c>RouteProgress.TotalDistanceMeters</c>; the previously-
+    /// separate <c>GetEditRouteStatsAsync</c> ran the same haversine
+    /// loop in JS and was retired per the project rule (decisions
+    /// in C#).</summary>
     Task<double[][]?> GetEditRouteCoordsAsync();
 
     // ---- Polygon edit -------------------------------------------------

@@ -36,9 +36,6 @@ public sealed class MapEditJs : IMapEditJs
     public Task ReverseEditRouteAsync()
         => InvokeSafe("reverseEditRoute");
 
-    public Task<double[]?> GetEditRouteStatsAsync()
-        => InvokeReturning<double[]?>("getEditRouteStats");
-
     public Task<double[][]?> GetEditRouteCoordsAsync()
         => InvokeReturning<double[][]?>("getEditRouteCoords");
 

@@ -173,21 +173,11 @@ public class MapEditJsTests
         await Assert.ThrowsAsync<JSException>(() => sut.StartRouteEditAsync());
     }
 
-    [Test]
-    public async Task GetEditRouteStatsAsync_ReturnsJsPayloadAsIs()
-    {
-        var fake = new RecordingJsRef();
-        fake.Returns["getEditRouteStats"] = new double[] { 5, 12.7 };
-        var sut = new MapEditJs(fake);
-
-        var stats = await sut.GetEditRouteStatsAsync();
-
-        await Assert.That(fake.Calls[0].id).IsEqualTo("getEditRouteStats");
-        await Assert.That(stats).IsNotNull();
-        await Assert.That(stats!.Length).IsEqualTo(2);
-        await Assert.That(stats[0]).IsEqualTo(5);
-        await Assert.That(stats[1]).IsEqualTo(12.7);
-    }
+    // GetEditRouteStatsAsync was removed: stats (count + total NM) are
+    // derived in C# from getEditRouteCoords + RouteProgress
+    // .TotalDistanceMeters. The route-edit-stats poll behaviour is
+    // exercised end-to-end through the in-page UpdateRouteStats path
+    // and the existing GetEditRouteCoordsAsync test below.
 
     [Test]
     public async Task GetEditRouteCoordsAsync_ReturnsJsPayloadAsIs()

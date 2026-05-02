@@ -327,16 +327,18 @@ public partial class Map
     private async Task UpdateRouteStats()
     {
         if (_editJs is null) return;
-        // Fetch stats + coords together so the in-panel waypoint list
-        // stays in sync with the polyline. Both round-trips are cheap
-        // (JS-side arrays), but we still only do one render afterwards.
-        var stats = await _editJs.GetEditRouteStatsAsync();
+        // Fetch the live edit coords; derive stats (count + total NM)
+        // here in C#. Earlier code called a sibling JS getEditRouteStats
+        // that ran the same haversine sum -- that round-trip is gone
+        // and the math now lives in one place per the project rule.
         var coords = await _editJs.GetEditRouteCoordsAsync();
         bool dirty = false;
-        if (stats is not null && stats.Length == 2)
+        if (coords is not null)
         {
-            int wpCount = (int)stats[0];
-            double nm = stats[1];
+            int wpCount = coords.Length;
+            double nm = wpCount >= 2
+                ? OnaPlotter.Utilities.RouteProgress.TotalDistanceMeters(coords) / 1852.0
+                : 0;
             var s = $"{wpCount} WP / {nm:F1} nm";
             if (s != routeEditStats) { routeEditStats = s; dirty = true; }
         }

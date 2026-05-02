@@ -62,9 +62,13 @@ describe('withOverzoom: levels > 0 path', () => {
         assert.equal(result.maxZoom, 17);
     });
 
-    it('clamps levels to 3 (upper)', () => {
+    it('clamps levels to MaxLevels (upper)', () => {
+        // ChartUpscale.MaxLevels is currently 5 (bumped from 3 for
+        // harbour-detail pilotage). The decorator's clamp must
+        // reflect that. If MaxLevels changes again, this assertion
+        // tracks the C# side via the constant in C# tests.
         const result = withOverzoom({ maxNativeZoom: 15 }, 99);
-        assert.equal(result.maxZoom, 18);   // 15 + 3, not 15 + 99
+        assert.equal(result.maxZoom, 20);   // 15 + 5, not 15 + 99
     });
 
     it('clamps fractional levels via |0 truncation toward zero', () => {

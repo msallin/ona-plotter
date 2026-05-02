@@ -302,19 +302,9 @@ export function removeRouteEditWaypoint(index) {
     rebuildRouteEditMarkers();
 }
 
-// Returns [waypointCount, totalDistanceNm]
-export function getEditRouteStats() {
-    const n = routeEditCoords.length;
-    if (n < 2) return [n, 0];
-    let meters = 0;
-    for (let i = 1; i < n; i++) {
-        meters += haversineMeters(
-            routeEditCoords[i-1][0], routeEditCoords[i-1][1],
-            routeEditCoords[i][0], routeEditCoords[i][1]
-        );
-    }
-    return [n, meters * NM_PER_METER];
-}
+// getEditRouteStats removed: C# RouteEditing.UpdateRouteStats now
+// derives (waypointCount, totalDistanceNm) from getEditRouteCoords +
+// RouteProgress.TotalDistanceMeters. One haversine sum, in C#.
 
 // Load an existing saved route into edit mode for editing.
 export function loadRouteForEdit(coords) {
