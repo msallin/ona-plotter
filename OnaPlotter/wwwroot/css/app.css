@@ -3301,7 +3301,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border-color: var(--sk-accent);
 }
 @media (pointer: coarse) {
-    .alarm-log-btn { min-height: 32px; padding: 6px 12px; font-size: 0.78rem; }
+    .alarm-log-btn { min-height: 44px; padding: 10px 14px; font-size: 0.78rem; }
 }
 
 /* Update-available chip. Sits in the topbar between the alarm log
@@ -3335,7 +3335,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     50%      { box-shadow: 0 0 0 4px rgba(var(--sk-accent-rgb), 0.25); }
 }
 @media (pointer: coarse) {
-    .update-available-chip { min-height: 32px; padding: 6px 14px; font-size: 0.8rem; }
+    .update-available-chip { min-height: 44px; padding: 10px 16px; font-size: 0.8rem; }
 }
 
 /* Not-logged-in chip. Same shape as .update-available-chip (helm
@@ -3368,7 +3368,27 @@ main:has(.alarm-banner-stack) .snooze-chips {
     color: #fff;
 }
 @media (pointer: coarse) {
-    .auth-warning-chip { min-height: 32px; padding: 6px 14px; font-size: 0.8rem; }
+    .auth-warning-chip { min-height: 44px; padding: 10px 16px; font-size: 0.8rem; }
+}
+
+/* Topbar icon buttons (zoom in/out, night/day, fullscreen). Bootstrap's
+   btn-sm renders ~31 px tall, well below the iOS 44 px touch-target
+   floor; on a moving cockpit with gloves the most-used controls slip
+   under the helm's thumb. Coarse-pointer override locks them to 44 px
+   square. */
+@media (pointer: coarse) {
+    .topbar-icon-btn {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .topbar-icon-btn svg {
+        width: 18px;
+        height: 18px;
+    }
 }
 
 /* Full-screen tap-outside backdrop. Rendered alongside the panel in
