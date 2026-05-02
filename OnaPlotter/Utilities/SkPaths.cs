@@ -42,6 +42,8 @@ public static class SkPaths
             public const string ActiveRoutePointIndex = "navigation.course.activeRoute.pointIndex";
             public const string ActiveRoutePointTotal = "navigation.course.activeRoute.pointTotal";
             public const string NextPoint = "navigation.course.nextPoint";
+            public const string NextPointPosition = "navigation.course.nextPoint.position";
+            public const string PreviousPointPosition = "navigation.course.previousPoint.position";
 
             public static class CalcValues
             {
@@ -52,6 +54,8 @@ public static class SkPaths
                 public const string VelocityMadeGood = "navigation.course.calcValues.velocityMadeGood";
                 public const string RouteDistance = "navigation.course.calcValues.route.distance";
                 public const string RouteTimeToGo = "navigation.course.calcValues.route.timeToGo";
+                public const string PerpendicularPassed = "navigation.course.calcValues.perpendicularPassed";
+                public const string ArrivalCircleEntered = "navigation.course.calcValues.arrivalCircleEntered";
             }
         }
     }

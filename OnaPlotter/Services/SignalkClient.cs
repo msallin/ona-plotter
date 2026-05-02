@@ -140,8 +140,8 @@ public sealed class SignalkClient : IAsyncDisposable
         Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex,
         Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal,
         Utilities.SkPaths.Navigation.Course.NextPoint,
-        "navigation.course.nextPoint.position",
-        "navigation.course.previousPoint.position",
+        Utilities.SkPaths.Navigation.Course.NextPointPosition,
+        Utilities.SkPaths.Navigation.Course.PreviousPointPosition,
         Utilities.SkPaths.Navigation.Course.CalcValues.Distance,
         Utilities.SkPaths.Navigation.Course.CalcValues.BearingTrue,
         Utilities.SkPaths.Navigation.Course.CalcValues.TimeToGo,
@@ -152,8 +152,8 @@ public sealed class SignalkClient : IAsyncDisposable
         // Bare-boolean leg-advance fallbacks. The notification-shaped
         // siblings live in SelfFastNotificationsTierPaths below (separate
         // tier so they ride policy=instant and don't get coalesced).
-        "navigation.course.calcValues.perpendicularPassed",
-        "navigation.course.calcValues.arrivalCircleEntered",
+        Utilities.SkPaths.Navigation.Course.CalcValues.PerpendicularPassed,
+        Utilities.SkPaths.Navigation.Course.CalcValues.ArrivalCircleEntered,
         // Autopilot state + target heading + target AWA (wind mode).
         "steering.autopilot.state",
         "steering.autopilot.target.headingTrue",
@@ -963,7 +963,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 // courseRhumbline variants were dropped in the
                 // tech-debt pass because the v2 surface has been
                 // default on SK Node Server for years.
-                if (val.Path == "navigation.course.nextPoint.position"
+                if (val.Path == Utilities.SkPaths.Navigation.Course.NextPointPosition
                     && val.Value is JsonElement wpEl
                     && wpEl.ValueKind == JsonValueKind.Object)
                 {
@@ -997,7 +997,7 @@ public sealed class SignalkClient : IAsyncDisposable
 
                 // Course previous-point position. v2 only, for the
                 // same reason as nextPoint.position above.
-                if (val.Path == "navigation.course.previousPoint.position"
+                if (val.Path == Utilities.SkPaths.Navigation.Course.PreviousPointPosition
                     && val.Value is JsonElement prevWpEl
                     && prevWpEl.ValueKind == JsonValueKind.Object)
                 {

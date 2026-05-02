@@ -528,12 +528,12 @@ public sealed class NavigationData
                 // break auto-advance.
                 case "notifications.navigation.course.perpendicularPassed":
                 case "navigation.course.perpendicularPassed":
-                case "navigation.course.calcValues.perpendicularPassed":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.PerpendicularPassed:
                     PerpendicularPassed = value;
                     break;
                 case "notifications.navigation.course.arrivalCircleEntered":
                 case "navigation.course.arrivalCircleEntered":
-                case "navigation.course.calcValues.arrivalCircleEntered":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.ArrivalCircleEntered:
                     ArrivalCircleEntered = value;
                     break;
                 default:
@@ -553,10 +553,10 @@ public sealed class NavigationData
         {
             switch (path)
             {
-                case "navigation.course.activeRoute.href":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRouteHref:
                     ActiveRouteHref = value;
                     break;
-                case "navigation.course.activeRoute.name":
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRouteName:
                     ActiveRouteName = value;
                     break;
                 case "steering.autopilot.state":
