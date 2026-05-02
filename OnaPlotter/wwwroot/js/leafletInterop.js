@@ -1546,7 +1546,7 @@ export function setChartLayerOrder(orderedIds) {
 // measure the click is absorbed as a new waypoint instead (same guard
 // as AIS markers) so the user can't accidentally fire Activate/Delete
 // while trying to extend a route.
-export function addRoute(id, name, coords) {
+export function addRoute(id, name, coords, totalNm) {
     if (!map || routeLayers.has(id)) return;
     const line = L.polyline(coords, {
         color: MapColors.route, weight: 2.5, opacity: 0.8
@@ -1563,7 +1563,14 @@ export function addRoute(id, name, coords) {
         color: MapColors.route, weight: 36, opacity: 0, interactive: true
     }).addTo(map);
 
-    const nmTotal = routeTotalNauticalMiles(coords);
+    // totalNm is precomputed in C# (see Map.razor's AddRouteToMap
+    // call site -- RouteProgress.TotalDistanceMeters / 1852). JS
+    // used to redo the haversine sum here; the duplication has been
+    // removed per the project rule (decisions/math in C#). Defensive
+    // fallback if a future caller forgets the arg: 0 reads as
+    // "missing" and the popup just shows "N WP" without the distance,
+    // which is honest rather than wrong.
+    const nmTotal = (typeof totalNm === 'number' && isFinite(totalNm)) ? totalNm : 0;
     const popupOptions = { className: 'route-popup', maxWidth: 320, autoClose: true };
     const popupHtml = () => buildRoutePopupHtml(id, name, coords.length, nmTotal);
     line.bindPopup(popupHtml(), popupOptions);
@@ -1612,6 +1619,15 @@ export function addRoute(id, name, coords) {
     routeLayers.set(id, group);
 }
 
+// JS-side haversine sum used to populate the saved-route popup's
+// distance line. addRoute() no longer calls this (it accepts a
+// precomputed totalNm from C# via RouteProgress.TotalDistanceMeters
+// / 1852, per the project rule that decisions/math live in C#).
+// Still used by activeRouteLayer.js via dep injection -- the active-
+// route popup hasn't been migrated yet because the C# active-route
+// sync controller doesn't compute the total NM today; that's a
+// follow-up. When that lands this function can be deleted alongside
+// the dep-injection wiring.
 function routeTotalNauticalMiles(coords) {
     let m = 0;
     for (let i = 1; i < coords.length; i++) {
@@ -1908,7 +1924,9 @@ export const getEditRouteCoords = () => routeEditLayerMod.getEditRouteCoords();
 export const undoLastEditWaypoint = () => routeEditLayerMod.undoLastEditWaypoint();
 export const reverseEditRoute = () => routeEditLayerMod.reverseEditRoute();
 export const removeRouteEditWaypoint = (index) => routeEditLayerMod.removeRouteEditWaypoint(index);
-export const getEditRouteStats = () => routeEditLayerMod.getEditRouteStats();
+// getEditRouteStats removed: C# polls getEditRouteCoords and computes
+// (count + total NM) via RouteProgress.TotalDistanceMeters. The JS
+// haversine duplicate has been deleted from routeEditLayer.js.
 export const loadRouteForEdit = (coords) => routeEditLayerMod.loadRouteForEdit(coords);
 // `function` declarations rather than `const` arrows so they hoist
 // to the top of the module: the call sites (line click handlers,

@@ -2785,7 +2785,13 @@
             coords.Add([arr[1], arr[0]]); // [lat, lon]
         }
 
-        await _routeJs.AddRouteAsync(route.Id, route.Name, coords.ToArray());
+        var coordsArr = coords.ToArray();
+        // Compute the route's total distance C#-side via the shared
+        // haversine sum so the JS render path doesn't re-derive it.
+        // RouteProgress.TotalDistanceMeters is the canonical source;
+        // dividing by metres-per-NM keeps one conversion site.
+        double totalNm = OnaPlotter.Utilities.RouteProgress.TotalDistanceMeters(coordsArr) / 1852.0;
+        await _routeJs.AddRouteAsync(route.Id, route.Name, coordsArr, totalNm);
     }
 
     // ServerTrackController owns the server-track state + interop;

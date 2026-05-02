@@ -23,7 +23,7 @@ public class ActiveRouteSyncTests
         public List<string> Removed { get; } = [];
         public List<(string id, double[][] coords)> Added { get; } = [];
 
-        public Task AddRouteAsync(string id, string? name, double[][] coords)
+        public Task AddRouteAsync(string id, string? name, double[][] coords, double totalNm)
         {
             Added.Add((id, coords));
             return Task.CompletedTask;

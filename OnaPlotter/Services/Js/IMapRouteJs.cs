@@ -11,8 +11,13 @@ namespace OnaPlotter.Services.Js;
 public interface IMapRouteJs
 {
     /// <summary>Draw a saved route as a polyline. Coords are
-    /// Leaflet-ordered <c>[lat, lon]</c> pairs.</summary>
-    Task AddRouteAsync(string id, string? name, double[][] coords);
+    /// Leaflet-ordered <c>[lat, lon]</c> pairs.
+    /// <paramref name="totalNm"/> is the precomputed sum-of-haversines
+    /// distance in nautical miles, used by the popup's
+    /// "<c>N WP &middot; X.X nm</c>" line. Computed C#-side via
+    /// <c>RouteProgress.TotalDistanceMeters</c> so the JS render path
+    /// doesn't have to re-derive it.</summary>
+    Task AddRouteAsync(string id, string? name, double[][] coords, double totalNm);
 
     /// <summary>Remove a previously-added saved-route polyline.</summary>
     Task RemoveRouteAsync(string id);

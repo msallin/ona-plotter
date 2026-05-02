@@ -12,19 +12,22 @@ namespace OnaPlotter.Tests;
 public class MapRouteJsTests
 {
     [Test]
-    public async Task AddRouteAsync_PassesIdNameCoords()
+    public async Task AddRouteAsync_PassesIdNameCoordsAndTotalNm()
     {
         var fake = new RecordingJsRef();
         var sut = new MapRouteJs(fake);
         var coords = new[] { new[] { 54.5, 11.2 }, new[] { 54.6, 11.3 } };
 
-        await sut.AddRouteAsync("r1", "Plan A", coords);
+        await sut.AddRouteAsync("r1", "Plan A", coords, totalNm: 6.4);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("addRoute");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(3);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(4);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("r1");
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo("Plan A");
         await Assert.That(fake.Calls[0].args[2]).IsSameReferenceAs(coords);
+        // totalNm now travels alongside coords -- the JS popup uses
+        // it directly instead of recomputing the haversine sum.
+        await Assert.That(fake.Calls[0].args[3]).IsEqualTo(6.4);
     }
 
     [Test]
@@ -137,7 +140,7 @@ public class MapRouteJsTests
         var sut = new MapRouteJs(fake);
 
         sut.MarkDisposed();
-        await sut.AddRouteAsync("r", null, new[] { new[] { 0.0, 0.0 } });
+        await sut.AddRouteAsync("r", null, new[] { new[] { 0.0, 0.0 } }, totalNm: 0);
         await sut.RemoveRouteAsync("r");
         await sut.ClearActiveRouteAsync();
 

@@ -21,8 +21,8 @@ public sealed class MapRouteJs : IMapRouteJs
 
     public void MarkDisposed() => _disposed = true;
 
-    public Task AddRouteAsync(string id, string? name, double[][] coords)
-        => InvokeSafe("addRoute", id, name, coords);
+    public Task AddRouteAsync(string id, string? name, double[][] coords, double totalNm)
+        => InvokeSafe("addRoute", id, name, coords, totalNm);
 
     public Task RemoveRouteAsync(string id)
         => InvokeSafe("removeRoute", id);
