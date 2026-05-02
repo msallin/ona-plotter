@@ -43,6 +43,9 @@ namespace OnaPlotter.Services.Json;
 /// <c>T</c> is the property name the analyser generates) at the
 /// call site. The compile fails with a clear message when a type
 /// is referenced in a typed Deserialize but not registered here.
+/// Also add a round-trip case to <c>OnaJsonContextTests</c> so a
+/// silent regression on the converter (e.g. a future analyser
+/// upgrade dropping a property attribute) surfaces in CI.
 /// </para>
 /// </summary>
 // PropertyNameCaseInsensitive: matches the previous AuthApi behaviour

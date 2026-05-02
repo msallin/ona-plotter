@@ -114,6 +114,46 @@ public class SignalkClientByteParseTests
     }
 
     [Test]
+    public async Task ProcessMessageBytes_Skips_OnRawMessage_When_No_Subscriber()
+    {
+        // The byte path's whole point: skip the UTF-16 string
+        // allocation when nobody is listening. We can't observe
+        // "did we allocate a string?" directly, but we CAN observe
+        // "was the subscriber called?" -- if a future refactor flips
+        // the gate to "always invoke", subscribed-after counts go up
+        // when they shouldn't. This test pins the contract: an
+        // unsubscribed delta increments no listener; subscribing
+        // after the fact and pushing a new delta increments by
+        // exactly one.
+        var c = NewClient();
+        int callCount = 0;
+        Action<string> handler = _ => Interlocked.Increment(ref callCount);
+
+        const string delta = """
+            {"context":"vessels.urn:mrn:imo:mmsi:244111222",
+             "updates":[{
+               "timestamp":"2026-04-22T22:00:00.000Z",
+               "values":[{"path":"navigation.speedOverGround","value":2.5}]
+             }]}
+            """;
+
+        // Phase 1: no subscriber. callCount stays 0.
+        c.ProcessMessageBytes(Encoding.UTF8.GetBytes(delta));
+        await Assert.That(callCount).IsEqualTo(0);
+
+        // Phase 2: subscribe; one delta -> one invocation.
+        c.OnRawMessage += handler;
+        c.ProcessMessageBytes(Encoding.UTF8.GetBytes(delta));
+        await Assert.That(callCount).IsEqualTo(1);
+
+        // Phase 3: unsubscribe; further deltas don't increment.
+        c.OnRawMessage -= handler;
+        c.ProcessMessageBytes(Encoding.UTF8.GetBytes(delta));
+        c.ProcessMessageBytes(Encoding.UTF8.GetBytes(delta));
+        await Assert.That(callCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task ProcessMessageBytes_Self_Scan_Skipped_After_Resolution()
     {
         // First hello resolves _selfContext. A second hello-looking
