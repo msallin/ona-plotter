@@ -741,7 +741,7 @@ public partial class Map
     [JSInvokable]
     public async Task DeleteRouteById(string id)
     {
-        string label = loadedRoutes.FirstOrDefault(rt => rt.Id == id)?.Name ?? id;
+        string label = availableRoutes.FirstOrDefault(rt => rt.Id == id)?.Name ?? id;
         ApiResult r;
         try { r = await RouteApi.DeleteAsync(id); }
         catch (Exception ex) { Toasts.Error($"Delete route '{label}' failed: {ex.Message}"); return; }
