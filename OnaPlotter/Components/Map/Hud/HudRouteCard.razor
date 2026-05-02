@@ -36,7 +36,15 @@
        false). *@
     <div class="hud-panel hud-card route-panel @(Snapshot.Stopping ? "route-stopping" : "")">
             <div class="hud-card-title">
-                <span class="hud-card-name">@(Snapshot.Name ?? "Active Route")</span>
+                @* Route name in the title row only in Big HUD. The
+                   small HUD layout drops it so the metrics row gets
+                   the horizontal real estate; the helm always knows
+                   which route they activated, so the name is
+                   redundant chrome at landscape-iPad scale. *@
+                @if (BigHud)
+                {
+                    <span class="hud-card-name">@(Snapshot.Name ?? "Active Route")</span>
+                }
                 @if (Snapshot.PointIndex is int idx && Snapshot.PointTotal is int total)
                 {
                     @* Prev / Next waypoint controls. Disabled at the
