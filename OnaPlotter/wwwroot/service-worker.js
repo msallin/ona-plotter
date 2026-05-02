@@ -109,7 +109,28 @@
 //               and per-chart layers (leafletInterop.js); larger
 //               in-DOM tile retention so small route-planning pans
 //               don't re-fetch.
-const CACHE_NAME = 'ona-plotter-v21';
+// v21 -> v22: network-first for /js/*, /css/*, and the document root.
+//             Stale-while-revalidate (the previous strategy) caches
+//             a working JS module on first visit AND keeps serving
+//             that exact byte-for-byte cached copy on every
+//             subsequent visit until the cache is bumped manually.
+//             Every deploy that adds a new C#-callable export to a
+//             JS module (e.g. setGuardZoneWarningRingVisible in PR
+//             #143) crashes the helm's NEXT page load with a
+//             Blazor "value is not a function" because the new C#
+//             code calls a function the cached old JS doesn't
+//             have. The cache eventually refreshes in the
+//             background and the helm's NEXT-NEXT load works -- but
+//             one crashed reload per deploy is one too many; e2e
+//             CI surfaces it as a hard failure.
+//             Network-first fetches fresh on every online load and
+//             only falls back to cache when the network is gone.
+//             The 304-revalidation path keeps the bytes-on-the-wire
+//             cost low (Kestrel sends ETag, browser sends
+//             If-None-Match, server replies 304 with no body when
+//             unchanged). Offline launch still works because the
+//             network failure surfaces the cached copy.
+const CACHE_NAME = 'ona-plotter-v22';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -336,12 +357,60 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Cache-first for app shell, network fallback otherwise. Wrapped
-    // for the same reason as above: caches.match / caches.open / put
-    // can all reject; the outer try guarantees respondWith resolves
-    // to a Response.
+    // Network-first for "evolves with C# bundle" assets (JS modules,
+    // CSS, the SPA document root). C# code that calls a JS export
+    // ships in a content-hashed wasm filename, so the new wasm is
+    // always fetched fresh -- but the JS module URLs are stable
+    // (`./js/leafletInterop.js`, no hash), so a cache-first SW would
+    // happily serve yesterday's leafletInterop.js (no new export) to
+    // today's wasm (which calls it) and crash on the
+    // not-a-function lookup. Network-first fixes that without losing
+    // offline launch (cache is the fallback when fetch rejects).
+    if (url.pathname.startsWith('/js/')
+        || url.pathname.startsWith('/css/')
+        || url.pathname === '/'
+        || url.pathname === SCOPE.replace(self.location.origin, '')
+        || url.pathname.endsWith('.html')) {
+        event.respondWith(networkFirstWithCacheFallback(event.request));
+        return;
+    }
+
+    // Cache-first for app shell (icons, fonts, version stamps), network
+    // fallback otherwise. Wrapped for the same reason as above:
+    // caches.match / caches.open / put can all reject; the outer try
+    // guarantees respondWith resolves to a Response.
     event.respondWith(appShellCacheFirst(event.request));
 });
+
+/** Network-first with cache fallback. Always tries network first so
+ *  a fresh deploy lands in the helm's browser on the next page load
+ *  rather than the load-after-that. The browser-level HTTP cache +
+ *  Kestrel's ETag/no-cache headers keep the wire cost down (304 with
+ *  no body when unchanged). On network failure (offline / refused),
+ *  serves the previously-cached copy so the app still launches.
+ *  Caches every successful 2xx response so the offline fallback has
+ *  something to fall back to. */
+async function networkFirstWithCacheFallback(request) {
+    try {
+        const response = await fetch(request);
+        if (response.ok) {
+            try {
+                const clone = response.clone();
+                const cache = await caches.open(CACHE_NAME);
+                cache.put(request, clone).catch(() => { /* best-effort */ });
+            } catch (_) { /* clone / open / put threw */ }
+        }
+        return response;
+    } catch (_) {
+        // Offline / refused / aborted. Fall back to whatever the
+        // cache has from a previous online visit.
+        try {
+            const cached = await caches.match(request);
+            if (cached) return cached;
+        } catch (_) { /* cache layer unavailable */ }
+        return new Response('', { status: 504, statusText: 'Offline' });
+    }
+}
 
 /** Plain pass-through fetch with a safety net. Used for /signalk/*
  *  and WebSocket upgrades -- we don't cache or transform those, but
