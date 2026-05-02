@@ -369,13 +369,19 @@ public sealed class NavigationData
                     break;
                 // pointIndex / pointTotal come as numbers too; route them
                 // through the number-apply path and cast back to int at
-                // the UI boundary so NaN / fractional server quirks don't
-                // trip the hot path.
+                // the UI boundary. Math.Round so a server publishing
+                // 2.999999 (floating-point round-trip artefacts in some
+                // course-provider plugins) lands as 3 not 2; finite-
+                // guard so a NaN doesn't silently cast to 0 and reset
+                // route progress mid-leg. Bare cast `(int)NaN` returns
+                // 0 with no warning, which previously dimmed the
+                // already-passed leg history every time the server
+                // misbehaved.
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointIndex:
-                    ActiveRoutePointIndex = (int)value;
+                    ActiveRoutePointIndex = double.IsFinite(value) ? (int)Math.Round(value) : null;
                     break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.ActiveRoutePointTotal:
-                    ActiveRoutePointTotal = (int)value;
+                    ActiveRoutePointTotal = double.IsFinite(value) ? (int)Math.Round(value) : null;
                     break;
                 default:
                     return false;
