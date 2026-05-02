@@ -20,6 +20,7 @@
 @inject NavigationManager Nav
 @inject SignalkClient SignalkClient
 @inject Microsoft.JSInterop.IJSRuntime JS
+@using OnaPlotter.Services.Json
 @using Microsoft.AspNetCore.Components.Forms
 @implements IAsyncDisposable
 
@@ -665,26 +666,14 @@
             Toasts.Error("Nothing to share -- this waypoint has no position.");
             return;
         }
-        var feature = new
-        {
-            type = "Feature",
-            geometry = new
-            {
-                type = "Point",
-                coordinates = new[] { lon, lat },
-            },
-            properties = new
-            {
-                name = w.Name,
-                createdAt = w.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
-            },
-        };
-        string json = System.Text.Json.JsonSerializer.Serialize(feature,
-            new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            });
+        var feature = new GeoJsonShareWaypointFeature(
+            "Feature",
+            new GeoJsonPointGeometry("Point", [lon, lat]),
+            new GeoJsonShareWaypointProperties(
+                Name: w.Name,
+                CreatedAt: w.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture)));
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
 
         try
         {
@@ -755,27 +744,15 @@
             Toasts.Error("Nothing to share -- this note has no position.");
             return;
         }
-        var feature = new
-        {
-            type = "Feature",
-            geometry = new
-            {
-                type = "Point",
-                coordinates = new[] { n.Position.Longitude, n.Position.Latitude },
-            },
-            properties = new
-            {
-                title = n.Title,
-                description = n.Description,
-                createdAt = n.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
-            },
-        };
-        string json = System.Text.Json.JsonSerializer.Serialize(feature,
-            new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            });
+        var feature = new GeoJsonShareNoteFeature(
+            "Feature",
+            new GeoJsonPointGeometry("Point", [n.Position.Longitude, n.Position.Latitude]),
+            new GeoJsonShareNoteProperties(
+                Title: n.Title,
+                Description: n.Description,
+                CreatedAt: n.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture)));
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            feature, OnaGeoJsonContext.Default.GeoJsonShareNoteFeature);
 
         try
         {

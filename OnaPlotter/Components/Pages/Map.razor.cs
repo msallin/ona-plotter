@@ -2,6 +2,7 @@ using Microsoft.JSInterop;
 using OnaPlotter.Models;
 using OnaPlotter.Services;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Services.Json;
 using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Components.Pages;
@@ -217,26 +218,14 @@ public partial class Map
         {
             Toasts.Warning("Waypoint not found"); return;
         }
-        var feature = new
-        {
-            type = "Feature",
-            geometry = new
-            {
-                type = "Point",
-                coordinates = new[] { wp.Longitude.Value, wp.Latitude.Value },
-            },
-            properties = new
-            {
-                name = wp.Name,
-                createdAt = wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
-            },
-        };
-        string json = System.Text.Json.JsonSerializer.Serialize(feature,
-            new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            });
+        var feature = new GeoJsonShareWaypointFeature(
+            "Feature",
+            new GeoJsonPointGeometry("Point", [wp.Longitude.Value, wp.Latitude.Value]),
+            new GeoJsonShareWaypointProperties(
+                Name: wp.Name,
+                CreatedAt: wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture)));
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
 
         try
         {
@@ -447,27 +436,15 @@ public partial class Map
         // Inline GeoJSON build: notes are a small one-off shape, no
         // benefit to reusing ResourceExporter (which targets routes /
         // tracks). Coordinates per GeoJSON spec are [lon, lat].
-        var feature = new
-        {
-            type = "Feature",
-            geometry = new
-            {
-                type = "Point",
-                coordinates = new[] { note.Position.Longitude, note.Position.Latitude },
-            },
-            properties = new
-            {
-                title = note.Title,
-                description = note.Description,
-                createdAt = note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
-            },
-        };
-        string json = System.Text.Json.JsonSerializer.Serialize(feature,
-            new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-            });
+        var feature = new GeoJsonShareNoteFeature(
+            "Feature",
+            new GeoJsonPointGeometry("Point", [note.Position.Longitude, note.Position.Latitude]),
+            new GeoJsonShareNoteProperties(
+                Title: note.Title,
+                Description: note.Description,
+                CreatedAt: note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture)));
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            feature, OnaGeoJsonContext.Default.GeoJsonShareNoteFeature);
 
         try
         {

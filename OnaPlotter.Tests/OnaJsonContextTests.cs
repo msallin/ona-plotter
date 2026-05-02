@@ -155,4 +155,57 @@ public class OnaJsonContextTests
         await Assert.That(unsubs[0].TryGetProperty("period", out _)).IsFalse();
         await Assert.That(unsubs[0].TryGetProperty("policy", out _)).IsFalse();
     }
+
+    [Test]
+    public async Task GeoJsonShareWaypointFeature_Elides_Null_Properties()
+    {
+        // Share blobs use [JsonIgnore(Condition=WhenWritingNull)] on
+        // both Name and CreatedAt; the previous reflection serializer
+        // achieved the same via DefaultIgnoreCondition. Pin: when both
+        // are null, the properties bag is "{}". When one is set, only
+        // that one is present.
+        var feature = new GeoJsonShareWaypointFeature(
+            "Feature",
+            new GeoJsonPointGeometry("Point", [8.5, 47.4]),
+            new GeoJsonShareWaypointProperties(Name: null, CreatedAt: null));
+        var json = JsonSerializer.Serialize(
+            feature,
+            OnaPlotter.Services.Json.OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
+
+        using var doc = JsonDocument.Parse(json);
+        var props = doc.RootElement.GetProperty("properties");
+        await Assert.That(props.TryGetProperty("name", out _)).IsFalse();
+        await Assert.That(props.TryGetProperty("createdAt", out _)).IsFalse();
+
+        // Sanity check: a non-null Name renders.
+        var named = feature with
+        {
+            Properties = new GeoJsonShareWaypointProperties(Name: "Buoy", CreatedAt: null),
+        };
+        var json2 = JsonSerializer.Serialize(
+            named,
+            OnaPlotter.Services.Json.OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
+        using var doc2 = JsonDocument.Parse(json2);
+        await Assert.That(doc2.RootElement.GetProperty("properties").GetProperty("name").GetString())
+            .IsEqualTo("Buoy");
+    }
+
+    [Test]
+    public async Task GeoJsonExportContext_Indents_Output()
+    {
+        // The indent contract matters: helms occasionally open the
+        // .geojson before sharing. WriteIndented=true lives on the
+        // OnaGeoJsonContext source-gen options; pin it here so a
+        // future drop reverting that flag fails loudly.
+        var feature = new GeoJsonWaypointFeature(
+            "Feature",
+            new GeoJsonNameProperties("Marker"),
+            new GeoJsonPointGeometry("Point", [8.5, 47.4]));
+        var json = JsonSerializer.Serialize(
+            feature,
+            OnaPlotter.Services.Json.OnaGeoJsonContext.Default.GeoJsonWaypointFeature);
+        // Indented JSON contains newlines + leading whitespace on
+        // child lines; non-indented does not.
+        await Assert.That(json.Contains('\n')).IsTrue();
+    }
 }

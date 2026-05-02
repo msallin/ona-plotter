@@ -61,6 +61,15 @@ namespace OnaPlotter.Services.Json;
 [JsonSerializable(typeof(SnoozedTarget[]))]
 [JsonSerializable(typeof(SignalkSubscribeRequest))]
 [JsonSerializable(typeof(SignalkUnsubscribeRequest))]
+// Primitive / array types used at the History.razor JS-interop literal
+// embedding sites. Registering them here lets each Serialize call go
+// through the typed source-gen overload instead of the reflection-based
+// generic; cuts the trim warnings the otherwise pristine F2/3 surface
+// would otherwise emit at TrimMode=full.
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(double[]))]
+[JsonSerializable(typeof(double[][]))]
+[JsonSerializable(typeof(List<OnaPlotter.Utilities.HistorySegmentRender.SegmentPayload>))]
 internal partial class OnaJsonContext : JsonSerializerContext
 {
 }

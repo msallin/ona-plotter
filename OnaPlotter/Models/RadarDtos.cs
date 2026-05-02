@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Models;
 
@@ -498,8 +499,12 @@ public sealed class ControlValue
     /// </summary>
     public static ControlValue ForRange(int meters) => new()
     {
+        // Source-gen string converter: avoids the reflection-resolved
+        // JsonSerializer.SerializeToElement<T>(value) overload that
+        // would otherwise emit a trim warning under TrimMode=full.
         Value = JsonSerializer.SerializeToElement(
-            meters.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            meters.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            OnaJsonContext.Default.String),
     };
 }
 
