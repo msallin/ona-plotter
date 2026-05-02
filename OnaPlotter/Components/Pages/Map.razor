@@ -1507,6 +1507,9 @@
         if (mapOrientation != "north") await _controlsJs.SetMapOrientationAsync(mapOrientation);
 
         await PushGuardZoneAsync();
+        await _controlsJs.SetCogVectorMinutesAsync(
+            Settings.OwnCogVectorMinutes,
+            Settings.AisCogVectorMinutes);
         Settings.OnSettingsChanged += HandleSettingsChanged;
 
         SignalkClient.OnDataChanged += HandleDataChanged;
@@ -1638,6 +1641,12 @@
     private void HandleSettingsChanged()
     {
         _ = PushGuardZoneAsync();
+        if (_controlsJs is not null)
+        {
+            _ = _controlsJs.SetCogVectorMinutesAsync(
+                Settings.OwnCogVectorMinutes,
+                Settings.AisCogVectorMinutes);
+        }
         // Wake-lock toggles are handled by MainLayout's OnSettingsChanged
         // handler; the Map page no longer needs to relay them.
 

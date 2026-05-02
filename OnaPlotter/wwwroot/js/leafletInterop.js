@@ -36,6 +36,14 @@ let boundsTimer = null;
 // during active drag, etc. Computed once in initMap() so the
 // same flag drives every layer created later.
 let isSlowClient = false;
+
+// Helm-tunable COG-vector look-ahead in minutes. Defaults match
+// IAppSettings.OwnCogVectorMinutes / AisCogVectorMinutes (10). C#
+// updates these via setCogVectorMinutes on init + on settings change;
+// vectorEnd / the own-boat label below read the live values. The
+// AIS layer has its own copy synced via aisLayerMod.setAisCogMinutes.
+let ownCogMinutes = 10;
+
 // Own-boat MMSI, pushed from C# once SignalkClient.SetSelfContext
 // resolves (the hello message). Used by buildSelfPopupHtml to pull
 // the country flag from the same signalk-flags endpoint the AIS
@@ -992,12 +1000,12 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     // boat<->anchor line in one place.
     anchorLayerMod.setBoatPosition(lat, lon);
 
-    const end = vectorEnd(lat, lon, cogRad, sogMs);
+    const end = vectorEnd(lat, lon, cogRad, sogMs, ownCogMinutes);
     if (end) {
         boatVector.setLatLngs([[lat, lon], end]);
         // Tip dot at the vector end -- mirrors aisLayer's vessel
         // vector tip so own + AIS vectors share the same visual
-        // landmark ("boat will be here at +VECTOR_MINUTES"). Same
+        // landmark ("boat will be here at +ownCogMinutes"). Same
         // shape: filled circle, MapColors.own, non-interactive.
         if (boatVectorTip) {
             boatVectorTip.setLatLng(end);
@@ -1012,8 +1020,8 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
             }).addTo(map);
         }
         // Label at vector tip: time and distance.
-        const distNm = (sogMs * VECTOR_MINUTES * 60) * NM_PER_METER;
-        const label = `${VECTOR_MINUTES}min / ${distNm.toFixed(1)}nm`;
+        const distNm = (sogMs * ownCogMinutes * 60) * NM_PER_METER;
+        const label = `${ownCogMinutes.toFixed(0)}min / ${distNm.toFixed(1)}nm`;
         if (vectorLabel) {
             vectorLabel.setLatLng(end);
             vectorLabel.setContent(label);
@@ -1191,6 +1199,22 @@ export function stopRadarOverlay(radarId) {
 
 export function updateRadarRange(radarId, range) {
     setRadarRange(radarId, range);
+}
+
+// --- COG vector look-ahead ---
+
+/**
+ * Update both own-vessel and AIS COG-vector look-ahead in minutes.
+ * Called from C# (IMapControlsJs.SetCogVectorMinutesAsync) on map
+ * init and on every settings-change event so the helm sees the new
+ * length on the next render tick. Falls back to the previous value
+ * when an arg is non-numeric.
+ */
+export function setCogVectorMinutes(ownMin, aisMin) {
+    if (typeof ownMin === 'number' && isFinite(ownMin) && ownMin > 0) ownCogMinutes = ownMin;
+    if (typeof aisMin === 'number' && isFinite(aisMin) && aisMin > 0) {
+        aisLayerMod.setAisCogMinutes(aisMin);
+    }
 }
 
 // --- Night Mode ---

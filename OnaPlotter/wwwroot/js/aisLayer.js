@@ -127,6 +127,14 @@ let guardZoneWarningRingVisible = true;
 // and moored vessels are filtered upstream in C#.
 let harborMode = false;
 
+// AIS-target COG-vector look-ahead in minutes. Default matches
+// IAppSettings.AisCogVectorMinutes (10). leafletInterop's
+// setCogVectorMinutes calls setAisCogMinutes below to update.
+let aisCogMinutes = 10;
+export function setAisCogMinutes(min) {
+    if (typeof min === 'number' && isFinite(min) && min > 0) aisCogMinutes = min;
+}
+
 export function init(map, deps) {
     mapRef = map;
     colors = deps.colors;
@@ -725,7 +733,7 @@ export function updateAisTargets(vessels) {
         // without the alarm; the alarm is the marker's job.
         const vecColor = isRadar ? colors.radar
             : (v.buddy ? colors.buddy : (v.shipColor || '#e0c9a6'));
-        const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs);
+        const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs, aisCogMinutes);
         if (end) {
             let vec = aisVectors[v.context];
             if (!vec) {

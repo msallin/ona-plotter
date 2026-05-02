@@ -44,6 +44,12 @@ public interface IMapControlsJs
     /// to the outer red ring.</summary>
     Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor);
 
+    /// <summary>Configure how far ahead the COG vectors project, in
+    /// minutes. Two distinct values so the helm can shorten target
+    /// vectors in busy harbours without losing their own predictor's
+    /// reach. Both default to 10 min on first run.</summary>
+    Task SetCogVectorMinutesAsync(double ownMinutes, double aisMinutes);
+
     /// <summary>One-shot pan to the given lat/lon at the current zoom
     /// level. Distinct from <see cref="SetFollowAsync"/>, which
     /// continuously re-centres.</summary>

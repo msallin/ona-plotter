@@ -96,6 +96,19 @@ public interface IMapDisplaySettings
     /// switches.</summary>
     bool ShowDefaultHud { get; }
 
+    /// <summary>How far ahead the OWN-vessel COG vector projects, in
+    /// minutes. Drives the dashed predictor line + endpoint label
+    /// ('Nmin / N.Nnm') on the chart. Helm-tunable so a coastal cruiser
+    /// at 5 kn and a passage at 8 kn can pick a useful look-ahead
+    /// independently of the AIS-target setting below. Default 10 min.</summary>
+    double OwnCogVectorMinutes { get; }
+
+    /// <summary>How far ahead AIS-target COG vectors project, in
+    /// minutes. Independent of <see cref="OwnCogVectorMinutes"/> so a
+    /// helm in a busy harbour can shorten target vectors to declutter
+    /// without affecting their own predictor. Default 10 min.</summary>
+    double AisCogVectorMinutes { get; }
+
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
@@ -111,4 +124,6 @@ public interface IMapDisplaySettings
     Task SetShowAutopilotHudAsync(bool value);
     Task SetShowRadarHudAsync(bool value);
     Task SetShowDefaultHudAsync(bool value);
+    Task SetOwnCogVectorMinutesAsync(double value);
+    Task SetAisCogVectorMinutesAsync(double value);
 }

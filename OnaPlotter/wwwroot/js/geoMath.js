@@ -4,7 +4,12 @@
 export const RAD = Math.PI / 180;
 export const DEG = 180 / Math.PI;
 export const NM_PER_METER = 1 / 1852;
-export const VECTOR_MINUTES = 5;
+// Default look-ahead window for COG vectors. Both own-vessel and AIS
+// targets used to share this constant. C# now exposes two helm-tunable
+// settings (OwnCogVectorMinutes / AisCogVectorMinutes); the JS layer
+// reads those from per-call parameters with this default as a fallback
+// when a caller doesn't pass an explicit minutes value.
+export const VECTOR_MINUTES = 10;
 
 /** Haversine distance in meters between two lat/lon points (degrees). */
 export function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -34,10 +39,16 @@ export function destPoint(lat, lon, bearingRad, distM) {
     return [lat2*DEG, lon2*DEG];
 }
 
-/** Course vector endpoint: returns [lat, lon] or null if speed too low. */
-export function vectorEnd(lat, lon, cogRad, sogMs) {
+/**
+ * Course vector endpoint: returns [lat, lon] or null if speed too low.
+ * `minutes` defaults to VECTOR_MINUTES when omitted; pass an explicit
+ * value to use a per-vessel-class look-ahead (own vs AIS).
+ */
+export function vectorEnd(lat, lon, cogRad, sogMs, minutes) {
     if (cogRad == null || sogMs == null || sogMs < 0.1) return null;
-    return destPoint(lat, lon, cogRad, sogMs * VECTOR_MINUTES * 60);
+    const m = (typeof minutes === 'number' && isFinite(minutes) && minutes > 0)
+        ? minutes : VECTOR_MINUTES;
+    return destPoint(lat, lon, cogRad, sogMs * m * 60);
 }
 
 /** Speed-to-color mapping: sogMs -> CSS rgb string. Blue(0) -> Green(3kn) -> Yellow(6+kn). */

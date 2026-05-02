@@ -39,6 +39,9 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor)
         => InvokeSafe("setGuardZone", radiusNm, lookaheadMin, warningFactor);
 
+    public Task SetCogVectorMinutesAsync(double ownMinutes, double aisMinutes)
+        => InvokeSafe("setCogVectorMinutes", ownMinutes, aisMinutes);
+
     public Task PanToAsync(double lat, double lon)
         => InvokeSafe("panTo", lat, lon);
 

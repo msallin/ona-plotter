@@ -93,6 +93,15 @@ public sealed class AppSettingsService : IAppSettings
     // panels they always did; toggle is for helms running external
     // instruments or wanting a clean screenshot.
     public bool ShowDefaultHud { get; private set; } = true;
+    /// <summary>How far ahead own-vessel COG vector projects (minutes).
+    /// Default 10 covers harbour entry + coastal pilotage; helms doing
+    /// long passages bump to 20-30 for forward-planning, helms in
+    /// thick traffic shorten to 3-5 to declutter their own predictor.</summary>
+    public double OwnCogVectorMinutes { get; private set; } = 10.0;
+    /// <summary>Same look-ahead horizon for AIS targets. Independent
+    /// of own-vessel so a busy-harbour helm can shorten target vectors
+    /// without losing their own predictor's reach.</summary>
+    public double AisCogVectorMinutes { get; private set; } = 10.0;
     public bool PreferMagneticHeading { get; private set; } = false;
     public bool PreferMagneticCourse { get; private set; } = false;
     public bool AutoAdvanceWaypoints { get; private set; } = true;
@@ -187,6 +196,8 @@ public sealed class AppSettingsService : IAppSettings
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
             ShowRadarHud = await LoadBool("showRadarHud.v1", false);
             ShowDefaultHud = await LoadBool("showDefaultHud.v1", true);
+            OwnCogVectorMinutes = await LoadDouble("ownCogVectorMinutes.v1", 10.0);
+            AisCogVectorMinutes = await LoadDouble("aisCogVectorMinutes.v1", 10.0);
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
             AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
@@ -505,6 +516,29 @@ public sealed class AppSettingsService : IAppSettings
     {
         ShowDefaultHud = value;
         await Save("showDefaultHud.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetOwnCogVectorMinutesAsync(double value)
+    {
+        // Clamp to a sensible range. 1 min is the floor where the
+        // dashed predictor reads as a vector at all; 60 min is the
+        // ceiling beyond which the line crosses the chart's pan
+        // budget and the helm loses spatial context. Storage
+        // corruption / a malformed import lands at the default.
+        if (!double.IsFinite(value)) value = 10.0;
+        value = Math.Clamp(value, 1.0, 60.0);
+        OwnCogVectorMinutes = value;
+        await Save("ownCogVectorMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAisCogVectorMinutesAsync(double value)
+    {
+        if (!double.IsFinite(value)) value = 10.0;
+        value = Math.Clamp(value, 1.0, 60.0);
+        AisCogVectorMinutes = value;
+        await Save("aisCogVectorMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

@@ -498,6 +498,38 @@
         </div>
     </div>
 
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Own COG vector length</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="60"
+                           aria-label="Own-vessel COG vector look-ahead in minutes"
+                           value="@AppSettings.OwnCogVectorMinutes"
+                           @onchange="(e) => OnOwnCogVectorChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">How far ahead the dashed predictor line + endpoint label project from your boat. 5 for harbour entry, 20-30 for passage planning.</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">AIS COG vector length</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="60"
+                           aria-label="AIS target COG vector look-ahead in minutes"
+                           value="@AppSettings.AisCogVectorMinutes"
+                           @onchange="(e) => OnAisCogVectorChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">How far ahead AIS-target predictors project. Shorten in busy harbours to declutter; lengthen offshore for collision-avoidance reach.</small>
+            </div>
+        </div>
+    </div>
+
     @* Boat Draft card removed -- the same information is surfaced on
        the Paths page (`design.draft.current` / `.maximum` with live
        values) and is also called out in the Anchor Tide Alarm setup
@@ -1036,6 +1068,26 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetWindShiftMinTrueWindSpeedAsync(val);
+    }
+
+    private async Task OnOwnCogVectorChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+        {
+            await AppSettings.SetOwnCogVectorMinutesAsync(val);
+        }
+    }
+
+    private async Task OnAisCogVectorChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double val))
+        {
+            await AppSettings.SetAisCogVectorMinutesAsync(val);
+        }
     }
 
     private async Task OnAnchorTideMarginChanged(ChangeEventArgs e)

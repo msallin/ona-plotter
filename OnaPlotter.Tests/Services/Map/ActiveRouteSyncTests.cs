@@ -120,6 +120,7 @@ public class ActiveRouteSyncTests
         public Task ClearLaylinesAsync() => Task.CompletedTask;
         public Task SetNightModeAsync(bool enabled) => Task.CompletedTask;
         public Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor) => Task.CompletedTask;
+        public Task SetCogVectorMinutesAsync(double ownMinutes, double aisMinutes) => Task.CompletedTask;
         public Task PanToAsync(double lat, double lon) => Task.CompletedTask;
         public Task ZoomToTrackAsync() => Task.CompletedTask;
         public Task FitBoundsAsync(double minLat, double minLon, double maxLat, double maxLon) => Task.CompletedTask;

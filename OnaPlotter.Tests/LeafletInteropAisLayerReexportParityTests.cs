@@ -63,6 +63,9 @@ public class LeafletInteropAisLayerReexportParityTests
         var skipList = new HashSet<string>(StringComparer.Ordinal)
         {
             "init", "dispose", "setBoatPosition", "resolveAisPopupTitle",
+            // Called by leafletInterop's own setCogVectorMinutes wrapper;
+            // C# never invokes it directly. Same shape as setBoatPosition.
+            "setAisCogMinutes",
         };
 
         await Assert.That(aisLayerExports.Count)
