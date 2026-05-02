@@ -1504,8 +1504,16 @@ export function addRoute(id, name, coords) {
             L.DomEvent.stopPropagation(ev);
             const ll = ev.latlng;
             if (!ll) return;
-            // Measure beats route / polygon edit -- same priority as
-            // every other layer's click handler.
+            // Measure beats route / polygon edit on a route-polyline
+            // click. Mirrors the same priority on the map-level click
+            // handler above; the helm's original complaint was that
+            // measuring AROUND an existing route was impossible
+            // because the polyline ate every click. Marker / region /
+            // active-route polyline clicks deliberately use the
+            // historical route-first order -- those targets are
+            // unambiguous (the helm tapped a specific item) so the
+            // measure-first override is scoped to the empty-map and
+            // stale-route polyline cases only.
             if (measureLayerMod.isActive())            measureLayerMod.addMeasurePoint(ll.lat, ll.lng);
             else if (routeEditLayerMod.isActive())     addEditWaypoint(ll.lat, ll.lng);
             else if (polygonEditLayerMod.isActive())   addPolygonVertexInternal(ll.lat, ll.lng);

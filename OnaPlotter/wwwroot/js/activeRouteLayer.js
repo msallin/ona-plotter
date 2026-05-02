@@ -165,11 +165,15 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
                 L.DomEvent.stopPropagation(ev);
                 const ll = ev.latlng;
                 if (!ll) return;
-                // Measure beats route / polygon edit. Same priority
-                // as the other layer click handlers.
-                if (flags.measure)           editModeAddPoint('measure', ll.lat, ll.lng);
-                else if (flags.routeEdit)    editModeAddPoint('route', ll.lat, ll.lng);
+                // A click ON the active-route polyline is unambiguous:
+                // the helm tapped this specific route. Edit-mode
+                // dispatch follows the historical priority (route ->
+                // polygon -> measure); the measure-first override only
+                // applies to empty-map clicks (see
+                // leafletInterop.js::map.on('click')).
+                if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
                 else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
+                else                         editModeAddPoint('measure', ll.lat, ll.lng);
                 hitLine.closePopup();
             }
         });
