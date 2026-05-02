@@ -1905,10 +1905,37 @@ html:fullscreen .hud-stack-br {
     color: #fff;
     box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 0.95);
     animation: ctrl-confirming-pulse 0.9s ease-in-out infinite;
+    /* Position context for the countdown bar; isolation keeps the
+       countdown's z-stack scoped so other absolute children of the
+       button can't accidentally overlap it. */
+    position: relative;
+    overflow: hidden;
+}
+/* Countdown bar: a 3-px stripe along the bottom of the button that
+   shrinks from 100% to 0% width over the same 3 s as the C#-side
+   ConfirmWindowMs in MapControls.razor.cs. The helm sees how much
+   time they have to commit; reduced-motion users get a static fill
+   so the affordance is still there. Pinned to bottom + non-interactive
+   so the helm's tap still hits the button itself. */
+.ctrl-btn-confirming::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    transform-origin: left center;
+    animation: ctrl-confirming-countdown 3s linear forwards;
+    pointer-events: none;
 }
 @keyframes ctrl-confirming-pulse {
     0%, 100% { box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 0.95); }
     50%      { box-shadow: inset 0 0 0 2px rgba(var(--sev-danger-rgb), 1), 0 0 0 3px rgba(var(--sev-danger-rgb), 0.35); }
+}
+@keyframes ctrl-confirming-countdown {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
 }
 
 @keyframes mob-glow {
@@ -4120,9 +4147,34 @@ html.night-mode-global body {
     color: #fecaca;
     border-color: rgba(239, 68, 68, 0.5);
     background: rgba(239, 68, 68, 0.12);
+    /* Trash glyph as a leading inline-SVG so the Delete button reads
+       as destructive at a glance even in glare. Pure CSS so no Razor
+       edits are needed across the four sub-sections that render this
+       class. data-uri keeps the icon embeddable; stroke=currentColor
+       picks up the row's danger-tint colour and the night-mode
+       override below. */
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fecaca' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 6h18'/><path d='M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/><path d='M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6'/><line x1='10' y1='11' x2='10' y2='17'/><line x1='14' y1='11' x2='14' y2='17'/></svg>");
+    background-repeat: no-repeat;
+    background-position: 8px center;
+    background-size: 14px 14px;
+    background-color: rgba(239, 68, 68, 0.12);
+    padding-left: 28px;
 }
 .route-action-danger:hover {
-    background: rgba(239, 68, 68, 0.22);
+    background-color: rgba(239, 68, 68, 0.22);
+}
+/* Night-mode contrast bump. The 0.12 background tint reads as nearly
+   black on the night palette and the helm reported the button felt
+   identical to Edit in glare. Stronger fill + brighter text
+   re-establishes the destructive cue without changing the daylight
+   look. */
+html.night-mode-global .route-action-danger {
+    color: #fee2e2;
+    border-color: rgba(248, 113, 113, 0.8);
+    background-color: rgba(220, 38, 38, 0.32);
+}
+html.night-mode-global .route-action-danger:hover {
+    background-color: rgba(220, 38, 38, 0.50);
 }
 
 .chart-item:last-child { border-bottom: none; }
@@ -8425,9 +8477,13 @@ html[data-slow-client="1"] * {
     .cpa-pulse,
     .depth-danger,
     .hud-card-progress-alarm,
-    .ctrl-btn-confirming {
+    .ctrl-btn-confirming,
+    .ctrl-btn-confirming::after {
         animation: none !important;
     }
+    /* Without the countdown animation, the ::after fill stays at
+       100% (its from-state) which still surfaces the "armed" cue --
+       just without the visual ticking. C# timer still fires at 3s. */
 
     /* Also cut scroll/transform smoothing that some users find
        nauseating. Leaflet's own map panning uses requestAnimationFrame
