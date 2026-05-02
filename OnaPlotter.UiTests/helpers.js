@@ -35,6 +35,15 @@ export function collectErrors(page) {
         if (text.includes('Failed to load resource')
             && (text.includes('400 (Bad Request)')
                 || text.includes('404 (Not Found)'))) return;
+        // Transport-level noise: CORS preflight failure, refused
+        // connection, generic ERR_FAILED. These fire when running
+        // against a dev / CI environment where the SignalK server
+        // (and optional Mayara radar port) isn't reachable. Out of
+        // scope for a UI fuzz that hunts JS / Blazor bugs.
+        if (text.includes('blocked by CORS policy')) return;
+        if (text.includes('net::ERR_FAILED')) return;
+        if (text.includes('net::ERR_CONNECTION_REFUSED')) return;
+        if (text.includes('Failed to load resource: net::ERR')) return;
         // Blazor logs every unhandled exception through its crit logger; it's
         // covered separately by assertBlazorErrorNotVisible.
         if (text.includes('crit:')) return;
@@ -79,22 +88,60 @@ export async function waitForMapReady(page) {
 /** Dismiss any of the three click-blocking overlays that can appear on
  * a fresh session: welcome card, touch coachmark, load-failure toasts.
  * Silent if none of them are present -- the map page on day-2 of a
- * device has none of these, and the test must work there too. */
+ * device has none of these, and the test must work there too.
+ *
+ * The welcome card surfaces inside Map.razor.OnAfterRenderAsync after
+ * a chain of async work (Settings.Initialize, JS module imports, REST
+ * seeds). On slow CI it can appear AFTER the first dismiss pass. We
+ * therefore poll for it for a few seconds rather than try-once. */
 export async function dismissInitialOverlays(page) {
     // Welcome card: first-visit "Got it" button. A backdrop click would
     // ALSO dismiss but we pick the button to avoid accidentally clicking
-    // through to a map marker behind it.
+    // through to a map marker behind it. Poll for up to 5 s so a late-
+    // rendering card on a slow runner still gets dismissed; clicks
+    // intercepted by the still-pending welcome dialog were the dominant
+    // cause of CI e2e flake before this loop.
     const gotIt = page.locator('button.welcome-dismiss');
-    if (await gotIt.count() > 0 && await gotIt.first().isVisible()) {
-        await gotIt.first().click({ force: true });
-        await page.waitForTimeout(100);
+    const pollDeadline = Date.now() + 5_000;
+    while (Date.now() < pollDeadline) {
+        if (await gotIt.count() > 0 && await gotIt.first().isVisible()) {
+            try {
+                await gotIt.first().click({ force: true, timeout: 500 });
+                await page.waitForTimeout(150);
+                // Verify gone -- card hides after click. If something
+                // re-rendered it, loop continues.
+                if (await gotIt.count() === 0) break;
+                if (!(await gotIt.first().isVisible())) break;
+            } catch { /* card disappeared mid-click */ break; }
+        }
+        // Also bail if the card doesn't appear in the first second of
+        // polling -- on day-2 devices and pre-seeded test contexts the
+        // welcome dismissed flag is already set so the card never
+        // surfaces. No need to wait the full 5 s in that case.
+        if (Date.now() > pollDeadline - 4_000
+            && await gotIt.count() === 0) break;
+        await page.waitForTimeout(200);
     }
+
     // Touch coachmark: tap anywhere (its @onclick is on the whole div).
+    // Same poll shape as the welcome card -- coachmark is gated on the
+    // welcome-dismissed flag so it can also appear late.
     const coachmark = page.locator('.touch-coachmark');
-    if (await coachmark.count() > 0 && await coachmark.first().isVisible()) {
-        await coachmark.first().click({ force: true });
-        await page.waitForTimeout(100);
+    const coachmarkDeadline = Date.now() + 2_000;
+    while (Date.now() < coachmarkDeadline) {
+        if (await coachmark.count() > 0 && await coachmark.first().isVisible()) {
+            try {
+                await coachmark.first().click({ force: true, timeout: 500 });
+                await page.waitForTimeout(100);
+                if (await coachmark.count() === 0) break;
+                if (!(await coachmark.first().isVisible())) break;
+            } catch { break; }
+        }
+        if (Date.now() > coachmarkDeadline - 1_500
+            && await coachmark.count() === 0) break;
+        await page.waitForTimeout(200);
     }
+
     // Dismiss transient toasts by tapping them. Load-failure toasts like
     // "Couldn't load regions" auto-clear eventually but block clicks in
     // the meantime. Clicking them closes. Skip silently if the stack is
