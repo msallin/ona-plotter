@@ -137,6 +137,7 @@ public class ChartLayerControllerTests
         public string MapOrientation => "north";
         public bool FollowBoat => true;
         public bool LaylinesVisible => false;
+        public bool ShipLinesVisible => true;
         public bool AtonsVisible => true;
         public bool GuardZoneVisible => true;
         public bool GuardZoneWarningRingVisible => true;
@@ -152,6 +153,7 @@ public class ChartLayerControllerTests
         public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
         public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
         public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
+        public Task SetShipLinesVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneWarningRingVisibleAsync(bool v) => Task.CompletedTask;

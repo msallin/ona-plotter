@@ -68,8 +68,10 @@ public class MapControlsTests
         var night = Render(ctx, p => p.Add(x => x.NightMode, true));
         await Assert.That(night.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
 
-        var lay = Render(ctx, p => p.Add(x => x.LaylinesVisible, true));
-        await Assert.That(lay.Find(".ctrl-more-wrap > button").ClassList).Contains("ctrl-btn-dot");
+        // Laylines used to be a More-menu toggle; folded into the
+        // Layers panel "Show ship lines" master so it no longer
+        // affects the More dot. The dedicated Harbor-mode dot test
+        // below covers that surface.
 
         // Measure on by itself must NOT light the dot (its bar button
         // shows the state directly now).
@@ -83,28 +85,30 @@ public class MapControlsTests
     [Test]
     public async Task More_Button_Title_Lists_Active_Items()
     {
-        // The dynamic title makes the dot discoverable on hover without
-        // opening the menu. The default catalogue lists what's actually
-        // inside the menu (Legend / Night / Laylines / Orient).
-        // Active toggles get summarised in parens; Measure is excluded
-        // because it lives on the bar permanently.
+        // The dynamic title makes the dot discoverable on hover
+        // without opening the menu. The default catalogue lists
+        // what's actually inside the menu (Legend / Night / Orient
+        // / Harbor). Active toggles get summarised in parens;
+        // Measure is excluded because it lives on the bar
+        // permanently. Laylines used to be in the catalogue; it
+        // moved to the Layers panel "Own ship" section.
         using var ctx = new Bunit.TestContext();
 
         var off = Render(ctx);
         await Assert.That(off.Find(".ctrl-more-wrap > button").GetAttribute("title"))
-            .IsEqualTo("More: Legend, Night, Laylines, Harbor, Orient");
+            .IsEqualTo("More: Legend, Night, Harbor, Orient");
 
         var some = Render(ctx, p => p
             .Add(x => x.NightMode, true)
-            .Add(x => x.LaylinesVisible, true));
+            .Add(x => x.HarborMode, true));
         await Assert.That(some.Find(".ctrl-more-wrap > button").GetAttribute("title"))
-            .IsEqualTo("More (on: Night, Laylines)");
+            .IsEqualTo("More (on: Night, Harbor)");
 
         // Measure being on by itself should leave the title at the
         // default catalogue, not surface "(on: Measure)".
         var measOn = Render(ctx, p => p.Add(x => x.MeasureActive, true));
         await Assert.That(measOn.Find(".ctrl-more-wrap > button").GetAttribute("title"))
-            .IsEqualTo("More: Legend, Night, Laylines, Harbor, Orient");
+            .IsEqualTo("More: Legend, Night, Harbor, Orient");
     }
 
     [Test]
@@ -149,18 +153,20 @@ public class MapControlsTests
         using var ctx = new Bunit.TestContext();
         int fired = 0;
         var cut = RenderWithMoreController(ctx, out _, p => p
-            .Add(x => x.OnToggleLaylines, EventCallback.Factory.Create(this, () => fired++)));
+            .Add(x => x.OnToggleNight, EventCallback.Factory.Create(this, () => fired++)));
 
         cut.Find(".ctrl-more-wrap > button").Click();
-        // Menu open, pick Laylines.
+        // Menu open, pick Night (any menu item works for the
+        // closes-after-click contract; Night is the most
+        // recognisable label and stays put across reorderings).
         var items = cut.FindAll(".ctrl-more-item");
-        AngleSharp.Dom.IElement? laylinesItem = null;
+        AngleSharp.Dom.IElement? nightItem = null;
         foreach (var el in items)
         {
-            if (el.TextContent.Contains("Laylines")) { laylinesItem = el; break; }
+            if (el.TextContent.Contains("Night")) { nightItem = el; break; }
         }
-        await Assert.That(laylinesItem).IsNotNull();
-        laylinesItem!.Click();
+        await Assert.That(nightItem).IsNotNull();
+        nightItem!.Click();
 
         await Assert.That(fired).IsEqualTo(1);
         // Menu closed after the selection.

@@ -21,6 +21,18 @@ public interface IMapDisplaySettings
     /// <summary>Layline overlay visible on the SailSteer + Map.</summary>
     bool LaylinesVisible { get; }
 
+    /// <summary>Master gate for own-ship informational lines on the
+    /// chart: COG vector (with tip + time/distance label), tidal
+    /// current arrow, and laylines. Off declutters the chart for
+    /// helms (or for racing) who want to see only the boat icon and
+    /// active-route guidance. Defaults to true so existing installs
+    /// see the indicators they always saw.
+    /// <para>Bearing line + XTE tick are NOT gated by this flag --
+    /// they're navigation guidance, not info, and hiding them mid-
+    /// leg would be a foot-gun. They show automatically when a route
+    /// is active.</para></summary>
+    bool ShipLinesVisible { get; }
+
     /// <summary>AIS Aids to Navigation visible on the map.</summary>
     bool AtonsVisible { get; }
 
@@ -112,6 +124,7 @@ public interface IMapDisplaySettings
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
+    Task SetShipLinesVisibleAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
     Task SetGuardZoneVisibleAsync(bool value);
     Task SetGuardZoneWarningRingVisibleAsync(bool value);

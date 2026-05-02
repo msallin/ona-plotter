@@ -44,6 +44,16 @@ let isSlowClient = false;
 // AIS layer has its own copy synced via aisLayerMod.setAisCogMinutes.
 let ownCogMinutes = 10;
 
+// Master gate for own-ship informational lines on the chart: COG
+// vector (with tip + time/distance label), tidal current arrow, and
+// laylines. Off declutters the chart for helms (or for racing) who
+// want to see only the boat icon and active-route guidance. Default
+// true; the C# side pushes the helm-set value at init via
+// setShipLinesVisible. Bearing line + XTE tick are NOT gated by
+// this flag -- they're navigation guidance and only show when a
+// route is active anyway.
+let shipLinesVisible = true;
+
 // Own-boat MMSI, pushed from C# once SignalkClient.SetSelfContext
 // resolves (the hello message). Used by buildSelfPopupHtml to pull
 // the country flag from the same signalk-flags endpoint the AIS
@@ -970,9 +980,28 @@ export function applyFrame(frame) {
         const cu = frame.current;
         setCurrentArrow(cu.lat, cu.lon, cu.setRad, cu.driftMs);
     }
-    if (frame.laylines) {
+    if (frame.laylines && shipLinesVisible) {
         const l = frame.laylines;
         setLaylines(l.lat, l.lon, l.twdRad, l.twaRad, l.wpLat, l.wpLon);
+    }
+}
+
+/**
+ * Helm flipped the "Show ship lines" toggle in the Layers panel.
+ * Updates the gate and tears down any visible COG vector / current
+ * arrow / laylines immediately so the change is felt on the next
+ * render tick instead of "next time the boat moves". A subsequent
+ * applyFrame / updatePosition call paints them back when the gate
+ * is on again.
+ */
+export function setShipLinesVisible(enabled) {
+    shipLinesVisible = !!enabled;
+    if (!shipLinesVisible) {
+        if (boatVector) boatVector.setLatLngs([]);
+        if (boatVectorTip && map) { map.removeLayer(boatVectorTip); boatVectorTip = null; }
+        if (vectorLabel && map) { map.removeLayer(vectorLabel); vectorLabel = null; }
+        if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
+        clearLaylines();
     }
 }
 
@@ -1000,7 +1029,11 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     // boat<->anchor line in one place.
     anchorLayerMod.setBoatPosition(lat, lon);
 
-    const end = vectorEnd(lat, lon, cogRad, sogMs, ownCogMinutes);
+    // shipLinesVisible gates the COG vector (+ tip + label). Helm
+    // can hide it via the Layers panel "Show ship lines" toggle.
+    const end = shipLinesVisible
+        ? vectorEnd(lat, lon, cogRad, sogMs, ownCogMinutes)
+        : null;
     if (end) {
         boatVector.setLatLngs([[lat, lon], end]);
         // Tip dot at the vector end -- mirrors aisLayer's vessel
@@ -2015,6 +2048,14 @@ let currentArrow = null;
 
 export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
     if (!map) return;
+    // shipLinesVisible gates the current arrow (+ implicit drift
+    // direction cue). Helm can hide it via the Layers panel "Show
+    // ship lines" toggle. The HUD value is the real reading; this
+    // arrow is just a chart-side directional cue.
+    if (!shipLinesVisible) {
+        if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
+        return;
+    }
     // Arrow length proportional to drift. Helm flagged the arrow as
     // "very prominent but not that important" -- drift magnitude is
     // already shown in the bottom-right HUD, so the on-chart arrow

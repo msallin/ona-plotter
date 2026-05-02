@@ -72,6 +72,14 @@
                     OnDelete="OnDeleteRegion"
                     OnToggleVisible="OnToggleRegionsVisible" />
 
+    @* Own-ship informational lines (COG vector, tidal current,
+       laylines). Sits above the vessel + history sections because
+       its toggles are about own-boat chart clutter, the most
+       commonly tweaked group; History (server) stays below since
+       it's a different data source. *@
+    <OwnShipSection ShipLinesVisible="ShipLinesVisible"
+                    OnToggleShipLines="OnToggleShipLines" />
+
     <BuddiesSection Buddies="Buddies"
                     Vessels="Vessels"
                     OnFocus="OnFocusVessel" />
@@ -147,6 +155,8 @@
     [Parameter] public IReadOnlySet<string> EnabledRadars { get; set; } = new HashSet<string>();
     [Parameter] public IReadOnlyDictionary<string, RadarCapabilities?> RadarCapabilities { get; set; } =
         new Dictionary<string, RadarCapabilities?>();
+    [Parameter] public bool ShipLinesVisible { get; set; } = true;
+    [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;

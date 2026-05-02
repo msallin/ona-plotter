@@ -35,6 +35,13 @@ public interface IMapControlsJs
     /// here -- only the explicit clear on toggle-off / dispose.</summary>
     Task ClearLaylinesAsync();
 
+    /// <summary>Master gate for own-ship informational lines (COG
+    /// vector + tip + label, tidal current arrow, laylines). Set
+    /// false to declutter the chart; the JS side tears the existing
+    /// lines down immediately so the helm sees the change without
+    /// waiting for the next frame.</summary>
+    Task SetShipLinesVisibleAsync(bool enabled);
+
     /// <summary>Apply night-mode CSS filter to map tiles + UI chrome.</summary>
     Task SetNightModeAsync(bool enabled);
 

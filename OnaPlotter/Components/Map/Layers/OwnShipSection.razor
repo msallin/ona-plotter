@@ -1,0 +1,40 @@
+@* Own-ship indicator toggles. Master gate for the lines drawn around
+   the boat icon that are info / prediction (not navigation guidance):
+     * COG vector + tip dot + "10 min / N nm" label
+     * Tidal current arrow (drift direction)
+     * Laylines (port + stbd, when sailing)
+
+   Bearing line + XTE tick are intentionally NOT in this group --
+   they're navigation guidance, only show when a route is active, and
+   hiding them mid-leg would be a foot-gun.
+
+   Local trail toggle lives here too so all "own-ship-on-the-chart"
+   knobs are in one place. Server history stays in its own section
+   below since it's a different data source with its own duration /
+   resolution dropdowns. *@
+
+<SectionHeader Title="Own ship"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    <label class="chart-item">
+        <input type="checkbox" checked="@ShipLinesVisible"
+               @onchange="(e) => OnToggleShipLines.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Show ship lines</div>
+            <div class="chart-desc">COG vector, tidal current, laylines</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool ShipLinesVisible { get; set; } = true;
+    [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
+
+    /// <summary>Default expanded so a fresh helm sees the toggles
+    /// without hunting; collapsing is one tap. The Own ship section
+    /// is shorter than e.g. Charts so default-expanded doesn't bloat
+    /// the panel.</summary>
+    private bool expanded = true;
+}

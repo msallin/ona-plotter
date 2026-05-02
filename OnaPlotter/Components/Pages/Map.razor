@@ -92,7 +92,6 @@
                  RouteNavigating="SignalkClient.Data.HasActiveCourse"
                  OnStopNavigation="StopNavigation"
                  MobActive="mobActive"
-                 LaylinesVisible="laylinesVisible"
                  HarborMode="@Settings.HarborMode"
                  MeasureActive="measureActive"
                  RouteEditMode="routeEditMode"
@@ -108,7 +107,6 @@
                  OnToggleMob="ToggleMob"
                  OnZoomToTrack="ZoomToTrack"
                  OnCentreOnBoat="CentreOnBoat"
-                 OnToggleLaylines="ToggleLaylines"
                  OnToggleHarborMode="ToggleHarborMode"
                  OnToggleMeasure="ToggleMeasure"
                  OnStartRouteEdit="StartRouteEdit"
@@ -176,9 +174,9 @@
                 <li>
                     <strong>Check the <span class="welcome-kbd">More</span>
                     button</strong> (leftmost on the bottom bar) for the
-                    symbol <em>Legend</em>, Night mode, Laylines and
-                    Measure. A dot on the button means something in there
-                    is currently on.
+                    symbol <em>Legend</em>, Night mode, and Harbor mode.
+                    A dot on the button means something in there is
+                    currently on.
                 </li>
             </ol>
             <button class="welcome-dismiss map-btn active" @onclick="DismissWelcome">
@@ -465,6 +463,8 @@
                      AvailableRadars="RadarOverlay.Radars"
                      EnabledRadars="RadarOverlay.EnabledRadarIds"
                      RadarCapabilities="RadarOverlay.Capabilities"
+                     ShipLinesVisible="Settings.ShipLinesVisible"
+                     OnToggleShipLines="OnToggleShipLines"
                      ServerTrackVisible="@(_serverTrack?.Visible ?? false)"
                      ServerTrackDuration="@(_serverTrack?.Duration ?? "1d")"
                      ServerTrackResolution="@(_serverTrack?.Resolution ?? "1m")"
@@ -577,7 +577,11 @@
     // Map.razor consume them directly; no controller in between.
     private OnaPlotter.Services.Js.MapControlsJs? _controlsJs;
     private OnaPlotter.Services.Js.MapEditJs? _editJs;
-    private bool laylinesVisible;
+    // Master gate for own-ship informational chart lines (COG vector,
+    // tidal current arrow, laylines). Driven by Settings.ShipLinesVisible
+    // and pushed to JS on init + on toggle. Replaces the standalone
+    // laylines flag the More-menu used to drive: the helm now toggles
+    // all three lines together via the Layers panel "Own ship" section.
     private bool measureActive;
     private bool fabMenuOpen;
     // Lifted here from MapControls so the three bottom-bar flyouts
@@ -1519,7 +1523,9 @@
 
         follow = Settings.FollowBoat;
         nightMode = Settings.NightMode;
-        laylinesVisible = Settings.LaylinesVisible;
+        // ShipLinesVisible is loaded from settings (default true). The
+        // initial push to JS happens after _controlsJs is constructed
+        // (see the OnAfterRenderAsync init path below).
         mapOrientation = Settings.MapOrientation;
         mapOrientationLabel = mapOrientation switch { "course" => "C\u2191", "head" => "H\u2191", _ => "N\u2191" };
 
@@ -1531,6 +1537,12 @@
         await _controlsJs.SetCogVectorMinutesAsync(
             Settings.OwnCogVectorMinutes,
             Settings.AisCogVectorMinutes);
+        // Push the persisted ship-lines gate so a helm who disabled it
+        // last session sees the chart decluttered immediately, not
+        // "after the toggle is touched once". JS-side default is true
+        // so we only push when the helm-set value differs.
+        if (!Settings.ShipLinesVisible)
+            await _controlsJs.SetShipLinesVisibleAsync(false);
         Settings.OnSettingsChanged += HandleSettingsChanged;
 
         SignalkClient.OnDataChanged += HandleDataChanged;
@@ -1706,7 +1718,7 @@
             case "f": await ToggleFollow(); break;
             case "a": await ToggleAnchor(); break;
             case "t": await ZoomToTrack(); break;
-            case "l": await ToggleLaylines(); break;
+            case "l": await OnToggleShipLines(!Settings.ShipLinesVisible); break;
             case "o": await CycleMapOrientation(); break;
             case "r": ToggleRaceTimer(); break;
             case "d": await ToggleMeasure(); break;
@@ -1945,7 +1957,10 @@
             // JSRuntime JsonOptions is CamelCase so the record-struct
             // fields arrive in JS as `pos.lat`, `pos.headingRad`, etc,
             // which is exactly what applyFrame expects.
-            _frameBuilder.LaylinesVisible = laylinesVisible;
+            // Laylines piggy-back on the master ship-lines toggle so
+            // the helm has one knob for all own-ship informational
+            // lines instead of three separate ones to remember.
+            _frameBuilder.LaylinesVisible = Settings.ShipLinesVisible;
             var frame = _frameBuilder.Build(Data);
             if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
 
@@ -2147,12 +2162,17 @@
             await _controlsJs.SetMapOrientationAsync(mapOrientation);
     }
 
-    private async Task ToggleLaylines()
+    /// <summary>Helm flipped the "Show ship lines" toggle in the
+    /// Layers panel. Persists, pushes to JS so the existing chart
+    /// elements are torn down (or restored) immediately, and -- on
+    /// disable -- explicitly clears laylines because the per-tick
+    /// frame won't push another laylines payload while the gate is
+    /// off.</summary>
+    private async Task OnToggleShipLines(bool enabled)
     {
-        laylinesVisible = !laylinesVisible;
-        await Settings.SetLaylinesVisibleAsync(laylinesVisible);
-        if (!laylinesVisible && _controlsJs is not null)
-            await _controlsJs.ClearLaylinesAsync();
+        await Settings.SetShipLinesVisibleAsync(enabled);
+        if (_controlsJs is not null)
+            await _controlsJs.SetShipLinesVisibleAsync(enabled);
     }
 
     /// <summary>

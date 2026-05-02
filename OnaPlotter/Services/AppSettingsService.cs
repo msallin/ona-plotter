@@ -35,6 +35,10 @@ public sealed class AppSettingsService : IAppSettings
     public string MapOrientation { get; private set; } = "north";
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
+    /// <summary>Master gate for own-ship indicator lines on the chart
+    /// (COG vector, tidal current arrow, laylines). Default true so
+    /// existing installs see the lines they always saw.</summary>
+    public bool ShipLinesVisible { get; private set; } = true;
     public bool AtonsVisible { get; private set; } = true;
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
@@ -156,6 +160,7 @@ public sealed class AppSettingsService : IAppSettings
             MapOrientation = await LoadString("mapOrientation") ?? "north";
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
+            ShipLinesVisible = await LoadBool("shipLinesVisible.v1", true);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
             GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
             GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
@@ -324,6 +329,12 @@ public sealed class AppSettingsService : IAppSettings
     {
         LaylinesVisible = value;
         await Save("laylinesVisible", value ? "true" : "false");
+    }
+
+    public async Task SetShipLinesVisibleAsync(bool value)
+    {
+        ShipLinesVisible = value;
+        await Save("shipLinesVisible.v1", value ? "true" : "false");
     }
 
     public async Task SetAtonsVisibleAsync(bool value)

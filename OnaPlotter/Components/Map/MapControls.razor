@@ -6,14 +6,17 @@
    Layout: More (overflow) is leftmost, then navigation grouping
    (Follow / Centre), safety (Anchor / MOB), view (Fit), create
    (Add / Measure / Race), and finally Layers. "Less-essential" toggles
-   (Legend / Night / Laylines / Orient) live inside the More menu; the
-   More button shows a dot when any of its contents are active so an
-   "on" state doesn't hide behind a closed menu. *@
+   (Legend / Night / Orient) live inside the More menu; the More
+   button shows a dot when any of its contents are active so an "on"
+   state doesn't hide behind a closed menu. Laylines used to live
+   here too; they moved to the Layers panel "Own ship" section under
+   the master "Show ship lines" toggle so the helm has one knob for
+   all own-ship informational chart lines. *@
 
 <div class="map-controls">
     @* Overflow menu anchor. Shows a dot badge when any contained
-       toggle is currently active so the helm can tell at a glance that
-       Night, Laylines, or Measure are on without opening the menu. *@
+       toggle is currently active so the helm can tell at a glance
+       that Night or Harbor mode is on without opening the menu. *@
     <div class="ctrl-more-wrap">
         <button class="ctrl-btn @(MoreMenuOpen ? "active" : "") @(AnyMoreItemActive ? "ctrl-btn-dot" : "")"
                 @onclick="ToggleMoreMenu"
@@ -99,11 +102,6 @@
                         title="Night mode (N) -- hold for Dark Ops">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
                     <span>Night @(NightMode ? "(on)" : "")</span>
-                </button>
-                <button class="ctrl-more-item @(LaylinesVisible ? "ctrl-more-active" : "")"
-                        @onclick="() => Select(OnToggleLaylines)">
-                    <span class="ctrl-more-ico">@((MarkupString)Icons.Laylines)</span>
-                    <span>Laylines@(LaylinesVisible ? " (on)" : "")@(ShowKeyboardHints ? " (L)" : "")</span>
                 </button>
                 @* Harbor mode: a single switch that bundles AIS / collision
                    suppressions for entering a busy port -- moored vessels
@@ -291,7 +289,6 @@
     /// stop, which looks broken. Wired from
     /// <c>SignalkClient.Data.HasActiveCourse</c>.</summary>
     [Parameter] public bool RouteNavigating { get; set; }
-    [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public bool HarborMode { get; set; }
     [Parameter] public bool MeasureActive { get; set; }
     [Parameter] public bool RouteEditMode { get; set; }
@@ -310,7 +307,6 @@
     [Parameter] public EventCallback OnStopNavigation { get; set; }
     [Parameter] public EventCallback OnZoomToTrack { get; set; }
     [Parameter] public EventCallback OnCentreOnBoat { get; set; }
-    [Parameter] public EventCallback OnToggleLaylines { get; set; }
     [Parameter] public EventCallback OnToggleHarborMode { get; set; }
     [Parameter] public EventCallback OnToggleMeasure { get; set; }
     [Parameter] public EventCallback OnStartRouteEdit { get; set; }
@@ -415,28 +411,28 @@
     }
 
     // Dot indicator on the More button when any of its contents is on,
-    // so Night / Laylines / Harbor being active is visible without
-    // opening the menu. Measure used to be in this list, but it now
-    // lives on the bar (right of Add) on every viewport size; the bar
-    // button itself shows the active state, so the More dot would be
-    // misleading. Harbor mode IS in the list -- the helm needs to see
-    // at a glance "alarms are suppressed" so a forgotten Harbor mode
-    // doesn't ride into open water.
-    private bool AnyMoreItemActive => NightMode || LaylinesVisible || HarborMode;
+    // so Night / Harbor being active is visible without opening the
+    // menu. Measure used to be in this list, but it now lives on the
+    // bar (right of Add) on every viewport size; the bar button itself
+    // shows the active state, so the More dot would be misleading.
+    // Harbor mode IS in the list -- the helm needs to see at a glance
+    // "alarms are suppressed" so a forgotten Harbor mode doesn't ride
+    // into open water. Laylines moved to the Layers panel under the
+    // master "Show ship lines" toggle so they're no longer here.
+    private bool AnyMoreItemActive => NightMode || HarborMode;
 
-    // Dynamic tooltip: when items are active it reads "More (on: Night,
-    // Laylines)" so the dot badge's meaning is discoverable on hover /
-    // keyboard focus without opening the menu.
+    // Dynamic tooltip: when items are active it reads "More (on:
+    // Night, Harbor)" so the dot badge's meaning is discoverable on
+    // hover / keyboard focus without opening the menu.
     private string MoreButtonTitle
     {
         get
         {
-            var on = new List<string>(3);
+            var on = new List<string>(2);
             if (NightMode) on.Add("Night");
-            if (LaylinesVisible) on.Add("Laylines");
             if (HarborMode) on.Add("Harbor");
             return on.Count == 0
-                ? "More: Legend, Night, Laylines, Harbor, Orient"
+                ? "More: Legend, Night, Harbor, Orient"
                 : "More (on: " + string.Join(", ", on) + ")";
         }
     }

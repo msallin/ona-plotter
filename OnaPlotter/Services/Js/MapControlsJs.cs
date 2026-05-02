@@ -33,6 +33,9 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task ClearLaylinesAsync()
         => InvokeSafe("clearLaylines");
 
+    public Task SetShipLinesVisibleAsync(bool enabled)
+        => InvokeSafe("setShipLinesVisible", enabled);
+
     public Task SetNightModeAsync(bool enabled)
         => InvokeSafe("setNightMode", enabled);
 
