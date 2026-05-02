@@ -436,10 +436,18 @@
        legibility on a busy chart, and the outer stroke flips from
        black-50% to slate-900-40% so the silhouette holds against
        both white land and blue water. */
-    --hud-card-bg:         rgba(255, 255, 255, 0.92);
+    /* Off-white (slate-50) instead of pure white: helm field-feedback
+       on Admiralty-style + many NOAA charts that use white for open
+       water -- a pure-white HUD card dissolved into the chart and
+       the silhouette vanished under polarised glare. Slate-50 reads
+       as "light card" and stays consistent with the rest of the
+       light chrome, but has just enough cool tint to be distinct
+       from chart-paper white. Stroke + halo also strengthened so
+       the panel edge holds against any chart luminance. */
+    --hud-card-bg:         rgba(248, 250, 252, 0.94);
     --hud-card-stroke-in:  rgba(15, 23, 42, 0.06);
-    --hud-card-stroke-out: rgba(15, 23, 42, 0.40);
-    --hud-card-halo:       0 0 16px rgba(15, 23, 42, 0.18);
+    --hud-card-stroke-out: rgba(15, 23, 42, 0.55);
+    --hud-card-halo:       0 0 20px rgba(15, 23, 42, 0.32);
     --hud-ink:             #0f172a;
     --hud-ink-dim:         rgba(15, 23, 42, 0.55);
     --hud-ink-stale:       rgba(15, 23, 42, 0.40);
