@@ -47,13 +47,23 @@
             </select>
             @if (rangeMode == "preset")
             {
+                @* Mirrors the Stats page's preset list 1:1 so a helm
+                   switching between the two pages sees the same options
+                   in the same order with the same labels. The 30d/90d/
+                   365d additions extend the History map view to long
+                   windows for season-review playback; long-window
+                   defaults use a coarser resolution to keep the row
+                   count manageable. *@
                 <select class="form-select form-select-sm" data-history-input
                         @onchange="OnTimespanChanged">
-                    <option value="1h" selected="@(selectedTimespan == "1h")">Last 1 hour</option>
-                    <option value="6h" selected="@(selectedTimespan == "6h")">Last 6 hours</option>
-                    <option value="1d" selected="@(selectedTimespan == "1d")">Last 24 hours</option>
-                    <option value="3d" selected="@(selectedTimespan == "3d")">Last 3 days</option>
-                    <option value="7d" selected="@(selectedTimespan == "7d")">Last 7 days</option>
+                    <option value="1h"   selected="@(selectedTimespan == "1h")">Last 1 hour</option>
+                    <option value="6h"   selected="@(selectedTimespan == "6h")">Last 6 hours</option>
+                    <option value="1d"   selected="@(selectedTimespan == "1d")">Today (24 h)</option>
+                    <option value="3d"   selected="@(selectedTimespan == "3d")">Last 3 days</option>
+                    <option value="7d"   selected="@(selectedTimespan == "7d")">Last 7 days</option>
+                    <option value="30d"  selected="@(selectedTimespan == "30d")">Last 30 days</option>
+                    <option value="90d"  selected="@(selectedTimespan == "90d")">Last 90 days</option>
+                    <option value="365d" selected="@(selectedTimespan == "365d")">Last year</option>
                 </select>
             }
             else
@@ -74,19 +84,27 @@
                        value="@FormatLocalForInput(customToLocal)"
                        @onchange="OnCustomToChanged" />
             }
-            @* Sampling resolution. Mirror Stats' dropdown so a
-               long-window load on a tethered tablet (sat link / boat
-               wifi) doesn't pull millions of points just to render a
-               polyline. 30 s stays default for the "what happened
-               today?" use; 5 m / 15 m for "show me the season". *@
+            @* Sampling resolution. Wider range than the Stats page
+               because History is also the playback view -- a helm
+               investigating "what happened in that 90-second tack
+               at 14:32" needs 1 s, while a helm reviewing a
+               trans-Atlantic at 90 d is fine with 1 h. The chunker
+               (TrackApi.GetServerTrackPointsAsync) keeps fine-
+               resolution-over-long-window loads under the SK history
+               provider's per-response cap by issuing parallel sub-
+               requests. *@
             <select class="form-select form-select-sm" data-history-input
                     title="Sampling resolution"
                     aria-label="Sampling resolution"
                     @onchange="OnResolutionChanged">
+                <option value="1s"  selected="@(resolution == "1s")">1 s (sub-second tacks)</option>
                 <option value="30s" selected="@(resolution == "30s")">30 s</option>
                 <option value="1m"  selected="@(resolution == "1m")">1 m</option>
                 <option value="5m"  selected="@(resolution == "5m")">5 m</option>
                 <option value="15m" selected="@(resolution == "15m")">15 m</option>
+                <option value="30m" selected="@(resolution == "30m")">30 m</option>
+                <option value="1h"  selected="@(resolution == "1h")">1 h</option>
+                <option value="4h"  selected="@(resolution == "4h")">4 h (season review)</option>
             </select>
             @* Loading-aware Load button. While a fetch is in flight
                the same button doubles as Cancel: helm tap signals
@@ -410,9 +428,12 @@
     // (the History API caps each response at 500 rows), which on a
     // sat-link feels slow. 5 m gives 7 d × 12 buckets/h = ~2 016
     // rows -- one round-trip, sub-second on LAN -- and the helm
-    // who actually wants 30 s detail can still pick it from the
-    // dropdown. Mirrors the Stats page's resolution selector so
-    // muscle memory carries.
+    // who actually wants finer (down to 1 s for sub-second tack
+    // analysis) or coarser (up to 4 h for season review) detail
+    // can still pick it from the dropdown. The default is paired
+    // with the "Today (24 h)" timespan default so a fresh visit
+    // shows 24 h × 12 buckets/h = 288 rows -- one round-trip,
+    // smooth playback.
     private string resolution = "5m";
     // View mode toggle. "map" is the default playback view; "table"
     // hides the map behind a list of segments (filtered to moving by
