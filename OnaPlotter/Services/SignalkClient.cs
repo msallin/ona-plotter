@@ -17,6 +17,12 @@ public sealed class SignalkClient : IAsyncDisposable
     private const int InitialBackoffMs = 1_000;
     private const int MaxBackoffMs = 30_000;
     private const int ReceiveBufferBytes = 8 * 1024;
+    /// <summary>Cap on the per-message StringBuilder used to assemble
+    /// fragmented WebSocket frames. Above this we drop the buffer +
+    /// force a reconnect rather than let a misbehaving server / debug
+    /// endpoint exhaust the WASM heap. 4 MB is well above any plausible
+    /// SignalK delta -- even a 200-vessel bulk AIS push is single-digit KB.</summary>
+    private const int MaxMessageBufferBytes = 4 * 1024 * 1024;
     private const int StaleDataThresholdSec = 5;
 
     /// <summary>
@@ -566,6 +572,25 @@ public sealed class SignalkClient : IAsyncDisposable
                         break;
 
                     messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+
+                    // Cap the per-message buffer at 4 MB. A buggy or
+                    // malicious server emitting a fragmented stream
+                    // without EndOfMessage indefinitely (or a single
+                    // >>RAM message from a misbehaving /raw debug
+                    // endpoint) would otherwise grow the StringBuilder
+                    // until the WASM heap is exhausted and the tab
+                    // dies, with no recovery short of a reload. 4 MB
+                    // is well above any plausible delta payload --
+                    // even a ~200-vessel AIS bulk update is single-
+                    // digit KB.
+                    if (messageBuffer.Length > MaxMessageBufferBytes)
+                    {
+                        _logger.LogWarning(
+                            "Message buffer exceeded {Limit} bytes (got {Got}) -- dropping and forcing reconnect",
+                            MaxMessageBufferBytes, messageBuffer.Length);
+                        messageBuffer.Clear();
+                        break;
+                    }
 
                     if (result.EndOfMessage)
                     {
