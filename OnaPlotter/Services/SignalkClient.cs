@@ -576,14 +576,27 @@ public sealed class SignalkClient : IAsyncDisposable
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                // _ws stays referenced until the finally clears it;
+                // keep the convention that _ws is null only when there's
+                // no usable socket so concurrent SendAsync paths don't
+                // race on a half-aborted instance.
+                _ws = null;
+                IsConnected = false;
                 return;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "SignalK connection lost, reconnecting in {BackoffMs}ms", backoffMs);
             }
-
-            _ws = null;
+            finally
+            {
+                // Null _ws AS PART OF THE SAME FRAME that observes the
+                // ReceiveAsync exception so a concurrent SendSubscriptionAsync
+                // / SendRawAsync (RawStream subscribe) can't see a non-null
+                // _ws referencing an aborted socket. The State==Open guard
+                // inside Send* is otherwise a tight race with the throw.
+                _ws = null;
+            }
             IsConnected = false;
             // Drop any cached server notifications: while we're
             // offline we can't see if the server has cleared one,
