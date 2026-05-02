@@ -469,6 +469,8 @@
                      RadarCapabilities="RadarOverlay.Capabilities"
                      ShipLinesVisible="Settings.ShipLinesVisible"
                      OnToggleShipLines="OnToggleShipLines"
+                     LaylinesVisible="Settings.LaylinesVisible"
+                     OnToggleLaylines="OnToggleLaylinesPersist"
                      LocalTrackVisible="Settings.LocalTrackVisible"
                      OnToggleLocalTrack="OnToggleLocalTrack"
                      ServerTrackVisible="@(_serverTrack?.Visible ?? false)"
@@ -1772,7 +1774,7 @@
             case "f": await ToggleFollow(); break;
             case "a": await ToggleAnchor(); break;
             case "t": await ZoomToTrack(); break;
-            case "l": await OnToggleShipLines(!Settings.ShipLinesVisible); break;
+            case "l": await OnToggleLaylinesPersist(!Settings.LaylinesVisible); break;
             case "o": await CycleMapOrientation(); break;
             case "r": ToggleRaceTimer(); break;
             case "d": await ToggleMeasure(); break;
@@ -2035,17 +2037,12 @@
             // JSRuntime JsonOptions is CamelCase so the record-struct
             // fields arrive in JS as `pos.lat`, `pos.headingRad`, etc,
             // which is exactly what applyFrame expects.
-            // The master ShipLinesVisible toggle gates THREE on-chart
-            // ship lines: COG vector, tidal-current arrow, and
-            // laylines. Two of those (COG, current) are rendered in
-            // JS and gated via setShipLinesVisible below; only
-            // laylines flow through MapFrameBuilder, so the C#-side
-            // field stays narrowly named for its single concern. The
-            // names look mismatched at this assignment but each side
-            // is correct in its own scope: read this line as "the
-            // C# laylines field gets its on/off from the master
-            // ship-lines knob; the JS half lives in setShipLinesVisible".
-            _frameBuilder.LaylinesVisible = Settings.ShipLinesVisible;
+            // Laylines have their own Layers-panel toggle, separate
+            // from the master ShipLines knob (which gates COG vector
+            // + tidal current arrow only). Helms who motor never
+            // want laylines; helms who race want them visible
+            // independently of the always-on indicators.
+            _frameBuilder.LaylinesVisible = Settings.LaylinesVisible;
             var frame = _frameBuilder.Build(Data);
             if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
 
@@ -2254,16 +2251,29 @@
     }
 
     /// <summary>Helm flipped the "Show ship lines" toggle in the
-    /// Layers panel. Persists, pushes to JS so the existing chart
-    /// elements are torn down (or restored) immediately, and -- on
-    /// disable -- explicitly clears laylines because the per-tick
-    /// frame won't push another laylines payload while the gate is
-    /// off.</summary>
+    /// Layers panel. Master gate for COG vector + tidal current
+    /// arrow on the chart. Laylines are no longer covered (separate
+    /// toggle in OwnShipSection).</summary>
     private async Task OnToggleShipLines(bool enabled)
     {
         await Settings.SetShipLinesVisibleAsync(enabled);
         if (_controlsJs is not null)
             await _controlsJs.SetShipLinesVisibleAsync(enabled);
+    }
+
+    /// <summary>Helm flipped the "Show laylines" toggle. Persist;
+    /// the per-tick frame already reads Settings.LaylinesVisible
+    /// directly so no extra JS push is needed -- when the flag goes
+    /// false the next applyFrame skips the laylines branch and the
+    /// JS layer drops the polylines on its own. We do call the
+    /// explicit clear here so the lines vanish on the same tick the
+    /// helm flipped the switch instead of "next time the boat
+    /// moves" (idle moment, no fix yet).</summary>
+    private async Task OnToggleLaylinesPersist(bool enabled)
+    {
+        await Settings.SetLaylinesVisibleAsync(enabled);
+        if (!enabled && _controlsJs is not null)
+            await _controlsJs.ClearLaylinesAsync();
     }
 
     /// <summary>Helm flipped the "Ship track" visibility toggle.

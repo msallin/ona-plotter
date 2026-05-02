@@ -89,6 +89,8 @@
        hunt across the panel for the right toggle. *@
     <OwnShipSection ShipLinesVisible="ShipLinesVisible"
                     OnToggleShipLines="OnToggleShipLines"
+                    LaylinesVisible="LaylinesVisible"
+                    OnToggleLaylines="OnToggleLaylines"
                     LocalTrackVisible="LocalTrackVisible"
                     OnToggleLocalTrack="OnToggleLocalTrack"
                     GuardZoneVisible="GuardZoneVisible"
@@ -168,6 +170,8 @@
         new Dictionary<string, RadarCapabilities?>();
     [Parameter] public bool ShipLinesVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
+    [Parameter] public bool LaylinesVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
     [Parameter] public bool LocalTrackVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleLocalTrack { get; set; }
     [Parameter] public bool ServerTrackVisible { get; set; }

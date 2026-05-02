@@ -46,13 +46,14 @@ let isSlowClient = false;
 let ownCogMinutes = 10;
 
 // Master gate for own-ship informational lines on the chart: COG
-// vector (with tip + time/distance label), tidal current arrow, and
-// laylines. Off declutters the chart for helms (or for racing) who
-// want to see only the boat icon and active-route guidance. Default
-// true; the C# side pushes the helm-set value at init via
-// setShipLinesVisible. Bearing line + XTE tick are NOT gated by
-// this flag -- they're navigation guidance and only show when a
-// route is active anyway.
+// vector (with tip + time/distance label) and the tidal current
+// arrow. Off declutters the chart for helms who want to see only
+// the boat icon and active-route guidance. Default true; the C#
+// side pushes the helm-set value at init via setShipLinesVisible.
+// Laylines have their own independent toggle: the C# frame builder
+// sets frame.laylines to null when the helm hides them, so no
+// dedicated JS gate is needed for that layer. Bearing line + XTE
+// tick are NOT gated -- they're navigation guidance.
 let shipLinesVisible = true;
 
 // Own-boat MMSI, pushed from C# once SignalkClient.SetSelfContext
@@ -981,7 +982,7 @@ export function applyFrame(frame) {
         const cu = frame.current;
         setCurrentArrow(cu.lat, cu.lon, cu.setRad, cu.driftMs);
     }
-    if (frame.laylines && shipLinesVisible) {
+    if (frame.laylines) {
         const l = frame.laylines;
         setLaylines(l.lat, l.lon, l.twdRad, l.twaRad, l.wpLat, l.wpLon);
     }
@@ -989,11 +990,14 @@ export function applyFrame(frame) {
 
 /**
  * Helm flipped the "Show ship lines" toggle in the Layers panel.
- * Updates the gate and tears down any visible COG vector / current
- * arrow / laylines immediately so the change is felt on the next
- * render tick instead of "next time the boat moves". A subsequent
- * applyFrame / updatePosition call paints them back when the gate
- * is on again.
+ * Updates the gate and tears down the visible COG vector + current
+ * arrow immediately so the change is felt on the next render tick
+ * instead of "next time the boat moves". Laylines are NOT touched
+ * here -- they have their own toggle (Settings.LaylinesVisible
+ * gates the per-tick frame.laylines payload C#-side, and the
+ * dedicated ClearLaylinesAsync call covers the on-disable
+ * teardown). A subsequent applyFrame / updatePosition call paints
+ * COG vector + current arrow back when the gate is on again.
  */
 export function setShipLinesVisible(enabled) {
     shipLinesVisible = !!enabled;
@@ -1002,7 +1006,6 @@ export function setShipLinesVisible(enabled) {
         if (boatVectorTip && map) { map.removeLayer(boatVectorTip); boatVectorTip = null; }
         if (vectorLabel && map) { map.removeLayer(vectorLabel); vectorLabel = null; }
         if (currentArrow && map) { map.removeLayer(currentArrow); currentArrow = null; }
-        clearLaylines();
     }
 }
 

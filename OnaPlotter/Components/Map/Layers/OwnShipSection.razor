@@ -1,8 +1,9 @@
 @* Own-ship layer toggles. One section gathers every chart layer
    that is "about my own boat":
-     * Show ship lines  -- COG vector, tidal current arrow, laylines
-                            (master gate for the always-on indicators)
+     * Show ship lines  -- COG vector + tidal current arrow
+     * Show laylines    -- close-hauled tack projections (sailing only)
      * Show local trail -- in-memory SOG-coloured rolling polyline
+     * Guard zone ring  -- amber CPA-radius circle around own boat
      * Ship track       -- server-side history polyline + its window /
                             resolution / within-bounds controls
 
@@ -20,7 +21,20 @@
                @onchange="(e) => OnToggleShipLines.InvokeAsync((bool)(e.Value ?? false))" />
         <div class="chart-item-body">
             <div class="chart-name">Show ship lines</div>
-            <div class="chart-desc">COG vector, tidal current, laylines</div>
+            <div class="chart-desc">COG vector + tidal current arrow</div>
+        </div>
+    </label>
+    @* Laylines: own toggle (used to ride on Show ship lines).
+       Helms who don't sail close-hauled (motoring / cruising) want
+       to leave laylines off without losing the COG vector + current
+       arrow; helms who race want them visible without the chart
+       chrome the master toggle controls. Two knobs cover both. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@LaylinesVisible"
+               @onchange="(e) => OnToggleLaylines.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Show laylines</div>
+            <div class="chart-desc">Port + stbd close-hauled tacks (sailing)</div>
         </div>
     </label>
     <label class="chart-item">
@@ -121,6 +135,8 @@
 @code {
     [Parameter] public bool ShipLinesVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
+    [Parameter] public bool LaylinesVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
     [Parameter] public bool LocalTrackVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleLocalTrack { get; set; }
     [Parameter] public bool GuardZoneVisible { get; set; } = true;
