@@ -9,9 +9,28 @@
 
 <PageTitle>Dashboard</PageTitle>
 
+@* Three-state empty pattern (matches WindRose). When the WS hasn't
+   delivered any data yet:
+     - !IsConnected -> "offline" (server unreachable; the dashboard
+       cards below will show stale "--" rather than fresh data)
+     - IsConnected + no fix yet -> "waiting" (connection up, but the
+       boat hasn't reported a position / SOG yet -- typically the
+       first 1-2 s after a connect, or a sensor that hasn't booted)
+   Once LastReceivedUtc is set the empty-state hides; cards render. *@
 @if (Data.LastReceivedUtc is null)
 {
-    <div class="text-muted mb-4" style="opacity: 0.6;">Waiting for data...</div>
+    <div class="mb-4">
+        @if (!SignalkClient.IsConnected)
+        {
+            <EmptyState Compact="true"
+                        Title="Offline"
+                        Message="Not connected to the SignalK server. Check the connection and retry." />
+        }
+        else
+        {
+            <LoadingState Label="Waiting for first SignalK delta..." />
+        }
+    </div>
 }
 
 @* === Primary: the three values you check most often ===

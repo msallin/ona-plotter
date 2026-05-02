@@ -440,6 +440,7 @@
         <div class="panel-backdrop" @onclick="() => chartPanelOpen = false"></div>
         <LayersPanel AvailableCharts="availableCharts"
                      AvailableRoutes="availableRoutes"
+                     Offline="@(!SignalkClient.IsConnected)"
                      FilteredCharts="FilteredCharts"
                      FilteredRoutes="FilteredRoutes"
                      FilteredWaypoints="FilteredWaypoints"

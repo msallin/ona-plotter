@@ -21,7 +21,7 @@
         <h2 class="rawstream-title">Data stream</h2>
         <div class="rawstream-actions">
             <input type="search" class="form-control form-control-sm rawstream-search"
-                   placeholder="Search content…"
+                   placeholder="Search content..."
                    aria-label="Search raw stream messages"
                    value="@searchText"
                    @oninput="OnSearchInput" />
@@ -58,13 +58,13 @@
                 <button class="btn btn-sm btn-outline-secondary" @onclick="SelectAll">All</button>
                 <button class="btn btn-sm btn-outline-secondary" @onclick="SelectNone">None</button>
                 <input type="search" class="form-control form-control-sm rawstream-pathfilter"
-                       placeholder="Filter path list…"
+                       placeholder="Filter path list..."
                        aria-label="Filter path list"
                        @bind="pathFilterText" @bind:event="oninput" />
             </div>
             @if (availablePaths.Count == 0)
             {
-                <span class="text-muted" style="font-size:0.8rem;">Loading paths…</span>
+                <span class="text-muted" style="font-size:0.8rem;">Loading paths...</span>
             }
             else
             {
@@ -83,9 +83,19 @@
     </details>
 
     <div id="rawStreamBox" class="rawstream-log">
+        @* Three-state empty pattern, matching Dashboard. *@
         @if (entries.Count == 0)
         {
-            <span class="text-muted">Waiting for data…</span>
+            @if (!SignalkClient.IsConnected)
+            {
+                <EmptyState Compact="true"
+                            Title="Offline"
+                            Message="Not connected to the SignalK server. Stream resumes when the connection comes back." />
+            }
+            else
+            {
+                <LoadingState Label="Waiting for SignalK data..." />
+            }
         }
         else
         {
