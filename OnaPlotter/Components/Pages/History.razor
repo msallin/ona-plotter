@@ -884,7 +884,7 @@
 
         ApiResult<string> r;
         try { r = await RouteApi.SaveAsync(name, [.. coords]); }
-        catch (Exception ex) { Toasts.Error($"Save route failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Save route"); return; }
         if (!r.Success)
         {
             Toasts.Error($"Save route failed: {r.Error ?? "server rejected"}");
@@ -1005,7 +1005,7 @@
             Toasts.Success($"Exported {filename}");
         }
         catch (JSDisconnectedException) { }
-        catch (JSException ex) { Toasts.Error($"Export failed: {ex.Message}"); }
+        catch (JSException ex) { Toasts.LogException(ex, "Export"); }
     }
 
     /// <summary>Web Share API (system share sheet on iPad / Android
@@ -1042,7 +1042,7 @@
             }
         }
         catch (JSDisconnectedException) { }
-        catch (JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
+        catch (JSException ex) { Toasts.LogException(ex, "Share"); }
     }
 
     /// <summary>Strip filesystem-illegal characters from a humanly-

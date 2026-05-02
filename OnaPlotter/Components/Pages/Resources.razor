@@ -410,7 +410,7 @@
         catch (Exception ex)
         {
             if (SignalkClient.IsConnected)
-                Toasts.Error($"Couldn't load {kind}: {ex.Message}");
+                Toasts.LogException(ex, $"Load {kind}");
             return null;
         }
     }
@@ -438,7 +438,7 @@
         if (!await Confirm($"Delete route '{NameOrId(name, id)}'?")) return;
         ApiResult r;
         try { r = await RouteApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete route failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Delete route"); return; }
         if (!r.Success) { Toasts.Error($"Delete route failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Route deleted");
         routes = routes.Where(rt => rt.Id != id).ToList();
@@ -449,7 +449,7 @@
         if (!await Confirm($"Delete waypoint '{NameOrId(name, id)}'?")) return;
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete waypoint failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Delete waypoint"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Waypoint deleted");
         waypoints = waypoints.Where(w => w.Id != id).ToList();
@@ -460,7 +460,7 @@
         if (!await Confirm($"Delete note '{NameOrId(title, id)}'?")) return;
         ApiResult r;
         try { r = await NoteApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete note failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Delete note"); return; }
         if (!r.Success) { Toasts.Error($"Delete note failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Note deleted");
         notes = notes.Where(n => n.Id != id).ToList();
@@ -471,7 +471,7 @@
         if (!await Confirm($"Delete region '{NameOrId(name, id)}'?")) return;
         ApiResult r;
         try { r = await RegionApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete region failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Delete region"); return; }
         if (!r.Success) { Toasts.Error($"Delete region failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Info("Region deleted");
         regions = regions.Where(rg => rg.Id != id).ToList();
@@ -605,7 +605,7 @@
         }
         catch (Exception ex)
         {
-            Toasts.Error($"Import failed: {ex.Message}");
+            Toasts.LogException(ex, "Import");
         }
         finally
         {
@@ -690,7 +690,7 @@
             }
         }
         catch (Microsoft.JSInterop.JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
     }
 
     private async Task ExportNote(SignalkNote n)
@@ -722,7 +722,7 @@
         if (trimmed == current) return;          // no-op
         ApiResult r;
         try { r = await NoteApi.UpdateAsync(n, trimmed, n.Description); }
-        catch (Exception ex) { Toasts.Error($"Rename failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Rename"); return; }
         if (!r.Success) { Toasts.Error($"Rename failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Success($"Renamed to '{trimmed}'");
         n.Title = trimmed;
@@ -780,7 +780,7 @@
             }
         }
         catch (Microsoft.JSInterop.JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
     }
 
     /// <summary>Regions always export as GeoJSON (GPX 1.1 has no
@@ -822,7 +822,7 @@
         catch (Microsoft.JSInterop.JSDisconnectedException) { /* page teardown */ }
         catch (Exception ex)
         {
-            Toasts.Error($"Export failed: {ex.Message}");
+            Toasts.LogException(ex, "Export");
         }
         finally
         {
@@ -887,7 +887,7 @@
         if (updated == current) return;            // no-op
         ApiResult r;
         try { r = await WaypointApi.UpdateAsync(wp, updated); }
-        catch (Exception ex) { Toasts.Error($"Rename failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Rename"); return; }
         if (!r.Success) { Toasts.Error($"Rename failed: {r.Error ?? "server rejected"}"); return; }
         Toasts.Success($"Renamed to '{updated}'");
         // Reflect locally; no need to refetch the whole list.

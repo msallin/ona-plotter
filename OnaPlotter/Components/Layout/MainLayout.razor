@@ -1024,9 +1024,24 @@
             // and reintroduce the multi-plotter race.
             // Tell the helm what to do, not just that something failed.
             // pointIndex is missing when the server hasn't published v2
-            // course state for the current leg; the manual "Next WP"
-            // button on the APPROACH alarm banner is the workaround.
-            Toasts.Error("Auto-advance unavailable -- tap Next WP on the alarm banner to advance manually.");
+            // course state for the current leg; the manual relative
+            // advance is the workaround. Surface it as a one-tap action
+            // on the toast itself so the helm doesn't have to dig
+            // through the alarm banner for the same call.
+            Toasts.ShowAction(
+                "Auto-advance unavailable (route position unknown).",
+                "Next WP",
+                async () =>
+                {
+                    try
+                    {
+                        var r = await CourseApi.AdvanceActiveRouteAsync();
+                        if (!r.Success)
+                            Toasts.Error($"Next waypoint failed: {r.Error ?? "server rejected"}");
+                    }
+                    catch (Exception ex) { Toasts.LogException(ex, "Next waypoint"); }
+                },
+                ToastLevel.Warning, durationSec: 8);
             return;
         }
         bool isLastLeg = data.ActiveRoutePointTotal is int total && currentIdx + 1 >= total;
@@ -1045,7 +1060,7 @@
             if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
                 Toasts.Success("Arrived at final waypoint");
         }
-        catch (Exception ex) { Toasts.Error($"Auto-advance failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Auto-advance"); }
     }
 
     private async Task DismissOne(AlarmInfo alarm) => await Alarms.DismissAsync(alarm);
@@ -1079,7 +1094,7 @@
             if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
                 Toasts.Success("Arrived at final waypoint");
         }
-        catch (Exception ex) { Toasts.Error($"Next waypoint failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Next waypoint"); }
     }
 
     // --- Hold-to-dismiss for Danger alarms ---
@@ -1165,7 +1180,7 @@
         Toasts.Dismiss(t.Id);
         if (t.Action is null) return;
         try { await t.Action(); }
-        catch (Exception ex) { Toasts.Error($"Undo failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Undo"); }
     }
 
     private async Task CheckStaleAsync()

@@ -1239,11 +1239,15 @@
         }
         catch (Exception ex)
         {
-            // Surface the exact parse error on the Settings page (not just
-            // a transient toast) so the user can read the message while
-            // inspecting their CSV.
+            // Surface the exact parse error on the Settings page (not
+            // a transient toast) so the user can read the message
+            // while inspecting their CSV. The inline polar-status-error
+            // card already renders polarError; a transient toast on
+            // top duplicates the same string. Devs still see the trace
+            // via Console.Error -- helpful when the parse path itself
+            // throws unexpectedly.
             polarError = ex.Message;
-            Toasts.Error($"Polar import failed: {ex.Message}");
+            Console.Error.WriteLine($"OnaPlotter: Polar import failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         }
         finally
         {

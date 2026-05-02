@@ -91,7 +91,13 @@ public partial class Map
             if (!ok) return;
         }
         if (wpCount > 0)
-            Toasts.Info($"Route edit cancelled ({wpCount} waypoints discarded)");
+            // Quieted: 2 s instead of the default 4 s. Confirmation
+            // already happened via the Discard / Keep-editing modal,
+            // so this toast is just a "yep, gone" acknowledgement,
+            // not a warning. Helm-feedback: longer dwell felt like
+            // an apology.
+            Toasts.Show($"Route edit cancelled ({wpCount} waypoints discarded)",
+                ToastLevel.Info, durationSec: 2);
 
         routeEditMode = false;
         routeEditId = null;
@@ -234,7 +240,7 @@ public partial class Map
         catch (JSDisconnectedException) { return; }
         catch (Microsoft.JSInterop.JSException ex)
         {
-            Toasts.Error($"Restore failed: {ex.Message}");
+            Toasts.LogException(ex, "Restore");
             return;
         }
         routeStatsTimer = new System.Threading.Timer(
@@ -441,7 +447,7 @@ public partial class Map
         // surfaces as a toast rather than freezing the save flow.
         double[][]? coords = null;
         try { coords = await _editJs.GetEditRouteCoordsAsync(); }
-        catch (JSException ex) { Toasts.Error($"Couldn't read route: {ex.Message}"); }
+        catch (JSException ex) { Toasts.LogException(ex, "Read route"); }
 
         SignalkRoute? newRoute = null;
         bool ok = false;
@@ -453,7 +459,11 @@ public partial class Map
                 // in case a race gets us here anyway (keyboard shortcut, JS
                 // interop lag). Toast so the helm knows WHY nothing saved.
                 if (coords is not null)
-                    Toasts.Show("Add at least 2 waypoints before saving");
+                    // Warning, not Info: this is a guard rejecting the
+                    // helm's save attempt, not an informational status.
+                    // Severity should match the colour the helm reads
+                    // ("yellow = something needs your attention").
+                    Toasts.Warning("Add at least 2 waypoints before saving");
                 return;
             }
             // Empty name -> date-stamped default. yyyyMMdd is monotonically
@@ -525,7 +535,7 @@ public partial class Map
             }
             catch (Exception ex)
             {
-                Toasts.Error($"Save route failed: {ex.Message}");
+                Toasts.LogException(ex, "Save route");
                 ok = false; errMsg = ex.Message;
                 errorToasted = true;
             }
@@ -562,7 +572,7 @@ public partial class Map
                     if (enabledRoutes.Contains(existingId))
                     {
                         try { await AddRouteToMap(newRoute); }
-                        catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
+                        catch (JSException ex) { Toasts.LogException(ex, "Display route"); }
                     }
 
                     // If the saved route is currently the active course,
@@ -590,7 +600,7 @@ public partial class Map
                     enabledRoutes.Add(newRoute.Id);
                     await Settings.SetEnabledRoutesAsync(enabledRoutes);
                     try { await AddRouteToMap(newRoute); }
-                    catch (JSException ex) { Toasts.Error($"Display route failed: {ex.Message}"); }
+                    catch (JSException ex) { Toasts.LogException(ex, "Display route"); }
                 }
                 RebuildFilteredLayers();
             }
@@ -667,7 +677,7 @@ public partial class Map
             }
             catch (Exception ex)
             {
-                Toasts.Error($"Route saved but start navigation failed: {ex.Message}");
+                Toasts.LogException(ex, "Route saved, but start navigation");
             }
         }
     }

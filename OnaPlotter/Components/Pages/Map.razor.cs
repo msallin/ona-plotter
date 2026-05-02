@@ -79,7 +79,7 @@ public partial class Map
 
             ApiResult ru;
             try { ru = await WaypointApi.UpdateAsync(existing, name, description); }
-            catch (Exception ex) { Toasts.Error($"Save waypoint '{name}' failed: {ex.Message}"); return; }
+            catch (Exception ex) { Toasts.LogException(ex, $"Save waypoint '{name}'"); return; }
             if (!ru.Success) { Toasts.Error($"Save waypoint '{name}' failed: {ru.Error ?? "server rejected"}"); return; }
 
             loadedWaypoints = loadedWaypoints.Select(w =>
@@ -110,7 +110,7 @@ public partial class Map
         // Create branch: POST at the context-menu position.
         ApiResult<string> r;
         try { r = await WaypointApi.CreateAsync(name, contextMenuLat, contextMenuLon, description); }
-        catch (Exception ex) { Toasts.Error($"Save waypoint '{name}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Save waypoint '{name}'"); return; }
 
         if (!r.Success || string.IsNullOrEmpty(r.Value))
         {
@@ -154,7 +154,7 @@ public partial class Map
 
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete waypoint '{label}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Delete waypoint '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
@@ -253,7 +253,7 @@ public partial class Map
             }
         }
         catch (JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
     }
 
     // ---- Note (create, save, delete, focus, show/hide) ---------------
@@ -308,7 +308,7 @@ public partial class Map
 
             ApiResult ru;
             try { ru = await NoteApi.UpdateAsync(existing, title, description); }
-            catch (Exception ex) { Toasts.Error($"Save note '{title}' failed: {ex.Message}"); return; }
+            catch (Exception ex) { Toasts.LogException(ex, $"Save note '{title}'"); return; }
             if (!ru.Success) { Toasts.Error($"Save note '{title}' failed: {ru.Error ?? "server rejected"}"); return; }
 
             loadedNotes = loadedNotes.Select(x =>
@@ -340,7 +340,7 @@ public partial class Map
         // Create branch: POST at the context-menu position.
         ApiResult<string> r;
         try { r = await NoteApi.CreateAsync(title, description, contextMenuLat, contextMenuLon); }
-        catch (Exception ex) { Toasts.Error($"Save note '{title}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Save note '{title}'"); return; }
 
         if (!r.Success || string.IsNullOrEmpty(r.Value))
         {
@@ -379,7 +379,7 @@ public partial class Map
         string label = loadedNotes.FirstOrDefault(n => n.Id == id)?.Title ?? id;
         ApiResult r;
         try { r = await NoteApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete note '{label}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Delete note '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete note '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
@@ -412,7 +412,7 @@ public partial class Map
             }
             Toasts.Success($"Navigating to {(string.IsNullOrWhiteSpace(note.Title) ? "note" : note.Title)}");
         }
-        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Navigate"); }
     }
 
     /// <summary>Invoked from the JS popup's Edit button: open the
@@ -484,7 +484,7 @@ public partial class Map
             }
         }
         catch (JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.Error($"Share failed: {ex.Message}"); }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
     }
 
     private async Task FocusNote(SignalkNote note)
@@ -619,7 +619,7 @@ public partial class Map
                 contextMenuLat, contextMenuLon, newRegionRadiusMeters,
                 newRegionIsHazard);
         }
-        catch (Exception ex) { Toasts.Error($"Save region '{title}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Save region '{title}'"); return; }
         if (!r.Success || string.IsNullOrEmpty(r.Value))
         {
             Toasts.Error($"Save region '{title}' failed: {r.Error ?? "server rejected"}");
@@ -645,7 +645,7 @@ public partial class Map
         string label = loadedRegions.FirstOrDefault(rg => rg.Id == id)?.Name ?? id;
         ApiResult r;
         try { r = await RegionApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete region '{label}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Delete region '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete region '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (module is not null)
@@ -735,7 +735,7 @@ public partial class Map
             }
             Toasts.Success($"Skipped to WP {wpNumber}");
         }
-        catch (Exception ex) { Toasts.Error($"Skip to WP {wpNumber} failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, $"Skip to WP {wpNumber}"); }
     }
 
     [JSInvokable]
@@ -744,7 +744,7 @@ public partial class Map
         string label = availableRoutes.FirstOrDefault(rt => rt.Id == id)?.Name ?? id;
         ApiResult r;
         try { r = await RouteApi.DeleteAsync(id); }
-        catch (Exception ex) { Toasts.Error($"Delete route '{label}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Delete route '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete route '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         // Strip from enabled + draw order so the UI forgets it too.
@@ -819,7 +819,7 @@ public partial class Map
             }
             else Toasts.Error($"Start route failed: {r.Error ?? "server rejected"}");
         }
-        catch (Exception ex) { Toasts.Error($"Start route failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Start route"); }
     }
 
     private async Task FocusRegion(SignalkRegion region)

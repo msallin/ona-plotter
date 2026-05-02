@@ -791,7 +791,7 @@
         string label = wp.Name ?? wp.Id;
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(wp.Id); }
-        catch (Exception ex) { Toasts.Error($"Delete waypoint '{label}' failed: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, $"Delete waypoint '{label}'"); return; }
         if (!r.Success) { Toasts.Error($"Delete waypoint '{label}' failed: {r.Error ?? "server rejected"}"); return; }
 
         if (_resourceJs is not null)
@@ -844,7 +844,7 @@
             }
             Toasts.Success($"Navigating to {(string.IsNullOrWhiteSpace(n.Title) ? "note" : n.Title)}");
         }
-        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Navigate"); }
     }
 
     // RenameNoteFromLayers used to live here. The layers-panel Edit
@@ -883,9 +883,9 @@
         try
         {
             var r = await RadarApi.SetControlAsync(radarId, "power", body);
-            if (!r.Success) { Toasts.Error($"Radar power: {r.Error ?? "rejected by server"}"); return; }
+            if (!r.Success) { Toasts.Error($"Radar power change failed: {r.Error ?? "server rejected"}"); return; }
         }
-        catch (Exception ex) { Toasts.Error($"Radar power: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Radar power change"); return; }
         // Targeted refresh: only re-fetch the radar list (1 GET),
         // not the broad resource refresh (which fired 5+ unrelated
         // GETs for waypoints / routes / notes / regions / charts).
@@ -909,9 +909,9 @@
         try
         {
             var r = await RadarApi.SetControlAsync(radarId, "range", body);
-            if (!r.Success) { Toasts.Error($"Radar range: {r.Error ?? "rejected by server"}"); return; }
+            if (!r.Success) { Toasts.Error($"Radar range change failed: {r.Error ?? "server rejected"}"); return; }
         }
-        catch (Exception ex) { Toasts.Error($"Radar range: {ex.Message}"); return; }
+        catch (Exception ex) { Toasts.LogException(ex, "Radar range change"); return; }
         // Range writes apply immediately on Mayara -- a single
         // targeted refresh is enough; no transitional state to
         // wait through.
@@ -1064,7 +1064,7 @@
         catch (HttpRequestException ex)
         {
             if (SignalkClient.IsConnected)
-                Toasts.Error($"Couldn't load {what}: {ex.Message}");
+                Toasts.LogException(ex, $"Load {what}");
             return null;
         }
         catch (TaskCanceledException)
@@ -2352,7 +2352,11 @@
             // "the buddy-list plugin isn't installed or the request wasn't
             // authorised" rather than a transient error. Tell the helm what
             // to check instead of leaving them with developer shorthand.
-            Toasts.Error($"Buddy update failed: {r.Error ?? "the SignalK buddy-list plugin may not be installed or authorised."}");
+            // Buddy list lives in an optional SK plugin; if the helm
+            // hasn't installed it the server just returns "not found".
+            // De-jargon the fallback: helm isn't expected to know
+            // what "authorised" means in the SK admin sense.
+            Toasts.Error($"Buddy update failed: {r.Error ?? "buddy-list plugin missing or you're not signed in."}");
         }
     }
 
@@ -2424,7 +2428,7 @@
             if (!r.Success) { Toasts.Error($"Navigate failed: {r.Error ?? "server rejected"}"); return; }
             Toasts.Success($"Navigating to {lat:F4}, {lon:F4}");
         }
-        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Navigate"); }
     }
 
     private async Task StartRouteFromContextMenu()
@@ -2503,7 +2507,7 @@
                         await CourseApi.SetDestinationPositionAsync(lat, lon);
                         Toasts.Success("Navigation restored");
                     }
-                    catch (Exception ex) { Toasts.Error($"Undo failed: {ex.Message}"); }
+                    catch (Exception ex) { Toasts.LogException(ex, "Undo"); }
                 },
                 durationSec: 6);
         }
@@ -2517,7 +2521,7 @@
             await CourseApi.SetDestinationAsync(wp.Id);
             Toasts.Success($"Navigating to {wp.Name ?? "waypoint"}");
         }
-        catch (Exception ex) { Toasts.Error($"Navigate failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Navigate"); }
     }
 
     /// <summary>
@@ -2547,7 +2551,7 @@
                 Toasts.Error($"Next waypoint failed: {r.Error ?? "server rejected"}");
             }
         }
-        catch (Exception ex) { Toasts.Error($"Next waypoint failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Next waypoint"); }
     }
 
     /// <summary>Step back one waypoint via SetPointIndexAsync. Used
@@ -2566,7 +2570,7 @@
                 Toasts.Error($"Previous waypoint failed: {r.Error ?? "server rejected"}");
             }
         }
-        catch (Exception ex) { Toasts.Error($"Previous waypoint failed: {ex.Message}"); }
+        catch (Exception ex) { Toasts.LogException(ex, "Previous waypoint"); }
     }
 
 
@@ -2866,7 +2870,7 @@
             try
             {
                 try { r = await AnchorAlarmApi.RaiseAsync(); }
-                catch (Exception ex) { Toasts.Error($"Raise anchor failed: {ex.Message}"); return; }
+                catch (Exception ex) { Toasts.LogException(ex, "Raise anchor"); return; }
 
                 if (!r.Success)
                 {
@@ -2967,7 +2971,7 @@
             if (Data.HasActiveCourse)
             {
                 try { await CourseApi.ClearAsync(); }
-                catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+                catch (Exception ex) { Toasts.LogException(ex, "Stop course"); }
             }
             // Persist the choice so the next drop's heuristic
             // fallback (no-depth case) suggests this value.
@@ -2987,7 +2991,7 @@
             if (Data.HasActiveCourse)
             {
                 try { await CourseApi.ClearAsync(); }
-                catch (Exception ex) { Toasts.Error($"Stop course failed: {ex.Message}"); }
+                catch (Exception ex) { Toasts.LogException(ex, "Stop course"); }
             }
             await _anchorJs.SetAnchorAsync(lat, lon, radiusMeters);
             anchorManualLat = lat;

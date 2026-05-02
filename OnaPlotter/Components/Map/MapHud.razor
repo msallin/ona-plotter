@@ -608,7 +608,7 @@
         }
         catch (Exception ex)
         {
-            Toasts.Error($"Autopilot nudge failed: {ex.Message}");
+            Toasts.LogException(ex, "Autopilot nudge");
         }
     }
 
