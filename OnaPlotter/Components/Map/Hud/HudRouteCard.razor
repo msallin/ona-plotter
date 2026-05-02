@@ -160,7 +160,11 @@
                     }
                     @if (Snapshot.RouteTimeToGo is not null)
                     {
-                        <span class="route-total-value">@Format.TimeToGo(Snapshot.RouteTimeToGo)</span>
+                        @* "TTG" prefix added so the helm reads the
+                           formatted duration as 'time to go' rather
+                           than parsing it as the ETA's first half;
+                           the ETA next to it carries its own label. *@
+                        <span class="route-total-value">TTG @Format.TimeToGo(Snapshot.RouteTimeToGo)</span>
                         <span class="route-total-value">ETA @Format.Eta(Snapshot.RouteTimeToGo)</span>
                     }
                 </div>
