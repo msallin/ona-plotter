@@ -58,7 +58,7 @@
             @if (importing)
             {
                 <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                <span>Importing...</span>
+                <span>@(_importProgressTotal > 0 ? $"Importing {_importProgressDone}/{_importProgressTotal}..." : "Importing...")</span>
             }
             else
             {
@@ -67,6 +67,14 @@
             <InputFile OnChange="HandleImport" Accept=".gpx,.geojson,.json,.xml"
                        style="display:none;" disabled="@importing" />
         </label>
+        @if (importing)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                    @onclick="CancelImport"
+                    title="Stop the import after the current item; already-saved items are kept on the server">
+                Cancel
+            </button>
+        }
     </header>
 
     <ul class="nav nav-tabs resources-tabs" role="tablist">
@@ -254,6 +262,28 @@
     /// SignalK server (per-feature POST round-trips) doesn't tempt
     /// the helm into picking the file twice.</summary>
     private bool importing;
+
+    /// <summary>Per-feature progress for the import spinner ("Importing
+    /// 5/42..."). Reset to 0/0 between imports. Updated synchronously
+    /// inside <see cref="HandleImport"/> after each per-feature await
+    /// so the helm sees forward motion on a long import without
+    /// guessing whether the network is hung.</summary>
+    private int _importProgressDone;
+    private int _importProgressTotal;
+
+    /// <summary>Driver for the Cancel button on the import spinner row.
+    /// Null when no import is in flight; created on entry to
+    /// <see cref="HandleImport"/> and disposed in the finally. The
+    /// helm tap fires <see cref="CancelImport"/> which signals; the
+    /// per-feature loop checks the token between items so already-
+    /// saved features stay on the server.</summary>
+    private CancellationTokenSource? _importCts;
+
+    private void CancelImport()
+    {
+        try { _importCts?.Cancel(); }
+        catch (ObjectDisposedException) { /* already finishing */ }
+    }
     /// <summary>Filesystem cap on the import payload. 8 MB matches
     /// what GpxService used to allow; a typical season's GPX or
     /// GeoJSON dump is under 1 MB.</summary>
@@ -459,6 +489,10 @@
     {
         if (importing) return;
         importing = true;
+        _importProgressDone = 0;
+        _importProgressTotal = 0;
+        _importCts = new CancellationTokenSource();
+        var ct = _importCts.Token;
         StateHasChanged();
         try
         {
@@ -466,7 +500,7 @@
             using (var reader = new System.IO.StreamReader(
                 e.File.OpenReadStream(maxAllowedSize: MaxImportBytes)))
             {
-                content = await reader.ReadToEndAsync();
+                content = await reader.ReadToEndAsync(ct);
             }
 
             ImportResult parsed;
@@ -484,44 +518,65 @@
             // Per-feature creates. Fire sequentially to keep server
             // load gentle (typical pi-class SK server) and so a
             // mid-flight failure surfaces with an accurate count.
+            // The token check between items lets the helm cancel a
+            // slow import (sat link / 4G blip) without losing the
+            // already-saved entries on the server.
+            _importProgressTotal = parsed.TotalCount;
             int rOk = 0, wOk = 0, nOk = 0, gOk = 0, failed = 0;
+            bool cancelled = false;
             foreach (var route in parsed.Routes)
             {
+                if (ct.IsCancellationRequested) { cancelled = true; break; }
                 try
                 {
-                    var r = await RouteApi.SaveAsync(route.Name, route.CoordsLatLon);
+                    var r = await RouteApi.SaveAsync(route.Name, route.CoordsLatLon, ct);
                     if (r.Success) rOk++; else failed++;
                 }
+                catch (OperationCanceledException) { cancelled = true; break; }
                 catch { failed++; }
+                _importProgressDone++;
+                StateHasChanged();
             }
             foreach (var wp in parsed.Waypoints)
             {
+                if (cancelled || ct.IsCancellationRequested) { cancelled = true; break; }
                 try
                 {
-                    var r = await WaypointApi.CreateAsync(wp.Name, wp.Lat, wp.Lon, wp.Description);
+                    var r = await WaypointApi.CreateAsync(wp.Name, wp.Lat, wp.Lon, wp.Description, ct);
                     if (r.Success) wOk++; else failed++;
                 }
+                catch (OperationCanceledException) { cancelled = true; break; }
                 catch { failed++; }
+                _importProgressDone++;
+                StateHasChanged();
             }
             foreach (var note in parsed.Notes)
             {
+                if (cancelled || ct.IsCancellationRequested) { cancelled = true; break; }
                 try
                 {
                     var r = await NoteApi.CreateAsync(
-                        note.Title, note.Description ?? "", note.Lat, note.Lon);
+                        note.Title, note.Description ?? "", note.Lat, note.Lon, ct);
                     if (r.Success) nOk++; else failed++;
                 }
+                catch (OperationCanceledException) { cancelled = true; break; }
                 catch { failed++; }
+                _importProgressDone++;
+                StateHasChanged();
             }
             foreach (var region in parsed.Regions)
             {
+                if (cancelled || ct.IsCancellationRequested) { cancelled = true; break; }
                 try
                 {
                     var r = await RegionApi.CreatePolygonAsync(
-                        region.Name, region.Description ?? "", region.RingLatLon);
+                        region.Name, region.Description ?? "", region.RingLatLon, ct: ct);
                     if (r.Success) gOk++; else failed++;
                 }
+                catch (OperationCanceledException) { cancelled = true; break; }
                 catch { failed++; }
+                _importProgressDone++;
+                StateHasChanged();
             }
 
             // Refresh lists so the new entries appear in their tabs.
@@ -531,7 +586,11 @@
                 + $"{wOk} waypoint{Plural(wOk)}, "
                 + $"{nOk} note{Plural(nOk)}, "
                 + $"{gOk} region{Plural(gOk)}";
-            if (failed > 0)
+            if (cancelled)
+            {
+                Toasts.Warning($"{summary} (cancelled at {_importProgressDone} of {_importProgressTotal}).");
+            }
+            else if (failed > 0)
             {
                 Toasts.Error($"{summary}. {failed} failed (see browser console).");
             }
@@ -540,6 +599,10 @@
                 Toasts.Success(summary);
             }
         }
+        catch (OperationCanceledException)
+        {
+            Toasts.Warning("Import cancelled.");
+        }
         catch (Exception ex)
         {
             Toasts.Error($"Import failed: {ex.Message}");
@@ -547,6 +610,10 @@
         finally
         {
             importing = false;
+            _importProgressDone = 0;
+            _importProgressTotal = 0;
+            _importCts?.Dispose();
+            _importCts = null;
             StateHasChanged();
         }
 
