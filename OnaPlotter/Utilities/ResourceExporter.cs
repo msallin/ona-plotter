@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Xml.Linq;
 using OnaPlotter.Models;
+using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Utilities;
 
@@ -45,14 +46,9 @@ public static class ResourceExporter
     // anchor circle's centre when round-tripped.
     private const string LatLonFormat = "F6";
 
-    // Shared System.Text.Json options. Indented for human-readable
-    // GeoJSON exports (the helm sometimes opens the file in a text
-    // editor to verify before sharing). PreferUtf8 default is fine
-    // -- the JS download wraps in a UTF-8 Blob.
-    private static readonly JsonSerializerOptions PrettyJson = new()
-    {
-        WriteIndented = true,
-    };
+    // GeoJSON Feature shapes serialise via OnaGeoJsonContext (source-
+    // gen, WriteIndented=true). The earlier shared `PrettyJson` options
+    // were redundant with the context's options; deleted.
 
     // ---------------- ROUTE -----------------------------------------
 
@@ -95,17 +91,11 @@ public static class ResourceExporter
         var coords = ReadCoords(route.Feature.Geometry.Coordinates);
         if (coords is null) return null;
 
-        var feature = new
-        {
-            type = "Feature",
-            properties = NameDescDistance(route.Name, route.Description, route.Distance),
-            geometry = new
-            {
-                type = "LineString",
-                coordinates = coords,
-            },
-        };
-        return JsonSerializer.Serialize(feature, PrettyJson);
+        var feature = new GeoJsonRouteFeature(
+            "Feature",
+            new GeoJsonRouteProperties(route.Name ?? "", route.Description ?? "", route.Distance),
+            new GeoJsonLineStringGeometry("LineString", coords));
+        return JsonSerializer.Serialize(feature, OnaGeoJsonContext.Default.GeoJsonRouteFeature);
     }
 
     // ---------------- WAYPOINT --------------------------------------
@@ -124,19 +114,13 @@ public static class ResourceExporter
     public static string? WaypointGeoJson(SignalkWaypoint w)
     {
         if (w.Latitude is null || w.Longitude is null) return null;
-        var feature = new
-        {
-            type = "Feature",
-            properties = NameOnly(w.Name),
-            geometry = new
-            {
-                type = "Point",
-                // GeoJSON convention is [lon, lat]. Swap from the
-                // helm-friendly [lat, lon] used in the model.
-                coordinates = new[] { w.Longitude.Value, w.Latitude.Value },
-            },
-        };
-        return JsonSerializer.Serialize(feature, PrettyJson);
+        var feature = new GeoJsonWaypointFeature(
+            "Feature",
+            new GeoJsonNameProperties(w.Name ?? ""),
+            // GeoJSON convention is [lon, lat]. Swap from the
+            // helm-friendly [lat, lon] used in the model.
+            new GeoJsonPointGeometry("Point", [w.Longitude.Value, w.Latitude.Value]));
+        return JsonSerializer.Serialize(feature, OnaGeoJsonContext.Default.GeoJsonWaypointFeature);
     }
 
     // ---------------- NOTE ------------------------------------------
@@ -162,17 +146,11 @@ public static class ResourceExporter
     public static string? NoteGeoJson(SignalkNote n)
     {
         if (n.Position is null) return null;
-        var feature = new
-        {
-            type = "Feature",
-            properties = TitleDesc(n.Title, n.Description),
-            geometry = new
-            {
-                type = "Point",
-                coordinates = new[] { n.Position.Longitude, n.Position.Latitude },
-            },
-        };
-        return JsonSerializer.Serialize(feature, PrettyJson);
+        var feature = new GeoJsonNoteFeature(
+            "Feature",
+            new GeoJsonTitleDescProperties(n.Title ?? "", n.Description ?? ""),
+            new GeoJsonPointGeometry("Point", [n.Position.Longitude, n.Position.Latitude]));
+        return JsonSerializer.Serialize(feature, OnaGeoJsonContext.Default.GeoJsonNoteFeature);
     }
 
     // ---------------- TRIP (history segment) ------------------------
@@ -228,35 +206,29 @@ public static class ResourceExporter
         for (int i = 0; i < points.Count; i++)
             coords[i] = [points[i].Longitude, points[i].Latitude];
 
-        var feature = new
-        {
-            type = "Feature",
-            properties = new
-            {
-                name = name ?? "",
+        var feature = new GeoJsonTripFeature(
+            "Feature",
+            new GeoJsonTripProperties(
+                Name: name ?? "",
                 // ISO-8601 in UTC. Same convention as the GPX <time>
                 // elements above so downstream tooling sees one format.
-                startUtc = segment.StartUtc.ToString("o", Inv),
-                endUtc = segment.EndUtc.ToString("o", Inv),
+                StartUtc: segment.StartUtc.ToString("o", Inv),
+                EndUtc: segment.EndUtc.ToString("o", Inv),
                 // Numeric fields stay raw so the consumer can format
-                // (knots vs m/s, nm vs km, h:mm vs seconds). null fields
-                // elide via JsonSerializer for missing aggregates.
-                durationSec = segment.Duration.TotalSeconds,
-                distanceMeters = segment.DistanceMetres,
-                sogAvgMs = segment.SogAvgMs,
-                sogMaxMs = segment.SogMaxMs,
-                sogMinMs = segment.SogMinMs,
-                twsAvgMs = segment.WindSpeedAvgMs,
-                pointCount = segment.PointCount,
-                isStationary = segment.IsStationary,
-            },
-            geometry = new
-            {
-                type = "LineString",
-                coordinates = coords,
-            },
-        };
-        return JsonSerializer.Serialize(feature, PrettyJson);
+                // (knots vs m/s, nm vs km, h:mm vs seconds). Nullable
+                // doubles ride through unchanged; they emit as
+                // "key": null when absent (matches earlier PrettyJson
+                // behaviour, no DefaultIgnoreCondition was set).
+                DurationSec: segment.Duration.TotalSeconds,
+                DistanceMeters: segment.DistanceMetres,
+                SogAvgMs: segment.SogAvgMs,
+                SogMaxMs: segment.SogMaxMs,
+                SogMinMs: segment.SogMinMs,
+                TwsAvgMs: segment.WindSpeedAvgMs,
+                PointCount: segment.PointCount,
+                IsStationary: segment.IsStationary),
+            new GeoJsonLineStringGeometry("LineString", coords));
+        return JsonSerializer.Serialize(feature, OnaGeoJsonContext.Default.GeoJsonTripFeature);
     }
 
     // ---------------- REGION ----------------------------------------
@@ -281,17 +253,27 @@ public static class ResourceExporter
             .Select(ring => CloseRing(ring.Select(p => new[] { p[1], p[0] }).ToArray()))
             .ToArray();
 
-        object geometry = rings.Length == 1
-            ? new { type = "Polygon", coordinates = new[] { rings[0] } }
-            : new { type = "MultiPolygon", coordinates = rings.Select(r => new[] { r }).ToArray() };
-
-        var feature = new
+        var properties = new GeoJsonNameDescProperties(r.Name ?? "", r.Description ?? "");
+        // Single-Polygon and MultiPolygon are distinct record shapes
+        // because source-gen wants a concrete type per call site;
+        // dispatch on ring count.
+        if (rings.Length == 1)
         {
-            type = "Feature",
-            properties = NameDesc(r.Name, r.Description),
-            geometry,
-        };
-        return JsonSerializer.Serialize(feature, PrettyJson);
+            var feature = new GeoJsonRegionPolygonFeature(
+                "Feature",
+                properties,
+                new GeoJsonPolygonGeometry("Polygon", [rings[0]]));
+            return JsonSerializer.Serialize(feature, OnaGeoJsonContext.Default.GeoJsonRegionPolygonFeature);
+        }
+        else
+        {
+            var multi = rings.Select(ring => new[] { ring }).ToArray();
+            var feature = new GeoJsonRegionMultiPolygonFeature(
+                "Feature",
+                properties,
+                new GeoJsonMultiPolygonGeometry("MultiPolygon", multi));
+            return JsonSerializer.Serialize(feature, OnaGeoJsonContext.Default.GeoJsonRegionMultiPolygonFeature);
+        }
     }
 
     // ---------------- helpers ---------------------------------------
@@ -359,33 +341,10 @@ public static class ResourceExporter
         return closed;
     }
 
-    // Properties bags. Tiny anonymous objects rather than a shared
-    // record because System.Text.Json's anonymous-type serialiser
-    // omits null fields automatically (with the "ignore null"
-    // option), but we want to emit known-empty fields as empty
-    // strings to match Freeboard's expectation. So we hand-build
-    // the bag per resource type.
-
-    private static object NameOnly(string? name) =>
-        new { name = name ?? "" };
-
-    private static object NameDesc(string? name, string? description) =>
-        new { name = name ?? "", description = description ?? "" };
-
-    private static object TitleDesc(string? title, string? description) =>
-        new { title = title ?? "", description = description ?? "" };
-
-    /// <summary>Route-specific properties bag. <c>distance</c> in
-    /// metres survives the round-trip so a re-import doesn't have
-    /// to recompute the haversine sum to render "X.XX nm".</summary>
-    private static object NameDescDistance(string? name, string? description, double? distance) =>
-        new
-        {
-            name = name ?? "",
-            description = description ?? "",
-            // null elides via JsonSerializer when no distance was
-            // stored on the source record (old OnaPlotter-saved
-            // routes pre-2026-04-28).
-            distance,
-        };
+    // Properties-bag construction is inlined at each export site
+    // now; the per-shape named records (GeoJsonRouteProperties,
+    // GeoJsonNameProperties, GeoJsonTitleDescProperties,
+    // GeoJsonNameDescProperties) replaced the earlier private helpers
+    // that returned `object` and let the reflection serializer pick
+    // the shape. See OnaPlotter/Models/GeoJsonDtos.cs.
 }

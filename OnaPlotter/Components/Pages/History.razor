@@ -23,6 +23,7 @@
    is shared across the app (singleton) and memoises the load,
    so repeat exports cost nothing extra. *@
 @inject XmlAssemblyLoader XmlLoader
+@using OnaPlotter.Services.Json
 
 <PageTitle>History</PageTitle>
 
@@ -1131,7 +1132,7 @@
                     var m = window._historyMap;
                     if (!m) return;
                     if (!window._historyChartLayers) window._historyChartLayers = {{}};
-                    var id = {System.Text.Json.JsonSerializer.Serialize(chart.Identifier)};
+                    var id = {System.Text.Json.JsonSerializer.Serialize(chart.Identifier, OnaJsonContext.Default.String)};
                     if (window._historyChartLayers[id]) return;
                     var opts = {{
                         minZoom: {(chart.MinZoom ?? 1).ToString(System.Globalization.CultureInfo.InvariantCulture)},
@@ -1142,9 +1143,9 @@
                         attribution: '',
                         errorTileUrl: ''
                     }};
-                    var b = {(bounds is { Length: 4 } ? System.Text.Json.JsonSerializer.Serialize(bounds) : "null")};
+                    var b = {(bounds is { Length: 4 } ? System.Text.Json.JsonSerializer.Serialize(bounds, OnaJsonContext.Default.DoubleArray) : "null")};
                     if (b) opts.bounds = L.latLngBounds([b[1], b[0]], [b[3], b[2]]);
-                    var layer = L.tileLayer({System.Text.Json.JsonSerializer.Serialize(resolved)}, opts);
+                    var layer = L.tileLayer({System.Text.Json.JsonSerializer.Serialize(resolved, OnaJsonContext.Default.String)}, opts);
                     layer.setZIndex(50);
                     layer.addTo(m);
                     window._historyChartLayers[id] = layer;
@@ -1164,7 +1165,7 @@
                     if (!m) return;
                     var bag = window._historyChartLayers;
                     if (!bag) return;
-                    var id = {System.Text.Json.JsonSerializer.Serialize(id)};
+                    var id = {System.Text.Json.JsonSerializer.Serialize(id, OnaJsonContext.Default.String)};
                     var l = bag[id];
                     if (l) {{ m.removeLayer(l); delete bag[id]; }}
                 }})()
@@ -1372,7 +1373,7 @@
                     // accordingly. A previous version read s.coords and
                     // crashed at L.polyline(undefined, ...) on every
                     // History mount.
-                    var segs = {System.Text.Json.JsonSerializer.Serialize(segPayload)};
+                    var segs = {System.Text.Json.JsonSerializer.Serialize(segPayload, OnaJsonContext.Default.ListSegmentPayload)};
                     var statAsDot = {statAsDotJs};
                     var movingBaseColor = getComputedStyle(document.documentElement)
                         .getPropertyValue('--map-own').trim() || '#ec4899';
@@ -1474,7 +1475,7 @@
                     if ({fitBoundsJs} && bounds) m.fitBounds(bounds, {{ padding: [40, 40] }});
 
                     if (window._historyMarker) m.removeLayer(window._historyMarker);
-                    var coords = {System.Text.Json.JsonSerializer.Serialize(coords)};
+                    var coords = {System.Text.Json.JsonSerializer.Serialize(coords, OnaJsonContext.Default.DoubleArrayArray)};
                     // Playback marker pulls --map-playback so a future
                     // palette tweak doesn't leave a frozen amber here.
                     var playbackCol = getComputedStyle(document.documentElement)

@@ -29,25 +29,20 @@ OnaPlotter/Services/Api/AuthApi.cs:74             -- LoginStatus deser
 OnaPlotter/Services/RouteDraftStore.cs:27,70      -- RouteDraft round-trip
 ```
 
-Still reflection (anonymous-type serialise; not a blocker for partial-trim, blocks the full-trim flip):
+All known reflection-based JSON serialise sites in the application code are now migrated to source-gen. Recent migrations:
 
 ```
-OnaPlotter/Components/Pages/Map.razor.cs:234,465  -- share-feature Serialize(new {...})
-OnaPlotter/Components/Pages/Resources.razor:682,773 -- share-feature Serialize(new {...})
-OnaPlotter/Components/Pages/History.razor:1134,1145,1147,1167,1375,1477 -- JS-interop literal embedding
-OnaPlotter/Models/RadarDtos.cs:501                -- SerializeToElement(...) of an anon shape
-OnaPlotter/Utilities/ResourceExporter.cs:108,139,175,259,294 -- per-feature GPX-twin GeoJSON
+OnaPlotter/Services/SignalkClient.cs                -- SignalkSubscribeRequest / SignalkUnsubscribeRequest
+OnaPlotter/Utilities/ResourceExporter.cs            -- 5 GeoJSON Feature shapes (Route / Waypoint / Note / Trip / Region)
+OnaPlotter/Components/Pages/Map.razor.cs            -- 2 share-feature blobs (Waypoint / Note)
+OnaPlotter/Components/Pages/Resources.razor         -- 2 share-feature blobs (Waypoint / Note)
+OnaPlotter/Components/Pages/History.razor           -- 6 JS-interop literal embeds (string, double[], double[][], List<SegmentPayload>)
+OnaPlotter/Models/RadarDtos.cs                      -- 1 primitive SerializeToElement
 ```
 
-Migrated since (now source-gen):
+GeoJSON exports use a dedicated `OnaGeoJsonContext` (source-gen with `WriteIndented = true`); the wire-protocol shapes stay in `OnaJsonContext` (compact). Per-record `[JsonIgnore(Condition = WhenWritingNull)]` reproduces the previous `DefaultIgnoreCondition` behaviour where it was used (share blobs only).
 
-```
-OnaPlotter/Services/SignalkClient.cs:1443,1462    -- SignalkSubscribeRequest / SignalkUnsubscribeRequest
-```
-
-To finish the trim-blocker work for the rest, replace each `new { ... }` with a named `record` (e.g. `RouteFeature(string Type, RouteProperties Properties, RouteGeometry Geometry)`) and add `[JsonSerializable(typeof(T))]` to `OnaJsonContext`. Mechanical, but spread across many files; the SignalkClient migration shows the pattern.
-
-**Estimated effort for the remaining anonymous-type sweep**: 2-3 hours.
+**Status**: the application-side surface is source-gen-clean. Trim-warning audit on a `TrimMode=full` publish should now produce zero IL2xxx warnings on `OnaPlotter.dll`.
 
 ### 2. AlarmManager Activator-based test ctor
 
