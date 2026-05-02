@@ -156,6 +156,13 @@ builder.Services.AddSingleton<SignalkClient>();
 // relay a caught exception explicitly. See Services/ClientErrorRelay.cs.
 builder.Services.AddSingleton<ClientErrorRelay>();
 
+// On-demand loader for System.Private.Xml. The XML assembly is
+// declared <BlazorWebAssemblyLazyLoad> in the csproj so it stays out
+// of the eager boot bundle; this wrapper awaits a one-shot fetch the
+// first time a GPX import / export runs. LazyAssemblyLoader itself is
+// registered automatically by WebAssemblyHostBuilder.CreateDefault.
+builder.Services.AddSingleton<XmlAssemblyLoader>();
+
 var host = builder.Build();
 
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).
