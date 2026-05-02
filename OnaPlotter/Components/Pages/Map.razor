@@ -1582,8 +1582,10 @@
 
         // Welcome card takes precedence over the touch coachmark on
         // first-ever visit since it covers long-press explicitly.
-        var welcomeShown = await MaybeShowWelcomeAsync();
-        if (!welcomeShown) await MaybeShowTouchCoachmarkAsync();
+        // The card is now surfaced from OnInitializedAsync so it can
+        // paint BEFORE the REST-fetch toasts; here we only chain the
+        // coachmark when the welcome wasn't shown.
+        if (!welcomeVisible) await MaybeShowTouchCoachmarkAsync();
 
         // Resolve any deep-link from /map?focus=<type>:<id> or
         // ?edit=<type>:<id> -- set by the Resources page's View / Edit

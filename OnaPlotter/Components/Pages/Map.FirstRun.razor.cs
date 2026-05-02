@@ -32,23 +32,74 @@ public partial class Map
     private bool welcomeVisible;
 
     /// <summary>
+    /// Surface the welcome card AT INIT time, before the long
+    /// chain of REST seeds + JS interop init in OnAfterRenderAsync
+    /// runs. Earlier the card waited until after those completed,
+    /// which meant any "Couldn't reach SignalK" toast painted on
+    /// top of the welcome card during the same tick -- helms saw
+    /// the card half-covered by the error and tapped Got It without
+    /// reading. Pushing this into OnInitializedAsync lets the card
+    /// land first and the toasts queue under it.
+    ///
+    /// The OnAfterRenderAsync gate that previously called this
+    /// helper now just reads the existing <see cref="welcomeVisible"/>
+    /// to decide whether to chain the touch coachmark.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        // ?welcome=1 (set by the Settings page's "Show welcome card
+        // again" link) bypasses the dismissed flag without clearing
+        // it. The deep-link handler in OnAfterRenderAsync drops the
+        // query string after consume so a page reload doesn't loop.
+        bool forceShow = false;
+        try
+        {
+            var uri = new Uri(Nav.Uri);
+            if (!string.IsNullOrEmpty(uri.Query)
+                && uri.Query.Contains("welcome=1", StringComparison.Ordinal))
+            {
+                forceShow = true;
+            }
+        }
+        catch { /* malformed URI: just don't force */ }
+        await MaybeShowWelcomeAsync(forceShow: forceShow);
+    }
+
+    /// <summary>
     /// Returns true if the welcome card was shown so OnAfterRenderAsync
     /// can gate the coachmark: both on the same first visit piles up,
     /// so we show welcome now and let DismissWelcome chain the
     /// coachmark when the user taps Got it.
+    ///
+    /// Also wired to a "Show welcome again" link in Settings so the
+    /// helm can re-read the onboarding after the first dismissal --
+    /// passing <paramref name="forceShow"/> = true bypasses the KV
+    /// flag without clearing it.
     /// </summary>
-    private async Task<bool> MaybeShowWelcomeAsync()
+    private async Task<bool> MaybeShowWelcomeAsync(bool forceShow = false)
     {
         try
         {
-            var dismissed = await Kv.GetAsync(WelcomeKey);
-            if (dismissed == "1") return false;
+            if (!forceShow)
+            {
+                var dismissed = await Kv.GetAsync(WelcomeKey);
+                if (dismissed == "1") return false;
+            }
             welcomeVisible = true;
             StateHasChanged();
             return true;
         }
         catch (Exception) { return false; }
     }
+
+    /// <summary>Public re-open hook for the Settings page's "Show
+    /// welcome again" link. Surfaces the card unconditionally
+    /// (regardless of the dismissed KV flag) so the helm can
+    /// re-read the onboarding without nuking the flag itself --
+    /// taps to Got It still close the card; the flag stays as it
+    /// was on entry.</summary>
+    public Task ShowWelcomeAgainAsync() => MaybeShowWelcomeAsync(forceShow: true);
 
     private async Task DismissWelcome()
     {
