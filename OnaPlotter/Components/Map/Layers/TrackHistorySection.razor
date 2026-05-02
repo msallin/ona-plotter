@@ -1,8 +1,8 @@
-@* Toggle + duration + within-bounds picker for the server-side
-   position history overlay. Was a fixed 24h checkbox; now matches the
-   History page's duration ladder (1h / 6h / 24h / 3d / 7d / all) plus
-   a "within current view" filter that re-clips client-side as the
-   helm pans, without re-fetching. *@
+@* Toggle + duration + resolution + within-bounds picker for the
+   server-side position history overlay. Resolution mirrors the
+   History page's ladder (1s..4h) so the helm can coarsen sampling
+   when a long window (7d / all) is too dense to render fluidly, or
+   when the SK history endpoint times out on a fine-grained span. *@
 
 <SectionHeader Title="History"
                Expanded="@expanded"
@@ -38,6 +38,27 @@
                     <option value="all">All time</option>
                 </select>
             </label>
+            @* Resolution ladder mirrors the History page exactly so the
+               helm muscle-memory carries across. The "tacks / cruise"
+               annotations on the extremes hint at the right tool: 1 s
+               for short-window detail, 4 h to make a season-spanning
+               window actually loadable. *@
+            <label class="chart-item track-history-row">
+                <span class="chart-item-label">Resolution</span>
+                <select class="form-select form-select-sm track-history-select"
+                        value="@Resolution"
+                        @onchange="OnResolutionChange"
+                        aria-label="Server track sampling resolution">
+                    <option value="1s">1 s (sub-second tacks)</option>
+                    <option value="30s">30 s</option>
+                    <option value="1m">1 m</option>
+                    <option value="5m">5 m</option>
+                    <option value="15m">15 m</option>
+                    <option value="30m">30 m</option>
+                    <option value="1h">1 h</option>
+                    <option value="4h">4 h (season review)</option>
+                </select>
+            </label>
             <label class="chart-item">
                 <input type="checkbox" checked="@WithinBounds"
                        @onchange="(e) => OnWithinBoundsChanged.InvokeAsync((bool)(e.Value ?? false))" />
@@ -53,9 +74,13 @@
 @code {
     [Parameter] public bool Visible { get; set; }
     [Parameter] public string Duration { get; set; } = "1d";
+    /// <summary>Sampling resolution from the SK history ladder
+    /// (1s..4h). Default "1m" matches the prior hardcoded value.</summary>
+    [Parameter] public string Resolution { get; set; } = "1m";
     [Parameter] public bool WithinBounds { get; set; }
     [Parameter] public EventCallback<bool> OnToggle { get; set; }
     [Parameter] public EventCallback<string> OnDurationChanged { get; set; }
+    [Parameter] public EventCallback<string> OnResolutionChanged { get; set; }
     [Parameter] public EventCallback<bool> OnWithinBoundsChanged { get; set; }
 
     private bool expanded = false;
@@ -64,5 +89,11 @@
     {
         var v = e.Value?.ToString() ?? "1d";
         await OnDurationChanged.InvokeAsync(v);
+    }
+
+    private async Task OnResolutionChange(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? "1m";
+        await OnResolutionChanged.InvokeAsync(v);
     }
 }

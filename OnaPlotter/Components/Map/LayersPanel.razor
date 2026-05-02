@@ -81,9 +81,11 @@
 
     <TrackHistorySection Visible="ServerTrackVisible"
                          Duration="@ServerTrackDuration"
+                         Resolution="@ServerTrackResolution"
                          WithinBounds="ServerTrackWithinBounds"
                          OnToggle="OnToggleServerTrack"
                          OnDurationChanged="OnServerTrackDurationChanged"
+                         OnResolutionChanged="OnServerTrackResolutionChanged"
                          OnWithinBoundsChanged="OnServerTrackWithinBoundsChanged" />
 
     @* HUD visibility toggles -- mirrors the Settings page so the
@@ -187,9 +189,11 @@
     [Parameter] public EventCallback<bool> OnToggleRegionsVisible { get; set; }
     [Parameter] public EventCallback<string> OnFocusVessel { get; set; }
     [Parameter] public string ServerTrackDuration { get; set; } = "1d";
+    [Parameter] public string ServerTrackResolution { get; set; } = "1m";
     [Parameter] public bool ServerTrackWithinBounds { get; set; }
     [Parameter] public EventCallback<bool> OnToggleServerTrack { get; set; }
     [Parameter] public EventCallback<string> OnServerTrackDurationChanged { get; set; }
+    [Parameter] public EventCallback<string> OnServerTrackResolutionChanged { get; set; }
     [Parameter] public EventCallback<bool> OnServerTrackWithinBoundsChanged { get; set; }
     [Parameter] public EventCallback<bool> OnToggleWeatherOverlay { get; set; }
     [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
