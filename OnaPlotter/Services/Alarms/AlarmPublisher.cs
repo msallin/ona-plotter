@@ -140,22 +140,62 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
     }
 
+    /// <summary>How long server-side notifications survive after the
+    /// originating plotter goes silent (signalk-server's notification
+    /// GC default). The tracker keeps "we owned this path" entries for
+    /// at least this long after disconnect so a server-replay of our
+    /// own pre-disconnect notifications doesn't get treated by the
+    /// bridge rule as fresh remote alarms after we reconnect.</summary>
+    public static readonly TimeSpan DisconnectGracePeriod = TimeSpan.FromSeconds(60);
+
+    /// <summary>Timer that drives the deferred-clear of tracker
+    /// entries after the grace period. Held as a field so a second
+    /// disconnect within the window resets it cleanly.</summary>
+    private System.Threading.Timer? _trackerGraceTimer;
+
     private void HandleConnectionChanged()
     {
         if (_disposed) return;
         // Only act on disconnect; reconnect lets the next OnAlarmsChanged
         // tick re-establish state from scratch via the same Pass 1 logic.
         if (_signalk is null || _signalk.IsConnected) return;
-        // Drop everything we thought we owned. The corresponding server
-        // entries either survived (60 s GC) or didn't; either way our
-        // local tracking was stale, and a fresh diff cycle is safer
-        // than reconciling with a half-known server view.
-        if (_raised.Count > 0)
+        if (_raised.Count == 0) return;
+
+        // Snapshot the paths we currently own + drop the local _raised
+        // map (it tracks in-flight raises -- their continuations will
+        // see _disposed/!IsConnected and bail).  Keep the TRACKER paths
+        // alive for the server-side GC window (~60s) so the bridge rule
+        // continues to filter own-echoes when the server replays our
+        // pre-disconnect notifications post-reconnect. Otherwise every
+        // brief LTE blip would stack 2-3 banners for the same alarm
+        // until the server's GC sweeps it.
+        var ownedPaths = _raised.Values.Select(v => v.Path).ToArray();
+        _raised.Clear();
+        _ = LogInfoAsync("alarm.publisher reset on WS disconnect (tracker grace " +
+            $"{(int)DisconnectGracePeriod.TotalSeconds}s)");
+
+        // Reset any prior grace timer (multiple disconnects in a short
+        // window restart the clock from the latest one).
+        _trackerGraceTimer?.Dispose();
+        _trackerGraceTimer = new System.Threading.Timer(
+            _ => SweepTrackerGrace(ownedPaths),
+            null, DisconnectGracePeriod, Timeout.InfiniteTimeSpan);
+    }
+
+    private void SweepTrackerGrace(string[] paths)
+    {
+        if (_disposed) return;
+        // Drop only the paths still in the tracker AND not re-raised
+        // since disconnect (we re-Add via TryRaiseAsync; if the helm's
+        // alarm fired again post-reconnect the path's still ours and we
+        // keep it). The Remove is a no-op when re-raise already
+        // refreshed the entry.
+        foreach (var path in paths)
         {
-            foreach (var entry in _raised.Values)
-                _tracker.Remove(entry.Path);
-            _raised.Clear();
-            _ = LogInfoAsync("alarm.publisher reset on WS disconnect");
+            // If we re-raised this path post-reconnect, leave it alone
+            // -- the new raise has its own ownership claim.
+            if (_raised.Values.Any(v => v.Path == path)) continue;
+            _tracker.Remove(path);
         }
     }
 
@@ -280,6 +320,8 @@ public sealed class AlarmPublisher : IAsyncDisposable
         {
             _signalk.OnConnectionChanged -= HandleConnectionChanged;
         }
+        _trackerGraceTimer?.Dispose();
+        _trackerGraceTimer = null;
         // Best-effort cleanup so a soft refresh / nav-away doesn't
         // leave stale entries on the server. The 60 s GC would catch
         // them anyway, but ack flows on other plotters work better
