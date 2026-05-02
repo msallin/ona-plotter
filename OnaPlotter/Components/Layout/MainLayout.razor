@@ -44,9 +44,17 @@
             }
             @if (historyCount > 0 || Alarms.SnoozedTargets.Count > 0)
             {
+                @* "History N" reads as 'past alarms' rather than the
+                   ambiguous "Log N" (which a helm could read as 'logs
+                   to send to support', 'active alarms hidden', or just
+                   a developer artefact). Tooltip carries the same
+                   meaning + the snooze count when it's non-zero so a
+                   helm hovering on desktop sees both bits of state. *@
                 <button class="alarm-log-btn" @onclick="ToggleAlarmLog"
-                        title="Alarm log (@historyCount recent)">
-                    Log @historyCount
+                        title="@($"Alarm history ({historyCount} recent" +
+                                  (Alarms.SnoozedTargets.Count > 0
+                                    ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
+                    History @historyCount
                 </button>
             }
 
