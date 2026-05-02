@@ -119,6 +119,7 @@ public class ActiveRouteSyncTests
         public Task SetFollowAsync(bool follow) => Task.CompletedTask;
         public Task ClearLaylinesAsync() => Task.CompletedTask;
         public Task SetShipLinesVisibleAsync(bool enabled) => Task.CompletedTask;
+        public Task SetRadarRangeRingsAsync(bool enabled, int count) => Task.CompletedTask;
         public Task SetNightModeAsync(bool enabled) => Task.CompletedTask;
         public Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor) => Task.CompletedTask;
         public Task SetCogVectorMinutesAsync(double ownMinutes, double aisMinutes) => Task.CompletedTask;

@@ -580,6 +580,32 @@
         </div>
     </div>
 
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Radar range rings</label>
+                <div class="form-check form-switch mb-2">
+                    <input type="checkbox" class="form-check-input" role="switch"
+                           id="radar-range-rings-enabled"
+                           checked="@AppSettings.RadarRangeRingsEnabled"
+                           @onchange="OnRadarRangeRingsEnabledChanged" />
+                    <label class="form-check-label" for="radar-range-rings-enabled">
+                        Show concentric rings on the chart while a radar overlay is active
+                    </label>
+                </div>
+                <div class="input-group">
+                    <span class="input-group-text">Rings</span>
+                    <input type="number" class="form-control" step="1" min="1" max="8"
+                           aria-label="Number of radar range rings"
+                           value="@AppSettings.RadarRangeRingsCount"
+                           disabled="@(!AppSettings.RadarRangeRingsEnabled)"
+                           @onchange="(e) => OnRadarRangeRingsCountChanged(e)" />
+                </div>
+                <small class="text-muted">Each ring sits at an evenly-spaced fraction of the radar's current range. Default 4 = quarter / half / three-quarter / full. 1-8 supported.</small>
+            </div>
+        </div>
+    </div>
+
     @* Boat Draft card removed -- the same information is surfaced on
        the Paths page (`design.draft.current` / `.maximum` with live
        values) and is also called out in the Anchor Tide Alarm setup
@@ -1137,6 +1163,22 @@
             System.Globalization.CultureInfo.InvariantCulture, out double val))
         {
             await AppSettings.SetAisCogVectorMinutesAsync(val);
+        }
+    }
+
+    private async Task OnRadarRangeRingsEnabledChanged(ChangeEventArgs e)
+    {
+        bool enabled = e.Value is bool b && b;
+        await AppSettings.SetRadarRangeRingsEnabledAsync(enabled);
+    }
+
+    private async Task OnRadarRangeRingsCountChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out int val))
+        {
+            await AppSettings.SetRadarRangeRingsCountAsync(val);
         }
     }
 

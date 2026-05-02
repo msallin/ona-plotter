@@ -36,6 +36,9 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task SetShipLinesVisibleAsync(bool enabled)
         => InvokeSafe("setShipLinesVisible", enabled);
 
+    public Task SetRadarRangeRingsAsync(bool enabled, int count)
+        => InvokeSafe("setRadarRangeRings", enabled, count);
+
     public Task SetNightModeAsync(bool enabled)
         => InvokeSafe("setNightMode", enabled);
 

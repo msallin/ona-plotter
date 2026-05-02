@@ -157,6 +157,20 @@ public interface IMapDisplaySettings
     /// without affecting their own predictor. Default 10 min.</summary>
     double AisCogVectorMinutes { get; }
 
+    /// <summary>Whether the radar overlay paints concentric range
+    /// rings centred on own boat. Each ring sits at an evenly-spaced
+    /// fraction of the radar's current range (1/N, 2/N, ..., N/N).
+    /// Helm aid: read "how far is the sweep showing me" at a glance
+    /// without checking the range chip in the HUD. Default true.</summary>
+    bool RadarRangeRingsEnabled { get; }
+
+    /// <summary>How many concentric rings to draw when
+    /// <see cref="RadarRangeRingsEnabled"/> is true. Default 4
+    /// (quarter / half / three-quarter / full range). Clamped 1..8
+    /// on the JS side; below 1 there's nothing to draw, above 8 the
+    /// chart turns into a bullseye.</summary>
+    int RadarRangeRingsCount { get; }
+
     Task SetMapOrientationAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
@@ -180,4 +194,6 @@ public interface IMapDisplaySettings
     Task SetShowDefaultHudAsync(bool value);
     Task SetOwnCogVectorMinutesAsync(double value);
     Task SetAisCogVectorMinutesAsync(double value);
+    Task SetRadarRangeRingsEnabledAsync(bool value);
+    Task SetRadarRangeRingsCountAsync(int value);
 }

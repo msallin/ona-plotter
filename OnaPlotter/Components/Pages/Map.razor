@@ -1582,6 +1582,13 @@
         // so we only push when the helm-set value differs.
         if (!Settings.ShipLinesVisible)
             await _controlsJs.SetShipLinesVisibleAsync(false);
+        // Radar range rings: push persisted config so the rings are
+        // sized + visible the moment a radar overlay starts. The
+        // radar layer caches the config module-globally so the push
+        // is independent of which radars are active.
+        await _controlsJs.SetRadarRangeRingsAsync(
+            Settings.RadarRangeRingsEnabled,
+            Settings.RadarRangeRingsCount);
         Settings.OnSettingsChanged += HandleSettingsChanged;
 
         SignalkClient.OnDataChanged += HandleDataChanged;
@@ -1735,6 +1742,9 @@
             _ = _controlsJs.SetCogVectorMinutesAsync(
                 Settings.OwnCogVectorMinutes,
                 Settings.AisCogVectorMinutes);
+            _ = _controlsJs.SetRadarRangeRingsAsync(
+                Settings.RadarRangeRingsEnabled,
+                Settings.RadarRangeRingsCount);
         }
         // Wake-lock toggles are handled by MainLayout's OnSettingsChanged
         // handler; the Map page no longer needs to relay them.

@@ -42,6 +42,15 @@ public interface IMapControlsJs
     /// waiting for the next frame.</summary>
     Task SetShipLinesVisibleAsync(bool enabled);
 
+    /// <summary>Push the range-rings config (enabled + ring count)
+    /// to every active radar overlay. Rings are concentric circles
+    /// on own boat at evenly-spaced fractions of the radar's current
+    /// range, helping the helm read "how far is the sweep showing
+    /// me" at a glance. The JS side refreshes each overlay
+    /// internally so the rings appear / disappear / re-count on the
+    /// next render tick.</summary>
+    Task SetRadarRangeRingsAsync(bool enabled, int count);
+
     /// <summary>Apply night-mode CSS filter to map tiles + UI chrome.</summary>
     Task SetNightModeAsync(bool enabled);
 

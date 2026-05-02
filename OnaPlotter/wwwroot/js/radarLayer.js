@@ -69,6 +69,31 @@ const activeRadars = new Map();
 // each active radar reads it at paint / reposition time.
 let boatState = { lat: null, lon: null, headingRad: 0 };
 
+// Range-ring overlay config. Helm-toggleable: when enabled, every
+// active radar overlay paints `count` concentric circles centred on
+// own boat at evenly-spaced fractions of the radar's current range
+// (1/N, 2/N, ..., N/N). Default-on, default 4 rings; the C# side
+// pushes the helm-set values via setRangeRingsConfig at init + on
+// settings change. When disabled the per-overlay rings group is
+// torn down on the next refresh.
+let ringsEnabled = true;
+let ringsCount = 4;
+
+/**
+ * Update the global range-rings configuration. Refreshes every
+ * active radar overlay so the helm sees the new rings (or their
+ * absence) on the next render tick.
+ */
+export function setRangeRingsConfig(enabled, count) {
+    ringsEnabled = !!enabled;
+    // Clamp to a sane range -- below 1 there's nothing to draw, above
+    // 8 the chart turns into a bullseye. The Settings UI offers 1-6
+    // anyway.
+    const n = Number(count);
+    ringsCount = Number.isFinite(n) ? Math.max(1, Math.min(8, Math.round(n))) : 4;
+    for (const rec of activeRadars.values()) rec.refreshRangeRings();
+}
+
 /**
  * Enable the radar overlay for one radar. Safe to call twice with
  * the same id (second call is a no-op).
@@ -260,6 +285,11 @@ class RadarOverlay {
 
     connect() {
         this._openWebsocket();
+        // Range rings appear immediately if the boat fix is already
+        // known (helm pre-zoomed in before enabling the overlay) --
+        // otherwise the next boat-state push triggers a refresh via
+        // onBoatStateChanged. No-op when ringsEnabled is false.
+        this.refreshRangeRings();
     }
 
     _openWebsocket() {
@@ -438,10 +468,68 @@ class RadarOverlay {
         this._clearCanvas();
         this.range = range;
         this._scheduleReposition();
+        // Range scrolls the rings: the radii are fractions of
+        // this.range, so a new range needs new circles.
+        this.refreshRangeRings();
     }
 
     onBoatStateChanged() {
         this._scheduleReposition();
+        // Boat moved -> rings follow. Cheap setLatLng on existing
+        // circles when the group already exists; a full refresh on
+        // the first fix (group is null until then).
+        if (this._rangeRings) this._updateRangeRingsCentre();
+        else this.refreshRangeRings();
+    }
+
+    /**
+     * Build (or rebuild) the concentric range-ring polylines for
+     * this radar. Tears down any existing group first so the call
+     * is idempotent. Rings are L.circle (radius in metres,
+     * properly projected by Leaflet) so the geometry stays correct
+     * across zoom levels without us re-doing the haversine math.
+     * No-op when range / boat-fix is missing OR the helm has the
+     * feature disabled.
+     */
+    refreshRangeRings() {
+        if (this._rangeRings) {
+            this._rangeRings.remove();
+            this._rangeRings = null;
+        }
+        if (!ringsEnabled) return;
+        const { lat, lon } = boatState;
+        if (lat == null || lon == null || !this.range) return;
+
+        const group = L.layerGroup();
+        const circles = [];
+        for (let i = 1; i <= ringsCount; i++) {
+            const ringRange = (i / ringsCount) * this.range;
+            // Outer ring slightly heavier so the helm reads it as
+            // "this is what the radar can actually see"; inner rings
+            // stay faint so they read as background scale-marks.
+            const isOuter = i === ringsCount;
+            const c = L.circle([lat, lon], {
+                radius: ringRange,
+                color: '#94a3b8',
+                weight: isOuter ? 1.25 : 1,
+                opacity: isOuter ? 0.6 : 0.4,
+                dashArray: '4,5',
+                fill: false,
+                interactive: false,
+                pane: 'overlayPane',
+            }).addTo(group);
+            circles.push(c);
+        }
+        group.addTo(this.map);
+        this._rangeRings = group;
+        this._rangeRingCircles = circles;
+    }
+
+    _updateRangeRingsCentre() {
+        if (!this._rangeRingCircles) return;
+        const { lat, lon } = boatState;
+        if (lat == null || lon == null) return;
+        for (const c of this._rangeRingCircles) c.setLatLng([lat, lon]);
     }
 
     _scheduleReposition() {
@@ -482,6 +570,11 @@ class RadarOverlay {
         if (this.layer) {
             this.layer.remove();
             this.layer = null;
+        }
+        if (this._rangeRings) {
+            this._rangeRings.remove();
+            this._rangeRings = null;
+            this._rangeRingCircles = null;
         }
         // Release the LUT memory aggressively -- these can be
         // 4-8 MB per radar.

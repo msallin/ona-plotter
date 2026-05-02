@@ -124,6 +124,13 @@ public sealed class AppSettingsService : IAppSettings
     /// of own-vessel so a busy-harbour helm can shorten target vectors
     /// without losing their own predictor's reach.</summary>
     public double AisCogVectorMinutes { get; private set; } = 10.0;
+
+    /// <summary>Radar range-ring overlay enabled. Default true.</summary>
+    public bool RadarRangeRingsEnabled { get; private set; } = true;
+    /// <summary>How many concentric range rings to draw. Default 4
+    /// (quarter / half / three-quarter / full radar range).</summary>
+    public int RadarRangeRingsCount { get; private set; } = 4;
+
     public bool PreferMagneticHeading { get; private set; } = false;
     public bool PreferMagneticCourse { get; private set; } = false;
     public bool AutoAdvanceWaypoints { get; private set; } = true;
@@ -229,6 +236,12 @@ public sealed class AppSettingsService : IAppSettings
             ShowDefaultHud = await LoadBool("showDefaultHud.v1", true);
             OwnCogVectorMinutes = await LoadDouble("ownCogVectorMinutes.v1", 10.0);
             AisCogVectorMinutes = await LoadDouble("aisCogVectorMinutes.v1", 10.0);
+            RadarRangeRingsEnabled = await LoadBool("radarRangeRingsEnabled.v1", true);
+            // 4 covers quarter / half / three-quarter / full range,
+            // the standard chartplotter pattern. Clamp 1..8 to keep
+            // the chart from turning into a bullseye.
+            RadarRangeRingsCount = (int)Math.Clamp(
+                await LoadDouble("radarRangeRingsCount.v1", 4.0), 1.0, 8.0);
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
             AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
@@ -623,6 +636,21 @@ public sealed class AppSettingsService : IAppSettings
         value = Math.Clamp(value, 1.0, 60.0);
         AisCogVectorMinutes = value;
         await Save("aisCogVectorMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetRadarRangeRingsEnabledAsync(bool value)
+    {
+        RadarRangeRingsEnabled = value;
+        await Save("radarRangeRingsEnabled.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetRadarRangeRingsCountAsync(int value)
+    {
+        RadarRangeRingsCount = Math.Clamp(value, 1, 8);
+        await Save("radarRangeRingsCount.v1",
+            RadarRangeRingsCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

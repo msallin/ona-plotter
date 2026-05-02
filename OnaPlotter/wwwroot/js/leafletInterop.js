@@ -6,7 +6,8 @@ import { DEG, NM_PER_METER, SPEED_BUCKETS,
          speedColor, speedBucket } from './geoMath.js';
 import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
-         setRadarRange, setBoatState as setRadarBoatState } from './radarLayer.js';
+         setRadarRange, setBoatState as setRadarBoatState,
+         setRangeRingsConfig as setRadarRangeRingsConfig } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
 import * as mobLayerMod from './mobLayer.js';
@@ -1236,6 +1237,20 @@ export function stopRadarOverlay(radarId) {
 
 export function updateRadarRange(radarId, range) {
     setRadarRange(radarId, range);
+}
+
+/**
+ * Push the helm-set range-rings config to every active radar
+ * overlay. C# calls this on init (with persisted settings) and on
+ * every settings change so the rings appear / disappear / re-count
+ * immediately. The radar layer's setRangeRingsConfig refreshes
+ * each active overlay internally.
+ *
+ * @param {boolean} enabled  Master visibility flag.
+ * @param {number}  count    Number of concentric rings (1..8).
+ */
+export function setRadarRangeRings(enabled, count) {
+    setRadarRangeRingsConfig(enabled, count);
 }
 
 // --- COG vector look-ahead ---
