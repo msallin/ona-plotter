@@ -98,9 +98,23 @@ public sealed class AisStore
         if (_cachedSnapshot is not null && _snapshotVersion == currentVersion)
             return _cachedSnapshot;
 
-        _cachedSnapshot = _vessels.Values
-            .Where(v => v.Latitude is not null && v.Longitude is not null)
-            .ToArray();
+        // Pre-sized array + manual foreach so the snapshot rebuild
+        // (called per-AIS-push tick from the map page) doesn't allocate
+        // an enumerator + iterator pair on every invocation. Upper-
+        // bound size is the dictionary count; the actual count after
+        // the position-filter is usually a hair under that, so we
+        // build into a local with possible trailing slack and trim.
+        // _vessels is never mutated under us (single-thread WASM)
+        // so the count snapshot is stable for the duration.
+        int max = _vessels.Count;
+        var buf = new AisVessel[max];
+        int n = 0;
+        foreach (var v in _vessels.Values)
+        {
+            if (v.Latitude is not null && v.Longitude is not null)
+                buf[n++] = v;
+        }
+        _cachedSnapshot = (n == max) ? buf : buf.AsSpan(0, n).ToArray();
         _snapshotVersion = currentVersion;
         return _cachedSnapshot;
     }
