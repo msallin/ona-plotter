@@ -203,8 +203,16 @@
     --z-fullscreen: 9999;
 
     /* Map overlay positioning. All floating panels above the control bar use
-       --panel-bottom so they stack predictably. Update in one place. */
-    --ctrl-bar-height: 64px;  /* Approx height of .map-controls (icon + label + padding). */
+       --panel-bottom so they stack predictably. Update in one place.
+       The bar height varies between small + Big HUD (the .big-type
+       class bumps .ctrl-btn min-height to 56px + bigger padding), so
+       --ctrl-bar-height is overridden inside .map-container.big-type
+       below. Otherwise the bc-stack would either overlap a tall
+       Big-HUD bar (no gap) or float too far above a small-HUD bar
+       (yawning gap) -- both helm-flagged. Custom-property cascade
+       does the work: --panel-bottom's calc evaluates with the local
+       --ctrl-bar-height value when consumed inside the container. */
+    --ctrl-bar-height: 56px;  /* Default (small HUD) actual rendered height. */
     --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
     /* 9 px gap between the bottom action bar and the bc-stack
        cards (anchor watch + active route). Helm-feedback: 18 px
@@ -5733,6 +5741,14 @@ html.night-mode-global .route-action-danger:hover {
    from across a cockpit / helm. CSS-only; triggered by a Settings
    toggle that adds .big-type to .map-container. Labels + position
    readout get a proportional bump too. */
+/* Bar gets taller in Big HUD (ctrl-btn min-height 56px + bigger
+   padding below). The bc-stack consumes --ctrl-bar-height through
+   --panel-bottom; pin the override here so the gap above the bar
+   stays the helm-tested 9 px (== --panel-gap) on both modes
+   instead of either overlapping in Big HUD or yawning in small. */
+.map-container.big-type {
+    --ctrl-bar-height: 80px;
+}
 .map-container.big-type .hud-value {
     font-size: 2.2rem;
 }
