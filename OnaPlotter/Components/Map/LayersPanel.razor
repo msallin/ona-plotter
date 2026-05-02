@@ -91,6 +91,8 @@
                     OnToggleShipLines="OnToggleShipLines"
                     LocalTrackVisible="LocalTrackVisible"
                     OnToggleLocalTrack="OnToggleLocalTrack"
+                    GuardZoneVisible="GuardZoneVisible"
+                    OnToggleGuardZone="OnToggleGuardZoneVisible"
                     ServerTrackVisible="ServerTrackVisible"
                     ServerTrackDuration="@ServerTrackDuration"
                     ServerTrackResolution="@ServerTrackResolution"
@@ -126,12 +128,10 @@
     <MiscSection WeatherVisible="WeatherOverlayVisible"
                  WeatherOpacityPercent="WeatherOverlayOpacityPercent"
                  AtonsVisible="AtonsVisible"
-                 GuardZoneVisible="GuardZoneVisible"
                  OnToggleWeather="OnToggleWeatherOverlay"
                  OnWeatherOpacityPreview="OnWeatherOpacityPreview"
                  OnWeatherOpacityCommit="OnWeatherOpacityCommit"
-                 OnToggleAtons="OnToggleAtonsVisible"
-                 OnToggleGuardZone="OnToggleGuardZoneVisible" />
+                 OnToggleAtons="OnToggleAtonsVisible" />
 
     @* Import / Export GPX moved to the Settings page (Backup section).
        The map's Layers panel is for "what shows on the chart"; data
