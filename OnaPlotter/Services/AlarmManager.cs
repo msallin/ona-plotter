@@ -241,7 +241,23 @@ public sealed class AlarmManager : IAlarmManager
             }
             if (_snoozed.Count > 0) OnAlarmsChanged?.Invoke();
         }
-        catch (Exception) { /* malformed JSON / storage issue - start empty */ }
+        // Narrow catches surface OOM / thread-aborts to the global
+        // boundary instead of swallowing them; corrupt storage and
+        // missing JS interop both fall back to "start empty" without
+        // taking down the alarm pipeline.
+        catch (System.Text.Json.JsonException ex)
+        {
+            Console.Error.WriteLine($"[alarm.snooze] hydrate skipped: malformed json: {ex.Message}");
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            Console.Error.WriteLine($"[alarm.snooze] hydrate skipped: localStorage unavailable: {ex.Message}");
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { /* page tear-down race */ }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"[alarm.snooze] hydrate skipped: {ex.Message}");
+        }
     }
 
     private async Task PersistSnoozesAsync()
@@ -253,7 +269,15 @@ public sealed class AlarmManager : IAlarmManager
             var json = System.Text.Json.JsonSerializer.Serialize(arr);
             await _kv.SetAsync(SnoozeStorageKey, json);
         }
-        catch (Exception) { /* don't let storage hiccups surface as alarm-stack errors */ }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Console.Error.WriteLine($"[alarm.snooze] persist skipped: serialize: {ex.Message}");
+        }
+        catch (Microsoft.JSInterop.JSException ex)
+        {
+            Console.Error.WriteLine($"[alarm.snooze] persist skipped: localStorage: {ex.Message}");
+        }
+        catch (Microsoft.JSInterop.JSDisconnectedException) { /* page tear-down */ }
     }
 
     public void Evaluate(NavigationData data, IReadOnlyCollection<AisVessel> vessels, IAppSettings settings)
