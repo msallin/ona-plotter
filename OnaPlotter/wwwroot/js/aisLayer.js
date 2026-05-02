@@ -402,7 +402,14 @@ function buildAisPopupHtml(snap) {
         // a narrow popup when "Crossing -- give way to vessel on stbd"
         // shared a row with the COLREGS label; the role chip wrapped
         // mid-phrase. Spanning two columns lets the text breathe.
-        colregsHtml = `<tr><td colspan="2" style="opacity:0.5;padding-top:6px">COLREGS</td></tr>` +
+        // The "?" link opens /help/colregs in a new tab so the helm can
+        // drill into the rule + role meaning without losing the popup.
+        colregsHtml = `<tr><td colspan="2" style="opacity:0.5;padding-top:6px">` +
+                      `COLREGS ` +
+                      `<a href="/help/colregs" target="_blank" rel="noopener" ` +
+                      `style="opacity:0.7;text-decoration:none;font-size:0.85em" ` +
+                      `title="Open COLREGS quick reference">?</a>` +
+                      `</td></tr>` +
                       `<tr><td colspan="2" style="padding-bottom:4px">${esc(v.colregsLabel)}${roleHtml}</td></tr>`;
     }
 
