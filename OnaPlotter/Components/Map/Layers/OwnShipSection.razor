@@ -51,6 +51,20 @@
     @if (ServerTrackVisible)
     {
         <div class="track-history-controls">
+            @* Within-current-view sits ABOVE the duration / resolution
+               dropdowns: it changes WHAT subset of the fetched track
+               you see (clipping is a viewport filter), while the
+               dropdowns change WHAT the server fetches. The viewport
+               filter is the most-toggled control of the three for
+               helms zooming in/out, so it earns the top slot. *@
+            <label class="chart-item">
+                <input type="checkbox" checked="@ServerTrackWithinBounds"
+                       @onchange="(e) => OnToggleServerTrackWithinBounds.InvokeAsync((bool)(e.Value ?? false))" />
+                <div class="chart-item-body">
+                    <div class="chart-name">Within current view</div>
+                    <div class="chart-desc">Filter to the chart area on screen now</div>
+                </div>
+            </label>
             <label class="chart-item track-history-row">
                 <span class="chart-item-label">Duration</span>
                 <select class="form-select form-select-sm track-history-select"
@@ -85,14 +99,6 @@
                     <option value="1h">1 h</option>
                     <option value="4h">4 h (season review)</option>
                 </select>
-            </label>
-            <label class="chart-item">
-                <input type="checkbox" checked="@ServerTrackWithinBounds"
-                       @onchange="(e) => OnToggleServerTrackWithinBounds.InvokeAsync((bool)(e.Value ?? false))" />
-                <div class="chart-item-body">
-                    <div class="chart-name">Within current view</div>
-                    <div class="chart-desc">Filter to the chart area on screen now (no re-fetch)</div>
-                </div>
             </label>
         </div>
     }

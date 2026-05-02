@@ -4232,6 +4232,22 @@ html.night-mode-global .route-action-danger:hover {
 
 .chart-item:last-child { border-bottom: none; }
 
+/* Ship-track row: fixed-width label so the Duration + Resolution
+   dropdowns line up vertically in the stacked layout. Without the
+   fixed-width label the two dropdowns would start at slightly
+   different x positions ("Duration" is shorter than "Resolution"),
+   which read as a layout bug at a glance. The select itself takes
+   the rest of the row so both selects render the same width too. */
+.track-history-row .chart-item-label {
+    flex: 0 0 90px;
+    color: var(--sk-text-muted);
+    font-size: 0.78rem;
+}
+.track-history-row .track-history-select {
+    flex: 1;
+    max-width: 100%;
+}
+
 .chart-item input[type="checkbox"] {
     accent-color: var(--sk-accent);
     width: 14px;
