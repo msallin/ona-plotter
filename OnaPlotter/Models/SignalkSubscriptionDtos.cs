@@ -20,7 +20,20 @@ namespace OnaPlotter.Models;
 /// </summary>
 internal sealed record SignalkSubscribeRequest(
     [property: JsonPropertyName("context")] string Context,
-    [property: JsonPropertyName("subscribe")] SignalkSubscribePath[] Subscribe);
+    [property: JsonPropertyName("subscribe")] SignalkSubscribePath[] Subscribe)
+{
+    /// <summary>Materialise a subscribe envelope from a path
+    /// enumeration + uniform period / policy. Hides the
+    /// <c>Select(p =&gt; new ...).ToArray()</c> at the call site so
+    /// <see cref="OnaPlotter.Services.SignalkClient"/> reads as a
+    /// single line per send.</summary>
+    public static SignalkSubscribeRequest For(
+        string context, IEnumerable<string> paths, int periodMs, string policy)
+    {
+        var rows = paths.Select(p => new SignalkSubscribePath(p, periodMs, policy)).ToArray();
+        return new SignalkSubscribeRequest(context, rows);
+    }
+}
 
 /// <summary>One row of a subscribe envelope: path + cadence policy.
 /// <c>policy</c> is "ideal" (server coalesces) for the standard
@@ -36,7 +49,18 @@ internal sealed record SignalkSubscribePath(
 /// paths"; only the path string is needed in each row.</summary>
 internal sealed record SignalkUnsubscribeRequest(
     [property: JsonPropertyName("context")] string Context,
-    [property: JsonPropertyName("unsubscribe")] SignalkUnsubscribePath[] Unsubscribe);
+    [property: JsonPropertyName("unsubscribe")] SignalkUnsubscribePath[] Unsubscribe)
+{
+    /// <summary>Materialise an unsubscribe envelope from a path
+    /// enumeration. Mirror of
+    /// <see cref="SignalkSubscribeRequest.For"/> for the cancel
+    /// side.</summary>
+    public static SignalkUnsubscribeRequest For(string context, IEnumerable<string> paths)
+    {
+        var rows = paths.Select(p => new SignalkUnsubscribePath(p)).ToArray();
+        return new SignalkUnsubscribeRequest(context, rows);
+    }
+}
 
 internal sealed record SignalkUnsubscribePath(
     [property: JsonPropertyName("path")] string Path);
