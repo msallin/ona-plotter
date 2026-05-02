@@ -22,6 +22,22 @@
          kiosk where the old interpreted path bottlenecked the main
          thread. -->
     <RunAOTCompilation>true</RunAOTCompilation>
+    <!-- TrimMode investigation gate. Default Blazor WASM trim mode
+         is 'partial'; switching to 'full' would shave another
+         100-200 KB brotli but requires every reflection / dynamic
+         path to be annotated. Today the codebase has ~10 reflection-
+         based JsonSerializer.Deserialize calls (SignalkClient,
+         AlarmManager snooze persist, RouteDraftStore, AuthApi, ...)
+         that would each need a source-generated JsonSerializerContext
+         + a typed Deserialize overload, plus AlarmManager has an
+         Activator-based ctor pattern that needs [DynamicDependency]
+         hints. See docs/research-trimmode.md for the audit + a
+         step-by-step migration outline.
+         Setting TrimMode=full prematurely causes the published
+         bundle to crash at boot ("type X was not preserved" or
+         "Method Y was trimmed"); leaving the default 'partial'
+         until the migration is done. -->
+    <TrimMode>partial</TrimMode>
     <!-- Strip the source IL from the published bundle after AOT. The
          WASM runtime can execute the native code alone; the IL would
          just sit in the download. Cuts roughly 15 to 20 percent off
