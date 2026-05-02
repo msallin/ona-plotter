@@ -1,6 +1,8 @@
 using Bunit;
+using Microsoft.Extensions.DependencyInjection;
 using OnaPlotter.Components.Map;
 using OnaPlotter.Models;
+using OnaPlotter.Services;
 using OnaPlotter.Services.Api;
 
 namespace OnaPlotter.Tests.Components;
@@ -21,6 +23,10 @@ public class MapHudTests
 
     private static IRenderedComponent<MapHud> Render(Bunit.TestContext ctx, NavigationData data)
     {
+        // MapHud now @injects IToastService for the autopilot
+        // heading-nudge audit toast; supply a real ToastService rather
+        // than a fake since the assertions never read its state.
+        ctx.Services.AddSingleton<IToastService, ToastService>();
         return ctx.RenderComponent<MapHud>(p => p
             .Add(x => x.Data, data)
             .Add(x => x.Autopilot, new FakeAutopilot()));

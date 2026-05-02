@@ -32,6 +32,31 @@ public sealed class AisPushService
     private readonly IAppSettings _settings;
     private readonly TimeProvider _time;
 
+    /// <summary>Last AisStore.Version we pushed at. -1 forces an
+    /// initial push so the JS layer is never starved on first tick.</summary>
+    private int _lastPushedVersion = -1;
+    /// <summary>Last own-ship geometry we pushed at. CPA / COLREGS /
+    /// chip threat band are derived from these on every vessel, so a
+    /// change in own-ship lat / lon / cog / sog must invalidate the
+    /// skip even if the AisStore version is unchanged.</summary>
+    private double? _lastOwnLat, _lastOwnLon, _lastOwnCog, _lastOwnSog;
+    private bool _lastHarborMode;
+    private bool _lastAnchorActive;
+    private double? _lastAnchorMaxRadius;
+    /// <summary>UTC instant of the most recent successful push. The
+    /// skip-when-unchanged optimisation force-refreshes once every
+    /// <see cref="MaxSkipInterval"/> regardless of version so time-
+    /// driven state (moored-vessel SOG-dwell expiry, vessel-staleness
+    /// ageSec fade in JS) still surfaces in the helm-visible UI.</summary>
+    private DateTime _lastPushedAtUtc = DateTime.MinValue;
+    /// <summary>Maximum quiet window before the skip optimisation
+    /// gives up and pushes anyway. 5 s is long enough for the skip to
+    /// elide steady-state ticks (3 s cadence -&gt; one push every other
+    /// tick at worst when nothing changes) but short enough that
+    /// time-based tracker state (moored-vessel dwell, JS opacity
+    /// fade) refreshes promptly.</summary>
+    internal static readonly TimeSpan MaxSkipInterval = TimeSpan.FromSeconds(5);
+
     public AisPushService(
         IMapAisJs aisJs,
         AisStore aisStore,
@@ -51,10 +76,47 @@ public sealed class AisPushService
     /// regressions are caught and logged so a hot-path JS bug doesn't
     /// take down the Blazor render pass (we fire at 3 Hz; a toast per
     /// tick would be spam).
+    /// <para>Skips the snapshot build + interop call entirely when
+    /// nothing observable has changed since the last push: AisStore's
+    /// monotonic version counter, own-ship lat / lon / cog / sog
+    /// (drives CPA / COLREGS), HarborMode flag, and the anchor-active
+    /// + anchor-max-radius pair (drive the effective CPA radius). 200-
+    /// vessel harbour at 3 s cadence saves ~14 short-lived allocs per
+    /// vessel per tick on idle ticks plus the JSInterop JSON cost.</para>
     /// </summary>
     public async Task PushAsync(NavigationData ownship)
     {
         if (ownship is null) return;
+        int storeVersion = _aisStore.Version;
+        bool harbor = _settings.HarborMode;
+        var nowUtc = _time.GetUtcNow().UtcDateTime;
+        if (storeVersion == _lastPushedVersion
+            && ownship.Latitude == _lastOwnLat
+            && ownship.Longitude == _lastOwnLon
+            && ownship.CourseOverGround == _lastOwnCog
+            && ownship.SpeedOverGround == _lastOwnSog
+            && harbor == _lastHarborMode
+            && ownship.AnchorActive == _lastAnchorActive
+            && ownship.AnchorMaxRadius == _lastAnchorMaxRadius
+            && (nowUtc - _lastPushedAtUtc) < MaxSkipInterval)
+        {
+            // Nothing observable to push. Both AIS state and own-ship
+            // geometry agree with the last push, and we're still
+            // inside the time cap that catches tracker-state changes
+            // (moored-vessel dwell expiring, ageSec fade) which the
+            // version counter doesn't reflect.
+            return;
+        }
+        _lastPushedVersion = storeVersion;
+        _lastOwnLat = ownship.Latitude;
+        _lastOwnLon = ownship.Longitude;
+        _lastOwnCog = ownship.CourseOverGround;
+        _lastOwnSog = ownship.SpeedOverGround;
+        _lastHarborMode = harbor;
+        _lastAnchorActive = ownship.AnchorActive;
+        _lastAnchorMaxRadius = ownship.AnchorMaxRadius;
+        _lastPushedAtUtc = nowUtc;
+
         try
         {
             var jsVessels = BuildSnapshot(ownship);
