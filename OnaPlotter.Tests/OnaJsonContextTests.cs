@@ -102,4 +102,57 @@ public class OnaJsonContextTests
         await Assert.That(roundtripped[0].Label).IsEqualTo("Brave Wind");
         await Assert.That(roundtripped[1].ExpiresAt).IsEqualTo(now.AddMinutes(15));
     }
+
+    [Test]
+    public async Task SignalkSubscribeRequest_Wire_Shape_Matches_Spec()
+    {
+        // Pin the on-the-wire shape: keys "context" / "subscribe", and
+        // each subscribe row carries "path" / "period" / "policy".
+        // The earlier anon-type Serialize emitted exactly this shape;
+        // the named-record migration must not drift.
+        var request = new SignalkSubscribeRequest(
+            "vessels.self",
+            new[]
+            {
+                new SignalkSubscribePath("navigation.position", 1000, "ideal"),
+                new SignalkSubscribePath("navigation.speedOverGround", 1000, "ideal"),
+            });
+
+        var json = JsonSerializer.Serialize(request, OnaJsonContext.Default.SignalkSubscribeRequest);
+
+        // Parse it back as a JsonDocument and assert key shape rather
+        // than a string compare, which would be brittle on insignificant
+        // whitespace / property-order differences.
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        await Assert.That(root.GetProperty("context").GetString()).IsEqualTo("vessels.self");
+        var subs = root.GetProperty("subscribe");
+        await Assert.That(subs.GetArrayLength()).IsEqualTo(2);
+        await Assert.That(subs[0].GetProperty("path").GetString()).IsEqualTo("navigation.position");
+        await Assert.That(subs[0].GetProperty("period").GetInt32()).IsEqualTo(1000);
+        await Assert.That(subs[0].GetProperty("policy").GetString()).IsEqualTo("ideal");
+    }
+
+    [Test]
+    public async Task SignalkUnsubscribeRequest_Wire_Shape_Matches_Spec()
+    {
+        var request = new SignalkUnsubscribeRequest(
+            "vessels.self",
+            new[]
+            {
+                new SignalkUnsubscribePath("navigation.position"),
+            });
+
+        var json = JsonSerializer.Serialize(request, OnaJsonContext.Default.SignalkUnsubscribeRequest);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        await Assert.That(root.GetProperty("context").GetString()).IsEqualTo("vessels.self");
+        var unsubs = root.GetProperty("unsubscribe");
+        await Assert.That(unsubs.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(unsubs[0].GetProperty("path").GetString()).IsEqualTo("navigation.position");
+        // Unsubscribe rows carry only "path" -- "period" / "policy" are absent.
+        await Assert.That(unsubs[0].TryGetProperty("period", out _)).IsFalse();
+        await Assert.That(unsubs[0].TryGetProperty("policy", out _)).IsFalse();
+    }
 }

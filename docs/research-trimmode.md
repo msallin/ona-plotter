@@ -36,13 +36,18 @@ OnaPlotter/Components/Pages/Map.razor.cs:234,465  -- share-feature Serialize(new
 OnaPlotter/Components/Pages/Resources.razor:682,773 -- share-feature Serialize(new {...})
 OnaPlotter/Components/Pages/History.razor:1134,1145,1147,1167,1375,1477 -- JS-interop literal embedding
 OnaPlotter/Models/RadarDtos.cs:501                -- SerializeToElement(...) of an anon shape
-OnaPlotter/Services/SignalkClient.cs:1436,1453    -- WS subscribe / unsubscribe envelope
 OnaPlotter/Utilities/ResourceExporter.cs:108,139,175,259,294 -- per-feature GPX-twin GeoJSON
 ```
 
-To finish the trim-blocker work for these, replace each `new { ... }` with a named `record` (e.g. `SubscribeRequest(string Context, SubscribePath[] Paths)`) and add `[JsonSerializable(typeof(SubscribeRequest))]` to `OnaJsonContext`. Mechanical, but spread across many files; left out of F2 to keep that batch focused.
+Migrated since (now source-gen):
 
-**Estimated effort for the anonymous-type sweep**: 2-3 hours.
+```
+OnaPlotter/Services/SignalkClient.cs:1443,1462    -- SignalkSubscribeRequest / SignalkUnsubscribeRequest
+```
+
+To finish the trim-blocker work for the rest, replace each `new { ... }` with a named `record` (e.g. `RouteFeature(string Type, RouteProperties Properties, RouteGeometry Geometry)`) and add `[JsonSerializable(typeof(T))]` to `OnaJsonContext`. Mechanical, but spread across many files; the SignalkClient migration shows the pattern.
+
+**Estimated effort for the remaining anonymous-type sweep**: 2-3 hours.
 
 ### 2. AlarmManager Activator-based test ctor
 
