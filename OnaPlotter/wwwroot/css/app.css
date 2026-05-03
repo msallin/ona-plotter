@@ -4904,16 +4904,16 @@ html.night-mode-global body {
 }
 /* Pad the metric row + route-total row away from the side buttons
    so the BRG / DTW / TTG chips don't slide under the prev/next
-   glyphs. 44 px = chevron's coarse-pointer min-width (36 px) +
-   the 4 px left/right offset + 4 px breathing space. The previous
-   36 px matched only the button width, so the panel rendered with
-   the chevron sitting flush against the start of "DTW" / end of
-   "XTE" (helm screenshot showed the "D" of "DTW" hidden under the
-   left chevron). */
+   glyphs. 56 px = chevron coarse-pointer width (36 px) + 4 px
+   left/right offset + 16 px breathing space. The earlier 44 px
+   left only 4 px between the chevron edge and the closest metric
+   ("16:02" sat almost flush against the next-WP arrow on the helm
+   screenshot); 56 px gives a real visible gap on every screen
+   width without the metrics row needing to grow. */
 .route-panel-compact .route-info-row,
 .route-panel-compact .route-total-row {
-    padding-left: 44px;
-    padding-right: 44px;
+    padding-left: 56px;
+    padding-right: 56px;
 }
 
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
@@ -5776,10 +5776,23 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    height, so .hud-stack-bc (active-route + anchor-watch cards)
    sat flush against the top of the bar -- helm flagged "no
    padding in big screen mode between active route and bottom
-   menu". Re-derive the variable so --panel-bottom keeps the
-   same visual --panel-gap above the taller bar. */
+   menu". Two layers of fix:
+     (a) Bump --ctrl-bar-height for big mode so any future
+         consumer of the variable picks up the right value.
+     (b) Hard-set .hud-stack-bc bottom because the calc-based
+         --panel-bottom defined at :root doesn't always re-evaluate
+         the inherited override on every browser/cache combination
+         (Safari has shipped two different evaluation orders for
+         var() inside calc() inside custom-property values), and
+         the helm reported the gap was still missing after fix (a)
+         alone. The hard value is calc'd from the same tokens so
+         a future --ctrl-bar-offset / --panel-gap change still
+         lands here. */
 main:has(.map-container.big-type) {
     --ctrl-bar-height: 88px;
+}
+main:has(.map-container.big-type) .hud-stack-bc {
+    bottom: calc(88px + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
 /* Big screen mode: AIS ship icons. Scale the SVG inside the
