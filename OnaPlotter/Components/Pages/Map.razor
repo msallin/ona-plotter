@@ -3449,6 +3449,15 @@
         _resourceJs?.MarkDisposed();
         _controlsJs?.MarkDisposed();
         _editJs?.MarkDisposed();
+        // Hand the MOB chart renderer (singleton) back to the
+        // null-bridge state so a future page re-mount goes through
+        // the AttachJs path, which invalidates the dedup cache and
+        // re-paints the marker. Without this DetachJs call the
+        // renderer kept its old _js reference (pointing at a now-
+        // disposed module) and the helm flagged "navigate to
+        // dashboard and back -> chart is empty even though MOB is
+        // active".
+        MobChartRenderer.DetachJs();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();

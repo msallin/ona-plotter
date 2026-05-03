@@ -65,6 +65,19 @@ public sealed class MobChartRenderer : IDisposable
     public void AttachJs(IMapControlsJs js)
     {
         _js = js ?? throw new ArgumentNullException(nameof(js));
+        // Helm regression: navigating Chart -> Dashboard -> Chart
+        // returned to a chart with no MOB marker even though the
+        // store still had the MOB. Cause was the dedup state below
+        // (_renderedPath / _renderedLat / etc) surviving across
+        // pages -- the new JS bridge got "same MOB, no change,
+        // nothing to do" and the marker never painted on the
+        // freshly-mounted Leaflet container. Invalidate the dedup
+        // cache before resyncing so the new bridge always gets a
+        // fresh setMob.
+        _renderedPath = null;
+        _renderedLat = null;
+        _renderedLon = null;
+        _renderedCreatedAt = null;
         // Recompute -- if a MOB landed while the JS handle was
         // null, this paints it now. The synthesised store entry
         // already has the lat/lon.
