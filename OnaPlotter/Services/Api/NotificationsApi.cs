@@ -84,4 +84,52 @@ public sealed class NotificationsApi : INotificationsApi
             _baseUrl.Combine(SignalKUrls.NotificationById(notificationId)),
             cts.Token).ConfigureAwait(false);
     }
+
+    /// <inheritdoc/>
+    public async Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default)
+    {
+        // Body shape: empty when message is null, otherwise { message }.
+        // The server still expects an application/json content-type so
+        // we always send an object literal.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
+        object body = message is null ? new { } : new { message };
+        return await ResourceHttp.PostCreateAsync(_http,
+            _baseUrl.Combine(SignalKUrls.NotificationMobRaise),
+            body, cts.Token).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<ApiResult> ClearByActionAsync(string notificationId, CancellationToken ct = default)
+    {
+        // Action-style clear: POST .../{id}/clear with empty body.
+        // The server runs its full clear-side bookkeeping (state ->
+        // normal, GC scheduled). Distinct from DELETE /{id}, which
+        // older SK builds used for the same effect; the safety-
+        // alarm flow takes the action verb because that's what the
+        // SK v2 spec wires Acknowledge / Silence to as well.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
+        return await ResourceHttp.PostAsync(_http,
+            _baseUrl.Combine(SignalKUrls.NotificationClearAction(notificationId)),
+            new { }, cts.Token).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
+    {
+        // Uses the same per-call timeout as the action verbs; a slow
+        // GET on the boot path shouldn't stall the alarm pipeline.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(CallTimeout);
+        try
+        {
+            return await ResourceHttp.GetDictAsync<ServerNotificationDto>(_http,
+                _baseUrl.Combine(SignalKUrls.NotificationsPath),
+                cts.Token).ConfigureAwait(false);
+        }
+        catch (System.Net.Http.HttpRequestException) { return null; }
+        catch (System.Text.Json.JsonException) { return null; }
+        catch (OperationCanceledException) { return null; }
+    }
 }

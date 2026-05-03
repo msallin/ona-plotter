@@ -55,7 +55,62 @@ public interface INotificationsApi
     /// <c>normal</c>; server GCs after 60 s). Used by the publisher
     /// when the local rule that raised a notification stops firing.</summary>
     Task<ApiResult> ClearAsync(string notificationId, CancellationToken ct = default);
+
+    /// <summary>Raise a Man Overboard safety alarm via the dedicated
+    /// <c>POST /signalk/v2/api/notifications/mob</c> endpoint.
+    /// The server generates the UUID; clients cannot inject their
+    /// own. Returns the server-issued id on success so the local
+    /// pending entry can reconcile against the WS echo.
+    /// <para>The action is distinct from <see cref="RaiseAsync"/>
+    /// (the path-keyed publisher used by client-side rules):
+    /// <c>/notifications/mob</c> emits a server-side
+    /// <c>state: "emergency"</c> notification with
+    /// <c>method: ["visual","sound"]</c> and the helm's current
+    /// position attached, all without the client having to wrangle
+    /// path / state / method.</para></summary>
+    Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default);
+
+    /// <summary>Action-style clear via <c>POST /{id}/clear</c>.
+    /// Distinct from <see cref="ClearAsync"/> (which DELETEs);
+    /// safety alarms (MOB / fire / collision) use this verb so the
+    /// server runs its full clear-side bookkeeping. Idempotent on
+    /// the server: a second call after GC is a no-op 404.</summary>
+    Task<ApiResult> ClearByActionAsync(string notificationId, CancellationToken ct = default);
+
+    /// <summary>GET <c>/signalk/v2/api/notifications</c>. Returns
+    /// the active notification map keyed by id, or null on transport
+    /// failure / 4xx / 5xx. Used at SignalkClient connect-time so
+    /// any MOB raised before the WS subscription was up still lands
+    /// on the local store.</summary>
+    Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default);
 }
+
+/// <summary>
+/// Wire shape for a single notification entry in the list-active
+/// response. Mirrors the WS-delta value block (state / method /
+/// message / id / status / position / createdAt). Only the fields
+/// the MOB pipeline actually consumes are typed; extra fields the
+/// server may add stay un-bound.
+/// </summary>
+public sealed record ServerNotificationDto(
+    string? Id,
+    string? State,
+    string? Message,
+    string[]? Method,
+    NotificationStatusDto? Status,
+    NotificationPositionDto? Position,
+    DateTime? CreatedAt);
+
+public sealed record NotificationStatusDto(
+    bool Silenced,
+    bool Acknowledged,
+    bool CanSilence,
+    bool CanAcknowledge,
+    bool CanClear);
+
+public sealed record NotificationPositionDto(
+    double Latitude,
+    double Longitude);
 
 /// <summary>
 /// JSON shape for <see cref="INotificationsApi.RaiseAsync"/>. Mirrors
