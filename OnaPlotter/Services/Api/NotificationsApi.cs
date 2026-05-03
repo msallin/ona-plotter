@@ -100,22 +100,6 @@ public sealed class NotificationsApi : INotificationsApi
     }
 
     /// <inheritdoc/>
-    public async Task<ApiResult> ClearByActionAsync(string notificationId, CancellationToken ct = default)
-    {
-        // Action-style clear: POST .../{id}/clear with empty body.
-        // The server runs its full clear-side bookkeeping (state ->
-        // normal, GC scheduled). Distinct from DELETE /{id}, which
-        // older SK builds used for the same effect; the safety-
-        // alarm flow takes the action verb because that's what the
-        // SK v2 spec wires Acknowledge / Silence to as well.
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(CallTimeout);
-        return await ResourceHttp.PostAsync(_http,
-            _baseUrl.Combine(SignalKUrls.NotificationClearAction(notificationId)),
-            new { }, cts.Token).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
     {
         // Uses the same per-call timeout as the action verbs; a slow

@@ -163,8 +163,6 @@ public class AlarmPublisherTests
         // keyed notifications). Stubbed for interface compliance.
         public Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default)
             => Task.FromResult(ApiResult<string>.Ok("mob-stub"));
-        public Task<ApiResult> ClearByActionAsync(string id, CancellationToken ct = default)
-            => Task.FromResult(ApiResult.Ok);
         public Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyDictionary<string, ServerNotificationDto>?>(null);
     }

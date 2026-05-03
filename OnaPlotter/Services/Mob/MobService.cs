@@ -196,8 +196,8 @@ public sealed class MobService : IMobService, IDisposable
         }
         _store.Clear(MobPathPrefix + id);
 
-        // Skip the REST POST when we know there's no server-side
-        // entry to clear. Calling /clear/<localId> would 404 (the
+        // Skip the REST call when we know there's no server-side
+        // entry to clear. Calling DELETE /<localId> would 404 (the
         // server never saw that id) and the call wastes a round-
         // trip + can confuse a future observer in the server log.
         if (matchedLocalId is not null && !hasServerSide)
@@ -205,7 +205,14 @@ public sealed class MobService : IMobService, IDisposable
             return true;
         }
 
-        var result = await _api.ClearByActionAsync(id, ct).ConfigureAwait(false);
+        // DELETE /signalk/v2/api/notifications/<id> -- the actual
+        // clear path on signalk-server. The previous POST .../clear
+        // endpoint returned 404 (it isn't routed), so the local
+        // plotter cleared its own banner but no WS delta ever
+        // broadcast and other plotters' banners stayed up. The
+        // server's DELETE handler emits the "normal"/"cleared"
+        // notifications delta we rely on for cross-plotter sync.
+        var result = await _api.ClearAsync(id, ct).ConfigureAwait(false);
         return result.Success;
     }
 
@@ -337,17 +344,34 @@ public sealed class MobService : IMobService, IDisposable
             {
                 // POST went through. Record the serverId on the
                 // pending entry so the WS echo reconciliation knows
-                // which local synthetic to retire. We do NOT remove
-                // the synthetic here -- the WS echo arrives via
-                // ReconcileMobPath and removes it then. If the echo
-                // never arrives (server dropped it for whatever
-                // reason) the helm still sees the synthetic;
-                // safety > correctness.
+                // which local synthetic to retire.
                 if (_pending.TryGetValue(pending.LocalId, out var live))
                 {
                     var updated = live with { ServerId = result.Value, AttemptCount = attempt };
                     _pending[pending.LocalId] = updated;
                     await PersistPendingAsync(ct).ConfigureAwait(false);
+
+                    // Race fix: the server's WS echo can arrive at
+                    // notifications.mob.<serverId> BEFORE this HTTP
+                    // response completes (WS push has fewer hops
+                    // than the REST round-trip). When that happens
+                    // the OnPathChanged event for the WS frame
+                    // already fired, but ReconcileMobPath couldn't
+                    // match because pending.ServerId was still null.
+                    // Result: TWO banners on the local plotter
+                    // (local synthetic at <localId> + server twin
+                    // at <serverId>) until the next store mutation
+                    // happens to fire OnPathChanged again. Probe
+                    // the store now: if the server-twin path is
+                    // already there, tear down the local synthetic
+                    // immediately. If it isn't, the upcoming WS
+                    // echo will trigger ReconcileMobPath cleanly.
+                    var serverPath = MobPathPrefix + result.Value;
+                    if (_store.Active.Any(n => n.Path == serverPath))
+                    {
+                        _store.Clear(MobPathPrefix + pending.LocalId);
+                        CancelAndDropPending(pending.LocalId);
+                    }
                 }
                 return;
             }

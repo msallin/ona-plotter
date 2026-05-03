@@ -70,13 +70,6 @@ public interface INotificationsApi
     /// path / state / method.</para></summary>
     Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default);
 
-    /// <summary>Action-style clear via <c>POST /{id}/clear</c>.
-    /// Distinct from <see cref="ClearAsync"/> (which DELETEs);
-    /// safety alarms (MOB / fire / collision) use this verb so the
-    /// server runs its full clear-side bookkeeping. Idempotent on
-    /// the server: a second call after GC is a no-op 404.</summary>
-    Task<ApiResult> ClearByActionAsync(string notificationId, CancellationToken ct = default);
-
     /// <summary>GET <c>/signalk/v2/api/notifications</c>. Returns
     /// the active notification map keyed by id, or null on transport
     /// failure / 4xx / 5xx. Used at SignalkClient connect-time so

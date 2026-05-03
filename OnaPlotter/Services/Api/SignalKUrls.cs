@@ -112,14 +112,6 @@ public static class SignalKUrls
     /// <c>{ state, id }</c>.</summary>
     public const string NotificationMobRaise = NotificationsPath + "/mob";
 
-    /// <summary>POST /{id}/clear -- the action-style clear (state ->
-    /// normal). Distinct from DELETE /{id} on older SK builds; the
-    /// safety-alarm flow (MOB / fire / collision) uses this verb so
-    /// the server runs the GC + clear-side notification logic, not
-    /// just a row delete.</summary>
-    public static string NotificationClearAction(string id) =>
-        $"{NotificationsPath}/{Uri.EscapeDataString(id)}/clear";
-
     /// <summary>REST API exposed by sbender9/signalk-buddylist-plugin.
     /// A 200 means the plugin is installed and running; 404 means it isn't.</summary>
     public const string BuddiesPath = "/signalk/v2/api/resources/buddies";

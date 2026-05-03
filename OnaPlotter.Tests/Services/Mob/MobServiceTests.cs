@@ -187,6 +187,52 @@ public class MobServiceTests
     }
 
     [Test]
+    public async Task ServerEcho_Arriving_Before_ServerId_Recorded_Still_Removes_Local_Synthetic()
+    {
+        // Race regression: in the field the helm saw TWO banners on
+        // the local plotter (local synthetic + server twin).
+        // Cause: the SK server's WS push of notifications.mob.<serverId>
+        // can arrive at the SignalkClient BEFORE the REST POST reply
+        // returns to MobService. ReconcileMobPath then ran with
+        // pending.ServerId == null, missed the match, and the local
+        // synthetic stayed armed alongside the server twin.
+        // Fix: after MobService records ServerId, it probes the store
+        // for the server-twin path and tears the synthetic down if
+        // the WS echo already landed.
+        using var f = NewFixture();
+        f.Api.SuspendRaise = true;
+        f.Api.NextServerId = "race-srv";
+
+        var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+        var localPath = MobPathPrefix + localId;
+        await Assert.That(f.Store.Active.Any(n => n.Path == localPath)).IsTrue();
+        // Wait for the loop to be parked at the gate.
+        await f.Api.WaitForSuspendedRaiseAsync();
+
+        // Server-twin WS echo arrives WHILE the REST POST is still
+        // suspended -- ServerId hasn't been written into pending yet.
+        // OnPathChanged fires; ReconcileMobPath has nothing to match.
+        f.Store.Apply("notifications.mob.race-srv", "emergency", "MOB",
+            id: "race-srv",
+            status: new NotificationStatus(false, false, false, true, true),
+            latitude: 47.5, longitude: 8.5);
+        // Both entries are in the store right now -- this is the
+        // duplicate-banner state.
+        await Assert.That(f.Store.Active.Any(n => n.Path == localPath)).IsTrue();
+        await Assert.That(f.Store.Active.Any(n => n.Path == "notifications.mob.race-srv")).IsTrue();
+
+        // Release the gate so the REST POST returns. MobService
+        // records ServerId, then probes the store and tears the
+        // local synthetic down.
+        f.Api.SuspendRaise = false;
+        await AwaitRaiseLoopAsync(f.Service, localId);
+
+        var paths = f.Store.Active.Select(n => n.Path).ToList();
+        await Assert.That(paths).DoesNotContain(localPath);
+        await Assert.That(paths).Contains("notifications.mob.race-srv");
+    }
+
+    [Test]
     public async Task ServerEcho_For_Unknown_ServerId_Treats_As_Remote_Mob()
     {
         // Acceptance scenario 4: another plotter raises a MOB; this
@@ -440,7 +486,7 @@ public class MobServiceTests
 
         await Assert.That(ok).IsTrue();
         await Assert.That(f.Store.Active.Any(n => n.Path == "notifications.mob.bar")).IsFalse();
-        await Assert.That(f.Api.ClearActionCalls).Contains("bar");
+        await Assert.That(f.Api.ClearCalls).Contains("bar");
     }
 
     [Test]
@@ -483,7 +529,7 @@ public class MobServiceTests
         await Assert.That(ok).IsTrue();
         await Assert.That(f.Store.Active.Any(n => n.Path == path)).IsFalse();
         // No REST clear fired -- no serverId existed.
-        await Assert.That(f.Api.ClearActionCalls.Count).IsEqualTo(0);
+        await Assert.That(f.Api.ClearCalls.Count).IsEqualTo(0);
         // Retry loop must have been cancelled. Releasing the
         // SuspendRaise gate here would let any leaked loop fire a
         // POST; a leaked loop fails the assertion below.
@@ -515,8 +561,8 @@ public class MobServiceTests
         await Assert.That(mobPaths.Count).IsEqualTo(0);
         // The server entry was cleared via REST; the pending one
         // wasn't (no serverId).
-        await Assert.That(f.Api.ClearActionCalls).Contains("server-foo");
-        await Assert.That(f.Api.ClearActionCalls.Count).IsEqualTo(1);
+        await Assert.That(f.Api.ClearCalls).Contains("server-foo");
+        await Assert.That(f.Api.ClearCalls.Count).IsEqualTo(1);
     }
 
     // ------------------------------------------------------------
@@ -586,7 +632,7 @@ public class MobServiceTests
     {
         public List<string?> RaiseMobCalls { get; } = [];
         public List<string> AckCalls { get; } = [];
-        public List<string> ClearActionCalls { get; } = [];
+        public List<string> ClearCalls { get; } = [];
         public string NextServerId { get; set; } = "server-id-1";
         public int FailRaiseCount { get; set; } = 0;
         public int FailClearCount { get; set; } = 0;
@@ -611,12 +657,20 @@ public class MobServiceTests
             get => _suspendGate is not null;
             set
             {
-                _suspendGate = value
-                    ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
-                    : null;
-                _raiseEnteredGate = value
-                    ? new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
-                    : null;
+                if (value)
+                {
+                    _suspendGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _raiseEnteredGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                }
+                else
+                {
+                    // Release any parked call so its gate.Task.WaitAsync
+                    // completes -- otherwise the loop stays suspended
+                    // forever even after a test sets SuspendRaise=false.
+                    _suspendGate?.TrySetResult();
+                    _suspendGate = null;
+                    _raiseEnteredGate = null;
+                }
             }
         }
 
@@ -655,17 +709,6 @@ public class MobServiceTests
             return Task.FromResult(ApiResult.Ok);
         }
 
-        public Task<ApiResult> ClearByActionAsync(string id, CancellationToken ct = default)
-        {
-            ClearActionCalls.Add(id);
-            if (FailClearCount > 0)
-            {
-                FailClearCount--;
-                return Task.FromResult(ApiResult.Fail("network"));
-            }
-            return Task.FromResult(ApiResult.Ok);
-        }
-
         public Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
             => Task.FromResult(ListReturn);
 
@@ -675,7 +718,19 @@ public class MobServiceTests
             => Task.FromResult(ApiResult.Ok);
         public Task<ApiResult<string>> RaiseAsync(string path, NotificationPayload body, CancellationToken ct = default)
             => Task.FromResult(ApiResult<string>.Ok("path-id"));
+        // ClearAsync (DELETE /<id>) is the actual clear path the MOB
+        // pipeline calls. Records the id and fails N times when
+        // FailClearCount is set, so tests pin both the verb and the
+        // surface for "POST returned 4xx" recovery.
         public Task<ApiResult> ClearAsync(string id, CancellationToken ct = default)
-            => Task.FromResult(ApiResult.Ok);
+        {
+            ClearCalls.Add(id);
+            if (FailClearCount > 0)
+            {
+                FailClearCount--;
+                return Task.FromResult(ApiResult.Fail("network"));
+            }
+            return Task.FromResult(ApiResult.Ok);
+        }
     }
 }
