@@ -23,12 +23,15 @@ let courseLineXte = null;
 // Pulsing marker at the destination waypoint. Drawn here (not just
 // in activeRouteLayer.js) so the "Navigate Here" flow -- which
 // drops a course destination but never creates a route -- still
-// gets the active-WP visual cue. When a route IS active, the
-// activeRouteLayer's nextWpMarker pulses at the same coord with a
-// higher zIndex; both are L.divIcon-based with the same CSS
-// .active-wp-pulse animation, so a coincident render reads as a
-// single pulse rather than two.
+// gets the active-WP visual cue. When a route IS active the
+// activeRouteLayer pulses its OWN marker at the same coord with a
+// higher zIndex + the "WP N" tooltip; the two stack visibly (helm-
+// flagged: "one waypoint two symbols"). The active-route layer
+// flips coursePulseSuppressed via setCoursePulseSuppressed below
+// while it owns a polyline so this layer keeps the marker hidden
+// for the route case and only renders for Navigate Here.
 let courseLinePulse = null;
+let coursePulseSuppressed = false;
 // Helm-configured arrival-radius circle around the destination WP.
 // Hidden when ArrivalRadiusMeters <= 0 (the helm explicitly
 // disables the APPROACH alarm by setting the radius to 0; the
@@ -97,11 +100,16 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, 
         courseLineXte = null;
     }
 
-    // Pulse marker at the destination. Re-position when present;
-    // create when absent. zIndexOffset 800 -- below the active-route
-    // layer's nextWpMarker (900) so a route-active render lets the
-    // route's marker (with its "WP N" tooltip) win when they collide.
-    if (courseLinePulse) {
+    // Pulse marker at the destination. Skipped when the active-
+    // route layer is rendering its own pulsing nextWpMarker at the
+    // same coord (route case); otherwise rendered for the Navigate
+    // Here case where there's a destination but no route.
+    if (coursePulseSuppressed) {
+        if (courseLinePulse && mapRef) {
+            mapRef.removeLayer(courseLinePulse);
+            courseLinePulse = null;
+        }
+    } else if (courseLinePulse) {
         courseLinePulse.setLatLng([wpLat, wpLon]);
     } else {
         courseLinePulse = L.marker([wpLat, wpLon], {
@@ -135,6 +143,21 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, 
     } else if (courseLineArrivalRing) {
         mapRef.removeLayer(courseLineArrivalRing);
         courseLineArrivalRing = null;
+    }
+}
+
+/**
+ * Tell the course-line layer to stop drawing its own pulsing
+ * destination marker. Called by activeRouteLayer when it owns a
+ * route polyline (its nextWpMarker covers the same coord with a
+ * higher zIndex + a "WP N" tooltip). Cleared when the route ends
+ * so Navigate Here continues to get its pulse.
+ */
+export function setCoursePulseSuppressed(suppress) {
+    coursePulseSuppressed = !!suppress;
+    if (coursePulseSuppressed && courseLinePulse && mapRef) {
+        mapRef.removeLayer(courseLinePulse);
+        courseLinePulse = null;
     }
 }
 

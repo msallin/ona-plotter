@@ -30,6 +30,7 @@ let wireRouteEdit = null;
 let wireDeleteConfirm = null;
 let routeTotalNauticalMiles = null;
 let clearCourseLineFn = null;
+let setCoursePulseSuppressedFn = null;
 
 let activeRouteLayer = null;
 let activeRouteCoords = null;
@@ -48,6 +49,7 @@ export function init(map, deps) {
     wireDeleteConfirm = deps.wireDeleteConfirm;
     routeTotalNauticalMiles = deps.routeTotalNauticalMiles;
     clearCourseLineFn = deps.clearCourseLine;
+    setCoursePulseSuppressedFn = deps.setCoursePulseSuppressed;
 }
 
 // applyFrame consults this to decide whether to redraw the course
@@ -103,6 +105,11 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     // from a future caller must not crash the renderer.
     const idx = Math.max(0, Math.min(coords.length - 1, wpIdx | 0));
     activeRouteLayer = L.layerGroup().addTo(mapRef);
+    // Hide the course-line layer's own pulsing destination marker
+    // for the duration of this route -- our nextWpMarker (drawn
+    // below) covers the same coord with a higher zIndex + a "WP N"
+    // tooltip, so two pulses would stack visibly.
+    if (setCoursePulseSuppressedFn) setCoursePulseSuppressedFn(true);
     const dotNetRef = getDotNetRef();
     const tappable = !!(routeId && dotNetRef);
 
@@ -237,6 +244,10 @@ export function clearActiveRoute() {
     activeRouteLayer = null;
     activeRouteCoords = null;
     nextWpMarker = null;
+    // Hand the destination pulse back to courseLineLayer so a
+    // Navigate-Here destination (without an active route) still
+    // gets a visible marker.
+    if (setCoursePulseSuppressedFn) setCoursePulseSuppressedFn(false);
 }
 
 // Toggle the "edit-active-route in progress" suppression flag. While

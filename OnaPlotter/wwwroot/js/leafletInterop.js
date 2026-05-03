@@ -603,6 +603,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         wireDeleteConfirm,
         routeTotalNauticalMiles,
         clearCourseLine: () => courseLineLayerMod.clearCourseLine(),
+        // Tell courseLineLayer to hide its own pulsing destination
+        // marker while we own one -- otherwise both render at the
+        // same coord and read as "one waypoint two symbols".
+        setCoursePulseSuppressed: (s) => courseLineLayerMod.setCoursePulseSuppressed(s),
     });
 
     // Leaflet's native +/- zoom control is turned off above
