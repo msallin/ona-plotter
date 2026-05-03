@@ -76,11 +76,39 @@ Ran a `dotnet publish -c Release` with `<TrimMode>full</TrimMode>` flipped on to
 ## Other bundle-size opportunities (in priority order)
 
 The v1 backlog also mentioned:
-- ~~**Lazy-load `System.Private.Xml` via Blazor LazyAssemblies**~~ ✅ Landed in F2/2. ~97 KB brotli excluded from the eager boot bundle; the GPX flows in Resources / History pull the assemblies via `XmlAssemblyLoader.EnsureLoadedAsync()` before the first call.
+- ~~**Lazy-load `System.Private.Xml` via Blazor LazyAssemblies**~~ **Landed F2/2, reverted 2026-05-02** -- see "Revert: lazy-XML interaction with AOT + partial trim" below. The boot-time savings (~97 KB brotli) were real; the runtime cost was a hard boot crash on the helm.
 - **`<UseInterpreter>` for cold paths**: AOT all the hot stuff, interpreter-only the cold paths to claw back AOT bloat. The current `<RunAOTCompilation>true</RunAOTCompilation>` AOTs everything; selective AOT is more nuanced and may not be worth it once full-trim lands.
+
+## Revert: lazy-XML interaction with AOT + partial trim (2026-05-02)
+
+The F2/2 lazy-load setup (`<BlazorWebAssemblyLazyLoad>` for `System.Private.Xml.wasm` + `.Linq.wasm`) was reverted after a deployed bundle crashed the helm at boot with:
+
+```
+[MONO] * Assertion at .../mono/metadata/appdomain.c:188, condition `<disabled>' not met
+mono_wasm_load_runtime () failed
+```
+
+The crash signature is the runtime asserting during `mono_wasm_load_runtime` -- before any C# code runs. Cache + service-worker complications were ruled out (private-mode reproduction). The remaining suspect is the trim/AOT/lazy-load three-way interaction:
+
+- Under `TrimMode=partial`, the trimmer is conservative and preserves cross-assembly references that an AOT-compiled method may statically depend on.
+- The AOT compiler emits native code for those preserved references, expecting type metadata to be resolvable at runtime.
+- Marking `System.Private.Xml.*` as `<BlazorWebAssemblyLazyLoad>` excludes them from the boot manifest's eager-load set, so the runtime starts up without them.
+- If any AOT-compiled method (in a non-lazy assembly) carries a static reference to a type provided by the lazy assemblies, the runtime fails to resolve that type during `mono_wasm_load_runtime` and aborts.
+
+The verification gap on the F2/2 PR was that I confirmed publish-time correctness (manifest shape, assembly placement, all tests green) but didn't load the published bundle in a real browser. The combination of AOT + partial-trim + lazy-load was untested at runtime.
+
+### Re-enabling lazy-load safely
+
+When this comes back on the table, the path of least surprise is:
+
+1. **Move to `TrimMode=full` first** with a `<TrimmerRootDescriptor>` that pins the specific `System.Xml.Linq.*` types `ResourceImporter` / `ResourceExporter` actually use. Full trim drops the unused references that partial trim was preserving, so the AOT compiler stops emitting native code that depends on them.
+2. **Lazy-load on top of that**, adding `<BlazorWebAssemblyLazyLoad>` only after the trimmer's static graph no longer references the assembly outside the GPX call sites.
+3. **Verify by publishing + loading the bundle in a real browser** (Firefox + Safari + Chrome ideally), not just by inspecting the manifest. The runtime-only failure mode means publish-time verification is insufficient.
+
+A safer alternative that doesn't need full-trim: extract the GPX format work into a separately-mountable assembly, mark THAT as lazy-load, and arrange that no framework or app code outside it has a static reference to System.Xml.Linq types. More refactor effort, less trim-mode coupling.
 
 ## Verdict
 
-`TrimMode=full` is realistic on the application-code side after F2/3 (source-gen JsonContext landed), but the lazy-XML interaction needs `<TrimmerRootDescriptor>` work before the flip is a net-positive on bundle size. The csproj stays at `TrimMode=partial` with a comment cross-referencing this doc so the next contributor finds the context.
+`TrimMode=full` is realistic on the application-code side after F2/3 (source-gen JsonContext landed). The lazy-XML angle is more complex than the audit anticipated -- the runtime crash showed that lazy-load + AOT + partial-trim is a fragile combination -- so the next attempt should sequence trim-full first, then lazy.
 
-The anonymous-type `Serialize(new {...})` sweep (step 3) is independent and the next concrete step toward closing this out.
+The anonymous-type `Serialize(new {...})` sweep (step 3) is independent and was completed in PR #208.
