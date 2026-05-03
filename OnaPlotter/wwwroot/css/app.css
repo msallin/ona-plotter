@@ -4006,6 +4006,13 @@ html.night-mode-global body {
     .ctrl-btn { padding: 4px 6px; font-size: 0.6rem; }
     .ctrl-sep { display: none; }
     .ctrl-btn-overflow { display: none !important; }
+    /* Bar-overflow items in the More menu: turn them on for phone
+       (the bar itself is collapsed so they need a home). The
+       default rule below the @media block keeps them hidden on
+       desktop / iPad. .ctrl-more-item uses display: flex; the
+       separator is a plain block element. */
+    .ctrl-more-overflow { display: flex !important; }
+    div.ctrl-more-overflow { display: block !important; }
     /* Tighter control bar on mobile -> recompute --panel-bottom so the
        bottom-center stack still sits one --panel-gap above the bar. */
     :root { --ctrl-bar-height: 56px; }
@@ -4196,13 +4203,17 @@ html.night-mode-global body {
 /* Default (non-phone): show the full alarm-log label, hide the
    abbreviated one. Mirror block for the connection text. */
 .alarm-log-label-short { display: none; }
-/* On viewports the bar can fit comfortably, the overflow items live
-   in the bar -- hide their duplicates inside the More menu. The
-   negation of the phone breakpoint above: NOT a portrait phone AND
-   NOT a landscape phone. */
-@media not (max-width: 600px) and not ((max-height: 500px) and (max-width: 900px)) {
-    .ctrl-more-overflow { display: none !important; }
-}
+/* DEFAULT for every viewport: hide the More-menu overflow items.
+   They duplicate buttons that already live in the bar on
+   desktop / iPad. The phone @media block above flips them back
+   on (display: flex / display: block) so the More menu shows
+   the full set when the bar can't.
+   Earlier this was a `@media not (X) and not (Y)` negation which
+   relies on Media Queries Level 4 boolean syntax -- helm flagged
+   that desktop browsers were showing the duplicates anyway,
+   meaning the negation isn't being honoured everywhere. Flipping
+   the default avoids the problematic `not` operator entirely. */
+.ctrl-more-overflow { display: none !important; }
 .ctrl-more-sep {
     height: 1px;
     background: rgba(255, 255, 255, 0.08);
