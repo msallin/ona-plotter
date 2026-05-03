@@ -2179,7 +2179,15 @@ html:fullscreen .hud-stack-br {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.ais-popup-buddy {
+/* Buddy chip: amber. Specificity bumped via the parent class so
+   we beat the `a, .btn-link { color: var(--sk-accent); }` rule
+   that paints every other anchor on the page sky-blue -- without
+   the parent qualifier the buddy chip rendered in the same blue
+   as the MarineTraffic / VesselFinder links and lost its
+   distinct "buddy = warn-coloured affordance" reading. The same
+   parent qualifier is applied to .ais-popup-extern + .ais-popup-snooze
+   below so all three popup-link colours are won fairly. */
+.ais-popup-content .ais-popup-buddy {
     font-size: 11px;
     color: var(--sk-warn, #facc15);
     text-decoration: none;
@@ -2241,6 +2249,15 @@ html:fullscreen .hud-stack-br {
    Role is bold + colour-coded ("Give way" red, "Stand on" green);
    classification is regular weight underneath. The "?" link sits
    in the LABEL cell next to "COLREGS". */
+/* Label cell override: "COLREGS ?" is ~10 chars at 12 px, which
+   doesn't fit the shared 56 px first-column width. Without nowrap
+   the table auto-layout broke "COLREGS" / "?" onto two lines and
+   the "?" rendered as an orphaned glyph below the row label.
+   Whitespace nowrap forces the auto-layout to expand the cell. */
+.ais-popup-table td.ais-popup-colregs-label-cell {
+    white-space: nowrap;
+    width: auto;
+}
 .ais-popup-colregs-help {
     color: var(--panel-text-muted);
     text-decoration: none;
@@ -2275,7 +2292,7 @@ html:fullscreen .hud-stack-br {
     gap: 10px;
     align-items: center;
 }
-.ais-popup-extern {
+.ais-popup-content .ais-popup-extern {
     color: var(--sk-cyan, #7dd3fc);
     font-size: 11px;
     text-decoration: none;
@@ -2284,7 +2301,7 @@ html:fullscreen .hud-stack-br {
     padding: 2px 4px;
     white-space: nowrap;
 }
-.ais-popup-snooze {
+.ais-popup-content .ais-popup-snooze {
     color: var(--sev-warn, #fbbf24);
     font-size: 11px;
     text-decoration: none;
@@ -4872,11 +4889,16 @@ html.night-mode-global body {
 }
 /* Pad the metric row + route-total row away from the side buttons
    so the BRG / DTW / TTG chips don't slide under the prev/next
-   glyphs. */
+   glyphs. 44 px = chevron's coarse-pointer min-width (36 px) +
+   the 4 px left/right offset + 4 px breathing space. The previous
+   36 px matched only the button width, so the panel rendered with
+   the chevron sitting flush against the start of "DTW" / end of
+   "XTE" (helm screenshot showed the "D" of "DTW" hidden under the
+   left chevron). */
 .route-panel-compact .route-info-row,
 .route-panel-compact .route-total-row {
-    padding-left: 36px;
-    padding-right: 36px;
+    padding-left: 44px;
+    padding-right: 44px;
 }
 
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
@@ -5141,6 +5163,16 @@ html.night-mode-global body {
     align-items: center;
     padding: 4px 4px 4px 8px;
     line-height: 1.25;
+}
+/* COLREGS modal reuses .legend-list/.legend-name/.legend-desc but
+   has no swatch column -- only [name | description]. Without this
+   override the name lands in the 24 px swatch column (too narrow)
+   and overflows into the description column starting at column 2,
+   so "Head-on" / "Both vessels..." paint on top of each other.
+   2-column auto/1fr grid puts name and desc in their own tracks. */
+.colregs-list li {
+    grid-template-columns: minmax(7em, max-content) 1fr;
+    align-items: start;
 }
 .legend-name {
     color: var(--sk-text);
@@ -5721,6 +5753,18 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     min-height: 40px;
     min-width: 40px;
     font-size: 1.1rem;
+}
+
+/* Big screen mode: control bar grows because the buttons inside
+   bumped to min-height 56px + 10/14 padding. The default
+   --ctrl-bar-height: 64px no longer matches the actual rendered
+   height, so .hud-stack-bc (active-route + anchor-watch cards)
+   sat flush against the top of the bar -- helm flagged "no
+   padding in big screen mode between active route and bottom
+   menu". Re-derive the variable so --panel-bottom keeps the
+   same visual --panel-gap above the taller bar. */
+main:has(.map-container.big-type) {
+    --ctrl-bar-height: 88px;
 }
 
 /* Big screen mode: AIS ship icons. Scale the SVG inside the

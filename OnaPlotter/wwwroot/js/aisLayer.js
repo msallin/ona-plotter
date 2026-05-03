@@ -402,7 +402,15 @@ function buildAisPopupHtml(snap) {
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {
         const cls = isDangerEff ? 'ais-popup-cpa-danger' : 'ais-popup-cpa';
-        cpaHtml = `<tr><td>CPA</td><td class="${cls}">${cpaInfo.cpa.toFixed(2)}nm in ${cpaInfo.tcpa.toFixed(0)}min</td></tr>`;
+        // Bold the NUMBERS only -- "nm" / "in" / "min" are scaffolding
+        // and the eye should latch on the magnitudes. Per-token <strong>
+        // wrapping; the surrounding cell drops its global font-weight
+        // override (see .ais-popup-cpa rule in app.css) so the units
+        // sit at regular weight beside the bold values.
+        cpaHtml = `<tr><td>CPA</td><td class="${cls}">` +
+            `<strong>${cpaInfo.cpa.toFixed(2)}</strong>nm in ` +
+            `<strong>${cpaInfo.tcpa.toFixed(0)}</strong>min` +
+            `</td></tr>`;
     }
 
     // COLREGS rows: label on the LEFT (like every other data row),
@@ -420,8 +428,12 @@ function buildAisPopupHtml(snap) {
             ? `<div class="ais-popup-colregs-role ${v.colregsRole === 'Give way' ? 'ais-popup-colregs-give-way' : 'ais-popup-colregs-stand-on'}">${esc(v.colregsRole)}</div>`
             : '';
         const labelHtml = `<div class="ais-popup-colregs-label">${esc(v.colregsLabel)}</div>`;
+        // Label cell carries an extra class so we can override the
+        // shared 56 px first-column width: "COLREGS ?" is wider than
+        // 56 px, so without nowrap the "?" wrapped onto its own row
+        // BELOW the label and read as orphaned punctuation.
         colregsHtml = `<tr>` +
-            `<td>` +
+            `<td class="ais-popup-colregs-label-cell">` +
                 `COLREGS ` +
                 `<a href="#" data-ona-colregs="1" class="ais-popup-colregs-help" ` +
                     `title="Open COLREGS quick reference">?</a>` +

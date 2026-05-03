@@ -191,7 +191,16 @@
                        like "30" was clipped at the right edge -- the
                        helm saw "3" alone for the top tick. 44 px gives
                        room for up to three digits. *@
-                    <svg width="44" height="180" aria-hidden="true">
+                    @* SVG height 188 (was 180) -- the bottom "0" tick
+                       sat at baseline y=178 with a 10 px font, and
+                       the digit descender extended past y=180,
+                       clipping the lower curve of the "0" against
+                       the SVG box edge. The gradient rect still
+                       runs 0..180 so the colour band lines up with
+                       the top "30" tick at y=12; the extra 8 px
+                       below the rect just lets the "0" glyph live
+                       inside the SVG. *@
+                    <svg width="44" height="188" aria-hidden="true">
                         <defs>
                             @* Viridis stops -- match SpeedColor() in the
                                @code block. Perceptually uniform in

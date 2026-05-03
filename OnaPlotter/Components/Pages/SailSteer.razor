@@ -354,11 +354,17 @@
                very top edge of the SVG; cardinals were pulled
                INSIDE the ring above so this no longer competes
                with them, but the mask remains as a belt-and-braces
-               guard against future label-positioning tweaks. *@
-        <rect x="207" y="2" width="86" height="34" rx="6"
+               guard against future label-positioning tweaks.
+               Pill height 42 + label baseline 14 + value baseline 36
+               -- the previous 34/16/32 stack collapsed the 11px
+               label's descender (~y=18) onto the 22px value's
+               cap-top (~y=10), painting "HDG" inside the digits.
+               Bumping the pill 8 px gives both text rows their own
+               cap band with a 4 px breathing line in between. *@
+        <rect x="207" y="2" width="86" height="42" rx="6"
               class="sailsteer-hdg-pill" />
-        @Txt(250, 16, "HDG", "sailsteer-label")
-        @Txt(250, 32, $"{Format.Degrees(Data.Heading)}°", Data.Heading is null ? "sailsteer-value-lg sailsteer-value-muted" : "sailsteer-value-lg")
+        @Txt(250, 14, "HDG", "sailsteer-label")
+        @Txt(250, 36, $"{Format.Degrees(Data.Heading)}°", Data.Heading is null ? "sailsteer-value-lg sailsteer-value-muted" : "sailsteer-value-lg")
 
         @* === Help button (rendered LAST too, after the pill so a
                theoretical pill-overlap doesn't swallow taps). Tap
