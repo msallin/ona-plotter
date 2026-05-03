@@ -6099,11 +6099,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
 
 /* Big screen mode: control bar grows because the buttons inside
    bumped to min-height 56px + 10/14 padding. The default
-   --ctrl-bar-height: 64px no longer matches the actual rendered
-   height, so .hud-stack-bc (active-route + anchor-watch cards)
-   sat flush against the top of the bar -- helm flagged "no
-   padding in big screen mode between active route and bottom
-   menu". Two layers of fix:
+   --ctrl-bar-height: 64px is an approximation of the rendered
+   bar; in big mode it's actually ~70 px tall (56 px button
+   content-area + 4 px bar padding × 2 + 1 px border × 2). To get
+   the SAME visual gap above the bar the helm sees on desktop
+   (~18 px between the route card and the bar), the override
+   here uses 70 px -- not the earlier 88 which was too generous
+   and pushed the card visibly higher than the desktop equivalent.
+   Two layers of fix:
      (a) Bump --ctrl-bar-height for big mode so any future
          consumer of the variable picks up the right value.
      (b) Hard-set .hud-stack-bc bottom because the calc-based
@@ -6116,10 +6119,10 @@ main:has(.map-container.big-type) .chart-reorder-btn {
          a future --ctrl-bar-offset / --panel-gap change still
          lands here. */
 main:has(.map-container.big-type) {
-    --ctrl-bar-height: 88px;
+    --ctrl-bar-height: 70px;
 }
 main:has(.map-container.big-type) .hud-stack-bc {
-    bottom: calc(88px + var(--ctrl-bar-offset) + var(--panel-gap));
+    bottom: calc(70px + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
 /* Big screen mode: AIS ship icons. Scale the SVG inside the
