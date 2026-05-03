@@ -420,6 +420,23 @@
     /// either case.</summary>
     private LoginStatus? _loginStatus;
     private System.Threading.Timer? authPollTimer;
+    /// <summary>Coalesces overlapping probes. At the warning-shown
+    /// 2s cadence, a network stall can leave a previous probe in
+    /// flight when the next tick fires (AuthApi caps each probe at
+    /// 8s). Interlocked guard skips the duplicate -- queuing them
+    /// up would build a backlog of stale 401 round-trips with no
+    /// UX benefit.</summary>
+    private int _authProbeInFlight;
+    /// <summary>Login-state polling cadence. Fast 2s while the
+    /// not-logged-in chip is up so the helm signing in via the SK
+    /// admin tab sees the chip clear within a tick or two; slow
+    /// 1-min cadence once logged in (or on a no-security server)
+    /// just to catch a session expiry without a manual reload.
+    /// Cadence is re-evaluated after every probe.</summary>
+    private static readonly TimeSpan AuthPollIntervalWarningShown =
+        TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan AuthPollIntervalWarningHidden =
+        TimeSpan.FromMinutes(1);
     /// <summary>Browser origin used to build the
     /// <c>/skServer/login</c> link in the not-logged-in chip.
     /// Captured once at OnInitialized; the chip's href is built
@@ -481,16 +498,20 @@
         // signalk-server install.
         _baseUri = Nav.BaseUri.TrimEnd('/');
 
-        // Probe login status. One-shot at app start, then every 5 min
-        // so a helm who signs in via the SK admin tab sees the chip
-        // clear within a few minutes without a manual reload. The
-        // probe degrades to null (chip hidden) on 404 / transport
+        // Probe login status. One-shot at app start, then on a
+        // dynamic cadence that the probe itself re-tunes:
+        //   - 2 s while the not-logged-in chip is up (the helm is
+        //     most likely about to sign in via the SK admin tab; we
+        //     want the chip to clear within a couple of seconds);
+        //   - 1 min once logged in or on a no-security server (cheap
+        //     keep-alive so a session expiry surfaces quickly).
+        // The probe degrades to null (chip hidden) on 404 / transport
         // failure -- third-party SK servers without /skServer/loginStatus
         // see no chip rather than a "broken auth" warning.
         _ = RefreshLoginStatusAsync();
         authPollTimer = new System.Threading.Timer(
             _ => _ = RefreshLoginStatusAsync(), null,
-            TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+            AuthPollIntervalWarningHidden, AuthPollIntervalWarningHidden);
         // Snoozed-chip countdown refresh: updates the "7m" label each
         // minute. Separate from the stale check to keep the two concerns
         // independent.
@@ -1238,19 +1259,27 @@
     }
 
     /// <summary>Probe the login-status endpoint and stash for the
-    /// not-logged-in chip. Called once on init and every 5 min from
-    /// the auth poll timer. Failure / 404 (third-party SK server
-    /// without /skServer/loginStatus) leaves the cached value null
-    /// and the chip stays hidden -- "we can't tell" is a more
-    /// honest UX than a chip that lies.</summary>
+    /// not-logged-in chip. Called once on init, on tab visibility
+    /// changes, and on a dynamic timer cadence (2 s while the chip
+    /// is up; 1 min otherwise -- see <see cref="AuthPollIntervalWarningShown"/>).
+    /// Failure / 404 (third-party SK server without
+    /// /skServer/loginStatus) leaves the cached value null and the
+    /// chip stays hidden -- "we can't tell" is a more honest UX
+    /// than a chip that lies.</summary>
     private async Task RefreshLoginStatusAsync()
     {
+        // Skip if a previous probe is still running. Without this,
+        // an 8 s network stall under the 2 s warning-shown cadence
+        // would queue up to 4 concurrent probes against the same
+        // endpoint -- noise without signal.
+        if (System.Threading.Interlocked.CompareExchange(
+                ref _authProbeInFlight, 1, 0) != 0) return;
         try
         {
             var status = await AuthApi.GetLoginStatusAsync();
             // Only re-render when the warning state changed -- avoids
-            // a free StateHasChanged on every 5-min poll for the
-            // common "still logged in" path. Toggle vs the current
+            // a free StateHasChanged on every poll for the common
+            // "still logged in" path. Toggle vs the current
             // _loginStatus's effective banner state.
             bool wasShowing = _loginStatus is { ShouldShowLoginWarning: true };
             bool nowShowing = status is { ShouldShowLoginWarning: true };
@@ -1259,6 +1288,15 @@
             {
                 await InvokeAsync(StateHasChanged);
             }
+            // Re-tune the poll cadence to match the new state: fast
+            // while the chip is up so the next sign-in is detected
+            // promptly, slow otherwise. Safe to call on every probe
+            // -- Timer.Change is idempotent for a same-period reset.
+            var nextInterval = nowShowing
+                ? AuthPollIntervalWarningShown
+                : AuthPollIntervalWarningHidden;
+            try { authPollTimer?.Change(nextInterval, nextInterval); }
+            catch (ObjectDisposedException) { }
         }
         catch (ObjectDisposedException) { }
         catch (Exception)
@@ -1266,6 +1304,10 @@
             // Auth probe is best-effort; never let it crash the
             // page. Worst case is the chip stays at its previous
             // state until the next poll.
+        }
+        finally
+        {
+            System.Threading.Interlocked.Exchange(ref _authProbeInFlight, 0);
         }
     }
 
