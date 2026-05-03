@@ -1,3 +1,4 @@
+using System.Net.Http;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.Js;
@@ -247,10 +248,36 @@ public sealed class ActiveRouteSync
             // teardown.
             if (!string.IsNullOrEmpty(currentHref))
             {
-                _activeRouteCoords = await _routeApi.GetCoordinatesAsync(currentHref);
-                _activeRouteDistanceTotal = _activeRouteCoords is not null
-                    ? RouteProgress.TotalDistanceMeters(_activeRouteCoords)
-                    : null;
+                // Catch transport failures locally so a slow / unreachable
+                // SK server (8 s HttpClient timeout -> TaskCanceledException,
+                // or HttpRequestException on connection refused) doesn't
+                // bubble up to HandleDataChanged's async-void boundary --
+                // an unhandled exception there terminates the WASM runtime
+                // (".NET runtime already exited with 1") and the helm has
+                // to reload. We log to console so the relay still surfaces
+                // the failure, leave _activeRouteCoords unchanged so the
+                // last-known geometry stays drawn, and let the next tick's
+                // diff (href hasn't changed -> early-exit at line 188)
+                // skip the refetch until something actually moves. A
+                // genuine deactivation (currentHref -> null) will retry
+                // and clear correctly.
+                try
+                {
+                    _activeRouteCoords = await _routeApi.GetCoordinatesAsync(currentHref);
+                    _activeRouteDistanceTotal = _activeRouteCoords is not null
+                        ? RouteProgress.TotalDistanceMeters(_activeRouteCoords)
+                        : null;
+                }
+                catch (Exception ex)
+                    when (ex is TaskCanceledException or HttpRequestException or OperationCanceledException)
+                {
+                    Console.Error.WriteLine(
+                        $"[active-route] geometry fetch failed: {ex.GetType().Name}: {ex.Message}");
+                    // Leave _activeRouteCoords as-is: a previously-fetched
+                    // route stays drawn through the transient outage,
+                    // matching the helm's mental model ("the route I
+                    // activated is still there").
+                }
             }
             else
             {

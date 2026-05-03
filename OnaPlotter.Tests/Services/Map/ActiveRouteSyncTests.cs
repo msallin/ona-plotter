@@ -1,3 +1,4 @@
+using System.Net.Http;
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.Js;
@@ -72,6 +73,10 @@ public class ActiveRouteSyncTests
     {
         public Dictionary<string, double[][]?> CoordsByHref { get; } = [];
         public int FetchCount { get; private set; }
+        /// <summary>When non-null, GetCoordinatesAsync throws this
+        /// exception instead of returning. Used to drive the timeout /
+        /// transport-failure path in SyncAsync.</summary>
+        public Func<Exception>? ThrowOnFetch { get; set; }
 
         public Task<List<SignalkRoute>> GetAllAsync(CancellationToken ct = default) =>
             Task.FromResult(new List<SignalkRoute>());
@@ -79,6 +84,7 @@ public class ActiveRouteSyncTests
         public Task<double[][]?> GetCoordinatesAsync(string href, CancellationToken ct = default)
         {
             FetchCount++;
+            if (ThrowOnFetch is { } make) throw make();
             return Task.FromResult(CoordsByHref.TryGetValue(href, out var c) ? c : null);
         }
 
@@ -404,5 +410,51 @@ public class ActiveRouteSyncTests
         await sync.SyncAsync(data, new HashSet<string>(), available);
 
         await Assert.That(js.ActiveRoutes[0].name).IsEqualTo("Friday Sail");
+    }
+
+    [Test]
+    public async Task GeometryFetch_Timeout_Does_Not_Propagate()
+    {
+        // Pins the runtime-stability fix: a slow / unreachable SK
+        // server (HttpClient 8 s timeout -> TaskCanceledException)
+        // must NOT propagate out of SyncAsync, because HandleDataChanged
+        // is async-void and an unhandled exception there terminates
+        // the WASM runtime ("Assert failed: .NET runtime already exited
+        // with 1"). Repro on the helm 2026-05-02; root cause was the
+        // raw `await _routeApi.GetCoordinatesAsync(currentHref)` with
+        // no try/catch.
+        var (sync, _, api, _, _, _) = NewSync();
+        api.ThrowOnFetch = () => new TaskCanceledException("net_http_request_timedout, 8");
+        var data = new NavigationData();
+        data.ApplyString("navigation.course.activeRoute.href", "/resources/routes/r-slow");
+        data.ApplyCourseNextPointPosition(54.5, 11.2);
+        data.Apply("navigation.course.activeRoute.pointIndex", 0);
+
+        // Must complete without throwing -- the catch-and-log inside
+        // SyncAsync swallows the timeout. A future regression that
+        // removes the try/catch would surface here as TUnit reporting
+        // an unhandled task exception.
+        await sync.SyncAsync(data, new HashSet<string>(), []);
+
+        // The fetch was attempted (so we're testing the right path).
+        await Assert.That(api.FetchCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task GeometryFetch_HttpRequestException_Does_Not_Propagate()
+    {
+        // Sibling case: connection refused / DNS failure raises
+        // HttpRequestException rather than TaskCanceledException.
+        // Same swallow-and-recover policy.
+        var (sync, _, api, _, _, _) = NewSync();
+        api.ThrowOnFetch = () => new HttpRequestException("Connection refused");
+        var data = new NavigationData();
+        data.ApplyString("navigation.course.activeRoute.href", "/resources/routes/r-down");
+        data.ApplyCourseNextPointPosition(54.5, 11.2);
+        data.Apply("navigation.course.activeRoute.pointIndex", 0);
+
+        await sync.SyncAsync(data, new HashSet<string>(), []);
+
+        await Assert.That(api.FetchCount).IsEqualTo(1);
     }
 }
