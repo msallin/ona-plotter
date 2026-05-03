@@ -157,6 +157,16 @@ public class AlarmPublisherTests
             OnCleared?.Invoke(id);
             return Task.FromResult(ApiResult.Ok);
         }
+
+        // MOB-specific verbs: not exercised by AlarmPublisher tests
+        // (the publisher only uses RaiseAsync / ClearAsync for path-
+        // keyed notifications). Stubbed for interface compliance.
+        public Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default)
+            => Task.FromResult(ApiResult<string>.Ok("mob-stub"));
+        public Task<ApiResult> ClearByActionAsync(string id, CancellationToken ct = default)
+            => Task.FromResult(ApiResult.Ok);
+        public Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, ServerNotificationDto>?>(null);
     }
 
     /// <summary>Stub acknowledger used to mark an AlarmInfo as

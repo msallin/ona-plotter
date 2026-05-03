@@ -113,6 +113,19 @@ builder.Services.AddSingleton<ICourseApi, CourseApi>();
 // via Acknowledge / Silence and (Phase B) lets client-side rules
 // publish their alarms back to SK so other plotters can see them.
 builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
+
+// Local-first MOB pipeline: synthesises a notification into the
+// ServerNotificationStore + queues a background POST that retries
+// until the server confirms. The "onChanged" callback fires the
+// existing OnDataChanged on SignalkClient so the alarm pipeline
+// re-evaluates immediately after a synthesise / reconcile.
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService>(sp =>
+    new OnaPlotter.Services.Mob.MobService(
+        sp.GetRequiredService<INotificationsApi>(),
+        sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
+        sp.GetRequiredService<OnaPlotter.Services.IKeyValueStore>(),
+        sp.GetRequiredService<TimeProvider>(),
+        () => sp.GetRequiredService<SignalkClient>().FireDataChanged()));
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
 // isn't installed; the map surfaces that as a toast rather than failing

@@ -30,6 +30,16 @@ public sealed class ServerNotificationStore
     private readonly Dictionary<string, ServerNotification> _byPath
         = new(StringComparer.Ordinal);
 
+    /// <summary>Fires when <see cref="Apply"/> mutates the active set
+    /// (a new path arms, an existing path re-arms with a different
+    /// payload, or the call cleared an active path). Used by the MOB
+    /// pipeline to reconcile a local synthetic against a server WS
+    /// echo without coupling SignalkClient directly to MobService.
+    /// Single-threaded WASM assumption: handlers run synchronously
+    /// inside Apply, before the bool result propagates to the
+    /// caller.</summary>
+    public event Action<string>? OnPathChanged;
+
     /// <summary>Snapshot of the currently-armed notifications. Returns a
     /// shallow copy so iteration is safe against concurrent
     /// <see cref="Apply"/> calls (Blazor WASM is single-threaded but the
@@ -75,12 +85,15 @@ public sealed class ServerNotificationStore
     /// </para>
     /// </summary>
     public bool Apply(string path, string? state, string? message,
-        string? id = null, NotificationStatus? status = null)
+        string? id = null, NotificationStatus? status = null,
+        double? latitude = null, double? longitude = null)
     {
         var severity = MapSeverity(state);
         if (severity is null)
         {
-            return _byPath.Remove(path);
+            bool removed = _byPath.Remove(path);
+            if (removed) OnPathChanged?.Invoke(path);
+            return removed;
         }
         // V2 server-side ack: drop from the active set so the alarm
         // pipeline auto-clears. Without this the banner would persist
@@ -100,7 +113,9 @@ public sealed class ServerNotificationStore
         // regardless.
         if (status is { Acknowledged: true } && !IsEmergencyState(state))
         {
-            return _byPath.Remove(path);
+            bool removedAck = _byPath.Remove(path);
+            if (removedAck) OnPathChanged?.Invoke(path);
+            return removedAck;
         }
         // Hard cap on active set. See MaxActiveNotifications. Refuse
         // new paths past the cap; existing paths can still update
@@ -114,7 +129,8 @@ public sealed class ServerNotificationStore
         // can render "emergency" vs "alarm" if they care; severity is
         // pre-mapped to the AlarmSeverity coarse bucket the banner
         // actually uses.
-        var notif = new ServerNotification(path, state!, message, severity.Value, id, status);
+        var notif = new ServerNotification(
+            path, state!, message, severity.Value, id, status, latitude, longitude);
         if (_byPath.TryGetValue(path, out var existing) && existing == notif)
         {
             // Idempotent: same exact notification re-applied. No state
@@ -122,6 +138,7 @@ public sealed class ServerNotificationStore
             return false;
         }
         _byPath[path] = notif;
+        OnPathChanged?.Invoke(path);
         return true;
     }
 
@@ -131,7 +148,12 @@ public sealed class ServerNotificationStore
     /// <summary>Remove a path explicitly. Used when a delta arrives with
     /// a JSON null value (server cleared the notification). Returns
     /// true when something was actually removed.</summary>
-    public bool Clear(string path) => _byPath.Remove(path);
+    public bool Clear(string path)
+    {
+        bool removed = _byPath.Remove(path);
+        if (removed) OnPathChanged?.Invoke(path);
+        return removed;
+    }
 
     /// <summary>Drop everything. Used on websocket disconnect so a
     /// stale cached notification doesn't haunt the alarm stack while

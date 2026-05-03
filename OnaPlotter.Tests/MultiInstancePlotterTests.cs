@@ -326,6 +326,17 @@ public class MultiInstancePlotterTests
             _server.ClearById(id);
             return Task.FromResult(ApiResult.Ok);
         }
+
+        // MOB-specific verbs: this multi-plotter harness covers the
+        // path-keyed publisher flow (CPA / wind / depth). The MOB
+        // pipeline has its own dedicated tests (MobServiceTests);
+        // stubs here are interface-compliance only.
+        public Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default)
+            => Task.FromResult(ApiResult<string>.Ok("mob-stub"));
+        public Task<ApiResult> ClearByActionAsync(string id, CancellationToken ct = default)
+            => Task.FromResult(ApiResult.Ok);
+        public Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, ServerNotificationDto>?>(null);
     }
 
     private static NotificationStatus FullPermissions =>

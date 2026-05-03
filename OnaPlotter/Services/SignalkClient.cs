@@ -357,6 +357,13 @@ public sealed class SignalkClient : IAsyncDisposable
     /// </summary>
     public event Action? OnDataChanged;
 
+    /// <summary>External fire-OnDataChanged trigger. Used by services
+    /// that mutate the alarm-store directly (MobService synthesises a
+    /// MOB into ServerNotificationStore) so the alarm pipeline +
+    /// component re-renders pick up the change without waiting for
+    /// the next ws frame.</summary>
+    internal void FireDataChanged() => OnDataChanged?.Invoke();
+
     /// <summary>
     /// Raised for every raw JSON message received from the websocket.
     /// </summary>
@@ -1547,11 +1554,27 @@ public sealed class SignalkClient : IAsyncDisposable
             {
                 status = ParseNotificationStatus(statusEl);
             }
+            // Optional position block on safety alarms (MOB / fire /
+            // collision). Server may emit `null` if it had no fix at
+            // trigger time; we treat any non-object shape (including
+            // null) as "no position" so the chart marker layer
+            // simply doesn't draw one.
+            double? lat = null, lon = null;
+            if (el.TryGetProperty("position", out var posEl)
+                && posEl.ValueKind == JsonValueKind.Object)
+            {
+                if (posEl.TryGetProperty("latitude", out var latEl)
+                    && latEl.ValueKind == JsonValueKind.Number)
+                    lat = latEl.GetDouble();
+                if (posEl.TryGetProperty("longitude", out var lonEl)
+                    && lonEl.ValueKind == JsonValueKind.Number)
+                    lon = lonEl.GetDouble();
+            }
             // Missing-state-on-an-object: assume armed at "alarm"
             // severity. Clears require an explicit normal/cleared
             // string OR a JSON null payload.
             state ??= "alarm";
-            return _serverNotifs.Apply(path, state, message, id, status);
+            return _serverNotifs.Apply(path, state, message, id, status, lat, lon);
         }
 
         // Bare bool true: rare legacy form ("we have a notification");

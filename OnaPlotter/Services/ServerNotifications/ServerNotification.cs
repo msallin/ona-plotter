@@ -29,10 +29,19 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// pre-2.21 servers. When present, drives the Acknowledge / Silence
 /// banner buttons and lets <see cref="ServerNotificationsAlarmRule"/>
 /// suppress already-acknowledged notifications.</param>
+/// <param name="Latitude">Optional latitude attached to the
+/// notification value (SignalK v2 safety alarms -- MOB / fire /
+/// collision -- carry a <c>position</c> block so the chart can
+/// render a marker without the receiver having to look up the
+/// helm's last fix). Null when the server didn't publish one.</param>
+/// <param name="Longitude">Companion to <see cref="Latitude"/>;
+/// always travels paired (both null or both non-null).</param>
 public sealed record ServerNotification(
     string Path,
     string State,
     string? Message,
     AlarmSeverity Severity,
     string? Id = null,
-    NotificationStatus? Status = null);
+    NotificationStatus? Status = null,
+    double? Latitude = null,
+    double? Longitude = null);

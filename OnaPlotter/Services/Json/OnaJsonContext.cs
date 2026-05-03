@@ -60,6 +60,7 @@ namespace OnaPlotter.Services.Json;
 [JsonSerializable(typeof(LoginStatus))]
 [JsonSerializable(typeof(RouteDraft))]
 [JsonSerializable(typeof(SnoozedTarget[]))]
+[JsonSerializable(typeof(OnaPlotter.Services.Mob.PendingRaise[]))]
 [JsonSerializable(typeof(SignalkSubscribeRequest))]
 [JsonSerializable(typeof(SignalkUnsubscribeRequest))]
 // Primitive / array types used at the History.razor JS-interop literal
