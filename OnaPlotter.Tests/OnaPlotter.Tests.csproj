@@ -26,6 +26,10 @@
          would surface cheaply. Same reasoning as TUnit: floor to the
          current minor rather than the whole 1.x major. -->
     <PackageReference Include="bunit" Version="1.40.*" />
+    <!-- FakeTimeProvider for deterministic clock control in tests
+         that exercise the MOB retry-loop backoff schedule. Avoids
+         hand-rolling the CreateTimer plumbing. -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.*" />
   </ItemGroup>
 
   <ItemGroup>

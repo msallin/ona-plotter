@@ -73,6 +73,14 @@ public sealed class MobService : IMobService, IDisposable
     private readonly Dictionary<string, CancellationTokenSource> _pendingCts =
         new(StringComparer.Ordinal);
 
+    /// <summary>Per-pending retry-loop Task. Test seam: a test can
+    /// <c>await GetRaiseLoopAsync(localId)</c> instead of polling
+    /// the fake API with wall-clock waits, which removes the flake
+    /// vector identified in the review (TEST-004 / TEST-005).
+    /// Production callers don't need this; it stays internal.</summary>
+    private readonly Dictionary<string, Task> _pendingTasks =
+        new(StringComparer.Ordinal);
+
     private bool _disposed;
 
     public MobService(
@@ -135,12 +143,14 @@ public sealed class MobService : IMobService, IDisposable
         _pending[localId] = pending;
         await PersistPendingAsync(ct);
 
-        // Background retry. Fire-and-forget; the loop owns its own
-        // CTS so cancellations (echo arrival, dispose) tear it down
-        // cleanly.
+        // Background retry. The loop owns its own CTS so cancellations
+        // (echo arrival, dispose) tear it down cleanly. The Task is
+        // tracked so tests can await it -- production callers ignore
+        // the handle.
         var cts = new CancellationTokenSource();
         _pendingCts[localId] = cts;
-        _ = Task.Run(() => RunRaiseLoopAsync(pending, cts.Token));
+        var loopTask = Task.Run(() => RunRaiseLoopAsync(pending, cts.Token));
+        _pendingTasks[localId] = loopTask;
 
         return localId;
     }
@@ -237,7 +247,7 @@ public sealed class MobService : IMobService, IDisposable
             _pending[p.LocalId] = p;
             var cts = new CancellationTokenSource();
             _pendingCts[p.LocalId] = cts;
-            _ = Task.Run(() => RunRaiseLoopAsync(p, cts.Token));
+            _pendingTasks[p.LocalId] = Task.Run(() => RunRaiseLoopAsync(p, cts.Token));
         }
         // Each Apply above fires OnPathChanged; the alarm pipeline
         // subscriber wakes itself N times (cheap; coalesced at the
@@ -361,6 +371,7 @@ public sealed class MobService : IMobService, IDisposable
             _pendingCts.Remove(localId);
         }
         _pending.Remove(localId);
+        _pendingTasks.Remove(localId);
         // Persist the trimmed queue so a reload doesn't replay a
         // raise that already succeeded. Fire-and-forget: a transient
         // KV write failure here is recoverable on the next persist
@@ -413,7 +424,16 @@ public sealed class MobService : IMobService, IDisposable
             cts.Dispose();
         }
         _pendingCts.Clear();
+        _pendingTasks.Clear();
     }
+
+    /// <summary>Test seam: returns the running retry-loop Task for
+    /// the given localId, or null if no loop is tracked. Tests
+    /// await this to observe deterministic completion of the
+    /// background POST + reconciliation, replacing wall-clock
+    /// Task.Delay waits.</summary>
+    internal Task? GetRaiseLoopForTest(string localId) =>
+        _pendingTasks.TryGetValue(localId, out var t) ? t : null;
 }
 
 /// <summary>Persistable pending-raise record. Survives a page
