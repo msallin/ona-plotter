@@ -1636,6 +1636,19 @@
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
+        // SignalkClient is a singleton so on a page reload the WS
+        // can already be connected by the time the Map mounts. The
+        // OnConnectionChanged subscription above only fires on
+        // state CHANGES, not on the current state, so the MOB
+        // recovery path (HandleConnectionChanged -> MobService.
+        // InitializeAsync -> GET /notifications) never runs after
+        // a reload of an already-live tab. Kick it manually here
+        // when the connection is already up; the change handler
+        // still covers the cold-start path.
+        if (SignalkClient.IsConnected)
+        {
+            HandleConnectionChanged();
+        }
         KickInitialDataSyncAfterSubscribe();
 
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
