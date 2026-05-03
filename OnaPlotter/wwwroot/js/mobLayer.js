@@ -58,7 +58,7 @@ export function setBoatPosition(lat, lon) {
     }
 }
 
-export function setMob(lat, lon) {
+export function setMob(lat, lon, createdAtIso) {
     if (!mapRef) return;  // page unmounted mid-dispatch; same guard as setAnchor.
     clearMob();
     mobMarker = L.marker([lat, lon], { icon: mobIcon, zIndexOffset: 2000 }).addTo(mapRef);
@@ -81,7 +81,18 @@ export function setMob(lat, lon) {
     // location so the helm can read the casualty fix straight off
     // the chart while reading the VHF mic rather than pulling it
     // from a toast at the bottom-right.
-    const ts = new Date();
+    // createdAtIso: server-stamped ISO-8601 raise time. Falling
+    // back to new Date() only when the server didn't supply one
+    // (pre-v2 SK server) -- the C# layer hands us the parsed
+    // createdAt as ISO so every plotter shows the same minute-
+    // and-second on the casualty.
+    let ts;
+    if (createdAtIso) {
+        const parsed = new Date(createdAtIso);
+        ts = isNaN(parsed.getTime()) ? new Date() : parsed;
+    } else {
+        ts = new Date();
+    }
     const hh = String(ts.getHours()).padStart(2, '0');
     const mm = String(ts.getMinutes()).padStart(2, '0');
     const ss = String(ts.getSeconds()).padStart(2, '0');

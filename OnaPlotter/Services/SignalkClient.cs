@@ -1563,11 +1563,28 @@ public sealed class SignalkClient : IAsyncDisposable
                     && lonEl.ValueKind == JsonValueKind.Number)
                     lon = lonEl.GetDouble();
             }
+            // Optional createdAt: SignalK v2 stamps the value's
+            // raise time as an ISO-8601 string. Use it instead of
+            // each plotter's local clock at render time so a MOB
+            // shows the same "MOB HH:MM:SS" on every connected
+            // helm. Pre-v2 servers omit the field; receiver falls
+            // back to the local clock at the display layer.
+            DateTime? createdAt = null;
+            if (el.TryGetProperty("createdAt", out var createdEl)
+                && createdEl.ValueKind == JsonValueKind.String
+                && DateTime.TryParse(createdEl.GetString(),
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AdjustToUniversal
+                        | System.Globalization.DateTimeStyles.AssumeUniversal,
+                    out var parsed))
+            {
+                createdAt = parsed;
+            }
             // Missing-state-on-an-object: assume armed at "alarm"
             // severity. Clears require an explicit normal/cleared
             // string OR a JSON null payload.
             state ??= "alarm";
-            return _serverNotifs.Apply(path, state, message, id, status, lat, lon);
+            return _serverNotifs.Apply(path, state, message, id, status, lat, lon, createdAt);
         }
 
         // Bare bool true: rare legacy form ("we have a notification");

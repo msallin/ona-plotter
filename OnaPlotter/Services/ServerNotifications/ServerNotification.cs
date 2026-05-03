@@ -36,6 +36,13 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// helm's last fix). Null when the server didn't publish one.</param>
 /// <param name="Longitude">Companion to <see cref="Latitude"/>;
 /// always travels paired (both null or both non-null).</param>
+/// <param name="CreatedAt">Server-stamped UTC time the notification
+/// was raised. SignalK v2 notifications carry a <c>createdAt</c>
+/// field on the value -- using it for the MOB chart-marker
+/// timestamp (instead of each plotter's local clock at render time)
+/// keeps every connected plotter in lockstep on "when did this
+/// happen". Null on pre-v2 servers / synthetic locally-raised
+/// entries that haven't reconciled yet.</param>
 public sealed record ServerNotification(
     string Path,
     string State,
@@ -44,4 +51,5 @@ public sealed record ServerNotification(
     string? Id = null,
     NotificationStatus? Status = null,
     double? Latitude = null,
-    double? Longitude = null);
+    double? Longitude = null,
+    DateTime? CreatedAt = null);

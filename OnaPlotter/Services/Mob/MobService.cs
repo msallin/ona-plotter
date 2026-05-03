@@ -36,6 +36,14 @@ namespace OnaPlotter.Services.Mob;
 public sealed class MobService : IMobService, IDisposable
 {
     private const string StorageKey = "mob.pendingRaise.v1";
+    /// <summary>localStorage key for the resolved-position cache --
+    /// a serverId -> (lat, lon) map written when reconcile copies
+    /// the position from a successful local synthetic onto the
+    /// server twin. Lets a future reload / restart enrich the
+    /// position-less server twin (signalk-server discards
+    /// <c>position</c> from the /mob POST body so the canonical
+    /// store of the lat/lon is here, not on the server).</summary>
+    private const string ResolvedPositionsKey = "mob.resolvedPositions.v1";
     private const string MobPathPrefix = "notifications.mob.";
     private const string MobValueId = "mob";
 
@@ -79,6 +87,18 @@ public sealed class MobService : IMobService, IDisposable
     /// vector identified in the review (TEST-004 / TEST-005).
     /// Production callers don't need this; it stays internal.</summary>
     private readonly Dictionary<string, Task> _pendingTasks =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Cache of MOB positions keyed by serverId, persisted to
+    /// localStorage. Populated when reconcile transfers the local
+    /// synthetic's position onto the server twin and consulted on
+    /// <see cref="InitializeAsync"/> when ListActiveAsync returns a
+    /// server-twin entry without position. Without this cache the
+    /// chart marker would vanish across a session boundary: the
+    /// previous-session reconcile drops the pending entry once the
+    /// raise succeeds, so the position lives only on the (in-memory)
+    /// server-twin store entry. New session = new store, gone.</summary>
+    private readonly Dictionary<string, (double Lat, double Lon)> _resolvedPositions =
         new(StringComparer.Ordinal);
 
     private bool _disposed;
@@ -196,6 +216,14 @@ public sealed class MobService : IMobService, IDisposable
         }
         _store.Clear(MobPathPrefix + id);
 
+        // Drop the resolved-position cache entry for this MOB so a
+        // future raise of an unrelated MOB doesn't pick up a stale
+        // fix from a long-resolved casualty.
+        if (_resolvedPositions.Remove(id))
+        {
+            _ = PersistResolvedPositionsAsync(CancellationToken.None);
+        }
+
         // Skip the REST call when we know there's no server-side
         // entry to clear. Calling DELETE /<localId> would 404 (the
         // server never saw that id) and the call wastes a round-
@@ -242,6 +270,10 @@ public sealed class MobService : IMobService, IDisposable
         // from the saved attempt counter so a reload mid-retry
         // doesn't restart the backoff at 1 s.
         var persisted = await LoadPendingAsync(ct).ConfigureAwait(false);
+        // Recover the resolved-position cache too so the chart marker
+        // can survive a reload that happens AFTER reconcile already
+        // dropped the pending entry on the previous session.
+        await LoadResolvedPositionsAsync(ct).ConfigureAwait(false);
         foreach (var p in persisted)
         {
             // Re-seed the synthetic into the store -- the previous
@@ -285,7 +317,18 @@ public sealed class MobService : IMobService, IDisposable
                 : new NotificationStatus(false, false, false, true, true);
             double? lat = dto.Position?.Latitude;
             double? lon = dto.Position?.Longitude;
-            _store.Apply(path, dto.State, dto.Message, dto.Id, status, lat, lon);
+            // Server discards position from /mob POST body so dto.Position
+            // is usually null. Fall back to the resolved-position cache
+            // (written by reconcile in a previous session) so the chart
+            // marker recovers across a reload / restart.
+            if (lat is null && lon is null
+                && _resolvedPositions.TryGetValue(dto.Id, out var saved))
+            {
+                lat = saved.Lat;
+                lon = saved.Lon;
+            }
+            _store.Apply(path, dto.State, dto.Message, dto.Id, status,
+                lat, lon, dto.CreatedAt);
         }
     }
 
@@ -305,15 +348,61 @@ public sealed class MobService : IMobService, IDisposable
         var serverId = path[MobPathPrefix.Length..];
         if (string.IsNullOrEmpty(serverId)) return;
         string? matchedLocalId = null;
+        PendingRaise? matchedPending = null;
         foreach (var (localId, p) in _pending)
         {
             if (p.ServerId is { } sid && string.Equals(sid, serverId, StringComparison.Ordinal))
             {
                 matchedLocalId = localId;
+                matchedPending = p;
                 break;
             }
         }
         if (matchedLocalId is null) return;
+        // Pre-cleanup: signalk-server's /mob endpoint discards the
+        // POST body's position field, so the server-twin store entry
+        // arrives with Latitude / Longitude == null even when the
+        // helm raised the MOB at a known fix. The MOB chart marker
+        // can't draw without coords (MobChartRenderer bails on null
+        // lat/lon), and on reload the local synthetic is gone -- the
+        // server twin is all that remains. Copy the pending raise's
+        // recorded position onto the server-twin entry before we
+        // drop the synthetic; the position survives reconcile, the
+        // marker survives reload.
+        // Return after the copy: Apply re-fires OnPathChanged, the
+        // recursive ReconcileMobPath sees a server-twin that now has
+        // coords, falls through to the cleanup branch, and clears
+        // the synthetic + pending in one pass. Returning here keeps
+        // us off the redundant double-cleanup path.
+        var serverEntry = _store.Active.FirstOrDefault(n =>
+            string.Equals(n.Path, path, StringComparison.Ordinal));
+        if (serverEntry is not null
+            && serverEntry.Latitude is null
+            && serverEntry.Longitude is null
+            && matchedPending is { Latitude: { } lat, Longitude: { } lon })
+        {
+            // Persist the resolved position keyed by serverId so a
+            // future reload (after we drop the pending entry below)
+            // can recover the coords for the chart marker. Fire-
+            // and-forget; the in-memory dict is the source of truth
+            // between writes.
+            _resolvedPositions[serverId] = (lat, lon);
+            _ = PersistResolvedPositionsAsync(CancellationToken.None);
+            _store.Apply(path, serverEntry.State, serverEntry.Message,
+                serverEntry.Id, serverEntry.Status, lat, lon,
+                serverEntry.CreatedAt);
+            return;
+        }
+        // Server-twin path was just removed (clear delta) -- drop the
+        // resolved-position cache entry too so the next raise of a
+        // different MOB doesn't pick up a stale fix.
+        if (serverEntry is null)
+        {
+            if (_resolvedPositions.Remove(serverId))
+            {
+                _ = PersistResolvedPositionsAsync(CancellationToken.None);
+            }
+        }
         // Tear down the local synthetic + the retry loop. The POST
         // already succeeded so the loop is idle; cancelling is
         // defensive against re-entry.
@@ -437,6 +526,44 @@ public sealed class MobService : IMobService, IDisposable
         }
     }
 
+    private Task PersistResolvedPositionsAsync(CancellationToken ct)
+    {
+        if (_resolvedPositions.Count == 0)
+        {
+            return _kv.RemoveAsync(ResolvedPositionsKey, ct);
+        }
+        var arr = _resolvedPositions
+            .Select(kv => new ResolvedMobPosition(kv.Key, kv.Value.Lat, kv.Value.Lon))
+            .ToArray();
+        var json = JsonSerializer.Serialize(arr,
+            OnaPlotter.Services.Json.OnaJsonContext.Default.ResolvedMobPositionArray);
+        return _kv.SetAsync(ResolvedPositionsKey, json, ct);
+    }
+
+    private async Task LoadResolvedPositionsAsync(CancellationToken ct)
+    {
+        var json = await _kv.GetAsync(ResolvedPositionsKey, ct).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(json)) return;
+        try
+        {
+            var arr = JsonSerializer.Deserialize(json,
+                OnaPlotter.Services.Json.OnaJsonContext.Default.ResolvedMobPositionArray);
+            if (arr is null) return;
+            foreach (var p in arr)
+            {
+                if (string.IsNullOrEmpty(p.ServerId)) continue;
+                _resolvedPositions[p.ServerId] = (p.Latitude, p.Longitude);
+            }
+        }
+        catch (JsonException)
+        {
+            // localStorage corruption / schema skew -> drop the
+            // cache and start clean. The chart marker can't appear
+            // until the next raise, but the alarm pipeline still
+            // works -- safe degraded mode.
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -470,3 +597,15 @@ public sealed record PendingRaise(
     double? Longitude,
     int AttemptCount,
     string? ServerId = null);
+
+/// <summary>Persistable map entry for the resolved-position cache.
+/// signalk-server's /mob endpoint discards the POST body's position
+/// field, so this client-side cache is the canonical store of the
+/// MOB lat/lon. Written on reconcile (when transferring position
+/// from local synthetic to server twin) and consumed on
+/// <see cref="MobService.InitializeAsync"/> to recover the position
+/// across a session boundary.</summary>
+public sealed record ResolvedMobPosition(
+    string ServerId,
+    double Latitude,
+    double Longitude);

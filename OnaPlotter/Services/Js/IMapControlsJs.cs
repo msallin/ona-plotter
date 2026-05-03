@@ -95,8 +95,12 @@ public interface IMapControlsJs
     Task ApplyFrameAsync(object frame);
 
     /// <summary>Drop a Man-Overboard pin at the given lat/lon and play
-    /// the two-tone confirmation chime.</summary>
-    Task SetMobAsync(double lat, double lon);
+    /// the two-tone confirmation chime. <paramref name="createdAtIso"/>
+    /// is the SignalK-stamped ISO-8601 raise time the chart-marker
+    /// label should show; null falls back to the local clock so
+    /// pre-v2 servers and synthetic locally-raised entries still
+    /// render a timestamp.</summary>
+    Task SetMobAsync(double lat, double lon, string? createdAtIso);
 
     /// <summary>Clear the Man-Overboard pin.</summary>
     Task ClearMobAsync();

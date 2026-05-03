@@ -40,6 +40,7 @@ public sealed class MobChartRenderer : IDisposable
     private string? _renderedPath;
     private double? _renderedLat;
     private double? _renderedLon;
+    private DateTime? _renderedCreatedAt;
 
     public MobChartRenderer(ServerNotificationStore store)
     {
@@ -103,13 +104,14 @@ public sealed class MobChartRenderer : IDisposable
             }
             return;
         }
-        // Skip when nothing changed (same path + same coords). The
-        // store fires OnPathChanged on every Apply (including
+        // Skip when nothing changed (same path + coords + createdAt).
+        // The store fires OnPathChanged on every Apply (including
         // status-only updates) and we don't want to re-pulse the
         // marker on each tick.
         if (string.Equals(_renderedPath, first.Path, StringComparison.Ordinal)
             && _renderedLat == first.Latitude
-            && _renderedLon == first.Longitude)
+            && _renderedLon == first.Longitude
+            && _renderedCreatedAt == first.CreatedAt)
         {
             return;
         }
@@ -121,10 +123,18 @@ public sealed class MobChartRenderer : IDisposable
         {
             return;
         }
-        _ = _js.SetMobAsync(lat, lon);
+        // Hand the server-stamped raise time across as ISO-8601 so
+        // every connected plotter shows the same "MOB HH:MM:SS"
+        // label. Null when the server is pre-v2 (no createdAt
+        // field) -- the JS layer falls back to the local clock.
+        var iso = first.CreatedAt is DateTime ts
+            ? ts.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+        _ = _js.SetMobAsync(lat, lon, iso);
         _renderedPath = first.Path;
         _renderedLat = lat;
         _renderedLon = lon;
+        _renderedCreatedAt = first.CreatedAt;
     }
 
     public void Dispose()

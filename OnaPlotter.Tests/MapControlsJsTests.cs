@@ -171,11 +171,12 @@ public class MapControlsJsTests
         var fake = new RecordingJsRef();
         var sut = new MapControlsJs(fake);
 
-        await sut.SetMobAsync(54.5, 11.2);
+        await sut.SetMobAsync(54.5, 11.2, "2026-05-03T12:34:56.789Z");
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setMob");
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(11.2);
+        await Assert.That(fake.Calls[0].args[2]).IsEqualTo("2026-05-03T12:34:56.789Z");
     }
 
     [Test]
@@ -211,7 +212,7 @@ public class MapControlsJsTests
         await sut.SetNightModeAsync(true);
         await sut.PanToAsync(0, 0);
         await sut.ZoomToTrackAsync();
-        await sut.SetMobAsync(0, 0);
+        await sut.SetMobAsync(0, 0, null);
         await sut.ClearMobAsync();
 
         await Assert.That(fake.Calls.Count).IsEqualTo(0);

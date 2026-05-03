@@ -187,6 +187,44 @@ public class MobServiceTests
     }
 
     [Test]
+    public async Task ServerEcho_Without_Position_Inherits_Position_From_Pending()
+    {
+        // signalk-server discards the position field from the /mob
+        // POST body so the WS echo arrives at notifications.mob.<id>
+        // with position=null. The local synthetic carried the helm's
+        // recorded fix; the reconcile flow must transfer that fix
+        // onto the server-twin store entry before clearing the
+        // synthetic, otherwise the chart marker has no coords to
+        // render.
+        using var f = NewFixture();
+        f.Api.NextServerId = "srv-no-pos";
+
+        var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+        await AwaitRaiseLoopAsync(f.Service, localId);
+
+        // WS echo arrives at the server-twin path WITHOUT position
+        // (matches signalk-server's actual behaviour).
+        f.Store.Apply("notifications.mob.srv-no-pos", "emergency", "MOB",
+            id: "srv-no-pos",
+            status: new NotificationStatus(false, false, false, true, true),
+            latitude: null, longitude: null);
+
+        var serverEntry = f.Store.Active.FirstOrDefault(
+            n => n.Path == "notifications.mob.srv-no-pos");
+        await Assert.That(serverEntry).IsNotNull();
+        await Assert.That(serverEntry!.Latitude).IsEqualTo(47.5);
+        await Assert.That(serverEntry.Longitude).IsEqualTo(8.5);
+        // Local synthetic was torn down -- single banner / single marker.
+        await Assert.That(f.Store.Active.Any(n => n.Path == MobPathPrefix + localId)).IsFalse();
+        // Resolved-position cache was persisted under the serverId
+        // so a future reload / restart can recover the coords.
+        var cached = await f.Kv.GetAsync("mob.resolvedPositions.v1");
+        await Assert.That(cached).IsNotNull();
+        await Assert.That(cached!).Contains("srv-no-pos");
+        await Assert.That(cached).Contains("47.5");
+    }
+
+    [Test]
     public async Task ServerEcho_Arriving_Before_ServerId_Recorded_Still_Removes_Local_Synthetic()
     {
         // Race regression: in the field the helm saw TWO banners on
@@ -423,6 +461,44 @@ public class MobServiceTests
         var entry = f.Store.Active.FirstOrDefault(n => n.Path == MobPathPrefix + "uuid-1");
         await Assert.That(entry).IsNotNull();
         await Assert.That(entry!.Latitude).IsEqualTo(48.5);
+    }
+
+    [Test]
+    public async Task InitializeAsync_Recovers_Position_From_Resolved_Cache()
+    {
+        // Helm regression: signalk-server discards the position
+        // field from the /mob POST body, so the WS echo and the
+        // /notifications GET both arrive with position=null. On
+        // a clean restart (no persisted PendingRaise to fall back
+        // on), the chart marker disappeared because MobChartRenderer
+        // bails on null lat/lon. The resolved-position cache,
+        // written by reconcile in the previous session, is the
+        // recovery path: when ListActiveAsync's server twin lacks
+        // position, MobService merges in the cached coords.
+        using var f = NewFixture();
+        // Pre-seed the KV with a resolved-position cache as if a
+        // previous session had already raised + reconciled this MOB.
+        var cacheJson = "[{\"ServerId\":\"recovered-id\","
+                      + "\"Latitude\":47.5,\"Longitude\":8.5}]";
+        await f.Kv.SetAsync("mob.resolvedPositions.v1", cacheJson);
+        // The server's list returns the MOB but with no position
+        // (the realistic shape -- /mob discards POSt body position).
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationDto>
+        {
+            ["recovered-id"] = new(
+                Id: "recovered-id", State: "emergency", Message: "MOB",
+                Method: ["visual", "sound"],
+                Status: new NotificationStatusDto(false, false, false, true, true),
+                Position: null,
+                CreatedAt: DateTime.UtcNow),
+        };
+
+        await f.Service.InitializeAsync();
+
+        var entry = f.Store.Active.FirstOrDefault(n => n.Path == MobPathPrefix + "recovered-id");
+        await Assert.That(entry).IsNotNull();
+        await Assert.That(entry!.Latitude).IsEqualTo(47.5);
+        await Assert.That(entry.Longitude).IsEqualTo(8.5);
     }
 
     [Test]

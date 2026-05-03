@@ -99,7 +99,8 @@ public sealed class ServerNotificationStore
     /// </summary>
     public bool Apply(string path, string? state, string? message,
         string? id = null, NotificationStatus? status = null,
-        double? latitude = null, double? longitude = null)
+        double? latitude = null, double? longitude = null,
+        DateTime? createdAt = null)
     {
         var severity = MapSeverity(state);
         if (severity is null)
@@ -143,7 +144,7 @@ public sealed class ServerNotificationStore
         // pre-mapped to the AlarmSeverity coarse bucket the banner
         // actually uses.
         var notif = new ServerNotification(
-            path, state!, message, severity.Value, id, status, latitude, longitude);
+            path, state!, message, severity.Value, id, status, latitude, longitude, createdAt);
         if (_byPath.TryGetValue(path, out var existing) && existing == notif)
         {
             // Idempotent: same exact notification re-applied. No state
