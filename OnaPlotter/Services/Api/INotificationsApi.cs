@@ -74,9 +74,25 @@ public interface INotificationsApi
     /// the active notification map keyed by id, or null on transport
     /// failure / 4xx / 5xx. Used at SignalkClient connect-time so
     /// any MOB raised before the WS subscription was up still lands
-    /// on the local store.</summary>
-    Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default);
+    /// on the local store. The envelope shape mirrors what
+    /// signalk-server actually returns from GET /notifications:
+    /// each entry is a delta-style wrapper { context, path, value }
+    /// where the notification payload sits under value, NOT at the
+    /// top level. The earlier flat-shape DTO silently produced
+    /// every field as null, MobService skipped every entry, and
+    /// the alarm vanished on reload because REST recovery did
+    /// nothing.</summary>
+    Task<IReadOnlyDictionary<string, ServerNotificationEnvelope>?> ListActiveAsync(CancellationToken ct = default);
 }
+
+/// <summary>Envelope SignalK wraps each /notifications entry in:
+/// <c>{ context, path, value: { state, message, status, position,
+/// createdAt, id } }</c>. Match the actual wire shape so the
+/// deserialiser doesn't drop the whole payload onto the floor.</summary>
+public sealed record ServerNotificationEnvelope(
+    string? Context,
+    string? Path,
+    ServerNotificationDto? Value);
 
 /// <summary>
 /// Wire shape for a single notification entry in the list-active

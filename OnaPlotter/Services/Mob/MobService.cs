@@ -296,11 +296,17 @@ public sealed class MobService : IMobService, IDisposable
         // (this plotter just booted; another plotter's emit) lands
         // on the local store. Silently best-effort: a 4xx / network
         // error here means "nothing to recover", not a hard failure.
+        // Each entry is a delta-style envelope { context, path,
+        // value }; the notification payload sits under .Value, NOT
+        // at the top level (an earlier flat-shape DTO silently
+        // produced every field as null and the alarm vanished on
+        // reload).
         var active = await _api.ListActiveAsync(ct).ConfigureAwait(false);
         if (active is null) return;
-        foreach (var (id, dto) in active)
+        foreach (var (id, env) in active)
         {
-            if (dto.State is null) continue;
+            var dto = env?.Value;
+            if (dto?.State is null) continue;
             // List returns every active notification; this service
             // owns the MOB pipeline so we filter by state=emergency
             // (a coarse but acceptable proxy -- non-MOB emergencies

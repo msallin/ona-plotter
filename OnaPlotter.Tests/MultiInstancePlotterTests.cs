@@ -333,8 +333,8 @@ public class MultiInstancePlotterTests
         // stubs here are interface-compliance only.
         public Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default)
             => Task.FromResult(ApiResult<string>.Ok("mob-stub"));
-        public Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
-            => Task.FromResult<IReadOnlyDictionary<string, ServerNotificationDto>?>(null);
+        public Task<IReadOnlyDictionary<string, ServerNotificationEnvelope>?> ListActiveAsync(CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, ServerNotificationEnvelope>?>(null);
     }
 
     private static NotificationStatus FullPermissions =>

@@ -100,7 +100,7 @@ public sealed class NotificationsApi : INotificationsApi
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyDictionary<string, ServerNotificationEnvelope>?> ListActiveAsync(CancellationToken ct = default)
     {
         // Uses the same per-call timeout as the action verbs; a slow
         // GET on the boot path shouldn't stall the alarm pipeline.
@@ -108,7 +108,7 @@ public sealed class NotificationsApi : INotificationsApi
         cts.CancelAfter(CallTimeout);
         try
         {
-            return await ResourceHttp.GetDictAsync<ServerNotificationDto>(_http,
+            return await ResourceHttp.GetDictAsync<ServerNotificationEnvelope>(_http,
                 _baseUrl.Combine(SignalKUrls.NotificationsPath),
                 cts.Token).ConfigureAwait(false);
         }

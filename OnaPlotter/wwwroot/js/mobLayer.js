@@ -133,11 +133,12 @@ export function setMob(lat, lon, createdAtIso, selfMmsi) {
         .setContent(buildMobLabelHtml())
         .addTo(mapRef);
 
-    // T+ counter ticks every 30 s on the at-pin label (and on any
+    // T+ counter ticks every 10 s on the at-pin label (and on any
     // open popup, indirectly -- closing + reopening rebuilds the
-    // popup HTML against the same currentMob). 30 s is fine-grained
-    // enough that "T+1m" -> "T+2m" is observable without flooding
-    // the redraw loop.
+    // popup HTML against the same currentMob). 10 s gives the helm
+    // a near-live readout of elapsed time without flooding the
+    // redraw loop; helm-feedback was that 30 s felt sluggish during
+    // the active rescue window.
     if (elapsedTickHandle) clearInterval(elapsedTickHandle);
     elapsedTickHandle = setInterval(() => {
         if (mobPointLabel) mobPointLabel.setContent(buildMobLabelHtml());
@@ -146,7 +147,7 @@ export function setMob(lat, lon, createdAtIso, selfMmsi) {
         if (mobMarker && mobMarker.isPopupOpen()) {
             mobMarker.setPopupContent(buildMobPopupHtml());
         }
-    }, 30_000);
+    }, 10_000);
 
     // Audible confirmation: the helm may have been looking overboard
     // when they pressed the button and can't see the pulse animation.

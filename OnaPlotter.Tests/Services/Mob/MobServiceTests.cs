@@ -446,14 +446,17 @@ public class MobServiceTests
         // Acceptance scenario 7: a MOB raised pre-reload (or on
         // another plotter) lands via the list endpoint at startup.
         using var f = NewFixture();
-        f.Api.ListReturn = new Dictionary<string, ServerNotificationDto>
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
         {
             ["uuid-1"] = new(
-                Id: "uuid-1", State: "emergency", Message: "MOB",
-                Method: ["visual", "sound"],
-                Status: new NotificationStatusDto(false, false, false, true, true),
-                Position: new NotificationPositionDto(48.5, 9.5),
-                CreatedAt: DateTime.UtcNow),
+                Context: "vessels.self",
+                Path: "notifications.mob.uuid-1",
+                Value: new ServerNotificationDto(
+                    Id: "uuid-1", State: "emergency", Message: "MOB",
+                    Method: ["visual", "sound"],
+                    Status: new NotificationStatusDto(false, false, false, true, true),
+                    Position: new NotificationPositionDto(48.5, 9.5),
+                    CreatedAt: DateTime.UtcNow)),
         };
 
         await f.Service.InitializeAsync();
@@ -483,14 +486,17 @@ public class MobServiceTests
         await f.Kv.SetAsync("mob.resolvedPositions.v1", cacheJson);
         // The server's list returns the MOB but with no position
         // (the realistic shape -- /mob discards POSt body position).
-        f.Api.ListReturn = new Dictionary<string, ServerNotificationDto>
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
         {
             ["recovered-id"] = new(
-                Id: "recovered-id", State: "emergency", Message: "MOB",
-                Method: ["visual", "sound"],
-                Status: new NotificationStatusDto(false, false, false, true, true),
-                Position: null,
-                CreatedAt: DateTime.UtcNow),
+                Context: "vessels.self",
+                Path: "notifications.mob.recovered-id",
+                Value: new ServerNotificationDto(
+                    Id: "recovered-id", State: "emergency", Message: "MOB",
+                    Method: ["visual", "sound"],
+                    Status: new NotificationStatusDto(false, false, false, true, true),
+                    Position: null,
+                    CreatedAt: DateTime.UtcNow)),
         };
 
         await f.Service.InitializeAsync();
@@ -509,13 +515,16 @@ public class MobServiceTests
         // returned by the list endpoint does NOT enter the MOB
         // pipeline.
         using var f = NewFixture();
-        f.Api.ListReturn = new Dictionary<string, ServerNotificationDto>
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
         {
             ["low-batt"] = new(
-                Id: "low-batt", State: "alarm", Message: "Battery low",
-                Method: ["visual"],
-                Status: new NotificationStatusDto(false, false, false, true, true),
-                Position: null, CreatedAt: DateTime.UtcNow),
+                Context: "vessels.self",
+                Path: "notifications.environment.battery.low",
+                Value: new ServerNotificationDto(
+                    Id: "low-batt", State: "alarm", Message: "Battery low",
+                    Method: ["visual"],
+                    Status: new NotificationStatusDto(false, false, false, true, true),
+                    Position: null, CreatedAt: DateTime.UtcNow)),
         };
 
         await f.Service.InitializeAsync();
@@ -530,13 +539,16 @@ public class MobServiceTests
         // produce a "notifications.mob." path; skip rather than
         // synthesise a path-with-empty-suffix.
         using var f = NewFixture();
-        f.Api.ListReturn = new Dictionary<string, ServerNotificationDto>
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
         {
             ["x"] = new(
-                Id: "", State: "emergency", Message: "MOB",
-                Method: ["visual", "sound"],
-                Status: new NotificationStatusDto(false, false, false, true, true),
-                Position: null, CreatedAt: DateTime.UtcNow),
+                Context: "vessels.self",
+                Path: "notifications.mob.x",
+                Value: new ServerNotificationDto(
+                    Id: "", State: "emergency", Message: "MOB",
+                    Method: ["visual", "sound"],
+                    Status: new NotificationStatusDto(false, false, false, true, true),
+                    Position: null, CreatedAt: DateTime.UtcNow)),
         };
 
         await f.Service.InitializeAsync();
@@ -755,7 +767,7 @@ public class MobServiceTests
         /// completed task when SuspendRaise is false.</summary>
         public Task WaitForSuspendedRaiseAsync() =>
             _raiseEnteredGate?.Task ?? Task.CompletedTask;
-        public IReadOnlyDictionary<string, ServerNotificationDto>? ListReturn { get; set; }
+        public IReadOnlyDictionary<string, ServerNotificationEnvelope>? ListReturn { get; set; }
 
         public async Task<ApiResult<string>> RaiseMobAsync(string? message, CancellationToken ct = default)
         {
@@ -785,7 +797,7 @@ public class MobServiceTests
             return Task.FromResult(ApiResult.Ok);
         }
 
-        public Task<IReadOnlyDictionary<string, ServerNotificationDto>?> ListActiveAsync(CancellationToken ct = default)
+        public Task<IReadOnlyDictionary<string, ServerNotificationEnvelope>?> ListActiveAsync(CancellationToken ct = default)
             => Task.FromResult(ListReturn);
 
         // Path-keyed verbs not exercised by MOB tests (alarm publisher
