@@ -3633,6 +3633,21 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .alarm-log-item:last-child { border-bottom: none; }
 .alarm-log-time { color: var(--panel-text-muted); font-variant-numeric: tabular-nums; font-size: 0.72rem; }
 .alarm-log-title { color: var(--panel-text); font-weight: 600; }
+/* Count chip on grouped (consecutive same-key) entries: "x3" rendered
+   right next to the title so the helm sees the run length without
+   the row losing its "single line, scannable left-to-right" rhythm.
+   Subdued bg + tabular nums so a row with x12 sits in the same
+   visual band as a x2. */
+.alarm-log-count {
+    color: var(--panel-text-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    padding: 1px 5px;
+    margin-left: 2px;
+}
 .alarm-log-reason { color: var(--panel-text-muted); font-size: 0.72rem; }
 .alarm-log-msg { color: var(--panel-text-muted); }
 /* Disposition colours track --sev-* so the alarm-log title hue stays
@@ -7285,22 +7300,17 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     border: 1px solid var(--route-popup-border) !important;
 }
 .route-popup .leaflet-popup-tip { background: var(--route-popup-bg) !important; }
-.route-popup-body { padding: 2px 4px; min-width: 180px; }
+/* min-width 260 so the three action buttons (Deactivate / Edit /
+   Delete) sit on a single row at coarse-pointer (touch) sizing.
+   The previous 180 px forced a wrap onto two rows AND broke the
+   word "Deactivate" mid-letter ("De-/activate"); white-space:
+   nowrap on the buttons themselves stops the intra-word break
+   even on narrow viewports. */
+.route-popup-body { padding: 2px 4px; min-width: 260px; }
 .route-popup-title { font-weight: 600; color: var(--route-popup-title); margin-bottom: 2px; }
 .route-popup-meta {
     color: var(--panel-text-muted);
     font-size: 0.75rem;
-    margin-bottom: 8px;
-    font-variant-numeric: tabular-nums;
-}
-/* Active-route popup only: ETA + remaining-time pair on its own line.
-   Slightly larger + accent-coloured because ETA is the value the helm
-   reads first ("when do we get there?"), and a smaller meta line for
-   waypoints + distance sits above it as static reference. */
-.route-popup-eta {
-    color: var(--sk-accent);
-    font-size: 0.85rem;
-    font-weight: 600;
     margin-bottom: 8px;
     font-variant-numeric: tabular-nums;
 }
@@ -7310,6 +7320,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 .route-edit-btn,
 .route-delete-btn {
     background: transparent;
+    white-space: nowrap;
     /* Resting label colour pulls --sk-text-muted so the four
        buttons are legible on both the dark warm-amber popup card
        and the light theme's cream card. The hardcoded #94a3b8 was

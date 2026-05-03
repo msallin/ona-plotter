@@ -282,7 +282,14 @@
         @if (Data.WindDirectionTrue is not null)
         {
             double twdDeg = Data.WindDirectionTrue.Value * Format.RadToDeg;
-            var (lx, ly) = CompassPos(twdDeg, R + 12);
+            // Label radius bumped from R+12 to R+22: the magenta TWD
+            // arrow polygon's base corners (244,Cy-R-12 / 256,Cy-R-12)
+            // sit at distance ~R+12 from centre, exactly where the
+            // label was. The base bar cut through the middle of
+            // "TWD", visually splitting the W from the rest of the
+            // glyphs. Moving the label 10 px further out clears the
+            // arrow geometry on every heading.
+            var (lx, ly) = CompassPos(twdDeg, R + 22);
             @SvgTxt(lx, ly, "TWD", "var(--sk-accent)", 10, "700")
         }
         @if (Data.WindDirectionTrue is not null && Data.WindAngleTrue is not null)

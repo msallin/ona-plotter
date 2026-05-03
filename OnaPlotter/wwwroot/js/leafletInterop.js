@@ -825,6 +825,20 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
             // long-press threshold, map is null and containerPointToLatLng
             // would throw. Bail silently.
             if (!map || !longPressStartPt) return;
+            // Race guard: when an alarm banner pops in under the
+            // finger AFTER touchstart fired on the map, the original
+            // pointerdown stays bound to its first target so our
+            // existing alarm-pointerdown cancel never runs. Probe
+            // what's currently rendered at the press location -- if
+            // it's the banner, the user is dismissing the alarm, not
+            // opening the chart context menu.
+            const overEl = document.elementFromPoint(
+                longPressStartPt.x, longPressStartPt.y);
+            if (overEl && overEl.closest &&
+                overEl.closest('.alarm-banner-stack, .auth-warning-chip')) {
+                longPressStartPt = null;
+                return;
+            }
             const rect = mapEl.getBoundingClientRect();
             const latlng = map.containerPointToLatLng([
                 longPressStartPt.x - rect.left,
@@ -1784,18 +1798,15 @@ function liveActiveRouteTtgSeconds() {
 // primary action is "Deactivate" (clear the SignalK course) rather
 // than "Activate". Edit + Delete keep working on the route resource
 // via the same JSInvokables the regular-route popup wires up.
-// ETA line is rendered when the cached _activeRouteTtgSeconds is
-// non-null; computed at popup-open time so the helm sees a fresh
-// arrival estimate without paying for a re-render on every tick.
+// ETA row dropped per helm-feedback ("popup takes too much space"):
+// the HudRouteCard already shows ETA + TTG continuously, so the
+// popup duplicate was redundant chrome.
 function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
     const safeName = esc(name || `Route ${id.substring(0, 6)}`);
-    const etaText = formatRouteEta(liveActiveRouteTtgSeconds());
-    const etaRow = etaText ? `<div class="route-popup-eta">${etaText}</div>` : '';
     return `
         <div class="route-popup-body">
             <div class="route-popup-title">${safeName}</div>
             <div class="route-popup-meta">${wpCount} WP &middot; ${nmTotal.toFixed(1)} nm &middot; active</div>
-            ${etaRow}
             <div class="route-popup-actions">
                 <button class="route-deactivate-btn" type="button">Deactivate</button>
                 <button class="route-edit-btn" type="button">Edit</button>

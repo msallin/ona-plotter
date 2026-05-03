@@ -55,7 +55,7 @@
                         title="@($"Alarm history ({historyCount} recent" +
                                   (Alarms.SnoozedTargets.Count > 0
                                     ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
-                    History @historyCount
+                    Alarm History @historyCount
                 </button>
             }
 
@@ -308,7 +308,7 @@
                 <button type="button" class="alarm-log-handle" aria-label="Close alarm log"
                         @onclick="ToggleAlarmLog"></button>
                 <div class="alarm-log-header">
-                    <strong id="alarm-log-title">Alarm log</strong>
+                    <strong id="alarm-log-title">Alarm history</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>
                 </div>
                 @if (Alarms.DismissedHistory.Count == 0)
@@ -317,15 +317,27 @@
                 }
                 else
                 {
+                    @* Coalesce consecutive entries that share the same
+                       (Title, Reason, TargetKey). Helm-feedback: a noisy
+                       depth sensor produced a "Depth Cleared" entry on
+                       every tide tick, drowning the rest of the log.
+                       Grouping shows one row per run with a count chip
+                       and the latest timestamp; expand-on-tap is a
+                       future affordance, the count alone is enough to
+                       not lose information. *@
                     <ul class="alarm-log-list">
-                        @foreach (var d in Alarms.DismissedHistory)
+                        @foreach (var g in CoalesceDismissedHistory(Alarms.DismissedHistory))
                         {
-                            <li class="alarm-log-item alarm-log-@d.Reason.ToString().ToLowerInvariant()"
-                                @key="(d.Alarm.Title, d.Alarm.TargetKey, d.At)">
-                                <span class="alarm-log-time">@d.At.ToLocalTime().ToString("HH:mm:ss")</span>
-                                <span class="alarm-log-title">@d.Alarm.Title</span>
-                                <span class="alarm-log-reason">@FormatReason(d.Reason)</span>
-                                <span class="alarm-log-msg">@d.Alarm.Message</span>
+                            <li class="alarm-log-item alarm-log-@g.Latest.Reason.ToString().ToLowerInvariant()"
+                                @key="(g.Latest.Alarm.Title, g.Latest.Alarm.TargetKey, g.Latest.Reason, g.Latest.At)">
+                                <span class="alarm-log-time">@g.Latest.At.ToLocalTime().ToString("HH:mm:ss")</span>
+                                <span class="alarm-log-title">@g.Latest.Alarm.Title</span>
+                                @if (g.Count > 1)
+                                {
+                                    <span class="alarm-log-count" title="@($"{g.Count} consecutive occurrences")">x@(g.Count)</span>
+                                }
+                                <span class="alarm-log-reason">@FormatReason(g.Latest.Reason)</span>
+                                <span class="alarm-log-msg">@g.Latest.Alarm.Message</span>
                             </li>
                         }
                     </ul>
@@ -1326,6 +1338,46 @@
         DismissReason.AutoCleared => "cleared",
         _ => reason.ToString(),
     };
+
+    /// <summary>One coalesced row in the rendered alarm history. Holds
+    /// the latest sample of a run of consecutive entries that share
+    /// (Title, Reason, TargetKey) plus the run length so the UI can
+    /// surface "x3" without losing the most-recent timestamp.</summary>
+    private sealed record DismissedAlarmGroup(
+        OnaPlotter.Models.DismissedAlarm Latest, int Count);
+
+    /// <summary>Collapse runs of consecutive same-key dismissed
+    /// alarms into a single row with a count chip. Helm-feedback: a
+    /// noisy depth sensor pushed five "Depth Cleared" entries to
+    /// the top of the log on every tide tick, drowning out other
+    /// alarms; grouping keeps one row per run while preserving the
+    /// run length. Only consecutive same-key entries collapse -- a
+    /// CPA alarm between two depth clears keeps both depth runs as
+    /// distinct rows so the chronological context survives.</summary>
+    private static IEnumerable<DismissedAlarmGroup> CoalesceDismissedHistory(
+        IReadOnlyList<OnaPlotter.Models.DismissedAlarm> history)
+    {
+        if (history is null || history.Count == 0) yield break;
+        var current = history[0];
+        int count = 1;
+        for (int i = 1; i < history.Count; i++)
+        {
+            var next = history[i];
+            bool sameKey =
+                string.Equals(next.Alarm.Title, current.Alarm.Title, StringComparison.Ordinal)
+                && next.Reason == current.Reason
+                && string.Equals(next.Alarm.TargetKey, current.Alarm.TargetKey, StringComparison.Ordinal);
+            if (sameKey)
+            {
+                count++;
+                continue;
+            }
+            yield return new DismissedAlarmGroup(current, count);
+            current = next;
+            count = 1;
+        }
+        yield return new DismissedAlarmGroup(current, count);
+    }
 
     private async Task UpdateConnectionAlarmAsync()
     {
