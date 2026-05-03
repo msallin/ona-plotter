@@ -18,11 +18,6 @@
 @inject IToastService Toasts
 @inject IConfirmationService Confirmations
 @inject OnaPlotter.Services.State.HistoryPageState State
-@* System.Private.Xml is lazy-loaded; awaited inline before each
-   GPX trip export so the boot bundle stays smaller. The instance
-   is shared across the app (singleton) and memoises the load,
-   so repeat exports cost nothing extra. *@
-@inject XmlAssemblyLoader XmlLoader
 @using OnaPlotter.Services.Json
 
 <PageTitle>History</PageTitle>
@@ -1014,11 +1009,6 @@
             "Export this trip as which format?",
             [FormatGpx, FormatGeoJson]);
         if (picked is null) return;
-
-        // System.Private.Xml is lazy-loaded; only fetch it when the
-        // helm actually picks GPX. GeoJSON exports stay free of the
-        // ~100 KB brotli download.
-        if (picked == FormatGpx) await XmlLoader.EnsureLoadedAsync();
 
         string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH-mm}";
         string? content = picked == FormatGpx
