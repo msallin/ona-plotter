@@ -129,6 +129,15 @@
         <LegendOverlay OnDismiss="() => legendOpen = false" />
     }
 
+    @* COLREGS quick-reference modal. Opened from the AIS popup's
+       "?" link via OnShowColregsHelp (delegated handler in
+       leafletInterop.js routes data-ona-colregs clicks to the
+       JSInvokable). Same dismissal contract as LegendOverlay. *@
+    @if (colregsHelpOpen)
+    {
+        <OnaPlotter.Components.Map.ColregsHelpOverlay OnDismiss="() => colregsHelpOpen = false" />
+    }
+
     @* First-run long-press hint. CSS gates on `@@media (pointer: coarse)`
        so desktop users never see it. Dismisses on tap or after 6s; the
        dismissal flag is stored in KV so it only shows once per device. *@
@@ -593,6 +602,26 @@
     // OpenFlyoutOnly() below.
     private bool moreMenuOpen;
     private bool legendOpen;
+
+    /// <summary>Whether the COLREGS quick-reference modal is open.
+    /// Toggled from the AIS popup's "?" link via the
+    /// <see cref="OnShowColregsHelp"/> JSInvokable (delegated handler
+    /// in leafletInterop.js routes the data-ona-colregs click).
+    /// Backdrop click + Close button both flip this back to false.</summary>
+    private bool colregsHelpOpen;
+
+    /// <summary>Invoked from the AIS popup "?" link in JS via the
+    /// delegated handler. Opens the COLREGS quick-reference modal
+    /// in-app instead of navigating to the standalone help page
+    /// (which broke under the SK plugin mount + would have lost the
+    /// helm's map context). Sync method; the modal flag is read on
+    /// the next render.</summary>
+    [JSInvokable]
+    public void OnShowColregsHelp()
+    {
+        colregsHelpOpen = true;
+        StateHasChanged();
+    }
     // Per-tick frame-building state (previous position, laylines
     // throttle counter, course-line-drawn flag) lives in this builder
     // so the decision tree in HandleDataChanged stays small and the
