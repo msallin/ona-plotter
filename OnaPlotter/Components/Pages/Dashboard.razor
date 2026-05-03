@@ -6,6 +6,7 @@
 @implements IDisposable
 @inject SignalkClient SignalkClient
 @inject IPolarService Polar
+@inject OnaPlotter.Services.Settings.IMapDisplaySettings DisplaySettings
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -405,10 +406,14 @@ else if (Polar.HasPolar)
         _ => "depth-danger"
     };
 
+    // AND-s the helm's "Show tide" toggle so a non-tidal-water helm
+    // can hide the section without us also having to suppress the
+    // section header / chrome elsewhere.
     private bool HasTideData =>
-        Data.TideHeightNow is not null
-        || Data.TideTimeHigh is not null
-        || Data.TideTimeLow is not null;
+        DisplaySettings.TideVisible
+        && (Data.TideHeightNow is not null
+            || Data.TideTimeHigh is not null
+            || Data.TideTimeLow is not null);
 
     private static string FormatDashInterval(DateTime futureUtc)
     {

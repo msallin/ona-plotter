@@ -787,6 +787,12 @@
     /// them back when the helm wants cockpit-glance reach.</summary>
     [Parameter] public bool BigType { get; set; }
 
+    /// <summary>Helm's "Show tide" toggle. AND-s with the data
+    /// presence in <see cref="HasTideData"/> so the depth-card tide
+    /// row + extras only render when both the data is published AND
+    /// the helm hasn't decided to hide it.</summary>
+    [Parameter] public bool TideVisible { get; set; } = true;
+
     // Single source of truth for "is this corner showing its extras".
     // Global toggle wins over per-corner click state; that way enabling
     // ExpandAllHud while a corner is already open doesn't behave
@@ -977,13 +983,16 @@
     }
 
     // --- Tide ---------------------------------------------------------
-    // True when at least the current height is published; lets the HUD
-    // hide entirely on servers without a tide plugin rather than
-    // showing an empty card.
+    // True when at least the current height is published AND the
+    // helm hasn't disabled the tide HUD via Settings. The visibility
+    // gate AND-s the data presence so a helm in non-tidal waters can
+    // hide the slot entirely without us also having to suppress the
+    // "next HW / LW" label-string formatting elsewhere on the card.
     private bool HasTideData =>
-        Data.TideHeightNow is not null
-        || Data.TideTimeHigh is not null
-        || Data.TideTimeLow is not null;
+        TideVisible
+        && (Data.TideHeightNow is not null
+            || Data.TideTimeHigh is not null
+            || Data.TideTimeLow is not null);
 
     /// <summary>The next high or low water, whichever comes first.
     /// Returns null when the tide plugin isn't publishing extremes yet.</summary>

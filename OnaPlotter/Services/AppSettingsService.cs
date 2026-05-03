@@ -126,6 +126,10 @@ public sealed class AppSettingsService : IAppSettings
     /// without losing their own predictor's reach.</summary>
     public double AisCogVectorMinutes { get; private set; } = 10.0;
 
+    /// <summary>Show the tide row + extras on the depth HUD +
+    /// Dashboard. Default true.</summary>
+    public bool TideVisible { get; private set; } = true;
+
     /// <summary>Radar range-ring overlay enabled. Default true.</summary>
     public bool RadarRangeRingsEnabled { get; private set; } = true;
     /// <summary>How many concentric range rings to draw. Default 4
@@ -239,6 +243,7 @@ public sealed class AppSettingsService : IAppSettings
             ShowDefaultHud = await LoadBool("showDefaultHud.v1", true);
             OwnCogVectorMinutes = await LoadDouble("ownCogVectorMinutes.v1", 10.0);
             AisCogVectorMinutes = await LoadDouble("aisCogVectorMinutes.v1", 10.0);
+            TideVisible = await LoadBool("tideVisible.v1", true);
             RadarRangeRingsEnabled = await LoadBool("radarRangeRingsEnabled.v1", true);
             // 4 covers quarter / half / three-quarter / full range,
             // the standard chartplotter pattern. Clamp 1..8 to keep
@@ -670,6 +675,13 @@ public sealed class AppSettingsService : IAppSettings
         value = Math.Clamp(value, 1.0, 60.0);
         AisCogVectorMinutes = value;
         await Save("aisCogVectorMinutes.v1", value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetTideVisibleAsync(bool value)
+    {
+        TideVisible = value;
+        await Save("tideVisible.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

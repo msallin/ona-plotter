@@ -819,8 +819,20 @@
                 <small class="text-muted d-block mt-1">
                     Reads <code>environment.sun</code> (string: day / dawn / dusk / night).
                     Needs a solar-position plugin on the SignalK server (see the Paths page).
-                    A manual Night tap suppresses the auto-flip for 12 hours so the app doesn't
-                    fight your choice.
+                    A manual Night tap suppresses the auto-flip until env.sun next crosses
+                    a day / night transition, so the app doesn't fight your choice.
+                </small>
+
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           checked="@AppSettings.TideVisible"
+                           @onchange="OnTideVisibleChanged" />
+                    <label class="form-check-label">Show tide</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Tide row on the depth HUD card + the Tide section on the Dashboard.
+                    Hide on non-tidal waters (lakes, inland canals) or when the SignalK
+                    server has no tide plugin.
                 </small>
 
                 <div class="form-check form-switch mt-2">
@@ -1268,6 +1280,12 @@
     {
         bool val = e.Value is bool b && b;
         await AppSettings.SetExpandAllHudAsync(val);
+    }
+
+    private async Task OnTideVisibleChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetTideVisibleAsync(on);
     }
 
     private async Task OnBigTypeChanged(ChangeEventArgs e)

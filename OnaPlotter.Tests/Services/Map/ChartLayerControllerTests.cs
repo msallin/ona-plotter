@@ -145,6 +145,7 @@ public class ChartLayerControllerTests
         public bool ServerTrackWithinBounds => true;
         public bool RadarRangeRingsEnabled => true;
         public int RadarRangeRingsCount => 4;
+        public bool TideVisible => true;
         public bool AtonsVisible => true;
         public bool GuardZoneVisible => true;
         public bool GuardZoneWarningRingVisible => true;
@@ -168,6 +169,7 @@ public class ChartLayerControllerTests
         public Task SetServerTrackWithinBoundsAsync(bool v) => Task.CompletedTask;
         public Task SetRadarRangeRingsEnabledAsync(bool v) => Task.CompletedTask;
         public Task SetRadarRangeRingsCountAsync(int v) => Task.CompletedTask;
+        public Task SetTideVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneWarningRingVisibleAsync(bool v) => Task.CompletedTask;

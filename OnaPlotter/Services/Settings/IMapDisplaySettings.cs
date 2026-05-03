@@ -157,6 +157,13 @@ public interface IMapDisplaySettings
     /// without affecting their own predictor. Default 10 min.</summary>
     double AisCogVectorMinutes { get; }
 
+    /// <summary>Show the tide row + extras on the depth HUD card +
+    /// Dashboard. Default true; helms in non-tidal waters (lakes,
+    /// inland canals) or who run a server without a tide plugin
+    /// can hide the empty / irrelevant slot. Persisted as
+    /// <c>tideVisible.v1</c>.</summary>
+    bool TideVisible { get; }
+
     /// <summary>Whether the radar overlay paints concentric range
     /// rings centred on own boat. Each ring sits at an evenly-spaced
     /// fraction of the radar's current range (1/N, 2/N, ..., N/N).
@@ -196,4 +203,5 @@ public interface IMapDisplaySettings
     Task SetAisCogVectorMinutesAsync(double value);
     Task SetRadarRangeRingsEnabledAsync(bool value);
     Task SetRadarRangeRingsCountAsync(int value);
+    Task SetTideVisibleAsync(bool value);
 }
