@@ -839,12 +839,13 @@
                     <input class="form-check-input" type="checkbox"
                            checked="@AppSettings.BigType"
                            @onchange="OnBigTypeChanged" />
-                    <label class="form-check-label">Big-type HUD values</label>
+                    <label class="form-check-label">Big screen mode</label>
                 </div>
                 <small class="text-muted d-block mt-1">
-                    Scales the four corner HUD numbers up so they read from across a
-                    cockpit or on a 21&quot; helm screen. Useful for older eyes or bright
-                    sunlight.
+                    Scales corner HUD numbers, AIS ship icons + labels, CPA chips, toast
+                    + alarm banners up to read well from 1-2 m away. Designed for the
+                    21&quot;+ helm screen the crew watches from a couch or nav station;
+                    on a phone the standard size already fits the viewport.
                 </small>
 
                 <div class="form-check form-switch mt-2">
@@ -857,8 +858,8 @@
                     Keep every corner HUD in its expanded state (DMS / wind extras /
                     drift / leeway rows) instead of hiding them behind a tap. Best on
                     wide helm screens where the extra rows fit without covering chart.
-                    Independent of Big-type; combine them for a maximum-information
-                    read on a 21&quot;+ display.
+                    Independent of Big screen mode; combine them for a maximum-
+                    information read on a 21&quot;+ display.
                 </small>
             </div>
         </div>

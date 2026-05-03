@@ -41,8 +41,9 @@
         <input type="checkbox" checked="@BigType"
                @onchange="(e) => OnToggleBigType.InvokeAsync((bool)(e.Value ?? false))" />
         <div class="chart-item-body">
-            <div class="chart-name">Big type</div>
-            <div class="chart-desc">Scale corner HUD values up for cockpit-distance reading.</div>
+            <div class="chart-name">Big screen mode</div>
+            <div class="chart-desc">Scales HUD values, AIS ships + labels, CPA chips,
+                toasts + alarms for reading from 1-2 m on a 21"+ helm screen.</div>
         </div>
     </label>
     <label class="chart-item">

@@ -5624,10 +5624,21 @@ html.night-mode-global body {
     filter: brightness(0.4) sepia(0.8) hue-rotate(-30deg) saturate(1.4);
 }
 
-/* Big-type mode: scales the four corner HUD values up so they read
-   from across a cockpit / helm. CSS-only; triggered by a Settings
-   toggle that adds .big-type to .map-container. Labels + position
-   readout get a proportional bump too. */
+/* Big screen mode: scales every cockpit-distance-relevant element
+   up for a 21"+ helm screen viewed from 1-2 m away. CSS-only;
+   triggered by a Settings toggle that adds .big-type to
+   .map-container. Renamed in the helm-facing UI to "Big screen
+   mode" but the CSS class stays .big-type for compatibility with
+   the existing C# property and persisted-settings key.
+   Scopes:
+     - HUD numbers (corner cards) -- the original Big-type scope
+     - AIS ship icons + labels (so a ferry on the chart still reads
+       at 2 m)
+     - CPA chips on the chart
+     - Toast notifications + alarm banners (helm at the nav station
+       has to see them across the saloon)
+   Sizes calibrated to match the expanded HUD font (~1rem = comfortable
+   from 1-2 m on a 21" screen at typical pixel density). */
 .map-container.big-type .hud-value {
     font-size: 2.2rem;
 }
@@ -5669,6 +5680,86 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     min-height: 40px;
     min-width: 40px;
     font-size: 1.1rem;
+}
+
+/* Big screen mode: AIS ship icons. Scale the SVG inside the
+   div-icon (Leaflet sets translate3d on the wrapper element via
+   inline style; targeting the inner SVG avoids fighting that with
+   !important and keeps Leaflet's anchor positioning intact). 1.6x
+   reads as "noticeably bigger" without colliding with the AIS
+   labels at typical zoom levels. */
+.map-container.big-type .leaflet-marker-icon.boat-icon svg {
+    transform: scale(1.6);
+    transform-origin: center;
+}
+/* Sleeping AIS markers (anchored / moored) get the same scale so
+   the size convention stays consistent across the fleet. */
+.map-container.big-type .leaflet-marker-icon.boat-icon-sleeping svg,
+.map-container.big-type .leaflet-marker-icon.boat-icon-buddy svg {
+    transform: scale(1.6);
+    transform-origin: center;
+}
+
+/* Big screen mode: AIS chart labels (vessel names + speed shown
+   under each marker). The base .ais-label rule uses !important
+   to override Leaflet's tooltip defaults; we have to use it here
+   too to win the cascade. Bumped to 14px (~30 % larger) to match
+   the bigger marker. Tighter line-height so the label doesn't
+   push down into the marker glyph. */
+.map-container.big-type .ais-label {
+    font-size: 14px !important;
+    line-height: 1.15 !important;
+    padding: 3px 7px !important;
+}
+
+/* Big screen mode: CPA chips on the chart (the labelled midpoint
+   between own-boat and the predicted crossing point). The chip
+   carries the most safety-critical glance read on the chart;
+   scaling it the most makes a danger CPA visible from the saloon.
+   Same !important escape hatch as .ais-label / base .cpa-label
+   to override Leaflet's tooltip default styling. */
+.map-container.big-type .cpa-label {
+    font-size: 14px !important;
+    padding: 5px 10px !important;
+}
+.map-container.big-type .cpa-label strong {
+    font-size: 15.5px;
+}
+
+/* Big screen mode: toast notifications. The toast stack lives
+   outside .map-container, but the helm seeing toasts from the
+   nav-station seat needs them readable too. :has() lifts the
+   scope to <main>. */
+main:has(.map-container.big-type) .toast-item {
+    font-size: 1rem;
+    padding: 0.85rem 1.1rem;
+    min-width: 280px;
+}
+main:has(.map-container.big-type) .toast-action {
+    font-size: 0.95rem;
+    padding: 0.4rem 0.8rem;
+}
+
+/* Big screen mode: alarm banner stack. Same reasoning as toasts;
+   the alarm copy ("APPROACH", "CPA 0.15nm in 1min") is the
+   single biggest "act NOW" cue, so it should be the easiest to
+   read across the cabin. */
+main:has(.map-container.big-type) .alarm-banner {
+    font-size: 1.1rem;
+    padding: 14px 18px;
+    min-height: 52px;
+}
+main:has(.map-container.big-type) .alarm-banner strong {
+    font-size: 1.2rem;
+}
+main:has(.map-container.big-type) .alarm-snooze,
+main:has(.map-container.big-type) .alarm-action {
+    font-size: 1rem;
+    padding: 8px 14px;
+    min-height: 44px;
+}
+main:has(.map-container.big-type) .alarm-hold-hint {
+    font-size: 0.85rem;
 }
 /* Tiny exit chip, top-right. Big enough to tap in a swell but small
    enough not to compete with the chart. env(safe-area-inset-*) keeps
