@@ -23,6 +23,13 @@ let mobMarker = null;
 let mobCircle = null;
 let mobLine = null;
 let mobLabel = null;
+// Permanent "MOB hh:mm:ss / lat, lon" label anchored at the dropped
+// position. Helm-feedback: the same info used to live in a 30 s
+// toast at the bottom-right; helms wanted it pinned to the chart
+// where the casualty is so they can read it off the map directly
+// while talking on the VHF rather than glancing between two
+// places.
+let mobPointLabel = null;
 
 // Latest own-boat position. Pushed from the mux on every updatePosition
 // tick so the boat<->MOB line + label can refresh without the module
@@ -62,9 +69,34 @@ export function setMob(lat, lon) {
     mobLine = L.polyline([[selfLat, selfLon], [lat, lon]], {
         color: colors.mob, weight: 2, dashArray: '4,4'
     }).addTo(mapRef);
+    // Midpoint label: starts as "MOB" and switches to bearing /
+    // distance on every boat-position update. Used during the
+    // return-to-casualty manoeuvre so the helm sees the live
+    // closing geometry while looking at the chart.
     mobLabel = L.tooltip({ permanent: true, direction: 'center', className: 'mob-tooltip' })
         .setLatLng([(selfLat + lat) / 2, (selfLon + lon) / 2])
         .setContent('MOB')
+        .addTo(mapRef);
+    // At-pin label: time-of-drop + lat / lon. Pinned to the MOB
+    // location so the helm can read the casualty fix straight off
+    // the chart while reading the VHF mic rather than pulling it
+    // from a toast at the bottom-right.
+    const ts = new Date();
+    const hh = String(ts.getHours()).padStart(2, '0');
+    const mm = String(ts.getMinutes()).padStart(2, '0');
+    const ss = String(ts.getSeconds()).padStart(2, '0');
+    const ns = lat >= 0 ? 'N' : 'S';
+    const ew = lon >= 0 ? 'E' : 'W';
+    const labelHtml = `<strong>MOB ${hh}:${mm}:${ss}</strong><br>` +
+                      `${Math.abs(lat).toFixed(5)}&deg;${ns} ${Math.abs(lon).toFixed(5)}&deg;${ew}`;
+    mobPointLabel = L.tooltip({
+        permanent: true,
+        direction: 'right',
+        offset: [12, 0],
+        className: 'mob-point-label',
+    })
+        .setLatLng([lat, lon])
+        .setContent(labelHtml)
         .addTo(mapRef);
     // Audible confirmation: the helm may have been looking overboard
     // when they pressed the button and can't see the pulse animation.
@@ -101,13 +133,15 @@ function playMobChime() {
 
 export function clearMob() {
     if (!mapRef) {
-        mobMarker = null; mobCircle = null; mobLine = null; mobLabel = null;
+        mobMarker = null; mobCircle = null; mobLine = null;
+        mobLabel = null; mobPointLabel = null;
         return;
     }
     if (mobMarker) { mapRef.removeLayer(mobMarker); mobMarker = null; }
     if (mobCircle) { mapRef.removeLayer(mobCircle); mobCircle = null; }
     if (mobLine) { mapRef.removeLayer(mobLine); mobLine = null; }
     if (mobLabel) { mapRef.removeLayer(mobLabel); mobLabel = null; }
+    if (mobPointLabel) { mapRef.removeLayer(mobPointLabel); mobPointLabel = null; }
 }
 
 export function dispose() {
@@ -115,6 +149,7 @@ export function dispose() {
     mobCircle = null;
     mobLine = null;
     mobLabel = null;
+    mobPointLabel = null;
     selfLat = 0; selfLon = 0;
     mapRef = null;
     colors = null;

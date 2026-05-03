@@ -3039,16 +3039,12 @@
                 }
                 await _controlsJs.SetMobAsync(lat, lon);
                 mobActive = true;
-                // setMob also plays a two-tone chime so the helm has
-                // audio confirmation even if they were looking overboard
-                // when the button was pressed. Persistent toast carries
-                // the exact lat/lon so the helm can read it on the radio.
-                var ns = lat >= 0 ? 'N' : 'S';
-                var ew = lon >= 0 ? 'E' : 'W';
-                Toasts.Show(
-                    $"MOB dropped {DateTime.Now:HH:mm:ss} -- {Math.Abs(lat):F5}\u00B0{ns}, {Math.Abs(lon):F5}\u00B0{ew}",
-                    ToastLevel.Success,
-                    durationSec: 30);
+                // setMob plays a two-tone chime + draws a permanent
+                // "MOB hh:mm:ss / lat, lon" label at the dropped pin
+                // so the helm reads the casualty fix straight off the
+                // chart while talking on the VHF. The toast is just
+                // a confirmation that the action landed.
+                Toasts.Show("MOB dropped", ToastLevel.Success, durationSec: 8);
             }
             else
             {

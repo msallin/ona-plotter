@@ -2423,6 +2423,28 @@ html:fullscreen .hud-stack-br {
 }
 .mob-tooltip::before { display: none !important; }
 
+/* Permanent at-pin label: time-of-drop + lat / lon. Two lines so
+   the timestamp reads as the headline and the coords as the
+   reference detail. Tabular-nums so the digits don't shift width
+   between fixes if the helm taps MOB twice in a session. */
+.mob-point-label {
+    background: rgba(15, 17, 22, 0.92) !important;
+    border: 1px solid rgba(239, 68, 68, 0.6) !important;
+    color: #fff !important;
+    font-size: 11px !important;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.35 !important;
+    padding: 4px 8px !important;
+    border-radius: 4px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+    white-space: nowrap !important;
+}
+.mob-point-label::before { display: none !important; }
+.mob-point-label strong {
+    color: rgb(252, 165, 165);
+    font-weight: 700;
+}
+
 /* Compass rose (tiny heading indicator). transform-box:view-box pins the
    rotation origin to the SVG's viewBox centre (0,0) so the needle rotates
    around its pivot instead of the SVG element's top-left corner. */
