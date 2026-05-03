@@ -25,6 +25,14 @@ public sealed class MobChartRenderer : IDisposable
 
     private readonly ServerNotificationStore _store;
 
+    /// <summary>Provider for the helm vessel's MMSI -- shown in
+    /// the MOB marker's popup so the helm can read MMSI + position
+    /// onto the VHF mic without leaving the chart. Optional: tests
+    /// pass null and the popup just omits the MMSI row. Production
+    /// wiring uses SignalkClient.OwnMmsi via a thunk so the renderer
+    /// stays out of the SignalkClient dependency tree.</summary>
+    private readonly Func<string?>? _ownMmsi;
+
     /// <summary>JS bridge -- nullable because the renderer is
     /// constructed at app start while the JS module reference only
     /// becomes available after the Map page mounts. The map page
@@ -42,9 +50,10 @@ public sealed class MobChartRenderer : IDisposable
     private double? _renderedLon;
     private DateTime? _renderedCreatedAt;
 
-    public MobChartRenderer(ServerNotificationStore store)
+    public MobChartRenderer(ServerNotificationStore store, Func<string?>? ownMmsi = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _ownMmsi = ownMmsi;
         _store.OnPathChanged += HandlePathChanged;
     }
 
@@ -130,7 +139,8 @@ public sealed class MobChartRenderer : IDisposable
         var iso = first.CreatedAt is DateTime ts
             ? ts.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture)
             : null;
-        _ = _js.SetMobAsync(lat, lon, iso);
+        var selfMmsi = _ownMmsi?.Invoke();
+        _ = _js.SetMobAsync(lat, lon, iso, selfMmsi);
         _renderedPath = first.Path;
         _renderedLat = lat;
         _renderedLon = lon;

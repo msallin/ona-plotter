@@ -63,6 +63,11 @@ let shipLinesVisible = true;
 // popups use. Null until resolved; empty string means "no mmsi on
 // the self URN" (rare but valid for inland boats without AIS).
 let ownMmsi = null;
+// Own-boat callsign, pushed from C# when SignalkClient sees a
+// communication.callsignVhf delta on self. Surfaces in the
+// ownship popup so the helm reads MMSI + callsign onto the VHF
+// mic without leaving the chart.
+let ownCallsign = null;
 let boatMarker = null;
 let boatVector = null;
 let boatVectorTip = null;  // Filled dot at the COG-vector end -- matches AIS layer's tip.
@@ -548,7 +553,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // unchanged.
     weatherLayerMod.init(map);
     anchorLayerMod.init(map, { colors: MapColors });
-    mobLayerMod.init(map, { colors: MapColors });
+    mobLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef });
     laylineLayerMod.init(map, { colors: MapColors });
     atonLayerMod.init(map);
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
@@ -1237,7 +1242,8 @@ export const measureFromVesselTo = (lat, lon) => measureLayerMod.measureFromVess
 // --- MOB ---
 
 // Implementation in mobLayer.js; mux re-exports the C# entries.
-export const setMob = (lat, lon) => mobLayerMod.setMob(lat, lon);
+export const setMob = (lat, lon, createdAtIso, selfMmsi) =>
+    mobLayerMod.setMob(lat, lon, createdAtIso, selfMmsi);
 export const clearMob = () => mobLayerMod.clearMob();
 
 // --- Anchor Watch ---
@@ -2059,6 +2065,17 @@ function buildSelfPopupHtml(data) {
     const flagHtml = ownMmsi
         ? `<img class="ais-popup-flag" src="${flagUrl(ownMmsi)}" alt="" onerror="this.style.display='none'">`
         : '';
+    // Identity rows: MMSI + callsign show only when we know them
+    // (server hello hasn't resolved self yet, or the SK feed
+    // doesn't carry communication.callsignVhf). Helm reads MMSI
+    // off the popup onto the VHF mic during distress comms; the
+    // callsign feeds Sea Areas A2/A3 distress channel routing.
+    const mmsiRow = ownMmsi
+        ? `<tr><td>MMSI</td><td>${ownMmsi}</td></tr>`
+        : '';
+    const callsignRow = ownCallsign
+        ? `<tr><td>Call</td><td>${ownCallsign}</td></tr>`
+        : '';
     return `<div class="ais-popup-content">` +
         `<div class="ais-popup-title">${flagHtml}&#9733; Own boat</div>` +
         `<table class="ais-popup-table">` +
@@ -2066,6 +2083,8 @@ function buildSelfPopupHtml(data) {
             `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
             `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
             `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
+            mmsiRow +
+            callsignRow +
         `</table>` +
         `</div>`;
 }
@@ -2075,6 +2094,12 @@ function buildSelfPopupHtml(data) {
  *  with the same value is a no-op. */
 export function setOwnMmsi(mmsi) {
     ownMmsi = mmsi || null;
+}
+
+/** Set the own-boat callsign. C# calls this when the SK feed has
+ *  delivered communication.callsignVhf for self. Idempotent. */
+export function setOwnCallsign(callsign) {
+    ownCallsign = callsign || null;
 }
 
 

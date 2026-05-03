@@ -195,12 +195,12 @@ public class MobChartRendererTests
     /// only uses these two.</summary>
     private sealed class FakeJs : IMapControlsJs
     {
-        public List<(double lat, double lon, string? createdAtIso)> SetMobCalls { get; } = [];
+        public List<(double lat, double lon, string? createdAtIso, string? selfMmsi)> SetMobCalls { get; } = [];
         public int ClearMobCount { get; private set; }
 
-        public Task SetMobAsync(double lat, double lon, string? createdAtIso)
+        public Task SetMobAsync(double lat, double lon, string? createdAtIso, string? selfMmsi)
         {
-            SetMobCalls.Add((lat, lon, createdAtIso));
+            SetMobCalls.Add((lat, lon, createdAtIso, selfMmsi));
             return Task.CompletedTask;
         }
         public Task ClearMobAsync()

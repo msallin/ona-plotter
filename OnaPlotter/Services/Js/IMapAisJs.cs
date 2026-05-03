@@ -30,6 +30,13 @@ public interface IMapAisJs
     /// country flag from the same endpoint AIS markers do.</summary>
     Task SetOwnMmsiAsync(string mmsi);
 
+    /// <summary>Seed the JS side with own-vessel VHF callsign when
+    /// the SignalK feed delivers communication.callsignVhf on self.
+    /// Surfaces in the ownship chart popup so the helm can read
+    /// MMSI + callsign onto the VHF mic during distress comms
+    /// without leaving the chart.</summary>
+    Task SetOwnCallsignAsync(string callsign);
+
     /// <summary>Push harbor-mode flag to JS so name labels, COG vectors,
     /// CPA arcs, and the guard-zone ring vanish in lock-step with the
     /// C# alarm-suppression flip.</summary>

@@ -135,7 +135,7 @@ public class ActiveRouteSyncTests
         public Task EnableKeyboardShortcutsAsync<T>(Microsoft.JSInterop.DotNetObjectReference<T> dotNetRef) where T : class => Task.CompletedTask;
         public Task DisableKeyboardShortcutsAsync() => Task.CompletedTask;
         public Task ApplyFrameAsync(object frame) => Task.CompletedTask;
-        public Task SetMobAsync(double lat, double lon, string? createdAtIso) => Task.CompletedTask;
+        public Task SetMobAsync(double lat, double lon, string? createdAtIso, string? selfMmsi) => Task.CompletedTask;
         public Task ClearMobAsync() => Task.CompletedTask;
         public Task ClearCurrentArrowAsync() => Task.CompletedTask;
         public Task<double[]?> GetMapCenterAsync() => Task.FromResult<double[]?>(null);

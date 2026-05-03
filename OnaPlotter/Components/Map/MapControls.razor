@@ -121,12 +121,11 @@
                         <span>@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
                     </button>
                 }
-                <button class="ctrl-more-item ctrl-more-overflow @(LayersPanelOpen ? "ctrl-more-active" : "")"
-                        @onclick="() => Select(OnToggleLayers)"
-                        title="Layers panel">
-                    <span class="ctrl-more-ico">@((MarkupString)Icons.Layers)</span>
-                    <span>Layers</span>
-                </button>
+                @* Layers intentionally NOT in the More menu's
+                   phone-overflow list -- the helm flagged it as
+                   the most-used button so it stays in the bar
+                   alongside More (the only two visible buttons on
+                   phone). *@
                 <div class="ctrl-more-sep ctrl-more-overflow"></div>
 
                 <button class="ctrl-more-item @(LegendOpen ? "ctrl-more-active" : "")"
@@ -324,7 +323,16 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn ctrl-btn-overflow @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
+    @* Layers stays visible in the bar on every viewport (no
+       .ctrl-btn-overflow). Helm-feedback: Layers is the most-used
+       toggle on a phone (chart picker, AIS visibility, depth
+       overlays). The phone bar therefore renders [More] + [Layers]
+       even though every other control collapsed into More. The
+       More menu still carries a Layers row for the desktop overflow
+       but it's gated by .ctrl-more-overflow which only shows on
+       phone -- on phone the bar version is enough so the duplicate
+       is suppressed below in the @media block. *@
+    <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
             title="Layers panel">
         <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
         <span class="ctrl-lbl">Layers</span>

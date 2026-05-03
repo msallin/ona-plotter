@@ -146,8 +146,14 @@ builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService, OnaPlotter.Se
 
 // Drives the MOB chart marker from store changes. Singleton so the
 // subscription survives page navigation and the marker reappears
-// when the Map remounts.
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.MobChartRenderer>();
+// when the Map remounts. The factory thunk for OwnMmsi reads the
+// SignalkClient.OwnMmsi at the moment setMob fires (not at
+// construction time) so a delayed self-context resolution still
+// makes the helm vessel's MMSI land in the popup.
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.MobChartRenderer>(sp =>
+    new OnaPlotter.Services.Mob.MobChartRenderer(
+        sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
+        () => sp.GetRequiredService<SignalkClient>().OwnMmsi));
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
 // isn't installed; the map surfaces that as a toast rather than failing

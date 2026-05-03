@@ -424,11 +424,17 @@
     private bool IsOpen(string key)
     {
         if (_sectionOpen.TryGetValue(key, out var v)) return v;
-        // Phones default-collapsed so a 390-wide viewport doesn't
-        // need a full scroll to see every section header at once.
-        // Desktop defaults open -- a wide screen can show the whole
-        // dashboard at a glance, no benefit to hiding cards.
-        return !_isMobileViewport;
+        // Default-open everywhere on desktop. On phone, only the
+        // Primary section (SOG / Depth / HDG -- the trio every helm
+        // checks first on landing) is expanded; everything else
+        // starts collapsed so the helm sees one viewport-sized
+        // dashboard instead of an infinite scroll. User toggles
+        // store an explicit override so the picks stick.
+        if (_isMobileViewport)
+        {
+            return string.Equals(key, "primary", StringComparison.Ordinal);
+        }
+        return true;
     }
 
     private void Toggle(string key)

@@ -41,6 +41,9 @@ public sealed class MapAisJs : IMapAisJs
     public Task SetOwnMmsiAsync(string mmsi)
         => InvokeSafe("setOwnMmsi", mmsi);
 
+    public Task SetOwnCallsignAsync(string callsign)
+        => InvokeSafe("setOwnCallsign", callsign);
+
     public Task SetHarborModeAsync(bool enabled)
         => InvokeSafe("setHarborMode", enabled);
 

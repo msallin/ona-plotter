@@ -99,8 +99,11 @@ public interface IMapControlsJs
     /// is the SignalK-stamped ISO-8601 raise time the chart-marker
     /// label should show; null falls back to the local clock so
     /// pre-v2 servers and synthetic locally-raised entries still
-    /// render a timestamp.</summary>
-    Task SetMobAsync(double lat, double lon, string? createdAtIso);
+    /// render a timestamp. <paramref name="selfMmsi"/> is the
+    /// helm vessel's MMSI -- shown in the marker's popup so a
+    /// helm reading the casualty fix off the chart can also read
+    /// it onto the VHF mic without going to a separate page.</summary>
+    Task SetMobAsync(double lat, double lon, string? createdAtIso, string? selfMmsi);
 
     /// <summary>Clear the Man-Overboard pin.</summary>
     Task ClearMobAsync();

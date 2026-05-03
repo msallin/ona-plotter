@@ -245,6 +245,42 @@ public partial class Map
         catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
     }
 
+    /// <summary>MOB popup-side Share: serialise the casualty fix as
+    /// a one-off waypoint feature (same shape WaypointShare uses)
+    /// and route through the file-transfer helper. The helm reading
+    /// the MOB position into the VHF mic gets a one-tap "now share
+    /// the same coords with the rescue coordinator on WhatsApp /
+    /// SMS / mail" affordance. createdAtIso plumbs through so a
+    /// shared casualty note carries the same timestamp every plotter
+    /// in the area shows.</summary>
+    [JSInvokable]
+    public async Task MobShare(double lat, double lon, string? createdAtIso)
+    {
+        var feature = new GeoJsonShareWaypointFeature(
+            "Feature",
+            new GeoJsonPointGeometry("Point", [lon, lat]),
+            new GeoJsonShareWaypointProperties(
+                Name: "MOB",
+                CreatedAt: createdAtIso));
+        string json = System.Text.Json.JsonSerializer.Serialize(
+            feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
+        try
+        {
+            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/platform/fileTransfer.js");
+            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", "MOB", json);
+            switch (outcome)
+            {
+                case "shared":      Toasts.Success("Shared"); break;
+                case "copied":      Toasts.Success("Copied to clipboard"); break;
+                case "cancelled":   /* helm tapped cancel */ break;
+                default:            Toasts.Error("Couldn't share or copy."); break;
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "MOB share"); }
+    }
+
     // ---- Note (create, save, delete, focus, show/hide) ---------------
     private bool noteDialogVisible;
     private string newNoteTitle = "";

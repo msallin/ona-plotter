@@ -719,16 +719,23 @@ export function updateAisTargets(vessels) {
             // Buddy / Snooze links. At 280 px the action row wrapped onto
             // three lines on iPad landscape and the MT / VF links split
             // across rows; 420 keeps them on one line and reads cleaner.
-            // autoPan: false -- a CPA banner often prompts the helm to
-            // tap the threatening AIS marker to investigate, and the
-            // default Leaflet popup auto-pan would shift the map away
-            // from own boat to fit the popup. The helm wanted "no
-            // focus change on collision course" -- they want to see
-            // own boat AND the threat geometry, not have the chart
-            // jerk to keep a popup on screen. Helm can still pan
-            // manually.
-            marker.bindPopup('',
-                { closeButton: false, maxWidth: 420, className: 'ais-popup', autoPan: false });
+            // autoPan re-enabled (was false earlier under "no focus
+            // change on collision course"): in the field a marker near
+            // the top of the screen meant the popup rendered above it
+            // and went off-viewport entirely -- the helm couldn't
+            // read the CPA / COG row at all. autoPan with a generous
+            // padding still moves the map only when strictly needed
+            // and keeps own-boat in view at all but the most extreme
+            // edge cases. keepInView pins the popup if the helm then
+            // pans manually so it doesn't slide off again.
+            marker.bindPopup('', {
+                closeButton: false,
+                maxWidth: 420,
+                className: 'ais-popup',
+                autoPan: true,
+                autoPanPadding: [20, 20],
+                keepInView: true,
+            });
             marker.on('popupopen', () => {
                 if (marker._onaVesselSnapshot) {
                     marker.setPopupContent(buildAisPopupHtml(marker._onaVesselSnapshot));

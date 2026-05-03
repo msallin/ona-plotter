@@ -2423,6 +2423,111 @@ html:fullscreen .hud-stack-br {
 }
 .mob-tooltip::before { display: none !important; }
 
+/* MOB at-pin label: glanceable readout with time + T+ elapsed +
+   lat/lon, pinned next to the pulsing marker. Theme tokens via
+   --panel-* so the label flips with light / dark / high-contrast
+   palettes (Leaflet's default white-tooltip styling collided with
+   the dark theme and lost contrast against the chart). */
+.mob-point-label {
+    background: var(--panel-bg-strong) !important;
+    color: var(--panel-text) !important;
+    border: 1px solid var(--panel-border) !important;
+    border-radius: 4px !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    padding: 4px 8px !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35) !important;
+}
+.mob-point-label::before { display: none !important; }
+.mob-elapsed {
+    color: var(--sev-warn);
+    font-weight: 600;
+    margin-left: 4px;
+}
+
+/* MOB popup: full dialog tied to the marker. Theme-styled via the
+   panel + sev tokens so dark / light / high-contrast share the
+   same look-and-feel; mirrors the .ais-popup chrome so the helm
+   recognises "this is a chart-marker dialog" without re-learning. */
+.mob-popup .leaflet-popup-content-wrapper {
+    background: var(--panel-bg-strong) !important;
+    color: var(--panel-text) !important;
+    border: 1px solid var(--sev-danger) !important;
+    border-radius: 6px !important;
+}
+.mob-popup .leaflet-popup-tip { background: var(--panel-bg-strong) !important; }
+.mob-popup .leaflet-popup-content {
+    margin: 10px 14px !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+}
+.mob-popup-body { min-width: 200px; }
+.mob-popup-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--sev-danger);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.mob-popup-elapsed {
+    color: var(--sev-warn);
+    font-size: 11px;
+    font-weight: 600;
+}
+.mob-popup-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+}
+.mob-popup-table td {
+    padding: 1px 0;
+    vertical-align: top;
+}
+.mob-popup-table td:first-child {
+    color: var(--panel-text-muted);
+    width: 56px;
+}
+.mob-popup-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.mob-popup-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+.mob-popup-go-btn,
+.mob-popup-share-btn {
+    flex: 1;
+    background: transparent;
+    color: var(--panel-text);
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.mob-popup-go-btn {
+    color: var(--sev-danger);
+    border-color: rgba(239, 68, 68, 0.55);
+}
+.mob-popup-go-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--sev-danger);
+}
+.mob-popup-share-btn {
+    color: var(--sk-cyan, #7dd3fc);
+    border-color: rgba(34, 211, 238, 0.45);
+}
+.mob-popup-share-btn:hover {
+    background: rgba(34, 211, 238, 0.15);
+    border-color: var(--sk-cyan, #7dd3fc);
+}
+
 /* Compass rose (tiny heading indicator). transform-box:view-box pins the
    rotation origin to the SVG's viewBox centre (0,0) so the needle rotates
    around its pivot instead of the SVG element's top-left corner. */
@@ -3958,39 +4063,62 @@ html.night-mode-global body {
         --hud-font-label:   0.65rem;
     }
 
-    /* Phone HUD: stack the unit suffix BELOW the digit instead of
-       inline. Helm with a thumb-sized phone screen reads "6.4"
-       with "kn" underneath faster than "6.4 kn" packed onto one
-       line at small font sizes -- the digit dominates and the
-       unit reads as a label rather than fighting the value for
-       space. line-height tightened so the stack doesn't pad the
-       card. */
+    /* Phone HUD: keep the unit inline AFTER the digit ("6.4 kn"),
+       not stacked below. Earlier display:block experiment broke
+       the visual order on the helm screenshot ("kn" appeared on
+       a line BEFORE the digit because the parent container
+       reflowed); helm-feedback was unambiguous: units behind. */
     .hud-unit {
-        display: block;
-        margin-left: 0;
-        margin-top: -2px;
-        line-height: 1;
         font-size: 0.62rem;
+        margin-left: 0.15em;
     }
 
     /* Phone topbar: critical real-estate -- the chip stack (Live /
        History / Update / Not-logged-in / zoom / night) was wrapping
        onto two rows on a 390-wide iPhone. These tweaks shave the
        fat:
-         - Live: hide the text, keep the dot. Tooltip still verbose.
+         - Live: hide the text, tighten the chip down to just the
+           dot inside a snug box. Tooltip still verbose.
          - Alarm History: drop the count + the word "Alarm" via the
            shorter label span (markup carries both, CSS picks one).
          - Not-logged-in chip: smaller font, tighter padding so it
            stops overflowing onto two lines. */
     .connection-status-text { display: none; }
+    .connection-status {
+        padding: 0;
+        margin: 0;
+        gap: 0;
+        min-width: 0;
+        flex: 0 0 auto;
+    }
+    .connection-dot {
+        margin-right: 0;
+    }
     .alarm-log-label-full { display: none; }
     .alarm-log-label-short { display: inline; }
+    /* Tighten the alarm-log button so it matches the dot's footprint;
+       on a viewport with no history the button isn't rendered at all
+       (gated in MainLayout) so this only kicks in once the helm has
+       a history to inspect. */
+    .alarm-log-btn {
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        line-height: 1.2;
+    }
     .auth-warning-chip {
         font-size: 0.7rem;
         padding: 2px 6px;
         line-height: 1.2;
         white-space: nowrap;
     }
+
+    /* Phone-wide font shrink (~2pt). Cascades through everything
+       that doesn't carry an explicit font-size, including the route
+       HUD card text, dashboard tables, the layers panel, the
+       settings forms, etc. The HUD-token block above already
+       handles the bigger headline numbers; this catches the
+       remaining body copy. */
+    html { font-size: 13px; }
 
     /* Phone: narrower sidebar so the chart gets more pixels.
        Default rail is 10rem (collapsed 4rem); a phone can spare
@@ -4014,6 +4142,56 @@ html.night-mode-global body {
     .display-6 { font-size: 1.2rem; line-height: 1.1; }
     .dashboard-section .card-body { padding: 0.5rem 0.4rem; }
     .dashboard-section .card-subtitle { font-size: 0.7rem; }
+
+    /* Phone route HUD: compact mobile layout for the active-route
+       card. The desktop / iPad layout has six metrics on one
+       horizontal row + a "Route total" footer, both eating ~120 px
+       of vertical real estate that on a 390-wide phone competes
+       with the chart itself. Tighter spacing + 2-column grid +
+       collapsed footer brings it down to a glanceable strip. */
+    .route-panel {
+        padding: 4px 8px !important;
+        max-width: calc(100vw - 24px);
+    }
+    .route-panel-compact .route-info-row,
+    .route-panel-compact .route-total-row {
+        /* Override the desktop 56 px padding (chevron clearance):
+           on phone the chevrons are absolutely positioned at the
+           edges and overlap the row; padding reserves space. The
+           desktop value (56) is too generous for phone; trim to
+           44 which is the chevron's true coarse-pointer width
+           plus 4 px breathing. */
+        padding-left: 44px;
+        padding-right: 44px;
+    }
+    .route-info-row {
+        flex-wrap: wrap;
+        gap: 4px 10px;
+    }
+    .route-info-item .hud-label {
+        font-size: 0.6rem;
+        opacity: 0.7;
+    }
+    .route-info-item .hud-value {
+        font-size: 0.85rem;
+    }
+    .route-total-row {
+        font-size: 0.65rem;
+        gap: 6px;
+    }
+    .route-total-label {
+        font-size: 0.55rem;
+    }
+    /* Chevrons on phone: smaller + tighter so they don't dominate
+       the panel. The bar's prev/next coarse-pointer min-width 36px
+       leaves no room for the chip; 28px is enough for a clear
+       glyph + tap target without 44px WCAG (the buttons aren't
+       safety-critical). */
+    .route-panel-compact .route-wp-step-btn {
+        min-width: 28px;
+        height: 28px;
+        font-size: 0.85rem;
+    }
 }
 /* Default (non-phone): show the full alarm-log label, hide the
    abbreviated one. Mirror block for the connection text. */

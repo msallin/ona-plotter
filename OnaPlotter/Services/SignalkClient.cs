@@ -876,6 +876,18 @@ public sealed class SignalkClient : IAsyncDisposable
         }
     }
 
+    /// <summary>VHF callsign for the helm vessel, captured from
+    /// the SignalK <c>communication.callsignVhf</c> path on self.
+    /// Null until the SK feed delivers it (some boats publish only
+    /// MMSI; AIS-less inland boats may publish neither). Surfaces
+    /// in the ownship chart popup so the helm reads MMSI +
+    /// callsign onto the VHF mic without leaving the chart.</summary>
+    public string? OwnCallsign { get; private set; }
+    /// <summary>Fires once when OwnCallsign first becomes non-null,
+    /// or when it changes. Map.razor uses this to push the value
+    /// to JS for the popup.</summary>
+    public event Action? OnOwnCallsignChanged;
+
     internal bool IsSelfContext(string? context)
     {
         if (string.IsNullOrEmpty(context)) return true;
@@ -908,6 +920,25 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (val.Path.StartsWith("radars.", StringComparison.Ordinal))
                 {
                     RouteRadarDelta(val.Path, val.Value);
+                    continue;
+                }
+
+                // VHF callsign for self -- captured for the ownship
+                // chart popup. Keeping it on SignalkClient (rather
+                // than NavigationData) because it's identity, not
+                // navigation; the AIS pipeline already stores per-
+                // vessel callsigns in the AisVesselStore so a future
+                // unification could move both to the same surface.
+                if (val.Path == "communication.callsignVhf"
+                    && val.Value is JsonElement callsignEl
+                    && callsignEl.ValueKind == JsonValueKind.String)
+                {
+                    var cs = callsignEl.GetString();
+                    if (!string.Equals(cs, OwnCallsign, StringComparison.Ordinal))
+                    {
+                        OwnCallsign = cs;
+                        try { OnOwnCallsignChanged?.Invoke(); } catch { /* swallow */ }
+                    }
                     continue;
                 }
 

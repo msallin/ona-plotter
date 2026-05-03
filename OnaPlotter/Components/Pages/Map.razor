@@ -2030,6 +2030,7 @@
     // message; HandleDataChanged is the reliable cadence where
     // OwnMmsi becomes non-null.
     private bool _ownMmsiPushed;
+    private string? _lastPushedOwnCallsign;
 
     /// <summary>Last (active, maxRadiusMeters) tuple pushed to the
     /// guard-zone JS layer. We diff per tick so transitions
@@ -2072,6 +2073,18 @@
             // tick after that anyway, so the latch never needs reset.
             _ownMmsiPushed = true;
             await _aisJs.SetOwnMmsiAsync(mmsi);
+        }
+        // Push own callsign once the SK feed has delivered it so
+        // the ownship popup can show MMSI + callsign together.
+        // Re-pushable: an SK feed might re-publish callsignVhf on
+        // a sensor swap, so we don't latch -- the JS setter is
+        // idempotent for unchanged values anyway.
+        if (SignalkClient.OwnCallsign is string callsign
+            && callsign != _lastPushedOwnCallsign
+            && _aisJs is not null)
+        {
+            _lastPushedOwnCallsign = callsign;
+            await _aisJs.SetOwnCallsignAsync(callsign);
         }
 
         // Auto-flip Night mode near / past civil twilight if enabled.
