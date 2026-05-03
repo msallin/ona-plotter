@@ -126,6 +126,11 @@ builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService>(sp =>
         sp.GetRequiredService<OnaPlotter.Services.IKeyValueStore>(),
         sp.GetRequiredService<TimeProvider>(),
         () => sp.GetRequiredService<SignalkClient>().FireDataChanged()));
+
+// Drives the MOB chart marker from store changes. Singleton so the
+// subscription survives page navigation and the marker reappears
+// when the Map remounts.
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.MobChartRenderer>();
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
 // isn't installed; the map surfaces that as a toast rather than failing

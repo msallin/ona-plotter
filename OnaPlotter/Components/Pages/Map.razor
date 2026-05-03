@@ -32,6 +32,9 @@
 @inject IConfirmationService Confirmations
 @inject IKeyValueStore Kv
 @inject IRouteDraftStore RouteDraftStore
+@inject OnaPlotter.Services.Mob.IMobService MobService
+@inject OnaPlotter.Services.Mob.MobChartRenderer MobChartRenderer
+@inject OnaPlotter.Services.ServerNotifications.ServerNotificationStore NotificationStore
 @inject IAlarmManager Alarms
 @inject DeadmanTracker DeadmanTracker
 @inject IJSRuntime JS
@@ -528,7 +531,14 @@
     private DotNetObjectReference<Map>? dotNetRef;
     private bool follow;
     private bool nightMode;
-    private bool mobActive;
+    /// <summary>True while at least one notifications.mob.* entry is
+    /// in the active set. Computed off the store, not a standalone
+    /// field, so a remote MOB raised by another plotter (or a
+    /// reload-recovered one) flips the bar-button state without us
+    /// having to wire a second boolean. Settings.MobActive doesn't
+    /// exist; this is purely a UI computed value.</summary>
+    private bool mobActive => NotificationStore.Active
+        .Any(n => n.Path.StartsWith("notifications.mob.", StringComparison.Ordinal));
     private bool anchorManualActive;
     private bool mapInitialized;
     private bool chartPanelOpen;
@@ -1217,6 +1227,19 @@
     {
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
+        // On reconnect: replay any persisted pending MOB raises
+        // (offline-emit recovery) + pull the active notification
+        // list (cross-reload recovery). Best-effort; an error here
+        // gets logged and ignored -- the helm still has the
+        // synthetic local entry on the chart.
+        if (SignalkClient.IsConnected)
+        {
+            try { await MobService.InitializeAsync(); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[mob] InitializeAsync: {ex.Message}");
+            }
+        }
     }
 
     // Anchor state: server anchor takes priority over manual.
@@ -1307,6 +1330,12 @@
         // bottom-centre range scale while the route HUD card sits
         // in that slot. Other wrappers stay in their current order.
         _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
+        // Hand the JS bridge to the MOB chart renderer so it can
+        // paint markers for store entries (incl. any MOB raised
+        // before this page mounted -- the renderer re-syncs on
+        // attach). The renderer itself is a singleton so the
+        // subscription is stable across navigation.
+        MobChartRenderer.AttachJs(_controlsJs);
         _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteSync(
             _routeJs,
             _controlsJs,
@@ -3020,46 +3049,76 @@
 
     private async Task ToggleMob()
     {
-        if (_controlsJs is null) return;
         if (_mobOpInFlight) return;
         _mobOpInFlight = true;
         try
         {
             if (!mobActive)
             {
-                // If the GPS is dead at the exact moment the user taps
-                // MOB, silently doing nothing is the worst outcome.
-                // Better to tell them immediately so they can try again,
-                // raise VHF, or use a handheld GPS. Don't set mobActive
-                // either, so the button UI reflects the un-set state.
-                if (Data.Latitude is not double lat || Data.Longitude is not double lon)
+                // GPS is best-effort: a missing fix doesn't block the
+                // raise (the SK MOB notification value's position
+                // block is allowed to be null). Still warn the helm
+                // so they reach for the VHF / handheld -- the raise
+                // is logged on the server but won't show a chart
+                // marker until a fix exists.
+                double? lat = Data.Latitude;
+                double? lon = Data.Longitude;
+                if (lat is null || lon is null)
                 {
-                    Toasts.Error("No GPS fix -- use VHF and handheld for MOB");
-                    return;
+                    Toasts.Warning("MOB raised without a GPS fix -- use VHF and handheld");
                 }
-                await _controlsJs.SetMobAsync(lat, lon);
-                mobActive = true;
-                // setMob plays a two-tone chime + draws a permanent
-                // "MOB hh:mm:ss / lat, lon" label at the dropped pin
-                // so the helm reads the casualty fix straight off the
-                // chart while talking on the VHF. The toast is just
-                // a confirmation that the action landed.
+                // Local-first via MobService: the synthetic enters
+                // the alarm pipeline immediately; the chart marker
+                // is driven by MobChartRenderer subscribing to the
+                // same store; the REST POST happens in the
+                // background and reconciles the WS echo into a
+                // single canonical entry.
+                // mobActive flips automatically via the store-derived
+                // computed property the moment the synthetic lands.
+                await MobService.RaiseAsync("Person Overboard!", lat, lon);
                 Toasts.Show("MOB dropped", ToastLevel.Success, durationSec: 8);
             }
             else
             {
-                // Guard against false-trigger clears handled in MapControls
-                // via the two-tap confirm pattern (parallel to Stop-
-                // Navigation). By the time ToggleMob fires for a clear,
-                // the user has already armed + confirmed. No second prompt
-                // needed here.
-                await _controlsJs.ClearMobAsync();
-                mobActive = false;
+                // Confirmed two-tap clear (MapControls pattern).
+                // Falls back to the local-store clear when there's
+                // no serverId yet (POST still pending) -- the
+                // pending-raise queue records the clear and replays
+                // it once the serverId arrives. For v1 we just
+                // teardown locally; the alarm-banner Clear button
+                // is the cross-MOB / multi-MOB path.
+                // mobActive flips false automatically when the last
+                // MOB leaves the store (the computed property reads
+                // it on demand).
+                await ClearAllLocalMobsAsync();
             }
         }
         finally
         {
             _mobOpInFlight = false;
+        }
+    }
+
+    /// <summary>Tear down every active MOB. Used by the bar-button
+    /// two-tap clear; the alarm-banner per-entry Clear is the
+    /// fine-grained path. For records with a serverId, fires the
+    /// REST clear so the server cleans up; for pending records
+    /// without a serverId, just drops the local synthetic.</summary>
+    private async Task ClearAllLocalMobsAsync()
+    {
+        var active = NotificationStore.Active
+            .Where(n => n.Path.StartsWith("notifications.mob.", StringComparison.Ordinal))
+            .ToList();
+        foreach (var n in active)
+        {
+            if (n.Id is { } sid)
+            {
+                await MobService.ClearAsync(sid);
+            }
+            else
+            {
+                NotificationStore.Clear(n.Path);
+            }
         }
     }
 
