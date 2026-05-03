@@ -153,9 +153,12 @@
     [Parameter] public EventCallback<string> OnServerTrackResolutionChanged { get; set; }
     [Parameter] public EventCallback<bool> OnToggleServerTrackWithinBounds { get; set; }
 
-    /// <summary>Default expanded so a fresh helm sees the toggles
-    /// without hunting; collapsing is one tap.</summary>
-    private bool expanded = true;
+    /// <summary>Default collapsed to match every other Layers section.
+    /// Helm-feedback: opening Layers and immediately seeing Own ship
+    /// expanded broke the visual rhythm -- helms expect "all closed,
+    /// tap what you want". Sticks at user-collapsed across renders;
+    /// no separate persistence (consistent with sibling sections).</summary>
+    private bool expanded = false;
 
     private async Task OnDurationChange(ChangeEventArgs e)
     {
