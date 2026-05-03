@@ -26,7 +26,11 @@
         <div class="top-row px-4">
             <span class="connection-status @ConnectionClass" title="@ConnectionTooltip">
                 <span class="connection-dot @DotClass"></span>
-                @ConnectionLabel
+                @* Phone-only: the dot already conveys the state (green
+                   = live, amber = reconnecting, red = down). Hide the
+                   text label there so the topbar fits at narrow widths;
+                   tooltip still carries the verbose form. *@
+                <span class="connection-status-text">@ConnectionLabel</span>
             </span>
             @* When offline, surface a Retry button right next to the
                chip. Cancels the current reconnect backoff so the next
@@ -55,7 +59,12 @@
                         title="@($"Alarm history ({historyCount} recent" +
                                   (Alarms.SnoozedTargets.Count > 0
                                     ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
-                    Alarm History @historyCount
+                    @* Two labels: full text for desktop, abbreviated
+                       for phone (CSS hides one or the other). Short
+                       form drops the count + the word "Alarm" because
+                       the topbar is critical real estate on a phone. *@
+                    <span class="alarm-log-label-full">Alarm History @historyCount</span>
+                    <span class="alarm-log-label-short">History</span>
                 </button>
             }
 
@@ -162,7 +171,7 @@
                the user-gesture context, which makes
                requestFullscreen() silently reject. *@
             <button @ref="fsBtnRef"
-                    class="btn btn-sm btn-outline-secondary topbar-icon-btn @(fullscreenSupported ? "" : "d-none")"
+                    class="btn btn-sm btn-outline-secondary topbar-icon-btn topbar-fullscreen-btn @(fullscreenSupported ? "" : "d-none")"
                     title="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")"
                     aria-label="@(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")">
                 @if (isFullscreen)

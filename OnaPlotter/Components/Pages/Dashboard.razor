@@ -3,10 +3,12 @@
 @page "/"
 @using OnaPlotter.Services
 @using OnaPlotter.Models
+@using Microsoft.JSInterop
 @implements IDisposable
 @inject SignalkClient SignalkClient
 @inject IPolarService Polar
 @inject OnaPlotter.Services.Settings.IMapDisplaySettings DisplaySettings
+@inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -37,39 +39,48 @@
 @* === Primary: the three values you check most often ===
    Units sit inline after each digit in .dash-unit (small + muted),
    not as a separate caption below; saves vertical space without
-   losing the "this is the unit, not part of the number" cue. *@
-<div class="row g-3 mb-4">
-    <div class="col-md-4 col-sm-6">
-        <div class="card dash-card-primary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">SOG</h6>
-                <p class="card-text metric-xl">
-                    @Format.Speed(Data.SpeedOverGround)<span class="dash-unit">kn</span>
-                </p>
+   losing the "this is the unit, not part of the number" cue.
+   Wrapped in a collapsible <details> -- desktop default-open,
+   phone default-closed (see ProbeViewportAsync). *@
+<details class="dashboard-section" open="@IsOpen("primary")">
+    <summary class="dashboard-section-summary"
+             @onclick:preventDefault @onclick='() => Toggle("primary")'>
+        <span class="page-section-header">Primary</span>
+        <span class="dashboard-section-chevron">@(IsOpen("primary") ? "▾" : "▸")</span>
+    </summary>
+    <div class="row g-3 mb-4 mt-2">
+        <div class="col-md-4 col-sm-6">
+            <div class="card dash-card-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">SOG</h6>
+                    <p class="card-text metric-xl">
+                        @Format.Speed(Data.SpeedOverGround)<span class="dash-unit">kn</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 col-sm-6">
+            <div class="card dash-card-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">Depth</h6>
+                    <p class="card-text metric-xl @Format.DepthClass(Data.Depth)">
+                        @Format.Depth(Data.Depth)<span class="dash-unit">m</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 col-sm-6">
+            <div class="card dash-card-primary">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">HDG</h6>
+                    <p class="card-text metric-xl">
+                        @Format.Degrees(Data.Heading)<span class="dash-unit">&deg;</span>
+                    </p>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4 col-sm-6">
-        <div class="card dash-card-primary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">Depth</h6>
-                <p class="card-text metric-xl @Format.DepthClass(Data.Depth)">
-                    @Format.Depth(Data.Depth)<span class="dash-unit">m</span>
-                </p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4 col-sm-6">
-        <div class="card dash-card-primary">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">HDG</h6>
-                <p class="card-text metric-xl">
-                    @Format.Degrees(Data.Heading)<span class="dash-unit">&deg;</span>
-                </p>
-            </div>
-        </div>
-    </div>
-</div>
+</details>
 
 @* === Polar Performance ===
    Only rendered when a polar is actually loaded. Two states:
@@ -78,91 +89,112 @@
    No-polar boats get nothing here -- the Settings page is where you
    go to upload one, and the Dashboard should stay focused on live
    numbers rather than an empty nag card. *@
-@if (Polar.HasPolar && PolarPerformancePct is not null)
+@if (Polar.HasPolar)
 {
-    <div class="row g-3 mb-4">
-        <div class="col-md-4 col-sm-6">
-            <div class="card dash-card-primary">
-                <div class="card-body text-center">
-                    <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
-                    <p class="card-text metric-xl @PerfClass">
-                        @((PolarPerformancePct.Value * 100).ToString("F0"))%
-                    </p>
-                    <small class="text-muted">of polar target</small>
+    <details class="dashboard-section" open="@IsOpen("polar")">
+        <summary class="dashboard-section-summary"
+                 @onclick:preventDefault @onclick='() => Toggle("polar")'>
+            <span class="page-section-header">Polar performance</span>
+            <span class="dashboard-section-chevron">@(IsOpen("polar") ? "▾" : "▸")</span>
+        </summary>
+        @if (PolarPerformancePct is not null)
+        {
+            <div class="row g-3 mb-4 mt-2">
+                <div class="col-md-4 col-sm-6">
+                    <div class="card dash-card-primary">
+                        <div class="card-body text-center">
+                            <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
+                            <p class="card-text metric-xl @PerfClass">
+                                @((PolarPerformancePct.Value * 100).ToString("F0"))%
+                            </p>
+                            <small class="text-muted">of polar target</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 col-sm-6">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-subtitle mb-1 text-muted">Target BSP</h6>
+                            <p class="card-text display-6">@TargetSpeedKn</p>
+                            <small class="text-muted">kn</small>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="col-md-4 col-sm-6">
-            <div class="card">
-                <div class="card-body text-center">
-                    <h6 class="card-subtitle mb-1 text-muted">Target BSP</h6>
-                    <p class="card-text display-6">@TargetSpeedKn</p>
-                    <small class="text-muted">kn</small>
+        }
+        else
+        {
+            <div class="row g-3 mb-4 mt-2">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
+                            <p class="card-text metric-md" style="color:var(--sk-text-muted);">
+                                Waiting for true-wind data
+                            </p>
+                            <small class="text-muted">Needs TWD + TWS from SignalK</small>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
-}
-else if (Polar.HasPolar)
-{
-    <div class="row g-3 mb-4">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-body text-center">
-                    <h6 class="card-subtitle mb-1 text-muted">Performance</h6>
-                    <p class="card-text metric-md" style="color:var(--sk-text-muted);">
-                        Waiting for true-wind data
-                    </p>
-                    <small class="text-muted">Needs TWD + TWS from SignalK</small>
-                </div>
-            </div>
-        </div>
-    </div>
+        }
+    </details>
 }
 
 @* === Wind: apparent + true side by side === *@
-<h6 class="page-section-header mb-2">Wind</h6>
-<div class="row g-3 mb-4">
-    <div class="col-md-3 col-sm-6">
-        <div class="card">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">AWA</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)<span class="dash-unit">&deg;</span></p>
+<details class="dashboard-section" open="@IsOpen("wind")">
+    <summary class="dashboard-section-summary"
+             @onclick:preventDefault @onclick='() => Toggle("wind")'>
+        <span class="page-section-header">Wind</span>
+        <span class="dashboard-section-chevron">@(IsOpen("wind") ? "▾" : "▸")</span>
+    </summary>
+    <div class="row g-3 mb-4 mt-2">
+        <div class="col-md-3 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">AWA</h6>
+                    <p class="card-text display-6">@Format.Degrees(Data.WindAngleApparent)<span class="dash-unit">&deg;</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">AWS</h6>
+                    <p class="card-text display-6">@Format.Speed(Data.WindSpeedApparent)<span class="dash-unit">kn</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">TWA</h6>
+                    <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)<span class="dash-unit">&deg;</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-subtitle mb-1 text-muted">TWS</h6>
+                    <p class="card-text display-6">@Format.Speed(Data.WindSpeedTrue)<span class="dash-unit">kn</span></p>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3 col-sm-6">
-        <div class="card">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">AWS</h6>
-                <p class="card-text display-6">@Format.Speed(Data.WindSpeedApparent)<span class="dash-unit">kn</span></p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 col-sm-6">
-        <div class="card">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">TWA</h6>
-                <p class="card-text display-6">@Format.Degrees(Data.WindAngleTrue)<span class="dash-unit">&deg;</span></p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3 col-sm-6">
-        <div class="card">
-            <div class="card-body text-center">
-                <h6 class="card-subtitle mb-1 text-muted">TWS</h6>
-                <p class="card-text display-6">@Format.Speed(Data.WindSpeedTrue)<span class="dash-unit">kn</span></p>
-            </div>
-        </div>
-    </div>
-</div>
+</details>
 
 @* === Navigation: HDG, COG, TWD, Position ===
    HDG repeats here (it's also one of the three primary cards above)
    because navigators expect it next to COG -- the angular delta
    between the two is the heart of leeway / set-and-drift reading. *@
-<h6 class="page-section-header mb-2">Navigation</h6>
-<div class="row g-3 mb-4">
+<details class="dashboard-section" open="@IsOpen("navigation")">
+    <summary class="dashboard-section-summary"
+             @onclick:preventDefault @onclick='() => Toggle("navigation")'>
+        <span class="page-section-header">Navigation</span>
+        <span class="dashboard-section-chevron">@(IsOpen("navigation") ? "▾" : "▸")</span>
+    </summary>
+<div class="row g-3 mb-4 mt-2">
     <div class="col-md-3 col-sm-6">
         <div class="card">
             <div class="card-body text-center">
@@ -215,21 +247,24 @@ else if (Polar.HasPolar)
         </div>
     </div>
 </div>
+</details>
 
 @* === Tide (conditional: only when a SignalK tide plugin publishes data) === *@
 @if (HasTideData)
 {
-    <h6 class="page-section-header mb-2">
-        Tide
-        @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
-        {
-            @* Dashboard has a full-width header to spend; render the
-               whole NOAA / UKHO station name. The map HUD truncates
-               (where horizontal space is tight); see HudDepthCard. *@
-            <span class="tide-station-name">@Data.TideStationName</span>
-        }
-    </h6>
-    <div class="row g-3 mb-4">
+    <details class="dashboard-section" open="@IsOpen("tide")">
+        <summary class="dashboard-section-summary"
+                 @onclick:preventDefault @onclick='() => Toggle("tide")'>
+            <span class="page-section-header">
+                Tide
+                @if (!string.IsNullOrWhiteSpace(Data.TideStationName))
+                {
+                    <span class="tide-station-name">@Data.TideStationName</span>
+                }
+            </span>
+            <span class="dashboard-section-chevron">@(IsOpen("tide") ? "▾" : "▸")</span>
+        </summary>
+    <div class="row g-3 mb-4 mt-2">
         @if (Data.TideHeightNow is double hNow)
         {
             <div class="col-md-4 col-sm-6">
@@ -294,15 +329,19 @@ else if (Polar.HasPolar)
             </div>
         }
     </div>
+    </details>
 }
 
 @* === Active Route (conditional) === *@
 @if (Data.HasActiveCourse)
 {
-    <h6 class="page-section-header mb-2">
-        @(Data.ActiveRouteName ?? "Active Route")
-    </h6>
-    <div class="row g-3 mb-4">
+    <details class="dashboard-section" open="@IsOpen("route")">
+        <summary class="dashboard-section-summary"
+                 @onclick:preventDefault @onclick='() => Toggle("route")'>
+            <span class="page-section-header">@(Data.ActiveRouteName ?? "Active Route")</span>
+            <span class="dashboard-section-chevron">@(IsOpen("route") ? "▾" : "▸")</span>
+        </summary>
+    <div class="row g-3 mb-4 mt-2">
         <div class="col-md-3 col-sm-6">
             <div class="card">
                 <div class="card-body text-center">
@@ -361,6 +400,7 @@ else if (Polar.HasPolar)
             </div>
         }
     </div>
+    </details>
 }
 
 @if (Data.LastReceivedUtc is DateTime lastRx)
@@ -370,6 +410,55 @@ else if (Polar.HasPolar)
 
 @code {
     private Models.NavigationData Data => SignalkClient.Data;
+
+    /// <summary>Per-section open/closed state for the collapsible
+    /// dashboard sections. Default is null = "use viewport default":
+    /// open on desktop, closed on phone (set after the first render
+    /// once we've probed the viewport width via JS). User toggles
+    /// store an explicit bool here so subsequent renders honour the
+    /// pick and don't snap back to the viewport default.</summary>
+    private readonly Dictionary<string, bool> _sectionOpen = new(StringComparer.Ordinal);
+    private bool _isMobileViewport;
+    private bool _viewportProbed;
+
+    private bool IsOpen(string key)
+    {
+        if (_sectionOpen.TryGetValue(key, out var v)) return v;
+        // Phones default-collapsed so a 390-wide viewport doesn't
+        // need a full scroll to see every section header at once.
+        // Desktop defaults open -- a wide screen can show the whole
+        // dashboard at a glance, no benefit to hiding cards.
+        return !_isMobileViewport;
+    }
+
+    private void Toggle(string key)
+    {
+        _sectionOpen[key] = !IsOpen(key);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _viewportProbed) return;
+        _viewportProbed = true;
+        // One-shot viewport probe at first render. innerWidth <= 600
+        // matches the phone breakpoint used everywhere else in
+        // app.css; staying in lockstep means a viewport that resizes
+        // across the breakpoint at runtime (rare on a real plotter,
+        // common in dev devtools) would still need a reload to
+        // re-probe -- acceptable trade-off for not adding a resize
+        // listener that re-renders the whole dashboard on every
+        // window-drag pixel.
+        try
+        {
+            var w = await JS.InvokeAsync<int>("eval", "window.innerWidth");
+            if (w > 0 && w <= 600 && !_isMobileViewport)
+            {
+                _isMobileViewport = true;
+                StateHasChanged();
+            }
+        }
+        catch { /* JS unavailable / pre-render */ }
+    }
 
     // Polar performance (returns null if polar not loaded or wind data missing).
     private double? PolarPerformancePct

@@ -33,10 +33,21 @@
         {
             <div class="ctrl-more-menu" @onclick:stopPropagation>
                 @* === Phone overflow items ===
-                   On viewports <= 600 px the bar hides Centre / Orient / Add
-                   to keep the row from wrapping; the same actions land here
-                   instead. CSS-only visibility split: bigger viewports show
-                   them in the bar and hide them here, phones do the reverse. *@
+                   On viewports that match the phone breakpoint the bar
+                   hides every secondary control to keep itself a single
+                   tappable button; the same actions land here instead.
+                   CSS-only visibility split: bigger viewports show them
+                   in the bar and hide them here, phones do the reverse.
+                   Ordering follows bar-left-to-right so a helm trained
+                   on the desktop layout finds the same items in the
+                   same logical groups (navigation -> safety -> view ->
+                   create -> layers). *@
+                <button class="ctrl-more-item ctrl-more-overflow @(Follow ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnToggleFollow)"
+                        title="Follow boat (F)">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Follow)</span>
+                    <span>@(Follow ? "Follow" : "Free")</span>
+                </button>
                 <button class="ctrl-more-item ctrl-more-overflow"
                         @onclick="() => Select(OnCentreOnBoat)"
                         title="Centre on boat">
@@ -85,6 +96,36 @@
                         title="@(MobActive ? "Clear MOB" : "Man overboard")">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Mob)</span>
                     <span>@(MobActive ? "Clear MOB" : "MOB")</span>
+                </button>
+                @if (RouteNavigating)
+                {
+                    <button class="ctrl-more-item ctrl-more-overflow"
+                            @onclick="() => Select(OnStopClicked)"
+                            title="Stop navigation -- clear the active route / destination">
+                        <span class="ctrl-more-ico">@((MarkupString)Icons.X)</span>
+                        <span>@(stopConfirming ? "Confirm?" : "Stop")</span>
+                    </button>
+                }
+                <button class="ctrl-more-item ctrl-more-overflow @(MeasureActive ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnToggleMeasure)"
+                        title="Measure distance + bearing (D)">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Measure)</span>
+                    <span>Measure</span>
+                </button>
+                @if (SailingMode == "race" || RaceTimerActive)
+                {
+                    <button class="ctrl-more-item ctrl-more-overflow @(RaceTimerActive ? "ctrl-more-active" : "")"
+                            @onclick="() => Select(OnToggleRaceTimer)"
+                            title="Race timer (R)">
+                        <span class="ctrl-more-ico">@((MarkupString)Icons.Flag)</span>
+                        <span>@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
+                    </button>
+                }
+                <button class="ctrl-more-item ctrl-more-overflow @(LayersPanelOpen ? "ctrl-more-active" : "")"
+                        @onclick="() => Select(OnToggleLayers)"
+                        title="Layers panel">
+                    <span class="ctrl-more-ico">@((MarkupString)Icons.Layers)</span>
+                    <span>Layers</span>
                 </button>
                 <div class="ctrl-more-sep ctrl-more-overflow"></div>
 
@@ -148,7 +189,7 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
+    <button class="ctrl-btn ctrl-btn-overflow @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
         <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
         <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
     </button>
@@ -190,7 +231,7 @@
            --confirm-window inline custom property drives the CSS
            countdown bar's animation-duration so the bar reaches zero
            exactly when the C# timer fires; one constant, one source. *@
-        <button class="ctrl-btn ctrl-btn-danger @(stopConfirming ? "ctrl-btn-confirming" : "")"
+        <button class="ctrl-btn ctrl-btn-overflow ctrl-btn-danger @(stopConfirming ? "ctrl-btn-confirming" : "")"
                 style="--confirm-window: @(ConfirmWindowMs)ms;"
                 @onclick="OnStopClicked"
                 title="@(stopConfirming ? "Tap again to confirm" : "Stop navigation -- clear the active route / destination")">
@@ -267,7 +308,7 @@
        interrupted the navigation grouping. No `ctrl-btn-overflow` --
        Measure earns a permanent bar slot on every viewport (the More
        menu's phone-overflow Measure entry is gone too). *@
-    <button class="ctrl-btn @(MeasureActive ? "active" : "")"
+    <button class="ctrl-btn ctrl-btn-overflow @(MeasureActive ? "active" : "")"
             @onclick="OnToggleMeasure"
             title="Measure distance + bearing (D)">
         <span class="ctrl-ico">@((MarkupString)Icons.Measure)</span>
@@ -275,7 +316,7 @@
     </button>
     @if (SailingMode == "race" || RaceTimerActive)
     {
-        <button class="ctrl-btn @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
+        <button class="ctrl-btn ctrl-btn-overflow @(RaceTimerActive ? "active" : "")" @onclick="OnToggleRaceTimer" title="Race timer (R)">
             <span class="ctrl-ico">@((MarkupString)Icons.Flag)</span>
             <span class="ctrl-lbl">@(RaceTimerActive ? RaceTimerLabel : "Race")</span>
         </button>
@@ -283,7 +324,7 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
+    <button class="ctrl-btn ctrl-btn-overflow @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
             title="Layers panel">
         <span class="ctrl-ico">@((MarkupString)Icons.Layers)</span>
         <span class="ctrl-lbl">Layers</span>

@@ -230,7 +230,7 @@ public partial class Map
         try
         {
             var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string title = string.IsNullOrWhiteSpace(wp.Name) ? "Waypoint" : wp.Name!;
             string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
             switch (outcome)
@@ -449,7 +449,7 @@ public partial class Map
         try
         {
             var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string title = string.IsNullOrWhiteSpace(note.Title) ? "Note" : note.Title!;
             string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
             switch (outcome)

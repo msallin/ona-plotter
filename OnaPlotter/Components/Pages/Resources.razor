@@ -667,7 +667,7 @@
         try
         {
             var fileTransfer = await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string title = NameOrId(w.Name, w.Id);
             string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
             switch (outcome)
@@ -745,7 +745,7 @@
         try
         {
             var fileTransfer = await JS.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
-                "import", "./js/fileTransfer.js");
+                "import", "./js/platform/fileTransfer.js");
             string title = NameOrId(n.Title, n.Id);
             string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
             switch (outcome)

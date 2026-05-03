@@ -894,6 +894,39 @@ a, .btn-link {
     margin: 0;
 }
 
+/* Dashboard: collapsible sections built on <details>/<summary>.
+   Default-open on desktop (helm sees everything at a glance);
+   default-closed on phone (six section headers fit in one viewport
+   so the helm picks what to expand). Native click-to-collapse is
+   suppressed via @onclick:preventDefault in markup so C# state
+   stays the source of truth -- the chevron and the open attribute
+   stay in sync even after a re-render. */
+.dashboard-section {
+    margin-bottom: 0.5rem;
+}
+.dashboard-section-summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.25rem;
+    border-radius: 4px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.dashboard-section-summary::-webkit-details-marker { display: none; }
+.dashboard-section-summary::marker { content: ""; }
+.dashboard-section-summary:hover {
+    background: var(--sk-surface-hover, rgba(255, 255, 255, 0.04));
+}
+.dashboard-section-chevron {
+    color: var(--sk-text-muted);
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
 /* Shared metric-value sizes. Dashboard used to inline the font-size
    at each card (3rem, 1.6rem, 1.1rem depending on the card's
    importance) and that drifted per-page. These three classes
@@ -3839,7 +3872,16 @@ html.night-mode-global body {
    primary type). A phone is a reference device, not an active helm;
    the dials add real estate without adding info you can't read off
    the digit. */
-@media (max-width: 600px) {
+/* Phone breakpoint covers BOTH orientations of a typical handheld:
+     - portrait phone: max-width 600 (e.g. iPhone 14 Pro 390x844)
+     - landscape phone: max-height 500 + max-width 900 catches the
+       same device rotated (844x390) without dragging in iPad
+       landscape (1180x820, falls through to the regular layout)
+   Without the second condition the helm flipping their phone to
+   landscape got the desktop HUDs back -- much too big for the
+   small viewport. */
+@media (max-width: 600px),
+       (max-height: 500px) and (max-width: 900px) {
     .map-controls {
         max-width: 95%;
         flex-wrap: wrap;
@@ -3852,6 +3894,13 @@ html.night-mode-global body {
     /* Tighter control bar on mobile -> recompute --panel-bottom so the
        bottom-center stack still sits one --panel-gap above the bar. */
     :root { --ctrl-bar-height: 56px; }
+
+    /* Topbar: drop the fullscreen toggle on phones. The browser's
+       own fullscreen / immersive mode covers the same ergonomic
+       and Safari iOS doesn't expose requestFullscreen() on the
+       document anyway. Saves an icon-width in the (already busy)
+       phone topbar. */
+    .topbar-fullscreen-btn { display: none !important; }
 
     /* === Phone HUD compact ===
        Cards stay anchored to their corners (same positions as desktop /
@@ -3881,10 +3930,89 @@ html.night-mode-global body {
     .hud-stack-tl .hud-position {
         display: none;
     }
+
+    /* Phone HUD: ~2pt smaller across the whole HUD typography
+       so an additional row (e.g. the active-route DTW / BRG /
+       VMG / TTG strip) fits in the same vertical budget. The
+       tokens cascade through every .hud-card-* / .hud-value /
+       .hud-label rule, so updating them once here covers SOG /
+       AW / COG / Depth / HDG and the route HUD card together.
+       Original tokens (defined at :root):
+         --hud-font-value:   clamp(1.2rem, 3.6dvh, 1.6rem)
+         --hud-font-primary: clamp(1.6rem, 4.8dvh, 2.5rem)
+         --hud-font-label:   0.75rem
+       2 pt at 16 px = 0.13 rem. Round to clean steps. */
+    :root {
+        --hud-font-value:   clamp(1.0rem, 3.2dvh, 1.4rem);
+        --hud-font-primary: clamp(1.4rem, 4.2dvh, 2.2rem);
+        --hud-font-label:   0.65rem;
+    }
+
+    /* Phone HUD: stack the unit suffix BELOW the digit instead of
+       inline. Helm with a thumb-sized phone screen reads "6.4"
+       with "kn" underneath faster than "6.4 kn" packed onto one
+       line at small font sizes -- the digit dominates and the
+       unit reads as a label rather than fighting the value for
+       space. line-height tightened so the stack doesn't pad the
+       card. */
+    .hud-unit {
+        display: block;
+        margin-left: 0;
+        margin-top: -2px;
+        line-height: 1;
+        font-size: 0.62rem;
+    }
+
+    /* Phone topbar: critical real-estate -- the chip stack (Live /
+       History / Update / Not-logged-in / zoom / night) was wrapping
+       onto two rows on a 390-wide iPhone. These tweaks shave the
+       fat:
+         - Live: hide the text, keep the dot. Tooltip still verbose.
+         - Alarm History: drop the count + the word "Alarm" via the
+           shorter label span (markup carries both, CSS picks one).
+         - Not-logged-in chip: smaller font, tighter padding so it
+           stops overflowing onto two lines. */
+    .connection-status-text { display: none; }
+    .alarm-log-label-full { display: none; }
+    .alarm-log-label-short { display: inline; }
+    .auth-warning-chip {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+
+    /* Phone: narrower sidebar so the chart gets more pixels.
+       Default rail is 10rem (collapsed 4rem); a phone can spare
+       fewer pixels for navigation. The 7rem expanded width keeps
+       icon + label legible without taking a quarter of a 390-wide
+       viewport, and 3rem collapsed leaves the rail just wide
+       enough for the icon stack. */
+    .page                      { --page-sidebar-width: 7rem; }
+    .page.sidebar-collapsed    { --page-sidebar-width: 3rem; }
+    .sidebar { width: 7rem; }
+    .page.sidebar-collapsed .sidebar { width: 3rem; }
+
+    /* Phone Dashboard: shrink the metric typography so 4-6 cards
+       fit per row instead of 1-2. The desktop .metric-xl: 3rem
+       and Bootstrap .display-6 ~2.5rem were tuned for a wide
+       viewport; on a phone they push every section into its own
+       scroll page. Halving these lets the helm see the SOG/Depth
+       /HDG primary trio + first cards of the next section in one
+       viewport. */
+    .metric-xl { font-size: 1.6rem; line-height: 1; }
+    .display-6 { font-size: 1.2rem; line-height: 1.1; }
+    .dashboard-section .card-body { padding: 0.5rem 0.4rem; }
+    .dashboard-section .card-subtitle { font-size: 0.7rem; }
 }
+/* Default (non-phone): show the full alarm-log label, hide the
+   abbreviated one. Mirror block for the connection text. */
+.alarm-log-label-short { display: none; }
 /* On viewports the bar can fit comfortably, the overflow items live
-   in the bar -- hide their duplicates inside the More menu. */
-@media (min-width: 601px) {
+   in the bar -- hide their duplicates inside the More menu. The
+   negation of the phone breakpoint above: NOT a portrait phone AND
+   NOT a landscape phone. */
+@media not (max-width: 600px) and not ((max-height: 500px) and (max-width: 900px)) {
     .ctrl-more-overflow { display: none !important; }
 }
 .ctrl-more-sep {
