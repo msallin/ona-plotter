@@ -15,6 +15,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool NightMode { get; set; }
     public bool NightModeAuto { get; set; }
     public DateTime? LastManualNightToggleUtc { get; set; }
+    public string? LastManualNightOverrideSunCluster { get; set; }
     public bool ChartsSeeded { get; set; }
     public string NightModePreset { get; set; } = "soft";
     public string Theme { get; set; } = "dark";
@@ -78,9 +79,19 @@ internal sealed class FakeSettings : IAppSettings
 
     public Task InitializeAsync() => Task.CompletedTask;
     public Task SetNightModeAsync(bool v) => Task.CompletedTask;
-    public Task MarkManualNightToggleAsync()
+    public Task MarkManualNightToggleAsync(string? sunCluster)
     {
         LastManualNightToggleUtc = DateTime.UtcNow;
+        LastManualNightOverrideSunCluster = sunCluster switch
+        {
+            "day" or "night" => sunCluster,
+            _ => null,
+        };
+        return Task.CompletedTask;
+    }
+    public Task ClearManualNightOverrideAsync()
+    {
+        LastManualNightOverrideSunCluster = null;
         return Task.CompletedTask;
     }
     public Task MarkChartsSeededAsync() { ChartsSeeded = true; return Task.CompletedTask; }

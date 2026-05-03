@@ -27,6 +27,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool NightMode { get; private set; }
     public bool NightModeAuto { get; private set; } = false;
     public DateTime? LastManualNightToggleUtc { get; private set; }
+    public string? LastManualNightOverrideSunCluster { get; private set; }
     public bool ChartsSeeded { get; private set; }
     public string NightModePreset { get; private set; } = "soft";
     public string Theme { get; private set; } = "system";
@@ -173,6 +174,8 @@ public sealed class AppSettingsService : IAppSettings
             NightMode = await LoadBool("nightMode", false);
             NightModeAuto = await LoadBool("nightModeAuto.v1", false);
             LastManualNightToggleUtc = await LoadDateTimeUtc("lastManualNightToggle.v1");
+            LastManualNightOverrideSunCluster = NormalizeSunCluster(
+                await LoadString("lastManualNightOverrideSunCluster.v1"));
             ChartsSeeded = await LoadBool("chartsSeeded.v1", false);
             NightModePreset = NormalizeNightPreset(await LoadString("nightModePreset"));
             Theme = NormalizeTheme(await LoadString("theme"));
@@ -280,12 +283,43 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task MarkManualNightToggleAsync()
+    public async Task MarkManualNightToggleAsync(string? sunCluster)
     {
         var now = DateTime.UtcNow;
         LastManualNightToggleUtc = now;
         await Save("lastManualNightToggle.v1", now.ToString("o", CultureInfo.InvariantCulture));
+
+        // Cluster suppression: store the env.sun cluster (day / night)
+        // at toggle time so CheckAutoNightAsync can suppress until
+        // the next sun-state transition. null when env.sun is unknown
+        // -- in that case auto-night isn't running anyway and the
+        // override has nothing to fight.
+        LastManualNightOverrideSunCluster = NormalizeSunCluster(sunCluster);
+        await Save("lastManualNightOverrideSunCluster.v1",
+            LastManualNightOverrideSunCluster ?? "");
     }
+
+    /// <summary>Clear the manual-override cluster. Called when
+    /// CheckAutoNightAsync sees env.sun transition out of the
+    /// override cluster -- the override has done its job and
+    /// auto-night can resume.</summary>
+    public async Task ClearManualNightOverrideAsync()
+    {
+        if (LastManualNightOverrideSunCluster is null) return;
+        LastManualNightOverrideSunCluster = null;
+        await Save("lastManualNightOverrideSunCluster.v1", "");
+    }
+
+    /// <summary>Whitelist guard: persist only the two cluster
+    /// values the rest of the code understands. Anything else (an
+    /// empty string from a cleared override, a future env.sun word
+    /// the plugin starts emitting, a corrupt localStorage value)
+    /// collapses to null = "no override".</summary>
+    private static string? NormalizeSunCluster(string? raw) => raw switch
+    {
+        "day" or "night" => raw,
+        _ => null,
+    };
 
     public async Task MarkChartsSeededAsync()
     {

@@ -1270,8 +1270,9 @@ public class AppSettingsServiceTests
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
-        await svc.MarkManualNightToggleAsync();
+        await svc.MarkManualNightToggleAsync(sunCluster: "day");
         await Assert.That(svc.LastManualNightToggleUtc).IsNotNull();
+        await Assert.That(svc.LastManualNightOverrideSunCluster).IsEqualTo("day");
 
         var stored = await kv.GetAsync("lastManualNightToggle.v1");
         await Assert.That(stored).IsNotNull();
@@ -1279,6 +1280,15 @@ public class AppSettingsServiceTests
         var svc2 = new AppSettingsService(kv);
         await svc2.InitializeAsync();
         await Assert.That(svc2.LastManualNightToggleUtc).IsNotNull();
+        await Assert.That(svc2.LastManualNightOverrideSunCluster).IsEqualTo("day");
+
+        // Cluster transition simulated: clearing the override must
+        // null the persisted cluster so a fresh load doesn't reapply
+        // a stale suppression.
+        await svc2.ClearManualNightOverrideAsync();
+        var svc3 = new AppSettingsService(kv);
+        await svc3.InitializeAsync();
+        await Assert.That(svc3.LastManualNightOverrideSunCluster).IsNull();
     }
 
     // === Chart upscale persistence ===

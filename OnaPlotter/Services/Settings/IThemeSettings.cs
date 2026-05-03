@@ -15,16 +15,28 @@ public interface IThemeSettings
 
     /// <summary>When true, Night mode auto-engages based on
     /// SignalK's <c>environment.sun</c> string path. A manual
-    /// toggle suppresses the auto-flip for 12 h via
-    /// <see cref="LastManualNightToggleUtc"/>.</summary>
+    /// toggle suppresses the auto-flip until the next day/night
+    /// transition via <see cref="LastManualNightOverrideSunCluster"/>;
+    /// <see cref="LastManualNightToggleUtc"/> is kept as a redundancy
+    /// timestamp.</summary>
     bool NightModeAuto { get; }
 
-    /// <summary>Night-mode flavour: "soft" / "amber" / "red".</summary>
+    /// <summary>Night-mode flavour: "dusk" / "soft" / "amber" / "red".</summary>
     string NightModePreset { get; }
 
     /// <summary>UTC timestamp of the most recent manual Night toggle.
-    /// Persisted so the 12-hour auto-suppress window survives reload.</summary>
+    /// Persisted so the auto-suppress window survives reload.</summary>
     DateTime? LastManualNightToggleUtc { get; }
+
+    /// <summary>The <c>environment.sun</c> cluster ("day" / "night")
+    /// at the moment of the last manual Night toggle. Auto-night
+    /// suppresses while the current cluster matches this value; the
+    /// next cluster transition (sunrise / sunset) clears the override
+    /// so auto-night resumes. Null when no override is active OR
+    /// when env.sun was unknown at toggle time. Replaces the
+    /// previous fixed 12-hour window which fought helms who wanted
+    /// their override to last the whole watch.</summary>
+    string? LastManualNightOverrideSunCluster { get; }
 
     /// <summary>"system" (follow OS) / "light" / "dark". Independent
     /// of <see cref="NightMode"/> -- night applies on top.</summary>
@@ -44,7 +56,19 @@ public interface IThemeSettings
     Task SetNightModeAsync(bool value);
     Task SetNightModeAutoAsync(bool value);
     Task SetNightModePresetAsync(string value);
-    Task MarkManualNightToggleAsync();
+    /// <summary>Record a manual Night-mode toggle. <paramref name="sunCluster"/>
+    /// should be "day" or "night" (the cluster of the current
+    /// <c>environment.sun</c> value at toggle time), or null when
+    /// the path is unknown. Cluster-suppression is the primary
+    /// auto-night-override mechanism; the timestamp is the
+    /// redundancy backstop.</summary>
+    Task MarkManualNightToggleAsync(string? sunCluster);
+
+    /// <summary>Drop the manual-override cluster -- called when the
+    /// auto-night check sees env.sun transition out of the override
+    /// cluster, signalling the helm's manual choice is now stale
+    /// and auto-night should resume.</summary>
+    Task ClearManualNightOverrideAsync();
     Task SetThemeAsync(string value);
     Task SetSidebarCollapsedAsync(bool value);
     Task SetShowKeyboardHintsAsync(bool value);

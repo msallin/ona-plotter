@@ -2894,12 +2894,13 @@
     /// The Night button in the More menu and the keyboard "n"
     /// shortcut both call this.
     ///
-    /// MarkManualNightToggleAsync sets the 12-h auto-night suppress
-    /// window the same way it always did -- a deliberate cycle
-    /// counts as a manual override.</summary>
+    /// MarkManualNightToggleAsync records the env.sun cluster at
+    /// toggle time so CheckAutoNightAsync suppresses until the next
+    /// day/night transition -- a deliberate cycle counts as a
+    /// manual override.</summary>
     private async Task CycleNightMode()
     {
-        await Settings.MarkManualNightToggleAsync();
+        await Settings.MarkManualNightToggleAsync(SunClusterFromState(Data.SunState));
         if (!nightMode)
         {
             // Off -> dusk. Always start at the gentlest non-red
@@ -2942,12 +2943,14 @@
     // Auto-night plumbing. Dormant unless the user opts in via Settings
     // AND the server publishes environment.sun as one of
     // "day" / "dawn" / "dusk" / "night". The plugin knows about
-    // civil-twilight cutoffs so we don't reimplement them. A manual
-    // Night tap within the last 12 h suppresses the auto-flip so a
-    // helmsman who wants day-mode at dusk isn't fought. Persisted in
-    // Settings.LastManualNightToggleUtc so the window survives page
-    // navigation and browser reload.
-    private const int ManualNightOverrideMinutes = 12 * 60;
+    // civil-twilight cutoffs so we don't reimplement them. Manual
+    // toggles capture the env.sun cluster at toggle time; auto-night
+    // suppresses while the current cluster matches that override
+    // and clears the override (= resumes auto-night) when env.sun
+    // transitions to a different cluster -- "until the next day/
+    // night change in between", per helm-feedback. Persisted in
+    // Settings.LastManualNightOverrideSunCluster so the override
+    // survives navigation / reload.
     private DateTime _lastAutoNightCheckUtc = DateTime.MinValue;
 
     private async Task CheckAutoNightAsync()
@@ -2971,11 +2974,17 @@
         if ((now - _lastAutoNightCheckUtc).TotalSeconds < 30) return;
         _lastAutoNightCheckUtc = now;
 
-        // Respect recent manual toggles. Source of truth is
-        // Settings.LastManualNightToggleUtc so the window survives
-        // navigation / reload.
-        if (Settings.LastManualNightToggleUtc is DateTime t
-            && (now - t).TotalMinutes < ManualNightOverrideMinutes) return;
+        // Cluster-suppression: if the helm manually toggled while
+        // env.sun was in cluster X and env.sun is STILL in cluster
+        // X, leave the override in place. When env.sun transitions
+        // to the other cluster, clear the override -- helm's choice
+        // applied to "this cycle"; the next cycle starts fresh.
+        var currentCluster = SunClusterFromState(Data.SunState);
+        if (Settings.LastManualNightOverrideSunCluster is string overrideCluster)
+        {
+            if (overrideCluster == currentCluster) return;
+            await Settings.ClearManualNightOverrideAsync();
+        }
 
         if (wantNight == nightMode) return;
 
@@ -2985,6 +2994,17 @@
             await _controlsJs.SetNightModeAsync(nightMode);
         await InvokeAsync(StateHasChanged);
     }
+
+    /// <summary>Map the Signal K <c>environment.sun</c> string to a
+    /// two-state cluster (day / night). Used by both the manual-
+    /// toggle override capture and the auto-night transition check
+    /// so the two surfaces speak the same vocabulary.</summary>
+    private static string? SunClusterFromState(string? sunState) => sunState switch
+    {
+        "day" or "dawn" => "day",
+        "dusk" or "night" => "night",
+        _ => null,
+    };
 
     // MOB clear confirmation now lives on MapControls (OnMobClicked)
     // as a two-tap pattern matching Stop-Navigation. The old

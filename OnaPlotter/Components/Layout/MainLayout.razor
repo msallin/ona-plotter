@@ -582,9 +582,12 @@
     /// the Map page's More-menu Night button so a helm picking the
     /// topbar shortcut sees the same behaviour. Dusk is the
     /// non-red-shifted intermediate; soft / amber / red are the
-    /// progressively-redder presets.</summary>
+    /// progressively-redder presets. Records the env.sun cluster at
+    /// toggle time so auto-night suppresses until the next day/night
+    /// transition (matches the Map button's override logic).</summary>
     private async Task CycleNightMode()
     {
+        await Settings.MarkManualNightToggleAsync(SunClusterFromState(SignalkClient.Data.SunState));
         if (!Settings.NightMode)
         {
             await Settings.SetNightModeAsync(true);
@@ -610,6 +613,17 @@
         }
         StateHasChanged();
     }
+
+    /// <summary>Same env.sun cluster mapping as Map.SunClusterFromState
+    /// -- duplicated rather than shared because IThemeSettings
+    /// shouldn't have to know about NavigationData and a tiny
+    /// helper isn't worth a dedicated utility class.</summary>
+    private static string? SunClusterFromState(string? sunState) => sunState switch
+    {
+        "day" or "dawn" => "day",
+        "dusk" or "night" => "night",
+        _ => null,
+    };
 
 // ToggleFullscreen() was here; the button now dispatches through
     // a native click listener wired from fullscreen.js::attachTrigger
