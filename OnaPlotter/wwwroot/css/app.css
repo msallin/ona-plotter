@@ -4297,6 +4297,47 @@ html.night-mode-global body {
     border-radius: 4px;
 }
 
+/* On-map distance labels for the radar range rings (radarLayer.js).
+   One label per ring, anchored at the top of each ring (due true-
+   north from own-boat) so the helm can read the radius without
+   guessing. The default (inner-rings) variant is faint, matching
+   the dashed scale-mark stroke; the .radar-ring-label--active
+   variant pairs with the solid outer ring (the radar's actual
+   detection boundary) so both signals -- "this is the active
+   range" -- read together. The text-shadow gives legibility on
+   any chart background without a heavy box around the text. */
+.radar-ring-label {
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1;
+    text-align: center;
+    text-shadow:
+        0 0 3px rgba(0, 0, 0, 0.7),
+        0 1px 2px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    /* divIcon's iconAnchor sets the anchor; padding-bottom lifts the
+       text off the ring vertex so the line doesn't underline the
+       glyph baseline. */
+    padding-bottom: 2px;
+}
+
+.radar-ring-label--active {
+    color: #e2e8f0;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* "nm" suffix dimmed slightly so the number reads as the primary
+   value at a glance. Inherits color from the parent rule above so
+   the active variant's stronger tone carries through. */
+.radar-ring-label-unit {
+    opacity: 0.75;
+    font-weight: 400;
+}
+
 .night-mode-global .chart-panel {
     background: rgba(30, 5, 5, 0.92);
 }
