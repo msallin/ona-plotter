@@ -17,6 +17,24 @@ namespace OnaPlotter.Services.Api;
 /// </summary>
 internal static class ResourceHttp
 {
+    /// <summary>SignalK uses camelCase JSON property names; our DTO
+    /// records are Pascal-case (no [JsonPropertyName] attributes
+    /// for terseness). Default System.Text.Json options are
+    /// case-sensitive in .NET 10, so the deserialiser silently
+    /// dropped every camelCased value onto the floor and the
+    /// caller saw `default` for every property. Helm regression:
+    /// the MOB recovery on reload returned an envelope where
+    /// every State / Position / CreatedAt was null, so the
+    /// `if (dto.State is null) continue;` guard skipped every
+    /// entry. Setting PropertyNameCaseInsensitive once here
+    /// covers every GetDict caller without per-DTO attribute
+    /// churn; existing [JsonPropertyName] attributes still take
+    /// priority where they exist.</summary>
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     /// <summary>
     /// GETs a SignalK resource collection and deserialises the
     /// returned map to <c>Dictionary&lt;string, T&gt;</c>. Null on any
@@ -28,7 +46,7 @@ internal static class ResourceHttp
     {
         using var response = await http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode) return null;
-        return await response.Content.ReadFromJsonAsync<Dictionary<string, T>>(cancellationToken: ct);
+        return await response.Content.ReadFromJsonAsync<Dictionary<string, T>>(s_jsonOptions, ct);
     }
 
     /// <summary>
