@@ -22,6 +22,28 @@ builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(8)
 // Storage + settings.
 builder.Services.AddSingleton<IKeyValueStore, LocalStorageKeyValueStore>();
 builder.Services.AddSingleton<IAppSettings, AppSettingsService>();
+// IAppSettings extends seven narrow ISP-carve-out interfaces from
+// Services/Settings/. Components that only need a slice can inject
+// just that slice (smaller test doubles, narrower change-amplification
+// surface). The DI container doesn't auto-forward sub-interfaces, so
+// register each narrow one as a forwarder to the same singleton.
+// Pattern: every interface IAppSettings inherits from gets one line
+// here. Forwarding ensures both wide and narrow consumers see the
+// SAME instance (settings persist across all of them).
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IAlarmThresholds>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IThemeSettings>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IMapDisplaySettings>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.INavPreferences>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IChartSettings>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IPersistedView>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IWindPageSettings>(
+    sp => sp.GetRequiredService<IAppSettings>());
 // In-progress route-edit snapshots survive a page reload via
 // localStorage. The store is consulted on app start so a save that
 // failed mid-edit (no network, not logged in, accidental refresh)
