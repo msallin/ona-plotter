@@ -94,31 +94,17 @@
                     <span>Legend</span>
                 </button>
                 @* Night mode cycle. Each tap advances:
-                       off -> soft -> amber -> red -> off
-                   The helm-feedback was that the previous "tap = soft,
-                   hold = Dark Ops" gesture was non-discoverable + the
-                   inline hint "(tap = soft, hold = Dark Ops)" looked
-                   like noise. Cycling through the three night-mode
-                   presets is muscle-memory: tap until you see what
-                   you like, tap once more to exit. The current preset
-                   is shown after the label so the helm knows where
-                   they are in the cycle without dropping into Settings.
-                   Dark Ops moved to its own menu item below. *@
+                       off -> dusk -> soft -> amber -> red -> off
+                   Cycling through the night-mode presets is muscle-
+                   memory: tap until you see what you like, tap once
+                   more to exit. The current preset is shown after the
+                   label so the helm knows where they are in the cycle
+                   without dropping into Settings. *@
                 <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnCycleNight)"
                         title="Night mode (N) -- tap to cycle off / dusk / soft / amber / red">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
                     <span>Night @(NightMode ? "(" + NightModePreset + ")" : "")@(ShowKeyboardHints ? " (N)" : "")</span>
-                </button>
-                @* Dark Ops: chrome-off mode for offshore watches.
-                   Used to be a long-press on the Night button; now its
-                   own menu item so the helm can find it. Esc + the
-                   dark-ops-exit button still exit it. *@
-                <button class="ctrl-more-item @(DarkOps ? "ctrl-more-active" : "")"
-                        @onclick="() => Select(OnToggleDarkOps)"
-                        title="Dark Ops (Esc) -- chrome-off offshore mode">
-                    <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
-                    <span>Dark Ops @(DarkOps ? "(on)" : "")</span>
                 </button>
                 @* Harbor mode: a single switch that bundles AIS / collision
                    suppressions for entering a busy port -- moored vessels
@@ -315,13 +301,10 @@
     [Parameter] public bool Follow { get; set; }
     [Parameter] public string OrientationLabel { get; set; } = "N\u2191";
     [Parameter] public bool NightMode { get; set; }
-    /// <summary>Current night-mode preset ("soft" / "amber" / "red").
-    /// Shown next to the Night menu label so the helm knows where in
-    /// the cycle they are.</summary>
+    /// <summary>Current night-mode preset ("dusk" / "soft" / "amber" /
+    /// "red"). Shown next to the Night menu label so the helm knows
+    /// where in the cycle they are.</summary>
     [Parameter] public string NightModePreset { get; set; } = "soft";
-    /// <summary>Dark Ops chrome-off mode active. Shown as the
-    /// active-state on the Dark Ops menu item.</summary>
-    [Parameter] public bool DarkOps { get; set; }
     [Parameter] public bool AnchorActive { get; set; }
     [Parameter] public bool MobActive { get; set; }
 
@@ -366,7 +349,6 @@
     [Parameter] public EventCallback OnFabCreateWaypoint { get; set; }
     [Parameter] public EventCallback OnFabCreateNote { get; set; }
     [Parameter] public EventCallback OnFabCreateRegion { get; set; }
-    [Parameter] public EventCallback OnToggleDarkOps { get; set; }
     /// <summary>When true, render the inline "(L)" / "(D)" shortcut
     /// letters on button labels. Driven by IAppSettings.ShowKeyboardHints;
     /// default off since most users are on touch and don't see them.</summary>
@@ -527,11 +509,6 @@
     // FabMenuOpen but we can't flip it here (it's a [Parameter]), so we rely
     // on the callback's own handler to set FabMenuOpen = false on Map.razor.
     private async Task SelectFab(EventCallback cb) => await cb.InvokeAsync();
-
-    // Night long-press for Dark Ops was retired: helms found the
-    // gesture non-discoverable and the inline hint cluttered. Click
-    // now cycles through off -> soft -> amber -> red -> off; Dark
-    // Ops sits next to Night in the menu as its own item.
 
     /// <summary>Dispose the three confirm-window timers when the
     /// component unmounts. Without this, a navigation away during

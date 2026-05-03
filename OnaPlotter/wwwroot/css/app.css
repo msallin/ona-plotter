@@ -5833,33 +5833,6 @@ html.night-mode-global .route-action-danger:hover {
     min-height: 28px;
 }
 
-/* ===== Dark Ops =====
-   Chrome-off mode for long offshore watches. The map + the alarm
-   banner remain; everything else hides. Explicit opt-in via a long-
-   press on the Night button; Esc or the Exit chip brings chrome back.
-   Intentionally aggressive -- if you want a subtler declutter, use
-   Fullscreen + Night mode instead. */
-.map-container.dark-ops .map-controls,
-.map-container.dark-ops .hud-stack,
-.map-container.dark-ops .chart-panel,
-.map-container.dark-ops .chart-quick-bar,
-.map-container.dark-ops .route-edit-bar,
-.map-container.dark-ops .route-edit-hint,
-.map-container.dark-ops .route-edit-list,
-.map-container.dark-ops .leaflet-control-zoom,
-.map-container.dark-ops .ona-zoom-badge {
-    display: none !important;
-}
-
-/* Dim chart tiles in Dark Ops so a satellite-imagery base doesn't kill
-   dark adaptation. Applied to the Leaflet tile pane specifically: AIS
-   markers, route polylines, anchor circles (all inside .leaflet-overlay-pane
-   or SVG layers) keep their original colours so colour-blind-safe hue
-   coding stays intact. */
-.map-container.dark-ops .leaflet-tile-pane {
-    filter: grayscale(1) brightness(0.35) contrast(1.1) sepia(0.4) hue-rotate(-30deg);
-}
-
 /* Light themes: ensure the leaflet-container background follows the
    theme so any tile gap shows the page bg rather than Leaflet's
    default #ddd grey. theme-effective-light is set on <html> by
@@ -5946,37 +5919,6 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     min-width: 40px;
     font-size: 1.1rem;
 }
-/* Tiny exit chip, top-right. Big enough to tap in a swell but small
-   enough not to compete with the chart. env(safe-area-inset-*) keeps
-   the chip clear of the iPad notch / rounded corners when the map is
-   fullscreen. Solid background + blur so it stays readable over any
-   chart tile underneath (85%-alpha on slate-blue water failed AA). */
-.dark-ops-exit {
-    position: absolute;
-    top: calc(10px + env(safe-area-inset-top, 0px));
-    right: calc(10px + env(safe-area-inset-right, 0px));
-    z-index: var(--z-modal);
-    background: rgba(15, 17, 22, 0.95);
-    color: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 4px;
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
-}
-.dark-ops-exit:hover,
-.dark-ops-exit:focus {
-    background: rgba(30, 34, 44, 1);
-    border-color: rgba(255, 255, 255, 0.55);
-    outline: none;
-}
-@media (pointer: coarse) {
-    .dark-ops-exit { min-height: 40px; padding: 10px 14px; }
-}
-
 /* ===== Map Rotation (Course-up / Head-up) ===== */
 #mapDiv {
     transition: transform 0.5s ease-out;
