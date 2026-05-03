@@ -900,9 +900,18 @@ a, .btn-link {
    so the helm picks what to expand). Native click-to-collapse is
    suppressed via @onclick:preventDefault in markup so C# state
    stays the source of truth -- the chevron and the open attribute
-   stay in sync even after a re-render. */
+   stay in sync even after a re-render.
+   Density tuned to match the previous bare <h6 class="page-section-
+   header mb-2"> header: zero vertical padding inside the summary
+   so the row is exactly the height of the .page-section-header
+   text (0.8rem cap-height, ~13 px). The mb-2 the old header
+   carried lives on .dashboard-section's margin-bottom now. */
 .dashboard-section {
-    margin-bottom: 0.5rem;
+    /* No bottom margin: the inner row already carries mb-4 (1.5rem)
+       which is the same gap the old non-collapsible layout used
+       between sections. Adding here would compound and bloat the
+       layout. */
+    margin-bottom: 0;
 }
 .dashboard-section-summary {
     list-style: none;
@@ -911,19 +920,20 @@ a, .btn-link {
     align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
-    padding: 0.4rem 0.25rem;
-    border-radius: 4px;
+    padding: 0;
+    line-height: 1.2;
     user-select: none;
     -webkit-user-select: none;
 }
 .dashboard-section-summary::-webkit-details-marker { display: none; }
 .dashboard-section-summary::marker { content: ""; }
-.dashboard-section-summary:hover {
-    background: var(--sk-surface-hover, rgba(255, 255, 255, 0.04));
+.dashboard-section-summary:hover .page-section-header,
+.dashboard-section-summary:hover .dashboard-section-chevron {
+    color: var(--sk-text);
 }
 .dashboard-section-chevron {
     color: var(--sk-text-muted);
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     line-height: 1;
 }
 
