@@ -383,41 +383,51 @@ function buildAisPopupHtml(snap) {
         cachedName,
     }));
 
-    // CPA hero block: when there's an inbound CPA, lead the popup
-    // with it. Helms only ever look at an AIS popup to assess "is
-    // this vessel a problem?" -- CPA + TCPA is the answer; demote
-    // MMSI / Call / Type to a metadata footer (see metaHtml below).
-    // Threat-coloured: danger = red, warning = amber, normal = dim.
+    // Compact identity subtitle (helm-feedback round 2: "MMSI 538071935 ·
+    // Call V7A6238 · Sailing" reads as one quick line under the title;
+    // previously each was a row in the data table eating vertical space).
+    const subtitleParts = [];
+    if (mmsi) subtitleParts.push(`MMSI ${esc(mmsi)}`);
+    if (callsign) subtitleParts.push(`Call ${callsign}`);
+    if (type) subtitleParts.push(type);
+    const subtitleHtml = subtitleParts.length > 0
+        ? `<div class="ais-popup-subtitle">${subtitleParts.join(' &middot; ')}</div>`
+        : '';
+
+    // CPA: same font size as the rest of the table; just bold the
+    // value when within the danger envelope. Previous version put the
+    // CPA in a larger / more padded row which dominated the popup
+    // height on touch devices to the point of unusability (helm
+    // screenshot showed the popup taller than a phone screen).
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {
-        const cpaCls = isDangerEff ? 'is-danger' : (isWarning ? 'is-warn' : '');
-        cpaHtml = `<div class="ais-popup-cpa ${cpaCls}">` +
-                  `<span class="ais-popup-cpa-label">CPA</span>` +
-                  `<span class="ais-popup-cpa-value">${cpaInfo.cpa.toFixed(2)} nm</span>` +
-                  `<span class="ais-popup-cpa-sep">in</span>` +
-                  `<span class="ais-popup-cpa-value">${cpaInfo.tcpa.toFixed(0)} min</span>` +
-                  `</div>`;
+        const cls = isDangerEff ? 'ais-popup-cpa-danger' : 'ais-popup-cpa';
+        cpaHtml = `<tr><td>CPA</td><td class="${cls}">${cpaInfo.cpa.toFixed(2)}nm in ${cpaInfo.tcpa.toFixed(0)}min</td></tr>`;
     }
 
-    // COLREGS block: separate from the data table now -- it's
-    // action-information ("which vessel gives way") that wants to
-    // sit next to CPA, not buried under MMSI + dimensions. Two
-    // lines: label + the classification / role text. The "?" link
-    // opens /help/colregs in a new tab so the helm can drill into
-    // the rule meaning without losing the popup.
+    // COLREGS rows: label on the LEFT (like every other data row),
+    // role + classification stacked in the value cell on the RIGHT.
+    // Role first (bold + coloured -- it's the action the helm has to
+    // take), classification under it (regular weight). The "?" opens
+    // an in-app modal via the data-ona-colregs hook (the previous
+    // /help/colregs link was broken under the SK plugin mount and
+    // navigated away from the map besides). Two rows so the role
+    // chip + classification both have room to breathe at any popup
+    // width without wrapping mid-phrase.
     let colregsHtml = '';
     if (v.colregsLabel) {
         const roleHtml = v.colregsRole
-            ? ` <span class="ais-popup-colregs-role ${v.colregsRole === 'Give way' ? 'is-give-way' : 'is-stand-on'}">${esc(v.colregsRole)}</span>`
+            ? `<div class="ais-popup-colregs-role ${v.colregsRole === 'Give way' ? 'ais-popup-colregs-give-way' : 'ais-popup-colregs-stand-on'}">${esc(v.colregsRole)}</div>`
             : '';
-        colregsHtml = `<div class="ais-popup-colregs">` +
-                      `<div class="ais-popup-colregs-label">COLREGS ` +
-                      `<a href="/help/colregs" target="_blank" rel="noopener" ` +
-                      `class="ais-popup-colregs-help" ` +
-                      `title="Open COLREGS quick reference">?</a>` +
-                      `</div>` +
-                      `<div class="ais-popup-colregs-text">${esc(v.colregsLabel)}${roleHtml}</div>` +
-                      `</div>`;
+        const labelHtml = `<div class="ais-popup-colregs-label">${esc(v.colregsLabel)}</div>`;
+        colregsHtml = `<tr>` +
+            `<td>` +
+                `COLREGS ` +
+                `<a href="#" data-ona-colregs="1" class="ais-popup-colregs-help" ` +
+                    `title="Open COLREGS quick reference">?</a>` +
+            `</td>` +
+            `<td class="ais-popup-colregs-cell">${roleHtml}${labelHtml}</td>` +
+            `</tr>`;
     }
 
     // External lookup links (free, no API key needed). VesselFinder's
@@ -425,47 +435,44 @@ function buildAisPopupHtml(snap) {
     const mtUrl = mmsi ? `https://www.marinetraffic.com/en/ais/details/ships/mmsi:${esc(mmsi)}` : '';
     const vfUrl = mmsi ? `https://www.vesselfinder.com/vessels?name=${esc(mmsi)}` : '';
 
-    // Buddy toggle + per-vessel snooze. Inline data attributes so the
-    // delegated handler on mapEl can route both to Blazor without
-    // leaking a callback through string concatenation.
+    // Buddy toggle moved into the title row (right-aligned, regular
+    // weight) per helm-feedback: the popup header had wasted right-
+    // side whitespace and the buddy action belonged with the vessel
+    // identity, not below it. data-ona-buddy is the same attribute
+    // the existing delegated handler on mapEl already listens for;
+    // no new wiring needed.
     const buddyLabel = v.buddy ? '★ Remove buddy' : '☆ Add buddy';
     const buddyAttrs = `data-ona-buddy="1" data-ctx="${esc(v.context)}" data-mmsi="${esc(mmsi || '')}"`
         + ` data-nm="${esc(v.name || '')}" data-is="${v.buddy ? '1' : '0'}"`;
+    const buddyHeaderHtml = mmsi
+        ? `<a href="#" ${buddyAttrs} class="ais-popup-buddy">${buddyLabel}</a>`
+        : '';
     const showSnooze = !v.buddy && (isDangerEff || isWarning);
     const snoozeAttrs = `data-ona-snooze="1" data-ctx="${esc(v.context)}" data-nm="${esc(v.name || mmsi || '')}"`;
     const snoozeHtml = showSnooze
-        ? `<a href="#" ${snoozeAttrs} style="color:#fbbf24;font-size:11px;text-decoration:none">♫ Snooze alarm</a>`
+        ? `<a href="#" ${snoozeAttrs} class="ais-popup-snooze">♫ Snooze alarm</a>`
         : '';
 
-    // Two action rows. Row 1: external-lookup links (MarineTraffic +
-    // VesselFinder) side-by-side on a single flex line -- they're
-    // the primary "tell me more about this vessel" action. Row 2:
-    // local actions (Buddy toggle + Snooze alarm) since they mutate
-    // app state and belong together. Splitting the rows stops the
-    // local actions from wrapping between the two external links on
-    // narrow popups and groups them by intent.
+    // Footer holds the external lookups + (only when relevant) the
+    // snooze action. Buddy moved up to the title row; the footer
+    // stays for the wider "look this vessel up elsewhere" intent
+    // and the situational snooze link. Hidden entirely when there's
+    // nothing to show (no MMSI + not snoozeable).
     let linksHtml = '';
     if (mmsi || showSnooze) {
-        const linkStyle = 'color:#7dd3fc;font-size:11px;text-decoration:none;flex:1;text-align:center;padding:2px 4px;white-space:nowrap';
         const rows = [];
         if (mmsi) {
             rows.push(
-                `<div style="display:flex;gap:10px;align-items:center">` +
-                `<a href="${mtUrl}" target="_blank" rel="noopener" style="${linkStyle}">MarineTraffic</a>` +
-                `<a href="${vfUrl}" target="_blank" rel="noopener" style="${linkStyle}">VesselFinder</a>` +
+                `<div class="ais-popup-links-row">` +
+                `<a href="${mtUrl}" target="_blank" rel="noopener" class="ais-popup-extern">MarineTraffic</a>` +
+                `<a href="${vfUrl}" target="_blank" rel="noopener" class="ais-popup-extern">VesselFinder</a>` +
                 `</div>`
             );
         }
-        const row2 = [];
-        if (mmsi) {
-            row2.push(`<a href="#" ${buddyAttrs} style="color:#facc15;font-size:11px;text-decoration:none">${buddyLabel}</a>`);
+        if (snoozeHtml) {
+            rows.push(`<div class="ais-popup-links-row">${snoozeHtml}</div>`);
         }
-        if (snoozeHtml) row2.push(snoozeHtml);
-        if (row2.length > 0) {
-            rows.push(`<div style="display:flex;gap:12px;flex-wrap:wrap">${row2.join('')}</div>`);
-        }
-        linksHtml = `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:6px">` +
-            rows.join('') + `</div>`;
+        linksHtml = `<div class="ais-popup-footer">` + rows.join('') + `</div>`;
     }
 
     // Country flag from signalk-flags plugin. 404s on servers without
@@ -474,32 +481,22 @@ function buildAisPopupHtml(snap) {
         ? `<img class="ais-popup-flag" src="${flagUrl(mmsi)}" alt="" onerror="this.style.display='none'">`
         : '';
 
-    // Identification metadata (MMSI · Call · Type) demoted to a small
-    // footer line below the data table. They're reference info, not
-    // navigational; helms scan to them only when they want to look
-    // the vessel up. The dot separator collapses cleanly when any
-    // of the three is missing.
-    const metaParts = [];
-    if (mmsi) metaParts.push(`MMSI ${esc(mmsi)}`);
-    if (callsign) metaParts.push(`Call ${callsign}`);
-    if (type) metaParts.push(type);
-    const metaHtml = metaParts.length > 0
-        ? `<div class="ais-popup-meta">${metaParts.join(' &middot; ')}</div>`
-        : '';
-
     return (
         `<div class="ais-popup-content">` +
-        `<div class="ais-popup-title">${flagHtml}${displayTitle}</div>` +
-        cpaHtml +     // CPA hero -- lead with the only field that drives action
-        colregsHtml + // crossing-rule classification + role
+        `<div class="ais-popup-header">` +
+            `<div class="ais-popup-title">${flagHtml}${displayTitle}</div>` +
+            buddyHeaderHtml +
+        `</div>` +
+        subtitleHtml +
         `<table class="ais-popup-table">` +
+          cpaHtml +
+          colregsHtml +
           `<tr><td>SOG</td><td>${sog} kn</td></tr>` +
           `<tr><td>COG</td><td>${cogDeg}&deg;</td></tr>` +
           `<tr><td>HDG</td><td>${hdgDeg}&deg;</td></tr>` +
           `<tr><td>Dist</td><td>${dist.toFixed(2)} nm</td></tr>` +
           `<tr><td>BRG</td><td>${brg.toFixed(0)}&deg;</td></tr>` +
         `</table>` +
-        metaHtml +    // MMSI / Call / Type demoted under the data
         linksHtml +
         `</div>`
     );

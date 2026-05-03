@@ -871,6 +871,18 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
                 snooze.getAttribute('data-nm') || '').catch(() => {});
             return;
         }
+        // COLREGS "?" link in the AIS popup: open the in-app
+        // quick-reference modal instead of navigating away. The
+        // previous href="/help/colregs" target was broken under
+        // the SK plugin mount AND took the helm off the map; the
+        // modal keeps the popup + chart context intact.
+        const colregs = e.target.closest('a[data-ona-colregs]');
+        if (colregs) {
+            e.preventDefault();
+            e.stopPropagation();
+            dotNetRef.invokeMethodAsync('OnShowColregsHelp').catch(() => {});
+            return;
+        }
     });
 
     // Notify Blazor when the viewport changes so layers can be filtered by bounds.

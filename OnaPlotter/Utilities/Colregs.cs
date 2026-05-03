@@ -183,14 +183,19 @@ public static class Colregs
         return new Result(Category.Indeterminate, Role.None);
     }
 
-    /// <summary>Human-readable short label for the popup / vessel list.</summary>
+    /// <summary>Human-readable short label for the popup / vessel list.
+    /// Uses single-letter (P) / (S) suffix for crossing categories
+    /// because the helm-feedback round on the AIS popup found "(port)"
+    /// / "(stbd)" eating popup width and pushing the role chip onto a
+    /// second line. (P) / (S) reads the same after one glance and
+    /// shaves ~50 % off the row width.</summary>
     public static string ShortLabel(Category c) => c switch
     {
         Category.HeadOn => "Head-on",
         Category.Overtaking => "Overtaking",
         Category.BeingOvertaken => "Being overtaken",
-        Category.CrossingFromPort => "Crossing (port)",
-        Category.CrossingFromStarboard => "Crossing (stbd)",
+        Category.CrossingFromPort => "Crossing (P)",
+        Category.CrossingFromStarboard => "Crossing (S)",
         _ => ""
     };
 

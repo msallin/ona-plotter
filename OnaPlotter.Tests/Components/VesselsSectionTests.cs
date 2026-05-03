@@ -86,11 +86,11 @@ public class VesselsSectionTests
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p
             .Add(x => x.Vessels, new[] {
-                V("c1", "Ship", colregsLabel: "Crossing (stbd)", colregsRole: "Give way")
+                V("c1", "Ship", colregsLabel: "Crossing (S)", colregsRole: "Give way")
             }));
         Expand(cut);
 
-        await Assert.That(cut.Markup).Contains("Crossing (stbd)");
+        await Assert.That(cut.Markup).Contains("Crossing (S)");
         await Assert.That(cut.Markup).Contains("Give way");
         await Assert.That(cut.Markup).Contains("colregs-giveway");
     }
