@@ -357,13 +357,6 @@ public sealed class SignalkClient : IAsyncDisposable
     /// </summary>
     public event Action? OnDataChanged;
 
-    /// <summary>External fire-OnDataChanged trigger. Used by services
-    /// that mutate the alarm-store directly (MobService synthesises a
-    /// MOB into ServerNotificationStore) so the alarm pipeline +
-    /// component re-renders pick up the change without waiting for
-    /// the next ws frame.</summary>
-    internal void FireDataChanged() => OnDataChanged?.Invoke();
-
     /// <summary>
     /// Raised for every raw JSON message received from the websocket.
     /// </summary>

@@ -114,18 +114,13 @@ builder.Services.AddSingleton<ICourseApi, CourseApi>();
 // publish their alarms back to SK so other plotters can see them.
 builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
 
-// Local-first MOB pipeline: synthesises a notification into the
+// Local-first MOB pipeline. Synthesises a notification into the
 // ServerNotificationStore + queues a background POST that retries
-// until the server confirms. The "onChanged" callback fires the
-// existing OnDataChanged on SignalkClient so the alarm pipeline
-// re-evaluates immediately after a synthesise / reconcile.
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService>(sp =>
-    new OnaPlotter.Services.Mob.MobService(
-        sp.GetRequiredService<INotificationsApi>(),
-        sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
-        sp.GetRequiredService<OnaPlotter.Services.IKeyValueStore>(),
-        sp.GetRequiredService<TimeProvider>(),
-        () => sp.GetRequiredService<SignalkClient>().FireDataChanged()));
+// until the server confirms. The alarm pipeline wakes up via
+// MainLayout's subscription to ServerNotificationStore.OnPathChanged
+// (no separate callback needed -- the store fires synchronously
+// from inside Apply / Clear).
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService, OnaPlotter.Services.Mob.MobService>();
 
 // Drives the MOB chart marker from store changes. Singleton so the
 // subscription survives page navigation and the marker reappears

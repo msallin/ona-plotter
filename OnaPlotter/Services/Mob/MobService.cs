@@ -16,6 +16,17 @@ namespace OnaPlotter.Services.Mob;
 /// have a serverId. After REST success the local synthetic is
 /// removed; the server's path is the canonical entry.</para>
 ///
+/// <para>Design alternative considered + rejected: rewrite the
+/// store path-key from notifications.mob.&lt;localId&gt; to
+/// notifications.mob.&lt;serverId&gt; in place on REST success, so
+/// the WS echo lands as an idempotent re-apply on an entry that's
+/// already there. Removes the dual-entry window but requires the
+/// store to grow a "rename path" primitive that doesn't fit the
+/// path-keyed dict shape and that the WS-driven Apply path doesn't
+/// need. The current dual-entry-with-reconciliation approach keeps
+/// the store API minimal at the cost of one extra Clear per
+/// successful raise -- acceptable.</para>
+///
 /// <para>Persistence: the pending-raise queue is written to
 /// localStorage (key <c>mob.pendingRaise.v1</c>) so an offline
 /// emit survives a reload. On <see cref="InitializeAsync"/>, the
@@ -27,6 +38,12 @@ public sealed class MobService : IMobService, IDisposable
     private const string StorageKey = "mob.pendingRaise.v1";
     private const string MobPathPrefix = "notifications.mob.";
     private const string MobValueId = "mob";
+
+    /// <summary>Default banner copy when the helm doesn't pass an
+    /// explicit message. Single source of truth -- Map.razor passes
+    /// null and inherits this so a future i18n / wording change has
+    /// one site to edit.</summary>
+    public const string DefaultRaiseMessage = "Person Overboard!";
 
     /// <summary>Backoff schedule for the REST retry loop. After
     /// the table is exhausted the service falls back to the last
@@ -46,7 +63,6 @@ public sealed class MobService : IMobService, IDisposable
     private readonly ServerNotificationStore _store;
     private readonly IKeyValueStore _kv;
     private readonly TimeProvider _time;
-    private readonly Action _notifyChanged;
 
     /// <summary>Keyed by localId. Survives reload via localStorage;
     /// the in-memory map is the source of truth between persists.</summary>
@@ -63,29 +79,23 @@ public sealed class MobService : IMobService, IDisposable
         INotificationsApi api,
         ServerNotificationStore store,
         IKeyValueStore kv,
-        TimeProvider time,
-        Action onChanged)
+        TimeProvider time)
     {
         _api = api ?? throw new ArgumentNullException(nameof(api));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _kv = kv ?? throw new ArgumentNullException(nameof(kv));
         _time = time ?? TimeProvider.System;
-        _notifyChanged = onChanged ?? throw new ArgumentNullException(nameof(onChanged));
 
-        // Reconciliation: when the WS echo lands at
-        // notifications.mob.<serverId>, the store fires OnPathChanged.
-        // We match the new path against any pending raise that has a
-        // serverId set (from a successful POST) and tear down its
-        // local synthetic so the helm sees one banner / one marker.
-        _store.OnPathChanged += HandleStorePathChanged;
-    }
-
-    private void HandleStorePathChanged(string path)
-    {
-        if (!path.StartsWith(MobPathPrefix, StringComparison.Ordinal)) return;
-        var idFromPath = path[MobPathPrefix.Length..];
-        if (string.IsNullOrEmpty(idFromPath)) return;
-        OnServerEcho(path, idFromPath);
+        // Reconciliation: when any notifications.mob.* path mutates in
+        // the store -- WS echo from the server, our own synthetic, or
+        // a clear -- ReconcileMobPath checks if a pending raise's
+        // recorded serverId matches the path and, if so, tears down
+        // the local synthetic so the helm sees one banner / one marker.
+        // Also serves the alarm-pipeline wake-up: MainLayout
+        // subscribes to the same OnPathChanged and re-evaluates, so
+        // the synthetic path triggers banner + audio without a
+        // dedicated callback.
+        _store.OnPathChanged += ReconcileMobPath;
     }
 
     /// <inheritdoc/>
@@ -94,7 +104,7 @@ public sealed class MobService : IMobService, IDisposable
         CancellationToken ct = default)
     {
         var localId = Guid.NewGuid().ToString();
-        var msg = string.IsNullOrWhiteSpace(message) ? "Person Overboard!" : message;
+        var msg = string.IsNullOrWhiteSpace(message) ? DefaultRaiseMessage : message;
         var path = MobPathPrefix + localId;
         var status = new NotificationStatus(
             Silenced: false,
@@ -109,7 +119,10 @@ public sealed class MobService : IMobService, IDisposable
         // would land at; we drop it on REST success so the
         // server's canonical entry can take over.
         bool stored = _store.Apply(path, "emergency", msg, localId, status, latitude, longitude);
-        if (stored) _notifyChanged();
+        // OnPathChanged fires synchronously inside Apply; the alarm-
+        // pipeline subscriber wakes the banner + audio pipeline
+        // without a separate callback (the same way a WS-driven
+        // delta would).
 
         // Track + persist the pending raise so a reload mid-retry
         // resumes where it left off.
@@ -118,7 +131,6 @@ public sealed class MobService : IMobService, IDisposable
             Message: msg,
             Latitude: latitude,
             Longitude: longitude,
-            CreatedAtUtc: _time.GetUtcNow().UtcDateTime,
             AttemptCount: 0);
         _pending[localId] = pending;
         await PersistPendingAsync(ct);
@@ -134,36 +146,76 @@ public sealed class MobService : IMobService, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<bool> AcknowledgeAsync(string serverId, CancellationToken ct = default)
+    public async Task<bool> ClearAsync(string id, CancellationToken ct = default)
     {
-        var path = MobPathPrefix + serverId;
-        // Optimistic local update: drop the active entry (the alarm
-        // pipeline auto-clears the banner on the next tick). The WS
-        // echo's status.acknowledged=true would do the same, so the
-        // round-trip lands as a no-op.
-        bool wasActive = _store.Clear(path);
-        if (wasActive) _notifyChanged();
-
-        var result = await _api.AcknowledgeAsync(serverId, ct).ConfigureAwait(false);
-        if (!result.Success)
+        // Resolve "is this a pending local id (no server twin yet)
+        // or an already-synced server id?" If a pending raise's
+        // localId matches OR its serverId matches, cancel the retry
+        // loop first -- otherwise the loop completes a successful
+        // POST after the helm has cleared, and the WS echo of the
+        // server twin resurrects the MOB. SKEP-001 in the review.
+        string? matchedLocalId = null;
+        bool hasServerSide = false;
+        foreach (var (localId, p) in _pending)
         {
-            // Rollback: the server still has the alarm armed, so
-            // the next WS delta tick will re-arm us. Nothing to
-            // restore by hand -- the store is eventually consistent.
-            return false;
+            if (string.Equals(localId, id, StringComparison.Ordinal))
+            {
+                matchedLocalId = localId;
+                hasServerSide = p.ServerId is not null;
+                break;
+            }
+            if (p.ServerId is { } sid && string.Equals(sid, id, StringComparison.Ordinal))
+            {
+                matchedLocalId = localId;
+                hasServerSide = true;
+                break;
+            }
         }
-        return true;
+        if (matchedLocalId is not null)
+        {
+            CancelAndDropPending(matchedLocalId);
+        }
+
+        // Drop the local synthetic at notifications.mob.<localId>
+        // (if we matched one) AND the path the helm passed (could
+        // be the server twin path notifications.mob.<serverId>).
+        // Safe-no-ops on absent paths.
+        if (matchedLocalId is not null)
+        {
+            _store.Clear(MobPathPrefix + matchedLocalId);
+        }
+        _store.Clear(MobPathPrefix + id);
+
+        // Skip the REST POST when we know there's no server-side
+        // entry to clear. Calling /clear/<localId> would 404 (the
+        // server never saw that id) and the call wastes a round-
+        // trip + can confuse a future observer in the server log.
+        if (matchedLocalId is not null && !hasServerSide)
+        {
+            return true;
+        }
+
+        var result = await _api.ClearByActionAsync(id, ct).ConfigureAwait(false);
+        return result.Success;
     }
 
     /// <inheritdoc/>
-    public async Task<bool> ClearAsync(string serverId, CancellationToken ct = default)
+    public async Task ClearAllAsync(CancellationToken ct = default)
     {
-        var path = MobPathPrefix + serverId;
-        bool wasActive = _store.Clear(path);
-        if (wasActive) _notifyChanged();
-
-        var result = await _api.ClearByActionAsync(serverId, ct).ConfigureAwait(false);
-        return result.Success;
+        // Snapshot the active set before mutating; iterating
+        // _store.Active while clearing would skip entries (the
+        // collection is built from a live dictionary). Each path's
+        // tail is the id (either localId or serverId, ClearAsync
+        // resolves which by checking the pending map).
+        var ids = _store.Active
+            .Select(n => n.Path)
+            .Where(p => p.StartsWith(MobPathPrefix, StringComparison.Ordinal))
+            .Select(p => p[MobPathPrefix.Length..])
+            .ToList();
+        foreach (var id in ids)
+        {
+            await ClearAsync(id, ct).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -187,7 +239,9 @@ public sealed class MobService : IMobService, IDisposable
             _pendingCts[p.LocalId] = cts;
             _ = Task.Run(() => RunRaiseLoopAsync(p, cts.Token));
         }
-        if (persisted.Count > 0) _notifyChanged();
+        // Each Apply above fires OnPathChanged; the alarm pipeline
+        // subscriber wakes itself N times (cheap; coalesced at the
+        // next render tick).
 
         // Pull the server's active list so any MOB raised pre-load
         // (this plotter just booted; another plotter's emit) lands
@@ -195,25 +249,16 @@ public sealed class MobService : IMobService, IDisposable
         // error here means "nothing to recover", not a hard failure.
         var active = await _api.ListActiveAsync(ct).ConfigureAwait(false);
         if (active is null) return;
-        bool changed = false;
         foreach (var (id, dto) in active)
         {
             if (dto.State is null) continue;
-            // Filter to MOB notifications only -- the list endpoint
-            // returns ALL active notifications, but this service
-            // owns only the MOB pipeline. Match against the value-
-            // level id the spec uses as the canonical key.
+            // List returns every active notification; this service
+            // owns the MOB pipeline so we filter by state=emergency
+            // (a coarse but acceptable proxy -- non-MOB emergencies
+            // are rare on SK servers and the chart renderer drops
+            // the marker on the next state transition if we mis-
+            // classify). dto.Id is the canonical id per spec.
             if (string.IsNullOrEmpty(dto.Id) || string.IsNullOrEmpty(id)) continue;
-            // SK servers we've seen put the MOB id in `id` and key
-            // by the same id; trust dto.Id since the spec calls it
-            // canonical.
-            // Heuristic: a notification carrying state=emergency and
-            // method containing "sound" + "visual" is a safety
-            // alarm. The list endpoint returns the path inside the
-            // value's status -- but to keep this contained we
-            // treat any state=emergency entry as a MOB candidate.
-            // The chart-marker layer drops the marker if the state
-            // later transitions to normal; no harm done.
             if (!string.Equals(dto.State, "emergency", StringComparison.Ordinal))
                 continue;
             var path = MobPathPrefix + dto.Id;
@@ -223,23 +268,25 @@ public sealed class MobService : IMobService, IDisposable
                 : new NotificationStatus(false, false, false, true, true);
             double? lat = dto.Position?.Latitude;
             double? lon = dto.Position?.Longitude;
-            if (_store.Apply(path, dto.State, dto.Message, dto.Id, status, lat, lon))
-                changed = true;
+            _store.Apply(path, dto.State, dto.Message, dto.Id, status, lat, lon);
         }
-        if (changed) _notifyChanged();
     }
 
-    /// <inheritdoc/>
-    public void OnServerEcho(string path, string? serverId)
+    /// <summary>Reconciliation: any notifications.mob.* path mutated
+    /// in the store. If a pending raise has a recorded serverId
+    /// matching this path, the WS echo of the server twin has
+    /// arrived and the local synthetic at
+    /// notifications.mob.&lt;localId&gt; should be torn down so the
+    /// helm sees one banner / one marker.
+    ///
+    /// Fires for local synthetics too (any Apply / Clear triggers
+    /// OnPathChanged) but the loop guard on p.ServerId means a
+    /// synthetic with no server twin yet is a no-op pass-through.</summary>
+    private void ReconcileMobPath(string path)
     {
         if (!path.StartsWith(MobPathPrefix, StringComparison.Ordinal)) return;
+        var serverId = path[MobPathPrefix.Length..];
         if (string.IsNullOrEmpty(serverId)) return;
-        // Look for a pending raise whose REST POST already returned
-        // this serverId. When we find one, the local synthetic at
-        // notifications.mob.<localId> can go away -- the server's
-        // canonical entry at notifications.mob.<serverId> is now in
-        // the store. Without this drop, both entries stay alive and
-        // the helm sees two banners + two markers.
         string? matchedLocalId = null;
         foreach (var (localId, p) in _pending)
         {
@@ -250,11 +297,11 @@ public sealed class MobService : IMobService, IDisposable
             }
         }
         if (matchedLocalId is null) return;
-        // Tear down the local synthetic + the retry loop (the POST
-        // already succeeded; the loop is idle by now but cancelling
-        // is defensive against re-entry).
+        // Tear down the local synthetic + the retry loop. The POST
+        // already succeeded so the loop is idle; cancelling is
+        // defensive against re-entry.
         var localPath = MobPathPrefix + matchedLocalId;
-        if (_store.Clear(localPath)) _notifyChanged();
+        _store.Clear(localPath);
         CancelAndDropPending(matchedLocalId);
     }
 
@@ -282,7 +329,7 @@ public sealed class MobService : IMobService, IDisposable
                 // pending entry so the WS echo reconciliation knows
                 // which local synthetic to retire. We do NOT remove
                 // the synthetic here -- the WS echo arrives via
-                // OnServerEcho and removes it then. If the echo
+                // ReconcileMobPath and removes it then. If the echo
                 // never arrives (server dropped it for whatever
                 // reason) the helm still sees the synthetic;
                 // safety > correctness.
@@ -315,7 +362,11 @@ public sealed class MobService : IMobService, IDisposable
         }
         _pending.Remove(localId);
         // Persist the trimmed queue so a reload doesn't replay a
-        // raise that already succeeded.
+        // raise that already succeeded. Fire-and-forget: a transient
+        // KV write failure here is recoverable on the next persist
+        // (the in-memory map is the source of truth between writes);
+        // the worst case is one duplicate raise on reload, which the
+        // server-side dedup + ReconcileMobPath then collapses.
         _ = PersistPendingAsync(CancellationToken.None);
     }
 
@@ -355,7 +406,7 @@ public sealed class MobService : IMobService, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _store.OnPathChanged -= HandleStorePathChanged;
+        _store.OnPathChanged -= ReconcileMobPath;
         foreach (var cts in _pendingCts.Values)
         {
             try { cts.Cancel(); } catch { /* best-effort */ }
@@ -373,6 +424,5 @@ public sealed record PendingRaise(
     string? Message,
     double? Latitude,
     double? Longitude,
-    DateTime CreatedAtUtc,
     int AttemptCount,
     string? ServerId = null);

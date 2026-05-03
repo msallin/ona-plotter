@@ -39,7 +39,7 @@ public class MobServiceTests
         // on the fake API.
         var clock = TimeProvider.System;
         var changes = new List<int>();
-        var svc = new MobService(api, store, kv, clock, () => changes.Add(changes.Count));
+        var svc = new MobService(api, store, kv, clock);
         return new Fixture(svc, api, store, kv, clock, changes);
     }
 
@@ -179,7 +179,6 @@ public class MobServiceTests
         var saved = "[{\"LocalId\":\"preserved-id\","
                   + "\"Message\":\"MOB\","
                   + "\"Latitude\":47.5,\"Longitude\":8.5,"
-                  + "\"CreatedAtUtc\":\"2026-05-03T12:00:00Z\","
                   + "\"AttemptCount\":2,\"ServerId\":null}]";
         await f.Kv.SetAsync("mob.pendingRaise.v1", saved);
 
@@ -215,25 +214,13 @@ public class MobServiceTests
         await Assert.That(entry!.Latitude).IsEqualTo(48.5);
     }
 
-    [Test]
-    public async Task AcknowledgeAsync_Drops_Local_Entry_And_Posts()
-    {
-        // Optimistic local update -- the alarm banner clears on the
-        // next pipeline tick. Server's WS echo with
-        // status.acknowledged=true would land later as a no-op
-        // because the entry's already gone.
-        var f = NewFixture();
-        f.Store.Apply("notifications.mob.foo", "emergency", "MOB",
-            id: "foo",
-            status: new NotificationStatus(false, false, false, true, true),
-            latitude: 47.5, longitude: 8.5);
-
-        var ok = await f.Service.AcknowledgeAsync("foo");
-
-        await Assert.That(ok).IsTrue();
-        await Assert.That(f.Store.Active.Any(n => n.Path == "notifications.mob.foo")).IsFalse();
-        await Assert.That(f.Api.AckCalls).Contains("foo");
-    }
+    // AcknowledgeAsync was retired from IMobService: an SK v2 emergency
+    // notification keeps state="emergency" through ack and just drops
+    // "sound" from method, so the existing
+    // SignalKNotificationAcknowledger path (POST /id/acknowledge -> WS
+    // echo updates the store) is already correct for MOB. A MOB-
+    // specific ack would have had to drop the visual banner, which the
+    // spec says must stay up after ack.
 
     [Test]
     public async Task ClearAsync_Drops_Local_Entry_And_Posts_Action_Verb()

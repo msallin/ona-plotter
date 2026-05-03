@@ -7,6 +7,7 @@
 @inject IAppSettings Settings
 @inject IToastService Toasts
 @inject IAlarmManager Alarms
+@inject OnaPlotter.Services.ServerNotifications.ServerNotificationStore ServerNotifications
 @inject OnaPlotter.Services.Api.ICourseApi CourseApi
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -447,6 +448,15 @@
     {
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         SignalkClient.OnDataChanged += HandleDataChanged;
+        // Wake the alarm pipeline whenever a server notification
+        // mutates -- including local synthetics produced by
+        // MobService. Previously MobService asked SignalkClient to
+        // re-fire OnDataChanged via a back-door shim; subscribing
+        // directly to the store keeps the dependency direction
+        // honest (the alarm pipeline depends on the store, not the
+        // WS client) and removes the precedent for "anyone can fire
+        // OnDataChanged".
+        ServerNotifications.OnPathChanged += HandleNotificationPathChanged;
         Toasts.OnChanged += HandleToastsChanged;
         Settings.OnSettingsChanged += HandleSettingsChanged;
         Alarms.OnAlarmChanged += HandleAlarmChanged;
@@ -944,6 +954,14 @@
         catch (ObjectDisposedException) { }
     }
 
+    /// <summary>Re-evaluate alarms whenever a server notification mutates
+    /// the active set. Reuses HandleDataChanged's evaluate path so the
+    /// notification-driven re-evaluation behaves identically to the
+    /// WS-frame-driven one (no separate code path for ServerNotifications-
+    /// only changes). Path argument is unused -- the rule pipeline reads
+    /// the entire store on every Evaluate.</summary>
+    private void HandleNotificationPathChanged(string _) => HandleDataChanged();
+
     // --- Auto-advance -------------------------------------------------
     //
     // The SignalK course-provider plugin publishes
@@ -1309,6 +1327,7 @@
     {
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         SignalkClient.OnDataChanged -= HandleDataChanged;
+        ServerNotifications.OnPathChanged -= HandleNotificationPathChanged;
         Toasts.OnChanged -= HandleToastsChanged;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         Alarms.OnAlarmChanged -= HandleAlarmChanged;

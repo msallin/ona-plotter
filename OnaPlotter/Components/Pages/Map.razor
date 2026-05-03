@@ -3118,50 +3118,26 @@
                 // single canonical entry.
                 // mobActive flips automatically via the store-derived
                 // computed property the moment the synthetic lands.
-                await MobService.RaiseAsync("Person Overboard!", lat, lon);
+                // Default message lives on MobService so a single
+                // edit changes it everywhere; pass null to inherit.
+                await MobService.RaiseAsync(message: null, lat, lon);
                 Toasts.Show("MOB dropped", ToastLevel.Success, durationSec: 8);
             }
             else
             {
                 // Confirmed two-tap clear (MapControls pattern).
-                // Falls back to the local-store clear when there's
-                // no serverId yet (POST still pending) -- the
-                // pending-raise queue records the clear and replays
-                // it once the serverId arrives. For v1 we just
-                // teardown locally; the alarm-banner Clear button
-                // is the cross-MOB / multi-MOB path.
-                // mobActive flips false automatically when the last
-                // MOB leaves the store (the computed property reads
-                // it on demand).
-                await ClearAllLocalMobsAsync();
+                // ClearAllAsync routes each active MOB through the
+                // service: pending raises (no serverId yet) get
+                // their retry loop cancelled + the local synthetic
+                // dropped; raises with a serverId fire POST
+                // /{id}/clear. mobActive flips false automatically
+                // when the last MOB leaves the store.
+                await MobService.ClearAllAsync();
             }
         }
         finally
         {
             _mobOpInFlight = false;
-        }
-    }
-
-    /// <summary>Tear down every active MOB. Used by the bar-button
-    /// two-tap clear; the alarm-banner per-entry Clear is the
-    /// fine-grained path. For records with a serverId, fires the
-    /// REST clear so the server cleans up; for pending records
-    /// without a serverId, just drops the local synthetic.</summary>
-    private async Task ClearAllLocalMobsAsync()
-    {
-        var active = NotificationStore.Active
-            .Where(n => n.Path.StartsWith("notifications.mob.", StringComparison.Ordinal))
-            .ToList();
-        foreach (var n in active)
-        {
-            if (n.Id is { } sid)
-            {
-                await MobService.ClearAsync(sid);
-            }
-            else
-            {
-                NotificationStore.Clear(n.Path);
-            }
         }
     }
 

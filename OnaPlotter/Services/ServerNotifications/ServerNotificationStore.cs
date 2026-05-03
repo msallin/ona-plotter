@@ -3,11 +3,24 @@ using OnaPlotter.Models;
 namespace OnaPlotter.Services.ServerNotifications;
 
 /// <summary>
-/// Singleton store of currently-active SignalK server notifications,
-/// keyed by full path. SignalkClient parses notifications.* deltas
-/// and pushes them here via <see cref="Apply"/>; the
-/// <see cref="ServerNotificationsAlarmRule"/> reads the active set on
-/// every Evaluate tick and emits one AlarmInfo per entry.
+/// Singleton store of currently-active alarm-class notifications,
+/// keyed by full path. Two write surfaces feed it:
+/// <list type="bullet">
+///   <item>SignalkClient parses notifications.* WS deltas and pushes
+///   them here via <see cref="Apply"/> (server-emitted entries).</item>
+///   <item>MobService synthesises a local notifications.mob.&lt;localId&gt;
+///   entry on raise so the alarm pipeline + chart marker fire
+///   immediately, even when the SK server is unreachable. The local
+///   synthetic is removed when the server's WS echo of the same MOB
+///   lands at notifications.mob.&lt;serverId&gt; (reconciliation lives in
+///   <see cref="OnaPlotter.Services.Mob.MobService"/>).</item>
+/// </list>
+/// The store does NOT distinguish between the two surfaces in its
+/// data model -- the alarm pipeline + the
+/// <see cref="ServerNotificationsAlarmRule"/> consume it uniformly.
+/// If a future caller cares about provenance ("which entries came
+/// from the server?"), add an <c>Origin</c> field to
+/// <see cref="ServerNotification"/> rather than a parallel store.
 /// <para>
 /// The store does NOT generate alarms directly. It's a transient
 /// data layer; the rule pipeline owns user-visible UX (banner,
