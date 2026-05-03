@@ -2134,6 +2134,20 @@
             // the dev. We fire at 1 Hz; a toast per tick would be spam.
             Console.Error.WriteLine($"[interop] HandleDataChanged: {ex.Message}");
         }
+        catch (Exception ex)
+        {
+            // Defense-in-depth for an async-void event handler: ANY
+            // exception that escapes here terminates the WASM runtime
+            // ("Assert failed: .NET runtime already exited with 1"),
+            // and the helm has to reload. Keeping the catches above
+            // typed for the documented JS-interop cases, then a
+            // generic catch so a future surface (HTTP failure in a
+            // sub-syncer, an alarm-rule throw, etc.) doesn't take
+            // down the runtime over a recoverable per-tick failure.
+            // 1 Hz cadence -> log only, no toast spam.
+            Console.Error.WriteLine(
+                $"[handle-data] unhandled {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     /// <summary>
