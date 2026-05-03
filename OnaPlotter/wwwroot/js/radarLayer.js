@@ -153,6 +153,43 @@ export function getActiveRadarCount() { return activeRadars.size; }
 
 // ---------------------------------------------------------------------
 
+// ---------------------------------------------------------------------
+// Helpers used by the range-ring rendering. Kept module-scoped so
+// they're shared across overlays + tested implicitly by the rendering
+// (no per-radar state inside).
+// ---------------------------------------------------------------------
+
+/**
+ * Lat/lon `metres` due true-north of (`lat`, `lon`). Used to anchor
+ * each range-ring's label at the top of the ring. Spherical-Earth
+ * approximation (111_320 m per degree of latitude); accurate enough
+ * for label placement at typical radar ranges (< 32 nm) -- a label
+ * a metre off the ring isn't visible at any plausible zoom.
+ */
+function offsetNorthMetres(lat, lon, metres) {
+    const dLat = metres / 111_320;
+    return [lat + dLat, lon];
+}
+
+/**
+ * Distance label as a short human-friendly string in nautical miles.
+ * The marine standard for range scales: helms read ranges in nm,
+ * not metres. Choice of decimals follows the magnitude:
+ *   < 1 nm   -> 0.25 / 0.5 / 0.75 (2 decimals max)
+ *   < 10 nm  -> 0.5 / 1 / 1.5 / 2 (1 decimal max)
+ *   >= 10 nm -> integer
+ * The trailing " nm" is suffixed inside the HTML so the styling can
+ * dim it relative to the number if needed.
+ */
+function formatRangeLabel(metres) {
+    const nm = metres / 1852;
+    let txt;
+    if (nm < 1) txt = nm.toFixed(2).replace(/\.?0+$/, '');
+    else if (nm < 10) txt = nm.toFixed(1).replace(/\.0$/, '');
+    else txt = Math.round(nm).toString();
+    return `${txt}<span class="radar-ring-label-unit"> nm</span>`;
+}
+
 class RadarOverlay {
     /**
      * @param {import('leaflet').Map} map
@@ -483,11 +520,20 @@ class RadarOverlay {
     }
 
     /**
-     * Build (or rebuild) the concentric range-ring polylines for
-     * this radar. Tears down any existing group first so the call
-     * is idempotent. Rings are L.circle (radius in metres,
-     * properly projected by Leaflet) so the geometry stays correct
-     * across zoom levels without us re-doing the haversine math.
+     * Build (or rebuild) the concentric range-ring polylines + their
+     * distance labels for this radar. Tears down any existing group
+     * first so the call is idempotent. Rings are L.circle (radius in
+     * metres, properly projected by Leaflet) so the geometry stays
+     * correct across zoom levels without us re-doing the haversine
+     * math.
+     *
+     * Visual hierarchy: the outer ring matches the configured radar
+     * range (i.e. the boundary of detection) and is drawn solid +
+     * heavier so the helm reads it as "this is what the radar
+     * actually sees right now". Inner rings stay dashed + faint as
+     * scale marks. Each ring carries a small label at the top
+     * (true-north bearing from boat) showing its distance in nm.
+     *
      * No-op when range / boat-fix is missing OR the helm has the
      * feature disabled.
      */
@@ -495,6 +541,8 @@ class RadarOverlay {
         if (this._rangeRings) {
             this._rangeRings.remove();
             this._rangeRings = null;
+            this._rangeRingCircles = null;
+            this._rangeRingLabels = null;
         }
         if (!ringsEnabled) return;
         const { lat, lon } = boatState;
@@ -502,27 +550,54 @@ class RadarOverlay {
 
         const group = L.layerGroup();
         const circles = [];
+        const labels = [];
         for (let i = 1; i <= ringsCount; i++) {
             const ringRange = (i / ringsCount) * this.range;
-            // Outer ring slightly heavier so the helm reads it as
-            // "this is what the radar can actually see"; inner rings
-            // stay faint so they read as background scale-marks.
-            const isOuter = i === ringsCount;
+            const isActive = i === ringsCount;
+            // Outer (active) ring: solid + heavier + higher opacity so
+            // the helm reads it as the actual boundary of detection.
+            // Inner rings: dashed + faint, "scale marks".
             const c = L.circle([lat, lon], {
                 radius: ringRange,
                 color: '#94a3b8',
-                weight: isOuter ? 1.25 : 1,
-                opacity: isOuter ? 0.6 : 0.4,
-                dashArray: '4,5',
+                weight: isActive ? 2 : 1,
+                opacity: isActive ? 0.9 : 0.4,
+                dashArray: isActive ? null : '4,5',
                 fill: false,
                 interactive: false,
                 pane: 'overlayPane',
             }).addTo(group);
             circles.push(c);
+
+            // Distance label, anchored at the top of each ring (due
+            // true-north from boat). One label per ring; the active
+            // one's font is heavier to match the ring stroke.
+            // Class is `radar-ring-label` (NOT `radar-range-label` --
+            // the latter exists for the HUD-side range chip).
+            const labelLatLng = offsetNorthMetres(lat, lon, ringRange);
+            const className = 'radar-ring-label'
+                + (isActive ? ' radar-ring-label--active' : '');
+            const labelMarker = L.marker(labelLatLng, {
+                icon: L.divIcon({
+                    className,
+                    html: formatRangeLabel(ringRange),
+                    // Anchor the bottom-centre of the label box at the
+                    // ring vertex so the text sits ABOVE the ring line,
+                    // not crossing it. iconSize must be set for divIcon
+                    // even when CSS handles the visual width.
+                    iconSize: [60, 18],
+                    iconAnchor: [30, 18],
+                }),
+                interactive: false,
+                keyboard: false,
+                pane: 'overlayPane',
+            }).addTo(group);
+            labels.push({ marker: labelMarker, range: ringRange });
         }
         group.addTo(this.map);
         this._rangeRings = group;
         this._rangeRingCircles = circles;
+        this._rangeRingLabels = labels;
     }
 
     _updateRangeRingsCentre() {
@@ -530,6 +605,14 @@ class RadarOverlay {
         const { lat, lon } = boatState;
         if (lat == null || lon == null) return;
         for (const c of this._rangeRingCircles) c.setLatLng([lat, lon]);
+        // Label markers track the ring radius, so recompute their
+        // lat/lon as the boat moves. Same labels reused -- the text
+        // doesn't change, only the position.
+        if (this._rangeRingLabels) {
+            for (const l of this._rangeRingLabels) {
+                l.marker.setLatLng(offsetNorthMetres(lat, lon, l.range));
+            }
+        }
     }
 
     _scheduleReposition() {
@@ -575,6 +658,7 @@ class RadarOverlay {
             this._rangeRings.remove();
             this._rangeRings = null;
             this._rangeRingCircles = null;
+            this._rangeRingLabels = null;
         }
         // Release the LUT memory aggressively -- these can be
         // 4-8 MB per radar.

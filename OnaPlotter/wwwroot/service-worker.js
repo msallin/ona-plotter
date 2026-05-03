@@ -130,7 +130,13 @@
 //             If-None-Match, server replies 304 with no body when
 //             unchanged). Offline launch still works because the
 //             network failure surfaces the cached copy.
-const CACHE_NAME = 'ona-plotter-v22';
+// v22 -> v23: radar range-ring labels + emphasised active-ring stroke.
+//             css/app.css is in APP_SHELL so a stale precache would
+//             ship the old (label-less) styles to a freshly-loaded
+//             page even with the network-first JS rule overriding the
+//             code path. Bump invalidates the shell precache so the
+//             helm picks up the new label styling on next launch.
+const CACHE_NAME = 'ona-plotter-v23';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
