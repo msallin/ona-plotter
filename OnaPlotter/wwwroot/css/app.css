@@ -5894,12 +5894,15 @@ html.night-mode-global .route-action-danger:hover {
    toggle that adds .big-type to .map-container. Labels + position
    readout get a proportional bump too. */
 /* Bar gets taller in Big HUD (ctrl-btn min-height 56px + bigger
-   padding below). The bc-stack consumes --ctrl-bar-height through
-   --panel-bottom; pin the override here so the gap above the bar
-   stays the helm-tested 9 px (== --panel-gap) on both modes
-   instead of either overlapping in Big HUD or yawning in small. */
+   padding + larger icons + 0.85rem label below). The bc-stack
+   consumes --ctrl-bar-height through --panel-bottom; pin the
+   override here so the gap above the bar stays the helm-tested
+   9 px (== --panel-gap) on both modes instead of either overlapping
+   in Big HUD or yawning in small. The 96px figure was helm-tested
+   on the iPad cockpit screen at Big HUD font sizes -- 80px left
+   the active-route card kissing the bar. */
 .map-container.big-type {
-    --ctrl-bar-height: 80px;
+    --ctrl-bar-height: 96px;
 }
 .map-container.big-type .hud-value {
     font-size: 2.2rem;
