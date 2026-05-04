@@ -302,39 +302,20 @@ public sealed class MobService : IMobService, IDisposable
         // produced every field as null and the alarm vanished on
         // reload).
         var active = await _api.ListActiveAsync(ct).ConfigureAwait(false);
-        if (active is null)
-        {
-            Console.WriteLine("[mob] InitializeAsync: ListActiveAsync returned null");
-            return;
-        }
-        Console.WriteLine($"[mob] InitializeAsync: ListActiveAsync returned {active.Count} entries");
-        int considered = 0, applied = 0;
+        if (active is null) return;
         foreach (var (id, env) in active)
         {
-            considered++;
             var dto = env?.Value;
-            if (dto?.State is null)
-            {
-                Console.WriteLine($"[mob]   skip {id}: state is null (env null? {env is null}, value null? {env?.Value is null})");
-                continue;
-            }
+            if (dto?.State is null) continue;
             // List returns every active notification; this service
             // owns the MOB pipeline so we filter by state=emergency
             // (a coarse but acceptable proxy -- non-MOB emergencies
             // are rare on SK servers and the chart renderer drops
             // the marker on the next state transition if we mis-
             // classify). dto.Id is the canonical id per spec.
-            if (string.IsNullOrEmpty(dto.Id) || string.IsNullOrEmpty(id))
-            {
-                Console.WriteLine($"[mob]   skip {id}: id missing (dto.Id='{dto.Id}', key='{id}')");
-                continue;
-            }
+            if (string.IsNullOrEmpty(dto.Id) || string.IsNullOrEmpty(id)) continue;
             if (!string.Equals(dto.State, "emergency", StringComparison.Ordinal))
-            {
-                Console.WriteLine($"[mob]   skip {id}: state='{dto.State}' (not emergency)");
                 continue;
-            }
-            applied++;
             var path = MobPathPrefix + dto.Id;
             var status = dto.Status is { } s
                 ? new NotificationStatus(s.Silenced, s.Acknowledged,
@@ -352,11 +333,9 @@ public sealed class MobService : IMobService, IDisposable
                 lat = saved.Lat;
                 lon = saved.Lon;
             }
-            Console.WriteLine($"[mob]   apply {path} lat={lat} lon={lon} createdAt={dto.CreatedAt}");
             _store.Apply(path, dto.State, dto.Message, dto.Id, status,
                 lat, lon, dto.CreatedAt);
         }
-        Console.WriteLine($"[mob] InitializeAsync: considered={considered} applied={applied}");
     }
 
     /// <summary>Reconciliation: any notifications.mob.* path mutated

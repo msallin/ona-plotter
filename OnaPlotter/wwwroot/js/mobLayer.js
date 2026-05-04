@@ -73,11 +73,7 @@ export function setBoatPosition(lat, lon) {
 }
 
 export function setMob(lat, lon, createdAtIso, selfMmsi) {
-    console.log(`[mob-js] setMob lat=${lat} lon=${lon} iso=${createdAtIso} mmsi=${selfMmsi} mapRef=${mapRef ? 'set' : 'NULL'}`);
-    if (!mapRef) {
-        console.warn('[mob-js] setMob: mapRef NULL, page unmounted mid-dispatch -- skipping');
-        return;
-    }
+    if (!mapRef) return;  // page unmounted mid-dispatch; same guard as setAnchor.
     clearMob();
     // createdAtIso: server-stamped ISO-8601 raise time. Falling
     // back to new Date() only when the server didn't supply one
