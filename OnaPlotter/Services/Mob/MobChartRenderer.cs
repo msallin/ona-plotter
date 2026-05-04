@@ -65,6 +65,7 @@ public sealed class MobChartRenderer : IDisposable
     public void AttachJs(IMapControlsJs js)
     {
         _js = js ?? throw new ArgumentNullException(nameof(js));
+        Console.WriteLine("[mob-renderer] AttachJs called -- invalidating dedup + resyncing");
         // Helm regression: navigating Chart -> Dashboard -> Chart
         // returned to a chart with no MOB marker even though the
         // store still had the MOB. Cause was the dedup state below
@@ -89,6 +90,7 @@ public sealed class MobChartRenderer : IDisposable
     /// state.</summary>
     public void DetachJs()
     {
+        Console.WriteLine("[mob-renderer] DetachJs called");
         _js = null;
         _renderedPath = null;
     }
@@ -96,12 +98,17 @@ public sealed class MobChartRenderer : IDisposable
     private void HandlePathChanged(string path)
     {
         if (!path.StartsWith(MobPathPrefix, StringComparison.Ordinal)) return;
+        Console.WriteLine($"[mob-renderer] HandlePathChanged path={path} _js={(_js is null ? "NULL" : "set")}");
         ResyncRender();
     }
 
     private void ResyncRender()
     {
-        if (_js is null) return;
+        if (_js is null)
+        {
+            Console.WriteLine("[mob-renderer] ResyncRender: _js NULL, skip");
+            return;
+        }
         // Pick the first active MOB. For v1 we render at most one
         // marker; the alarm banner stack still surfaces every
         // active MOB independently.
@@ -116,6 +123,7 @@ public sealed class MobChartRenderer : IDisposable
         }
         if (first is null)
         {
+            Console.WriteLine("[mob-renderer] ResyncRender: no MOB in store");
             // No active MOB -> tear the marker down if one's up.
             if (_renderedPath is not null)
             {
@@ -126,6 +134,7 @@ public sealed class MobChartRenderer : IDisposable
             }
             return;
         }
+        Console.WriteLine($"[mob-renderer] ResyncRender: first.Path={first.Path} lat={first.Latitude} lon={first.Longitude}");
         // Skip when nothing changed (same path + coords + createdAt).
         // The store fires OnPathChanged on every Apply (including
         // status-only updates) and we don't want to re-pulse the
@@ -135,6 +144,7 @@ public sealed class MobChartRenderer : IDisposable
             && _renderedLon == first.Longitude
             && _renderedCreatedAt == first.CreatedAt)
         {
+            Console.WriteLine("[mob-renderer] ResyncRender: dedup hit, skipping");
             return;
         }
         // Position is optional on the wire (server can emit MOB
@@ -153,6 +163,7 @@ public sealed class MobChartRenderer : IDisposable
             ? ts.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture)
             : null;
         var selfMmsi = _ownMmsi?.Invoke();
+        Console.WriteLine($"[mob-renderer] SetMobAsync(lat={lat}, lon={lon}, iso={iso}, mmsi={selfMmsi})");
         _ = _js.SetMobAsync(lat, lon, iso, selfMmsi);
         _renderedPath = first.Path;
         _renderedLat = lat;

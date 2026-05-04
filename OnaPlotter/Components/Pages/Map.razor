@@ -1359,12 +1359,15 @@
         // bottom-centre range scale while the route HUD card sits
         // in that slot. Other wrappers stay in their current order.
         _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
-        // Hand the JS bridge to the MOB chart renderer so it can
-        // paint markers for store entries (incl. any MOB raised
-        // before this page mounted -- the renderer re-syncs on
-        // attach). The renderer itself is a singleton so the
-        // subscription is stable across navigation.
-        MobChartRenderer.AttachJs(_controlsJs);
+        // (MobChartRenderer.AttachJs moved AFTER initMap below --
+        //  attaching it here meant the renderer's first ResyncRender
+        //  fired before mobLayerMod.init(map, ...) ran inside initMap,
+        //  so the bridge SetMobAsync lined up against a still-null
+        //  mapRef in mobLayer.js and silently skipped the marker
+        //  draw. The helm flagged "navigate Chart -> Dashboard ->
+        //  Chart and the marker disappears" with logs showing exactly
+        //  this race: [mob-renderer] SetMobAsync fired, [mob-js]
+        //  setMob saw mapRef=NULL and bailed.)
         _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteSync(
             _routeJs,
             _controlsJs,
@@ -1450,6 +1453,15 @@
         await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef,
             ClientCaps.IsSlowClient);
         mapInitialized = true;
+
+        // Hand the JS bridge to the MOB chart renderer NOW (after
+        // initMap has set mobLayer.mapRef). Earlier this lived
+        // before initMap; the renderer's first ResyncRender called
+        // setMob against a still-null JS-side mapRef and the
+        // marker silently dropped. Keeping AttachJs after initMap
+        // guarantees mobLayer is ready when the very next
+        // SetMobAsync fires.
+        MobChartRenderer.AttachJs(_controlsJs);
 
         // Tell the JS side where the SignalK server lives so its
         // origin-bound URLs (flag images today; future direct hits
