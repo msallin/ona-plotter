@@ -69,13 +69,25 @@ const AIS_TRAIL_SECONDS = 300;
 const VESSEL_NAME_CACHE_MAX = 500;
 const vesselNameCache = new Map();
 
-// Set of MMSIs we've already kicked a flag-image fetch for. The
-// flag lives behind /signalk/v2/api/resources/flags/mmsi/{mmsi} via
-// the signalk-flags plugin; lazy-loading only on popup-open gave a
-// visible flash as the user scrolled through AIS targets in a busy
-// harbour. Pre-warming on the first updateAisTargets tick lets the
-// browser cache handle subsequent opens.
-const flagsPrewarmed = new Set();
+// Country-flag cache. Two layers keyed by MMSI:
+//   * flagPromiseCache (mmsi -> Promise<dataUri | null>) -- dedupes
+//     in-flight fetches so two popup-opens for the same vessel in
+//     quick succession share one network round-trip.
+//   * flagSettledCache (mmsi -> dataUri | null) -- populated when
+//     the promise resolves. Subsequent popup builds read this
+//     synchronously and embed the data URI directly, so a second
+//     open for a vessel never hits the network at all (and doesn't
+//     depend on the SK server's HTTP cache headers, which the
+//     signalk-flags plugin doesn't always set).
+//
+// Lazy-only: no eager prewarm on updateAisTargets. In a busy
+// harbour with 200 AIS targets, ~95% of popups never open; the
+// pre-warm wasted 200 round-trips per session for the median helm.
+// First popup-open for an MMSI now triggers exactly one fetch;
+// every subsequent open for the same MMSI is fed from the cache.
+const flagPromiseCache = new Map();
+const flagSettledCache = new Map();
+let flagPlaceholderSeq = 0;
 
 // Icon caches (one per source x colour x category combo).
 const aisIconCache = {};
@@ -283,13 +295,68 @@ function getSartIcon(category) {
     return sartIconCache[category];
 }
 
-function prewarmFlag(mmsi) {
-    if (!mmsi || flagsPrewarmed.has(mmsi)) return;
-    flagsPrewarmed.add(mmsi);
-    const img = new Image();
-    // Image() doesn't block, no onerror noise (plugin-missing fetches
-    // are absorbed silently since no element is attached to the DOM).
-    img.src = flagUrl(mmsi);
+/**
+ * Get a Promise<dataUri | null> for the country flag of an MMSI.
+ * Dedupes in-flight fetches; on resolution, populates
+ * flagSettledCache so subsequent popup builds read it synchronously.
+ * Negative result (404 / network error) cached as null so we don't
+ * keep retrying the same plugin-missing endpoint.
+ */
+function getFlagDataUri(mmsi) {
+    if (!mmsi) return Promise.resolve(null);
+    let p = flagPromiseCache.get(mmsi);
+    if (p) return p;
+    p = (async () => {
+        try {
+            const resp = await fetch(flagUrl(mmsi));
+            if (!resp.ok) return null;
+            const blob = await resp.blob();
+            return await new Promise((resolve, reject) => {
+                const fr = new FileReader();
+                fr.onload = () => resolve(/** @type {string} */ (fr.result));
+                fr.onerror = reject;
+                fr.readAsDataURL(blob);
+            });
+        } catch {
+            return null;
+        }
+    })();
+    flagPromiseCache.set(mmsi, p);
+    p.then(value => flagSettledCache.set(mmsi, value));
+    return p;
+}
+
+/**
+ * Build the popup-flag <img> HTML for an MMSI. When the flag is
+ * already cached (second + opens for the same vessel) the data URI
+ * is embedded directly -- no network, no flicker. On first miss a
+ * placeholder is emitted with a unique id; the async fetch fills
+ * it (or hides it on 404) once the data URI lands.
+ */
+function flagImgHtml(mmsi) {
+    if (!mmsi) return '';
+    if (flagSettledCache.has(mmsi)) {
+        const settled = flagSettledCache.get(mmsi);
+        if (!settled) return '';   // negative-cached
+        return `<img class="ais-popup-flag" src="${settled}" alt="">`;
+    }
+    // First miss: emit a placeholder, kick the fetch, fill on resolve.
+    // visibility:hidden reserves the layout slot so the popup doesn't
+    // reflow when the flag arrives.
+    const id = `ais-flag-ph-${++flagPlaceholderSeq}`;
+    queueMicrotask(() => {
+        getFlagDataUri(mmsi).then(uri => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (uri) {
+                el.src = uri;
+                el.style.visibility = '';
+            } else {
+                el.style.display = 'none';
+            }
+        });
+    });
+    return `<img id="${id}" class="ais-popup-flag" alt="" style="visibility:hidden">`;
 }
 
 // --- vessel name cache ---
@@ -488,11 +555,12 @@ function buildAisPopupHtml(snap) {
         linksHtml = `<div class="ais-popup-footer">` + rows.join('') + `</div>`;
     }
 
-    // Country flag from signalk-flags plugin. 404s on servers without
-    // the plugin trigger onerror + hide; no broken-image glyph.
-    const flagHtml = mmsi
-        ? `<img class="ais-popup-flag" src="${flagUrl(mmsi)}" alt="" onerror="this.style.display='none'">`
-        : '';
+    // Country flag from signalk-flags plugin. flagImgHtml caches the
+    // SVG as a data URI on first popup-open; every subsequent open
+    // for the same MMSI is served from cache (no network round-trip,
+    // no dependence on the plugin's HTTP Cache-Control). 404s on
+    // servers without the plugin negative-cache silently.
+    const flagHtml = flagImgHtml(mmsi);
 
     return (
         `<div class="ais-popup-content">` +
@@ -531,10 +599,6 @@ export function updateAisTargets(vessels) {
     for (const v of vessels) {
         seen.add(v.context);
         if (v.lat == null || v.lon == null || !isFinite(v.lat) || !isFinite(v.lon)) continue;
-
-        // Pre-fetch the country flag on first sight so the AIS popup
-        // doesn't flash while it loads the SVG on first click.
-        if (v.mmsi) prewarmFlag(v.mmsi);
 
         // CPA + TCPA come pre-computed from the C# side (Utilities/Cpa)
         // so the map marker path and the Layers-panel list can't disagree.
