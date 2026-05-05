@@ -81,6 +81,11 @@ public sealed class AlarmManager : IAlarmManager
     // can ask each rule for its IAlarmRule.GetPublishPath mapping
     // without reverse-engineering it from the title. Same invalidation.
     private IReadOnlyList<(AlarmInfo Info, IAlarmRule Rule)>? _allActiveEntriesCache;
+    // Sorted-entries cache shared across the three public sorted-active
+    // readers above. SortedEntries() materialises this once; the
+    // per-property caches are then materialised from it in O(N) without
+    // re-sorting. Same invalidation contract as the per-property caches.
+    private ActiveEntry[]? _sortedEntriesCache;
     private readonly List<DismissedAlarm> _history = [];
     // Per-key cooldown window after a dismiss. Keyed the same as _active
     // so a CPA dismiss on "vessels.a" doesn't silence CPA on "vessels.b".
@@ -107,14 +112,11 @@ public sealed class AlarmManager : IAlarmManager
         get
         {
             if (_activeAlarmsCache is not null) return _activeAlarmsCache;
-            _activeAlarmsCache = _active.Values
-                .OrderByDescending(e => e.Info.Severity)
-                .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
-                .ThenBy(e => e.Rule.Priority)
-                .Select(e => e.Info)
-                .Take(MaxActiveAlarms)
-                .ToList();
-            return _activeAlarmsCache;
+            var sorted = SortedEntries();
+            int n = Math.Min(sorted.Length, MaxActiveAlarms);
+            var result = new AlarmInfo[n];
+            for (int i = 0; i < n; i++) result[i] = sorted[i].Info;
+            return _activeAlarmsCache = result;
         }
     }
 
@@ -124,13 +126,10 @@ public sealed class AlarmManager : IAlarmManager
         get
         {
             if (_allActiveAlarmsCache is not null) return _allActiveAlarmsCache;
-            _allActiveAlarmsCache = _active.Values
-                .OrderByDescending(e => e.Info.Severity)
-                .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
-                .ThenBy(e => e.Rule.Priority)
-                .Select(e => e.Info)
-                .ToList();
-            return _allActiveAlarmsCache;
+            var sorted = SortedEntries();
+            var result = new AlarmInfo[sorted.Length];
+            for (int i = 0; i < sorted.Length; i++) result[i] = sorted[i].Info;
+            return _allActiveAlarmsCache = result;
         }
     }
 
@@ -140,14 +139,41 @@ public sealed class AlarmManager : IAlarmManager
         get
         {
             if (_allActiveEntriesCache is not null) return _allActiveEntriesCache;
-            _allActiveEntriesCache = _active.Values
-                .OrderByDescending(e => e.Info.Severity)
-                .ThenBy(e => e.Info.TimeToEventMinutes ?? double.MaxValue)
-                .ThenBy(e => e.Rule.Priority)
-                .Select(e => (e.Info, e.Rule))
-                .ToList();
-            return _allActiveEntriesCache;
+            var sorted = SortedEntries();
+            var result = new (AlarmInfo, IAlarmRule)[sorted.Length];
+            for (int i = 0; i < sorted.Length; i++) result[i] = (sorted[i].Info, sorted[i].Rule);
+            return _allActiveEntriesCache = result;
         }
+    }
+
+    /// <summary>Single-pass sort over <c>_active.Values</c> shared by
+    /// every public sorted-active reader. Replaces a triple-OrderBy
+    /// LINQ chain (3 enumerator-class allocations + a deferred List
+    /// allocation per read) with one allocation + one Array.Sort call.
+    /// Tie-break order matches the previous LINQ semantics:
+    /// severity desc, time-to-event asc (null = +infinity), priority
+    /// asc. Caller materialises into the per-property shape.</summary>
+    private ActiveEntry[] SortedEntries()
+    {
+        if (_sortedEntriesCache is not null) return _sortedEntriesCache;
+        int n = _active.Count;
+        if (n == 0) return _sortedEntriesCache = [];
+        var arr = new ActiveEntry[n];
+        int i = 0;
+        foreach (var v in _active.Values) arr[i++] = v;
+        Array.Sort(arr, static (a, b) =>
+        {
+            // Severity is an enum where higher ordinal = more urgent;
+            // we want most-urgent first -> compare b vs a.
+            int s = b.Info.Severity.CompareTo(a.Info.Severity);
+            if (s != 0) return s;
+            double aTte = a.Info.TimeToEventMinutes ?? double.MaxValue;
+            double bTte = b.Info.TimeToEventMinutes ?? double.MaxValue;
+            int t = aTte.CompareTo(bTte);
+            if (t != 0) return t;
+            return a.Rule.Priority.CompareTo(b.Rule.Priority);
+        });
+        return _sortedEntriesCache = arr;
     }
 
     /// <summary>Invalidate the sorted caches on every _active mutation.
@@ -157,6 +183,7 @@ public sealed class AlarmManager : IAlarmManager
         _activeAlarmsCache = null;
         _allActiveAlarmsCache = null;
         _allActiveEntriesCache = null;
+        _sortedEntriesCache = null;
     }
 
     public int HiddenAlarmsCount => Math.Max(0, _active.Count - MaxActiveAlarms);
