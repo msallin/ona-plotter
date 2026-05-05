@@ -168,8 +168,22 @@ public sealed class AisPushService
             ownship.AnchorActive,
             ownship.AnchorMaxRadius);
 
-        return visible.Select(v =>
+        // Hot path: 200+ vessels at ~3 Hz on a busy harbour push.
+        // Pre-allocate the result array (visible.Count is known) and
+        // walk via index instead of Select(...).ToArray() so the
+        // closure capturing ownLat/ownLon/ownCog/ownSog/now/etc.
+        // doesn't allocate per call -- the captured locals just
+        // become method-frame locals, no heap.
+        // Helper variables hoisted to keep the loop body short.
+        var ownType = _settings.OwnVesselType == "sail"
+            ? Colregs.VesselType.Sail
+            : Colregs.VesselType.Power;
+        bool ownComplete = ownLat is not null && ownLon is not null
+            && ownCog is not null && ownSog is not null;
+        var result = new object[visible.Count];
+        for (int i = 0; i < visible.Count; i++)
         {
+            var v = visible[i];
             // Pre-compute COLREGS + CPA in C# so (a) Utilities/Cpa.cs +
             // CpaTests is the single source of truth and (b) the
             // BuildVesselList / PushAisTargets paths can't drift.
@@ -177,12 +191,11 @@ public sealed class AisPushService
             double? tcpaMin = null;
             string? colregsLabel = null;
             string? colregsRole = null;
-            if (ownLat is not null && ownLon is not null
-                && ownCog is not null && ownSog is not null
+            if (ownComplete
                 && v.CourseOverGround is not null && v.SpeedOverGround is not null)
             {
                 var cpa = Cpa.Compute(
-                    ownLat.Value, ownLon.Value, ownCog, ownSog,
+                    ownLat!.Value, ownLon!.Value, ownCog, ownSog,
                     v.Latitude!.Value, v.Longitude!.Value,
                     v.CourseOverGround, v.SpeedOverGround);
                 if (cpa is { } c)
@@ -197,12 +210,9 @@ public sealed class AisPushService
                 // role is overridden by Rule 18 so the helm sees
                 // 'sail stands on / power gives way' on a mixed
                 // encounter regardless of geometry.
-                var ownType = _settings.OwnVesselType == "sail"
-                    ? Colregs.VesselType.Sail
-                    : Colregs.VesselType.Power;
                 var tgtType = Colregs.FromAisShipType(v.ShipType);
                 var r = Colregs.Classify(
-                    ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
+                    ownLat!.Value, ownLon!.Value, ownCog!.Value, ownSog!.Value,
                     v.Latitude!.Value, v.Longitude!.Value,
                     v.CourseOverGround.Value, v.SpeedOverGround.Value,
                     ownType, tgtType);
@@ -251,7 +261,7 @@ public sealed class AisPushService
                 ? null
                 : (v.IsBuddy ? "★ " + baseName : baseName);
 
-            return (object)new
+            result[i] = new
             {
                 context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
                 displayName,                   // pre-resolved label or null
@@ -277,6 +287,7 @@ public sealed class AisPushService
                 // that hasn't updated in minutes.
                 ageSec = (int)(now - v.LastSeen).TotalSeconds,
             };
-        }).ToArray();
+        }
+        return result;
     }
 }
