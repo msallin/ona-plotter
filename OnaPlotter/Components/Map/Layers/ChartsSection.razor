@@ -94,7 +94,7 @@
     <div class="chart-filter-group" @onclick:stopPropagation>
         <div class="chart-filter-header">
             <span class="chart-filter-title">Display</span>
-            @if (ContrastPercent != 100 || SaturationPercent != 100 || BrightnessPercent != 100)
+            @if (_displayContrast != 100 || _displaySaturation != 100 || _displayBrightness != 100)
             {
                 <button class="chart-filter-reset" type="button"
                         title="Reset to defaults"
@@ -105,31 +105,31 @@
             <span class="chart-filter-label">Contrast</span>
             <input type="range" class="chart-filter-slider"
                    min="50" max="200" step="5"
-                   value="@ContrastPercent"
+                   value="@_displayContrast"
                    @oninput="HandleContrastInput"
                    @onchange="HandleContrastCommit"
                    aria-label="Chart contrast" />
-            <span class="chart-filter-value">@ContrastPercent%</span>
+            <span class="chart-filter-value">@_displayContrast%</span>
         </div>
         <div class="chart-filter-row">
             <span class="chart-filter-label">Saturation</span>
             <input type="range" class="chart-filter-slider"
                    min="50" max="200" step="5"
-                   value="@SaturationPercent"
+                   value="@_displaySaturation"
                    @oninput="HandleSaturationInput"
                    @onchange="HandleSaturationCommit"
                    aria-label="Chart saturation" />
-            <span class="chart-filter-value">@SaturationPercent%</span>
+            <span class="chart-filter-value">@_displaySaturation%</span>
         </div>
         <div class="chart-filter-row">
             <span class="chart-filter-label">Brightness</span>
             <input type="range" class="chart-filter-slider"
                    min="50" max="150" step="5"
-                   value="@BrightnessPercent"
+                   value="@_displayBrightness"
                    @oninput="HandleBrightnessInput"
                    @onchange="HandleBrightnessCommit"
                    aria-label="Chart brightness" />
-            <span class="chart-filter-value">@BrightnessPercent%</span>
+            <span class="chart-filter-value">@_displayBrightness%</span>
         </div>
     </div>
 }
@@ -186,50 +186,95 @@
     // the z-stack and the visible-list as separate state lets them drift
     // and breaks the reorder arrows.
 
+    // ---- Slider local-display state -------------------------------------
+    // Why this exists: the slider uses the @oninput / @onchange split so
+    // the chart updates live during drag (preview) but only persists on
+    // release (commit). The parameter (Settings.ChartContrastPercent)
+    // doesn't change until commit, so if we bound `value="@ContrastPercent"`
+    // every parent re-render during a drag would snap the slider knob
+    // back to the committed value while the user is still pulling it.
+    // The fix: keep a private _displayX field that the input binds to,
+    // updated locally on each oninput. OnParametersSet syncs from the
+    // parameter only when the parameter ACTUALLY changes (commit landed,
+    // or external reset), never on a render-pass-through. Net effect:
+    // the slider tracks the user's drag without parent feedback fighting
+    // the input element.
+    private int _displayContrast = 100;
+    private int _displaySaturation = 100;
+    private int _displayBrightness = 100;
+    // Last parameter values we synced from. Comparing the incoming
+    // parameter against these tells us whether the parent is delivering
+    // a NEW committed value or just re-rendering with the same one.
+    private int _lastContrastParam = 100;
+    private int _lastSaturationParam = 100;
+    private int _lastBrightnessParam = 100;
+
+    protected override void OnParametersSet()
+    {
+        if (ContrastPercent != _lastContrastParam)
+        {
+            _displayContrast = ContrastPercent;
+            _lastContrastParam = ContrastPercent;
+        }
+        if (SaturationPercent != _lastSaturationParam)
+        {
+            _displaySaturation = SaturationPercent;
+            _lastSaturationParam = SaturationPercent;
+        }
+        if (BrightnessPercent != _lastBrightnessParam)
+        {
+            _displayBrightness = BrightnessPercent;
+            _lastBrightnessParam = BrightnessPercent;
+        }
+    }
+
     private async Task HandleContrastInput(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
-        ContrastPercent = Math.Clamp(pct, 50, 200);
-        await OnContrastPreview.InvokeAsync(ContrastPercent);
+        _displayContrast = Math.Clamp(pct, 50, 200);
+        await OnContrastPreview.InvokeAsync(_displayContrast);
     }
     private Task HandleContrastCommit(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out int pct)) return Task.CompletedTask;
-        ContrastPercent = Math.Clamp(pct, 50, 200);
-        return OnContrastCommit.InvokeAsync(ContrastPercent);
+        _displayContrast = Math.Clamp(pct, 50, 200);
+        return OnContrastCommit.InvokeAsync(_displayContrast);
     }
 
     private async Task HandleSaturationInput(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
-        SaturationPercent = Math.Clamp(pct, 50, 200);
-        await OnSaturationPreview.InvokeAsync(SaturationPercent);
+        _displaySaturation = Math.Clamp(pct, 50, 200);
+        await OnSaturationPreview.InvokeAsync(_displaySaturation);
     }
     private Task HandleSaturationCommit(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out int pct)) return Task.CompletedTask;
-        SaturationPercent = Math.Clamp(pct, 50, 200);
-        return OnSaturationCommit.InvokeAsync(SaturationPercent);
+        _displaySaturation = Math.Clamp(pct, 50, 200);
+        return OnSaturationCommit.InvokeAsync(_displaySaturation);
     }
 
     private async Task HandleBrightnessInput(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
-        BrightnessPercent = Math.Clamp(pct, 50, 150);
-        await OnBrightnessPreview.InvokeAsync(BrightnessPercent);
+        _displayBrightness = Math.Clamp(pct, 50, 150);
+        await OnBrightnessPreview.InvokeAsync(_displayBrightness);
     }
     private Task HandleBrightnessCommit(ChangeEventArgs e)
     {
         if (!int.TryParse(e.Value?.ToString(), out int pct)) return Task.CompletedTask;
-        BrightnessPercent = Math.Clamp(pct, 50, 150);
-        return OnBrightnessCommit.InvokeAsync(BrightnessPercent);
+        _displayBrightness = Math.Clamp(pct, 50, 150);
+        return OnBrightnessCommit.InvokeAsync(_displayBrightness);
     }
 
     private Task HandleResetClicked()
     {
-        ContrastPercent = 100;
-        SaturationPercent = 100;
-        BrightnessPercent = 100;
+        // Local display goes back to 100 immediately so the sliders
+        // visibly snap; the OnFilterReset callback then persists, and
+        // OnParametersSet re-syncs (no-op since values match).
+        _displayContrast = 100;
+        _displaySaturation = 100;
+        _displayBrightness = 100;
         return OnFilterReset.InvokeAsync();
     }
 }
