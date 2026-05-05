@@ -15,6 +15,20 @@ public interface IMapDisplaySettings
     /// <summary>"north" / "course" / "head". Drives chart rotation.</summary>
     string MapOrientation { get; }
 
+    /// <summary>Helm-picked source for the chart boat-icon
+    /// rotation: <c>"headingTrue"</c>, <c>"headingMagnetic"</c>,
+    /// <c>"cogTrue"</c>, <c>"cogMagnetic"</c>. Default
+    /// <c>"headingTrue"</c> (marine charts are north-true; digital
+    /// compasses with a true-heading output are the most accurate
+    /// live source). Distinct from <see cref="OnaPlotter.Services.IAppSettings.PreferMagneticHeading"/>
+    /// / <see cref="OnaPlotter.Services.IAppSettings.PreferMagneticCourse"/>
+    /// which decide which variant the HDG / COG NUMERIC readouts
+    /// pick: this setting picks the FIELD that drives the boat-icon
+    /// arrow. Falls back through the four fields in
+    /// <see cref="OnaPlotter.Utilities.ShipOrientationResolver"/>'s
+    /// chain when the picked source isn't published.</summary>
+    string ShipOrientationSource { get; }
+
     /// <summary>When true, the map auto-pans to follow the boat.</summary>
     bool FollowBoat { get; }
 
@@ -179,6 +193,7 @@ public interface IMapDisplaySettings
     int RadarRangeRingsCount { get; }
 
     Task SetMapOrientationAsync(string value);
+    Task SetShipOrientationSourceAsync(string value);
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
     Task SetShipLinesVisibleAsync(bool value);

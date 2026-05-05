@@ -96,15 +96,32 @@ public sealed class MapFrameBuilder
     /// snapshot. Also advances the builder's internal state (PrevLat/
     /// Lon, LaylinesSkip, CourseLineDrawn) so the next call continues
     /// the inter-tick chain correctly.
+    ///
+    /// <para>The <paramref name="orientationOverride"/> /
+    /// <paramref name="cogOverride"/> / <paramref name="sogOverride"/>
+    /// hooks let the caller substitute smoothed values from
+    /// <see cref="OnaPlotter.Services.INavigationAverages"/> + the
+    /// helm's <c>ShipOrientationSource</c> pick. The boat icon
+    /// stops twitching, the COG vector pulls from a stable angle,
+    /// and the predicted endpoint matches the helm's tactical view
+    /// instead of every wave's instantaneous reading. Each override
+    /// is honoured only when non-null so a caller can mix smoothed
+    /// + live (e.g. smoothed COG, live SOG) per channel.</para>
     /// </summary>
-    public FramePayload Build(NavigationData data)
+    public FramePayload Build(
+        NavigationData data,
+        double? orientationOverride = null,
+        double? cogOverride = null,
+        double? sogOverride = null)
     {
         double? bLat = data.Latitude;
         double? bLon = data.Longitude;
 
         FramePos? pos = (bLat is not null && bLon is not null)
             ? new FramePos(bLat.Value, bLon.Value,
-                           data.Heading, data.CourseOverGround, data.SpeedOverGround)
+                           orientationOverride ?? data.Heading,
+                           cogOverride ?? data.CourseOverGround,
+                           sogOverride ?? data.SpeedOverGround)
             : null;
 
         // Track segment: [lat, lon, sog, prevLat, prevLon]. Emitted

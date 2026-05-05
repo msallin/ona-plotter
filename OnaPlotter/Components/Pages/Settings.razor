@@ -343,6 +343,29 @@
         </div>
     </div>
 
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label" for="ship-orientation">Ship orientation source</label>
+                <select class="form-select form-select-sm" id="ship-orientation"
+                        value="@AppSettings.ShipOrientationSource"
+                        @onchange="OnShipOrientationSourceChanged">
+                    <option value="headingTrue">Heading (True)</option>
+                    <option value="headingMagnetic">Heading (Magnetic)</option>
+                    <option value="cogTrue">COG (True)</option>
+                    <option value="cogMagnetic">COG (Magnetic)</option>
+                </select>
+                <small class="text-muted d-block mt-1">
+                    Picks the field that drives the rotation of the boat icon
+                    on the chart. Heading is the on-boat sensor; COG is the
+                    ground track derived from GPS. Falls back through the
+                    other three fields when the picked source isn't published.
+                    Default <em>Heading (True)</em>.
+                </small>
+            </div>
+        </div>
+    </div>
+
     <div class="col-12">
         <h5 class="page-section-header">Alarms</h5>
     </div>
@@ -1089,6 +1112,14 @@
 
     private async Task OnCogPrefChanged(bool magnetic)
         => await AppSettings.SetPreferMagneticCourseAsync(magnetic);
+
+    private async Task OnShipOrientationSourceChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? string.Empty;
+        // Service-side normaliser canonicalises unknown values, so
+        // the dropdown can pass the raw string through unchecked.
+        await AppSettings.SetShipOrientationSourceAsync(raw);
+    }
 
     private async Task OnAutoAdvanceChanged(ChangeEventArgs e)
     {

@@ -34,6 +34,8 @@ public sealed class AppSettingsService : IAppSettings
     public string WindHeroMode { get; private set; } = "apparent";
     public bool WindPageCompact { get; private set; }
     public string MapOrientation { get; private set; } = "north";
+    public string ShipOrientationSource { get; private set; } =
+        OnaPlotter.Utilities.ShipOrientationResolver.DefaultSetting;
     public bool FollowBoat { get; private set; } = true;
     public bool LaylinesVisible { get; private set; }
     /// <summary>Master gate for own-ship indicator lines on the chart
@@ -186,6 +188,12 @@ public sealed class AppSettingsService : IAppSettings
             WindHeroMode = NormalizeWindHeroMode(await LoadString("windHeroMode.v1"));
             WindPageCompact = await LoadBool("windPageCompact.v1", false);
             MapOrientation = await LoadString("mapOrientation") ?? "north";
+            // Round-trip through the resolver so a corrupt /
+            // schema-skew localStorage value lands at the default
+            // ("headingTrue") instead of crashing the Map page.
+            ShipOrientationSource = OnaPlotter.Utilities.ShipOrientationResolver.ToSetting(
+                OnaPlotter.Utilities.ShipOrientationResolver.Parse(
+                    await LoadString("shipOrientationSource.v1")));
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             ShipLinesVisible = await LoadBool("shipLinesVisible.v1", true);
@@ -389,6 +397,17 @@ public sealed class AppSettingsService : IAppSettings
     {
         MapOrientation = value;
         await Save("mapOrientation", value);
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetShipOrientationSourceAsync(string value)
+    {
+        // Normalise via the resolver so an unknown string from a
+        // forged dropdown call doesn't break later round-trips.
+        var canonical = OnaPlotter.Utilities.ShipOrientationResolver.ToSetting(
+            OnaPlotter.Utilities.ShipOrientationResolver.Parse(value));
+        ShipOrientationSource = canonical;
+        await Save("shipOrientationSource.v1", canonical);
         OnSettingsChanged?.Invoke();
     }
 

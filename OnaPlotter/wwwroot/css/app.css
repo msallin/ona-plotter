@@ -3973,6 +3973,22 @@ html.night-mode-global body {
     color: var(--sk-text);
 }
 
+/* Bar-overflow More-menu items: hidden by default; the phone
+   @media block below flips them back on. They duplicate buttons
+   that already live in the bar on desktop / iPad; on phones the
+   bar collapses and the More menu becomes their home. The default
+   rule MUST sit BEFORE the @media block so the @media override (at
+   equal specificity + !important) wins by source order on phone
+   viewports -- having the default later was the historic source of
+   "phone More menu shows the same as desktop" because the !important
+   tie-break favours the later rule. */
+.ctrl-more-overflow { display: none !important; }
+.ctrl-more-sep {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.08);
+    margin: 4px 0;
+}
+
 /* Mobile responsive: control-bar tweaks. HUD card density is handled
    by the .density-compact class + container queries on the stacks --
    no per-breakpoint padding/font overrides on .hud-panel anymore.
@@ -4005,7 +4021,19 @@ html.night-mode-global body {
         justify-content: center;
         gap: 2px;
     }
-    .ctrl-btn { padding: 4px 6px; font-size: 0.6rem; }
+    /* Phone bar: shrink the buttons so the bar height matches the
+       bottom HUD card height (label + value, ~46-50px) instead of
+       inheriting the 56-tall touch-coarse rule. The icon stays
+       tappable through padding + the parent flex layout; the
+       smaller font + tighter padding bring the bar in line with
+       the corner cards visually. */
+    .ctrl-btn {
+        padding: 3px 4px;
+        font-size: 0.55rem;
+        min-height: 44px;
+        min-width: 40px;
+    }
+    .ctrl-btn .ctrl-ico svg { width: 18px; height: 18px; }
     .ctrl-sep { display: none; }
     .ctrl-btn-overflow { display: none !important; }
     /* Bar-overflow items in the More menu: turn them on for phone
@@ -4017,7 +4045,7 @@ html.night-mode-global body {
     div.ctrl-more-overflow { display: block !important; }
     /* Tighter control bar on mobile -> recompute --panel-bottom so the
        bottom-center stack still sits one --panel-gap above the bar. */
-    :root { --ctrl-bar-height: 56px; }
+    :root { --ctrl-bar-height: 48px; }
 
     /* Topbar: drop the fullscreen toggle on phones. The browser's
        own fullscreen / immersive mode covers the same ergonomic
@@ -4039,8 +4067,16 @@ html.night-mode-global body {
     .hud-stack-br .hud-card svg {
         display: none !important;
     }
-    .hud-stack-tl .hud-value.hud-primary,
-    .hud-stack-bl .hud-value.hud-primary {
+    /* Compact-HUD typography: every corner card uses the same
+       value font size + weight on phone -- no card has the
+       desktop hero-primary look. Targeting all four stacks (not
+       just the .hud-primary downgrade) ensures the helm sees a
+       balanced four-corner readout regardless of which class
+       a particular value carries on a given page. */
+    .hud-stack-tl .hud-value,
+    .hud-stack-tr .hud-value,
+    .hud-stack-bl .hud-value,
+    .hud-stack-br .hud-value {
         font-size: var(--hud-font-value);
         font-weight: 500;
     }
@@ -4085,22 +4121,32 @@ html.night-mode-global body {
        History / Update / Not-logged-in / zoom / night) was wrapping
        onto two rows on a 390-wide iPhone. These tweaks shave the
        fat:
-         - Live: hide the text, tighten the chip down to just the
-           dot inside a snug box. Tooltip still verbose.
+         - Live: hide the text, the chip background, the chip padding
+           -- only the small dot remains as the pre-attentive cue.
+           Tooltip still carries the verbose state.
          - Alarm History: drop the count + the word "Alarm" via the
            shorter label span (markup carries both, CSS picks one).
          - Not-logged-in chip: smaller font, tighter padding so it
-           stops overflowing onto two lines. */
-    .connection-status-text { display: none; }
+           stops overflowing onto two lines.
+       !important on the .connection-status overrides because the
+       default chip rules sit AFTER this @media block and tie-break
+       in source-order against !important-equal phone overrides
+       otherwise. */
+    .connection-status-text { display: none !important; }
     .connection-status {
-        padding: 0;
-        margin: 0;
-        gap: 0;
-        min-width: 0;
-        flex: 0 0 auto;
+        padding: 0 !important;
+        margin: 0 !important;
+        gap: 0 !important;
+        min-width: 0 !important;
+        flex: 0 0 auto !important;
+        background: transparent !important;
+        border: none !important;
+        font-size: 0 !important;       /* kill any line-height padding from text node */
     }
     .connection-dot {
-        margin-right: 0;
+        margin-right: 0 !important;
+        width: 7px !important;
+        height: 7px !important;
     }
     .alarm-log-label-full { display: none; }
     .alarm-log-label-short { display: inline; }
@@ -4205,20 +4251,10 @@ html.night-mode-global body {
    abbreviated one. Mirror block for the connection text. */
 .alarm-log-label-short { display: none; }
 /* DEFAULT for every viewport: hide the More-menu overflow items.
-   They duplicate buttons that already live in the bar on
-   desktop / iPad. The phone @media block above flips them back
-   on (display: flex / display: block) so the More menu shows
-   the full set when the bar can't.
-   Default-off + opt-in (rather than `@media not (X) and not (Y)`
-   negation) avoids reliance on Media Queries Level 4 boolean
-   syntax, which Safari historically honours unevenly -- some
-   desktop browsers were showing the overflow duplicates anyway. */
-.ctrl-more-overflow { display: none !important; }
-.ctrl-more-sep {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.08);
-    margin: 4px 0;
-}
+   The default-off rule + the @media phone override that turns
+   them back on live near the top of the mobile-responsive block
+   above; this comment block remains here as the historical
+   pointer for grep ("ctrl-more-overflow"). */
 
 /* Chart picker panel */
 /* Map attribution bar: OSM / OpenSeaMap credits must stay visible by

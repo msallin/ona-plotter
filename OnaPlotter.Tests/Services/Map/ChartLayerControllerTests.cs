@@ -135,6 +135,7 @@ public class ChartLayerControllerTests
         public bool ChartUpscaleEnabled { get; set; }
         public int ChartUpscaleLevels { get; set; } = 2;
         public string MapOrientation => "north";
+        public string ShipOrientationSource => "headingTrue";
         public bool FollowBoat => true;
         public bool LaylinesVisible => false;
         public bool ShipLinesVisible => true;
@@ -159,6 +160,7 @@ public class ChartLayerControllerTests
         public double OwnCogVectorMinutes => 10.0;
         public double AisCogVectorMinutes => 10.0;
         public Task SetMapOrientationAsync(string v) => Task.CompletedTask;
+        public Task SetShipOrientationSourceAsync(string v) => Task.CompletedTask;
         public Task SetFollowBoatAsync(bool v) => Task.CompletedTask;
         public Task SetLaylinesVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetShipLinesVisibleAsync(bool v) => Task.CompletedTask;

@@ -35,6 +35,7 @@
 @inject OnaPlotter.Services.Mob.IMobService MobService
 @inject OnaPlotter.Services.Mob.MobChartRenderer MobChartRenderer
 @inject OnaPlotter.Services.ShareService ShareService
+@inject OnaPlotter.Services.INavigationAverages Avg
 @inject OnaPlotter.Services.ServerNotifications.ServerNotificationStore NotificationStore
 @inject IAlarmManager Alarms
 @inject DeadmanTracker DeadmanTracker
@@ -2138,7 +2139,23 @@
             // helm can change the value via Settings while the page
             // is open.
             _frameBuilder.ArrivalRadiusMeters = Settings.WaypointArrivalRadiusMeters;
-            var frame = _frameBuilder.Build(Data);
+            // Smoothed values for the boat icon + COG vector: helm
+            // picks the orientation source (HDG vs COG, true vs mag)
+            // via Settings; we resolve it through the chain so a
+            // missing field falls back to the next-best published
+            // alternative. COG + SOG fall back to live during the
+            // 30s warmup window so the chart isn't empty on first
+            // mount.
+            var orientationSource = OnaPlotter.Utilities.ShipOrientationResolver.Parse(
+                Settings.ShipOrientationSource);
+            double? smoothedCog = Avg.CogMean30Sec ?? Data.CourseOverGround;
+            double? smoothedSog = Avg.SogMean30Sec ?? Data.SpeedOverGround;
+            double? orientation = OnaPlotter.Utilities.ShipOrientationResolver.Resolve(
+                orientationSource, Data, smoothedCog: Avg.CogMean30Sec);
+            var frame = _frameBuilder.Build(Data,
+                orientationOverride: orientation,
+                cogOverride: smoothedCog,
+                sogOverride: smoothedSog);
             if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
 
             // Sync server-side anchor alarm to map visualization. Kept
