@@ -36,6 +36,26 @@
                     {
                         <span> · @vessel.SogKn.Value.ToString("F1") kn</span>
                     }
+                    @* AIS-static dimensions (LOA + beam). Same
+                       "show nothing if absent" rule the popup uses --
+                       most class-B targets never broadcast Type 24, so
+                       the chip stays hidden for the majority of harbour
+                       traffic. Appended to the existing distance / SOG
+                       line so a row that has dimensions doesn't grow
+                       another text line; just one extra dot-separated
+                       segment. *@
+                    @if (vessel.LengthOverallMeters is double loa && vessel.BeamMeters is double beam)
+                    {
+                        <span> · @loa.ToString("F1") × @beam.ToString("F1") m</span>
+                    }
+                    else if (vessel.LengthOverallMeters is double loaOnly)
+                    {
+                        <span> · L @loaOnly.ToString("F1") m</span>
+                    }
+                    else if (vessel.BeamMeters is double beamOnly)
+                    {
+                        <span> · B @beamOnly.ToString("F1") m</span>
+                    }
                 </div>
                 @if (vessel.ColregsLabel is not null)
                 {
