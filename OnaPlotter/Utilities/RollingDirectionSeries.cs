@@ -7,6 +7,12 @@ namespace OnaPlotter.Utilities;
 /// vector form (sin/cos) so the 350°/10° wrap doesn't poison the
 /// mean.
 ///
+/// <para>Storage + query strategy mirrors
+/// <see cref="RollingScalarSeries"/>: indexed list with logical
+/// head pointer, queries walk newest -&gt; oldest with early break.
+/// A 30 s mean on a 180-min retention buffer touches ~30 entries
+/// instead of 10,800.</para>
+///
 /// <para>Two query shapes:
 /// <list type="bullet">
 ///   <item><see cref="Mean"/> -- circular mean over a sub-window
@@ -24,12 +30,15 @@ namespace OnaPlotter.Utilities;
 /// </summary>
 public sealed class RollingDirectionSeries
 {
-    private const double TwoPi = Math.PI * 2;
-    private const double Pi = Math.PI;
     private const double RadToDeg = 180.0 / Math.PI;
 
     private readonly TimeProvider _time;
-    private readonly Queue<Sample> _samples = new();
+    private readonly List<Sample> _samples = [];
+    /// <summary>Logical start of the live range. Items in
+    /// <c>_samples[0.._head)</c> are evicted but not yet shifted out;
+    /// <see cref="EvictOlderThan"/> compacts when the dead-prefix
+    /// reaches half the list size.</summary>
+    private int _head;
 
     public TimeSpan MaxRetention { get; }
 
@@ -52,7 +61,7 @@ public sealed class RollingDirectionSeries
     {
         if (!double.IsFinite(angleRadians) || !double.IsFinite(weight) || weight < 0) return;
         var now = _time.GetUtcNow().UtcDateTime;
-        _samples.Enqueue(new Sample(now, angleRadians, weight));
+        _samples.Add(new Sample(now, angleRadians, weight));
         EvictOlderThan(now - MaxRetention);
     }
 
@@ -62,7 +71,7 @@ public sealed class RollingDirectionSeries
         {
             var now = _time.GetUtcNow().UtcDateTime;
             EvictOlderThan(now - MaxRetention);
-            return _samples.Count;
+            return _samples.Count - _head;
         }
     }
 
@@ -70,25 +79,30 @@ public sealed class RollingDirectionSeries
     /// Snapshot of every sample within the trailing
     /// <paramref name="window"/>, oldest to newest, in radians (the
     /// raw stored angle, not the unit-vector form). Zero-weight
-    /// samples are included so callers that want every published
-    /// reading (chart renderers) see them; callers that want only
-    /// "real" directions can filter by themselves -- but typically
-    /// a zero-weight sample is just a stationary frame whose angle
-    /// is GPS-noise garbage, so most chart consumers will want to
-    /// skip those. Use the <paramref name="includeZeroWeight"/>
-    /// flag to opt in.
+    /// samples are skipped by default; pass
+    /// <paramref name="includeZeroWeight"/> = true to include them
+    /// (chart renderers that want every published reading).
     /// </summary>
     public IReadOnlyList<TimeSeriesSample> SnapshotIn(TimeSpan window, bool includeZeroWeight = false)
     {
         if (window <= TimeSpan.Zero || window > MaxRetention) return [];
         var now = _time.GetUtcNow().UtcDateTime;
         EvictOlderThan(now - MaxRetention);
-        if (_samples.Count == 0) return [];
+        if (_samples.Count - _head == 0) return [];
         var cutoff = now - window;
-        var result = new List<TimeSeriesSample>(_samples.Count);
-        foreach (var s in _samples)
+        // Find the lowest in-window index by walking newest -> oldest
+        // with early break.
+        int firstIdx = _samples.Count;
+        for (int i = _samples.Count - 1; i >= _head; i--)
         {
-            if (s.Ts < cutoff) continue;
+            if (_samples[i].Ts < cutoff) break;
+            firstIdx = i;
+        }
+        if (firstIdx == _samples.Count) return [];
+        var result = new List<TimeSeriesSample>(_samples.Count - firstIdx);
+        for (int i = firstIdx; i < _samples.Count; i++)
+        {
+            var s = _samples[i];
             if (!includeZeroWeight && s.Weight <= 0) continue;
             result.Add(new TimeSeriesSample(s.Ts, s.AngleRad));
         }
@@ -100,10 +114,14 @@ public sealed class RollingDirectionSeries
     /// warmup not satisfied / window past <see cref="MaxRetention"/>.</summary>
     public double? Mean(TimeSpan window, double warmupRatio = RollingScalarSeries.DefaultWarmupRatio)
     {
-        if (!TryWindowSnapshot(window, warmupRatio, out var snap)) return null;
+        if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
+        // Walk newest -> oldest with early break; compute weighted
+        // sin/cos sums over the in-window samples.
         double sumSin = 0, sumCos = 0, sumW = 0;
-        foreach (var s in snap)
+        for (int i = _samples.Count - 1; i >= _head; i--)
         {
+            var s = _samples[i];
+            if (s.Ts < cutoff) break;
             sumSin += Math.Sin(s.AngleRad) * s.Weight;
             sumCos += Math.Cos(s.AngleRad) * s.Weight;
             sumW += s.Weight;
@@ -123,40 +141,51 @@ public sealed class RollingDirectionSeries
     /// </summary>
     public double? ShiftRateDegPerMin(TimeSpan window, double warmupRatio = RollingScalarSeries.DefaultWarmupRatio)
     {
-        if (!TryWindowSnapshot(window, warmupRatio, out var snap)) return null;
-        var arr = snap.ToArray();
-        if (arr.Length < 5) return null;
+        if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
+        // First pass (newest -> oldest with break): find the in-window
+        // range. Then unwrap forward (oldest -> newest) and fit the
+        // regression -- two passes total, both bounded by the in-window
+        // count, not the full retention.
+        int firstIdx = _samples.Count;
+        for (int i = _samples.Count - 1; i >= _head; i--)
+        {
+            if (_samples[i].Ts < cutoff) break;
+            firstIdx = i;
+        }
+        int n = _samples.Count - firstIdx;
+        if (n < 5) return null;
 
         // Unwrap around the first sample so 359 -> 1 reads as +2°,
         // not -358°. Each step is at most ±180° from the previous;
         // anything bigger must have wrapped.
-        double prev = arr[0].AngleRad * RadToDeg;
+        var times = new double[n];
+        var values = new double[n];
+        double prev = _samples[firstIdx].AngleRad * RadToDeg;
         double baseline = prev;
-        var times = new double[arr.Length];
-        var values = new double[arr.Length];
         double running = prev;
-        var t0 = arr[0].Ts;
+        var t0 = _samples[firstIdx].Ts;
         times[0] = 0;
         values[0] = 0;
-        for (int i = 1; i < arr.Length; i++)
+        for (int k = 1; k < n; k++)
         {
-            double d = arr[i].AngleRad * RadToDeg;
+            int i = firstIdx + k;
+            double d = _samples[i].AngleRad * RadToDeg;
             double delta = d - prev;
             if (delta > 180) delta -= 360;
             else if (delta < -180) delta += 360;
             running += delta;
-            times[i] = (arr[i].Ts - t0).TotalMinutes;
-            values[i] = running - baseline;
+            times[k] = (_samples[i].Ts - t0).TotalMinutes;
+            values[k] = running - baseline;
             prev = d;
         }
 
         // Linear regression slope: Σ(x-x̄)(y-ȳ) / Σ(x-x̄)²
         double tMean = 0, vMean = 0;
-        for (int i = 0; i < arr.Length; i++) { tMean += times[i]; vMean += values[i]; }
-        tMean /= arr.Length;
-        vMean /= arr.Length;
+        for (int i = 0; i < n; i++) { tMean += times[i]; vMean += values[i]; }
+        tMean /= n;
+        vMean /= n;
         double num = 0, den = 0;
-        for (int i = 0; i < arr.Length; i++)
+        for (int i = 0; i < n; i++)
         {
             double tDev = times[i] - tMean;
             num += tDev * (values[i] - vMean);
@@ -166,27 +195,31 @@ public sealed class RollingDirectionSeries
         return num / den;   // °/min
     }
 
-    private bool TryWindowSnapshot(TimeSpan window, double warmupRatio, out IEnumerable<Sample> snap)
+    private bool TryPrepareQuery(TimeSpan window, double warmupRatio, out DateTime cutoff)
     {
-        snap = [];
+        cutoff = default;
         if (window <= TimeSpan.Zero || window > MaxRetention) return false;
         if (warmupRatio < 0 || warmupRatio > 1) return false;
         var now = _time.GetUtcNow().UtcDateTime;
         EvictOlderThan(now - MaxRetention);
-        if (_samples.Count == 0) return false;
-        var oldest = _samples.Peek().Ts;
+        if (_samples.Count - _head == 0) return false;
+        var oldest = _samples[_head].Ts;
         var coverage = now - oldest;
         if (coverage < window * warmupRatio) return false;
-        var cutoff = now - window;
-        snap = _samples.Where(s => s.Ts >= cutoff && s.Weight > 0);
+        cutoff = now - window;
         return true;
     }
 
     private void EvictOlderThan(DateTime cutoff)
     {
-        while (_samples.Count > 0 && _samples.Peek().Ts < cutoff)
+        while (_head < _samples.Count && _samples[_head].Ts < cutoff)
         {
-            _samples.Dequeue();
+            _head++;
+        }
+        if (_head > 0 && _head >= _samples.Count / 2)
+        {
+            _samples.RemoveRange(0, _head);
+            _head = 0;
         }
     }
 

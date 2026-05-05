@@ -85,9 +85,37 @@ const vesselNameCache = new Map();
 // pre-warm wasted 200 round-trips per session for the median helm.
 // First popup-open for an MMSI now triggers exactly one fetch;
 // every subsequent open for the same MMSI is fed from the cache.
+//
+// LRU cap: each settled data URI is ~3-10 KB. Without a cap the
+// cache grew to ~MB-class on a long passage through busy waters.
+// 200 entries is well above the simultaneous-popup-history any
+// helm cycles through (the chip stack only surfaces ~10 vessels
+// at a time); least-recently-USED entries (by popup-build read,
+// not by fetch order) are evicted first via Map's insertion-order
+// iteration.
+const FLAG_CACHE_MAX = 200;
 const flagPromiseCache = new Map();
 const flagSettledCache = new Map();
 let flagPlaceholderSeq = 0;
+
+/** Re-insert key=>value to bump it to most-recent in Map's
+ *  insertion-order iteration. No-op when the key isn't present. */
+function lruBump(map, key) {
+    if (!map.has(key)) return;
+    const v = map.get(key);
+    map.delete(key);
+    map.set(key, v);
+}
+
+/** Set + cap. Evicts oldest entries until size <= max. */
+function lruSet(map, key, value, max) {
+    if (map.has(key)) map.delete(key);
+    map.set(key, value);
+    while (map.size > max) {
+        const oldest = map.keys().next().value;
+        map.delete(oldest);
+    }
+}
 
 // Icon caches (one per source x colour x category combo).
 const aisIconCache = {};
@@ -300,12 +328,16 @@ function getSartIcon(category) {
  * Dedupes in-flight fetches; on resolution, populates
  * flagSettledCache so subsequent popup builds read it synchronously.
  * Negative result (404 / network error) cached as null so we don't
- * keep retrying the same plugin-missing endpoint.
+ * keep retrying the same plugin-missing endpoint. Both caches are
+ * LRU-capped at FLAG_CACHE_MAX entries.
  */
 function getFlagDataUri(mmsi) {
     if (!mmsi) return Promise.resolve(null);
     let p = flagPromiseCache.get(mmsi);
-    if (p) return p;
+    if (p) {
+        lruBump(flagPromiseCache, mmsi);
+        return p;
+    }
     p = (async () => {
         try {
             const resp = await fetch(flagUrl(mmsi));
@@ -321,8 +353,8 @@ function getFlagDataUri(mmsi) {
             return null;
         }
     })();
-    flagPromiseCache.set(mmsi, p);
-    p.then(value => flagSettledCache.set(mmsi, value));
+    lruSet(flagPromiseCache, mmsi, p, FLAG_CACHE_MAX);
+    p.then(value => lruSet(flagSettledCache, mmsi, value, FLAG_CACHE_MAX));
     return p;
 }
 
@@ -337,6 +369,10 @@ function flagImgHtml(mmsi) {
     if (!mmsi) return '';
     if (flagSettledCache.has(mmsi)) {
         const settled = flagSettledCache.get(mmsi);
+        // Reading counts as "use" -- bump the LRU position so a
+        // helm cycling through the same handful of buddies doesn't
+        // get them evicted by passing traffic.
+        lruBump(flagSettledCache, mmsi);
         if (!settled) return '';   // negative-cached
         return `<img class="ais-popup-flag" src="${settled}" alt="">`;
     }
