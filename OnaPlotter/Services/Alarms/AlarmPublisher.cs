@@ -128,10 +128,17 @@ public sealed class AlarmPublisher : IAsyncDisposable
 
         // Pass 2: clear ones that left the active set. Snapshot the
         // keys to avoid mutating the dictionary mid-iteration.
-        var toClear = _raised
-            .Where(kv => !activeKeys.Contains(kv.Key))
-            .Select(kv => (kv.Key, kv.Value))
-            .ToList();
+        // Lazy-allocate the snapshot list so the steady state -- "no
+        // alarms cleared this tick", which is most ticks once raise
+        // settles -- doesn't allocate an enumerator chain + List<>.
+        List<(AlarmKey Key, RaisedEntry Raised)>? toClear = null;
+        foreach (var kv in _raised)
+        {
+            if (activeKeys.Contains(kv.Key)) continue;
+            (toClear ??= new List<(AlarmKey, RaisedEntry)>(2))
+                .Add((kv.Key, kv.Value));
+        }
+        if (toClear is null) return;
         foreach (var (key, raised) in toClear)
         {
             _raised.Remove(key);
