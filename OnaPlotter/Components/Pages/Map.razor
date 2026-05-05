@@ -1035,6 +1035,14 @@
         var ownCog = Data.CourseOverGround;
         var ownSog = Data.SpeedOverGround;
 
+        // Pre-compute own-ship sin/cos of COG ONCE for the per-vessel
+        // CPA pass below. Skips the trig + null-checks N times per
+        // BuildVesselList tick. Null is fine -- inner loop's
+        // ownLat-null guard already handles the missing-own-ship case.
+        var ownSnap = (ownLat is not null && ownLon is not null)
+            ? Cpa.PrecomputeOwn(ownLat.Value, ownLon.Value, ownCog, ownSog)
+            : null;
+
         var entries = new List<VesselListEntry>(vessels.Length);
         foreach (var v in vessels)
         {
@@ -1051,9 +1059,12 @@
             Colregs.Result? colregs = null;
             if (ownLat is not null && ownLon is not null)
             {
-                cpa = Cpa.Compute(
-                    ownLat.Value, ownLon.Value, ownCog, ownSog,
-                    v.Latitude.Value, v.Longitude.Value, v.CourseOverGround, v.SpeedOverGround);
+                cpa = ownSnap is not null
+                    ? Cpa.Compute(
+                        ownSnap.Value,
+                        v.Latitude.Value, v.Longitude.Value,
+                        v.CourseOverGround, v.SpeedOverGround)
+                    : null;
 
                 if (ownCog is not null && ownSog is not null
                     && v.CourseOverGround is not null && v.SpeedOverGround is not null)

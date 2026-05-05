@@ -100,6 +100,15 @@ public sealed class CpaAlarmRule : IAlarmRule
         double cpaLimit = EffectiveCpaRadiusNm(ctx);
         double tcpaLimit = ctx.Settings.GuardZoneLookaheadMinutes;
 
+        // Pre-compute own-ship sin/cos of COG ONCE here rather than on
+        // every vessel inside the loop -- a busy harbour push has 200+
+        // targets at ~3 Hz and the own-ship trig is invariant across
+        // the loop. Null short-circuits the whole pass.
+        var ownSnap = Cpa.PrecomputeOwn(
+            data.Latitude.Value, data.Longitude.Value,
+            data.CourseOverGround, data.SpeedOverGround);
+        if (ownSnap is null) return null;
+
         // Drop tracker state for vessels that have left AIS range so the
         // dict doesn't grow without bound over long sessions. Vessels-
         // collection overload skips the HashSet build entirely when no
@@ -117,8 +126,7 @@ public sealed class CpaAlarmRule : IAlarmRule
             if (ctx.IsSnoozed(v.Context)) continue;
 
             var cpa = Cpa.Compute(
-                data.Latitude.Value, data.Longitude.Value,
-                data.CourseOverGround, data.SpeedOverGround,
+                ownSnap.Value,
                 v.Latitude.Value, v.Longitude.Value,
                 v.CourseOverGround, v.SpeedOverGround);
 

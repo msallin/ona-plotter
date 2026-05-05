@@ -15,31 +15,65 @@ public static class Cpa
     public readonly record struct Result(double CpaNm, double TcpaMin);
 
     /// <summary>
-    /// Returns the closest point of approach, or null if the vessels are
-    /// diverging (CPA is in the past) or the inputs are insufficient.
-    /// Angles are in radians measured clockwise from true north.
+    /// Pre-computed own-vessel state for the per-target loop in
+    /// <see cref="CpaAlarmRule"/> / <see cref="OnaPlotter.Services.Map.AisPushService"/>
+    /// / Map.razor's CPA chip pass. The own-ship sin/cos of COG don't
+    /// vary across the loop, so hoisting the trig out of the inner
+    /// call avoids ~2 trig ops per AIS target per tick (200 vessels
+    /// × ~3 Hz = ~1200 trig/sec on Pi 5 ARM).
+    /// <para>Lat/Lon kept as separate fields rather than a tuple so
+    /// the struct fits in two SSE registers; SOG is stored explicitly
+    /// (rather than recovered from sqrt(Vx² + Vy²)) so the stationary
+    /// guard in <see cref="Compute(in OwnSnapshot, double, double, double?, double?)"/>
+    /// is a single comparison.</para>
+    /// </summary>
+    public readonly record struct OwnSnapshot(
+        double Lat, double Lon,
+        double Vx, double Vy,
+        double SogMs);
+
+    /// <summary>
+    /// Returns the precomputed own-ship state used by the per-target
+    /// <see cref="Compute(in OwnSnapshot, double, double, double?, double?)"/>
+    /// overload. Returns null when own-ship inputs are missing or
+    /// non-finite -- the caller should skip the per-target loop
+    /// entirely in that case.
+    /// </summary>
+    public static OwnSnapshot? PrecomputeOwn(
+        double lat, double lon, double? cogRad, double? sogMs)
+    {
+        if (cogRad is null || sogMs is null) return null;
+        if (!double.IsFinite(lat) || !double.IsFinite(lon)
+            || !double.IsFinite(cogRad.Value) || !double.IsFinite(sogMs.Value))
+            return null;
+        double s = sogMs.Value;
+        double c = cogRad.Value;
+        return new OwnSnapshot(lat, lon, Math.Sin(c) * s, Math.Cos(c) * s, s);
+    }
+
+    /// <summary>
+    /// Per-target CPA call against a pre-computed own-ship snapshot.
+    /// Hoists the own-ship sin/cos out of the per-target loop.
+    /// Behaviour matches the all-args
+    /// <see cref="Compute(double, double, double?, double?, double, double, double?, double?)"/>
+    /// overload exactly; the latter is now a thin wrapper that
+    /// pre-computes via <see cref="PrecomputeOwn"/> and dispatches here.
     /// </summary>
     public static Result? Compute(
-        double lat1, double lon1, double? cog1Rad, double? sog1Ms,
-        double lat2, double lon2, double? cog2Rad, double? sog2Ms)
+        in OwnSnapshot own, double lat2, double lon2,
+        double? cog2Rad, double? sog2Ms)
     {
-        if (cog1Rad is null || sog1Ms is null || cog2Rad is null || sog2Ms is null)
-            return null;
-
-        double s1 = sog1Ms.Value, s2 = sog2Ms.Value;
+        if (cog2Rad is null || sog2Ms is null) return null;
+        double s1 = own.SogMs, s2 = sog2Ms.Value;
         if (s1 < StationaryThresholdMs && s2 < StationaryThresholdMs) return null;
 
-        // Guard against malformed inputs. NaN/Infinity propagates through the
-        // whole calc and gives a plausible-looking but nonsense CPA.
-        if (!double.IsFinite(lat1) || !double.IsFinite(lon1)
-            || !double.IsFinite(lat2) || !double.IsFinite(lon2)
-            || !double.IsFinite(s1)   || !double.IsFinite(s2)
-            || !double.IsFinite(cog1Rad.Value) || !double.IsFinite(cog2Rad.Value))
+        if (!double.IsFinite(lat2) || !double.IsFinite(lon2)
+            || !double.IsFinite(s2) || !double.IsFinite(cog2Rad.Value))
             return null;
 
         // Project to metres using an equirectangular patch at the midpoint.
         const double MetresPerDegLat = 111_320.0;
-        double midLatRad = (lat1 + lat2) * 0.5 * Math.PI / 180.0;
+        double midLatRad = (own.Lat + lat2) * 0.5 * Math.PI / 180.0;
         double metresPerDegLon = MetresPerDegLat * Math.Cos(midLatRad);
 
         // Unwrap longitude so vessels straddling the antimeridian (one at
@@ -47,19 +81,18 @@ public static class Cpa
         // ~40 000 km apart. Without this the alarm never fires near the
         // dateline and the CPA geometry is nonsense for any Pacific
         // crossing. Normalised delta in (-180, 180].
-        double dLonDeg = ((lon2 - lon1 + 540.0) % 360.0) - 180.0;
+        double dLonDeg = ((lon2 - own.Lon + 540.0) % 360.0) - 180.0;
 
         double x2 = dLonDeg * metresPerDegLon;
-        double y2 = (lat2 - lat1) * MetresPerDegLat;
+        double y2 = (lat2 - own.Lat) * MetresPerDegLat;
 
-        // Velocity components: COG is bearing from north, so Vx = sin(COG)*SOG.
-        double c1 = cog1Rad.Value, c2 = cog2Rad.Value;
-        double vx1 = Math.Sin(c1) * s1, vy1 = Math.Cos(c1) * s1;
+        // Target velocity components: COG is bearing from north, so Vx = sin(COG)*SOG.
+        double c2 = cog2Rad.Value;
         double vx2 = Math.Sin(c2) * s2, vy2 = Math.Cos(c2) * s2;
 
         // Relative position (own - target) and velocity.
         double dpx = -x2, dpy = -y2;
-        double dvx = vx1 - vx2, dvy = vy1 - vy2;
+        double dvx = own.Vx - vx2, dvy = own.Vy - vy2;
 
         double a = dvx * dvx + dvy * dvy;
 
@@ -82,6 +115,25 @@ public static class Cpa
         if (!double.IsFinite(cpa) || !double.IsFinite(t)) return null;
 
         return new Result(cpa / 1852.0, t / 60.0);
+    }
+
+    /// <summary>
+    /// Returns the closest point of approach, or null if the vessels are
+    /// diverging (CPA is in the past) or the inputs are insufficient.
+    /// Angles are in radians measured clockwise from true north.
+    /// <para>Single-call site convenience wrapper around
+    /// <see cref="PrecomputeOwn"/> + the OwnSnapshot overload.
+    /// Per-tick loops with N targets should call PrecomputeOwn ONCE
+    /// outside the loop and the OwnSnapshot overload N times -- this
+    /// wrapper does the trig per call.</para>
+    /// </summary>
+    public static Result? Compute(
+        double lat1, double lon1, double? cog1Rad, double? sog1Ms,
+        double lat2, double lon2, double? cog2Rad, double? sog2Ms)
+    {
+        var own = PrecomputeOwn(lat1, lon1, cog1Rad, sog1Ms);
+        if (own is null) return null;
+        return Compute(own.Value, lat2, lon2, cog2Rad, sog2Ms);
     }
 
     /// <summary>

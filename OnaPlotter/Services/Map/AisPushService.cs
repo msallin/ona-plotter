@@ -178,8 +178,13 @@ public sealed class AisPushService
         var ownType = _settings.OwnVesselType == "sail"
             ? Colregs.VesselType.Sail
             : Colregs.VesselType.Power;
-        bool ownComplete = ownLat is not null && ownLon is not null
-            && ownCog is not null && ownSog is not null;
+        // Pre-compute own-ship sin/cos of COG ONCE here rather than on
+        // every vessel inside the loop -- the own-ship trig is
+        // invariant across the per-target pass. Null when own-ship
+        // inputs are missing/non-finite so the inner loop skips CPA.
+        var ownSnap = Cpa.PrecomputeOwn(
+            ownLat ?? double.NaN, ownLon ?? double.NaN, ownCog, ownSog);
+        bool ownComplete = ownSnap is not null;
         var result = new object[visible.Count];
         for (int i = 0; i < visible.Count; i++)
         {
@@ -195,7 +200,7 @@ public sealed class AisPushService
                 && v.CourseOverGround is not null && v.SpeedOverGround is not null)
             {
                 var cpa = Cpa.Compute(
-                    ownLat!.Value, ownLon!.Value, ownCog, ownSog,
+                    ownSnap!.Value,
                     v.Latitude!.Value, v.Longitude!.Value,
                     v.CourseOverGround, v.SpeedOverGround);
                 if (cpa is { } c)
