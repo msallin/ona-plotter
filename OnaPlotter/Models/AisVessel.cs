@@ -56,6 +56,20 @@ public sealed class AisVessel
     /// </summary>
     public bool IsBuddy { get; set; }
 
+    /// <summary>Length overall in metres (LOA). Published by
+    /// signalk-ais-* plugins from AIS Type 5 / Type 24 static
+    /// messages (computed as dimension A + dimension B). May be
+    /// absent for vessels whose AIS transponder hasn't broadcast
+    /// static yet, or for vessels without AIS at all (radar-only
+    /// targets always have null here). Optional in the popup --
+    /// the row is hidden entirely when null, never shows "--".</summary>
+    public double? LengthOverallMeters { get; set; }
+
+    /// <summary>Beam in metres. Published from AIS dimension C +
+    /// dimension D. Same null-treatment as
+    /// <see cref="LengthOverallMeters"/>.</summary>
+    public double? BeamMeters { get; set; }
+
     public DateTime LastSeen { get; set; }
 
     public AisVessel(string context)
@@ -185,6 +199,59 @@ public sealed class AisVessel
                     return true;
                 }
                 return false;
+
+            case "design.length":
+                // SignalK schema shape: { overall, hull, waterline }.
+                // Most AIS-derived servers populate just `overall`
+                // (dim A + dim B from Type 5 / 24); some flatten to
+                // a bare number. Accept both shapes so OnaPlotter
+                // works against signalk-ais-tcp, signalk-n2k-ais,
+                // and the rare server that hand-publishes a flat
+                // length. The .overall sub-key is canonical per
+                // Freeboard-SK's reader; we mirror that.
+                if (rawValue is JsonElement lenEl)
+                {
+                    if (lenEl.ValueKind == JsonValueKind.Object
+                        && lenEl.TryGetProperty("overall", out var overallEl)
+                        && overallEl.ValueKind == JsonValueKind.Number)
+                    {
+                        LengthOverallMeters = overallEl.GetDouble();
+                        return true;
+                    }
+                    if (lenEl.ValueKind == JsonValueKind.Number)
+                    {
+                        LengthOverallMeters = lenEl.GetDouble();
+                        return true;
+                    }
+                }
+                else
+                {
+                    var d = ToDouble(rawValue);
+                    if (d is not null) { LengthOverallMeters = d; return true; }
+                }
+                return false;
+
+            case "design.length.overall":
+                // Some servers publish the leaf path directly rather
+                // than the structured parent. ToDouble handles the
+                // scalar number; the FlattenAndApply path may also
+                // route here if a parent-object delta gets recursed.
+                {
+                    var d = ToDouble(rawValue);
+                    if (d is null) return false;
+                    LengthOverallMeters = d;
+                    return true;
+                }
+
+            case "design.beam":
+                // Beam is a bare scalar in the SK schema (no sub-keys).
+                // Accept both number and object-with-value shapes the
+                // SK servers in the wild emit.
+                {
+                    var d = ToDouble(rawValue);
+                    if (d is not null) { BeamMeters = d; return true; }
+                    return false;
+                }
 
             case "buddy":
                 bool newBuddy = rawValue switch

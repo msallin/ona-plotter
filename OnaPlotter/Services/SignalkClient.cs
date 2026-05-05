@@ -250,6 +250,15 @@ public sealed class SignalkClient : IAsyncDisposable
         "mmsi",
         "communication.callsignVhf",
         "design.aisShipType",
+        // AIS Type 5 / Type 24 static carries vessel dimensions
+        // (length-overall = dim A + dim B, beam = dim C + dim D).
+        // signalk-ais-* plugins publish these under design.length /
+        // design.beam. Optional -- many recreational targets never
+        // broadcast static (Type 24 isn't mandatory for class B), so
+        // these stay null for that majority. Popup hides the row
+        // when null rather than showing "--".
+        "design.length",
+        "design.beam",
         // Published by sbender9/signalk-buddylist-plugin when installed.
         // AisVessel.Apply sets IsBuddy; unknown when the plugin is absent.
         "buddy",
