@@ -161,9 +161,24 @@ public sealed class AlarmManager : IAlarmManager
 
     public int HiddenAlarmsCount => Math.Max(0, _active.Count - MaxActiveAlarms);
 
-    public IReadOnlyList<SnoozedTarget> SnoozedTargets => _snoozed.Values
-        .OrderBy(s => s.ExpiresAt)
-        .ToList();
+    public IReadOnlyList<SnoozedTarget> SnoozedTargets
+    {
+        get
+        {
+            // HUD reads this every render. The typical case is empty
+            // or 1-3 entries; LINQ would still allocate enumerator +
+            // List even for size 0. Manual path: early-return on
+            // empty, copy + Array.Sort otherwise (in-place, single
+            // allocation sized exactly to the entry count).
+            int n = _snoozed.Count;
+            if (n == 0) return [];
+            var arr = new SnoozedTarget[n];
+            int i = 0;
+            foreach (var v in _snoozed.Values) arr[i++] = v;
+            Array.Sort(arr, static (a, b) => a.ExpiresAt.CompareTo(b.ExpiresAt));
+            return arr;
+        }
+    }
 
     /// <summary>
     /// Rules that are currently in a post-dismiss rearm window.
@@ -173,12 +188,25 @@ public sealed class AlarmManager : IAlarmManager
     /// GetRearmStatus so future rules (e.g. wind-shift cooldown) can
     /// contribute without changing this signature.
     /// </summary>
-    public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now) =>
-        _rules
-            .Select(r => r.GetRearmStatus(now))
-            .Where(x => x is not null)
-            .Select(x => x!.Value)
-            .ToList();
+    public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now)
+    {
+        // HUD reads this every render. Today only SHALLOW returns
+        // a non-null status, so the typical result is 0 entries --
+        // the LINQ chain would still allocate two enumerators + a
+        // List for the empty case. Lazy-allocate the result list
+        // on the first hit; null + a small List<>(2) is much
+        // cheaper than three enumerators per render.
+        List<AlarmRearmInfo>? results = null;
+        foreach (var r in _rules)
+        {
+            var status = r.GetRearmStatus(now);
+            if (status is { } s)
+            {
+                (results ??= new List<AlarmRearmInfo>(2)).Add(s);
+            }
+        }
+        return results ?? (IReadOnlyList<AlarmRearmInfo>)[];
+    }
 
     public IReadOnlyList<DismissedAlarm> DismissedHistory => _history.AsReadOnly();
 
