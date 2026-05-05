@@ -73,7 +73,10 @@ public sealed class AtonPushService
         }
         catch (Microsoft.JSInterop.JSException ex)
         {
-            Console.Error.WriteLine($"[interop] PushAtons: {ex.Message}");
+            // Console.WriteLine (not Console.Error) so the handled
+            // JS regression doesn't surface as an unhandled error
+            // via errorRelayBoot.js's console.error wrapper.
+            Console.WriteLine($"[interop] PushAtons: {ex.Message}");
         }
     }
 }

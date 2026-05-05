@@ -62,11 +62,12 @@ public sealed class ChartApi : IChartApi
             // built-in basemap charts from the prefix above. Re-throw
             // would erase that fallback (Map.razor's SafeLoad would
             // null the list), which defeats the purpose of having
-            // client-side basemaps at all. Log to the browser console
-            // so a developer inspecting DevTools sees the SK failure;
-            // the helm just sees a Layers panel with the basemaps and
-            // none of the SK-served charts.
-            Console.Error.WriteLine($"[charts] SK fetch failed: {ex.Message}");
+            // client-side basemaps at all. Console.WriteLine so a
+            // developer inspecting DevTools sees the SK failure
+            // without the errorRelayBoot.js console.error wrapper
+            // surfacing it as an unhandled error -- this is fully
+            // recovered by the basemap fallback.
+            Console.WriteLine($"[charts] SK fetch failed: {ex.Message}");
         }
         return charts;
     }

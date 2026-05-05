@@ -125,8 +125,10 @@ public sealed class AisPushService
         catch (Microsoft.JSInterop.JSException ex)
         {
             // Hot path. Silent-but-logged stops a JS regression from
-            // taking down the whole map UI.
-            Console.Error.WriteLine($"[interop] PushAisTargets: {ex.Message}");
+            // taking down the whole map UI. Console.WriteLine (not
+            // Console.Error) so errorRelayBoot.js doesn't relay this
+            // handled-and-recovered case as an unhandled error.
+            Console.WriteLine($"[interop] PushAisTargets: {ex.Message}");
         }
     }
 

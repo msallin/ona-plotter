@@ -7,7 +7,15 @@ namespace OnaPlotter.Services.Api;
 /// <summary>signalk-server's <c>/skServer/loginStatus</c> probe.
 /// The path is server-implementation-specific (not in the SK spec)
 /// but every signalk-server build ships it; third-party servers may
-/// 404 and we degrade gracefully to "unknown" (null).</summary>
+/// 404 and we degrade gracefully to "unknown" (null).
+///
+/// <para>Logging note: every failure path here is fully recoverable
+/// (the chip retries on the next poll) so logs go through ILogger
+/// at Warning / Information level rather than <c>Console.Error</c>.
+/// The <c>errorRelayBoot.js</c> wrapper hooks <c>console.error</c>
+/// only -- routing handled-and-recoverable lines through ILogger
+/// keeps them out of the SK server's relayed-unhandled-error stream
+/// while still surfacing them in the helm's devtools console.</para></summary>
 public sealed class AuthApi : IAuthApi
 {
     /// <summary>Per-probe timeout. Short (admin endpoint should
@@ -20,11 +28,13 @@ public sealed class AuthApi : IAuthApi
 
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly ILogger<AuthApi> _logger;
 
-    public AuthApi(HttpClient http, ISignalKBaseUrl baseUrl)
+    public AuthApi(HttpClient http, ISignalKBaseUrl baseUrl, ILogger<AuthApi> logger)
     {
         _http = http;
         _baseUrl = baseUrl;
+        _logger = logger;
     }
 
     public async Task<LoginStatus?> GetLoginStatusAsync(CancellationToken ct = default)
@@ -47,25 +57,28 @@ public sealed class AuthApi : IAuthApi
         try { response = await _http.GetAsync(url, cts.Token); }
         catch (HttpRequestException ex)
         {
-            // Log so a 3 a.m. "the chip just won't appear" diagnosis
-            // has something to grep for. No PII risk -- the URL is
-            // the local SK server and the message is the network
-            // error.
-            Console.Error.WriteLine($"[auth] probe failed: {ex.Message}");
+            // Network error: log so a 3 a.m. "the chip just won't
+            // appear" diagnosis has something to grep for. Warning
+            // level (not error) -- the chip retries on the next tick.
+            _logger.LogWarning("[auth] probe failed: {Message}", ex.Message);
             return null;
         }
         catch (TaskCanceledException)
         {
             // Either the caller cancelled or our 8 s timeout fired.
             // Both are "no signal this tick"; the next poll retries.
-            Console.Error.WriteLine("[auth] probe timed out");
+            // Information level -- timeouts are routine on flaky LTE.
+            _logger.LogInformation("[auth] probe timed out");
             return null;
         }
         using (response)
         {
             if (!response.IsSuccessStatusCode)
             {
-                Console.Error.WriteLine($"[auth] probe HTTP {(int)response.StatusCode}");
+                // 404 = third-party SK server without /skServer/loginStatus
+                // (degrades to "unknown"); 401/403 = auth lapse caught
+                // here too. Both are recoverable; warn rather than error.
+                _logger.LogWarning("[auth] probe HTTP {StatusCode}", (int)response.StatusCode);
                 return null;
             }
             var json = await response.Content.ReadAsStringAsync(cts.Token);
@@ -80,7 +93,7 @@ public sealed class AuthApi : IAuthApi
             }
             catch (JsonException ex)
             {
-                Console.Error.WriteLine($"[auth] probe parse failed: {ex.Message}");
+                _logger.LogWarning("[auth] probe parse failed: {Message}", ex.Message);
                 return null;
             }
         }

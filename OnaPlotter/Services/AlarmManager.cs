@@ -248,16 +248,16 @@ public sealed class AlarmManager : IAlarmManager
         // taking down the alarm pipeline.
         catch (System.Text.Json.JsonException ex)
         {
-            Console.Error.WriteLine($"[alarm.snooze] hydrate skipped: malformed json: {ex.Message}");
+            Console.WriteLine($"[alarm.snooze] hydrate skipped: malformed json: {ex.Message}");
         }
         catch (Microsoft.JSInterop.JSException ex)
         {
-            Console.Error.WriteLine($"[alarm.snooze] hydrate skipped: localStorage unavailable: {ex.Message}");
+            Console.WriteLine($"[alarm.snooze] hydrate skipped: localStorage unavailable: {ex.Message}");
         }
         catch (Microsoft.JSInterop.JSDisconnectedException) { /* page tear-down race */ }
         catch (ArgumentException ex)
         {
-            Console.Error.WriteLine($"[alarm.snooze] hydrate skipped: {ex.Message}");
+            Console.WriteLine($"[alarm.snooze] hydrate skipped: {ex.Message}");
         }
     }
 
@@ -272,11 +272,11 @@ public sealed class AlarmManager : IAlarmManager
         }
         catch (System.Text.Json.JsonException ex)
         {
-            Console.Error.WriteLine($"[alarm.snooze] persist skipped: serialize: {ex.Message}");
+            Console.WriteLine($"[alarm.snooze] persist skipped: serialize: {ex.Message}");
         }
         catch (Microsoft.JSInterop.JSException ex)
         {
-            Console.Error.WriteLine($"[alarm.snooze] persist skipped: localStorage: {ex.Message}");
+            Console.WriteLine($"[alarm.snooze] persist skipped: localStorage: {ex.Message}");
         }
         catch (Microsoft.JSInterop.JSDisconnectedException) { /* page tear-down */ }
     }

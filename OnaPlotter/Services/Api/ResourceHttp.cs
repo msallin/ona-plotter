@@ -168,11 +168,11 @@ internal static class ResourceHttp
         // when "HTTP 502" toasts hid an unrelated failure.
         catch (System.Net.Http.HttpRequestException ex)
         {
-            Console.Error.WriteLine($"[resourceHttp] body read failed (network): {ex.Message}");
+            Console.WriteLine($"[resourceHttp] body read failed (network): {ex.Message}");
         }
         catch (System.IO.IOException ex)
         {
-            Console.Error.WriteLine($"[resourceHttp] body read failed (io): {ex.Message}");
+            Console.WriteLine($"[resourceHttp] body read failed (io): {ex.Message}");
         }
         catch (OperationCanceledException) { /* request cancelled */ }
         return null;

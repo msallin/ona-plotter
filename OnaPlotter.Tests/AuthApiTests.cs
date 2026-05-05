@@ -30,7 +30,7 @@ public class AuthApiTests
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
-        return new AuthApi(http, ApiTestHelpers.FixedBaseUrl());
+        return new AuthApi(http, ApiTestHelpers.FixedBaseUrl(), Microsoft.Extensions.Logging.Abstractions.NullLogger<AuthApi>.Instance);
     }
 
     [Test]
@@ -127,7 +127,7 @@ public class AuthApiTests
         // DNS fail / network drop. Same null-degradation as 404.
         var http = ApiTestHelpers.MockClient(_ =>
             throw new HttpRequestException("dns fail"));
-        var sut = new AuthApi(http, ApiTestHelpers.FixedBaseUrl());
+        var sut = new AuthApi(http, ApiTestHelpers.FixedBaseUrl(), Microsoft.Extensions.Logging.Abstractions.NullLogger<AuthApi>.Instance);
         var s = await sut.GetLoginStatusAsync();
         await Assert.That(s).IsNull();
     }
@@ -143,7 +143,7 @@ public class AuthApiTests
         // exception. Simulates the same cancellation that an 8-s
         // ProbeTimeout would produce, without sleeping the test 8 s.
         var http = new HttpClient(new CancelRespectingHandler());
-        var sut = new AuthApi(http, ApiTestHelpers.FixedBaseUrl());
+        var sut = new AuthApi(http, ApiTestHelpers.FixedBaseUrl(), Microsoft.Extensions.Logging.Abstractions.NullLogger<AuthApi>.Instance);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         var s = await sut.GetLoginStatusAsync(cts.Token);

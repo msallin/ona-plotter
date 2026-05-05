@@ -271,7 +271,12 @@ public sealed class ActiveRouteSync
                 catch (Exception ex)
                     when (ex is TaskCanceledException or HttpRequestException or OperationCanceledException)
                 {
-                    Console.Error.WriteLine(
+                    // Console.WriteLine (not Console.Error) so a
+                    // transient WS / HTTP outage doesn't surface as
+                    // an unhandled error via the relay -- the catch
+                    // here already preserves the previously-fetched
+                    // geometry.
+                    Console.WriteLine(
                         $"[active-route] geometry fetch failed: {ex.GetType().Name}: {ex.Message}");
                     // Leave _activeRouteCoords as-is: a previously-fetched
                     // route stays drawn through the transient outage,
