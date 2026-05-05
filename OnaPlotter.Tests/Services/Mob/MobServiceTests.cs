@@ -57,17 +57,41 @@ public class MobServiceTests
         var api = new FakeNotificationsApi();
         var store = new ServerNotificationStore();
         var kv = new InMemoryKv();
+        var positions = new ResolvedPositionStore(kv);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
-        var svc = new MobService(api, store, kv, clock);
+        var svc = new MobService(api, store, kv, positions, clock);
         return new Fixture(svc, api, store, kv, clock);
     }
 
     /// <summary>Awaits the background retry loop for a localId. Used
-    /// in place of wall-clock Task.Delay so tests are deterministic.</summary>
+    /// in place of wall-clock Task.Delay so tests are deterministic.
+    /// Returns immediately if the loop already exited (success or
+    /// cancel); otherwise blocks until the Task.Run handle completes.
+    /// Tests that expect the loop to PARK indefinitely (e.g. on a
+    /// FakeTimeProvider Task.Delay with no advance) must spin-wait
+    /// on observable state instead -- see <see cref="WaitForRaiseCountAsync"/>.</summary>
     private static Task AwaitRaiseLoopAsync(MobService svc, string localId)
     {
         var t = svc.GetRaiseLoopForTest(localId);
         return t ?? Task.CompletedTask;
+    }
+
+    /// <summary>Spin-wait until <paramref name="api"/> has recorded
+    /// at least <paramref name="target"/> RaiseMobAsync calls, or the
+    /// timeout expires. Use in tests that rely on FakeTimeProvider
+    /// Task.Delay parks: the test must observe each iteration's POST
+    /// land before advancing the clock for the next backoff window,
+    /// because Clock.Advance is a no-op for timers that haven't been
+    /// registered yet.</summary>
+    private static async Task WaitForRaiseCountAsync(
+        FakeNotificationsApi api, int target,
+        TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (api.RaiseMobCalls.Count < target && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
     }
 
     // ------------------------------------------------------------
@@ -324,9 +348,16 @@ public class MobServiceTests
         f.Api.NextServerId = "after-retries";
 
         var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
-        // Advance the fake clock past the 1s + 2s backoff steps so the
-        // retry loop reaches its third attempt (success).
+        // First attempt is unconditional (no backoff). Wait for it
+        // to land before advancing the clock -- a Clock.Advance
+        // before the loop has registered its Task.Delay timer is a
+        // no-op, leaving the timer parked at the wrong deadline.
+        await WaitForRaiseCountAsync(f.Api, 1);
+        // Step past the 1s backoff for attempt 2, wait for it.
         f.Clock.Advance(TimeSpan.FromSeconds(1));
+        await WaitForRaiseCountAsync(f.Api, 2);
+        // Step past the 2s backoff for attempt 3 (success), then
+        // await the loop to fully unwind through the success path.
         f.Clock.Advance(TimeSpan.FromSeconds(2));
         await AwaitRaiseLoopAsync(f.Service, localId);
 
@@ -399,10 +430,11 @@ public class MobServiceTests
     [Test]
     public async Task InitializeAsync_Replays_With_Saved_AttemptCount_Backoff()
     {
-        // TEST-009: persisted AttemptCount=2 means the next backoff
-        // step is 5s (idx=2) -- not the initial 1s. Pin the contract:
-        // a reload mid-retry must not flood the server with 1s-spaced
-        // retries.
+        // TEST-009: persisted AttemptCount=2 means "iteration 2 just
+        // failed"; the next iteration's wait must therefore match
+        // what iteration 3 would wait (idx = attempt - 1 = 1 -> 2s),
+        // not the initial 1s. Pin the contract: a reload mid-retry
+        // must not flood the server with 1s-spaced retries.
         using var f = NewFixture();
         var saved = "[{\"LocalId\":\"slow-id\","
                   + "\"Message\":\"MOB\","
@@ -412,18 +444,21 @@ public class MobServiceTests
         f.Api.NextServerId = "after-resume";
 
         await f.Service.InitializeAsync();
+        // Yield so the replayed Task.Run can register its first
+        // Task.Delay timer with the FakeTimeProvider before we
+        // advance -- otherwise the advance fires no timers and the
+        // delay parks at the wrong deadline.
+        await Task.Delay(50);
 
-        // After 4s, the first attempt would have fired at the 1s
-        // step but the saved attempt counter pushes the next wait
-        // to 5s.
-        f.Clock.Advance(TimeSpan.FromSeconds(4));
-        // Yield so any due timer fires.
+        // After 1s, the saved AttemptCount=2 wait of 2s hasn't
+        // expired -- no POST yet.
+        f.Clock.Advance(TimeSpan.FromSeconds(1));
         await Task.Delay(20);
         await Assert.That(f.Api.RaiseMobCalls.Count).IsEqualTo(0);
 
-        // Step past the 5s backoff -> attempt fires.
+        // Step past the 2s backoff -> attempt fires.
         f.Clock.Advance(TimeSpan.FromSeconds(2));
-        await AwaitRaiseLoopAsync(f.Service, "slow-id");
+        await WaitForRaiseCountAsync(f.Api, 1);
         await Assert.That(f.Api.RaiseMobCalls.Count).IsEqualTo(1);
     }
 
@@ -525,6 +560,34 @@ public class MobServiceTests
                     Method: ["visual"],
                     Status: new NotificationStatusDto(false, false, false, true, true),
                     Position: null, CreatedAt: DateTime.UtcNow)),
+        };
+
+        await f.Service.InitializeAsync();
+
+        await Assert.That(f.Store.Active.Any(n => n.Path.StartsWith(MobPathPrefix))).IsFalse();
+    }
+
+    [Test]
+    public async Task InitializeAsync_Skips_Non_Mob_Emergencies()
+    {
+        // The state-filter catches "alarm"/"alert" but not a non-MOB
+        // emergency (e.g. fire, flooding, vessel-aground). Without a
+        // path-filter, those would get re-pathed under
+        // notifications.mob.<id> and the MOB chart pipeline would try
+        // to render them as casualties. Filter by env.Path so the MOB
+        // pipeline only picks up genuine notifications.mob.* entries.
+        using var f = NewFixture();
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
+        {
+            ["fire-1"] = new(
+                Context: "vessels.self",
+                Path: "notifications.environment.fire",
+                Value: new ServerNotificationDto(
+                    Id: "fire-1", State: "emergency", Message: "Fire in engine room",
+                    Method: ["visual", "sound"],
+                    Status: new NotificationStatusDto(false, false, false, true, true),
+                    Position: new NotificationPositionDto(47.5, 8.5),
+                    CreatedAt: DateTime.UtcNow)),
         };
 
         await f.Service.InitializeAsync();
@@ -666,8 +729,18 @@ public class MobServiceTests
         f.Api.FailRaiseCount = 1000;   // never succeed
         f.Api.SuspendRaise = false;     // let the first attempt fly
         var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
-        await AwaitRaiseLoopAsync(f.Service, localId);
-        // (loop is now parked on the 1s backoff; one POST recorded.)
+        // Spin-wait until the first POST is recorded -- the loop's
+        // first iteration is unconditional (no backoff). Awaiting
+        // the loop Task itself would hang forever because attempts
+        // 2+ are gated on Task.Delay against FakeTimeProvider, which
+        // we never advance in this test.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (f.Api.RaiseMobCalls.Count == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+        await Assert.That(f.Api.RaiseMobCalls.Count).IsGreaterThanOrEqualTo(1);
+        // Loop is now parked on the 1s backoff awaiting the next tick.
         var atDispose = f.Api.RaiseMobCalls.Count;
 
         f.Service.Dispose();

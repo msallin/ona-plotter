@@ -883,10 +883,6 @@ public sealed class SignalkClient : IAsyncDisposable
     /// in the ownship chart popup so the helm reads MMSI +
     /// callsign onto the VHF mic without leaving the chart.</summary>
     public string? OwnCallsign { get; private set; }
-    /// <summary>Fires once when OwnCallsign first becomes non-null,
-    /// or when it changes. Map.razor uses this to push the value
-    /// to JS for the popup.</summary>
-    public event Action? OnOwnCallsignChanged;
 
     internal bool IsSelfContext(string? context)
     {
@@ -937,7 +933,6 @@ public sealed class SignalkClient : IAsyncDisposable
                     if (!string.Equals(cs, OwnCallsign, StringComparison.Ordinal))
                     {
                         OwnCallsign = cs;
-                        try { OnOwnCallsignChanged?.Invoke(); } catch { /* swallow */ }
                     }
                     continue;
                 }

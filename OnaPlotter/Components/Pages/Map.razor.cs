@@ -206,10 +206,9 @@ public partial class Map
     }
 
     /// <summary>Popup-side Share: build a GeoJSON Feature for the
-    /// waypoint (point + name / createdAt properties) and route
-    /// through the file-transfer helper's shareOrCopy. Mirrors
-    /// <see cref="NoteShare"/> -- different resource, same
-    /// surface.</summary>
+    /// waypoint (point + name / createdAt properties) and hand it to
+    /// <see cref="ShareService"/> which owns the file-transfer +
+    /// toast surface shared with the Note and MOB share paths.</summary>
     [JSInvokable]
     public async Task WaypointShare(string id)
     {
@@ -226,28 +225,13 @@ public partial class Map
                 CreatedAt: wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture)));
         string json = System.Text.Json.JsonSerializer.Serialize(
             feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
-
-        try
-        {
-            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/platform/fileTransfer.js");
-            string title = string.IsNullOrWhiteSpace(wp.Name) ? "Waypoint" : wp.Name!;
-            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
-            switch (outcome)
-            {
-                case "shared":      Toasts.Success("Shared"); break;
-                case "copied":      Toasts.Success("Copied to clipboard"); break;
-                case "cancelled":   /* helm tapped cancel */ break;
-                default:            Toasts.Error("Couldn't share or copy."); break;
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
+        string title = string.IsNullOrWhiteSpace(wp.Name) ? "Waypoint" : wp.Name!;
+        await ShareService.ShareJsonAsync(title, json);
     }
 
     /// <summary>MOB popup-side Share: serialise the casualty fix as
     /// a one-off waypoint feature (same shape WaypointShare uses)
-    /// and route through the file-transfer helper. The helm reading
+    /// and route through <see cref="ShareService"/>. The helm reading
     /// the MOB position into the VHF mic gets a one-tap "now share
     /// the same coords with the rescue coordinator on WhatsApp /
     /// SMS / mail" affordance. createdAtIso plumbs through so a
@@ -264,21 +248,7 @@ public partial class Map
                 CreatedAt: createdAtIso));
         string json = System.Text.Json.JsonSerializer.Serialize(
             feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
-        try
-        {
-            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/platform/fileTransfer.js");
-            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", "MOB", json);
-            switch (outcome)
-            {
-                case "shared":      Toasts.Success("Shared"); break;
-                case "copied":      Toasts.Success("Copied to clipboard"); break;
-                case "cancelled":   /* helm tapped cancel */ break;
-                default:            Toasts.Error("Couldn't share or copy."); break;
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "MOB share"); }
+        await ShareService.ShareJsonAsync("MOB", json, errorContext: "MOB share");
     }
 
     // ---- Note (create, save, delete, focus, show/hide) ---------------
@@ -459,10 +429,10 @@ public partial class Map
 
     /// <summary>Invoked from the JS popup's Share button: build a
     /// GeoJSON Feature for the note (point geometry + title /
-    /// description / createdAt properties) and hand it to the file-
-    /// transfer module's shareOrCopy helper. The helm gets the
-    /// system share sheet on iPad / Android Chrome; on the desktop
-    /// the JSON copies to clipboard with a toast.</summary>
+    /// description / createdAt properties) and hand it to
+    /// <see cref="ShareService"/>. The helm gets the system share
+    /// sheet on iPad / Android Chrome; on the desktop the JSON
+    /// copies to clipboard with a toast.</summary>
     [JSInvokable]
     public async Task NoteShare(string id)
     {
@@ -481,23 +451,8 @@ public partial class Map
                 CreatedAt: note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture)));
         string json = System.Text.Json.JsonSerializer.Serialize(
             feature, OnaGeoJsonContext.Default.GeoJsonShareNoteFeature);
-
-        try
-        {
-            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/platform/fileTransfer.js");
-            string title = string.IsNullOrWhiteSpace(note.Title) ? "Note" : note.Title!;
-            string outcome = await fileTransfer.InvokeAsync<string>("shareOrCopy", title, json);
-            switch (outcome)
-            {
-                case "shared":      Toasts.Success("Shared"); break;
-                case "copied":      Toasts.Success("Copied to clipboard"); break;
-                case "cancelled":   /* helm tapped cancel */ break;
-                default:            Toasts.Error("Couldn't share or copy."); break;
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (Microsoft.JSInterop.JSException ex) { Toasts.LogException(ex, "Share"); }
+        string title = string.IsNullOrWhiteSpace(note.Title) ? "Note" : note.Title!;
+        await ShareService.ShareJsonAsync(title, json);
     }
 
     private async Task FocusNote(SignalkNote note)

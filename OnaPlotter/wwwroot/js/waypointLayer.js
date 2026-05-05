@@ -7,6 +7,7 @@
 
 import { MarkerLayer } from './markerLayer.js';
 import { esc, wireDeleteConfirm } from './popupHelpers.js';
+import { latLonDms } from './format.js';
 
 const waypointMarkers = new MarkerLayer();
 let mapRef = null;
@@ -30,9 +31,7 @@ export function init(map, deps) {
 // tooltips can't wrap.
 function formatWaypointTooltip(name, id, lat, lon) {
     const title = name || (id ? id.substring(0, 8) : 'Waypoint');
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
-    const coords = `${Math.abs(lat).toFixed(5)}° ${ns}, ${Math.abs(lon).toFixed(5)}° ${ew}`;
+    const coords = latLonDms(lat, lon, ', ');
     return `<div class="wp-tooltip-name">${esc(title)}</div>` +
            `<div class="wp-tooltip-coords">${esc(coords)}</div>`;
 }
@@ -53,9 +52,7 @@ function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
     // letters) so hover-then-tap doesn't show two conflicting
     // renderings of the same position. Tap-only users (phones, iPad)
     // need the coords here because they never trigger hover.
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
-    const coords = `${Math.abs(lat).toFixed(5)}°${ns}, ${Math.abs(lon).toFixed(5)}°${ew}`;
+    const coords = latLonDms(lat, lon, ', ');
     const created = formatCreatedAt(createdAtIso);
     // Mirror of the note popup so the helm gets the same affordance
     // grid (Go / Edit / Share / Delete) on either resource type.

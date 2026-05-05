@@ -8,6 +8,7 @@
 // distance evolve as they manoeuvre back to the casualty.
 
 import { haversineMeters, bearingDeg, NM_PER_METER } from './geoMath.js';
+import { mobElapsed, latDms, lonDms, latLonDms } from './format.js';
 
 const mobIcon = L.divIcon({
     className: 'mob-icon',
@@ -158,18 +159,12 @@ export function setMob(lat, lon, createdAtIso, selfMmsi) {
     try { playMobChime(); } catch (_) { /* audio blocked in context */ }
 }
 
-// "T+5m" / "T+1h23m" / "T+0s" formatter for the elapsed time
-// since the MOB raise. Caps at hours -- a multi-hour MOB is way
-// past acceptable; the helm has bigger problems than display
-// formatting at that point.
+// "T+5m" elapsed-since-raise formatter lives in C# (Format.MobElapsed,
+// tested) and is mirrored in format.js. We bridge the JS-side Date
+// arithmetic to seconds here so format.js stays time-source agnostic.
 function formatElapsed(createdAt) {
     if (!createdAt) return '';
-    const sec = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 1000));
-    if (sec < 60) return `T+${sec}s`;
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `T+${min}m`;
-    const hr = Math.floor(min / 60);
-    return `T+${hr}h${min % 60}m`;
+    return mobElapsed((Date.now() - createdAt.getTime()) / 1000);
 }
 
 function pad2(n) { return String(n).padStart(2, '0'); }
@@ -181,11 +176,9 @@ function buildMobLabelHtml() {
     const hh = pad2(createdAt.getHours());
     const mm = pad2(createdAt.getMinutes());
     const ss = pad2(createdAt.getSeconds());
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
     const elapsed = formatElapsed(createdAt);
     return `<strong>MOB ${hh}:${mm}:${ss}</strong> <span class="mob-elapsed">${elapsed}</span><br>` +
-           `${Math.abs(lat).toFixed(5)}&deg;${ns} ${Math.abs(lon).toFixed(5)}&deg;${ew}`;
+           latLonDms(lat, lon);
 }
 
 // Popup: full dialog -- time + T+ + position + MMSI + GO + Share.
@@ -197,8 +190,6 @@ function buildMobPopupHtml() {
     const hh = pad2(createdAt.getHours());
     const mm = pad2(createdAt.getMinutes());
     const ss = pad2(createdAt.getSeconds());
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
     const elapsed = formatElapsed(createdAt);
     const mmsiRow = selfMmsi
         ? `<tr><td>MMSI</td><td>${selfMmsi}</td></tr>`
@@ -208,8 +199,8 @@ function buildMobPopupHtml() {
             <div class="mob-popup-title">MOB <span class="mob-popup-elapsed">${elapsed}</span></div>
             <table class="mob-popup-table">
                 <tr><td>Time</td><td>${hh}:${mm}:${ss}</td></tr>
-                <tr><td>Lat</td><td>${Math.abs(lat).toFixed(5)}&deg;${ns}</td></tr>
-                <tr><td>Lon</td><td>${Math.abs(lon).toFixed(5)}&deg;${ew}</td></tr>
+                <tr><td>Lat</td><td>${latDms(lat)}</td></tr>
+                <tr><td>Lon</td><td>${lonDms(lon)}</td></tr>
                 ${mmsiRow}
             </table>
             <div class="mob-popup-actions">

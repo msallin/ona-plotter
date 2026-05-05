@@ -34,6 +34,7 @@
 @inject IRouteDraftStore RouteDraftStore
 @inject OnaPlotter.Services.Mob.IMobService MobService
 @inject OnaPlotter.Services.Mob.MobChartRenderer MobChartRenderer
+@inject OnaPlotter.Services.ShareService ShareService
 @inject OnaPlotter.Services.ServerNotifications.ServerNotificationStore NotificationStore
 @inject IAlarmManager Alarms
 @inject DeadmanTracker DeadmanTracker
@@ -1454,13 +1455,11 @@
             ClientCaps.IsSlowClient);
         mapInitialized = true;
 
-        // Hand the JS bridge to the MOB chart renderer NOW (after
-        // initMap has set mobLayer.mapRef). Earlier this lived
-        // before initMap; the renderer's first ResyncRender called
-        // setMob against a still-null JS-side mapRef and the
-        // marker silently dropped. Keeping AttachJs after initMap
-        // guarantees mobLayer is ready when the very next
-        // SetMobAsync fires.
+        // Hand the JS bridge to the MOB chart renderer AFTER
+        // initMap has run (initMap is what wires up mobLayer.mapRef).
+        // The renderer's first ResyncRender pushes setMob through the
+        // bridge; if mapRef is still null the marker silently drops.
+        // Order is load-bearing: AttachJs strictly post-initMap.
         MobChartRenderer.AttachJs(_controlsJs);
 
         // Tell the JS side where the SignalK server lives so its

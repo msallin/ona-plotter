@@ -8,6 +8,7 @@
 @inject TrackBuffer TrackBuffer
 @inject IPolarService Polar
 @inject IAppSettings Settings
+@inject INavigationAverages Avg
 
 <PageTitle>Wind</PageTitle>
 
@@ -339,13 +340,17 @@
                    legend" -- the previous one-line meta concatenated
                    three orthogonal facts. *@
             @{
-                var cutoff = DateTime.UtcNow.AddMinutes(-windowMinutes);
-                var visible = twdHistory.Where(s => s.Time >= cutoff).ToList();
+                // Pull the active view's samples from the shared
+                // NavigationAverages buffer. Direction view -> TWD
+                // (rad -> deg, normalised to [0, 360)); speed view ->
+                // TWS (m/s -> kn). One snapshot per render.
+                var visible = GetHistorySamples(historyView);
                 bool hasUsableHistory = visible.Count >= 5
                     && (visible[^1].Time - visible[0].Time).TotalSeconds >= 30;
+                int totalHistoryCount = Avg.Twd.Count + Avg.Tws.Count;
             }
 
-            @if (twdHistory.Count > 1)
+            @if (totalHistoryCount > 1)
             {
                 <section class="wind-card wind-history-section" aria-label="Wind history">
                     <header class="wind-section-header">
@@ -442,7 +447,7 @@
 
         @* Data polyline. Accent blue so night mode red-shifts it. *@
         <polyline fill="none" style="stroke: var(--sk-accent);" stroke-width="1.5" opacity="0.9"
-                  points="@HistoryPolylinePoints(visible, yMin, yMax, oldest, timeSpan, historyView)" />
+                  points="@HistoryPolylinePoints(visible, yMin, yMax, oldest, timeSpan)" />
 
         @* Time axis labels. Format adapts to span (-Ns / -N.Nm / -Nm). *@
         @for (int i = 0; i <= 3; i++)
@@ -529,17 +534,14 @@
         await Settings.SetWindPageCompactAsync(compactMode);
     }
 
-    // Windplot: TWD + TWS over time. Buffer is sized for the longest
-    // window offered; the user picks a trailing slice via WindowChoices.
-    // Hard cap MaxWindHistorySamples keeps memory bounded under 10Hz feeds.
-    private const int MaxWindowMinutes = 180;
-    private const int MaxWindHistorySamples = 10800;   // 3h at 1 sample/sec; headroom
+    // Windplot: TWD + TWS over time. Samples come from the shared
+    // NavigationAverages buffers so the chart, the AwsStats chips,
+    // and the HUD smoothed readouts all read the same series.
     private const int WpWidth = 420;
     private const int WpHeight = 180;
     private const int WpPad = 40;
     private const int WpPlotW = WpWidth - WpPad - 10;
     private const int WpPlotH = WpHeight - WpPad - 20;
-    private List<WindSample> twdHistory = [];
 
     // User-selectable trailing window. Defaults to 30 min. 15 min for
     // racers spotting a shift mid-leg; 1 h / 3 h for cruisers watching
@@ -584,100 +586,44 @@
     private bool HasAnyWind =>
         currentWind is not null
         || windPoints.Count > 0
-        || twdHistory.Count > 0;
+        || Avg.Twd.Count > 0
+        || Avg.Tws.Count > 0;
 
     /// <summary>
-    /// AWS variability over the gust/lull window: gust (+ above mean),
-    /// lull (- below mean), mean, and sigma (standard deviation -- a
-    /// single-number summary of how variable the wind is, regardless
-    /// of which direction the spread leans). All in knots; gust and
-    /// lull are non-negative magnitudes.
+    /// AWS variability over the helm-picked window: gust (+ above
+    /// mean), lull (- below mean), mean, and sigma (standard deviation
+    /// -- a single-number summary of how variable the wind is). All
+    /// in knots; gust and lull are non-negative magnitudes. Backed by
+    /// the shared <see cref="INavigationAverages"/> rolling buffer
+    /// (m/s); converted to knots here for display.
     /// </summary>
     private (double Gust, double Lull, double Mean, double Sigma)? AwsStats
     {
         get
         {
-            // Pull AWS samples from the track buffer's window rather
-            // than keeping a separate ring; TrackBuffer.GetSnapshot
-            // already carries WindSpeedApparent. Window length is the
-            // user-picked chipWindowMinutes (1 / 2 / 10 / 60 min).
-            var cutoff = DateTime.UtcNow.AddMinutes(-chipWindowMinutes);
-            var samples = TrackBuffer.GetSnapshot()
-                .Where(p => p.Timestamp >= cutoff && p.WindSpeedApparent is not null)
-                .Select(p => p.WindSpeedApparent!.Value * MsToKnots)
-                .ToList();
-            if (samples.Count < 5) return null;
-            double mean = samples.Average();
-            double gust = Math.Max(0, samples.Max() - mean);
-            double lull = Math.Max(0, mean - samples.Min());
-            // Population sigma: sqrt(sum((x - mean)^2) / N). Population
-            // (not sample) variance is appropriate here -- the helm cares
-            // about the dispersion of THIS specific window, not an
-            // estimate for an unseen larger population.
-            double sumSq = 0;
-            foreach (var s in samples) { double d = s - mean; sumSq += d * d; }
-            double sigma = Math.Sqrt(sumSq / samples.Count);
-            return (gust, lull, mean, sigma);
+            // warmupRatio: 0 here because the chip stats happily
+            // surface partial-window data on first connect -- a 30s
+            // partial fill of a 60-min window is still useful, and
+            // the chip already shows "n samples" elsewhere so the
+            // helm can read the coverage themselves.
+            var stats = Avg.Aws.Stats(TimeSpan.FromMinutes(chipWindowMinutes), warmupRatio: 0);
+            if (stats is null) return null;
+            var s = stats.Value;
+            return (s.Gust * MsToKnots, s.Lull * MsToKnots, s.Mean * MsToKnots, s.Sigma * MsToKnots);
         }
     }
 
     /// <summary>
     /// Signed TWD slope in degrees per minute over the shift-rate
     /// window. Positive = veering (clockwise); negative = backing.
-    /// Simple linear regression over the available samples; null when
-    /// fewer than a handful of samples exist. Handles 0/360 wraparound
-    /// by unfolding against the first sample.
+    /// Backed by the shared <see cref="INavigationAverages"/> rolling
+    /// buffer; the unwrap + linear regression live in
+    /// <see cref="OnaPlotter.Utilities.RollingDirectionSeries.ShiftRateDegPerMin"/>
+    /// so the math is unit-tested and reusable from a future tactical
+    /// HUD chip.
     /// </summary>
-    private double? ShiftRate
-    {
-        get
-        {
-            var cutoff = DateTime.UtcNow.AddMinutes(-ShiftRateWindowMin);
-            var window = twdHistory.Where(s => s.Time >= cutoff).ToList();
-            if (window.Count < 5) return null;
-
-            // Unfold around the first sample so 359 -> 1 doesn't read
-            // as a -358 degree jump. Each subsequent sample shifts by
-            // at most +/- 180; anything bigger must have wrapped.
-            double prev = window[0].TwdDeg;
-            double baseline = prev;
-            var unfolded = new double[window.Count];
-            double running = prev;
-            unfolded[0] = running - baseline;
-            for (int i = 1; i < window.Count; i++)
-            {
-                double d = window[i].TwdDeg;
-                double delta = d - prev;
-                if (delta > 180) delta -= 360;
-                else if (delta < -180) delta += 360;
-                running += delta;
-                unfolded[i] = running - baseline;
-                prev = d;
-            }
-
-            // Linear regression slope: Σ(x-x̄)(y-ȳ) / Σ(x-x̄)²
-            double tMean = 0, yMean = 0;
-            var ts = new double[window.Count];
-            for (int i = 0; i < window.Count; i++)
-            {
-                ts[i] = (window[i].Time - window[0].Time).TotalSeconds;
-                tMean += ts[i];
-                yMean += unfolded[i];
-            }
-            tMean /= window.Count;
-            yMean /= window.Count;
-            double num = 0, den = 0;
-            for (int i = 0; i < window.Count; i++)
-            {
-                double dt = ts[i] - tMean;
-                num += dt * (unfolded[i] - yMean);
-                den += dt * dt;
-            }
-            if (den < 1) return null;
-            double degPerSec = num / den;
-            return degPerSec * 60;
-        }
-    }
+    private double? ShiftRate =>
+        Avg.Twd.ShiftRateDegPerMin(TimeSpan.FromMinutes(ShiftRateWindowMin), warmupRatio: 0);
 
     /// <summary>Hero speed display in knots, formatted to 1 decimal,
     /// or "--" when the chosen wind reference (apparent / true) lacks
@@ -789,22 +735,9 @@
         else
             currentTrueWind = null;
 
-        // Update wind history. Both TWD and TWS must be present for a
-        // sample to land -- the chart toggles between the two and
-        // having one without the other would create a half-rendered
-        // chart on the unselected view. For TWD-only feeds the chart
-        // simply waits until TWS shows up.
-        if (data.WindDirectionTrue is not null && data.WindSpeedTrue is not null)
-        {
-            double twdDeg = data.WindDirectionTrue.Value * 180.0 / Math.PI;
-            if (twdDeg < 0) twdDeg += 360;
-            double twsKn = data.WindSpeedTrue.Value * MsToKnots;
-            twdHistory.Add(new WindSample(DateTime.UtcNow, twdDeg, twsKn));
-            var cutoff = DateTime.UtcNow.AddMinutes(-MaxWindowMinutes);
-            twdHistory.RemoveAll(s => s.Time < cutoff);
-            if (twdHistory.Count > MaxWindHistorySamples)
-                twdHistory.RemoveRange(0, twdHistory.Count - MaxWindHistorySamples);
-        }
+        // Wind-history samples land in NavigationAverages on every
+        // SignalkClient delta -- WindRose just queries the snapshots
+        // it needs at render time (see GetHistorySamples).
     }
 
     private void AddWindPoint(List<WindPoint> list, TrackPoint pt)
@@ -914,53 +847,77 @@
     /// from rendering as a hairline pinned to one grid stripe.
     /// </summary>
     private static (double Min, double Max, double Mean) ComputeYAxis(
-        IReadOnlyList<WindSample> samples, string view)
+        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples, string view)
     {
-        if (view == "speed")
+        double vMin = double.MaxValue, vMax = double.MinValue, sum = 0;
+        foreach (var s in samples)
         {
-            double sMin = samples.Min(s => s.TwsKn);
-            double sMax = samples.Max(s => s.TwsKn);
-            double sMid = (sMin + sMax) / 2;
-            double sRange = Math.Max(sMax - sMin, 4); // min 4 kn range
-            sMin = sMid - sRange / 2 - 1;
-            sMax = sMid + sRange / 2 + 1;
-            double sMean = samples.Average(s => s.TwsKn);
-            return (sMin, sMax, sMean);
+            if (s.Value < vMin) vMin = s.Value;
+            if (s.Value > vMax) vMax = s.Value;
+            sum += s.Value;
         }
-        else
-        {
-            double dMin = samples.Min(s => s.TwdDeg);
-            double dMax = samples.Max(s => s.TwdDeg);
-            double dMid = (dMin + dMax) / 2;
-            double dRange = Math.Max(dMax - dMin, 20); // min 20 deg range
-            dMin = dMid - dRange / 2 - 5;
-            dMax = dMid + dRange / 2 + 5;
-            double dMean = samples.Average(s => s.TwdDeg);
-            return (dMin, dMax, dMean);
-        }
+        double vMid = (vMin + vMax) / 2;
+        // View-specific minimum range + padding so a flat trace
+        // doesn't pin to a single grid stripe and the helm always
+        // sees breathing room above / below the data.
+        double minRange = view == "speed" ? 4 : 20;
+        double pad = view == "speed" ? 1 : 5;
+        double range = Math.Max(vMax - vMin, minRange);
+        return (vMid - range / 2 - pad, vMid + range / 2 + pad, sum / samples.Count);
     }
 
     /// <summary>
     /// Generates the SVG polyline points string for the history chart.
-    /// Picks TwdDeg or TwsKn off each sample based on <paramref name="view"/>.
+    /// Each <see cref="OnaPlotter.Utilities.TimeSeriesSample"/> already
+    /// carries the projected value (kn or deg) -- the view-specific
+    /// projection happens in <see cref="GetHistorySamples"/>.
     /// </summary>
-    private string HistoryPolylinePoints(IReadOnlyList<WindSample> samples,
-        double yMin, double yMax, DateTime oldest, double timeSpanSecs, string view)
+    private string HistoryPolylinePoints(
+        IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> samples,
+        double yMin, double yMax, DateTime oldest, double timeSpanSecs)
     {
         var sb = new System.Text.StringBuilder();
         double range = yMax - yMin;
         foreach (var s in samples)
         {
             double t = (s.Time - oldest).TotalSeconds;
-            double v = view == "speed" ? s.TwsKn : s.TwdDeg;
             double x = WpPad + WpPlotW * (t / timeSpanSecs);
-            double y = WpPad + WpPlotH * (1 - (v - yMin) / range);
+            double y = WpPad + WpPlotH * (1 - (s.Value - yMin) / range);
             if (sb.Length > 0) sb.Append(' ');
             sb.Append($"{x:F1},{y:F1}");
         }
         return sb.ToString();
     }
 
+    /// <summary>Pulls the trailing-window samples from
+    /// <see cref="INavigationAverages"/> and projects them into the
+    /// active view's display unit (kn for speed, deg [0, 360) for
+    /// direction). Each render evaluates this once and the result
+    /// is reused for axis bounds + polyline emission.</summary>
+    private IReadOnlyList<OnaPlotter.Utilities.TimeSeriesSample> GetHistorySamples(string view)
+    {
+        var window = TimeSpan.FromMinutes(windowMinutes);
+        if (view == "speed")
+        {
+            var raw = Avg.Tws.SnapshotIn(window);
+            var result = new List<OnaPlotter.Utilities.TimeSeriesSample>(raw.Count);
+            foreach (var s in raw)
+            {
+                result.Add(new(s.Time, s.Value * MsToKnots));
+            }
+            return result;
+        }
+        // Direction view: rad -> deg, normalised to [0, 360).
+        var rawDir = Avg.Twd.SnapshotIn(window);
+        var dirResult = new List<OnaPlotter.Utilities.TimeSeriesSample>(rawDir.Count);
+        foreach (var s in rawDir)
+        {
+            double deg = s.Value * 180.0 / Math.PI;
+            if (deg < 0) deg += 360;
+            dirResult.Add(new(s.Time, deg));
+        }
+        return dirResult;
+    }
+
     private readonly record struct WindPoint(double X, double Y, string Color);
-    private readonly record struct WindSample(DateTime Time, double TwdDeg, double TwsKn);
 }

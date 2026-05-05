@@ -117,8 +117,7 @@
                inert zoom buttons would be a lie. The first button
                of the right-side cluster carries `ms-auto` so the
                whole group right-aligns; subsequent buttons sit
-               flush. (Sidebar collapse used to live here but moved
-               into NavMenu's foot, where the standard pattern is.) *@
+               flush. *@
             @if (IsMapRoute)
             {
                 <button class="btn btn-sm btn-outline-secondary topbar-icon-btn ms-auto"
@@ -327,11 +326,11 @@
                 else
                 {
                     @* Coalesce consecutive entries that share the same
-                       (Title, Reason, TargetKey). Helm-feedback: a noisy
-                       depth sensor produced a "Depth Cleared" entry on
-                       every tide tick, drowning the rest of the log.
-                       Grouping shows one row per run with a count chip
-                       and the latest timestamp; expand-on-tap is a
+                       (Title, Reason, TargetKey) so a noisy sensor
+                       (e.g. depth flapping on every tide tick) doesn't
+                       drown the rest of the log. One row per run with
+                       a count chip and the latest timestamp; expand-
+                       on-tap is a
                        future affordance, the count alone is enough to
                        not lose information. *@
                     <ul class="alarm-log-list">
@@ -488,12 +487,10 @@
         SignalkClient.OnDataChanged += HandleDataChanged;
         // Wake the alarm pipeline whenever a server notification
         // mutates -- including local synthetics produced by
-        // MobService. Previously MobService asked SignalkClient to
-        // re-fire OnDataChanged via a back-door shim; subscribing
-        // directly to the store keeps the dependency direction
-        // honest (the alarm pipeline depends on the store, not the
-        // WS client) and removes the precedent for "anyone can fire
-        // OnDataChanged".
+        // MobService. Subscribing directly to the store keeps the
+        // dependency direction honest (the alarm pipeline depends
+        // on the store, not the WS client) and avoids back-door
+        // OnDataChanged fires from non-WS sources.
         ServerNotifications.OnPathChanged += HandleNotificationPathChanged;
         Toasts.OnChanged += HandleToastsChanged;
         Settings.OnSettingsChanged += HandleSettingsChanged;
@@ -722,9 +719,9 @@
     // True when the current URL is the Map page. Drives visibility
     // of the topbar zoom buttons -- there's no map to zoom anywhere
     // else. Cached + refreshed only when the location actually
-    // changes (HandleLocationChanged); the property used to allocate
-    // a new Uri on every MainLayout render which fires multiple times
-    // a second during alarm chatter.
+    // changes (HandleLocationChanged) so the MainLayout render path
+    // doesn't allocate a new Uri per call (this layout re-renders
+    // multiple times a second during alarm chatter).
     private bool _isMapRoute;
     private bool IsMapRoute => _isMapRoute;
 
@@ -859,9 +856,9 @@
             // First-run-on-phone default: collapse the sidebar to the
             // icon rail so a 600px-wide screen isn't half-eaten by
             // labels the helm rarely needs. The check happens AFTER
-            // Settings.InitializeAsync so any previously-set value
+            // Settings.InitializeAsync so any persisted user choice
             // wins; ApplyMobileFirstRunDefaultsAsync is a no-op once
-            // the user has toggled the chevron at least once.
+            // the helm has toggled the chevron at least once.
             try
             {
                 var viewport = await JS.InvokeAsync<IJSObjectReference>(
@@ -1356,13 +1353,13 @@
         OnaPlotter.Models.DismissedAlarm Latest, int Count);
 
     /// <summary>Collapse runs of consecutive same-key dismissed
-    /// alarms into a single row with a count chip. Helm-feedback: a
-    /// noisy depth sensor pushed five "Depth Cleared" entries to
-    /// the top of the log on every tide tick, drowning out other
-    /// alarms; grouping keeps one row per run while preserving the
-    /// run length. Only consecutive same-key entries collapse -- a
-    /// CPA alarm between two depth clears keeps both depth runs as
-    /// distinct rows so the chronological context survives.</summary>
+    /// alarms into a single row with a count chip. A noisy sensor
+    /// (e.g. depth flapping on every tide tick) would otherwise push
+    /// many identical entries to the top of the log and drown out
+    /// other alarms; grouping keeps one row per run while preserving
+    /// the run length. Only consecutive same-key entries collapse --
+    /// a CPA alarm between two depth clears keeps both depth runs
+    /// as distinct rows so the chronological context survives.</summary>
     private static IEnumerable<DismissedAlarmGroup> CoalesceDismissedHistory(
         IReadOnlyList<OnaPlotter.Models.DismissedAlarm> history)
     {

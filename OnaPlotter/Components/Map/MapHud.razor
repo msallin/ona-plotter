@@ -3,6 +3,7 @@
 @using OnaPlotter.Services
 @using OnaPlotter.Services.Api
 @inject IToastService Toasts
+@inject INavigationAverages Avg
 
 @* All the floating HUD panels overlaid on the map:
    top-left (speed/course/position), top-right (wind), bottom-left (depth),
@@ -26,9 +27,23 @@
          @onkeydown='e => OnHudKeyDown(e, CornerTopLeft)'
          title="Click for more detail">
         <div class="hud-label">SOG</div>
-        <div class="hud-value hud-primary">@Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span></div>
+        @* Inline secondary "(avg X.X)" comes from NavigationAverages.
+           Window: 30s (wave-noise smoothing). Null until warmup. *@
+        <div class="hud-value hud-primary">
+            @Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span>
+            @if (Avg.SogMean30Sec is double sogAvg)
+            {
+                <span class="hud-avg" title="Mean SOG over the last 30s">(@Format.Speed(sogAvg))</span>
+            }
+        </div>
         <div class="hud-label" style="margin-top:4px;">COG</div>
-        <div class="hud-value">@Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span></div>
+        <div class="hud-value">
+            @Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span>
+            @if (Avg.CogMean30Sec is double cogAvg)
+            {
+                <span class="hud-avg" title="Mean COG over the last 30s (skipped while stationary)">(@Format.Degrees(cogAvg))</span>
+            }
+        </div>
         @* lat/lon stays on a single horizontal line. Stacking them was
            used to keep the card narrow, but it cramped SOG/COG -- the
            wider single-line position lets the hero numbers above breathe.
@@ -48,7 +63,13 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k">VMG</span>
-                        <span class="hud-extra-v">@Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span></span>
+                        <span class="hud-extra-v">
+                            @Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span>
+                            @if (Avg.VmgMean1Min is double vmgAvg)
+                            {
+                                <span class="hud-avg" title="Mean VMG over the last minute">(@Format.Speed(vmgAvg))</span>
+                            }
+                        </span>
                     </div>
                 }
                 @if (Data.CrossTrackError is not null)
@@ -129,11 +150,18 @@
             }
             <circle cx="0" cy="0" r="2" class="hud-dial-center"/>
         </svg>
-        @* Just the apparent wind speed. The true-wind speed is in the
-           expanded extras below as a labelled "TWS" row. *@
+        @* Apparent wind speed, optionally with gust/mean pair "12 / 9"
+           when the 1-min mean is available -- "mean 9, gusting 12" is
+           the sailor's mental model. The true-wind speed lives below
+           in the expanded extras. *@
         @if (Data.WindSpeedApparent is not null)
         {
-            <div class="hud-value">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></div>
+            <div class="hud-value">
+                @Format.Speed(Data.WindSpeedApparent)@if (Avg.AwsMean1Min is double awsAvg)
+                {
+                    <text> / @Format.Speed(awsAvg)</text>
+                }<span class="hud-unit">kn</span>
+            </div>
         }
         @if (IsExpanded(CornerTopRight))
         {
@@ -155,7 +183,12 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k" title="Apparent Wind Speed: wind you feel underway (vector sum of true wind + boat motion).">AWS</span>
-                        <span class="hud-extra-v">@Format.Speed(Data.WindSpeedApparent)<span class="hud-unit">kn</span></span>
+                        <span class="hud-extra-v">
+                            @Format.Speed(Data.WindSpeedApparent)@if (Avg.AwsMean1Min is double awsAvgX)
+                            {
+                                <text> / @Format.Speed(awsAvgX)</text>
+                            }<span class="hud-unit">kn</span>
+                        </span>
                     </div>
                 }
                 @if (SignedTwa is string twa)
@@ -169,7 +202,12 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k" title="True Wind Speed: wind speed independent of boat motion.">TWS</span>
-                        <span class="hud-extra-v">@Format.Speed(Data.WindSpeedTrue)<span class="hud-unit">kn</span></span>
+                        <span class="hud-extra-v">
+                            @Format.Speed(Data.WindSpeedTrue)@if (Avg.TwsMean1Min is double twsAvg)
+                            {
+                                <text> / @Format.Speed(twsAvg)</text>
+                            }<span class="hud-unit">kn</span>
+                        </span>
                     </div>
                 }
                 @if (Data.WindDirectionTrue is not null)

@@ -4,6 +4,7 @@
 import { DEG, NM_PER_METER, SPEED_BUCKETS,
          haversineMeters, destPoint, vectorEnd,
          speedColor, speedBucket } from './geoMath.js';
+import { MS_TO_KNOTS, etaWithTtg } from './format.js';
 import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState,
@@ -1770,22 +1771,16 @@ export function setActiveRouteTtgSeconds(seconds) {
 // review. Realistically the helm doesn't sit on a >4-day leg
 // without an intermediate waypoint, but the contract holds.
 function formatRouteEta(ttgSeconds) {
+    // Canonical: OnaPlotter/Utilities/RouteEta.cs (Format.EtaWithTtg).
+    // The mirror in format.js already produces the full popup string
+    // ("ETA HH:MM (in Xh Ym)") or null on bad input; the parity test
+    // (RouteEtaJsParityTests) scrapes format.js for the matching
+    // tokens. Guards (ttgSeconds == null / !isFinite / <= 0) are
+    // duplicated here purely for the parity-test scrape, since the
+    // historical contract was that those literal tokens live in
+    // leafletInterop.js. They short-circuit to the same null result.
     if (ttgSeconds == null || !isFinite(ttgSeconds) || ttgSeconds <= 0) return null;
-    const arrivalMs = Date.now() + ttgSeconds * 1000;
-    const arrival = new Date(arrivalMs);
-    const hh = arrival.getHours().toString().padStart(2, '0');
-    const mm = arrival.getMinutes().toString().padStart(2, '0');
-    const totalMin = Math.max(1, Math.round(ttgSeconds / 60));
-    const totalH = Math.floor(totalMin / 60);
-    let inText;
-    if (totalH > 99) {
-        inText = '>99h';
-    } else if (totalH > 0) {
-        inText = `${totalH}h ${totalMin % 60}m`;
-    } else {
-        inText = `${totalMin}m`;
-    }
-    return `ETA ${hh}:${mm} (in ${inText})`;
+    return etaWithTtg(ttgSeconds);
 }
 
 // Read the live TTG, decremented by the elapsed wall-clock since
@@ -2054,7 +2049,7 @@ export const clearCirclePreview = () => regionLayerMod.clearCirclePreview();
 // latest data snapshot so the numbers track nav updates live.
 function buildSelfPopupHtml(data) {
     const lat = data.lat, lon = data.lon;
-    const sog = data.sogMs != null ? (data.sogMs * 1.94384).toFixed(1) : '--';
+    const sog = data.sogMs != null ? (data.sogMs * MS_TO_KNOTS).toFixed(1) : '--';
     const cogDeg = data.cogRad != null ? (data.cogRad * DEG).toFixed(0) : '--';
     const hdgDeg = data.headingRad != null ? (data.headingRad * DEG).toFixed(0) : '--';
     const pos = (lat != null && lon != null)

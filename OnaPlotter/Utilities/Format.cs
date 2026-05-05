@@ -61,6 +61,69 @@ public static class Format
         return eta.Date == DateTime.Today ? eta.ToString("HH:mm") : eta.ToString("dd.MM HH:mm");
     }
 
+    /// <summary>Formats elapsed-since-MOB-raise as "T+5s" / "T+12m"
+    /// / "T+1h23m". Pure formatter -- caller passes the seconds
+    /// since the casualty was raised. JS layer uses this via the
+    /// mirrored helper in <c>format.js</c>; tests live here to pin
+    /// the exact strings.</summary>
+    public static string MobElapsed(int seconds)
+    {
+        if (seconds < 0) seconds = 0;
+        if (seconds < 60) return $"T+{seconds}s";
+        int min = seconds / 60;
+        if (min < 60) return $"T+{min}m";
+        int hr = min / 60;
+        return $"T+{hr}h{min % 60}m";
+    }
+
+    /// <summary>Formats a lat/lon pair as DMS with hemisphere
+    /// indicators: "47.50000&deg;N 8.50000&deg;W". Five decimals on
+    /// the degrees ~= 1m precision -- enough for a chart popup. Used
+    /// by waypoint / note / MOB popups in JS via the mirrored helper.</summary>
+    public static string LatLonDms(double lat, double lon)
+    {
+        char ns = lat >= 0 ? 'N' : 'S';
+        char ew = lon >= 0 ? 'E' : 'W';
+        return $"{Math.Abs(lat).ToString("F5", System.Globalization.CultureInfo.InvariantCulture)}°{ns} " +
+               $"{Math.Abs(lon).ToString("F5", System.Globalization.CultureInfo.InvariantCulture)}°{ew}";
+    }
+
+    /// <summary>Formats a radius in nautical miles for an on-chart
+    /// ring label: "0.5 nm" / "1.5 nm" / "5 nm". Two decimals below
+    /// 1 nm so 0.5 doesn't round to "1"; one decimal at 1-9.99;
+    /// whole number above 10. Trailing zeros are stripped ("0.50"
+    /// -&gt; "0.5", "1.0" -&gt; "1") to keep chart labels compact.
+    /// Returns empty for non-finite or non-positive input.</summary>
+    public static string RangeRingLabel(double nm)
+    {
+        if (!double.IsFinite(nm) || nm <= 0) return string.Empty;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string digits;
+        if (nm < 1)
+        {
+            // F2 then strip trailing zeros (and the dot if all zeros after).
+            digits = nm.ToString("F2", inv).TrimEnd('0').TrimEnd('.');
+        }
+        else if (nm < 10)
+        {
+            // F1 then strip a trailing ".0" -- a non-zero tenths digit
+            // (e.g. "1.5") survives the strip.
+            digits = nm.ToString("F1", inv);
+            if (digits.EndsWith(".0", StringComparison.Ordinal))
+            {
+                digits = digits[..^2];
+            }
+        }
+        else
+        {
+            // AwayFromZero matches JS's Math.round (50.5 -> 51) so the
+            // C# canonical and the format.js mirror produce identical
+            // strings on the .5 boundary.
+            digits = ((long)Math.Round(nm, MidpointRounding.AwayFromZero)).ToString(inv);
+        }
+        return $"{digits} nm";
+    }
+
     /// <summary>Formats XTE with port/starboard suffix. SignalK convention: positive = starboard.</summary>
     public static string Xte(double? meters)
     {

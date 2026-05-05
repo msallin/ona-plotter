@@ -59,6 +59,10 @@ builder.Services.AddSingleton<AisStore>();
 
 // UI services.
 builder.Services.AddSingleton<IToastService, ToastService>();
+// Wraps the platform fileTransfer.js shareOrCopy helper + outcome
+// toast handling so popup-side "Share" buttons (waypoint, note, MOB)
+// reuse a single failure / success path.
+builder.Services.AddSingleton<OnaPlotter.Services.ShareService>();
 builder.Services.AddSingleton<IConfirmationService, ConfirmationService>();
 builder.Services.AddSingleton<IPolarService, PolarService>();
 // Polls the server's version.g.js every 5 min and surfaces a
@@ -136,6 +140,12 @@ builder.Services.AddSingleton<ICourseApi, CourseApi>();
 // publish their alarms back to SK so other plotters can see them.
 builder.Services.AddSingleton<INotificationsApi, NotificationsApi>();
 
+// Persistable cache of resolved MOB positions (serverId -> lat/lon).
+// signalk-server discards the position from the /mob POST body so
+// this client-side cache is what survives a reload and lets the
+// chart marker reappear on the next session.
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.ResolvedPositionStore>();
+
 // Local-first MOB pipeline. Synthesises a notification into the
 // ServerNotificationStore + queues a background POST that retries
 // until the server confirms. The alarm pipeline wakes up via
@@ -188,6 +198,13 @@ builder.Services.AddSingleton(TimeProvider.System);
 // SignalK WebSocket delta stream.
 builder.Services.AddSingleton<SignalkClient>();
 
+// Time-windowed averages over the nav channels (TWS / AWS / SOG /
+// VMG / COG / TWD). Singleton so the buffers fill across page
+// navigations and every consumer (chart HUD, WindRose, future trend
+// chips) reads from the same series. Subscribes to OnDataChanged in
+// its ctor; resolving once at startup wires the sampler.
+builder.Services.AddSingleton<OnaPlotter.Services.INavigationAverages, OnaPlotter.Services.NavigationAverages>();
+
 // Client-error relay to the SignalK plugin's /log endpoint. Makes
 // iPad Safari exceptions visible in the SignalK server log for
 // SSH-based debugging at the helm. The actual install happens in
@@ -210,5 +227,13 @@ _ = signalkClient.StartAsync();
 // the publisher) and locally-emitted alarms would never reach other
 // plotters. Stashed in a discard so the GC keeps the subscription alive.
 _ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmPublisher>();
+
+// NavigationAverages must resolve at startup too -- its ctor wires
+// the OnDataChanged subscription, and no component injects it until
+// the chart HUD is mounted. Without this kick the rolling buffers
+// stay empty until the helm navigates to /map, which means the
+// smoothed values would only start filling on first chart-page
+// visit instead of from the moment the WS connects.
+_ = host.Services.GetRequiredService<OnaPlotter.Services.INavigationAverages>();
 
 await host.RunAsync();

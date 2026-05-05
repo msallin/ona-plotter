@@ -1,5 +1,15 @@
 // Pure geometry and navigation math utilities.
 // Extracted from leafletInterop.js so they can be tested without a browser/Leaflet.
+//
+// Display formatters (speed colour, lat/lon DMS, knots conversion,
+// range-ring label, ETA, MOB elapsed, AIS staleness opacity) live in
+// `format.js` -- their canonical home is C# Utilities/Format.cs +
+// SpeedColor.cs + StalenessOpacity.cs and the JS module mirrors those
+// with cross-reference comments. Re-exported below for back-compat
+// with existing callers; new code should import from `format.js`.
+
+import { speedColor, speedBucket, SPEED_BUCKETS, MS_TO_KNOTS } from './format.js';
+export { speedColor, speedBucket, SPEED_BUCKETS, MS_TO_KNOTS };
 
 export const RAD = Math.PI / 180;
 export const DEG = 180 / Math.PI;
@@ -51,32 +61,5 @@ export function vectorEnd(lat, lon, cogRad, sogMs, minutes) {
     return destPoint(lat, lon, cogRad, sogMs * m * 60);
 }
 
-/** Speed-to-color mapping: sogMs -> CSS rgb string. Blue(0) -> Green(3kn) -> Yellow(6+kn). */
-export function speedColor(sogMs) {
-    if (sogMs == null) return '#3b82f6';
-    const kn = sogMs * 1.94384;
-    const t = Math.min(kn / 8, 1);
-    if (t < 0.5) {
-        const f = t * 2;
-        const r = Math.round(59 + f * (34 - 59));
-        const g = Math.round(130 + f * (197 - 130));
-        const b = Math.round(246 + f * (94 - 246));
-        return `rgb(${r},${g},${b})`;
-    } else {
-        const f = (t - 0.5) * 2;
-        const r = Math.round(34 + f * (234 - 34));
-        const g = Math.round(197 + f * (179 - 197));
-        const b = Math.round(94 + f * (8 - 94));
-        return `rgb(${r},${g},${b})`;
-    }
-}
-
-/** Speed bucket thresholds (m/s) for track segment grouping. */
-export const SPEED_BUCKETS = [0, 1, 2, 3, 5, 8];
-export function speedBucket(sogMs) {
-    if (sogMs == null) return 0;
-    for (let i = SPEED_BUCKETS.length - 1; i >= 0; i--) {
-        if (sogMs >= SPEED_BUCKETS[i]) return i;
-    }
-    return 0;
-}
+// speedColor / speedBucket / SPEED_BUCKETS / MS_TO_KNOTS are
+// re-exported from `format.js` at the top of this file.

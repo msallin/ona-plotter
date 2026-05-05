@@ -17,6 +17,7 @@
 @inject NavigationManager Nav
 @inject IToastService Toasts
 @inject IConfirmationService Confirmations
+@inject OnaPlotter.Services.ShareService ShareService
 @inject OnaPlotter.Services.State.HistoryPageState State
 @using OnaPlotter.Services.Json
 
@@ -1053,23 +1054,7 @@
         string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
         string? content = ResourceExporter.TripGeoJson(suggested, s, pts);
         if (content is null) return;
-
-        try
-        {
-            var fileTransfer = await JS.InvokeAsync<IJSObjectReference>(
-                "import", "./js/platform/fileTransfer.js");
-            string outcome = await fileTransfer.InvokeAsync<string>(
-                "shareOrCopy", suggested, content);
-            switch (outcome)
-            {
-                case "shared":      Toasts.Success("Shared"); break;
-                case "copied":      Toasts.Success("Copied to clipboard"); break;
-                case "cancelled":   /* helm tapped cancel; no toast */ break;
-                default:            Toasts.Error("Couldn't share or copy."); break;
-            }
-        }
-        catch (JSDisconnectedException) { }
-        catch (JSException ex) { Toasts.LogException(ex, "Share"); }
+        await ShareService.ShareJsonAsync(suggested, content);
     }
 
     /// <summary>Strip filesystem-illegal characters from a humanly-

@@ -48,9 +48,18 @@ public sealed class ServerNotificationStore
     /// payload, or the call cleared an active path). Used by the MOB
     /// pipeline to reconcile a local synthetic against a server WS
     /// echo without coupling SignalkClient directly to MobService.
-    /// Single-threaded WASM assumption: handlers run synchronously
-    /// inside Apply, before the bool result propagates to the
-    /// caller.</summary>
+    ///
+    /// <para><b>Invariant (load-bearing):</b> handlers run
+    /// synchronously inside <see cref="Apply"/> / <see cref="Clear"/>,
+    /// AFTER the dictionary mutation has completed and BEFORE the
+    /// bool result propagates to the caller. This lets a handler
+    /// safely re-enter Apply on a different path -- <c>MobService</c>
+    /// uses this for the local-synthetic / server-twin reconciliation
+    /// dance: a handler reads <see cref="Active"/> to find the
+    /// just-applied entry, then issues a follow-up Apply. Any change
+    /// that introduces awaits between the mutation and the event fire
+    /// (or batches notifications) breaks that contract -- handlers
+    /// would read stale state and the reconcile would mis-fire.</para></summary>
     public event Action<string>? OnPathChanged;
 
     /// <summary>Snapshot of the currently-armed notifications. Returns a

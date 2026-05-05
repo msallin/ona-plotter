@@ -36,6 +36,7 @@
 /** @typedef {import('./radarProtobuf.js').Spoke} Spoke */
 
 import { decodeRadarMessage } from './radarProtobuf.js';
+import { rangeRingLabel } from './format.js';
 
 // Fallback legend for servers that don't ship one in their
 // capabilities response. Lifted from Freeboard-SK's default (which
@@ -172,22 +173,16 @@ function offsetNorthMetres(lat, lon, metres) {
 }
 
 /**
- * Distance label as a short human-friendly string in nautical miles.
- * The marine standard for range scales: helms read ranges in nm,
- * not metres. Choice of decimals follows the magnitude:
- *   < 1 nm   -> 0.25 / 0.5 / 0.75 (2 decimals max)
- *   < 10 nm  -> 0.5 / 1 / 1.5 / 2 (1 decimal max)
- *   >= 10 nm -> integer
- * The trailing " nm" is suffixed inside the HTML so the styling can
- * dim it relative to the number if needed.
+ * Distance label HTML for a radar range ring. The number + unit
+ * formatting (decimals + trailing-zero strip) lives in C# (Format
+ * .RangeRingLabel) and is mirrored in format.js. Here we wrap the
+ * unit suffix in a span so CSS can dim " nm" relative to the digit
+ * (the AIS guard ring uses the bare label without the span).
  */
 function formatRangeLabel(metres) {
-    const nm = metres / 1852;
-    let txt;
-    if (nm < 1) txt = nm.toFixed(2).replace(/\.?0+$/, '');
-    else if (nm < 10) txt = nm.toFixed(1).replace(/\.0$/, '');
-    else txt = Math.round(nm).toString();
-    return `${txt}<span class="radar-ring-label-unit"> nm</span>`;
+    const label = rangeRingLabel(metres / 1852);
+    if (!label) return '';
+    return label.replace(/ nm$/, '<span class="radar-ring-label-unit"> nm</span>');
 }
 
 class RadarOverlay {

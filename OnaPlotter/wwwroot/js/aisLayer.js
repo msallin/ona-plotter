@@ -15,6 +15,7 @@
 // CPA threat band) are resolved on the C# side; JS just draws them.
 
 import { DEG, NM_PER_METER, haversineMeters, bearingDeg, destPoint, vectorEnd } from './geoMath.js';
+import { MS_TO_KNOTS, stalenessOpacity, rangeRingLabel } from './format.js';
 import { esc } from './popupHelpers.js';
 
 let mapRef = null;
@@ -362,7 +363,7 @@ function buildAisPopupHtml(snap) {
     const { v, selfLat: _selfLat, selfLon: _selfLon, cpaInfo, isDangerEff, isWarning } = snap;
     const mmsi = v.mmsi || '';
     const callsign = v.callsign ? esc(v.callsign) : '';
-    const sog = v.sogMs != null ? (v.sogMs * 1.94384).toFixed(1) : '--';
+    const sog = v.sogMs != null ? (v.sogMs * MS_TO_KNOTS).toFixed(1) : '--';
     const cogDeg = v.cogRad != null ? (v.cogRad * DEG).toFixed(0) : '--';
     const hdgDeg = v.headingRad != null ? (v.headingRad * DEG).toFixed(0) : '--';
     const type = v.shipType ? esc(v.shipType) : '';
@@ -657,11 +658,11 @@ export function updateAisTargets(vessels) {
                 if (isSart || v.buddy) {
                     if (el.style.opacity !== '') el.style.opacity = '';
                 } else {
+                    // The fade ramp lives in C# (StalenessOpacity.Compute);
+                    // format.js mirrors it. Null means "fresh, clear inline
+                    // opacity so the CSS default applies".
                     const ageSec = v.ageSec ?? 0;
-                    let op;
-                    if (ageSec >= 300)      op = '0.25';     // >5 min
-                    else if (ageSec >= 30)  op = (1 - 0.65 * (ageSec - 30) / 270).toFixed(2);
-                    else                    op = '';         // fresh
+                    const op = stalenessOpacity(ageSec) ?? '';
                     // Only write when the bucket actually changes; 200+
                     // vessels in a harbour re-writing style every tick
                     // invalidates layout for nothing.
@@ -1189,18 +1190,8 @@ export function setHarborMode(enabled) {
     }
 }
 
-/**
- * Format a radius in nautical miles for the on-chart guard-ring
- * label. Two decimals below 1 nm so 0.5 doesn't round to "1"; whole
- * number above 1 to keep the label compact ("1 nm" / "2 nm" /
- * "5 nm"). Standalone helper so the inner + outer ring labels
- * format the same way.
- */
-function formatRingLabelNm(nm) {
-    if (!isFinite(nm) || nm <= 0) return '';
-    if (nm < 1) return `${nm.toFixed(2)} nm`;
-    return `${nm.toFixed(nm < 10 ? 1 : 0)} nm`;
-}
+// Range-ring label formatter is shared with radarLayer.js via
+// format.js (canonical: Format.RangeRingLabel, tested in C#).
 
 /**
  * Drop a Leaflet tooltip (or update an existing one) at the
@@ -1290,7 +1281,7 @@ function drawGuardZone() {
     // Place the inner ring's distance label at the top of the ring.
     guardZoneRingLabel = placeRingLabel(
         guardZoneRingLabel, radiusM,
-        formatRingLabelNm(guardZoneRadiusNm),
+        rangeRingLabel(guardZoneRadiusNm),
         'guard-ring-label-danger');
 
     // Outer warning ring at radius * warningFactor. CPA chips for
@@ -1334,7 +1325,7 @@ function drawGuardZone() {
     }
     guardZoneWarningRingLabel = placeRingLabel(
         guardZoneWarningRingLabel, warnRadiusM,
-        formatRingLabelNm(guardZoneRadiusNm * Math.max(1.0, guardZoneWarningFactor)),
+        rangeRingLabel(guardZoneRadiusNm * Math.max(1.0, guardZoneWarningFactor)),
         'guard-ring-label-warn');
 }
 

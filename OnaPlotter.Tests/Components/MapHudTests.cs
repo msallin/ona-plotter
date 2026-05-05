@@ -4,6 +4,7 @@ using OnaPlotter.Components.Map;
 using OnaPlotter.Models;
 using OnaPlotter.Services;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Tests.Components;
 
@@ -21,12 +22,34 @@ public class MapHudTests
         public Task<ApiResult> AdjustHeadingAsync(double deltaDeg, CancellationToken ct = default) => Task.FromResult(ApiResult.Ok);
     }
 
+    /// <summary>Stub <see cref="INavigationAverages"/>: empty buffers,
+    /// every mean returns null. The HUD renders the live numbers
+    /// without the smoothed parenthetical -- which is what these tests
+    /// already expected before the averaging surface landed.</summary>
+    private sealed class StubNavigationAverages : INavigationAverages
+    {
+        public RollingScalarSeries Tws { get; } = new(TimeSpan.FromMinutes(60));
+        public RollingScalarSeries Aws { get; } = new(TimeSpan.FromMinutes(60));
+        public RollingDirectionSeries Twd { get; } = new(TimeSpan.FromMinutes(60));
+        public RollingScalarSeries Sog { get; } = new(TimeSpan.FromMinutes(5));
+        public RollingScalarSeries Vmg { get; } = new(TimeSpan.FromMinutes(5));
+        public RollingDirectionSeries Cog { get; } = new(TimeSpan.FromMinutes(5));
+        public double? TwsMean1Min => null;
+        public double? TwsMean10Min => null;
+        public double? AwsMean1Min => null;
+        public double? AwsMean10Min => null;
+        public double? SogMean30Sec => null;
+        public double? VmgMean1Min => null;
+        public double? CogMean30Sec => null;
+    }
+
     private static IRenderedComponent<MapHud> Render(Bunit.TestContext ctx, NavigationData data)
     {
         // MapHud now @injects IToastService for the autopilot
         // heading-nudge audit toast; supply a real ToastService rather
         // than a fake since the assertions never read its state.
         ctx.Services.AddSingleton<IToastService, ToastService>();
+        ctx.Services.AddSingleton<INavigationAverages, StubNavigationAverages>();
         return ctx.RenderComponent<MapHud>(p => p
             .Add(x => x.Data, data)
             .Add(x => x.Autopilot, new FakeAutopilot()));

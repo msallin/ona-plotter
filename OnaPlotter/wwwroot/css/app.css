@@ -1672,6 +1672,17 @@ html:fullscreen .hud-stack-br {
     margin-left: 3px;
 }
 
+/* Smoothed-value parenthetical that follows the live readout
+   ("SOG 6.4 kn (5.9)"). Sized between the unit and the primary so
+   the helm reads the live number first; the avg is a peripheral
+   reference. Same theme-aware muted ink as .hud-unit. */
+.hud-avg {
+    font-size: 0.75rem;
+    color: var(--hud-ink-stale);
+    margin-left: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Depth alarm threshold label under the depth HUD value. Muted by
    default so it's glanceable context ("you'll hear an alarm below
    this"); switches to a pulsing danger-red when the current depth is
@@ -2192,10 +2203,11 @@ html:fullscreen .hud-stack-br {
     line-height: 1.5 !important;
 }
 
-/* AIS popup structure. Helm-feedback round 2 (compact rewrite):
-   the previous popup grew to ~3/4 of a phone screen tall because
-   CPA used display-6-style font and COLREGS had its own padded
-   two-row layout. Now everything is one shared 12px font; only
+/* AIS popup structure. Compact one-font layout: every row uses
+   the same 12 px size + 1.5 line-height so the popup stays
+   roughly 1/4 of a phone screen tall (an early "CPA giant +
+   COLREGS two-row" layout grew to ~3/4 -- not workable on a
+   phone in landscape). Only
    the title is bold. CPA + COLREGS values are bold to keep their
    prominence without enlarging the row. */
 .ais-popup-content { line-height: 1.4; font-size: 12px; }
@@ -4070,11 +4082,10 @@ html.night-mode-global body {
         --hud-font-label:   0.65rem;
     }
 
-    /* Phone HUD: keep the unit inline AFTER the digit ("6.4 kn"),
-       not stacked below. Earlier display:block experiment broke
-       the visual order on the helm screenshot ("kn" appeared on
-       a line BEFORE the digit because the parent container
-       reflowed); helm-feedback was unambiguous: units behind. */
+    /* Phone HUD: keep the unit inline AFTER the digit ("6.4 kn").
+       display:block here puts the unit on its own line and on a
+       narrow flex parent it can reflow to BEFORE the digit, which
+       reads as "kn 6.4". Inline keeps the visual order stable. */
     .hud-unit {
         font-size: 0.62rem;
         margin-left: 0.15em;
@@ -4208,11 +4219,10 @@ html.night-mode-global body {
    desktop / iPad. The phone @media block above flips them back
    on (display: flex / display: block) so the More menu shows
    the full set when the bar can't.
-   Earlier this was a `@media not (X) and not (Y)` negation which
-   relies on Media Queries Level 4 boolean syntax -- helm flagged
-   that desktop browsers were showing the duplicates anyway,
-   meaning the negation isn't being honoured everywhere. Flipping
-   the default avoids the problematic `not` operator entirely. */
+   Default-off + opt-in (rather than `@media not (X) and not (Y)`
+   negation) avoids reliance on Media Queries Level 4 boolean
+   syntax, which Safari historically honours unevenly -- some
+   desktop browsers were showing the overflow duplicates anyway. */
 .ctrl-more-overflow { display: none !important; }
 .ctrl-more-sep {
     height: 1px;
@@ -5091,29 +5101,24 @@ html.night-mode-global body {
 
 /* ===== Route Info HUD Panel ===== */
 
-/* Active route panel: previously top:12 / left:50%, but that collided
-   with the chart-quick-bar (same slot) and blanketed it while under way.
-   The route + anchor cards now live in .hud-stack-bc which provides
-   bottom anchoring + width clamp once -- the per-card .hud-route /
-   .hud-anchor rules used to set those individually but are gone now. */
+/* Active route panel. The route + anchor cards live in
+   .hud-stack-bc which provides bottom anchoring + width clamp
+   so per-card rules don't need to restate position / width. */
 
 .route-panel {
-    /* Sizes to its content. Earlier had min-width:140 to keep the
-       waypoint progress chip from collapsing on a short route name,
-       but the chip's own intrinsic width is enough now that the BC
-       stack no longer fixes a card width. */
+    /* Sizes to its content. The waypoint progress chip's intrinsic
+       width is enough; no min-width needed now that the BC stack
+       does the layout. */
 }
 
 /* Title row: route name on the left, "WP 3 of 7" progress on the right.
    Flex so the progress chip stays pinned even when the name is long
    (truncate handled by parent overflow). */
 /* Shared title row for both the Route HUD card and the Anchor HUD
-   card. Keeping one rule across both means a font-size tweak or
-   colour change lands on both cards at once -- previously the two
-   had drifted (route=0.7rem uppercase muted with a blue chip vs
-   anchor=0.6rem uppercase dimmer) so the two sibling cards read
-   as different families. Now a .hud-card-title wraps the primary
-   label on each, optional .hud-card-progress adds the route-only
+   card. One rule across both means a font-size tweak or colour
+   change lands on both cards at once and keeps the two sibling
+   cards reading as one family. .hud-card-title wraps the primary
+   label on each; optional .hud-card-progress adds the route-only
    "WP 3 of 7" chip in the accent colour. */
 .hud-card-title {
     display: flex;
@@ -5260,11 +5265,10 @@ html.night-mode-global body {
 }
 .route-info-item {
     /* Label + value inline so a "DTW 1.5 nm" pair reads as one line
-       of text. Previously each item was a 2-line column (label
-       above value), which the helm read as "two rows of fields"
-       even though it was one row of items. flex-direction: row
-       collapses each pair to a single line; the gap keeps "DTW"
-       and "1.5 nm" visually distinct.
+       of text. A 2-line column variant (label above value) reads
+       as "two rows of fields" rather than one row of items.
+       flex-direction: row collapses each pair to a single line;
+       the gap keeps "DTW" and "1.5 nm" visually distinct.
 
        white-space: nowrap stops a value (e.g. "30m P") from
        wrapping inside its own item when the row is tight; the row
@@ -6104,8 +6108,8 @@ main:has(.map-container.big-type) .chart-reorder-btn {
    content-area + 4 px bar padding × 2 + 1 px border × 2). To get
    the SAME visual gap above the bar the helm sees on desktop
    (~18 px between the route card and the bar), the override
-   here uses 70 px -- not the earlier 88 which was too generous
-   and pushed the card visibly higher than the desktop equivalent.
+   here uses 70 px so the card sits at the same visual elevation
+   as the desktop equivalent.
    Two layers of fix:
      (a) Bump --ctrl-bar-height for big mode so any future
          consumer of the variable picks up the right value.

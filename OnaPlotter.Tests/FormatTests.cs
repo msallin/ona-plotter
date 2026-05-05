@@ -138,4 +138,107 @@ public class FormatTests
     {
         await Assert.That(Format.DepthClass(20)).IsEqualTo("depth-ok");
     }
+
+    // -- MobElapsed -----------------------------------------------
+
+    [Test]
+    public async Task MobElapsed_NegativeClamps_ToZero()
+    {
+        // Clock skew or test fixture passing pre-raise instant ->
+        // pin a stable display rather than a negative number.
+        await Assert.That(Format.MobElapsed(-5)).IsEqualTo("T+0s");
+    }
+
+    [Test]
+    public async Task MobElapsed_UnderMinute_Seconds()
+    {
+        await Assert.That(Format.MobElapsed(0)).IsEqualTo("T+0s");
+        await Assert.That(Format.MobElapsed(45)).IsEqualTo("T+45s");
+        await Assert.That(Format.MobElapsed(59)).IsEqualTo("T+59s");
+    }
+
+    [Test]
+    public async Task MobElapsed_AtMinute_RollsToMinutes()
+    {
+        await Assert.That(Format.MobElapsed(60)).IsEqualTo("T+1m");
+        await Assert.That(Format.MobElapsed(125)).IsEqualTo("T+2m");
+        await Assert.That(Format.MobElapsed(3599)).IsEqualTo("T+59m");
+    }
+
+    [Test]
+    public async Task MobElapsed_AtHour_RollsToHoursMinutes()
+    {
+        await Assert.That(Format.MobElapsed(3600)).IsEqualTo("T+1h0m");
+        await Assert.That(Format.MobElapsed(3660)).IsEqualTo("T+1h1m");
+        await Assert.That(Format.MobElapsed(5025)).IsEqualTo("T+1h23m");
+    }
+
+    // -- LatLonDms ------------------------------------------------
+
+    [Test]
+    public async Task LatLonDms_PositiveLat_PositiveLon_NE()
+    {
+        await Assert.That(Format.LatLonDms(47.5, 8.5))
+            .IsEqualTo("47.50000°N 8.50000°E");
+    }
+
+    [Test]
+    public async Task LatLonDms_NegativeLat_NegativeLon_SW()
+    {
+        await Assert.That(Format.LatLonDms(-25.535966, -76.761572))
+            .IsEqualTo("25.53597°S 76.76157°W");
+    }
+
+    [Test]
+    public async Task LatLonDms_FivePrecisionDigits_AlwaysFiveDecimals()
+    {
+        // Pin five-decimal width so the popup column doesn't jitter
+        // when a vessel's last digit changes.
+        await Assert.That(Format.LatLonDms(0.0, 0.0))
+            .IsEqualTo("0.00000°N 0.00000°E");
+    }
+
+    // -- RangeRingLabel -------------------------------------------
+
+    [Test]
+    public async Task RangeRingLabel_ZeroOrNegative_Empty()
+    {
+        await Assert.That(Format.RangeRingLabel(0)).IsEqualTo(string.Empty);
+        await Assert.That(Format.RangeRingLabel(-1)).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task RangeRingLabel_NonFinite_Empty()
+    {
+        await Assert.That(Format.RangeRingLabel(double.NaN)).IsEqualTo(string.Empty);
+        await Assert.That(Format.RangeRingLabel(double.PositiveInfinity)).IsEqualTo(string.Empty);
+    }
+
+    [Test]
+    public async Task RangeRingLabel_Under1Nm_StripsTrailingZeros()
+    {
+        await Assert.That(Format.RangeRingLabel(0.5)).IsEqualTo("0.5 nm");
+        await Assert.That(Format.RangeRingLabel(0.25)).IsEqualTo("0.25 nm");
+        await Assert.That(Format.RangeRingLabel(0.1)).IsEqualTo("0.1 nm");
+    }
+
+    [Test]
+    public async Task RangeRingLabel_OneToTen_StripsDotZero()
+    {
+        await Assert.That(Format.RangeRingLabel(1.0)).IsEqualTo("1 nm");
+        await Assert.That(Format.RangeRingLabel(2.5)).IsEqualTo("2.5 nm");
+        // 9.99 rounds up at F1 to "10.0" -> stripped to "10".
+        await Assert.That(Format.RangeRingLabel(9.99)).IsEqualTo("10 nm");
+    }
+
+    [Test]
+    public async Task RangeRingLabel_TenAndAbove_RoundsToInt()
+    {
+        await Assert.That(Format.RangeRingLabel(10.0)).IsEqualTo("10 nm");
+        await Assert.That(Format.RangeRingLabel(50.5)).IsEqualTo("51 nm");
+    }
+
+    // EtaWithTtg covered by RouteEta + RouteEtaTests; no duplicate
+    // here. The JS mirror in format.js (etaWithTtg) is parity-tested
+    // by RouteEtaJsParityTests against the same RouteEta canonical.
 }

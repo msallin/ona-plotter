@@ -446,18 +446,20 @@
     {
         if (!firstRender || _viewportProbed) return;
         _viewportProbed = true;
-        // One-shot viewport probe at first render. innerWidth <= 600
-        // matches the phone breakpoint used everywhere else in
-        // app.css; staying in lockstep means a viewport that resizes
-        // across the breakpoint at runtime (rare on a real plotter,
-        // common in dev devtools) would still need a reload to
-        // re-probe -- acceptable trade-off for not adding a resize
-        // listener that re-renders the whole dashboard on every
-        // window-drag pixel.
+        // One-shot viewport probe at first render. Goes through the
+        // shared platform/viewport.js helper so the (max-width: 600px)
+        // breakpoint stays in lockstep with app.css and MainLayout's
+        // first-run sidebar default. A viewport that resizes across
+        // the breakpoint at runtime (rare on a real plotter, common
+        // in dev devtools) needs a reload to re-probe -- acceptable
+        // trade-off for not adding a resize listener that re-renders
+        // the whole dashboard on every window-drag pixel.
         try
         {
-            var w = await JS.InvokeAsync<int>("eval", "window.innerWidth");
-            if (w > 0 && w <= 600 && !_isMobileViewport)
+            var viewport = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/platform/viewport.js");
+            var isMobile = await viewport.InvokeAsync<bool>("isMobile");
+            if (isMobile && !_isMobileViewport)
             {
                 _isMobileViewport = true;
                 StateHasChanged();

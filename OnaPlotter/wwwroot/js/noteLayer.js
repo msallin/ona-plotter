@@ -15,6 +15,7 @@
 
 import { MarkerLayer } from './markerLayer.js';
 import { esc, wireDeleteConfirm } from './popupHelpers.js';
+import { latLonDms } from './format.js';
 
 const NOTE_STROKE = '#7a5418';
 
@@ -75,14 +76,10 @@ function getNoteIcon() {
     return noteIconCached;
 }
 
-/** Format a [lat, lon] pair as "47.40123°N, 8.50456°E" for the popup
- *  body. Hemisphere letters keep it readable for a helm who isn't
- *  used to signed decimal degrees; 5 fractional digits = ~1 m on
- *  any latitude, matching what GPS feeds typically resolve. */
+/** "47.40123°N, 8.50456°E" -- comma-separated combined DMS via
+ *  the shared formatter (canonical: Format.LatLonDms). */
 function formatLatLon(lat, lon) {
-    const ns = lat >= 0 ? 'N' : 'S';
-    const ew = lon >= 0 ? 'E' : 'W';
-    return `${Math.abs(lat).toFixed(5)}°${ns}, ${Math.abs(lon).toFixed(5)}°${ew}`;
+    return latLonDms(lat, lon, ', ');
 }
 
 /** Format an ISO-8601 timestamp string for the popup. Local-tz

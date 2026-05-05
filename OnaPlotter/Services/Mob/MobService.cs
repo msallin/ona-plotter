@@ -36,16 +36,7 @@ namespace OnaPlotter.Services.Mob;
 public sealed class MobService : IMobService, IDisposable
 {
     private const string StorageKey = "mob.pendingRaise.v1";
-    /// <summary>localStorage key for the resolved-position cache --
-    /// a serverId -> (lat, lon) map written when reconcile copies
-    /// the position from a successful local synthetic onto the
-    /// server twin. Lets a future reload / restart enrich the
-    /// position-less server twin (signalk-server discards
-    /// <c>position</c> from the /mob POST body so the canonical
-    /// store of the lat/lon is here, not on the server).</summary>
-    private const string ResolvedPositionsKey = "mob.resolvedPositions.v1";
     private const string MobPathPrefix = "notifications.mob.";
-    private const string MobValueId = "mob";
 
     /// <summary>Default banner copy when the helm doesn't pass an
     /// explicit message. Single source of truth -- Map.razor passes
@@ -70,35 +61,17 @@ public sealed class MobService : IMobService, IDisposable
     private readonly INotificationsApi _api;
     private readonly ServerNotificationStore _store;
     private readonly IKeyValueStore _kv;
+    private readonly ResolvedPositionStore _resolvedPositions;
     private readonly TimeProvider _time;
 
-    /// <summary>Keyed by localId. Survives reload via localStorage;
-    /// the in-memory map is the source of truth between persists.</summary>
-    private readonly Dictionary<string, PendingRaise> _pending = new(StringComparer.Ordinal);
-
-    /// <summary>Per-pending CTS so a successful echo or explicit
-    /// cancel can stop the retry loop cleanly.</summary>
-    private readonly Dictionary<string, CancellationTokenSource> _pendingCts =
-        new(StringComparer.Ordinal);
-
-    /// <summary>Per-pending retry-loop Task. Test seam: a test can
-    /// <c>await GetRaiseLoopAsync(localId)</c> instead of polling
-    /// the fake API with wall-clock waits, which removes the flake
-    /// vector identified in the review (TEST-004 / TEST-005).
-    /// Production callers don't need this; it stays internal.</summary>
-    private readonly Dictionary<string, Task> _pendingTasks =
-        new(StringComparer.Ordinal);
-
-    /// <summary>Cache of MOB positions keyed by serverId, persisted to
-    /// localStorage. Populated when reconcile transfers the local
-    /// synthetic's position onto the server twin and consulted on
-    /// <see cref="InitializeAsync"/> when ListActiveAsync returns a
-    /// server-twin entry without position. Without this cache the
-    /// chart marker would vanish across a session boundary: the
-    /// previous-session reconcile drops the pending entry once the
-    /// raise succeeds, so the position lives only on the (in-memory)
-    /// server-twin store entry. New session = new store, gone.</summary>
-    private readonly Dictionary<string, (double Lat, double Lon)> _resolvedPositions =
+    /// <summary>Live pending raises keyed by localId. One entry per
+    /// in-flight MOB; bundles the persistable state, the cancel
+    /// handle, and the retry-loop task so add/remove is a single
+    /// dictionary operation -- no chance of leaving an orphan CTS
+    /// or task behind. The persistable <see cref="PendingRaise"/>
+    /// inside survives reload via localStorage; the cancel handle
+    /// + loop task are session-scoped.</summary>
+    private readonly Dictionary<string, LivePending> _pending =
         new(StringComparer.Ordinal);
 
     private bool _disposed;
@@ -107,11 +80,13 @@ public sealed class MobService : IMobService, IDisposable
         INotificationsApi api,
         ServerNotificationStore store,
         IKeyValueStore kv,
+        ResolvedPositionStore resolvedPositions,
         TimeProvider time)
     {
         _api = api ?? throw new ArgumentNullException(nameof(api));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _kv = kv ?? throw new ArgumentNullException(nameof(kv));
+        _resolvedPositions = resolvedPositions ?? throw new ArgumentNullException(nameof(resolvedPositions));
         _time = time ?? TimeProvider.System;
 
         // Reconciliation: when any notifications.mob.* path mutates in
@@ -154,23 +129,21 @@ public sealed class MobService : IMobService, IDisposable
 
         // Track + persist the pending raise so a reload mid-retry
         // resumes where it left off.
-        var pending = new PendingRaise(
+        var raise = new PendingRaise(
             LocalId: localId,
             Message: msg,
             Latitude: latitude,
             Longitude: longitude,
             AttemptCount: 0);
-        _pending[localId] = pending;
+        var live = new LivePending(raise, new CancellationTokenSource());
+        _pending[localId] = live;
         await PersistPendingAsync(ct);
 
-        // Background retry. The loop owns its own CTS so cancellations
-        // (echo arrival, dispose) tear it down cleanly. The Task is
-        // tracked so tests can await it -- production callers ignore
-        // the handle.
-        var cts = new CancellationTokenSource();
-        _pendingCts[localId] = cts;
-        var loopTask = Task.Run(() => RunRaiseLoopAsync(pending, cts.Token));
-        _pendingTasks[localId] = loopTask;
+        // Background retry. The CTS is the loop's exit signal
+        // (echo arrival, explicit cancel, dispose). The Task is
+        // captured so tests can await it -- production callers
+        // ignore the handle.
+        live.Loop = Task.Run(() => RunRaiseLoopAsync(raise, live.Cts.Token));
 
         return localId;
     }
@@ -183,18 +156,18 @@ public sealed class MobService : IMobService, IDisposable
         // localId matches OR its serverId matches, cancel the retry
         // loop first -- otherwise the loop completes a successful
         // POST after the helm has cleared, and the WS echo of the
-        // server twin resurrects the MOB. SKEP-001 in the review.
+        // server twin resurrects the MOB.
         string? matchedLocalId = null;
         bool hasServerSide = false;
-        foreach (var (localId, p) in _pending)
+        foreach (var (localId, live) in _pending)
         {
             if (string.Equals(localId, id, StringComparison.Ordinal))
             {
                 matchedLocalId = localId;
-                hasServerSide = p.ServerId is not null;
+                hasServerSide = live.Raise.ServerId is not null;
                 break;
             }
-            if (p.ServerId is { } sid && string.Equals(sid, id, StringComparison.Ordinal))
+            if (live.Raise.ServerId is { } sid && string.Equals(sid, id, StringComparison.Ordinal))
             {
                 matchedLocalId = localId;
                 hasServerSide = true;
@@ -219,10 +192,7 @@ public sealed class MobService : IMobService, IDisposable
         // Drop the resolved-position cache entry for this MOB so a
         // future raise of an unrelated MOB doesn't pick up a stale
         // fix from a long-resolved casualty.
-        if (_resolvedPositions.Remove(id))
-        {
-            _ = PersistResolvedPositionsAsync(CancellationToken.None);
-        }
+        _resolvedPositions.Forget(id);
 
         // Skip the REST call when we know there's no server-side
         // entry to clear. Calling DELETE /<localId> would 404 (the
@@ -270,23 +240,23 @@ public sealed class MobService : IMobService, IDisposable
         // from the saved attempt counter so a reload mid-retry
         // doesn't restart the backoff at 1 s.
         var persisted = await LoadPendingAsync(ct).ConfigureAwait(false);
-        // Recover the resolved-position cache too so the chart marker
-        // can survive a reload that happens AFTER reconcile already
-        // dropped the pending entry on the previous session.
-        await LoadResolvedPositionsAsync(ct).ConfigureAwait(false);
+        // Hydrate the resolved-position cache too. Reconcile drops
+        // the pending entry on a successful raise; without the cache
+        // a subsequent reload would land an emergency banner with no
+        // marker, since the in-memory store is session-scoped.
+        await _resolvedPositions.LoadAsync(ct).ConfigureAwait(false);
         foreach (var p in persisted)
         {
-            // Re-seed the synthetic into the store -- the previous
-            // session's store entries are gone now (in-memory state
-            // doesn't survive reload).
+            // Re-seed the synthetic into the store. The store is
+            // session-scoped (in-memory dictionary) so a reload
+            // mid-retry needs us to reapply the persisted state.
             _store.Apply(MobPathPrefix + p.LocalId, "emergency", p.Message,
                 p.LocalId,
                 new NotificationStatus(false, false, false, true, true),
                 p.Latitude, p.Longitude);
-            _pending[p.LocalId] = p;
-            var cts = new CancellationTokenSource();
-            _pendingCts[p.LocalId] = cts;
-            _pendingTasks[p.LocalId] = Task.Run(() => RunRaiseLoopAsync(p, cts.Token));
+            var live = new LivePending(p, new CancellationTokenSource());
+            _pending[p.LocalId] = live;
+            live.Loop = Task.Run(() => RunRaiseLoopAsync(p, live.Cts.Token));
         }
         // Each Apply above fires OnPathChanged; the alarm pipeline
         // subscriber wakes itself N times (cheap; coalesced at the
@@ -298,42 +268,40 @@ public sealed class MobService : IMobService, IDisposable
         // error here means "nothing to recover", not a hard failure.
         // Each entry is a delta-style envelope { context, path,
         // value }; the notification payload sits under .Value, NOT
-        // at the top level (an earlier flat-shape DTO silently
-        // produced every field as null and the alarm vanished on
-        // reload).
+        // at the top level. Filter by env.Path so a non-MOB emergency
+        // (depth, fire, etc.) doesn't leak into the MOB pipeline --
+        // ListActiveAsync returns every active notification regardless
+        // of category and this service only owns notifications.mob.*.
         var active = await _api.ListActiveAsync(ct).ConfigureAwait(false);
         if (active is null) return;
         foreach (var (id, env) in active)
         {
-            var dto = env?.Value;
+            if (env?.Path is null
+                || !env.Path.StartsWith(MobPathPrefix, StringComparison.Ordinal))
+                continue;
+            var dto = env.Value;
             if (dto?.State is null) continue;
-            // List returns every active notification; this service
-            // owns the MOB pipeline so we filter by state=emergency
-            // (a coarse but acceptable proxy -- non-MOB emergencies
-            // are rare on SK servers and the chart renderer drops
-            // the marker on the next state transition if we mis-
-            // classify). dto.Id is the canonical id per spec.
             if (string.IsNullOrEmpty(dto.Id) || string.IsNullOrEmpty(id)) continue;
             if (!string.Equals(dto.State, "emergency", StringComparison.Ordinal))
                 continue;
-            var path = MobPathPrefix + dto.Id;
             var status = dto.Status is { } s
                 ? new NotificationStatus(s.Silenced, s.Acknowledged,
                     s.CanSilence, s.CanAcknowledge, s.CanClear)
                 : new NotificationStatus(false, false, false, true, true);
             double? lat = dto.Position?.Latitude;
             double? lon = dto.Position?.Longitude;
-            // Server discards position from /mob POST body so dto.Position
-            // is usually null. Fall back to the resolved-position cache
-            // (written by reconcile in a previous session) so the chart
-            // marker recovers across a reload / restart.
+            // signalk-server's /mob endpoint discards the POST body's
+            // position field so dto.Position is usually null. Fall
+            // back to the resolved-position cache so the chart marker
+            // recovers across a reload / restart -- without it the
+            // helm sees an emergency banner with no fix on the chart.
             if (lat is null && lon is null
-                && _resolvedPositions.TryGetValue(dto.Id, out var saved))
+                && _resolvedPositions.TryGet(dto.Id, out var savedLat, out var savedLon))
             {
-                lat = saved.Lat;
-                lon = saved.Lon;
+                lat = savedLat;
+                lon = savedLon;
             }
-            _store.Apply(path, dto.State, dto.Message, dto.Id, status,
+            _store.Apply(env.Path, dto.State, dto.Message, dto.Id, status,
                 lat, lon, dto.CreatedAt);
         }
     }
@@ -355,12 +323,12 @@ public sealed class MobService : IMobService, IDisposable
         if (string.IsNullOrEmpty(serverId)) return;
         string? matchedLocalId = null;
         PendingRaise? matchedPending = null;
-        foreach (var (localId, p) in _pending)
+        foreach (var (localId, live) in _pending)
         {
-            if (p.ServerId is { } sid && string.Equals(sid, serverId, StringComparison.Ordinal))
+            if (live.Raise.ServerId is { } sid && string.Equals(sid, serverId, StringComparison.Ordinal))
             {
                 matchedLocalId = localId;
-                matchedPending = p;
+                matchedPending = live.Raise;
                 break;
             }
         }
@@ -389,11 +357,10 @@ public sealed class MobService : IMobService, IDisposable
         {
             // Persist the resolved position keyed by serverId so a
             // future reload (after we drop the pending entry below)
-            // can recover the coords for the chart marker. Fire-
-            // and-forget; the in-memory dict is the source of truth
-            // between writes.
-            _resolvedPositions[serverId] = (lat, lon);
-            _ = PersistResolvedPositionsAsync(CancellationToken.None);
+            // can recover the coords for the chart marker. The store
+            // owns the persist; in-memory state is the source of
+            // truth between writes.
+            _resolvedPositions.Save(serverId, lat, lon);
             _store.Apply(path, serverEntry.State, serverEntry.Message,
                 serverEntry.Id, serverEntry.Status, lat, lon,
                 serverEntry.CreatedAt);
@@ -404,10 +371,7 @@ public sealed class MobService : IMobService, IDisposable
         // different MOB doesn't pick up a stale fix.
         if (serverEntry is null)
         {
-            if (_resolvedPositions.Remove(serverId))
-            {
-                _ = PersistResolvedPositionsAsync(CancellationToken.None);
-            }
+            _resolvedPositions.Forget(serverId);
         }
         // Tear down the local synthetic + the retry loop. The POST
         // already succeeded so the loop is idle; cancelling is
@@ -442,25 +406,24 @@ public sealed class MobService : IMobService, IDisposable
                 // which local synthetic to retire.
                 if (_pending.TryGetValue(pending.LocalId, out var live))
                 {
-                    var updated = live with { ServerId = result.Value, AttemptCount = attempt };
-                    _pending[pending.LocalId] = updated;
+                    live.Raise = live.Raise with { ServerId = result.Value, AttemptCount = attempt };
                     await PersistPendingAsync(ct).ConfigureAwait(false);
 
-                    // Race fix: the server's WS echo can arrive at
-                    // notifications.mob.<serverId> BEFORE this HTTP
-                    // response completes (WS push has fewer hops
-                    // than the REST round-trip). When that happens
-                    // the OnPathChanged event for the WS frame
-                    // already fired, but ReconcileMobPath couldn't
-                    // match because pending.ServerId was still null.
-                    // Result: TWO banners on the local plotter
-                    // (local synthetic at <localId> + server twin
-                    // at <serverId>) until the next store mutation
-                    // happens to fire OnPathChanged again. Probe
-                    // the store now: if the server-twin path is
-                    // already there, tear down the local synthetic
-                    // immediately. If it isn't, the upcoming WS
-                    // echo will trigger ReconcileMobPath cleanly.
+                    // Order race: the server's WS echo of
+                    // notifications.mob.<serverId> can land BEFORE
+                    // this HTTP response completes (WS push has fewer
+                    // hops than the REST round-trip). In that case
+                    // the OnPathChanged event for the WS frame already
+                    // fired with pending.ServerId still null, so
+                    // ReconcileMobPath couldn't match -- and the
+                    // local synthetic + server twin would both stay
+                    // armed (two banners on the local plotter) until
+                    // the next store mutation re-triggered the event.
+                    // Probe the store now that ServerId is recorded:
+                    // if the server-twin path is already there, tear
+                    // down the local synthetic immediately. If it
+                    // isn't, the upcoming WS echo will trigger
+                    // ReconcileMobPath cleanly.
                     var serverPath = MobPathPrefix + result.Value;
                     if (_store.Active.Any(n => n.Path == serverPath))
                     {
@@ -473,9 +436,9 @@ public sealed class MobService : IMobService, IDisposable
 
             // Failure path: persist the new attempt counter so a
             // reload picks up at the right backoff step.
-            if (_pending.TryGetValue(pending.LocalId, out var pendNow))
+            if (_pending.TryGetValue(pending.LocalId, out var liveNow))
             {
-                _pending[pending.LocalId] = pendNow with { AttemptCount = attempt };
+                liveNow.Raise = liveNow.Raise with { AttemptCount = attempt };
                 await PersistPendingAsync(ct).ConfigureAwait(false);
             }
         }
@@ -483,14 +446,11 @@ public sealed class MobService : IMobService, IDisposable
 
     private void CancelAndDropPending(string localId)
     {
-        if (_pendingCts.TryGetValue(localId, out var cts))
+        if (_pending.Remove(localId, out var live))
         {
-            try { cts.Cancel(); } catch { /* already cancelled */ }
-            cts.Dispose();
-            _pendingCts.Remove(localId);
+            try { live.Cts.Cancel(); } catch { /* already cancelled */ }
+            live.Cts.Dispose();
         }
-        _pending.Remove(localId);
-        _pendingTasks.Remove(localId);
         // Persist the trimmed queue so a reload doesn't replay a
         // raise that already succeeded. Fire-and-forget: a transient
         // KV write failure here is recoverable on the next persist
@@ -508,7 +468,8 @@ public sealed class MobService : IMobService, IDisposable
         {
             return _kv.RemoveAsync(StorageKey, ct);
         }
-        var json = JsonSerializer.Serialize(_pending.Values.ToArray(),
+        var json = JsonSerializer.Serialize(
+            _pending.Values.Select(l => l.Raise).ToArray(),
             OnaPlotter.Services.Json.OnaJsonContext.Default.PendingRaiseArray);
         return _kv.SetAsync(StorageKey, json, ct);
     }
@@ -532,56 +493,17 @@ public sealed class MobService : IMobService, IDisposable
         }
     }
 
-    private Task PersistResolvedPositionsAsync(CancellationToken ct)
-    {
-        if (_resolvedPositions.Count == 0)
-        {
-            return _kv.RemoveAsync(ResolvedPositionsKey, ct);
-        }
-        var arr = _resolvedPositions
-            .Select(kv => new ResolvedMobPosition(kv.Key, kv.Value.Lat, kv.Value.Lon))
-            .ToArray();
-        var json = JsonSerializer.Serialize(arr,
-            OnaPlotter.Services.Json.OnaJsonContext.Default.ResolvedMobPositionArray);
-        return _kv.SetAsync(ResolvedPositionsKey, json, ct);
-    }
-
-    private async Task LoadResolvedPositionsAsync(CancellationToken ct)
-    {
-        var json = await _kv.GetAsync(ResolvedPositionsKey, ct).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(json)) return;
-        try
-        {
-            var arr = JsonSerializer.Deserialize(json,
-                OnaPlotter.Services.Json.OnaJsonContext.Default.ResolvedMobPositionArray);
-            if (arr is null) return;
-            foreach (var p in arr)
-            {
-                if (string.IsNullOrEmpty(p.ServerId)) continue;
-                _resolvedPositions[p.ServerId] = (p.Latitude, p.Longitude);
-            }
-        }
-        catch (JsonException)
-        {
-            // localStorage corruption / schema skew -> drop the
-            // cache and start clean. The chart marker can't appear
-            // until the next raise, but the alarm pipeline still
-            // works -- safe degraded mode.
-        }
-    }
-
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         _store.OnPathChanged -= ReconcileMobPath;
-        foreach (var cts in _pendingCts.Values)
+        foreach (var live in _pending.Values)
         {
-            try { cts.Cancel(); } catch { /* best-effort */ }
-            cts.Dispose();
+            try { live.Cts.Cancel(); } catch { /* best-effort */ }
+            live.Cts.Dispose();
         }
-        _pendingCts.Clear();
-        _pendingTasks.Clear();
+        _pending.Clear();
     }
 
     /// <summary>Test seam: returns the running retry-loop Task for
@@ -590,7 +512,25 @@ public sealed class MobService : IMobService, IDisposable
     /// background POST + reconciliation, replacing wall-clock
     /// Task.Delay waits.</summary>
     internal Task? GetRaiseLoopForTest(string localId) =>
-        _pendingTasks.TryGetValue(localId, out var t) ? t : null;
+        _pending.TryGetValue(localId, out var l) ? l.Loop : null;
+
+    /// <summary>Bundles the pieces of a live retry loop -- the
+    /// persistable raise record (replaced as ServerId / AttemptCount
+    /// change), the cancel handle, and the running task -- into a
+    /// single dictionary entry so add/remove can never leave an
+    /// orphan CTS or task behind.</summary>
+    private sealed class LivePending
+    {
+        public PendingRaise Raise { get; set; }
+        public CancellationTokenSource Cts { get; }
+        public Task Loop { get; set; } = Task.CompletedTask;
+
+        public LivePending(PendingRaise raise, CancellationTokenSource cts)
+        {
+            Raise = raise;
+            Cts = cts;
+        }
+    }
 }
 
 /// <summary>Persistable pending-raise record. Survives a page
@@ -603,15 +543,3 @@ public sealed record PendingRaise(
     double? Longitude,
     int AttemptCount,
     string? ServerId = null);
-
-/// <summary>Persistable map entry for the resolved-position cache.
-/// signalk-server's /mob endpoint discards the POST body's position
-/// field, so this client-side cache is the canonical store of the
-/// MOB lat/lon. Written on reconcile (when transferring position
-/// from local synthetic to server twin) and consumed on
-/// <see cref="MobService.InitializeAsync"/> to recover the position
-/// across a session boundary.</summary>
-public sealed record ResolvedMobPosition(
-    string ServerId,
-    double Latitude,
-    double Longitude);
