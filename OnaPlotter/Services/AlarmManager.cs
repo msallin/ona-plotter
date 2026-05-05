@@ -598,8 +598,18 @@ public sealed class AlarmManager : IAlarmManager
     private void SweepExpiredSnoozes(DateTime now)
     {
         if (_snoozed.Count == 0) return;
-        var expired = _snoozed.Where(kv => now >= kv.Value.ExpiresAt).Select(kv => kv.Key).ToList();
-        if (expired.Count == 0) return;
+        // Manual loop + lazy-allocated list so the per-Tick sweep
+        // doesn't allocate an enumerator chain + List<> when no
+        // entries have expired (the typical case once an active
+        // snooze is in place: the user sets it for an hour, the
+        // sweep runs every tick of that hour and finds nothing).
+        List<string>? expired = null;
+        foreach (var kv in _snoozed)
+        {
+            if (now < kv.Value.ExpiresAt) continue;
+            (expired ??= new List<string>(2)).Add(kv.Key);
+        }
+        if (expired is null) return;
         foreach (var k in expired) _snoozed.Remove(k);
         // Fire-and-forget: persist the shrunk list so a reload won't
         // see already-expired entries. Safe to race with other
@@ -646,8 +656,18 @@ public sealed class AlarmManager : IAlarmManager
     private void SweepExpiredDismissCooldowns(DateTime now)
     {
         if (_dismissCooldown.Count == 0) return;
-        var expired = _dismissCooldown.Where(kv => now >= kv.Value.Until)
-                                      .Select(kv => kv.Key).ToList();
+        // Same shape as SweepExpiredSnoozes -- manual walk +
+        // lazy-allocated list. Cooldowns sit in the dict for
+        // CpaDismissCooldownSeconds (15 min on CPA) or 30 s
+        // on others, so most sweeps during the cooldown find
+        // nothing expired.
+        List<AlarmKey>? expired = null;
+        foreach (var kv in _dismissCooldown)
+        {
+            if (now < kv.Value.Until) continue;
+            (expired ??= new List<AlarmKey>(2)).Add(kv.Key);
+        }
+        if (expired is null) return;
         foreach (var k in expired) _dismissCooldown.Remove(k);
     }
 
