@@ -21,12 +21,18 @@ public interface INavigationAverages
 {
     // ---- Underlying buffers (variable-window queries) ----------
 
-    /// <summary>True wind speed (m/s) -- 60 min retention.</summary>
+    /// <summary>True wind speed (m/s) -- 180 min retention.</summary>
     RollingScalarSeries Tws { get; }
-    /// <summary>Apparent wind speed (m/s) -- 60 min retention.</summary>
+    /// <summary>Apparent wind speed (m/s) -- 180 min retention.</summary>
     RollingScalarSeries Aws { get; }
-    /// <summary>True wind direction (radians) -- 60 min retention.</summary>
+    /// <summary>True wind direction (radians, compass-from) -- 180 min retention.</summary>
     RollingDirectionSeries Twd { get; }
+    /// <summary>Apparent wind angle (radians, bow-relative ±π) -- 5 min retention.
+    /// Drives the smoothed AW arrow on the chart-HUD wind dial.</summary>
+    RollingDirectionSeries Awa { get; }
+    /// <summary>True wind angle (radians, bow-relative ±π) -- 5 min retention.
+    /// Drives the smoothed TW arrow on the chart-HUD wind dial.</summary>
+    RollingDirectionSeries Twa { get; }
     /// <summary>Speed over ground (m/s) -- 5 min retention.</summary>
     RollingScalarSeries Sog { get; }
     /// <summary>VMG to next waypoint (m/s) -- 5 min retention.</summary>
@@ -53,4 +59,10 @@ public interface INavigationAverages
     /// Null when SOG has been below the stationary threshold for
     /// the entire window (direction is meaningless when not moving).</summary>
     double? CogMean30Sec { get; }
+    /// <summary>30-second circular mean apparent wind angle (rad,
+    /// bow-relative).</summary>
+    double? AwaMean30Sec { get; }
+    /// <summary>30-second circular mean true wind angle (rad,
+    /// bow-relative).</summary>
+    double? TwaMean30Sec { get; }
 }

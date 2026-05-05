@@ -27,22 +27,20 @@
          @onkeydown='e => OnHudKeyDown(e, CornerTopLeft)'
          title="Click for more detail">
         <div class="hud-label">SOG</div>
-        @* Inline secondary "(avg X.X)" comes from NavigationAverages.
-           Window: 30s (wave-noise smoothing). Null until warmup. *@
-        <div class="hud-value hud-primary">
-            @Format.Speed(Data.SpeedOverGround)<span class="hud-unit">kn</span>
-            @if (Avg.SogMean30Sec is double sogAvg)
-            {
-                <span class="hud-avg" title="Mean SOG over the last 30s">(@Format.Speed(sogAvg))</span>
-            }
+        @* Smoothed value (30 s mean, wave-noise filter) is the
+           primary readout once the buffer warms up; live SOG falls
+           back during the 15 s warmup window. The dual "live (avg)"
+           pair would be helpful in big-screen mode but isn't shown
+           in the compact HUD -- the smoothed number is what the
+           helm steers / trims to. *@
+        <div class="hud-value hud-primary"
+             title="@(Avg.SogMean30Sec is not null ? "30s mean SOG" : "Live SOG (smoothed value pending)")">
+            @Format.Speed(Avg.SogMean30Sec ?? Data.SpeedOverGround)<span class="hud-unit">kn</span>
         </div>
         <div class="hud-label" style="margin-top:4px;">COG</div>
-        <div class="hud-value">
-            @Format.Degrees(Data.CourseOverGround)<span class="hud-unit">&deg;</span>
-            @if (Avg.CogMean30Sec is double cogAvg)
-            {
-                <span class="hud-avg" title="Mean COG over the last 30s (skipped while stationary)">(@Format.Degrees(cogAvg))</span>
-            }
+        <div class="hud-value"
+             title="@(Avg.CogMean30Sec is not null ? "30s mean COG" : "Live COG (smoothed value pending; skipped while stationary)")">
+            @Format.Degrees(Avg.CogMean30Sec ?? Data.CourseOverGround)<span class="hud-unit">&deg;</span>
         </div>
         @* lat/lon stays on a single horizontal line. Stacking them was
            used to keep the card narrow, but it cramped SOG/COG -- the
@@ -63,15 +61,14 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k">VMG</span>
-                        <span class="hud-extra-v">
-                            @Format.Speed(Data.CourseNextPointVmg)<span class="hud-unit">kn</span>
-                            @if (Avg.VmgMean1Min is double vmgAvg)
-                            {
-                                <span class="hud-avg" title="Mean VMG over the last minute">(@Format.Speed(vmgAvg))</span>
-                            }
-                        </span>
+                        <span class="hud-extra-v">@Format.Speed(Avg.VmgMean1Min ?? Data.CourseNextPointVmg)<span class="hud-unit">kn</span></span>
                     </div>
                 }
+                @* XTE + Drift: render unconditionally when their
+                   inputs are present (route active for XTE; COG +
+                   HDG present for Drift). Both happily display the
+                   zero-magnitude reading -- hiding-on-zero made the
+                   row flap on every wave. *@
                 @if (Data.CrossTrackError is not null)
                 {
                     <div class="hud-extra-row">
@@ -112,13 +109,13 @@
            and TWS values sit below in matching colours so the eye can
            pair value <-> arrow without needing the AWA/TWA letters
            spelled out (the colours do that work). *@
-        @* Label is just "AW" -- the big number below is the apparent
-           wind speed. The dial still draws BOTH arrows (apparent blue
-           + true green) so the angular delta reads at-a-glance, but
-           the numeric reading stays single + uncluttered. TWA / TWS
-           are spelled out in the expanded view for when the helm
-           wants the precise true-wind numbers. *@
-        <div class="hud-label" title="Apparent Wind: the wind you feel underway (true wind plus the wind the boat creates moving through air).">AW</div>
+        @* Label is "AW/TW" -- the dial draws BOTH arrows (apparent
+           blue + true green) so the angular delta between the two
+           IS the lift/header you're sailing in. The big number below
+           shows apparent wind speed (smoothed); TWA / TWS appear in
+           the expanded view for the helm who wants the precise
+           true-wind numbers. *@
+        <div class="hud-label" title="Apparent + True wind: AW arrow (blue) is what you feel; TW arrow (green) is what a stationary observer would measure. The angle between them is the lift/header.">AW/TW</div>
         @* Same dial radius as the HDG compass (r=24 in a -26..26 viewBox)
            so the two dials read as a matched pair across the right column. *@
         <svg width="52" height="52" viewBox="-26 -26 52 52" class="wind-dial"
@@ -150,17 +147,16 @@
             }
             <circle cx="0" cy="0" r="2" class="hud-dial-center"/>
         </svg>
-        @* Apparent wind speed, optionally with gust/mean pair "12 / 9"
-           when the 1-min mean is available -- "mean 9, gusting 12" is
-           the sailor's mental model. The true-wind speed lives below
-           in the expanded extras. *@
+        @* Apparent wind speed -- smoothed (1 min mean) once warm,
+           live AWS during the warmup window. Compact-HUD shows one
+           number; the gust / mean pair is a candidate for big-screen
+           mode where there's room. The expanded view spells out
+           AWA + TWS + TWA + TWD numerically. *@
         @if (Data.WindSpeedApparent is not null)
         {
-            <div class="hud-value">
-                @Format.Speed(Data.WindSpeedApparent)@if (Avg.AwsMean1Min is double awsAvg)
-                {
-                    <text> / @Format.Speed(awsAvg)</text>
-                }<span class="hud-unit">kn</span>
+            <div class="hud-value"
+                 title="@(Avg.AwsMean1Min is not null ? "1 min mean AWS" : "Live AWS (smoothed value pending)")">
+                @Format.Speed(Avg.AwsMean1Min ?? Data.WindSpeedApparent)<span class="hud-unit">kn</span>
             </div>
         }
         @if (IsExpanded(CornerTopRight))
@@ -183,12 +179,7 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k" title="Apparent Wind Speed: wind you feel underway (vector sum of true wind + boat motion).">AWS</span>
-                        <span class="hud-extra-v">
-                            @Format.Speed(Data.WindSpeedApparent)@if (Avg.AwsMean1Min is double awsAvgX)
-                            {
-                                <text> / @Format.Speed(awsAvgX)</text>
-                            }<span class="hud-unit">kn</span>
-                        </span>
+                        <span class="hud-extra-v">@Format.Speed(Avg.AwsMean1Min ?? Data.WindSpeedApparent)<span class="hud-unit">kn</span></span>
                     </div>
                 }
                 @if (SignedTwa is string twa)
@@ -202,12 +193,7 @@
                 {
                     <div class="hud-extra-row">
                         <span class="hud-extra-k" title="True Wind Speed: wind speed independent of boat motion.">TWS</span>
-                        <span class="hud-extra-v">
-                            @Format.Speed(Data.WindSpeedTrue)@if (Avg.TwsMean1Min is double twsAvg)
-                            {
-                                <text> / @Format.Speed(twsAvg)</text>
-                            }<span class="hud-unit">kn</span>
-                        </span>
+                        <span class="hud-extra-v">@Format.Speed(Avg.TwsMean1Min ?? Data.WindSpeedTrue)<span class="hud-unit">kn</span></span>
                     </div>
                 }
                 @if (Data.WindDirectionTrue is not null)
@@ -217,9 +203,12 @@
                         <span class="hud-extra-v">@Format.Degrees(Data.WindDirectionTrue)&deg;</span>
                     </div>
                 }
-                @if (BeaufortLabel(Data.WindSpeedTrue ?? Data.WindSpeedApparent) is string bf)
+                @* Beaufort tracks the smoothed wind speed too; an
+                   instantaneous gust shouldn't flip the chip from
+                   Bft 4 to Bft 5 and back on the same gust cycle. *@
+                @if (BeaufortLabel(Avg.TwsMean1Min ?? Avg.AwsMean1Min ?? Data.WindSpeedTrue ?? Data.WindSpeedApparent) is string bf)
                 {
-                    <div class="hud-extra-row" title="Beaufort scale for true wind">
+                    <div class="hud-extra-row" title="Beaufort scale (smoothed wind speed)">
                         <span class="hud-extra-k">Bft</span>
                         <span class="hud-extra-v">@bf</span>
                     </div>
@@ -371,11 +360,23 @@
         <div class="hud-panel hud-card race-panel">
             <div class="hud-label">Race</div>
             @{
-                int twaDeg = (int)Math.Round(Math.Abs(Data.WindAngleTrue!.Value * RadToDeg));
-                double twsKn = Data.WindSpeedTrue!.Value * Format.MsToKnots;
+                // Polar lookup uses smoothed TWA/TWS so the target
+                // boat speed + optimal-TWA chips don't flap with every
+                // gust -- the polar curve is steep enough that a 1 kn
+                // wind oscillation flips the target reading by ~0.3 kn,
+                // which the helm reads as a trim problem and
+                // unnecessarily chases the trim. Live values fall back
+                // during the warmup window. Same smoothed SOG as the
+                // top-left HUD so "did my last trim change land?"
+                // reads consistently across cards.
+                double twaRad = Avg.TwaMean30Sec ?? Data.WindAngleTrue!.Value;
+                double twsMs = Avg.TwsMean1Min ?? Data.WindSpeedTrue!.Value;
+                int twaDeg = (int)Math.Round(Math.Abs(twaRad * RadToDeg));
+                double twsKn = twsMs * Format.MsToKnots;
                 double? targetKn = Polar?.GetTargetSpeed(twaDeg, twsKn);
-                double? actualKn = Data.SpeedOverGround.HasValue
-                    ? Data.SpeedOverGround.Value * Format.MsToKnots : null;
+                double? sogMs = Avg.SogMean30Sec ?? Data.SpeedOverGround;
+                double? actualKn = sogMs is double sg
+                    ? sg * Format.MsToKnots : null;
                 var opt = IsUpwind(twaDeg)
                     ? Polar?.GetOptimalUpwind(twsKn)
                     : Polar?.GetOptimalDownwind(twsKn);
@@ -889,10 +890,13 @@
         return $"{deg}\u00B0{min:D2}\u2032{sec:F1}\u2033 {hemisphere}";
     }
 
-    // Apparent wind angle shown as "35\u00B0 STBD" / "90\u00B0 PORT". SignalK
-    // publishes the angle in radians relative to bow (positive starboard).
-    private string? SignedAwa => FormatSignedAngle(Data.WindAngleApparent);
-    private string? SignedTwa => FormatSignedAngle(Data.WindAngleTrue);
+    // Apparent + true wind angles shown as "35\u00B0 STBD" / "90\u00B0 PORT".
+    // SignalK publishes the angle in radians relative to bow
+    // (positive starboard). Smoothed to match the dial-arrow
+    // rotation so the textual readout doesn't disagree with the
+    // arrow's pointing.
+    private string? SignedAwa => FormatSignedAngle(Avg.AwaMean30Sec ?? Data.WindAngleApparent);
+    private string? SignedTwa => FormatSignedAngle(Avg.TwaMean30Sec ?? Data.WindAngleTrue);
 
     private static string? FormatSignedAngle(double? rad)
     {
@@ -906,6 +910,9 @@
     // Positive means the boat's ground track is starboard of its heading
     // (wind / current pushing it right). Not a true leeway angle because
     // tidal current + windage both contribute; useful as an indicator.
+    // Always returns the rounded delta (including 0) when both inputs
+    // are present, so the row stays visible at zero crossings -- hiding-
+    // on-zero made the HUD flap as the value oscillated through 0.
     private int? LeewayDeg
     {
         get
@@ -915,10 +922,7 @@
             // Normalise to [-180, 180].
             while (delta > 180) delta -= 360;
             while (delta < -180) delta += 360;
-            // 1-degree threshold avoids jitter showing as "leeway" when
-            // the boat is tracking its heading within sensor noise.
-            int rounded = (int)Math.Round(delta);
-            return Math.Abs(rounded) >= 1 ? rounded : null;
+            return (int)Math.Round(delta);
         }
     }
 
@@ -1064,15 +1068,27 @@
         return minutes == 0 ? $"{hours}h" : $"{hours}h{minutes:D2}";
     }
 
-    private string WindAngleDegStr =>
-        Data.WindAngleApparent is not null
-            ? $"{(Data.WindAngleApparent.Value * RadToDeg):F0}deg"
-            : "0deg";
+    // Wind dial arrow rotations -- 30 s circular mean once the
+    // buffer warms up, falling back to the live angle during warmup.
+    // Smoothing keeps the arrows from twitching every wave / gust;
+    // helm reads the dial as a stable picture, not a strobing one.
+    private string WindAngleDegStr
+    {
+        get
+        {
+            var rad = Avg.AwaMean30Sec ?? Data.WindAngleApparent;
+            return rad is not null ? $"{(rad.Value * RadToDeg):F0}deg" : "0deg";
+        }
+    }
 
-    private string TrueWindAngleDegStr =>
-        Data.WindAngleTrue is not null
-            ? $"{(Data.WindAngleTrue.Value * RadToDeg):F0}deg"
-            : "0deg";
+    private string TrueWindAngleDegStr
+    {
+        get
+        {
+            var rad = Avg.TwaMean30Sec ?? Data.WindAngleTrue;
+            return rad is not null ? $"{(rad.Value * RadToDeg):F0}deg" : "0deg";
+        }
+    }
 
     private double HeadingRad => LastHeadingRad ?? 0;
     private string HeadingDegStr => $"{(HeadingRad * RadToDeg):F0}deg";

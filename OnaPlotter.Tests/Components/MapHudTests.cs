@@ -28,9 +28,11 @@ public class MapHudTests
     /// already expected before the averaging surface landed.</summary>
     private sealed class StubNavigationAverages : INavigationAverages
     {
-        public RollingScalarSeries Tws { get; } = new(TimeSpan.FromMinutes(60));
-        public RollingScalarSeries Aws { get; } = new(TimeSpan.FromMinutes(60));
-        public RollingDirectionSeries Twd { get; } = new(TimeSpan.FromMinutes(60));
+        public RollingScalarSeries Tws { get; } = new(TimeSpan.FromMinutes(180));
+        public RollingScalarSeries Aws { get; } = new(TimeSpan.FromMinutes(180));
+        public RollingDirectionSeries Twd { get; } = new(TimeSpan.FromMinutes(180));
+        public RollingDirectionSeries Awa { get; } = new(TimeSpan.FromMinutes(5));
+        public RollingDirectionSeries Twa { get; } = new(TimeSpan.FromMinutes(5));
         public RollingScalarSeries Sog { get; } = new(TimeSpan.FromMinutes(5));
         public RollingScalarSeries Vmg { get; } = new(TimeSpan.FromMinutes(5));
         public RollingDirectionSeries Cog { get; } = new(TimeSpan.FromMinutes(5));
@@ -41,6 +43,8 @@ public class MapHudTests
         public double? SogMean30Sec => null;
         public double? VmgMean1Min => null;
         public double? CogMean30Sec => null;
+        public double? AwaMean30Sec => null;
+        public double? TwaMean30Sec => null;
     }
 
     private static IRenderedComponent<MapHud> Render(Bunit.TestContext ctx, NavigationData data)

@@ -28,6 +28,8 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     public RollingScalarSeries Tws { get; }
     public RollingScalarSeries Aws { get; }
     public RollingDirectionSeries Twd { get; }
+    public RollingDirectionSeries Awa { get; }
+    public RollingDirectionSeries Twa { get; }
     public RollingScalarSeries Sog { get; }
     public RollingScalarSeries Vmg { get; }
     public RollingDirectionSeries Cog { get; }
@@ -51,6 +53,12 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         Vmg = new RollingScalarSeries(TimeSpan.FromMinutes(5), _time);
         Cog = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
 
+        // Bow-relative wind angles (AWA / TWA): 5 min retention so
+        // they share the boat-motion lifetime; the HUD pulls a 30 s
+        // mean to keep the dial arrows from twitching on every gust.
+        Awa = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
+        Twa = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
+
         _client.OnDataChanged += HandleDataChanged;
     }
 
@@ -69,6 +77,8 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     public double? SogMean30Sec => Sog.Mean(TimeSpan.FromSeconds(30));
     public double? VmgMean1Min => Vmg.Mean(TimeSpan.FromMinutes(1));
     public double? CogMean30Sec => Cog.Mean(TimeSpan.FromSeconds(30));
+    public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
+    public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
 
     // ---- Sampling pipeline -------------------------------------
 
@@ -83,6 +93,8 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         if (d.WindSpeedTrue is double tws) Tws.Add(tws);
         if (d.WindSpeedApparent is double aws) Aws.Add(aws);
         if (d.WindDirectionTrue is double twd) Twd.Add(twd);
+        if (d.WindAngleApparent is double awa) Awa.Add(awa);
+        if (d.WindAngleTrue is double twa) Twa.Add(twa);
         if (d.SpeedOverGround is double sog)
         {
             Sog.Add(sog);

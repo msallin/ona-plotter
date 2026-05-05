@@ -1672,16 +1672,6 @@ html:fullscreen .hud-stack-br {
     margin-left: 3px;
 }
 
-/* Smoothed-value parenthetical that follows the live readout
-   ("SOG 6.4 kn (5.9)"). Sized between the unit and the primary so
-   the helm reads the live number first; the avg is a peripheral
-   reference. Same theme-aware muted ink as .hud-unit. */
-.hud-avg {
-    font-size: 0.75rem;
-    color: var(--hud-ink-stale);
-    margin-left: 4px;
-    font-variant-numeric: tabular-nums;
-}
 
 /* Depth alarm threshold label under the depth HUD value. Muted by
    default so it's glanceable context ("you'll hear an alarm below

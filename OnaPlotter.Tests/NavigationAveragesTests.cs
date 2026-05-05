@@ -70,6 +70,8 @@ public class NavigationAveragesTests
         public OnaPlotter.Utilities.RollingScalarSeries Tws { get; }
         public OnaPlotter.Utilities.RollingScalarSeries Aws { get; }
         public OnaPlotter.Utilities.RollingDirectionSeries Twd { get; }
+        public OnaPlotter.Utilities.RollingDirectionSeries Awa { get; }
+        public OnaPlotter.Utilities.RollingDirectionSeries Twa { get; }
         public OnaPlotter.Utilities.RollingScalarSeries Sog { get; }
         public OnaPlotter.Utilities.RollingScalarSeries Vmg { get; }
         public OnaPlotter.Utilities.RollingDirectionSeries Cog { get; }
@@ -77,9 +79,11 @@ public class NavigationAveragesTests
         public TestNavigationAverages(TimeProvider time)
         {
             _time = time;
-            Tws = new(TimeSpan.FromMinutes(60), time);
-            Aws = new(TimeSpan.FromMinutes(60), time);
-            Twd = new(TimeSpan.FromMinutes(60), time);
+            Tws = new(TimeSpan.FromMinutes(180), time);
+            Aws = new(TimeSpan.FromMinutes(180), time);
+            Twd = new(TimeSpan.FromMinutes(180), time);
+            Awa = new(TimeSpan.FromMinutes(5), time);
+            Twa = new(TimeSpan.FromMinutes(5), time);
             Sog = new(TimeSpan.FromMinutes(5), time);
             Vmg = new(TimeSpan.FromMinutes(5), time);
             Cog = new(TimeSpan.FromMinutes(5), time);
@@ -92,6 +96,8 @@ public class NavigationAveragesTests
         public double? SogMean30Sec => Sog.Mean(TimeSpan.FromSeconds(30));
         public double? VmgMean1Min => Vmg.Mean(TimeSpan.FromMinutes(1));
         public double? CogMean30Sec => Cog.Mean(TimeSpan.FromSeconds(30));
+        public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
+        public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
 
         // Mirror of NavigationAverages.Sample to keep the unit-test
         // sampler in lockstep with production logic. Any change to
@@ -102,6 +108,8 @@ public class NavigationAveragesTests
             if (d.WindSpeedTrue is double tws) Tws.Add(tws);
             if (d.WindSpeedApparent is double aws) Aws.Add(aws);
             if (d.WindDirectionTrue is double twd) Twd.Add(twd);
+            if (d.WindAngleApparent is double awa) Awa.Add(awa);
+            if (d.WindAngleTrue is double twa) Twa.Add(twa);
             if (d.SpeedOverGround is double sog)
             {
                 Sog.Add(sog);
