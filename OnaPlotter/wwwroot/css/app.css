@@ -4854,7 +4854,12 @@ html.night-mode-global body {
 .chart-filter-group {
     margin-top: 0.4rem;
     padding: 0.5rem 0.6rem;
+    /* Symmetric framing: a closing rule below the sliders mirrors the
+       opening rule above the title so the Display block reads as a
+       contained section rather than bleeding into whatever follows
+       (Radars / Routes / etc.). Same colour + weight as the top. */
     border-top: 1px solid var(--sk-border, rgba(255, 255, 255, 0.08));
+    border-bottom: 1px solid var(--sk-border, rgba(255, 255, 255, 0.08));
 }
 .chart-filter-header {
     display: flex;
@@ -5377,17 +5382,26 @@ html.night-mode-global body {
 
 /* Route-total row: single-line summary of distance / TTG / ETA for
    the whole route (vs per-WP numbers above). Small + dim so the
-   next-WP values stay the primary reading. */
+   next-WP values stay the primary reading. The dashed divider only
+   shows in big-screen mode (see .map-container.big-type override
+   below); at small/regular size the helm reads the two-line shape
+   without needing a separator. */
 .route-total-row {
     display: flex;
     gap: 10px;
     margin-top: 6px;
-    padding-top: 6px;
-    border-top: 1px dashed rgba(255, 255, 255, 0.08);
     font-size: 0.75rem;
     color: var(--sk-text-muted);
     font-variant-numeric: tabular-nums;
     flex-wrap: wrap;
+}
+.map-container.big-type .route-total-row {
+    /* Big mode runs the rows wider with bigger glyphs; without the
+       dashed rule the two rows can fuse into one paragraph at a
+       glance. Re-introduce the divider + padding so the second row
+       reads as a separate readout. */
+    padding-top: 6px;
+    border-top: 1px dashed rgba(255, 255, 255, 0.08);
 }
 .route-total-label {
     color: var(--sk-text-muted);
