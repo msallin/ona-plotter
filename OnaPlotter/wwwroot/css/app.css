@@ -4882,9 +4882,16 @@ html.night-mode-global body {
     font-size: 0.7rem;
     cursor: pointer;
 }
-.chart-filter-reset:hover {
+.chart-filter-reset:hover:not(:disabled) {
     color: var(--sk-text);
     border-color: var(--sk-text-muted);
+}
+/* Disabled = every channel already at the identity default. Dim
+   + no pointer interaction. The button stays visible (helm sees
+   the affordance) but the styling communicates "nothing to do". */
+.chart-filter-reset:disabled {
+    opacity: 0.4;
+    cursor: default;
 }
 .chart-filter-row {
     display: flex;

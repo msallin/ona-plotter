@@ -139,7 +139,10 @@
 // v23 -> v24: route-total dashed divider scoped to big-screen mode,
 //             closing border under the chart-filter Display section.
 //             Same APP_SHELL invalidation reasoning as v23.
-const CACHE_NAME = 'ona-plotter-v24';
+// v24 -> v25: chart-filter Reset button always visible (with
+//             :disabled state styled when at defaults). CSS gained
+//             a new :disabled rule, so the precache must refresh.
+const CACHE_NAME = 'ona-plotter-v25';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
