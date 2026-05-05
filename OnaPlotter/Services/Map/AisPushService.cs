@@ -273,6 +273,11 @@ public sealed class AisPushService
                 lat = v.Latitude!.Value, lon = v.Longitude!.Value,
                 headingRad = v.Heading, cogRad = v.CourseOverGround,
                 sogMs = v.SpeedOverGround, shipType = v.ShipType,
+                // AIS-static dimensions (LOA + beam). Often absent --
+                // see AisVessel.LengthOverallMeters comments. JS popup
+                // renders the row only when at least one is non-null.
+                loaM = v.LengthOverallMeters,
+                beamM = v.BeamMeters,
                 buddy = v.IsBuddy,
                 // Tell JS whether to render with an AIS or radar-ARPA
                 // icon. Radar targets lose buddy/danger overlays too;

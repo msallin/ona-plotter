@@ -490,10 +490,26 @@ function buildAisPopupHtml(snap) {
     // Compact identity subtitle (helm-feedback round 2: "MMSI 538071935 ·
     // Call V7A6238 · Sailing" reads as one quick line under the title;
     // previously each was a row in the data table eating vertical space).
+    // Round 3 adds LOA / beam (AIS Type 5 / 24 static, often absent on
+    // class-B targets that don't broadcast static -- which is why we
+    // append to the parts list rather than reserving a column: rows
+    // without dimensions don't grow the popup at all).
     const subtitleParts = [];
     if (mmsi) subtitleParts.push(`MMSI ${esc(mmsi)}`);
     if (callsign) subtitleParts.push(`Call ${callsign}`);
     if (type) subtitleParts.push(type);
+    // Dimensions: "12.5 × 4.2 m" when both present, "L 12.5 m" or
+    // "B 4.2 m" when only one. Skip entirely when both null --
+    // helm-feedback was explicit: "show nothing if not present".
+    const loa = (typeof v.loaM === 'number' && isFinite(v.loaM)) ? v.loaM : null;
+    const beam = (typeof v.beamM === 'number' && isFinite(v.beamM)) ? v.beamM : null;
+    if (loa != null && beam != null) {
+        subtitleParts.push(`${loa.toFixed(1)} &times; ${beam.toFixed(1)} m`);
+    } else if (loa != null) {
+        subtitleParts.push(`L ${loa.toFixed(1)} m`);
+    } else if (beam != null) {
+        subtitleParts.push(`B ${beam.toFixed(1)} m`);
+    }
     const subtitleHtml = subtitleParts.length > 0
         ? `<div class="ais-popup-subtitle">${subtitleParts.join(' &middot; ')}</div>`
         : '';
