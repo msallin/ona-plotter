@@ -254,14 +254,26 @@ export function clearActiveRoute() {
 // hidden, applyFrame skips setCourseLine (so the leg / bearing / XTE
 // tick don't keep redrawing on every position update against stale
 // pre-edit geometry) and any stray setActiveRoute call during edit
-// is a no-op. Also tears down the course-line elements so the helm's
-// view is clean from the moment edit starts. C# pairs every true
-// with a false on edit cancel / save -- the next position frame
-// then redraws the course-line from the updated coords.
+// is a no-op. Also tears down the course-line elements AND the
+// active-route layer (numbered WP dots + the pulsing next-WP marker)
+// so the helm's view is clean from the moment edit starts.
+//
+// Tearing down the next-WP marker matters specifically for drag:
+// Leaflet stacks markers by zIndexOffset and our active-WP pulse
+// sits at 900 vs the route-edit drag handles' 800. With the pulse
+// still on the map during edit mode, pointer events on the
+// next-WP coordinate hit the (non-draggable) pulse marker first
+// and never reach the underlying drag handle -- the helm taps
+// the WP, nothing happens, and the route edit feels broken.
+//
+// C# pairs every true with a false on edit cancel / save -- the
+// next position frame's SyncActiveRouteAsync(force: true) then
+// redraws everything from the updated coords.
 export function setActiveOverlayHidden(hidden) {
     activeOverlayHidden = !!hidden;
     if (hidden) {
         clearCourseLineFn();
+        clearActiveRoute();
     }
 }
 
