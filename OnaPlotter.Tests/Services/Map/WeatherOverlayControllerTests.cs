@@ -43,6 +43,7 @@ public class WeatherOverlayControllerTests
         public Task SetServerTrackAsync(double[][] coords, bool clipToBounds) => Task.CompletedTask;
         public Task SetServerTrackClipToBoundsAsync(bool enabled) => Task.CompletedTask;
         public Task ClearServerTrackAsync() => Task.CompletedTask;
+        public Task SetChartFilterAsync(string cssFilter) => Task.CompletedTask;
     }
 
     [Test]

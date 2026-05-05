@@ -112,6 +112,28 @@ public interface IMapDisplaySettings
     /// the limits + clamp logic.</summary>
     double WeatherOverlayOpacity { get; }
 
+    /// <summary>Chart-display CSS contrast percentage, 50..200.
+    /// Default 100 (identity, no filter). Helm boosts this when
+    /// Navionics PNGs read washed-out at noon or on a sunlit screen.
+    /// Limits + format string live on
+    /// <see cref="OnaPlotter.Utilities.ChartFilter"/>.</summary>
+    int ChartContrastPercent { get; }
+
+    /// <summary>Chart-display CSS saturation percentage, 50..200.
+    /// Default 100 (identity, no filter). Drop toward 50 to dampen
+    /// over-saturated raster charts; raise toward 150 to pop the
+    /// depth-tinted areas of muddier source PNGs. Same range as
+    /// contrast since both are unbounded multipliers in CSS.</summary>
+    int ChartSaturationPercent { get; }
+
+    /// <summary>Chart-display CSS brightness percentage, 50..150.
+    /// Default 100 (identity, no filter). Tighter range than
+    /// contrast/saturation -- past 150 the chart blooms out and
+    /// printed contour lines fade. The helm typically pulls this
+    /// DOWN at night to take chart glare off a dark cockpit, not
+    /// up.</summary>
+    int ChartBrightnessPercent { get; }
+
     /// <summary>Chart upscale ("overzoom") master flag. Off by
     /// default; see design draft for the rationale (helms who don't
     /// ask for it shouldn't see pixelated tiles past native zoom).
@@ -206,6 +228,9 @@ public interface IMapDisplaySettings
     Task SetGuardZoneVisibleAsync(bool value);
     Task SetGuardZoneWarningRingVisibleAsync(bool value);
     Task SetWeatherOverlayOpacityAsync(double value);
+    Task SetChartContrastPercentAsync(int value);
+    Task SetChartSaturationPercentAsync(int value);
+    Task SetChartBrightnessPercentAsync(int value);
     Task SetChartUpscaleEnabledAsync(bool value);
     Task SetChartUpscaleLevelsAsync(int value);
     Task SetHarborModeAsync(bool value);

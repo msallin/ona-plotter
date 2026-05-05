@@ -44,7 +44,17 @@
                    Enabled="EnabledCharts"
                    QuickBarCharts="QuickBarCharts"
                    OnToggleQuickBar="OnToggleChartQuickBar"
-                   OnReorder="OnReorderChart" />
+                   OnReorder="OnReorderChart"
+                   ContrastPercent="ChartContrastPercent"
+                   SaturationPercent="ChartSaturationPercent"
+                   BrightnessPercent="ChartBrightnessPercent"
+                   OnContrastPreview="OnChartContrastPreview"
+                   OnContrastCommit="OnChartContrastCommit"
+                   OnSaturationPreview="OnChartSaturationPreview"
+                   OnSaturationCommit="OnChartSaturationCommit"
+                   OnBrightnessPreview="OnChartBrightnessPreview"
+                   OnBrightnessCommit="OnChartBrightnessCommit"
+                   OnFilterReset="OnChartFilterReset" />
 
     <RadarsSection Radars="AvailableRadars"
                    Enabled="EnabledRadars"
@@ -237,6 +247,25 @@
     [Parameter] public EventCallback<bool> OnToggleShowRadarHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleBigType { get; set; }
     [Parameter] public EventCallback<bool> OnToggleExpandAllHud { get; set; }
+
+    // ---- Chart-display CSS-filter sliders --------------------------
+    // Forwarded to ChartsSection's "Display" group at the bottom of
+    // the chart list. Same preview/commit pattern as the weather
+    // opacity row: preview pushes to JS for live feedback, commit
+    // persists to localStorage and broadcasts OnSettingsChanged.
+    [Parameter] public int ChartContrastPercent { get; set; } = 100;
+    [Parameter] public int ChartSaturationPercent { get; set; } = 100;
+    [Parameter] public int ChartBrightnessPercent { get; set; } = 100;
+    [Parameter] public EventCallback<int> OnChartContrastPreview { get; set; }
+    [Parameter] public EventCallback<int> OnChartContrastCommit { get; set; }
+    [Parameter] public EventCallback<int> OnChartSaturationPreview { get; set; }
+    [Parameter] public EventCallback<int> OnChartSaturationCommit { get; set; }
+    [Parameter] public EventCallback<int> OnChartBrightnessPreview { get; set; }
+    [Parameter] public EventCallback<int> OnChartBrightnessCommit { get; set; }
+    /// <summary>Reset every channel to identity (100). One callback so
+    /// the parent can persist all three under a single
+    /// OnSettingsChanged broadcast.</summary>
+    [Parameter] public EventCallback OnChartFilterReset { get; set; }
 
     private async Task OnFilterInput(ChangeEventArgs e)
     {

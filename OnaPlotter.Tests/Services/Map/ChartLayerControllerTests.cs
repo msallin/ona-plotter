@@ -78,6 +78,7 @@ public class ChartLayerControllerTests
         public Task SetServerTrackAsync(double[][] coords, bool clipToBounds) => Task.CompletedTask;
         public Task SetServerTrackClipToBoundsAsync(bool enabled) => Task.CompletedTask;
         public Task ClearServerTrackAsync() => Task.CompletedTask;
+        public Task SetChartFilterAsync(string cssFilter) => Task.CompletedTask;
     }
 
     private static SignalkChart Chart(string id, string name = "Chart") => new()
@@ -151,6 +152,9 @@ public class ChartLayerControllerTests
         public bool GuardZoneVisible => true;
         public bool GuardZoneWarningRingVisible => true;
         public double WeatherOverlayOpacity => 0.5;
+        public int ChartContrastPercent => 100;
+        public int ChartSaturationPercent => 100;
+        public int ChartBrightnessPercent => 100;
         public bool HarborMode => false;
         public bool BigType => false;
         public bool ExpandAllHud => false;
@@ -176,6 +180,9 @@ public class ChartLayerControllerTests
         public Task SetGuardZoneVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetGuardZoneWarningRingVisibleAsync(bool v) => Task.CompletedTask;
         public Task SetWeatherOverlayOpacityAsync(double v) => Task.CompletedTask;
+        public Task SetChartContrastPercentAsync(int v) => Task.CompletedTask;
+        public Task SetChartSaturationPercentAsync(int v) => Task.CompletedTask;
+        public Task SetChartBrightnessPercentAsync(int v) => Task.CompletedTask;
         public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }
         public Task SetChartUpscaleLevelsAsync(int v) { ChartUpscaleLevels = v; return Task.CompletedTask; }
         public Task SetHarborModeAsync(bool v) => Task.CompletedTask;

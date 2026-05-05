@@ -83,6 +83,55 @@
             </span>
         </label>
     }
+
+    @* Display tweaks. Three CSS-filter sliders: contrast / saturation
+       / brightness. Helms running raster Navionics PNGs find them
+       washed out at noon and unreadable in glare; small contrast +
+       saturation boosts make a real difference. Brightness range is
+       tighter (50-150) -- past 150 the chart blooms out and contour
+       lines fade. Reset button lands every channel back at the
+       identity default. *@
+    <div class="chart-filter-group" @onclick:stopPropagation>
+        <div class="chart-filter-header">
+            <span class="chart-filter-title">Display</span>
+            @if (ContrastPercent != 100 || SaturationPercent != 100 || BrightnessPercent != 100)
+            {
+                <button class="chart-filter-reset" type="button"
+                        title="Reset to defaults"
+                        @onclick="HandleResetClicked">Reset</button>
+            }
+        </div>
+        <div class="chart-filter-row">
+            <span class="chart-filter-label">Contrast</span>
+            <input type="range" class="chart-filter-slider"
+                   min="50" max="200" step="5"
+                   value="@ContrastPercent"
+                   @oninput="HandleContrastInput"
+                   @onchange="HandleContrastCommit"
+                   aria-label="Chart contrast" />
+            <span class="chart-filter-value">@ContrastPercent%</span>
+        </div>
+        <div class="chart-filter-row">
+            <span class="chart-filter-label">Saturation</span>
+            <input type="range" class="chart-filter-slider"
+                   min="50" max="200" step="5"
+                   value="@SaturationPercent"
+                   @oninput="HandleSaturationInput"
+                   @onchange="HandleSaturationCommit"
+                   aria-label="Chart saturation" />
+            <span class="chart-filter-value">@SaturationPercent%</span>
+        </div>
+        <div class="chart-filter-row">
+            <span class="chart-filter-label">Brightness</span>
+            <input type="range" class="chart-filter-slider"
+                   min="50" max="150" step="5"
+                   value="@BrightnessPercent"
+                   @oninput="HandleBrightnessInput"
+                   @onchange="HandleBrightnessCommit"
+                   aria-label="Chart brightness" />
+            <span class="chart-filter-value">@BrightnessPercent%</span>
+        </div>
+    </div>
 }
 
 @code {
@@ -106,6 +155,28 @@
     /// -1 = move up (toward top of stack), +1 = move down.</summary>
     [Parameter] public EventCallback<(SignalkChart chart, int direction)> OnReorder { get; set; }
 
+    // ---- CSS-filter sliders (contrast / saturation / brightness) ----
+    // Same preview/commit split as the weather-opacity row in MiscSection:
+    // @oninput pushes the new value to the JS layer immediately so the
+    // helm sees the chart change as they drag, @onchange fires once on
+    // slider release to persist + broadcast OnSettingsChanged. Without
+    // the split a 1-second drag would pile up ~10 localStorage writes
+    // and as many StateHasChanged cascades.
+    [Parameter] public int ContrastPercent { get; set; } = 100;
+    [Parameter] public int SaturationPercent { get; set; } = 100;
+    [Parameter] public int BrightnessPercent { get; set; } = 100;
+    [Parameter] public EventCallback<int> OnContrastPreview { get; set; }
+    [Parameter] public EventCallback<int> OnContrastCommit { get; set; }
+    [Parameter] public EventCallback<int> OnSaturationPreview { get; set; }
+    [Parameter] public EventCallback<int> OnSaturationCommit { get; set; }
+    [Parameter] public EventCallback<int> OnBrightnessPreview { get; set; }
+    [Parameter] public EventCallback<int> OnBrightnessCommit { get; set; }
+    /// <summary>Reset every channel to identity (100). Wired to a
+    /// single callback rather than three separate
+    /// SetXxxPercentAsync(100) calls so the parent can persist all
+    /// three under one OnSettingsChanged broadcast.</summary>
+    [Parameter] public EventCallback OnFilterReset { get; set; }
+
     // Collapsed by default -- the Layers panel opens compact, the user
     // expands only the sections they need. See agents.md "UX principles".
     private bool expanded = false;
@@ -114,4 +185,51 @@
     // re-introduce a separate "active stack" projection -- having both
     // the z-stack and the visible-list as separate state lets them drift
     // and breaks the reorder arrows.
+
+    private async Task HandleContrastInput(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
+        ContrastPercent = Math.Clamp(pct, 50, 200);
+        await OnContrastPreview.InvokeAsync(ContrastPercent);
+    }
+    private Task HandleContrastCommit(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return Task.CompletedTask;
+        ContrastPercent = Math.Clamp(pct, 50, 200);
+        return OnContrastCommit.InvokeAsync(ContrastPercent);
+    }
+
+    private async Task HandleSaturationInput(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
+        SaturationPercent = Math.Clamp(pct, 50, 200);
+        await OnSaturationPreview.InvokeAsync(SaturationPercent);
+    }
+    private Task HandleSaturationCommit(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return Task.CompletedTask;
+        SaturationPercent = Math.Clamp(pct, 50, 200);
+        return OnSaturationCommit.InvokeAsync(SaturationPercent);
+    }
+
+    private async Task HandleBrightnessInput(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return;
+        BrightnessPercent = Math.Clamp(pct, 50, 150);
+        await OnBrightnessPreview.InvokeAsync(BrightnessPercent);
+    }
+    private Task HandleBrightnessCommit(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out int pct)) return Task.CompletedTask;
+        BrightnessPercent = Math.Clamp(pct, 50, 150);
+        return OnBrightnessCommit.InvokeAsync(BrightnessPercent);
+    }
+
+    private Task HandleResetClicked()
+    {
+        ContrastPercent = 100;
+        SaturationPercent = 100;
+        BrightnessPercent = 100;
+        return OnFilterReset.InvokeAsync();
+    }
 }

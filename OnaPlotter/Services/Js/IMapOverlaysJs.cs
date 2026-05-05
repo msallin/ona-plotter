@@ -35,6 +35,16 @@ public interface IMapOverlaysJs
     /// layer matches the helm's panel ordering.</summary>
     Task SetChartLayerOrderAsync(string[] orderedIds);
 
+    /// <summary>Apply a CSS <c>filter</c> string (contrast / saturation
+    /// / brightness shorthand) to every chart tile-layer container.
+    /// Pass an empty string to clear the filter (identity case). The
+    /// helper <see cref="OnaPlotter.Utilities.ChartFilter.Format"/>
+    /// builds the string with invariant-culture decimals so a German-
+    /// locale boot can't emit "contrast(1,30)" and lose the filter.
+    /// New chart layers pick up the current value in
+    /// <c>addChartLayer</c>.</summary>
+    Task SetChartFilterAsync(string cssFilter);
+
     // ---- Weather overlay ---------------------------------------------
 
     /// <summary>Enable the precipitation-radar tile layer at the given

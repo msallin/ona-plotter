@@ -4843,6 +4843,68 @@ html.night-mode-global body {
     color: var(--sk-text);
 }
 
+/* Chart-display CSS-filter group at the bottom of the Charts section
+   in the Layers panel: contrast / saturation / brightness sliders
+   plus a Reset button when any channel is non-default. Mirrors the
+   weather-opacity row shape (label + slider + value triple) so the
+   helm reads it as the same kind of control. The wider lefthand
+   padding (0 -- not the 1.85rem of the weather inset) signals that
+   this group applies to the whole chart stack, not to a specific
+   chart row above. */
+.chart-filter-group {
+    margin-top: 0.4rem;
+    padding: 0.5rem 0.6rem;
+    border-top: 1px solid var(--sk-border, rgba(255, 255, 255, 0.08));
+}
+.chart-filter-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+}
+.chart-filter-title {
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.chart-filter-reset {
+    background: transparent;
+    border: 1px solid var(--sk-border, rgba(255, 255, 255, 0.15));
+    color: var(--sk-text-muted);
+    border-radius: 3px;
+    padding: 1px 8px;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+.chart-filter-reset:hover {
+    color: var(--sk-text);
+    border-color: var(--sk-text-muted);
+}
+.chart-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.2rem 0;
+    font-size: 0.78rem;
+    color: var(--sk-text-muted);
+}
+.chart-filter-label {
+    flex: 0 0 5rem;
+}
+.chart-filter-slider {
+    flex: 1 1 auto;
+    min-width: 80px;
+    accent-color: var(--sk-accent);
+}
+.chart-filter-value {
+    flex: 0 0 auto;
+    min-width: 2.6rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--sk-text);
+}
+
 /* AIS name labels on map.
    Default = dark theme styling (white pill on a sunlit chart looks like
    visual debris; the slate-on-dark pill blends with the dark-chrome

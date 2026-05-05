@@ -40,6 +40,9 @@ internal sealed class FakeSettings : IAppSettings
     public bool ChartUpscaleEnabled { get; set; }
     public int ChartUpscaleLevels { get; set; } = 2;
     public double WeatherOverlayOpacity { get; set; } = 0.5;
+    public int ChartContrastPercent { get; set; } = 100;
+    public int ChartSaturationPercent { get; set; } = 100;
+    public int ChartBrightnessPercent { get; set; } = 100;
     public bool HarborMode { get; set; }
     public bool SidebarCollapsed { get; set; }
     public double DepthAlarmThreshold { get; set; } = 3.0;
@@ -122,6 +125,9 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }
     public Task SetChartUpscaleLevelsAsync(int v) { ChartUpscaleLevels = v; return Task.CompletedTask; }
     public Task SetWeatherOverlayOpacityAsync(double v) { WeatherOverlayOpacity = v; return Task.CompletedTask; }
+    public Task SetChartContrastPercentAsync(int v) { ChartContrastPercent = v; return Task.CompletedTask; }
+    public Task SetChartSaturationPercentAsync(int v) { ChartSaturationPercent = v; return Task.CompletedTask; }
+    public Task SetChartBrightnessPercentAsync(int v) { ChartBrightnessPercent = v; return Task.CompletedTask; }
     public Task SetHarborModeAsync(bool v) { HarborMode = v; return Task.CompletedTask; }
     public Task ApplyMobileFirstRunDefaultsAsync(bool isMobile)
     {

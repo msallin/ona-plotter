@@ -60,6 +60,14 @@ public sealed class AppSettingsService : IAppSettings
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
+    /// <summary>Chart-display CSS filter percentages -- helm boosts /
+    /// dampens contrast / saturation / brightness from the Layers panel
+    /// to read washed-out raster charts. Defaults are identity (100 =
+    /// no filter); see <see cref="OnaPlotter.Utilities.ChartFilter"/>
+    /// for clamp limits + format.</summary>
+    public int ChartContrastPercent { get; private set; } = OnaPlotter.Utilities.ChartFilter.DefaultPercent;
+    public int ChartSaturationPercent { get; private set; } = OnaPlotter.Utilities.ChartFilter.DefaultPercent;
+    public int ChartBrightnessPercent { get; private set; } = OnaPlotter.Utilities.ChartFilter.DefaultPercent;
     // Defaults ON so a fresh helm gets readable tiles past a chart's
     // native max out of the box. Without this, a chart that declares
     // (or quietly downshifts to) maxzoom 16 leaves the helm staring at
@@ -209,6 +217,19 @@ public sealed class AppSettingsService : IAppSettings
             GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
                 OnaPlotter.Utilities.WeatherOpacity.DefaultFraction);
+            // chartContrast/sat/bright go through LoadDouble + cast for the
+            // same reason as ChartUpscaleLevels above: one numeric helper,
+            // identity-default on parse failure, then the clamp helper
+            // pins a corrupt-but-parseable value into the supported range.
+            ChartContrastPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(
+                (int)await LoadDouble("chartContrastPercent.v1",
+                    OnaPlotter.Utilities.ChartFilter.DefaultPercent));
+            ChartSaturationPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(
+                (int)await LoadDouble("chartSaturationPercent.v1",
+                    OnaPlotter.Utilities.ChartFilter.DefaultPercent));
+            ChartBrightnessPercent = OnaPlotter.Utilities.ChartFilter.ClampBrightness(
+                (int)await LoadDouble("chartBrightnessPercent.v1",
+                    OnaPlotter.Utilities.ChartFilter.DefaultPercent));
             ChartUpscaleEnabled = await LoadBool("chartUpscaleEnabled.v1", true);
             // chartUpscaleLevels.v1 is stored as an integer string ("2")
             // but read via LoadDouble + cast: this matches the same
@@ -525,6 +546,34 @@ public sealed class AppSettingsService : IAppSettings
         WeatherOverlayOpacity = OnaPlotter.Utilities.WeatherOpacity.ClampFraction(value);
         await Save("weatherOverlayOpacity.v1",
             WeatherOverlayOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetChartContrastPercentAsync(int value)
+    {
+        // Same belt-and-suspenders pattern as the other clamp-on-set
+        // settings. The slider's min/max attributes are the helm's
+        // fence; this clamp catches a JS-bridge override or a future
+        // programmatic caller bypassing it.
+        ChartContrastPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(value);
+        await Save("chartContrastPercent.v1",
+            ChartContrastPercent.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetChartSaturationPercentAsync(int value)
+    {
+        ChartSaturationPercent = OnaPlotter.Utilities.ChartFilter.ClampContrastSaturation(value);
+        await Save("chartSaturationPercent.v1",
+            ChartSaturationPercent.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetChartBrightnessPercentAsync(int value)
+    {
+        ChartBrightnessPercent = OnaPlotter.Utilities.ChartFilter.ClampBrightness(value);
+        await Save("chartBrightnessPercent.v1",
+            ChartBrightnessPercent.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

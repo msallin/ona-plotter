@@ -518,7 +518,17 @@
                      OnToggleShowAutopilotHud="@(v => Settings.SetShowAutopilotHudAsync(v))"
                      OnToggleShowRadarHud="@(v => Settings.SetShowRadarHudAsync(v))"
                      OnToggleBigType="@(v => Settings.SetBigTypeAsync(v))"
-                     OnToggleExpandAllHud="@(v => Settings.SetExpandAllHudAsync(v))" />
+                     OnToggleExpandAllHud="@(v => Settings.SetExpandAllHudAsync(v))"
+                     ChartContrastPercent="Settings.ChartContrastPercent"
+                     ChartSaturationPercent="Settings.ChartSaturationPercent"
+                     ChartBrightnessPercent="Settings.ChartBrightnessPercent"
+                     OnChartContrastPreview="@(p => PreviewChartFilterAsync(p, Settings.ChartSaturationPercent, Settings.ChartBrightnessPercent))"
+                     OnChartContrastCommit="@(p => Settings.SetChartContrastPercentAsync(p))"
+                     OnChartSaturationPreview="@(p => PreviewChartFilterAsync(Settings.ChartContrastPercent, p, Settings.ChartBrightnessPercent))"
+                     OnChartSaturationCommit="@(p => Settings.SetChartSaturationPercentAsync(p))"
+                     OnChartBrightnessPreview="@(p => PreviewChartFilterAsync(Settings.ChartContrastPercent, Settings.ChartSaturationPercent, p))"
+                     OnChartBrightnessCommit="@(p => Settings.SetChartBrightnessPercentAsync(p))"
+                     OnChartFilterReset="ResetChartFilterAsync" />
     }
 </div>
 
@@ -1655,6 +1665,14 @@
         await _controlsJs.SetRadarRangeRingsAsync(
             Settings.RadarRangeRingsEnabled,
             Settings.RadarRangeRingsCount);
+        // Push the persisted chart-display CSS filter once at init so
+        // every chart layer added below picks it up. addChartLayer
+        // re-applies the current filter on each layer creation, so
+        // the order of "set filter" vs "add layers" is forgiving --
+        // we set it here so a tab opened on a stack of charts
+        // pre-tinted by the helm doesn't flash unfiltered for one
+        // paint while the OnSettingsChanged path catches up.
+        await PushChartFilterAsync();
         Settings.OnSettingsChanged += HandleSettingsChanged;
 
         SignalkClient.OnDataChanged += HandleDataChanged;
@@ -1851,6 +1869,59 @@
             _ = _aisJs.SetGuardZoneWarningRingVisibleAsync(
                 Settings.GuardZoneWarningRingVisible);
         }
+
+        // Chart-display CSS filter: re-push on any settings broadcast
+        // so a slider commit (or a Settings-page edit) reaches the JS
+        // layer without the helm having to flip the chart. Idempotent
+        // when the filter hasn't changed -- setChartFilter walks the
+        // chart-layer map and assigns the same string to every
+        // container's style.filter, which the browser elides.
+        _ = PushChartFilterAsync();
+    }
+
+    /// <summary>Push the persisted chart-display CSS filter to the JS
+    /// layer. Called once on map init and on every OnSettingsChanged
+    /// broadcast so a slider-commit (or a programmatic setter) lands
+    /// on the chart immediately. The string is built C#-side via
+    /// <see cref="OnaPlotter.Utilities.ChartFilter.Format"/> so the
+    /// invariant-culture decimal pinning + clamp logic stays in one
+    /// place.</summary>
+    private Task PushChartFilterAsync()
+    {
+        if (_overlaysJs is null) return Task.CompletedTask;
+        return _overlaysJs.SetChartFilterAsync(
+            OnaPlotter.Utilities.ChartFilter.Format(
+                Settings.ChartContrastPercent,
+                Settings.ChartSaturationPercent,
+                Settings.ChartBrightnessPercent));
+    }
+
+    /// <summary>Live-preview path for the chart-filter sliders during
+    /// a drag. Bypasses the settings save (helm hasn't released the
+    /// slider yet) and pushes the candidate filter directly to JS so
+    /// the chart updates per slider tick. Per-tick localStorage writes
+    /// are reserved for the @onchange commit handler.</summary>
+    private Task PreviewChartFilterAsync(int contrastPct, int saturationPct, int brightnessPct)
+    {
+        if (_overlaysJs is null) return Task.CompletedTask;
+        return _overlaysJs.SetChartFilterAsync(
+            OnaPlotter.Utilities.ChartFilter.Format(
+                contrastPct, saturationPct, brightnessPct));
+    }
+
+    /// <summary>Reset every chart-filter channel to identity (100) in
+    /// one batch. Persists all three settings then relies on the
+    /// usual OnSettingsChanged broadcast to re-push the filter (the
+    /// individual setters each fire their own event but the JS push
+    /// is idempotent so the duplicate fan-out is fine).</summary>
+    private async Task ResetChartFilterAsync()
+    {
+        await Settings.SetChartContrastPercentAsync(
+            OnaPlotter.Utilities.ChartFilter.DefaultPercent);
+        await Settings.SetChartSaturationPercentAsync(
+            OnaPlotter.Utilities.ChartFilter.DefaultPercent);
+        await Settings.SetChartBrightnessPercentAsync(
+            OnaPlotter.Utilities.ChartFilter.DefaultPercent);
     }
 
     [JSInvokable]

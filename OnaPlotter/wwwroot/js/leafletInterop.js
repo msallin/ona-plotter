@@ -1446,6 +1446,10 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     layer.addTo(map);
     layer.setZIndex(50);
     chartLayers.set(id, layer);
+    // Pick up the current contrast / saturation / brightness filter
+    // (helm may have already tuned it before this chart toggled on).
+    // No-op when the filter is the identity default.
+    applyChartFilter(layer);
     chartTileErrors.set(id, 0);
     chartZoomErrors.set(id, new Map());
     layer.on('tileerror', (ev) => {
@@ -1592,6 +1596,45 @@ export function setChartLayerOrder(orderedIds) {
         if (layer) layer.setZIndex(base + i);
     }
     restackChartOpacities();
+}
+
+// Current chart-display CSS filter (contrast / saturation / brightness
+// shorthand). Empty string = identity, no filter applied. Stored at
+// module level so addChartLayer can re-apply it to a chart added AFTER
+// the helm tweaked the slider -- otherwise the new chart would render
+// at default contrast while the existing stack stays boosted.
+//
+// The string is built C#-side by ChartFilter.Format (invariant culture,
+// clamped). Any "trust the JS layer to format it" path would re-derive
+// what the C# tests already pin and create a second source of truth.
+let currentChartFilter = '';
+
+export function setChartFilter(cssFilter) {
+    currentChartFilter = cssFilter || '';
+    for (const [, layer] of chartLayers.entries()) {
+        applyChartFilter(layer);
+    }
+}
+
+// Apply the current filter string to a single chart layer's container.
+// Pulled out so addChartLayer can re-use it (a chart created after the
+// helm moves the contrast slider needs to pick up the boosted filter
+// without a full chart-stack rebuild).
+//
+// Leaflet's TileLayer keeps the wrapping <div> in layer._container;
+// _container is undocumented but stable across Leaflet 1.x and is what
+// every plugin uses to set per-layer DOM styles. Falling back to
+// getContainer() if it ever lands as a public method.
+function applyChartFilter(layer) {
+    if (!layer) return;
+    const el = (typeof layer.getContainer === 'function')
+        ? layer.getContainer()
+        : layer._container;
+    if (!el) return;
+    // '' assigns the empty string which clears the inline filter --
+    // the compositor then sees no filter at all, not a no-op
+    // contrast(1) which still costs a paint pass.
+    el.style.filter = currentChartFilter;
 }
 
 // --- Routes ---

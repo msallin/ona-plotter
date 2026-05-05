@@ -42,6 +42,7 @@ public class ServerTrackControllerTests
             Clears++;
             return Task.CompletedTask;
         }
+        public Task SetChartFilterAsync(string cssFilter) => Task.CompletedTask;
     }
 
     private sealed class FakeTrackApi : ITrackApi

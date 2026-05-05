@@ -30,6 +30,9 @@ public sealed class MapOverlaysJs : IMapOverlaysJs
     public Task SetChartLayerOrderAsync(string[] orderedIds)
         => InvokeSafe("setChartLayerOrder", orderedIds);
 
+    public Task SetChartFilterAsync(string cssFilter)
+        => InvokeSafe("setChartFilter", cssFilter);
+
     public Task SetWeatherOverlayAsync(string tileUrl, double opacity)
         => InvokeSafe("setWeatherOverlay", tileUrl, opacity);
 
