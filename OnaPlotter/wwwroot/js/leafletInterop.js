@@ -1384,7 +1384,13 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         minZoom: minZ,
         maxNativeZoom: native,
         maxZoom: native,
-        opacity: opacity || 0.8,
+        // 1.0 default: restackChartOpacities runs after addLayer and
+        // overrides this anyway (single-chart -> 1.0; stacked -> ramp
+        // from 1.0 down). The literal here matches the default-final
+        // state so a layer that's added but somehow never restacked
+        // (defensive only -- this path shouldn't exist) still renders
+        // at full contrast.
+        opacity: opacity || 1.0,
         // keepBuffer + updateWhenIdle match base layers; don't re-fetch
         // chart tiles when the user zig-zags back into territory they
         // just panned away from. updateWhenIdle follows the client-
@@ -1535,12 +1541,15 @@ export function removeChartLayer(id) {
     restackChartOpacities();
 }
 
-// Graduated opacity for stacked charts. With one chart enabled the
-// per-tile opacity is whatever the caller passed (typically 0.8);
-// each chart added above gets progressively more transparent so the
-// stack reads as layers rather than the topmost chart hiding what's
-// underneath. Numbers are intentionally gentle -- helms reported the
-// previous flat-0.8 stack hid useful detail from background charts. */
+// Graduated opacity for stacked charts. The bottom (primary) chart
+// always renders at full opacity so a single-chart helm sees the
+// chart's authored colours / contrast verbatim -- comparable to
+// Freeboard-SK's rendering, where Navionics MBTiles look noticeably
+// crisper than the previous flat-0.85 dim made them here. Each chart
+// stacked ABOVE the primary then ramps down to 0.45 so the helm
+// reads the stack as layers rather than the topmost chart hiding
+// what's underneath. The 0.45 floor keeps the top layer visible on
+// a 4+ chart stack.
 function restackChartOpacities() {
     if (!map || chartLayers.size === 0) return;
     // Order layers by their current z-index (bottom -> top). setZIndex
@@ -1552,17 +1561,20 @@ function restackChartOpacities() {
     }
     ordered.sort((a, b) => (a.options.zIndex ?? 50) - (b.options.zIndex ?? 50));
     if (ordered.length === 1) {
-        ordered[0].setOpacity(0.85);
+        // Single chart: full opacity. Helm wants the chart's own
+        // contrast, no client-side dimming. Matches Freeboard-SK's
+        // single-chart behaviour.
+        ordered[0].setOpacity(1.0);
         return;
     }
-    // Linear ramp from 0.85 (bottom) to 0.45 (top), with the bottom
-    // layer always the most opaque so the helm's "primary" chart
-    // dominates. 0.45 floor keeps the top layer from disappearing
-    // entirely on a 4+ chart stack.
+    // Linear ramp 1.0 (bottom) -> 0.45 (top). Bottom keeps full
+    // opacity so the primary chart is never dimmed; ramp slope is
+    // 0.55 so a 2-chart stack lands at (1.0, 0.45) and a 4-chart
+    // stack at (1.0, ~0.82, ~0.63, 0.45).
     const top = ordered.length - 1;
     for (let i = 0; i < ordered.length; i++) {
         const t = i / top;                       // 0..1, bottom->top
-        const opacity = 0.85 - 0.40 * t;
+        const opacity = 1.0 - 0.55 * t;
         ordered[i].setOpacity(opacity);
     }
 }
