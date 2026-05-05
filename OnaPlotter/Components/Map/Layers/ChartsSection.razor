@@ -94,12 +94,22 @@
     <div class="chart-filter-group" @onclick:stopPropagation>
         <div class="chart-filter-header">
             <span class="chart-filter-title">Display</span>
-            @if (_displayContrast != 100 || _displaySaturation != 100 || _displayBrightness != 100)
-            {
-                <button class="chart-filter-reset" type="button"
-                        title="Reset to defaults"
-                        @onclick="HandleResetClicked">Reset</button>
+            @{
+                bool atDefaults = _displayContrast == 100
+                    && _displaySaturation == 100
+                    && _displayBrightness == 100;
             }
+            @* Always-visible affordance so the helm doesn't have to
+               nudge a slider just to discover that Reset exists.
+               Disabled (CSS-dimmed + no pointer-events) when every
+               channel already sits at the identity 100, so the
+               disabled state itself communicates "nothing to reset
+               right now". *@
+            <button class="chart-filter-reset"
+                    type="button"
+                    disabled="@atDefaults"
+                    title="@(atDefaults ? "All channels at default" : "Reset to defaults")"
+                    @onclick="HandleResetClicked">Reset</button>
         </div>
         <div class="chart-filter-row">
             <span class="chart-filter-label">Contrast</span>
