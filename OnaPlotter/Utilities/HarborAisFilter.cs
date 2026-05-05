@@ -37,13 +37,51 @@ public static class HarborAisFilter
         bool harbor,
         DateTime now)
     {
-        if (harbor)
+        if (!harbor)
         {
-            // Vessels-collection overload skips the HashSet build when
-            // nothing is tracked, which is most ticks. The previous
-            // pattern allocated the set unconditionally.
-            tracker.Cleanup(vessels);
+            // Steady-state path: harbor mode is OFF on every tick the
+            // helm isn't actively entering / leaving a marina. The
+            // producer in production is AisStore.GetVessels(), which
+            // already filters null-position vessels and returns an
+            // AisVessel[]. When that invariant holds we can fast-return
+            // the array as-is, avoiding the per-tick List<>(N) +
+            // copy that previously dominated this method's allocation
+            // cost on a 200-vessel push.
+            //
+            // The null-position drop contract is preserved for
+            // collections that DO contain nulls (test fixtures that
+            // pass raw `new[] { ... }` literals): we scan once, and
+            // if a null is found we fall through to the slow allocate
+            // path to drop it. Producer-clean arrays (the only case
+            // that matters in production) get the zero-alloc path.
+            if (vessels is AisVessel[] arr)
+            {
+                bool allClean = true;
+                for (int i = 0; i < arr.Length; i++)
+                {
+                    var v = arr[i];
+                    if (v.Latitude is null || v.Longitude is null)
+                    {
+                        allClean = false;
+                        break;
+                    }
+                }
+                if (allClean) return arr;
+            }
+            var keptOff = new List<AisVessel>(vessels.Count);
+            foreach (var v in vessels)
+            {
+                if (v.Latitude is null || v.Longitude is null) continue;
+                keptOff.Add(v);
+            }
+            return keptOff;
         }
+
+        // Harbor mode ON: cleanup + drop moored.
+        // Vessels-collection overload skips the HashSet build when
+        // nothing is tracked, which is most ticks. The previous
+        // pattern allocated the set unconditionally.
+        tracker.Cleanup(vessels);
 
         var kept = new List<AisVessel>(vessels.Count);
         foreach (var v in vessels)
@@ -52,7 +90,7 @@ public static class HarborAisFilter
             // null lat / lon can't render on the chart regardless of
             // harbor mode. Mirror what Map.razor was doing inline.
             if (v.Latitude is null || v.Longitude is null) continue;
-            if (harbor && tracker.IsMoored(v, now)) continue;
+            if (tracker.IsMoored(v, now)) continue;
             kept.Add(v);
         }
         return kept;
