@@ -189,7 +189,14 @@
 //             and an .anchor-edit-set button; lost the SetRadius
 //             Close button. Cached v33 WASM passing the old shape
 //             would render a panel without preview wiring.
-const CACHE_NAME = 'ona-plotter-v34';
+// v34 -> v35: .top-row z-index 1 -> 1000 so the SearchBox typeahead
+//             dropdown (which visually overflows from the topbar
+//             into the map area) renders ABOVE the leaflet map
+//             panes + HUD cards. The dropdown WAS rendering -- the
+//             helm could see the rows in the HTML inspector -- but
+//             the parent's stacking context capped its effective
+//             z-index at 1, so the chart painted over it.
+const CACHE_NAME = 'ona-plotter-v35';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
