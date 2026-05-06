@@ -103,10 +103,24 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
                 if (string.IsNullOrWhiteSpace(json)) return [];
                 parsed = JsonSerializer.Deserialize(json, OnaJsonContext.Default.PhotonResponse);
             }
-            catch (JsonException ex)
+            // ReadAsStringAsync over a flaky LTE link can drop the
+            // connection mid-body and surface as HttpRequestException
+            // (wrapping IOException) -- not JsonException. Without
+            // this widened catch the exception escapes past the
+            // empty-list-on-failure contract into SearchBox.OnInput.
+            catch (Exception ex) when (ex is JsonException
+                                          or HttpRequestException
+                                          or IOException)
             {
-                _logger.LogWarning("[place] photon parse failed for query '{Query}': {Message}",
+                _logger.LogWarning("[place] photon read/parse failed for query '{Query}': {Message}",
                     query, ex.Message);
+                return [];
+            }
+            catch (TaskCanceledException)
+            {
+                // Mid-body cancellation (helm typed another char OR
+                // CallTimeout fired). Same shape as the pre-send
+                // cancellation: empty list, log nothing extra.
                 return [];
             }
 

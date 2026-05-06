@@ -20,10 +20,17 @@ namespace OnaPlotter.Services.Places;
 /// </summary>
 public sealed class MergedPlaceSearchService : IPlaceSearchService
 {
-    private readonly OwnPlacesIndex _own;
+    private readonly IPlaceSearchService _own;
     private readonly IPlaceSearchService _online;
 
-    public MergedPlaceSearchService(OwnPlacesIndex own, IPlaceSearchService online)
+    /// <summary>Production wiring: the helm-facing
+    /// <c>OwnPlacesIndex</c> implements <see cref="IPlaceSearchService"/>
+    /// directly so it can be threaded in here through the same
+    /// abstraction as the online side. That lets test fixtures stub
+    /// both branches with a unified <c>IPlaceSearchService</c> stub
+    /// and prove parallelism via "started" signals on each side
+    /// without relying on a wall-clock sleep.</summary>
+    public MergedPlaceSearchService(IPlaceSearchService own, IPlaceSearchService online)
     {
         _own = own;
         _online = online;

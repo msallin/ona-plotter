@@ -100,12 +100,20 @@ public sealed class NominatimPlaceSearchService : IPlaceSearchService
             // Sleep just long enough so the call lands at least
             // MinRequestInterval after the previous one. First call
             // (lastTicks == 0) skips the wait entirely.
+            //
+            // Task.Delay is routed through the injected TimeProvider so
+            // the rate-gate test can advance a fake clock instead of
+            // waiting on a real timer. Without the TimeProvider overload
+            // a system-timer Delay would race the test's clock-advance
+            // and force the test to insert a real Task.Delay(N) sleep
+            // to bridge the two -- which is exactly the kind of CI flake
+            // vector the FakeTimeProvider seam exists to eliminate.
             var nowTicks = _time.GetUtcNow().UtcTicks;
             var elapsed = TimeSpan.FromTicks(nowTicks - _lastRequestTicks);
             if (_lastRequestTicks != 0 && elapsed < MinRequestInterval)
             {
                 var wait = MinRequestInterval - elapsed;
-                try { await Task.Delay(wait, timeoutCts.Token); }
+                try { await Task.Delay(wait, _time, timeoutCts.Token); }
                 catch (TaskCanceledException) { return []; }
             }
             _lastRequestTicks = _time.GetUtcNow().UtcTicks;
@@ -159,10 +167,20 @@ public sealed class NominatimPlaceSearchService : IPlaceSearchService
                     if (string.IsNullOrWhiteSpace(json)) return [];
                     parsed = JsonSerializer.Deserialize(json, OnaJsonContext.Default.NominatimResultArray);
                 }
-                catch (JsonException ex)
+                // Same widened-catch as Photon: a body-stream drop
+                // mid-read on flaky LTE surfaces as HttpRequestException
+                // / IOException, not JsonException. Without these the
+                // contract leaks through into SearchBox.
+                catch (Exception ex) when (ex is JsonException
+                                              or HttpRequestException
+                                              or IOException)
                 {
-                    _logger.LogWarning("[place] nominatim parse failed for query '{Query}': {Message}",
+                    _logger.LogWarning("[place] nominatim read/parse failed for query '{Query}': {Message}",
                         query, ex.Message);
+                    return [];
+                }
+                catch (TaskCanceledException)
+                {
                     return [];
                 }
 

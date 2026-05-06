@@ -16,10 +16,32 @@ public class MergedPlaceSearchServiceTests
     {
         public IReadOnlyList<PlaceResult> NextResults { get; set; } = [];
         public TaskCompletionSource? Gate { get; set; }
+        /// <summary>Set by SearchAsync the moment it's entered; tests
+        /// can await this to deterministically observe "the inner
+        /// branch has started" without relying on a wall-clock sleep.</summary>
+        public TaskCompletionSource Started { get; } = new();
         public async Task<IReadOnlyList<PlaceResult>> SearchAsync(string query, CancellationToken ct = default)
         {
+            Started.TrySetResult();
             if (Gate is not null) await Gate.Task;
             return NextResults;
+        }
+    }
+
+    /// <summary>Wraps an OwnPlacesIndex so the test can observe the
+    /// moment the merged service started the own-data branch. The
+    /// real OwnPlacesIndex doesn't expose a "started" signal because
+    /// it normally completes synchronously on a hot cache; the
+    /// "Branches_Run_Concurrently" assertion needs the signal to
+    /// avoid relying on a Task.Delay wall-clock sleep.</summary>
+    private sealed class StubOwn : IPlaceSearchService
+    {
+        public IReadOnlyList<PlaceResult> NextResults { get; set; } = [];
+        public TaskCompletionSource Started { get; } = new();
+        public Task<IReadOnlyList<PlaceResult>> SearchAsync(string query, CancellationToken ct = default)
+        {
+            Started.TrySetResult();
+            return Task.FromResult(NextResults);
         }
     }
 
@@ -113,28 +135,41 @@ public class MergedPlaceSearchServiceTests
     [Test]
     public async Task Branches_Run_Concurrently()
     {
-        // Hold the inner geocoder behind a TCS. The own-data branch
-        // resolves in-memory immediately. If we awaited inner serially
-        // the merged Task would never complete until Gate is released.
-        // Resolving in parallel: the merged Task is in-flight after
-        // Both inner and own start.
+        // Both branches expose a "Started" TCS that fires the moment
+        // SearchAsync is entered. We kick off the merged search, await
+        // BOTH started signals, then verify the merged Task is still
+        // in-flight (proving online didn't block own's start). Finally
+        // release the online gate and assert the merged result lands.
+        //
+        // No Task.Delay sleeps -- the test is deterministic regardless
+        // of CI scheduler load.
         var gate = new TaskCompletionSource();
+        var own = new StubOwn
+        {
+            NextResults = new[] { new PlaceResult("Berlin", "Berlin", 52.5, 13.4, "waypoint") },
+        };
         var inner = new StubInner
         {
             NextResults = new[] { Online("late") },
             Gate = gate,
         };
-        var wpts = new FakeWaypointApi();
-        wpts.Waypoints.Add(new SignalkWaypoint
-            { Id = "w1", Name = "Berlin", Latitude = 52.5, Longitude = 13.4 });
-        var svc = new MergedPlaceSearchService(NewOwnIndex(wpts), inner);
+        var svc = new MergedPlaceSearchService(own, inner);
 
         var task = svc.SearchAsync("ber");
-        // Brief wait so the own-data load has had a chance to schedule
-        // (it's pure in-memory after the first cache fill, but the API
-        // calls in EnsureLoadedAsync cycle through Task.Yield-equivalents).
-        await Task.Delay(50);
-        // Inner is still gated; merged Task is waiting on it. Release.
+
+        // Both branches must have started before the merged Task can
+        // make progress past Task.WhenAll's setup. Awaiting both
+        // Started TCSes proves parallelism: a serial implementation
+        // (await own; await online) would only fire own.Started and
+        // the await on inner.Started.Task would block forever (since
+        // inner.SearchAsync hasn't been called yet at that point).
+        await own.Started.Task;
+        await inner.Started.Task;
+
+        // Inner is still gated; merged Task hasn't completed.
+        await Assert.That(task.IsCompleted).IsFalse();
+
+        // Release; the merged result lands with own first, online after.
         gate.SetResult();
         var results = await task;
         await Assert.That(results.Count).IsEqualTo(2);
