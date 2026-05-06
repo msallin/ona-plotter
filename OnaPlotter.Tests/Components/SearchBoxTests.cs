@@ -196,20 +196,14 @@ public class SearchBoxTests
     }
 
     [Test]
-    public async Task Search_Threads_Cancellation_Token_Through_To_Provider()
+    public async Task Two_Keystrokes_Each_Trigger_A_Search_With_Latest_Query()
     {
-        // The class doc on _searchCts pins this invariant: "without
-        // this a slow Photon response from the previous query would
-        // clobber the dropdown when it eventually returns". The full
-        // race is hard to exercise end-to-end through bUnit's
-        // InputAsync (which awaits the whole OnInput Task and would
-        // deadlock against a TCS-gated stub), so we pin the necessary
-        // ingredient: every SearchAsync call receives a non-default
-        // cancellation token, and a follow-up keystroke produces a
-        // different token (proving the CTS rotation actually fires).
-        // A regression that drops _searchCts.Cancel() or stops
-        // creating a fresh CTS on each keystroke would surface here
-        // as identical tokens across calls.
+        // The SearchBox replaced its CancellationTokenSource chain
+        // with a request-id counter (a fresh keystroke bumps the
+        // counter so any in-flight search discards its result on
+        // return). End-to-end via bUnit InputAsync we can pin the
+        // observable contract: each keystroke produces a service
+        // call carrying the latest typed text.
         using var ctx = new Bunit.TestContext();
         var search = new StubSearch
         {
@@ -218,18 +212,10 @@ public class SearchBoxTests
         var cut = Render(ctx, search);
 
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "ber" });
-        var firstCt = search.LastSeenCt;
-
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "berl" });
-        var secondCt = search.LastSeenCt;
 
         await Assert.That(search.CallCount).IsEqualTo(2);
-        await Assert.That(firstCt.CanBeCanceled).IsTrue();
-        await Assert.That(secondCt.CanBeCanceled).IsTrue();
-        // After the second keystroke the first token is cancelled
-        // (the stale clobber guard); the second token is fresh.
-        await Assert.That(firstCt.IsCancellationRequested).IsTrue();
-        await Assert.That(secondCt.IsCancellationRequested).IsFalse();
+        await Assert.That(search.LastQuery).IsEqualTo("berl");
     }
 
     [Test]

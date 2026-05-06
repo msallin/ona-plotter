@@ -156,7 +156,13 @@
 //             (--hud-card-bg / -stroke-in / -stroke-out / -halo /
 //             --hud-ink) so the dropdown matches HUD opacity in
 //             night / dark themes instead of looking transparent.
-const CACHE_NAME = 'ona-plotter-v29';
+// v29 -> v30: SearchBox.razor rewritten to use @bind + request-id
+//             counter (was: value="@_query" + manual @oninput +
+//             CTS chain). The previous controlled-input pattern
+//             raced keystrokes against in-handler StateHasChanged
+//             calls, dropping characters and (often) preventing
+//             a search request from firing at all.
+const CACHE_NAME = 'ona-plotter-v30';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
