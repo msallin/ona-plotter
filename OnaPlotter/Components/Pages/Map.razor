@@ -18,6 +18,7 @@
 @inject INoteApi NoteApi
 @inject IRegionApi RegionApi
 @inject IRegionStore RegionStore
+@inject OnaPlotter.Services.Places.OwnPlacesIndex OwnPlacesIndex
 @inject ICourseApi CourseApi
 @inject IAutopilotApi AutopilotApi
 @inject IAnchorAlarmApi AnchorAlarmApi
@@ -836,6 +837,13 @@
                 // alarm tick polls Regions per evaluation, no event.
                 RegionStore.SetRegions(regions);
             }
+            // Invalidate the topbar-search own-data index so a fresh
+            // resource refresh (whether from helm-side CRUD or another
+            // plotter's edit landing via the resource bus) is reflected
+            // in the search dropdown without waiting on the index's
+            // internal TTL. Cheap: the index lazy-reloads on the next
+            // search call.
+            OwnPlacesIndex.Invalidate();
             if (radars is not null)
             {
                 await RadarOverlay.OnRadarListUpdatedAsync(radars);
