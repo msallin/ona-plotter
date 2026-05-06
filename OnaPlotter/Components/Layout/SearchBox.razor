@@ -1,14 +1,39 @@
 @* Topbar place-search: type a name, debounced query against the
-   IPlaceSearchService (Photon today, with a cache decorator), pick
-   a result -> parent flies the map and drops a search-pin. The pin
-   wiring lives on the parent (MainLayout) so this component stays
-   transport-agnostic; we only emit the picked PlaceResult.
+   IPlaceSearchService, pick a result -> parent flies the map and
+   drops a search-pin.
 
-   Why this isn't done with @bind: the input is a controlled-vs-
-   uncontrolled hybrid -- the helm types freely (controlled) but
-   the dropdown highlight + Escape semantics need keyboard handling
-   that @bind doesn't expose. Manual @oninput / @onkeydown gives us
-   both. *@
+   Implementation notes (helm reported "type-ahead unreliable, often
+   no request fires even"):
+
+   - Use @bind with @bind:event="oninput" + @bind:after instead of
+     `value="@_query"` + manual @oninput. Blazor's @bind has anti-
+     clobber logic that prevents the renderer from overwriting the
+     helm's typed text mid-render -- the previous controlled-input
+     pattern was racing keystrokes against the StateHasChanged()
+     calls inside the handler, causing some keystrokes to never
+     reach OnInput at all. With @bind, the input is the source of
+     truth for the helm's typed value; we observe the change and
+     debounce + search.
+
+   - Track in-flight searches by a monotonic request ID instead of
+     a chain of CancellationTokenSource. The previous design's
+     cascading CTS cancellation was the right idea but invited
+     OperationCanceledException leaks across the cache + geocoder
+     decorators (each has its own CTS handling), some of which
+     surfaced past the OnInput catch. The request-ID approach is
+     dead-simple: when a search returns, drop the result if a newer
+     search has been kicked off in the meantime.
+
+   - No StateHasChanged() inside the handler. Blazor renders
+     automatically after an async event handler completes; the
+     extra render mid-handler is what raced the controlled-input
+     pattern in the first place. We let Blazor handle the lifecycle.
+
+   - Debounce trimmed from 300 ms to 200 ms. The helm's typing
+     pattern reported requests "often not firing" -- if a
+     character lands within 300 ms of the previous, the debounce
+     resets. 200 ms is still well above keystroke jitter (~50 ms)
+     but more forgiving for fast typing. *@
 
 @using OnaPlotter.Services.Places
 @inject IPlaceSearchService Search
@@ -18,8 +43,9 @@
     <input type="search"
            class="topbar-search-input"
            placeholder="@Placeholder"
-           value="@_query"
-           @oninput="OnInput"
+           @bind="_query"
+           @bind:event="oninput"
+           @bind:after="OnQueryChanged"
            @onkeydown="OnKeyDown"
            @onfocusin="HandleFocusIn"
            autocomplete="off"
@@ -60,11 +86,6 @@
                 {
                     var idx = i;
                     var r = _results[idx];
-                    // Separator row when transitioning from an own-data
-                    // source ("waypoint" / "note" / "region") to an
-                    // online geocoder source ("photon" / "nominatim").
-                    // Helm reads the dropdown as two distinct blocks:
-                    // "your places" on top, "found online" below.
                     bool isFirstOnlineAfterOwn =
                         idx > 0
                         && IsOwnSource(_results[idx - 1].Source)
@@ -101,9 +122,7 @@
 </div>
 
 @code {
-    /// <summary>Placeholder text shown when the input is empty.
-    /// Defaults to "Search places" -- the spec calls for that copy
-    /// but tests may override.</summary>
+    /// <summary>Placeholder text shown when the input is empty.</summary>
     [Parameter] public string Placeholder { get; set; } = "Search places";
 
     /// <summary>Fired when the helm picks a result from the dropdown
@@ -118,17 +137,14 @@
     [Parameter] public EventCallback OnCleared { get; set; }
 
     /// <summary>Optional debounce override (milliseconds). Default
-    /// 300 ms balances "feels live" against "don't hammer the
+    /// 200 ms balances "feels live" against "don't hammer the
     /// geocoder on every keystroke". Tests pass 0 for instant.</summary>
-    [Parameter] public int DebounceMs { get; set; } = 300;
+    [Parameter] public int DebounceMs { get; set; } = 200;
 
-    /// <summary>Hard cap on the helm-typed query length before we
-    /// hand it to the geocoder. A pasted multi-KB string would URL-
-    /// encode into an oversized GET that the upstream rejects with
-    /// 414 anyway -- truncating here keeps the cache key short and
-    /// the dropdown fast on every keystroke. 200 chars is well past
-    /// the longest place name in the OSM corpus (the longest
-    /// administrative name is around 80 chars).</summary>
+    /// <summary>Hard cap on the helm-typed query length. A pasted
+    /// multi-KB string would URL-encode into an oversized GET that
+    /// the upstream rejects with 414 anyway -- truncating here keeps
+    /// the cache key short and the dropdown fast on every keystroke.</summary>
     public const int MaxQueryLength = 200;
 
     private string _query = "";
@@ -136,29 +152,30 @@
     private int _highlight = 0;
     private bool _loading = false;
     private bool _open = false;
-    /// <summary>Cancels the in-flight debounce + search call when a
-    /// new keystroke lands. Without this a slow Photon response from
-    /// the previous query would clobber the dropdown when it
-    /// eventually returns.</summary>
-    private CancellationTokenSource? _searchCts;
+    /// <summary>Monotonic counter incremented on every helm keystroke.
+    /// A search Task captures this on entry; on completion it discards
+    /// its result if a newer keystroke has bumped the counter (i.e.
+    /// the helm has typed since this search was kicked off). Replaces
+    /// the previous CancellationTokenSource chain which had subtle
+    /// OperationCanceledException leaks across the cache + geocoder
+    /// decorators.</summary>
+    private int _requestId;
     /// <summary>Set by HandlePick so the immediately-following blur
-    /// doesn't close the dropdown after we've already navigated.
-    /// Avoids a flicker when the helm clicks a row.</summary>
+    /// doesn't close the dropdown after we've already navigated.</summary>
     private bool _suppressNextFocusOut;
 
-    private async Task OnInput(ChangeEventArgs e)
+    private async Task OnQueryChanged()
     {
-        var raw = e.Value?.ToString() ?? "";
-        // Cap the query length BEFORE storing it so the input value
-        // and the cache key both stay bounded. A paste of a multi-KB
-        // string would otherwise become an oversized GET URL on every
-        // debounced keystroke; the geocoder would 414, the empty-list
-        // contract would catch it, but the round-trip waste is real.
-        _query = raw.Length > MaxQueryLength ? raw[..MaxQueryLength] : raw;
-        // Cancel any in-flight previous search and start a fresh CTS.
-        _searchCts?.Cancel();
-        _searchCts = new CancellationTokenSource();
-        var ct = _searchCts.Token;
+        // Bind ran first; _query already reflects the helm's input
+        // (truncated below if the helm pasted something huge).
+        if (_query.Length > MaxQueryLength)
+        {
+            _query = _query[..MaxQueryLength];
+        }
+
+        // Bump the request id so any in-flight search knows it's
+        // stale by the time it returns.
+        var requestId = ++_requestId;
 
         if (string.IsNullOrWhiteSpace(_query))
         {
@@ -168,39 +185,41 @@
             return;
         }
 
-        // Debounce: wait DebounceMs unless cancelled by a fresh
-        // keystroke. Cancellation is the normal path here, not an
-        // exceptional one -- swallow silently.
-        //
-        // Catch OperationCanceledException (the BASE) not just
-        // TaskCanceledException: IJSRuntime.InvokeAsync (which the
-        // localStorage cache uses underneath) throws the base type
-        // on cancellation, NOT the derived TaskCanceledException.
-        // A narrow catch let the exception propagate up through
-        // Search.SearchAsync into this handler and abort OnInput
-        // before _results = results, which manifested as "API
-        // request fires but no suggestions appear" when the helm
-        // typed fast enough that a fresh keystroke cancelled the
-        // CTS mid-cache-write.
+        // Debounce: only proceed if no newer keystroke has bumped the
+        // counter during the wait. Catches both the normal cancel-on-
+        // fresh-keystroke path and any stray timer cancellation.
         if (DebounceMs > 0)
         {
-            try { await Task.Delay(DebounceMs, ct); }
+            try { await Task.Delay(DebounceMs); }
             catch (OperationCanceledException) { return; }
+            if (requestId != _requestId) return;
         }
 
         _loading = true;
         _open = true;
-        StateHasChanged();
+        // Render the spinner / dropdown-open state. Safe: no
+        // controlled-input clobber because @bind owns the input.
 
         IReadOnlyList<PlaceResult> results;
-        try { results = await Search.SearchAsync(_query, ct); }
-        catch (OperationCanceledException) { return; }
+        try
+        {
+            results = await Search.SearchAsync(_query);
+        }
+        catch (OperationCanceledException)
+        {
+            // A decorator's internal cancellation surfaced -- treat
+            // as empty (the contract says transient failures are
+            // empty lists, so this is a defensive belt + braces).
+            return;
+        }
 
-        if (ct.IsCancellationRequested) return;
+        // Stale check: a newer keystroke has bumped the counter
+        // while this search was in flight; discard the result.
+        if (requestId != _requestId) return;
+
         _results = results;
         _highlight = 0;
         _loading = false;
-        StateHasChanged();
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
@@ -239,6 +258,10 @@
         _suppressNextFocusOut = true;
         _open = false;
         _query = result.Name;
+        // Bump the id so any in-flight search for the partial query
+        // doesn't overwrite the dropdown after we've already
+        // navigated away.
+        _requestId++;
         await OnPicked.InvokeAsync(result);
     }
 
@@ -264,16 +287,11 @@
 
     private async Task HandleClear()
     {
-        _searchCts?.Cancel();
         _query = "";
         _results = [];
         _open = false;
         _loading = false;
-        // Tell the parent to clear the search-pin too. Without this
-        // the helm sees the dropdown disappear but the ring marker
-        // stays on the chart, which reads as "is this search active
-        // or not". Fire-and-forget for the UI -- the parent's handler
-        // catches its own JS exceptions.
+        _requestId++;
         if (OnCleared.HasDelegate) await OnCleared.InvokeAsync();
     }
 
