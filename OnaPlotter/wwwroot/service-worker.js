@@ -182,7 +182,14 @@
 //             any decorator regression degrades to empty list
 //             instead of leaving the dropdown in a half-rendered
 //             "stopped working" state.
-const CACHE_NAME = 'ona-plotter-v33';
+// v33 -> v34: AnchorEditPanel SetRadius mode reverted to pick-then-
+//             Set with on-map preview (was: live-commit, which
+//             couldn't show "Auto-grows-as-boat-drifts" without
+//             spamming PUTs). Panel gained OnPreviewRadius parameter
+//             and an .anchor-edit-set button; lost the SetRadius
+//             Close button. Cached v33 WASM passing the old shape
+//             would render a panel without preview wiring.
+const CACHE_NAME = 'ona-plotter-v34';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

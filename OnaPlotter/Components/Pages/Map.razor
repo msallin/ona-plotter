@@ -199,23 +199,26 @@
     {
         @* Two-state anchor panel. Mode switches off the current anchor
            data state (set by ToggleAnchor):
-             - Drop:       no anchor active (or only a JS-manual one).
-                           Tap Drop -> PUT navigation.anchor.position.
-             - SetRadius:  pin is set server-side, no maxRadius yet.
-                           Tap chip + Set OR tap Auto + Set -> PUT
-                           navigation.anchor.maxRadius (or POST the
-                           plugin's setRadius for Auto).
-           v1.x plugin compatibility: PUTs return 405; the parent
-           toasts a fail-loud "Anchor plugin v2.0.0+ required" and
-           leaves the panel open so the helm can install / upgrade
-           and try again. See OnAnchorPanelDrop / OnAnchorPanelSet. *@
+             - Drop:       no anchor active. Tap Drop -> POST
+                           /plugins/anchoralarm/dropAnchor (plugin
+                           reads current GPS).
+             - SetRadius:  pin set server-side, helm picking radius.
+                           Chip taps preview the ring on the chart
+                           via OnAnchorPanelPreviewRadius (no PUT);
+                           Set commits via OnAnchorPanelSet (PUT
+                           navigation.anchor.maxRadius).
+           v1.x plugin compatibility: PUTs return 405; OnAnchorPanel*
+           handlers surface a fail-loud "Anchor plugin v2.0.0+
+           required" toast and leave the panel open so the helm can
+           install / upgrade and try again. *@
         <AnchorEditPanel Mode="@_anchorPanelMode"
                          InitialRadiusMeters="@anchorEditInitialRadius"
                          SuggestionLabel="@anchorEditSuggestion"
                          Busy="@anchorEditBusy"
                          AutoPreviewRadius="@AutoRadiusPreview()"
                          OnDrop="OnAnchorPanelDrop"
-                         OnSetRadius="OnAnchorPanelSetNumericRadius"
+                         OnPreviewRadius="OnAnchorPanelPreviewRadius"
+                         OnSetRadius="OnAnchorPanelSet"
                          OnCancel="OnAnchorPanelCancel" />
     }
 
@@ -2187,6 +2190,11 @@
         {
             anchorEditMode = false;
             anchorEditBusy = false;
+            // Anchor is gone -- ServerAnchorSync will tear the on-
+            // map ring down; just drop the preview flag so a
+            // subsequent panel re-open doesn't think there's still
+            // an outstanding revert to do.
+            _anchorPreviewActive = false;
             Toasts.Warning("Anchor was raised by another plotter or the server -- panel closed");
         }
 
@@ -3380,6 +3388,15 @@
     private string anchorEditSuggestion = "";
     private bool anchorEditBusy;
 
+    /// <summary>True while the SetRadius panel has pushed a visual-
+    /// only preview to the on-map ring (chip tap or Auto live-
+    /// drift) without yet committing via Set. Lets us revert the
+    /// ring to the server's MaxRadius if the panel closes without
+    /// the PUT going through (e.g., helm raised the anchor mid-
+    /// pick, or the panel mode flipped externally). Reset on Set
+    /// success and on revert.</summary>
+    private bool _anchorPreviewActive;
+
     /// <summary>Open the panel in Drop state (no anchor yet). The
     /// plugin captures the GPS position at PUT time; the radius is
     /// chosen later via OpenAnchorSetRadiusPanel.</summary>
@@ -3513,14 +3530,33 @@
         anchorEditBusy = false;
     }
 
+    /// <summary>Visual-only preview: helm tapped a chip (or Auto's
+    /// recomputed value changed mid-drift). Push the new radius to
+    /// the on-map alarm ring directly via JS interop -- NO PUT.
+    /// Stored in <see cref="_anchorPreviewActive"/> so we know to
+    /// revert the ring back to the server's MaxRadius if the helm
+    /// closes the panel without tapping Set. The helm-visible
+    /// effect: as they hover chips, the ring resizes; tapping Set
+    /// commits, and tapping Auto on a drifting boat grows the ring
+    /// in 5 m steps without spamming PUTs.</summary>
+    private async Task OnAnchorPanelPreviewRadius(int radiusMeters)
+    {
+        if (_anchorJs is null) return;
+        _anchorPreviewActive = true;
+        try { await _anchorJs.UpdateAnchorRadiusAsync(radiusMeters); }
+        catch (Exception ex) { Toasts.LogException(ex, "Preview anchor radius"); }
+    }
+
     /// <summary>Step 2: PUT <c>navigation.anchor.maxRadius</c> with
     /// the helm-chosen value. Plugin arms the alarm circle + starts
-    /// publishing currentRadius for drift monitoring. Used for both
-    /// numeric-chip taps and the Auto chip (panel computes Auto's
-    /// value as current+5 m and routes through this same handler).
-    /// Subsequent calls adjust the radius in place -- no raise +
-    /// re-drop needed.</summary>
-    private async Task OnAnchorPanelSetNumericRadius(int radiusMeters)
+    /// publishing currentRadius for drift monitoring. The radius
+    /// arg is the panel's effective pick (numeric chip face if
+    /// numeric is picked, AutoPreviewRadius if Auto is picked --
+    /// both routes land here so the wire path is uniform).
+    /// On success the panel auto-closes (helm picked, helm set,
+    /// done); on failure it stays open so the helm can retry or
+    /// pick a different chip.</summary>
+    private async Task OnAnchorPanelSet(int radiusMeters)
     {
         if (anchorEditBusy) return;     // double-tap guard, see OnAnchorPanelDrop
         anchorEditBusy = true;
@@ -3533,29 +3569,44 @@
             // Persist the choice so the heuristic-default on a future
             // depth-less drop still has a sensible value to suggest.
             await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
+            // Preview reconciles with reality on the next server delta;
+            // ServerAnchorSync diffs MaxRadius against _lastPushedRadius
+            // and pushes the authoritative value. Clear the preview
+            // flag so a subsequent panel-close doesn't try to revert.
+            _anchorPreviewActive = false;
+            anchorEditMode = false;
             anchorEditBusy = false;
-            // Panel stays open so the helm can keep adjusting (live-
-            // commit UX). The active chip will track the published
-            // maxRadius via InitialRadiusMeters on the next render.
             return;
         }
         Toasts.Error(AnchorFailureMessage("Set radius", r));
         anchorEditBusy = false;
     }
 
-    private void OnAnchorPanelCancel()
+    /// <summary>Drop-mode Close: dismiss the panel without dropping.
+    /// SetRadius mode no longer has a Close button (helm exits by
+    /// raising via the Anchor button); but if the parent closes the
+    /// panel for some other reason (mode flip, page navigation),
+    /// any pending visual preview is reverted here so the on-map
+    /// ring matches the server's authoritative MaxRadius.</summary>
+    private async Task OnAnchorPanelCancel()
     {
-        // "Close" in the UI per the field-study finding that
-        // "Cancel" misled both sailors into thinking the drop
-        // would be aborted. Behaviour here: dismiss the panel; the
-        // dropped pin stays armed server-side. The plugin's
-        // Incomplete Anchor Alarm timeout is the safety net for
-        // "helm walks away forgetting step 2". Helm raises via
-        // the Anchor button (arm-then-confirm); to adjust the
-        // radius, helm taps the Anchor Watch HUD card to re-open
-        // this panel.
         anchorEditMode = false;
         anchorEditBusy = false;
+        await RevertAnchorPreviewIfActiveAsync();
+    }
+
+    /// <summary>Restore the on-map alarm ring to the server's
+    /// authoritative MaxRadius after a preview that didn't get
+    /// committed. Called from any path that closes the SetRadius
+    /// panel without going through Set. No-op when no preview was
+    /// active or the JS module is gone.</summary>
+    private async Task RevertAnchorPreviewIfActiveAsync()
+    {
+        if (!_anchorPreviewActive || _anchorJs is null) return;
+        _anchorPreviewActive = false;
+        double serverRadius = Data.AnchorMaxRadius ?? 30;
+        try { await _anchorJs.UpdateAnchorRadiusAsync(serverRadius); }
+        catch (Exception ex) { Toasts.LogException(ex, "Revert anchor preview"); }
     }
 
     private async Task ZoomToTrack()
