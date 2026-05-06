@@ -153,20 +153,20 @@ public class AnchorEditPanelTests
     // ---- SetRadius mode ----
 
     [Test]
-    public async Task SetRadiusMode_Renders_AutoChip_NumericChips_SetButton()
+    public async Task SetRadiusMode_Renders_AutoChip_NumericChips_NoSetButton()
     {
-        // Pin the chip set: Auto + every preset, plus a Set button.
-        // No Drop button (we're past step 1).
+        // Live-commit UX: chip taps fire the commit immediately;
+        // there is no separate Set button. Pin the chip set + button
+        // absence so a regression that re-introduces a Set button
+        // doesn't slip past.
         using var ctx = new Bunit.TestContext();
         var cut = RenderSetRadius(ctx);
 
         await Assert.That(cut.FindAll(".anchor-edit-auto").Count).IsEqualTo(1);
-        await Assert.That(cut.FindAll(".anchor-edit-set").Count).IsEqualTo(1);
+        await Assert.That(cut.FindAll(".anchor-edit-set").Count).IsEqualTo(0);
         await Assert.That(cut.FindAll(".anchor-edit-drop").Count).IsEqualTo(0);
 
         // 5 numeric chips (20/30/50/75/100) + 1 Auto = 6 inside the chip row.
-        // 150m was dropped on field-study feedback (rarely picked, was
-        // crowding the row).
         var chips = cut.FindAll(".anchor-edit-chips .map-btn");
         await Assert.That(chips.Count).IsEqualTo(6);
     }
@@ -174,8 +174,8 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_InitialRadius_LandsOnPresetChip()
     {
-        // Heuristic suggested 30 -> 30 chip is active. Auto is NOT
-        // active (a numeric is picked).
+        // Initial=30 -> 30 chip is active (derived from
+        // InitialRadiusMeters, not panel-internal pick state).
         using var ctx = new Bunit.TestContext();
         var cut = RenderSetRadius(ctx, initial: 30);
 
@@ -197,11 +197,11 @@ public class AnchorEditPanelTests
     }
 
     [Test]
-    public async Task SetRadiusMode_AutoChip_TapsSwitchToAuto()
+    public async Task SetRadiusMode_AutoChip_TapFiresOnAutoSetImmediately()
     {
-        // Helm taps Auto -> active class moves to Auto, no numeric is
-        // active. Tapping Set then fires OnAutoSetRadius (not
-        // OnSetRadius).
+        // Live-commit: tapping Auto fires OnAutoSetRadius right away,
+        // no separate Set tap needed. OnSetRadius (numeric) must NOT
+        // fire on the same tap.
         using var ctx = new Bunit.TestContext();
         bool autoFired = false;
         bool numericFired = false;
@@ -210,23 +210,23 @@ public class AnchorEditPanelTests
             onAutoSetRadius: () => autoFired = true);
 
         cut.Find(".anchor-edit-auto").Click();
-        cut.Find(".anchor-edit-set").Click();
 
         await Assert.That(autoFired).IsTrue();
         await Assert.That(numericFired).IsFalse();
     }
 
     [Test]
-    public async Task SetRadiusMode_NumericChip_FiresOnSetRadius_WithCurrentValue()
+    public async Task SetRadiusMode_NumericChip_TapFiresOnSetRadiusImmediately()
     {
-        // Initial 30 -> helm taps 75 -> Set fires OnSetRadius(75).
+        // Live-commit: tapping 75 chip fires OnSetRadius(75) right
+        // away. Helm doesn't have to chase a Set button afterward.
         using var ctx = new Bunit.TestContext();
         int? captured = null;
         var cut = RenderSetRadius(ctx, initial: 30, onSetRadius: r => captured = r);
 
         cut.FindAll(".anchor-edit-chips .map-btn")
-            .First(b => b.TextContent.Contains("75")).Click();
-        cut.Find(".anchor-edit-set").Click();
+            .First(b => b.TextContent.Contains("75") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
 
         await Assert.That(captured).IsEqualTo(75);
     }
@@ -234,46 +234,70 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_NumericChip_DoesNotFireOnAutoSet()
     {
-        // Numeric Set route MUST NOT fire OnAutoSetRadius even though
-        // both come through OnSetClicked() -- the picked-vs-Auto
-        // discriminator decides.
+        // Tapping a numeric chip routes through OnSetRadius only --
+        // OnAutoSetRadius stays silent. Pinning so a future refactor
+        // that conflates the two callbacks fails here.
         using var ctx = new Bunit.TestContext();
         bool autoFired = false;
         var cut = RenderSetRadius(ctx, initial: 30, onAutoSetRadius: () => autoFired = true);
 
         cut.FindAll(".anchor-edit-chips .map-btn")
-            .First(b => b.TextContent.Contains("100")).Click();
-        cut.Find(".anchor-edit-set").Click();
+            .First(b => b.TextContent.Contains("100") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
 
         await Assert.That(autoFired).IsFalse();
     }
 
     [Test]
-    public async Task SetRadiusMode_AutoToNumeric_LastWins()
+    public async Task SetRadiusMode_TwoNumericChipsTapped_BothCommit()
     {
-        // Helm taps Auto, then 50 -> Set fires OnSetRadius(50). The
-        // active chip should be 50, not Auto.
+        // Helm picks 50, sees alarm circle resize, decides to go
+        // bigger, picks 75. Both taps must commit (each fires the
+        // callback in order). Replaces the previous "AutoToNumeric
+        // LastWins" semantics -- the panel doesn't accumulate pick
+        // state any more; each tap is its own commit.
         using var ctx = new Bunit.TestContext();
-        int? captured = null;
-        var cut = RenderSetRadius(ctx, initial: 30, onSetRadius: r => captured = r);
+        var captured = new List<int>();
+        var cut = RenderSetRadius(ctx, initial: 30, onSetRadius: r => captured.Add(r));
+
+        cut.FindAll(".anchor-edit-chips .map-btn")
+            .First(b => b.TextContent.Contains("50") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
+        cut.FindAll(".anchor-edit-chips .map-btn")
+            .First(b => b.TextContent.Contains("75") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
+
+        await Assert.That(captured.Count).IsEqualTo(2);
+        await Assert.That(captured[0]).IsEqualTo(50);
+        await Assert.That(captured[1]).IsEqualTo(75);
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoTwiceInARow_RecomputesOnEachTap()
+    {
+        // Helm taps Auto, boat drifts further out, helm taps Auto
+        // again to recompute. Each tap must fire OnAutoSetRadius.
+        // Plugin uses fresh distance on each call, so two POSTs is
+        // the deliberate "extend on drift" gesture.
+        using var ctx = new Bunit.TestContext();
+        int autoFires = 0;
+        var cut = RenderSetRadius(ctx, initial: 30, onAutoSetRadius: () => autoFires++);
 
         cut.Find(".anchor-edit-auto").Click();
-        cut.FindAll(".anchor-edit-chips .map-btn")
-            .First(b => b.TextContent.Contains("50")).Click();
-        cut.Find(".anchor-edit-set").Click();
+        cut.Find(".anchor-edit-auto").Click();
 
-        await Assert.That(captured).IsEqualTo(50);
+        await Assert.That(autoFires).IsEqualTo(2);
     }
 
     [Test]
     public async Task SetRadiusMode_Busy_DisablesEverything()
     {
-        // While the PUT is in flight: Set disabled, every chip
-        // disabled, Close disabled.
+        // While a PUT is in flight: every chip disabled + Close
+        // disabled. Set button no longer exists in the live-commit
+        // UX so we don't check for it.
         using var ctx = new Bunit.TestContext();
         var cut = RenderSetRadius(ctx, initial: 30, busy: true);
 
-        await Assert.That(cut.Find(".anchor-edit-set").HasAttribute("disabled")).IsTrue();
         var chips = cut.FindAll(".anchor-edit-chips .map-btn");
         foreach (var chip in chips)
         {
@@ -282,6 +306,27 @@ public class AnchorEditPanelTests
         var close = cut.FindAll("button.map-btn")
             .First(b => b.TextContent.Trim() == "Close");
         await Assert.That(close.HasAttribute("disabled")).IsTrue();
+    }
+
+    [Test]
+    public async Task SetRadiusMode_Busy_BlocksChipTaps()
+    {
+        // bUnit's .Click() ignores disabled, so the in-handler
+        // `if (Busy) return;` gate is the real defence.
+        using var ctx = new Bunit.TestContext();
+        bool numericFired = false;
+        bool autoFired = false;
+        var cut = RenderSetRadius(ctx, initial: 30, busy: true,
+            onSetRadius: _ => numericFired = true,
+            onAutoSetRadius: () => autoFired = true);
+
+        cut.Find(".anchor-edit-auto").Click();
+        cut.FindAll(".anchor-edit-chips .map-btn")
+            .First(b => b.TextContent.Contains("75") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
+
+        await Assert.That(numericFired).IsFalse();
+        await Assert.That(autoFired).IsFalse();
     }
 
     [Test]
@@ -310,53 +355,31 @@ public class AnchorEditPanelTests
     }
 
     [Test]
-    public async Task SetRadiusMode_ParentReRender_PreservesUserChipChoice()
+    public async Task SetRadiusMode_ActiveChip_TracksInitialRadiusMeters()
     {
-        // Helm taps 75-chip; parent re-renders with the SAME
-        // InitialRadiusMeters. Set must fire 75 (helm's choice),
-        // NOT 30 (initial). Without the snap-only-on-initial-change
-        // guard the panel re-snaps every parameter set and silently
-        // overwrites the chip choice.
-        using var ctx = new Bunit.TestContext();
-        int? captured = null;
-        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
-            .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
-            .Add(x => x.InitialRadiusMeters, 30)
-            .Add(x => x.OnSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
-                .Create<int>(p, r => captured = r)));
-
-        cut.FindAll(".anchor-edit-chips .map-btn")
-            .First(b => b.TextContent.Contains("75")).Click();
-
-        cut.SetParametersAndRender(p => p.Add(x => x.InitialRadiusMeters, 30));
-
-        var actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
-        await Assert.That(actives.Count).IsEqualTo(1);
-        await Assert.That(actives[0].TextContent).Contains("75");
-
-        cut.Find(".anchor-edit-set").Click();
-        await Assert.That(captured).IsEqualTo(75);
-    }
-
-    [Test]
-    public async Task SetRadiusMode_ParentReSeedsWithNewInitial_Resnaps()
-    {
-        // New InitialRadiusMeters from the parent (different anchorage,
-        // different depth) MUST re-seed the chip pick. This is how the
-        // parent pushes a new heuristic suggestion.
+        // Live-commit UX: the active chip is DERIVED from
+        // InitialRadiusMeters (= the parent's view of the current
+        // armed radius), not from internal pick state. So when the
+        // server delta echoes back 75 m, the parent re-renders with
+        // InitialRadiusMeters=75 and the 75 chip lights up. This
+        // pin guards against a refactor that re-introduces panel-
+        // internal pick state and the active chip drifts out of
+        // sync with reality.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, 30));
 
-        cut.FindAll(".anchor-edit-chips .map-btn")
-            .First(b => b.TextContent.Contains("75")).Click();
-
-        cut.SetParametersAndRender(p => p.Add(x => x.InitialRadiusMeters, 100));
-
         var actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
         await Assert.That(actives.Count).IsEqualTo(1);
-        await Assert.That(actives[0].TextContent).Contains("100");
+        await Assert.That(actives[0].TextContent).Contains("30");
+
+        // Server delta arrives, parent passes the new radius down.
+        cut.SetParametersAndRender(p => p.Add(x => x.InitialRadiusMeters, 75));
+
+        actives = cut.FindAll(".anchor-edit-chips .map-btn.active");
+        await Assert.That(actives.Count).IsEqualTo(1);
+        await Assert.That(actives[0].TextContent).Contains("75");
     }
 
     // ---- Mode switching ----
@@ -377,7 +400,9 @@ public class AnchorEditPanelTests
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius));
 
         await Assert.That(cut.FindAll(".anchor-edit-chips").Count).IsEqualTo(1);
-        await Assert.That(cut.FindAll(".anchor-edit-set").Count).IsEqualTo(1);
+        // No Set button in the live-commit UX (chip taps commit
+        // immediately) and no Drop button (we're past step 1).
+        await Assert.That(cut.FindAll(".anchor-edit-set").Count).IsEqualTo(0);
         await Assert.That(cut.FindAll(".anchor-edit-drop").Count).IsEqualTo(0);
     }
 
@@ -471,10 +496,11 @@ public class AnchorEditPanelTests
     }
 
     [Test]
-    public async Task SetRadiusMode_UnseededThenNumericPicked_FiresOnSetRadius()
+    public async Task SetRadiusMode_UnseededThenNumericTap_FiresOnSetRadius()
     {
-        // Helm starts with no opinion (Unseeded), taps 50, then Set
-        // -> fires OnSetRadius(50), not OnAutoSetRadius.
+        // Helm opens panel with no opinion (Auto active by default),
+        // taps 50 chip -> fires OnSetRadius(50) immediately. Auto
+        // callback stays silent.
         using var ctx = new Bunit.TestContext();
         int? captured = null;
         bool autoFired = false;
@@ -486,7 +512,6 @@ public class AnchorEditPanelTests
         cut.FindAll(".anchor-edit-chips .map-btn")
             .First(b => b.TextContent.Contains("50") && !b.ClassList.Contains("anchor-edit-auto"))
             .Click();
-        cut.Find(".anchor-edit-set").Click();
 
         await Assert.That(captured).IsEqualTo(50);
         await Assert.That(autoFired).IsFalse();

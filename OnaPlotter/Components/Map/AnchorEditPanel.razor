@@ -38,23 +38,25 @@
 
     @if (Mode == AnchorPanelMode.SetRadius)
     {
-        @* Auto chip + numeric chips. Auto bypasses the helm's chip
-           pick and asks the plugin to compute the radius from the
-           current GPS distance to the drop point + its fudge factor.
-           Numeric chips PUT navigation.anchor.maxRadius with the
-           helm's exact value. *@
+        @* Live-commit chips. Tapping a chip immediately fires the
+           commit callback -- no separate Set button. The helm sees
+           the alarm circle resize on the chart as fast as the
+           server delta echoes back. The "active" chip is derived
+           from the parent's InitialRadiusMeters (= the current
+           server-armed radius), so the highlight tracks reality
+           rather than panel-internal pick state.
+           Numeric chips PUT navigation.anchor.maxRadius=N.
+           Auto chip POSTs /plugins/anchoralarm/setRadius {} so the
+           plugin recomputes from current distance + fudge factor.
+           Tapping Auto twice in a row is a deliberate "boat drifted
+           further, recompute" gesture. *@
         <div class="anchor-edit-chips" role="radiogroup" aria-label="Swing radius">
-            <button class="map-btn anchor-edit-auto @(picked is null ? "active" : "")"
+            <button class="map-btn anchor-edit-auto @(IsAutoActive ? "active" : "")"
                     type="button" role="radio"
-                    aria-checked="@(picked is null ? "true" : "false")"
+                    aria-checked="@(IsAutoActive ? "true" : "false")"
                     @onclick="OnPickAuto"
                     title="@AutoTooltip"
                     disabled="@Busy">
-                @* Auto-preview label: "Auto" alone when no preview,
-                   "Auto: N m" when the parent computed one. Field-
-                   study sailors needed to see the number before
-                   committing -- a black-box "Auto" chip didn't
-                   build trust. *@
                 @if (AutoPreviewRadius is int autoR)
                 {
                     <span>Auto:&nbsp;@autoR<span class="hud-unit">m</span></span>
@@ -67,27 +69,22 @@
             @foreach (var preset in RadiusPresets)
             {
                 var p = preset;
-                <button class="map-btn @(p == picked ? "active" : "")"
+                <button class="map-btn @(IsNumericActive(p) ? "active" : "")"
                         type="button" role="radio"
-                        aria-checked="@(p == picked ? "true" : "false")"
+                        aria-checked="@(IsNumericActive(p) ? "true" : "false")"
                         @onclick="() => OnPickNumeric(p)"
                         title="@p m swing radius"
                         disabled="@Busy">@p<span class="hud-unit">m</span></button>
             }
         </div>
 
-        <button class="map-btn active anchor-edit-set"
-                @onclick="OnSetClicked" disabled="@Busy"
-                title="@(Busy ? "Setting..." : "Set the alarm radius to the chosen value")">
-            @(Busy ? "Setting..." : "Set")
-        </button>
         @* Raise button only renders when the helm is REVISITING the
            panel on an already-armed anchor (CanRaise=true). On the
            first arming (panel auto-flipped from Drop), the helm
            hasn't committed a radius yet -- nothing to raise -- so
            the button stays hidden. Two-tap arm-then-confirm pattern
            matches the previous Anchor-button raise gesture: first
-           tap flips the label to "Tap again to raise" for 3 s; a
+           tap flips the label to "Tap to raise" for 3 s; a
            second tap within the window fires OnRaise. *@
         @if (CanRaise)
         {
@@ -163,12 +160,19 @@
     /// <c>IAnchorAlarmApi.DropAtCurrentPositionAsync</c>.</summary>
     [Parameter] public EventCallback OnDrop { get; set; }
 
-    /// <summary>Helm picked a numeric chip + tapped Set. Parent calls
-    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(radius)</c>.</summary>
+    /// <summary>Helm tapped a numeric chip -- fires immediately, no
+    /// separate Set tap. Parent calls
+    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(radius)</c>. Live-commit
+    /// UX: tapping a chip while the alarm is armed adjusts the
+    /// radius in place; the helm sees the chart circle resize as
+    /// the server delta echoes back.</summary>
     [Parameter] public EventCallback<int> OnSetRadius { get; set; }
 
-    /// <summary>Helm tapped Auto + Set. Parent calls
-    /// <c>IAnchorAlarmApi.AutoSetRadiusAsync()</c>.</summary>
+    /// <summary>Helm tapped the Auto chip -- fires immediately.
+    /// Parent calls <c>IAnchorAlarmApi.AutoSetRadiusAsync()</c>.
+    /// Tapping Auto twice after the boat drifts further out is the
+    /// "recompute" gesture (each tap re-POSTs, plugin uses fresh
+    /// distance).</summary>
     [Parameter] public EventCallback OnAutoSetRadius { get; set; }
 
     /// <summary>Cancel: parent closes the panel. In SetRadius mode
@@ -206,18 +210,6 @@
     /// and was crowding the row visually.</summary>
     private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100];
 
-    /// <summary>Currently-picked numeric chip; null = Auto chip is
-    /// active. Distinct nullable so the renderer can highlight
-    /// EITHER Auto OR a numeric, never both.</summary>
-    private int? picked;
-    /// <summary>Tracks the most recently seeded InitialRadiusMeters
-    /// value so an unrelated parent re-render with the same value
-    /// doesn't clobber the helm's chip pick. Plain bool + value
-    /// instead of a sentinel-overload so int.MinValue stays safely
-    /// usable as the "no opinion" parameter sentinel.</summary>
-    private bool seeded;
-    private int seededValue;
-
     private string TitleLabel => Mode switch
     {
         AnchorPanelMode.Drop => "Drop anchor",
@@ -236,46 +228,46 @@
         ? $"Plugin-computed radius: {r} m (current distance to anchor + safety margin)"
         : "Plugin computes the radius from current distance to the anchor";
 
-    protected override void OnParametersSet()
+    /// <summary>Auto chip "active" highlight is true when the helm
+    /// hasn't yet committed a numeric radius (UnseededInitialRadius
+    /// sentinel). Live-commit UX: once a numeric chip is tapped the
+    /// parent passes that radius back via InitialRadiusMeters and
+    /// the matching numeric chip lights up instead.</summary>
+    private bool IsAutoActive => InitialRadiusMeters == UnseededInitialRadius;
+
+    /// <summary>Numeric chip is "active" when its value matches the
+    /// armed radius the parent passed in. Snap-to-preset (round UP)
+    /// so a server-armed value of e.g. 47 m highlights the 50 m chip
+    /// (closest helm-friendly approximation). Avoids dual-active
+    /// highlights when the armed radius lands between presets.</summary>
+    private bool IsNumericActive(int preset) =>
+        !IsAutoActive
+        && preset == SnapToPreset(InitialRadiusMeters);
+
+    /// <summary>Tap a numeric chip -- fires the radius commit
+    /// immediately. No separate Set tap; the panel is the live
+    /// commit surface. Busy gate suppresses double-taps that race
+    /// the in-flight PUT.</summary>
+    private async Task OnPickNumeric(int radius)
     {
-        // Snap onto the nearest preset (rounded UP, see SnapToPreset)
-        // when the parent passes a fresh InitialRadiusMeters. The
-        // "only re-seed on change" guard prevents an unrelated parent
-        // re-render from clobbering the helm's chip pick mid-decision.
-        // UnseededInitialRadius means "Drop mode / no opinion" --
-        // skip the seed entirely so picked stays null and the Auto
-        // chip is the implicit active.
-        if (!seeded || InitialRadiusMeters != seededValue)
-        {
-            seeded = true;
-            seededValue = InitialRadiusMeters;
-            picked = InitialRadiusMeters == UnseededInitialRadius
-                ? null
-                : SnapToPreset(InitialRadiusMeters);
-        }
+        if (Busy) return;
+        await OnSetRadius.InvokeAsync(radius);
     }
 
-    private void OnPickNumeric(int radius) => picked = radius;
-
-    private void OnPickAuto() => picked = null;
+    /// <summary>Tap Auto -- fires the Auto-set commit immediately
+    /// (POST /plugins/anchoralarm/setRadius). Plugin computes from
+    /// current distance + fudge factor. Tapping Auto repeatedly is
+    /// the "boat drifted further, recompute" gesture.</summary>
+    private async Task OnPickAuto()
+    {
+        if (Busy) return;
+        await OnAutoSetRadius.InvokeAsync();
+    }
 
     private async Task OnDropClicked()
     {
         if (Busy) return;
         await OnDrop.InvokeAsync();
-    }
-
-    private async Task OnSetClicked()
-    {
-        if (Busy) return;
-        if (picked is int r)
-        {
-            await OnSetRadius.InvokeAsync(r);
-        }
-        else
-        {
-            await OnAutoSetRadius.InvokeAsync();
-        }
     }
 
     private async Task OnCancelClicked()
