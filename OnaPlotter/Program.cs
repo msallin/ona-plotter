@@ -215,27 +215,35 @@ builder.Services.AddSingleton<OnaPlotter.Services.INavigationAverages, OnaPlotte
 builder.Services.AddSingleton<ClientErrorRelay>();
 
 // Place search (topbar geocoder). The helm-facing IPlaceSearchService
-// is a Merged(Own + Caching(Photon)) composition:
+// is a Merged(Own + Caching(Fallback(Photon -> Nominatim))) composition:
 //
 //   helm types -> SearchBox calls IPlaceSearchService
 //   IPlaceSearchService = MergedPlaceSearchService
 //     own-data branch: OwnPlacesIndex (in-mem substring match
 //                       over waypoints + notes + regions, lazy-loaded
 //                       via the *Api singletons, 5-minute TTL)
-//     online branch:   CachingPlaceSearchService(PhotonPlaceSearchService)
-//                       cache hit -> immediate; miss -> Photon HTTP
+//     online branch:   CachingPlaceSearchService(
+//                          FallbackPlaceSearchService(
+//                              primary   = PhotonPlaceSearchService,
+//                              secondary = NominatimPlaceSearchService))
+//                       cache hit  -> immediate; miss -> Photon HTTP;
+//                       Photon empty / down -> Nominatim HTTP (rate-
+//                       limited to <= 1 rps per OSMF policy).
 //
-// Both branches run in parallel; the helm sees own-data hits even
-// when the geocoder is slow. Photon is online-only; offline / rate-
-// limited failures return an empty list per the IPlaceSearchService
-// contract, no exception bubbles out.
+// Own-data + online run in parallel; the helm sees own-data hits even
+// when both geocoders are slow / offline. All transient failures
+// return an empty list per the IPlaceSearchService contract.
 builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>();
+builder.Services.AddSingleton<OnaPlotter.Services.Places.NominatimPlaceSearchService>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.PlaceSearchCache>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.OwnPlacesIndex>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.IPlaceSearchService>(sp =>
 {
+    var fallback = new OnaPlotter.Services.Places.FallbackPlaceSearchService(
+        primary:   sp.GetRequiredService<OnaPlotter.Services.Places.PhotonPlaceSearchService>(),
+        secondary: sp.GetRequiredService<OnaPlotter.Services.Places.NominatimPlaceSearchService>());
     var caching = new OnaPlotter.Services.Places.CachingPlaceSearchService(
-        sp.GetRequiredService<OnaPlotter.Services.Places.PhotonPlaceSearchService>(),
+        fallback,
         sp.GetRequiredService<OnaPlotter.Services.Places.PlaceSearchCache>());
     return new OnaPlotter.Services.Places.MergedPlaceSearchService(
         sp.GetRequiredService<OnaPlotter.Services.Places.OwnPlacesIndex>(),

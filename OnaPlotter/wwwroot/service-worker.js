@@ -149,7 +149,10 @@
 // v26 -> v27: Place-search Phase 3 -- own-data separator + source
 //             badge. Adds .topbar-search-separator + -badge CSS
 //             under APP_SHELL.
-const CACHE_NAME = 'ona-plotter-v27';
+// v27 -> v28: Place-search Phase 4 -- Nominatim fallback + offline
+//             empty-state hint. Adds .topbar-search-empty-title
+//             / -hint CSS under APP_SHELL.
+const CACHE_NAME = 'ona-plotter-v28';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

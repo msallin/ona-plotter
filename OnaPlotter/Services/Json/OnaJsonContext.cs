@@ -73,10 +73,12 @@ namespace OnaPlotter.Services.Json;
 [JsonSerializable(typeof(double[]))]
 [JsonSerializable(typeof(double[][]))]
 [JsonSerializable(typeof(List<OnaPlotter.Utilities.HistorySegmentRender.SegmentPayload>))]
-// Place-search wire shapes. PhotonResponse is the geocoder client's
-// deserialise target; CachedQuery[] is the localStorage round-trip
+// Place-search wire shapes. PhotonResponse is the primary geocoder
+// client's deserialise target; NominatimResult[] is the fallback
+// (Phase 4) geocoder's; CachedQuery[] is the localStorage round-trip
 // for PlaceSearchCache.
 [JsonSerializable(typeof(OnaPlotter.Services.Places.PhotonResponse))]
+[JsonSerializable(typeof(OnaPlotter.Services.Places.NominatimResult[]))]
 [JsonSerializable(typeof(OnaPlotter.Services.Places.CachedQuery[]))]
 internal partial class OnaJsonContext : JsonSerializerContext
 {

@@ -3739,7 +3739,18 @@ main:has(.alarm-banner-stack) .snooze-chips {
     padding: 8px 10px;
     color: var(--sk-text-muted, #64748b);
     font-size: 0.8rem;
+}
+/* Two-line empty state: a "No results" title + a softer
+   "check your connection?" hint. The hint is one shade dimmer so
+   the title still reads as the primary message; the hint is a
+   recovery cue, not the verdict. */
+.topbar-search-empty-title {
     font-style: italic;
+}
+.topbar-search-empty-hint {
+    margin-top: 2px;
+    font-size: 0.72rem;
+    opacity: 0.7;
 }
 
 /* Separator between the own-data block (waypoints / notes / regions)

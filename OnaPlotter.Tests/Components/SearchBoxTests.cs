@@ -85,7 +85,7 @@ public class SearchBoxTests
     }
 
     [Test]
-    public async Task Empty_Result_Renders_No_Results_Message()
+    public async Task Empty_Result_Renders_No_Results_Message_With_Connection_Hint()
     {
         using var ctx = new Bunit.TestContext();
         var search = new StubSearch { NextResults = Array.Empty<PlaceResult>() };
@@ -93,10 +93,16 @@ public class SearchBoxTests
 
         await cut.Find(".topbar-search-input").InputAsync(new() { Value = "zzz" });
 
-        // Dropdown opens with the no-results placeholder, no row entries.
+        // Dropdown opens with the empty-state placeholder, no rows.
         await Assert.That(cut.FindAll(".topbar-search-row").Count).IsEqualTo(0);
-        await Assert.That(cut.Find(".topbar-search-empty").TextContent.Trim())
+        // The empty-state is two-line: a "No results" title and a
+        // softer "Check your connection?" hint. Phase 4 added the
+        // hint so an offline / rate-limited geocoder failure surfaces
+        // a recoverable cue instead of looking like a real miss.
+        await Assert.That(cut.Find(".topbar-search-empty-title").TextContent.Trim())
             .IsEqualTo("No results");
+        await Assert.That(cut.Find(".topbar-search-empty-hint").TextContent.Trim())
+            .IsEqualTo("Check your connection?");
     }
 
     [Test]

@@ -42,8 +42,16 @@
         <ul class="topbar-search-dropdown" role="listbox">
             @if (_results.Count == 0 && !_loading && !string.IsNullOrEmpty(_query))
             {
+                @* Empty-state copy: "no results -- check connection?"
+                   covers both real misses ("xyzqzy") and offline /
+                   rate-limited failures (geocoder returned empty).
+                   The component can't tell the two apart -- the
+                   IPlaceSearchService contract is "empty list on any
+                   transient failure" -- so the hint is a soft nudge
+                   that lets the helm decide. *@
                 <li class="topbar-search-empty" role="status">
-                    No results
+                    <div class="topbar-search-empty-title">No results</div>
+                    <div class="topbar-search-empty-hint">Check your connection?</div>
                 </li>
             }
             else
