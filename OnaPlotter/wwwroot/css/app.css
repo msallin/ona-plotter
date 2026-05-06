@@ -3698,8 +3698,14 @@ main:has(.alarm-banner-stack) .snooze-chips {
 
 /* Dropdown anchored under the input. Absolute over the page so it
    doesn't push the topbar's content; max-height keeps long result
-   sets scrollable; box-shadow + slight border so it reads as a
-   floating panel against the chart underneath. */
+   sets scrollable.
+   Uses the HUD card tokens (--hud-card-bg / -stroke-in / -stroke-out
+   / -halo / --hud-ink) so the panel reads as a sibling of the
+   on-chart HUD cards, not a different visual species. Helm flagged
+   the previous --panel-bg-derived style as "very transparent" in
+   dark / night themes -- the HUD-card surface is consistently
+   opaque (92%) AND carries the two-stroke instrument edge that
+   distinguishes a helm-grade overlay from generic chrome. */
 .topbar-search-dropdown {
     position: absolute;
     top: calc(100% + 4px);
@@ -3708,10 +3714,16 @@ main:has(.alarm-banner-stack) .snooze-chips {
     margin: 0;
     padding: 4px 0;
     list-style: none;
-    background: var(--panel-bg, rgba(15, 23, 42, 0.96));
-    border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.15));
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    background: var(--hud-card-bg, rgba(14, 17, 23, 0.92));
+    border: 1px solid var(--hud-card-stroke-in, rgba(255, 255, 255, 0.06));
+    border-radius: var(--hud-card-radius, 8px);
+    /* Two-stroke instrument edge + feathered halo, mirroring .hud-card
+       at line 1336. The outer stroke keeps the silhouette readable
+       against varied chart underneath, the halo lifts it off the
+       topbar. */
+    box-shadow:
+        0 0 0 1px var(--hud-card-stroke-out, rgba(0, 0, 0, 0.5)),
+        var(--hud-card-halo, 0 0 16px rgba(0, 0, 0, 0.4));
     max-height: 280px;
     overflow-y: auto;
     z-index: 1000;
@@ -3727,17 +3739,22 @@ main:has(.alarm-banner-stack) .snooze-chips {
     background: rgba(56, 189, 248, 0.15);
 }
 .topbar-search-name {
-    color: var(--sk-text, #e2e8f0);
+    /* Use --hud-ink so the row text matches the HUD-card readout
+       palette (white-on-dark or dark-on-white per theme). Falls
+       back to --sk-text if the HUD palette is unset (off-map
+       pages don't render the dropdown today, but the fallback
+       keeps the chain intact). */
+    color: var(--hud-ink, var(--sk-text, #e2e8f0));
     font-size: 0.85rem;
 }
 .topbar-search-meta {
-    color: var(--sk-text-muted, #64748b);
+    color: var(--hud-ink-dim, var(--sk-text-muted, #64748b));
     font-size: 0.72rem;
     margin-top: 2px;
 }
 .topbar-search-empty {
     padding: 8px 10px;
-    color: var(--sk-text-muted, #64748b);
+    color: var(--hud-ink-dim, var(--sk-text-muted, #64748b));
     font-size: 0.8rem;
 }
 /* Two-line empty state: a "No results" title + a softer

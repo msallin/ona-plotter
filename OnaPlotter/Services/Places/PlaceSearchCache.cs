@@ -113,9 +113,15 @@ public sealed class PlaceSearchCache
         // extension tampering, schema skew). Either path degrades
         // identically: drop the cache to empty so the next PutAsync
         // overwrites cleanly. Without the JSException catch the
-        // exception escapes into SearchBox.OnInput which only catches
-        // TaskCanceledException -- a private-browsing helm would see
-        // the dropdown break without a hint.
+        // exception escapes into SearchBox.OnInput which then needs
+        // to handle it itself (which it does -- catches
+        // OperationCanceledException as the base type).
+        //
+        // OperationCanceledException is INTENTIONALLY NOT caught here:
+        // a fresh-keystroke cancel should propagate up so SearchBox
+        // can return without leaving the dropdown in a half-rendered
+        // state. The cache stays uninitialised; the next non-
+        // cancelled call hydrates cleanly.
         catch (Exception ex) when (ex is Microsoft.JSInterop.JSException
                                      or System.Text.Json.JsonException)
         {

@@ -182,6 +182,20 @@ public sealed class OwnPlacesIndex : IPlaceSearchService
             return;
         }
 
+        // Cancellation check: a fresh keystroke cancels the CTS used
+        // by the API calls; SafeFetchAsync caught the resulting
+        // exceptions and returned null, so `fresh` is empty even
+        // though the underlying API never actually answered. Don't
+        // commit that empty snapshot to _entries with a fresh TTL --
+        // doing so would block real own-data hits from showing up
+        // for the next StaleTtl window. Leaving _entries null forces
+        // the next non-cancelled SearchAsync to retry the load.
+        if (ct.IsCancellationRequested)
+        {
+            _logger.LogDebug("[own-places] dropping cancelled load");
+            return;
+        }
+
         _entries = fresh;
         _lastLoadUtc = _time.GetUtcNow().UtcDateTime;
     }

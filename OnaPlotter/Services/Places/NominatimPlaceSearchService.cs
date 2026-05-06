@@ -113,8 +113,11 @@ public sealed class NominatimPlaceSearchService : IPlaceSearchService
             if (_lastRequestTicks != 0 && elapsed < MinRequestInterval)
             {
                 var wait = MinRequestInterval - elapsed;
+                // Catch the BASE OperationCanceledException, not just
+                // TaskCanceledException -- the TimeProvider Task.Delay
+                // overload can surface either depending on runtime.
                 try { await Task.Delay(wait, _time, timeoutCts.Token); }
-                catch (TaskCanceledException) { return []; }
+                catch (OperationCanceledException) { return []; }
             }
             _lastRequestTicks = _time.GetUtcNow().UtcTicks;
 
