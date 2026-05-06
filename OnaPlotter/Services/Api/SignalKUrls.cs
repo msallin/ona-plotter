@@ -61,6 +61,25 @@ public static class SignalKUrls
     // route href.
     public const string CourseActiveRoutePointIndexPath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex";
 
+    /// <summary>Anchor v2.0.0+ standard SK PUT handler endpoints. PUT
+    /// <c>navigation.anchor.position</c> with
+    /// <c>{value: {latitude, longitude, altitude}}</c> drops; PUT with
+    /// <c>{value: null}</c> raises. PUT
+    /// <c>navigation.anchor.maxRadius</c> with <c>{value: meters}</c>
+    /// arms the alarm circle. v1.x of the plugin doesn't register
+    /// these handlers and returns 405 / 404; the helm flow toasts
+    /// "v2.0.0+ required" rather than silently retrying.
+    /// <para>v1 path prefix per the plugin's v2 docs (the plugin
+    /// emits PUT examples on v1, even though resource APIs use v2).</para></summary>
+    public const string AnchorPositionPath = "/signalk/v1/api/vessels/self/navigation/anchor/position";
+    public const string AnchorMaxRadiusPath = "/signalk/v1/api/vessels/self/navigation/anchor/maxRadius";
+
+    /// <summary>Plugin-specific endpoint for "compute the radius from
+    /// my current distance to the drop point". No SK-spec PUT exists
+    /// for this; the plugin owns the geometry. Body is empty <c>{}</c>;
+    /// plugin uses its own fudge factor + safety margin.</summary>
+    public const string AnchorAlarmAutoSetRadiusPath = "/plugins/anchoralarm/setRadius";
+
     public const string AutopilotStatePath = "/signalk/v2/api/vessels/self/steering/autopilot/state";
     public const string AutopilotAdjustHeadingPath = "/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";
 

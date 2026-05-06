@@ -1150,16 +1150,22 @@
             MaxRadius: Data.AnchorMaxRadius,
             DormantReason: AnchorTideDormantReason(),
             PeakRadius: Data.AnchorPeakRadius,
-            // Bearing-back-to-anchor computed client-side from anchor
-            // pin + own-ship position so the needle works on the
-            // JS-only manual flow too (the previous PR subscribed to
-            // navigation.anchor.bearingTrue, which is plugin-only and
-            // silent on vanilla SK installs). Null when either
-            // endpoint is missing, which the HUD card uses as the
-            // hide signal.
-            BearingTrue: OnaPlotter.Utilities.GeoBearing.RadiansFromTo(
-                Data.Latitude, Data.Longitude,
-                Data.AnchorLatitude, Data.AnchorLongitude));
+            // Prefer the plugin's authoritative bearing
+            // (navigation.anchor.bearingTrue, v2.0.0+) when the helm
+            // has the bow offset configured -- it's bow-corrected
+            // unlike the GeoBearing fallback (GPS-to-anchor).
+            // GeoBearing fallback covers JS-only manual flows + v1.x
+            // plugin installs so the needle never goes silent on a
+            // working anchor. Null when both sources are unavailable;
+            // HUD card uses null as the hide signal for the needle.
+            BearingTrue: Data.AnchorBearingTrue
+                ?? OnaPlotter.Utilities.GeoBearing.RadiansFromTo(
+                    Data.Latitude, Data.Longitude,
+                    Data.AnchorLatitude, Data.AnchorLongitude),
+            // v2.0.0+ extras passed through verbatim. Null on v1.x +
+            // manual; the HUD card hides those readouts when null.
+            DistanceFromBow: Data.AnchorDistanceFromBow,
+            RodeLength: Data.AnchorRodeLength);
 
     // NOAA / UKHO station names often run 40+ chars. The BL depth-
     // card width budget is tight; a long name pushes the row off the

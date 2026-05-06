@@ -129,6 +129,32 @@ public sealed class NavigationData
     /// currentRadius.</summary>
     public double? AnchorPeakRadius { get; private set; }
 
+    /// <summary>True bearing FROM the boat back to the anchor (radians,
+    /// 0..2pi), as published by signalk-anchoralarm-plugin v2.0.0+.
+    /// HUD card renders a small needle at this bearing so the helm can
+    /// sight the anchor at night when it's out of view. Null on the
+    /// JS-only manual flow + on plugin v1.x; in those cases the HUD
+    /// computes a substitute via Utilities.GeoBearing.</summary>
+    public double? AnchorBearingTrue { get; private set; }
+
+    /// <summary>Apparent bearing -- bearing back to anchor in
+    /// vessel-relative frame (i.e. accounting for current heading).
+    /// Useful for swing-on-rode reasoning. Same provenance as
+    /// <see cref="AnchorBearingTrue"/>.</summary>
+    public double? AnchorApparentBearing { get; private set; }
+
+    /// <summary>Currently-deployed anchor rode length (metres). Helm-
+    /// confirmed on the plugin side via the rode counter or the Set
+    /// Rode Length flow; useful for the log + scope ratio readout
+    /// ("60 m of chain in 8 m of water = 7.5:1").</summary>
+    public double? AnchorRodeLength { get; private set; }
+
+    /// <summary>Live distance from bow to anchor (metres). Different
+    /// from <see cref="AnchorCurrentRadius"/>: that's GPS-to-anchor;
+    /// this is bow-to-anchor (GPS antenna offset corrected by the
+    /// plugin). Drives the "anchor 18 m back at 045°" HUD line.</summary>
+    public double? AnchorDistanceFromBow { get; private set; }
+
     public bool AnchorActive => AnchorLatitude is not null && AnchorLongitude is not null;
 
     // Active course / route info
@@ -311,6 +337,18 @@ public sealed class NavigationData
                         AnchorPeakRadius = value;
                     }
                     break;
+                case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.BearingTrue:
+                    AnchorBearingTrue = value;
+                    break;
+                case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.ApparentBearing:
+                    AnchorApparentBearing = value;
+                    break;
+                case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.RodeLength:
+                    AnchorRodeLength = value;
+                    break;
+                case OnaPlotter.Utilities.SkPaths.Navigation.Anchor.DistanceFromBow:
+                    AnchorDistanceFromBow = value;
+                    break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.Distance:
                     CourseNextPointDistance = value;
                     break;
@@ -457,9 +495,16 @@ public sealed class NavigationData
             // helm doesn't want yesterday's peak greeting them on
             // tonight's arrival.
             AnchorPeakRadius = null;
-            // Bearing is computed client-side from anchor + own-ship
-            // lat/lon (see Utilities.GeoBearing); nulling AnchorLatitude/
-            // Longitude above is enough to make the needle stop rendering.
+            // v2.0.0+ plugin-published fields: clear all so a raise
+            // followed by a re-drop in a different anchorage doesn't
+            // surface stale rode / bearing / distance from the
+            // previous spot for one tick before the new ones land.
+            // The HUD-side substitute (GeoBearing on lat/lon) also
+            // stops rendering naturally once AnchorLatitude is null.
+            AnchorBearingTrue = null;
+            AnchorApparentBearing = null;
+            AnchorRodeLength = null;
+            AnchorDistanceFromBow = null;
         }
     }
 

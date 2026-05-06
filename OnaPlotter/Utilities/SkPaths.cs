@@ -32,6 +32,16 @@ public static class SkPaths
             public const string Position = "navigation.anchor.position";
             public const string CurrentRadius = "navigation.anchor.currentRadius";
             public const string MaxRadius = "navigation.anchor.maxRadius";
+            // v2.0.0+ paths -- only published when the
+            // signalk-anchoralarm-plugin is at least v2 and the helm
+            // has the corresponding rode-counter / depth sensor wired.
+            // Plumbing them all the way through means the HUD picks
+            // the readouts up when they appear without a code change
+            // landing first.
+            public const string BearingTrue = "navigation.anchor.bearingTrue";
+            public const string ApparentBearing = "navigation.anchor.apparentBearing";
+            public const string RodeLength = "navigation.anchor.rodeLength";
+            public const string DistanceFromBow = "navigation.anchor.distanceFromBow";
         }
 
         public static class Course

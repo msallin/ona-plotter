@@ -1,158 +1,192 @@
-@* Anchor-drop overlay: a compact bottom-strip panel that opens when
-   the helm taps the Anchor bar button (and an anchor isn't already
-   active). Mirrors RouteEditPanel's chrome -- same `.route-edit-bar`
-   class for layout parity so the panel inherits the existing strip
-   styling without a new selector to maintain.
+@* Two-state anchor panel matching signalk-anchoralarm-plugin v2.0.0+
+   workflow: helm drops the pin first (no radius), then backs down +
+   sets the radius once the boat has settled. The plugin's Incomplete
+   Anchor Alarm guards the gap if the helm forgets step 2 -- that fires
+   as a server-side notification surfaced via the existing alarm
+   bridge, not as panel state.
 
-   The flow this replaces (one-tap drop with whatever radius was last
-   stored) was too easy to fat-finger on a touch helm, and the
-   pre-fill heuristic was buried in C#. Putting the radius up where
-   the helm sees it -- with chip presets + the suggested value
-   highlighted -- means anchoring is two taps (tap Anchor, tap Drop)
-   and the helm always knows what radius is about to land. *@
+   The panel renders one of two layouts driven by Mode, set by the
+   parent off Data.AnchorActive + Data.AnchorMaxRadius:
+     - Drop:       no anchor active -> show only the "Drop" button.
+     - SetRadius:  position published, radius pending -> show chips +
+                   Auto, no Drop button.
+   The third state ("anchor fully armed") closes the panel entirely;
+   the regular HUD card takes over.
 
-<div class="route-edit-bar anchor-edit-bar" role="dialog" aria-label="Drop anchor">
+   Cancel is symmetric: in Drop mode it just closes the panel without
+   touching the server. In SetRadius mode it ALSO leaves the dropped
+   pin in place -- the plugin keeps the position armed; the helm can
+   re-open the panel any time to set the radius. *@
+
+<div class="route-edit-bar anchor-edit-bar" role="dialog" aria-label="@AriaLabel">
     <span class="route-edit-stats anchor-edit-stats">
-        @* Two-line eyebrow + suggestion. The eyebrow tells the helm
-           what's about to happen ("you tapped Drop"); the suggestion
-           tells them where the pre-fill came from so a "wait, why
-           20 m?" question doesn't need a second look at Settings.
-           The subline is suppressed entirely on empty so a missing
-           label doesn't leave an empty span eating vertical space. *@
-        <span class="anchor-edit-title">Drop anchor</span>
+        <span class="anchor-edit-title">@TitleLabel</span>
         @if (!string.IsNullOrEmpty(SuggestionLabel))
         {
             <span class="anchor-edit-sub">@SuggestionLabel</span>
         }
     </span>
 
-    @* Chip row reuses the same preset list as the manual-anchor HUD
-       so the helm sees one coherent anchor language across surfaces.
-       Tap = picks that radius; the active chip shows which one is
-       currently selected (initial = the heuristic suggestion, then
-       follows the user's last chip tap). *@
-    <div class="anchor-edit-chips" role="radiogroup" aria-label="Swing radius">
-        @foreach (var preset in RadiusPresets)
-        {
-            var p = preset;   // capture for the lambda (loop variable)
-            <button class="map-btn @(p == _radius ? "active" : "")"
+    @if (Mode == AnchorPanelMode.SetRadius)
+    {
+        @* Auto chip + numeric chips. Auto bypasses the helm's chip
+           pick and asks the plugin to compute the radius from the
+           current GPS distance to the drop point + its fudge factor.
+           Numeric chips PUT navigation.anchor.maxRadius with the
+           helm's exact value. *@
+        <div class="anchor-edit-chips" role="radiogroup" aria-label="Swing radius">
+            <button class="map-btn anchor-edit-auto"
                     type="button" role="radio"
-                    aria-checked="@(p == _radius ? "true" : "false")"
-                    @onclick="() => OnPick(p)"
-                    title="@p m swing radius">@p<span class="hud-unit">m</span></button>
-        }
-    </div>
+                    aria-checked="@(_picked is null ? "true" : "false")"
+                    @onclick="OnPickAuto"
+                    title="Plugin computes the radius from current distance to the anchor"
+                    disabled="@Busy">
+                Auto
+            </button>
+            @foreach (var preset in RadiusPresets)
+            {
+                var p = preset;
+                <button class="map-btn @(p == _picked ? "active" : "")"
+                        type="button" role="radio"
+                        aria-checked="@(p == _picked ? "true" : "false")"
+                        @onclick="() => OnPickNumeric(p)"
+                        title="@p m swing radius"
+                        disabled="@Busy">@p<span class="hud-unit">m</span></button>
+            }
+        </div>
 
-    @* Drop is the primary action; same `.map-btn.active` styling as
-       Save in RouteEditPanel for visual consistency. Cancel is the
-       neutral escape. No "Drop & Notify" or other variants -- the
-       success toast covers confirmation; helm doesn't need branching
-       commit verbs in a one-tap flow. *@
-    <button class="map-btn active anchor-edit-drop"
-            @onclick="OnDropClicked" disabled="@Dropping"
-            title="@(Dropping ? "Dropping..." : "Drop anchor at current GPS")">
-        @(Dropping ? "Dropping..." : "Drop")
-    </button>
-    <button class="map-btn" @onclick="OnCancelClicked" disabled="@Dropping">Cancel</button>
+        <button class="map-btn active anchor-edit-set"
+                @onclick="OnSetClicked" disabled="@Busy"
+                title="@(Busy ? "Setting..." : "Arm the alarm at the chosen radius")">
+            @(Busy ? "Setting..." : "Set")
+        </button>
+        <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Cancel</button>
+    }
+    else
+    {
+        @* Drop state. No chips -- the radius decision is deferred
+           until the boat has actually settled. *@
+        <button class="map-btn active anchor-edit-drop"
+                @onclick="OnDropClicked" disabled="@Busy"
+                title="@(Busy ? "Dropping..." : "Mark the anchor at the current GPS position; set the radius after backing down")">
+            @(Busy ? "Dropping..." : "Drop")
+        </button>
+        <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Cancel</button>
+    }
 </div>
 
 @code {
-    /// <summary>Heuristic-derived initial radius in metres. Set when the
-    /// parent opens the panel (typically via
-    /// <c>AnchorRadiusHeuristic.Suggest(...)</c>) and used as the
-    /// default chip selection. The panel may bump it to the nearest
-    /// preset so the chip row stays in sync with the displayed
-    /// number.</summary>
-    [Parameter, EditorRequired] public int InitialRadiusMeters { get; set; }
+    /// <summary>Drives the two layouts. The parent picks the mode at
+    /// open time off the current anchor state -- not authoritative
+    /// here, since a server-side raise mid-Set could move the panel
+    /// out from under the helm; the parent re-evaluates on every
+    /// data tick and closes the panel when the right state lands.</summary>
+    public enum AnchorPanelMode { Drop, SetRadius }
 
-    /// <summary>True while the parent's <c>OnDrop</c> handler is
-    /// in flight (REST round-trip to the plugin). Disables both
-    /// buttons so a double-tap can't fire two drops -- the second
-    /// would either 409 or, worse, replace the first with a fresh
-    /// position lock and confuse the alarm state.</summary>
-    [Parameter] public bool Dropping { get; set; }
+    [Parameter, EditorRequired] public AnchorPanelMode Mode { get; set; } = AnchorPanelMode.Drop;
 
-    /// <summary>Optional source label for the "(suggestion)" subline,
-    /// e.g. "5x 6m depth" or "from last drop". Lets the helm see why
-    /// the panel pre-filled this number without opening Settings.
-    /// Empty string hides the subline entirely.</summary>
+    /// <summary>Heuristic-derived initial radius in metres (only used
+    /// in <see cref="AnchorPanelMode.SetRadius"/>). Same heuristic
+    /// the v1 panel used: <c>AnchorRadiusHeuristic.Suggest</c>.</summary>
+    [Parameter] public int InitialRadiusMeters { get; set; } = 30;
+
+    /// <summary>True while the parent's drop / set callback is in
+    /// flight (REST round-trip). Disables every button so a double-
+    /// tap can't fire two PUTs.</summary>
+    [Parameter] public bool Busy { get; set; }
+
+    /// <summary>Optional source label for the "(suggestion)" subline
+    /// in SetRadius mode (e.g. "5x 6m depth"). Empty hides the line.
+    /// In Drop mode this can carry a one-line reminder ("back down
+    /// before setting the radius") or be left empty.</summary>
     [Parameter] public string SuggestionLabel { get; set; } = "";
 
-    /// <summary>Fires with the chosen radius (metres) when Drop is
-    /// tapped. Parent calls
-    /// <c>IAnchorAlarmApi.DropAsync(radius)</c> and toasts the result.</summary>
-    [Parameter] public EventCallback<int> OnDrop { get; set; }
+    /// <summary>Drop button tapped (Drop mode). No radius arg -- step
+    /// 2 carries that. Parent calls
+    /// <c>IAnchorAlarmApi.DropAtCurrentPositionAsync</c>.</summary>
+    [Parameter] public EventCallback OnDrop { get; set; }
 
-    /// <summary>Fires when the helm taps Cancel. Parent closes the
-    /// panel without a server call -- the design tradeoff vs an
-    /// instant-drop flow that needs a roll-back call.</summary>
+    /// <summary>Helm picked a numeric chip + tapped Set. Parent calls
+    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(radius)</c>.</summary>
+    [Parameter] public EventCallback<int> OnSetRadius { get; set; }
+
+    /// <summary>Helm tapped Auto + Set. Parent calls
+    /// <c>IAnchorAlarmApi.AutoSetRadiusAsync()</c>.</summary>
+    [Parameter] public EventCallback OnAutoSetRadius { get; set; }
+
+    /// <summary>Cancel: parent closes the panel. In SetRadius mode
+    /// this leaves the dropped pin in place server-side; the helm
+    /// can re-open later to finish step 2.</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    /// <summary>Same chip presets as the manual-anchor HUD card so the
-    /// helm reads one anchor-radius vocabulary across the app. Whole
-    /// metres because the chip labels need to fit on a touch button
-    /// (no "12.5 m" sub-metric variants). New presets land here AND
-    /// in HudAnchorCard so the two stay aligned.</summary>
+    /// <summary>Same chip set as the v1 panel + the manual-anchor HUD
+    /// card so the helm's anchor-radius vocabulary stays consistent
+    /// across surfaces.</summary>
     private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100, 150];
 
-    private int _radius;
+    /// <summary>Currently-picked numeric chip; null = Auto chip is
+    /// active. Distinct nullable so the renderer can highlight
+    /// EITHER Auto OR a numeric, never both.</summary>
+    private int? _picked;
     private int _seededFromInitial = int.MinValue;
+
+    private string TitleLabel => Mode switch
+    {
+        AnchorPanelMode.Drop => "Drop anchor",
+        AnchorPanelMode.SetRadius => "Set alarm radius",
+        _ => "Anchor",
+    };
+
+    private string AriaLabel => TitleLabel;
 
     protected override void OnParametersSet()
     {
         // Snap onto the nearest preset (rounded UP, see SnapToPreset)
-        // so the chip row always has an `.active` member when the
-        // panel mounts. Only re-seed when InitialRadiusMeters
-        // actually changes -- otherwise an unrelated parent re-render
-        // (toast tick, settings change, etc.) would clobber the
-        // helm's chip choice. The sentinel `int.MinValue` guarantees
-        // the first call always seeds.
+        // when the parent passes a fresh InitialRadiusMeters. Same
+        // sentinel-based "only re-seed on change" guard as v1 so an
+        // unrelated parent re-render doesn't clobber the helm's chip
+        // pick mid-decision.
         if (InitialRadiusMeters != _seededFromInitial)
         {
             _seededFromInitial = InitialRadiusMeters;
-            _radius = SnapToPreset(InitialRadiusMeters);
+            _picked = SnapToPreset(InitialRadiusMeters);
         }
     }
 
-    private void OnPick(int radius)
-    {
-        _radius = radius;
-    }
+    private void OnPickNumeric(int radius) => _picked = radius;
+
+    private void OnPickAuto() => _picked = null;
 
     private async Task OnDropClicked()
     {
-        if (Dropping) return;
-        await OnDrop.InvokeAsync(_radius);
+        if (Busy) return;
+        await OnDrop.InvokeAsync();
+    }
+
+    private async Task OnSetClicked()
+    {
+        if (Busy) return;
+        if (_picked is int r)
+        {
+            await OnSetRadius.InvokeAsync(r);
+        }
+        else
+        {
+            await OnAutoSetRadius.InvokeAsync();
+        }
     }
 
     private async Task OnCancelClicked()
     {
-        // Symmetric with OnDropClicked: a Cancel mid-drop must not
-        // fire OnCancel and have the parent close the panel while
-        // the in-flight POST is still resolving (otherwise the helm
-        // sees the panel close, then a second later a stale toast
-        // from the resolved drop they thought they cancelled).
-        // bUnit's .Click() ignores `disabled`, so the in-handler gate
-        // is the only real defence.
-        if (Dropping) return;
+        if (Busy) return;
         await OnCancel.InvokeAsync();
     }
 
-    /// <summary>Picks the smallest preset &gt;= the suggested value.
-    /// Rounding UP keeps the alarm circle at LEAST as big as the
-    /// heuristic recommended -- a fractionally-larger radius costs
-    /// the helm one false-positive on a wind shift, while rounding
-    /// DOWN drops the swing scope below safe ratio (e.g. heuristic
-    /// 65 m for 13 m depth = 5:1 scope; rounding to 50 m would be
-    /// 3.85:1, below cruising-rule-of-thumb minimum). When the
-    /// suggestion exceeds the largest preset (only possible when a
-    /// caller bypasses the heuristic's <c>MaxSuggestedMeters</c>
-    /// ceiling) we cap at the largest preset; the helm can still
-    /// type more in Settings later.</summary>
+    /// <summary>Smallest preset >= radius. Same round-up rationale as
+    /// v1 -- 5:1 scope is the cruising-rule-of-thumb minimum, rounding
+    /// down would silently drop below that.</summary>
     private static int SnapToPreset(int radius)
     {
-        // Preset list is sorted ascending; walk from the bottom to
-        // find the first preset that's >= radius (round UP).
         for (int i = 0; i < RadiusPresets.Length; i++)
         {
             if (RadiusPresets[i] >= radius) return RadiusPresets[i];

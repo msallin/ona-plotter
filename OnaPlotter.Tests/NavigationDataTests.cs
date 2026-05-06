@@ -133,6 +133,13 @@ public class NavigationDataTests
         nav.ApplyAnchorPosition(47.39, 8.54);
         nav.Apply("navigation.anchor.maxRadius", JsonSerializer.SerializeToElement(30.0));
         nav.Apply("navigation.anchor.currentRadius", JsonSerializer.SerializeToElement(12.5));
+        // Set every v2.0.0+ field too so we can pin that ClearAnchor
+        // resets them; otherwise a raise+re-drop in a different
+        // anchorage would surface stale rode / bearing for one tick.
+        nav.Apply("navigation.anchor.bearingTrue", JsonSerializer.SerializeToElement(1.5));
+        nav.Apply("navigation.anchor.apparentBearing", JsonSerializer.SerializeToElement(0.7));
+        nav.Apply("navigation.anchor.rodeLength", JsonSerializer.SerializeToElement(60.0));
+        nav.Apply("navigation.anchor.distanceFromBow", JsonSerializer.SerializeToElement(18.0));
 
         nav.ClearAnchor();
 
@@ -144,11 +151,49 @@ public class NavigationDataTests
         // Peak resets too -- the next anchor drop must not greet the
         // helm with yesterday's worst-case distance.
         await Assert.That(nav.AnchorPeakRadius).IsNull();
-        // Bearing-back-to-anchor is computed client-side via
-        // GeoBearing from anchor + own-ship lat/lon. Clearing the
-        // anchor lat/lon (above) is enough to make the bearing
-        // resolve to null at the next snapshot build; no separate
-        // bearing field on NavigationData to clear.
+        // v2.0.0+ plugin-published fields all clear so a raise +
+        // re-drop in a different anchorage doesn't show stale rode /
+        // bearing for one tick before the new ones land.
+        await Assert.That(nav.AnchorBearingTrue).IsNull();
+        await Assert.That(nav.AnchorApparentBearing).IsNull();
+        await Assert.That(nav.AnchorRodeLength).IsNull();
+        await Assert.That(nav.AnchorDistanceFromBow).IsNull();
+    }
+
+    [Test]
+    public async Task Apply_AnchorBearingTrue_SetsProperty()
+    {
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(1.234);
+        await Assert.That(nav.Apply("navigation.anchor.bearingTrue", je)).IsTrue();
+        await Assert.That(nav.AnchorBearingTrue).IsEqualTo(1.234);
+    }
+
+    [Test]
+    public async Task Apply_AnchorApparentBearing_SetsProperty()
+    {
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(0.78);
+        await Assert.That(nav.Apply("navigation.anchor.apparentBearing", je)).IsTrue();
+        await Assert.That(nav.AnchorApparentBearing).IsEqualTo(0.78);
+    }
+
+    [Test]
+    public async Task Apply_AnchorRodeLength_SetsProperty()
+    {
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(45.5);
+        await Assert.That(nav.Apply("navigation.anchor.rodeLength", je)).IsTrue();
+        await Assert.That(nav.AnchorRodeLength).IsEqualTo(45.5);
+    }
+
+    [Test]
+    public async Task Apply_AnchorDistanceFromBow_SetsProperty()
+    {
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(17.2);
+        await Assert.That(nav.Apply("navigation.anchor.distanceFromBow", je)).IsTrue();
+        await Assert.That(nav.AnchorDistanceFromBow).IsEqualTo(17.2);
     }
 
     [Test]

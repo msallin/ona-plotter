@@ -1,20 +1,12 @@
 namespace OnaPlotter.Services.Api;
 
-/// <summary>Default <see cref="IAnchorAlarmApi"/> hitting the
-/// plugin's POST endpoints on the same host as the main SK server.
-/// </summary>
+/// <summary>Default <see cref="IAnchorAlarmApi"/> hitting the v2.0.0+
+/// SK PUT handlers + the one plugin-specific auto-radius POST. See
+/// the interface docstring for the two-step flow rationale.</summary>
 public sealed class AnchorAlarmApi : IAnchorAlarmApi
 {
     private readonly HttpClient _http;
     private readonly ISignalKBaseUrl _baseUrl;
-
-    // The plugin registers its routes under /plugins/anchoralarm/*;
-    // this matches the name used in the README's curl examples and
-    // the plugin's package.json. If a future release renames the
-    // prefix we'd need to make this configurable, but no other SK
-    // plugin the plotter talks to has done that in practice.
-    private const string DropAnchorPath = "/plugins/anchoralarm/dropAnchor";
-    private const string RaiseAnchorPath = "/plugins/anchoralarm/raiseAnchor";
 
     public AnchorAlarmApi(HttpClient http, ISignalKBaseUrl baseUrl)
     {
@@ -22,16 +14,48 @@ public sealed class AnchorAlarmApi : IAnchorAlarmApi
         _baseUrl = baseUrl;
     }
 
-    public Task<ApiResult> DropAsync(int radiusMeters, CancellationToken ct = default) =>
-        // Plugin expects { "radius": <number> } in metres. Plugin reads
-        // own-ship position from SignalK itself; we don't ship lat/lon.
-        ResourceHttp.PostAsync(_http, _baseUrl.Combine(DropAnchorPath),
-            new { radius = radiusMeters }, ct);
+    public Task<ApiResult> DropAtCurrentPositionAsync(
+        double latitude, double longitude, double? depthMeters,
+        CancellationToken ct = default)
+    {
+        // SK convention for the position object: { latitude, longitude,
+        // altitude } where altitude is metres ABOVE the SK datum.
+        // Anchors sit on the seabed -- altitude = -|depth|. When the
+        // helm has no depth source we omit altitude entirely; the v2
+        // plugin tolerates the missing field and derives one from the
+        // depth path itself when one is published. Mixed anonymous
+        // types are stored as `object` so System.Text.Json picks them
+        // up via runtime type discovery.
+        object positionValue = depthMeters is double d
+            ? new { latitude, longitude, altitude = -Math.Abs(d) }
+            : new { latitude, longitude };
+        return ResourceHttp.PutAsync(_http,
+            _baseUrl.Combine(SignalKUrls.AnchorPositionPath),
+            new { value = positionValue }, ct);
+    }
+
+    public Task<ApiResult> SetMaxRadiusAsync(int radiusMeters, CancellationToken ct = default) =>
+        // Plugin expects an integer metre value; the SK-spec wrapper is
+        // {value: N} (same shape as CourseApi.SetPointIndexAsync).
+        ResourceHttp.PutAsync(_http,
+            _baseUrl.Combine(SignalKUrls.AnchorMaxRadiusPath),
+            new { value = radiusMeters }, ct);
+
+    public Task<ApiResult> AutoSetRadiusAsync(CancellationToken ct = default) =>
+        // Empty body per the v2.0.0 README. PostAsync sends
+        // Content-Type: application/json which the plugin requires --
+        // an empty string body would 415.
+        ResourceHttp.PostAsync(_http,
+            _baseUrl.Combine(SignalKUrls.AnchorAlarmAutoSetRadiusPath),
+            new { }, ct);
 
     public Task<ApiResult> RaiseAsync(CancellationToken ct = default) =>
-        // Body is empty per the plugin docs; we still send {} because
-        // PostAsync sets Content-Type: application/json and the plugin
-        // expects that header.
-        ResourceHttp.PostAsync(_http, _baseUrl.Combine(RaiseAnchorPath),
-            new { }, ct);
+        // PUT {value: null} on anchor.position is the SK-spec way to
+        // clear an anchor; the plugin handler treats null as raise.
+        // Cast to (object?) so System.Text.Json emits JSON null rather
+        // than dropping the property (which would 400 on the plugin
+        // side: "missing value field").
+        ResourceHttp.PutAsync(_http,
+            _baseUrl.Combine(SignalKUrls.AnchorPositionPath),
+            new { value = (object?)null }, ct);
 }

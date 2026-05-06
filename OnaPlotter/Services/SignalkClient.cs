@@ -201,11 +201,18 @@ public sealed class SignalkClient : IAsyncDisposable
         Utilities.SkPaths.Navigation.Anchor.Position,
         Utilities.SkPaths.Navigation.Anchor.MaxRadius,
         Utilities.SkPaths.Navigation.Anchor.CurrentRadius,
-        // Note: bearing-to-anchor is NOT subscribed -- we compute it
-        // client-side via Utilities.GeoBearing from anchor lat/lon
-        // and own-ship lat/lon. That keeps the HUD bearing needle
-        // working on the JS-only manual-anchor fallback (when the
-        // plugin isn't installed) instead of being silent there.
+        // v2.0.0+ paths -- silently absent on older plugin / no-plugin
+        // self-host installs (subscription is harmless when no
+        // publisher exists). Plumbing them through now means the HUD
+        // adopts the plugin's authoritative readouts (rode counter,
+        // bow-corrected distance + bearing) the moment a helm
+        // upgrades the plugin -- no client redeploy required. The
+        // client-side GeoBearing fallback in the HUD card stays put
+        // for the JS-only manual flow.
+        Utilities.SkPaths.Navigation.Anchor.BearingTrue,
+        Utilities.SkPaths.Navigation.Anchor.ApparentBearing,
+        Utilities.SkPaths.Navigation.Anchor.RodeLength,
+        Utilities.SkPaths.Navigation.Anchor.DistanceFromBow,
         // Tide height + next extremes (openwatersio/signalk-tides &
         // similar plugins). No-ops when the plugin isn't installed.
         "environment.tide.heightNow",
