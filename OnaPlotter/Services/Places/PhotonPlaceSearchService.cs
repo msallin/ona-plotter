@@ -63,9 +63,22 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(CallTimeout);
 
+        // Query parameters per photon.komoot.io:
+        //   q=<text>          : the helm-typed search string
+        //   limit=N           : cap on results (we render at most 10 in the dropdown)
+        //   dedupe            : Photon-side de-duplication so multiple OSM rows for
+        //                       the same location collapse to one row (e.g. node +
+        //                       way + relation for a city all reduce to one hit).
+        //   osm_tag=place     : restrict to OSM elements tagged place=* (city,
+        //                       town, village, island, harbour, ...) -- the helm
+        //                       is looking for navigable destinations, not
+        //                       roads / buildings / POIs that the default
+        //                       Photon ranking otherwise mixes in.
         var url = EndpointBase
             + "?q=" + Uri.EscapeDataString(query)
-            + "&limit=" + ResultLimit;
+            + "&limit=" + ResultLimit
+            + "&dedupe"
+            + "&osm_tag=place";
 
         HttpResponseMessage response;
         try
