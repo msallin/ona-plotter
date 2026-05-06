@@ -78,7 +78,17 @@ main {
     align-items: center;
     position: sticky;
     top: 0;
-    z-index: 1;
+    /* z-index 1000 so descendants that visually overflow into the
+       chart area (notably the SearchBox typeahead dropdown) render
+       ABOVE the leaflet map (z-index 200-700) and the HUD cards
+       (--z-hud: 500). `position: sticky` makes this a stacking
+       context, so the dropdown's own local z-index can't escape it
+       -- the topbar's value is the ceiling for everything inside.
+       Was z-index: 1; the dropdown was rendered (visible in the
+       DOM) but painted under the map, looking like search returned
+       no results. Stays under modals (--z-modal: 900 wraps overlays
+       which themselves carry their own stacking context above this). */
+    z-index: 1000;
     padding-left: 1rem !important;
     padding-right: 1rem !important;
 }
