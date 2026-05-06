@@ -167,7 +167,16 @@
 //             writes the value attribute, so the helm's typing
 //             can't be clobbered. Added searchBoxJs.js for the
 //             programmatic clear / fill-on-pick paths.
-const CACHE_NAME = 'ona-plotter-v31';
+// v31 -> v32: AnchorEditPanel + HudAnchorCard component shapes
+//             changed (manual JS-only fallback removed; plugin
+//             v2.0.0+ is the only supported source). The cached
+//             v31 WASM still references the dropped CanRaise /
+//             OnAutoSetRadius / Manual / ManualRadiusMeters
+//             parameters, so a freshly-deployed shell loaded into
+//             a stale-WASM browser throws InvalidOperationException
+//             at render time. Bump invalidates the precache so the
+//             helm pulls the new framework on next launch.
+const CACHE_NAME = 'ona-plotter-v32';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
