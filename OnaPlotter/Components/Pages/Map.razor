@@ -216,9 +216,11 @@
                          SuggestionLabel="@anchorEditSuggestion"
                          Busy="@anchorEditBusy"
                          AutoPreviewRadius="@AutoRadiusPreview()"
+                         CanRaise="@(Data.AnchorActive && Data.AnchorMaxRadius is not null)"
                          OnDrop="OnAnchorPanelDrop"
                          OnSetRadius="OnAnchorPanelSetNumericRadius"
                          OnAutoSetRadius="OnAnchorPanelAutoSetRadius"
+                         OnRaise="OnAnchorPanelRaise"
                          OnCancel="OnAnchorPanelCancel" />
     }
 
@@ -3329,68 +3331,20 @@
         if (_anchorJs is null) return;
         if (_anchorRaiseInFlight) return;
 
-        // Two-state state machine driven off the published anchor
-        // data:
-        //   1. AnchorActive=false -> open Drop panel.
-        //   2. AnchorActive=true  -> arm-then-confirm raise.
-        // The two-step Drop -> SetRadius transition is handled IN
-        // PANEL: OnAnchorPanelDrop flips the panel mode to SetRadius
-        // on a successful Drop, so the helm doesn't tap Anchor twice.
-        // This means tapping the Anchor button when "anchor watch is
-        // active" (i.e. AnchorActive=true) always means RAISE, even
-        // if MaxRadius hasn't been set yet (edge case: helm closed
-        // the SetRadius panel without arming, or a SK restart wiped
-        // the radius). The plugin's Incomplete Anchor Alarm warns
-        // the helm server-side if step 2 was skipped; the chart
-        // marker pulses amber via setAnchorIncomplete -- both visible
-        // signals that the helm can choose to address by raising +
-        // re-dropping. Previous "AnchorActive && MaxRadius=null
-        // -> open SetRadius panel" branch trapped the helm in
-        // SetRadius with no escape to raise; field-tested as
-        // confusing on the dev test instance.
+        // The Anchor button always opens the panel; raise lives
+        // INSIDE the SetRadius panel as a button (with arm-then-
+        // confirm). This lets the helm adjust the radius any time
+        // (boat dragging? pick a larger chip / Auto) without first
+        // tearing down the anchor. Two routes:
+        //   1. AnchorActive=false -> Drop panel.
+        //   2. AnchorActive=true  -> SetRadius panel (chips +
+        //      Set + Raise). When MaxRadius is published the panel
+        //      pre-selects the current radius; otherwise (just
+        //      dropped, helm closed before arming, SK restart wiped
+        //      radius) it defaults to Auto.
         if (Data.AnchorActive)
         {
-            // State 3: full anchor armed -- raise via the SK PUT. The
-            // server clears position + maxRadius and stops drift
-            // monitoring; ServerAnchorSync's watchdog catches a
-            // server that doesn't echo the clear within 5 s.
-            _anchorRaiseInFlight = true;
-            // Arm the visual "raising" state + watchdog BEFORE the
-            // PUT so the helm sees feedback during the in-flight
-            // window. HttpClient.Timeout is 8 s; if we waited until
-            // after success the helm would stare at a frozen Anchor
-            // button + un-dimmed marker for up to 8 s on a slow
-            // server. Watchdog is conservative: armed pre-PUT, so
-            // it might fire 5 s into a slow-but-eventually-success
-            // PUT -- the warning toast is preferable to no feedback.
-            _anchorSync?.MarkRaisePending();
-            try { await _anchorJs.SetAnchorRaisingAsync(true); }
-            catch (Exception ex) { Toasts.LogException(ex, "Set anchor raising"); }
-            ApiResult r;
-            try
-            {
-                try { r = await AnchorAlarmApi.RaiseAsync(); }
-                catch (Exception ex) { Toasts.LogException(ex, "Raise anchor"); return; }
-
-                if (!r.Success)
-                {
-                    // Roll back the visual + watchdog so the helm sees
-                    // the anchor is still armed; otherwise the marker
-                    // sits dimmed indefinitely and the watchdog would
-                    // fire later with a confusing "didn't confirm"
-                    // toast on top of our failure toast.
-                    _anchorSync?.CancelRaisePending();
-                    try { await _anchorJs.SetAnchorRaisingAsync(false); }
-                    catch (Exception ex) { Toasts.LogException(ex, "Reset anchor raising"); }
-                    Toasts.Error(AnchorFailureMessage("Raise", r));
-                    return;
-                }
-                Toasts.Success("Anchor raised");
-            }
-            finally
-            {
-                _anchorRaiseInFlight = false;
-            }
+            OpenAnchorSetRadiusPanel();
             return;
         }
 
@@ -3403,7 +3357,7 @@
             return;
         }
 
-        // State 1: no anchor active -- open the Drop panel.
+        // No anchor active -- open the Drop panel.
         if (Data.Latitude is null || Data.Longitude is null)
         {
             Toasts.Error("No GPS fix -- can't drop anchor");
@@ -3470,16 +3424,19 @@
         return Math.Max(approx, 20);   // never below the smallest preset
     }
 
-    /// <summary>Open the panel in Set Radius state. Auto chip is the
-    /// default selection (helm-driven preference: most boats use the
-    /// plugin's distance-from-drop computation rather than a fixed
-    /// preset). The depth-based heuristic still drives the eyebrow
-    /// subtitle so the helm sees "5x 11.8 m depth" as a sanity check
-    /// against what Auto picked, but the chip selection starts on
-    /// Auto via the UnseededInitialRadius sentinel.</summary>
+    /// <summary>Open the panel in Set Radius state. When the anchor
+    /// is already armed (Data.AnchorMaxRadius published), pre-select
+    /// the current armed radius so the helm sees "you're at 50 m,
+    /// want to change?" instead of an Auto chip that would silently
+    /// commit a different value. When NOT armed (just dropped, or
+    /// helm closed without arming), default to Auto via the
+    /// UnseededInitialRadius sentinel -- helm-driven preference for
+    /// the plugin-computed value on first arming.</summary>
     private void OpenAnchorSetRadiusPanel()
     {
-        anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
+        anchorEditInitialRadius = Data.AnchorMaxRadius is double r && r > 0
+            ? (int)Math.Round(r)
+            : OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
         anchorEditSuggestion = OnaPlotter.Utilities.AnchorRadiusHeuristic
             .DescribeSuggestion(Data.Depth);
         anchorEditBusy = false;
@@ -3660,6 +3617,50 @@
         // "Close" as "I'm just dismissing this card".
         anchorEditMode = false;
         anchorEditBusy = false;
+    }
+
+    /// <summary>Raise from inside the SetRadius panel (helm tapped
+    /// the in-panel Raise button after the arm-then-confirm two-tap
+    /// sequence resolved). Mirrors the previous Anchor-button raise
+    /// path: arm visual feedback BEFORE the PUT so the helm sees
+    /// progress during the in-flight window, watchdog ServerAnchorSync
+    /// catches a server that doesn't echo the clear.</summary>
+    private async Task OnAnchorPanelRaise()
+    {
+        if (_anchorJs is null) return;
+        if (_anchorRaiseInFlight) return;
+        _anchorRaiseInFlight = true;
+        // Close the panel immediately on raise so the helm sees
+        // the action took effect; the watchdog + chart marker dim
+        // carry the visual feedback during the in-flight PUT.
+        anchorEditMode = false;
+        anchorEditBusy = false;
+        _anchorSync?.MarkRaisePending();
+        try { await _anchorJs.SetAnchorRaisingAsync(true); }
+        catch (Exception ex) { Toasts.LogException(ex, "Set anchor raising"); }
+        ApiResult r;
+        try
+        {
+            try { r = await AnchorAlarmApi.RaiseAsync(); }
+            catch (Exception ex)
+            {
+                Toasts.LogException(ex, "Raise anchor");
+                return;
+            }
+            if (!r.Success)
+            {
+                _anchorSync?.CancelRaisePending();
+                try { await _anchorJs.SetAnchorRaisingAsync(false); }
+                catch (Exception ex) { Toasts.LogException(ex, "Reset anchor raising"); }
+                Toasts.Error(AnchorFailureMessage("Raise", r));
+                return;
+            }
+            Toasts.Success("Anchor raised");
+        }
+        finally
+        {
+            _anchorRaiseInFlight = false;
+        }
     }
 
     // Origin of the manual anchor drop. Captured at OnAnchorPanelDrop
