@@ -142,7 +142,11 @@
 // v24 -> v25: chart-filter Reset button always visible (with
 //             :disabled state styled when at defaults). CSS gained
 //             a new :disabled rule, so the precache must refresh.
-const CACHE_NAME = 'ona-plotter-v25';
+// v25 -> v26: topbar place-search SearchBox + search-pin overlay
+//             (Phase 2 of the geocoder feature). New CSS rules
+//             under .topbar-search* / .search-pin* land in the
+//             APP_SHELL precache; bump invalidates the stale shell.
+const CACHE_NAME = 'ona-plotter-v26';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

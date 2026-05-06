@@ -3611,6 +3611,185 @@ main:has(.alarm-banner-stack) .snooze-chips {
     }
 }
 
+/* Topbar place-search (Components/Layout/SearchBox.razor). Sits in
+   the gap between the left-side status chips and the right-side
+   icon cluster on the Map page. The wrapper carries `ms-auto` from
+   MainLayout so the input grows to fill the available width up to
+   max-width below; on a wide desktop the dropdown still doesn't
+   feel oversized, on phone it shrinks naturally. */
+.topbar-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    /* margin-left:auto effectively bootstraps the right-side cluster:
+       everything before the search sits flush-left, the search and
+       everything after it shifts right. The icon buttons after the
+       search keep their natural flex spacing. */
+    margin-left: auto;
+    /* Cap the input width so the topbar doesn't eat the chip cluster
+       on a wide monitor; the right-side icons still get their seat. */
+    max-width: 320px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.topbar-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    /* Match the topbar-icon-btn height so the input visually aligns
+       with the buttons next to it. Coarse-pointer override below. */
+    height: 31px;
+    padding: 4px 28px 4px 10px;  /* right padding leaves room for spinner / clear */
+    background: var(--panel-bg, rgba(15, 23, 42, 0.9));
+    color: var(--panel-text, #e2e8f0);
+    border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.15));
+    border-radius: 4px;
+    font-size: 0.85rem;
+    /* Native search-input styling (the `x` clear button) is
+       inconsistent across browsers; we render our own clear, so
+       hide the user-agent one. */
+    appearance: none;
+}
+.topbar-search-input:focus {
+    outline: none;
+    border-color: var(--sk-accent, #38bdf8);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+.topbar-search-input::placeholder {
+    color: var(--sk-text-muted, #64748b);
+}
+
+/* Spinner / clear button slot, absolutely positioned at the right
+   edge of the input so the input itself doesn't shrink when state
+   changes (loading -> clear). */
+.topbar-search-spinner,
+.topbar-search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.topbar-search-spinner {
+    border: 2px solid var(--sk-text-muted, #64748b);
+    border-top-color: var(--sk-accent, #38bdf8);
+    border-radius: 50%;
+    animation: topbar-search-spin 0.7s linear infinite;
+}
+.topbar-search-clear {
+    background: transparent;
+    border: none;
+    color: var(--sk-text-muted, #64748b);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+.topbar-search-clear:hover {
+    color: var(--sk-text, #e2e8f0);
+}
+@keyframes topbar-search-spin {
+    to { transform: translateY(-50%) rotate(360deg); }
+}
+
+/* Dropdown anchored under the input. Absolute over the page so it
+   doesn't push the topbar's content; max-height keeps long result
+   sets scrollable; box-shadow + slight border so it reads as a
+   floating panel against the chart underneath. */
+.topbar-search-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 4px 0;
+    list-style: none;
+    background: var(--panel-bg, rgba(15, 23, 42, 0.96));
+    border: 1px solid var(--panel-border, rgba(255, 255, 255, 0.15));
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+.topbar-search-row {
+    padding: 6px 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    line-height: 1.25;
+}
+.topbar-search-row--active,
+.topbar-search-row:hover {
+    background: rgba(56, 189, 248, 0.15);
+}
+.topbar-search-name {
+    color: var(--sk-text, #e2e8f0);
+    font-size: 0.85rem;
+}
+.topbar-search-meta {
+    color: var(--sk-text-muted, #64748b);
+    font-size: 0.72rem;
+    margin-top: 2px;
+}
+.topbar-search-empty {
+    padding: 8px 10px;
+    color: var(--sk-text-muted, #64748b);
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+/* Coarse pointer (touchscreen) -- match the 44px touch-target floor
+   the icon buttons get. Same reasoning: gloved helm in a moving
+   cockpit needs a forgiving target. */
+@media (pointer: coarse) {
+    .topbar-search-input {
+        height: 44px;
+        font-size: 1rem;
+    }
+    .topbar-search-row {
+        padding: 10px 12px;
+    }
+}
+
+/* Phone-narrow: the topbar runs out of width before the dropdown.
+   Cap the wrapper so the icon cluster still fits, and let the
+   dropdown extend full-width via right:0 / left auto. */
+@media (max-width: 600px) {
+    .topbar-search {
+        max-width: 200px;
+    }
+}
+
+/* Search-pin overlay (leafletInterop.js setSearchPin). A
+   distinct visual: small ring + dot, NOT a waypoint marker, so the
+   helm reads it as "this is the place I just searched, not a
+   saved waypoint". Pulses gently to draw the eye after a flyTo
+   lands on the result. */
+.search-pin {
+    pointer-events: none;
+    user-select: none;
+}
+.search-pin-dot {
+    display: block;
+    width: 14px;
+    height: 14px;
+    margin: 4px;
+    border: 2px solid var(--sk-accent, #38bdf8);
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18),
+                0 0 8px rgba(56, 189, 248, 0.5);
+    animation: search-pin-pulse 1.4s ease-in-out infinite;
+}
+@keyframes search-pin-pulse {
+    0%, 100% { transform: scale(1);   opacity: 1;   }
+    50%      { transform: scale(1.15); opacity: 0.8; }
+}
+
 /* Full-screen tap-outside backdrop. Rendered alongside the panel in
    MainLayout so a touch outside the sheet dismisses it; on desktop the
    backdrop is invisible but still there so the Log-button toggle isn't
