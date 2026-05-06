@@ -14,6 +14,7 @@
 @inject OnaPlotter.Services.UpdateChecker Updates
 @inject OnaPlotter.Services.Api.IAuthApi AuthApi
 @inject OnaPlotter.Services.Api.ISignalKBaseUrl SkBaseUrl
+@inject ILogger<MainLayout> Logger
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
@@ -122,7 +123,7 @@
                search-pin via the leaflet JS module. *@
             @if (IsMapRoute)
             {
-                <SearchBox OnPicked="HandlePlacePicked" />
+                <SearchBox OnPicked="HandlePlacePicked" OnCleared="HandlePlaceCleared" />
             }
 
             @* Zoom in / out. Only rendered when the Map page is
@@ -789,6 +790,39 @@
                 "flyToSearchResult", result.Lat, result.Lon, null);
         }
         catch (JSDisconnectedException) { }
+        catch (JSException ex)
+        {
+            // A non-disconnected JS error (Leaflet flyTo throwing on a
+            // zero-size map; a stale shell deployment where the new
+            // wasm calls flyToSearchResult against an old bundle that
+            // doesn't export it). Log enough context that the support
+            // grep loop can trace which pick failed -- without this
+            // the error relay catches "unhandled exception in
+            // component" with no breadcrumb naming the place result.
+            Logger.LogWarning(ex,
+                "[place] flyTo failed for {Source} {Lat},{Lon}",
+                result.Source, result.Lat, result.Lon);
+        }
+    }
+
+    /// <summary>
+    /// Topbar SearchBox -> helm cleared the input. Tear down the
+    /// search-pin on the JS side so a stale ring doesn't linger on
+    /// the chart after the dropdown is gone (helm reads "no active
+    /// search" but the pin says otherwise).
+    /// </summary>
+    private async Task HandlePlaceCleared()
+    {
+        try
+        {
+            await EnsureLeafletModuleAsync();
+            await leafletModule!.InvokeVoidAsync("clearSearchPin");
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException ex)
+        {
+            Logger.LogWarning(ex, "[place] clearSearchPin failed");
+        }
     }
 
     private async Task ZoomOutAsync()

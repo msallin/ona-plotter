@@ -104,18 +104,48 @@ public sealed class PlaceSearchCache
             var loaded = JsonSerializer.Deserialize(raw, OnaJsonContext.Default.CachedQueryArray);
             _entries = loaded is null
                 ? []
-                : new List<CachedQuery>(loaded);
+                : new List<CachedQuery>(loaded.Select(SanitiseEntry).Where(e => e is not null)!)!;
             return _entries;
         }
-        catch (JsonException ex)
+        // JSException is the localStorage-side failure (private-mode
+        // Safari, quota exhaustion, JS interop disconnect during page
+        // teardown). JsonException is corrupted-payload (browser-
+        // extension tampering, schema skew). Either path degrades
+        // identically: drop the cache to empty so the next PutAsync
+        // overwrites cleanly. Without the JSException catch the
+        // exception escapes into SearchBox.OnInput which only catches
+        // TaskCanceledException -- a private-browsing helm would see
+        // the dropdown break without a hint.
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException
+                                     or System.Text.Json.JsonException)
         {
-            // Corrupted localStorage entry (browser-extension tampering
-            // or a v0 -> v1 schema skew that pre-dates this key). Treat
-            // as empty; the next PutAsync overwrites cleanly.
-            _logger.LogWarning("[place-cache] hydrate skipped: {Message}", ex.Message);
+            _logger.LogWarning(ex, "[place-cache] hydrate skipped");
             _entries = [];
             return _entries;
         }
+    }
+
+    /// <summary>Re-validate one cached entry on hydrate so a tampered
+    /// localStorage cannot feed the SearchBox / leaflet flyTo NaN /
+    /// out-of-range coordinates that the live geocoder would itself
+    /// reject. Threat model is local (browser extension, shared
+    /// device, dev-tools paste) -- defense-in-depth, not remote.</summary>
+    private static CachedQuery? SanitiseEntry(CachedQuery? entry)
+    {
+        if (entry is null) return null;
+        if (string.IsNullOrWhiteSpace(entry.Query)) return null;
+        if (entry.Results is null) return null;
+        var ok = new List<PlaceResult>(entry.Results.Length);
+        foreach (var r in entry.Results)
+        {
+            if (r is null) continue;
+            if (string.IsNullOrWhiteSpace(r.Name)) continue;
+            if (!double.IsFinite(r.Lat) || !double.IsFinite(r.Lon)) continue;
+            if (r.Lat < -90 || r.Lat > 90 || r.Lon < -180 || r.Lon > 180) continue;
+            ok.Add(r);
+        }
+        if (ok.Count == 0) return null;
+        return entry with { Results = ok.ToArray() };
     }
 
     private async Task PersistAsync(List<CachedQuery> entries, CancellationToken ct)
@@ -125,9 +155,16 @@ public sealed class PlaceSearchCache
             var json = JsonSerializer.Serialize(entries.ToArray(), OnaJsonContext.Default.CachedQueryArray);
             await _kv.SetAsync(StorageKey, json, ct);
         }
-        catch (JsonException ex)
+        // Same broadening as EnsureLoadedAsync: localStorage.setItem on
+        // iPad Safari throws JSException("QuotaExceededError") once the
+        // quota fills. Without this catch every cache-miss-and-write
+        // would throw into the search path. The cost of skipping a
+        // persist is only that the in-memory shadow is one entry ahead
+        // of disk until the next successful write.
+        catch (Exception ex) when (ex is Microsoft.JSInterop.JSException
+                                     or System.Text.Json.JsonException)
         {
-            _logger.LogWarning("[place-cache] persist skipped: {Message}", ex.Message);
+            _logger.LogWarning(ex, "[place-cache] persist skipped");
         }
     }
 

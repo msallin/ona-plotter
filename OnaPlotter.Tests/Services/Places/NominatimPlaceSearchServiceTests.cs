@@ -253,32 +253,43 @@ public class NominatimPlaceSearchServiceTests
     [Test]
     public async Task SearchAsync_Rate_Limits_Two_Calls_To_MinRequestInterval()
     {
-        // First call lands immediately; second call must have waited
-        // at least MinRequestInterval after the first. We assert by
-        // advancing a fake clock exactly to that boundary and
-        // observing both calls succeed -- the recorded second call
-        // shouldn't fire before then.
+        // Production code routes the rate-gate Task.Delay through the
+        // injected TimeProvider, so FakeTimeProvider drives the wait
+        // deterministically. No real Task.Delay sleeps in this test.
         //
-        // Easier: assert the timestamps the handler observes.
+        // Sequence:
+        //   1. First call fires; handler returns immediately; first
+        //      Task completes synchronously enough that we await it.
+        //   2. Second call fires; reaches the rate-gate Task.Delay
+        //      (because elapsed < MinRequestInterval) and parks.
+        //   3. We advance the fake clock JUST below the threshold ->
+        //      the gate timer hasn't fired -> handler still at 1.
+        //   4. We advance the remaining tick -> the gate timer fires
+        //      -> the gated call proceeds -> handler reaches 2.
         var handler = new TimestampingHandler("[]");
         var http = new HttpClient(handler);
         var time = new FakeTimeProvider(new DateTime(2026, 5, 6, 12, 0, 0, DateTimeKind.Utc));
         var svc = new NominatimPlaceSearchService(
             http, NullLogger<NominatimPlaceSearchService>.Instance, time);
 
-        var first = svc.SearchAsync("Berlin");
         // First call doesn't need to wait.
-        await first;
-
-        var second = svc.SearchAsync("Bremen");
-        // Advance the clock just below the rate-limit threshold; the
-        // call should NOT have proceeded to the handler yet.
-        time.Advance(NominatimPlaceSearchService.MinRequestInterval - TimeSpan.FromMilliseconds(10));
-        await Task.Delay(20);
+        await svc.SearchAsync("Berlin");
         await Assert.That(handler.RequestCount).IsEqualTo(1);
 
-        // Step over the boundary and the gated call lands.
-        time.Advance(TimeSpan.FromMilliseconds(20));
+        // Kick off second call. Don't await yet -- it will park inside
+        // the rate gate's Task.Delay until the fake clock advances.
+        var second = svc.SearchAsync("Bremen");
+
+        // Advance to JUST BEFORE the threshold. The TimeProvider-
+        // backed Task.Delay timer has not fired yet, so the handler
+        // count must still be 1.
+        time.Advance(NominatimPlaceSearchService.MinRequestInterval - TimeSpan.FromTicks(1));
+        await Assert.That(handler.RequestCount).IsEqualTo(1);
+        await Assert.That(second.IsCompleted).IsFalse();
+
+        // Cross the threshold; the gate fires, the gated call
+        // proceeds to the handler, the second Task completes.
+        time.Advance(TimeSpan.FromTicks(1));
         await second;
         await Assert.That(handler.RequestCount).IsEqualTo(2);
     }

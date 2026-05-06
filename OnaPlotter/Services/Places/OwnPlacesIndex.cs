@@ -22,8 +22,11 @@ namespace OnaPlotter.Services.Places;
 /// the helm can tell at a glance whether a match comes from their
 /// vault or an online geocoder.</para>
 /// </summary>
-public sealed class OwnPlacesIndex
+public sealed class OwnPlacesIndex : IPlaceSearchService
 {
+    Task<IReadOnlyList<PlaceResult>> IPlaceSearchService.SearchAsync(string query, CancellationToken ct) =>
+        SearchAsync(query, ct);
+
     /// <summary>Cache lifetime for the index. 5 minutes is short
     /// enough that a helm waypoint added on another plotter shows
     /// up reasonably soon without an explicit refresh, and long
@@ -47,6 +50,16 @@ public sealed class OwnPlacesIndex
     /// don't trigger three parallel API fetches each time the helm
     /// types into an empty search box.</summary>
     private Task? _inFlightLoad;
+    /// <summary>Generation counter bumped by <see cref="Invalidate"/>.
+    /// An in-flight <see cref="LoadAsync"/> snapshots this at entry
+    /// and only commits its result if the generation hasn't moved --
+    /// otherwise the load completed against a now-stale view (a CRUD
+    /// landed mid-flight) and its result is discarded so the next
+    /// EnsureLoadedAsync starts a fresh load. Without this the
+    /// pre-Invalidate load would resurrect stale data and reset the
+    /// timestamp, defeating the whole point of the public Invalidate
+    /// handle.</summary>
+    private int _generation;
 
     public OwnPlacesIndex(
         IWaypointApi waypoints,
@@ -97,10 +110,12 @@ public sealed class OwnPlacesIndex
     {
         _entries = null;
         _lastLoadUtc = DateTime.MinValue;
-        // _inFlightLoad is left in place; if a load is mid-flight
-        // it'll complete and populate _entries; the next SearchAsync
-        // call sees the (now stale) timestamp and triggers a fresh
-        // load.
+        // Bump the generation so any in-flight LoadAsync that was
+        // started against the pre-Invalidate view discards its result
+        // when it completes -- otherwise the pre-CRUD data would
+        // resurrect itself with a fresh timestamp and the next
+        // SearchAsync would return stale rows for up to StaleTtl.
+        _generation++;
     }
 
     private async Task EnsureLoadedAsync(CancellationToken ct)
@@ -124,6 +139,12 @@ public sealed class OwnPlacesIndex
 
     private async Task LoadAsync(CancellationToken ct)
     {
+        // Snapshot the generation at entry; if Invalidate() bumps it
+        // before our awaits return we discard the result rather than
+        // overwriting fresh post-CRUD state with the pre-CRUD view we
+        // started loading.
+        int generationAtEntry = _generation;
+
         // Three parallel API calls. Failure on any one degrades to
         // an empty contribution from that source; the others still
         // populate. Helm with a missing notes plugin shouldn't lose
@@ -146,6 +167,21 @@ public sealed class OwnPlacesIndex
         {
             if (TryMapRegion(g) is { } r) fresh.Add(r);
         }
+
+        // Generation check: if Invalidate() ran while we awaited the
+        // three API calls, our `fresh` snapshot is from BEFORE the
+        // CRUD that triggered the invalidate. Drop it so the next
+        // EnsureLoadedAsync starts a new load against the post-CRUD
+        // view. _entries stays null (Invalidate set it so) and
+        // _lastLoadUtc stays MinValue so the next pass triggers.
+        if (_generation != generationAtEntry)
+        {
+            _logger.LogInformation(
+                "[own-places] dropping stale load (generation moved {From} -> {To})",
+                generationAtEntry, _generation);
+            return;
+        }
+
         _entries = fresh;
         _lastLoadUtc = _time.GetUtcNow().UtcDateTime;
     }
@@ -156,8 +192,11 @@ public sealed class OwnPlacesIndex
         try { return await fetch(); }
         catch (Exception ex)
         {
-            _logger.LogWarning("[own-places] {Label} fetch failed: {Message}",
-                label, ex.Message);
+            // Log the exception OBJECT (type + stack) instead of just
+            // ex.Message so 3am triage can tell apart 401 (logged out),
+            // network timeout, and a null-deref bug in the *Api -- a
+            // bare ".Message" collapses these into the same line.
+            _logger.LogWarning(ex, "[own-places] {Label} fetch failed", label);
             return null;
         }
     }
@@ -205,10 +244,18 @@ public sealed class OwnPlacesIndex
         if (ring.Length == 0) return null;
         double sumLat = 0, sumLon = 0;
         int n = 0;
+        // Convention pin: SignalK regions store each ring point as
+        // [lat, lon] (Leaflet order), NOT GeoJSON [lon, lat]. Naming
+        // the columns explicitly avoids a 3am misread when this code
+        // is held next to PhotonPlaceSearchService where coordinates
+        // arrive in the GeoJSON order.
         foreach (var pt in ring)
         {
             if (pt.Length < 2) continue;
-            sumLat += pt[0]; sumLon += pt[1];
+            double pointLat = pt[0];
+            double pointLon = pt[1];
+            sumLat += pointLat;
+            sumLon += pointLon;
             n++;
         }
         if (n == 0) return null;

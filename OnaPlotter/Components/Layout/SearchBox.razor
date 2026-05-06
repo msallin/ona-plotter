@@ -65,9 +65,11 @@
                     // online geocoder source ("photon" / "nominatim").
                     // Helm reads the dropdown as two distinct blocks:
                     // "your places" on top, "found online" below.
-                    bool prevWasOwn = idx > 0 && IsOwnSource(_results[idx - 1].Source);
-                    bool currentIsOnline = !IsOwnSource(r.Source);
-                    if (prevWasOwn && currentIsOnline)
+                    bool isFirstOnlineAfterOwn =
+                        idx > 0
+                        && IsOwnSource(_results[idx - 1].Source)
+                        && !IsOwnSource(r.Source);
+                    if (isFirstOnlineAfterOwn)
                     {
                         <li class="topbar-search-separator" role="separator"
                             aria-hidden="true">Online</li>
@@ -109,10 +111,25 @@
     /// map + drops a search-pin via the leaflet JS interop.</summary>
     [Parameter] public EventCallback<PlaceResult> OnPicked { get; set; }
 
+    /// <summary>Fired when the helm clears the input (clear button
+    /// or Escape on an empty query). Parent should tear down the
+    /// search-pin on the JS side so a stale ring doesn't linger on
+    /// the chart after the dropdown is gone.</summary>
+    [Parameter] public EventCallback OnCleared { get; set; }
+
     /// <summary>Optional debounce override (milliseconds). Default
     /// 300 ms balances "feels live" against "don't hammer the
     /// geocoder on every keystroke". Tests pass 0 for instant.</summary>
     [Parameter] public int DebounceMs { get; set; } = 300;
+
+    /// <summary>Hard cap on the helm-typed query length before we
+    /// hand it to the geocoder. A pasted multi-KB string would URL-
+    /// encode into an oversized GET that the upstream rejects with
+    /// 414 anyway -- truncating here keeps the cache key short and
+    /// the dropdown fast on every keystroke. 200 chars is well past
+    /// the longest place name in the OSM corpus (the longest
+    /// administrative name is around 80 chars).</summary>
+    public const int MaxQueryLength = 200;
 
     private string _query = "";
     private IReadOnlyList<PlaceResult> _results = [];
@@ -131,7 +148,13 @@
 
     private async Task OnInput(ChangeEventArgs e)
     {
-        _query = e.Value?.ToString() ?? "";
+        var raw = e.Value?.ToString() ?? "";
+        // Cap the query length BEFORE storing it so the input value
+        // and the cache key both stay bounded. A paste of a multi-KB
+        // string would otherwise become an oversized GET URL on every
+        // debounced keystroke; the geocoder would 414, the empty-list
+        // contract would catch it, but the round-trip waste is real.
+        _query = raw.Length > MaxQueryLength ? raw[..MaxQueryLength] : raw;
         // Cancel any in-flight previous search and start a fresh CTS.
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
@@ -175,7 +198,7 @@
         {
             if (e.Key == "Escape" && !string.IsNullOrEmpty(_query))
             {
-                HandleClear();
+                await HandleClear();
             }
             return;
         }
@@ -228,13 +251,19 @@
         _open = false;
     }
 
-    private void HandleClear()
+    private async Task HandleClear()
     {
         _searchCts?.Cancel();
         _query = "";
         _results = [];
         _open = false;
         _loading = false;
+        // Tell the parent to clear the search-pin too. Without this
+        // the helm sees the dropdown disappear but the ring marker
+        // stays on the chart, which reads as "is this search active
+        // or not". Fire-and-forget for the UI -- the parent's handler
+        // catches its own JS exceptions.
+        if (OnCleared.HasDelegate) await OnCleared.InvokeAsync();
     }
 
     /// <summary>The own-data source tags (set by OwnPlacesIndex on
