@@ -78,8 +78,8 @@
 
         <button class="map-btn active anchor-edit-set"
                 @onclick="OnSetClicked" disabled="@Busy"
-                title="@(Busy ? "Setting..." : "Arm the alarm at the chosen radius")">
-            @(Busy ? "Setting..." : "Set")
+                title="@(Busy ? "Arming..." : "Arm the anchor watch at the chosen radius")">
+            @(Busy ? "Arming..." : "Arm")
         </button>
         <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Close</button>
     }

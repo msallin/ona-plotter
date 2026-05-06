@@ -82,24 +82,6 @@
                         <div class="hud-value route-value">@Snapshot.ManualRadiusMeters.ToString("F0")<span class="hud-unit">m</span></div>
                     </div>
                 }
-                @* v2.0.0+ plugin extras: bow-corrected distance (different
-                   from CurrentRadius which is GPS-to-anchor) + helm-
-                   confirmed rode length. Only render when present, so
-                   the card stays compact on plugin v1.x or manual mode. *@
-                @if (Snapshot.DistanceFromBow is not null)
-                {
-                    <div>
-                        <div class="hud-label">Bow</div>
-                        <div class="hud-value route-value">@Format.MetersDual(Snapshot.DistanceFromBow)</div>
-                    </div>
-                }
-                @if (Snapshot.RodeLength is not null)
-                {
-                    <div>
-                        <div class="hud-label">Rode</div>
-                        <div class="hud-value route-value">@Format.MetersDual(Snapshot.RodeLength)</div>
-                    </div>
-                }
             </div>
             @if (Snapshot.Manual && OnSetRadius.HasDelegate)
             {
@@ -154,22 +136,10 @@
         string? DormantReason,
         double? PeakRadius = null,
         // True-north bearing back to the anchor (radians, 0..2pi).
-        // Parent prefers Data.AnchorBearingTrue (plugin v2.0.0+ SK
-        // path) when present; falls back to client-side GeoBearing
-        // on anchor + own-ship lat/lon so the needle works on the
-        // JS-only manual flow + on plugin v1.x. Null when no source
-        // is available -- the card uses that as the hide signal for
-        // the needle but still renders the rest of the card.
-        double? BearingTrue = null,
-        // Distance from bow to anchor in metres (plugin v2.0.0+).
-        // Bow-offset corrected, distinct from CurrentRadius (which
-        // is GPS-to-anchor). Helm reads "anchor 18 m back at 045°"
-        // in one glance. Null on plugin v1.x and on manual flows.
-        double? DistanceFromBow = null,
-        // Currently-deployed rode length (metres). Helm-confirmed
-        // via plugin's Set Rode Length flow or rode counter input.
-        // Useful for the log + a quick scope-ratio cross-check
-        // ("60 m of chain in 8 m of water = 7.5:1"). Null when the
-        // helm hasn't reported it.
-        double? RodeLength = null);
+        // Computed client-side via Utilities.GeoBearing in the parent
+        // (MapHud.BuildAnchorSnapshot) from anchor + own-ship lat/lon
+        // so it works on both the plugin and the JS-only manual flow.
+        // Null when either endpoint is missing (no GPS, no anchor)
+        // -- the card uses that as the hide signal.
+        double? BearingTrue = null);
 }

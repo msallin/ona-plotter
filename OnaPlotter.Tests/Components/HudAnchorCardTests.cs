@@ -19,11 +19,9 @@ public class HudAnchorCardTests
         double? maxRadius = 30,
         string? dormantReason = null,
         double? peakRadius = null,
-        double? bearingTrue = null,
-        double? distanceFromBow = null,
-        double? rodeLength = null) =>
+        double? bearingTrue = null) =>
         new(visible, dragging, manual, manualRadius, currentRadius, maxRadius,
-            dormantReason, peakRadius, bearingTrue, distanceFromBow, rodeLength);
+            dormantReason, peakRadius, bearingTrue);
 
     [Test]
     public async Task NotVisible_RendersNothing()
@@ -253,68 +251,4 @@ public class HudAnchorCardTests
         await Assert.That(a).IsNotEqualTo(b);
     }
 
-    // ---- v2.0.0+ extras: Bow + Rode rows ----
-
-    [Test]
-    public async Task DistanceFromBow_RendersBowRow_WhenSet()
-    {
-        // Plugin v2.0.0+ publishes navigation.anchor.distanceFromBow
-        // (bow-corrected distance, distinct from CurrentRadius which
-        // is GPS-to-anchor). The HUD card surfaces it as a "Bow" row
-        // so the helm reads "anchor 18 m back" at a glance.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(distanceFromBow: 18.0)));
-        await Assert.That(cut.Markup).Contains("Bow");
-    }
-
-    [Test]
-    public async Task DistanceFromBow_HiddenWhenNull()
-    {
-        // Manual flow + plugin v1.x don't publish this path; the
-        // row should omit entirely so the card stays compact.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(distanceFromBow: null)));
-        await Assert.That(cut.Markup).DoesNotContain(">Bow<");
-    }
-
-    [Test]
-    public async Task RodeLength_RendersRodeRow_WhenSet()
-    {
-        // Helm-confirmed rode length from the plugin's Set Rode
-        // Length flow (or the rode counter sensor when wired). Useful
-        // for the log + scope-ratio cross-check.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(rodeLength: 60.0)));
-        await Assert.That(cut.Markup).Contains("Rode");
-    }
-
-    [Test]
-    public async Task RodeLength_HiddenWhenNull()
-    {
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(rodeLength: null)));
-        await Assert.That(cut.Markup).DoesNotContain(">Rode<");
-    }
-
-    [Test]
-    public async Task Snapshot_DistanceFromBowChange_NotEqual()
-    {
-        // Snapshot equality drives Blazor's render-skip optimisation;
-        // a delta on Bow must trigger a re-render.
-        var a = Snap(distanceFromBow: 18);
-        var b = Snap(distanceFromBow: 22);
-        await Assert.That(a).IsNotEqualTo(b);
-    }
-
-    [Test]
-    public async Task Snapshot_RodeLengthChange_NotEqual()
-    {
-        var a = Snap(rodeLength: 50);
-        var b = Snap(rodeLength: 60);
-        await Assert.That(a).IsNotEqualTo(b);
-    }
 }
