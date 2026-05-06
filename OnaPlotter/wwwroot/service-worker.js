@@ -176,7 +176,13 @@
 //             a stale-WASM browser throws InvalidOperationException
 //             at render time. Bump invalidates the precache so the
 //             helm pulls the new framework on next launch.
-const CACHE_NAME = 'ona-plotter-v32';
+// v32 -> v33: SearchBox state-cleanup pass -- explicit
+//             StateHasChanged so the spinner shows during the
+//             in-flight call; catch-all around SearchAsync so
+//             any decorator regression degrades to empty list
+//             instead of leaving the dropdown in a half-rendered
+//             "stopped working" state.
+const CACHE_NAME = 'ona-plotter-v33';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
