@@ -4,11 +4,25 @@
 // changes one place.
 
 /** HTML-escape an untrusted string for inline insertion into a popup
- *  template literal. */
+ *  template literal. Safe in BOTH text-node contexts (`<span>${esc(x)}</span>`)
+ *  and double- or single-quoted attribute contexts (`data-nm="${esc(x)}"`).
+ *
+ *  The textContent -> innerHTML round-trip alone follows the HTML5 text-
+ *  serialization spec, which only escapes `&`, `<`, `>`. That's safe for
+ *  text nodes but NOT for attribute values: a vessel name from the SK
+ *  delta containing a `"` (legitimate per ITU-R M.1371 6-bit ASCII -- it
+ *  fits the 64-char alphabet) would close the attribute and let the
+ *  trailing string land in the DOM as new attributes. We additionally
+ *  escape `"` and `'` so attr="..." and attr='...' are both safe to drop
+ *  esc()'s output into. The extra escapes are inert in text-node contexts
+ *  (`&quot;` / `&#39;` render as `"` / `'` to the user). */
 export function esc(s) {
     const d = document.createElement('div');
     d.textContent = s;
-    return d.innerHTML;
+    // Order matters: replace the textContent-serialized result, which
+    // already encodes `&` as `&amp;`. Touching `&` again would
+    // double-encode (`&amp;quot;`), so we stop at the quote characters.
+    return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /**

@@ -15,11 +15,14 @@ public class VesselsSectionTests
     private static VesselListEntry V(
         string ctx, string name, string? mmsi = null,
         double? cpa = null, double? tcpa = null, bool buddy = false,
-        string? colregsLabel = null, string? colregsRole = null) =>
+        string? colregsLabel = null, string? colregsRole = null,
+        double? loa = null, double? beam = null,
+        double? distNm = null) =>
         new(Context: ctx, DisplayName: name, Mmsi: mmsi,
-            CpaNm: cpa, TcpaMin: tcpa, DistanceNm: null, BearingDeg: null,
+            CpaNm: cpa, TcpaMin: tcpa, DistanceNm: distNm, BearingDeg: null,
             SogKn: null, ShipType: null, IsBuddy: buddy,
-            ColregsLabel: colregsLabel, ColregsRole: colregsRole);
+            ColregsLabel: colregsLabel, ColregsRole: colregsRole,
+            LengthOverallMeters: loa, BeamMeters: beam);
 
     // Sections start collapsed and stay that way until the helm taps
     // the header. Earlier we auto-expanded on any danger / warn CPA,
@@ -137,5 +140,96 @@ public class VesselsSectionTests
         cut.Find(".vessel-row").Click();
 
         await Assert.That(focused).IsEqualTo("vessels.ctx1");
+    }
+
+    // --- LOA / Beam dimension chip (PR #221) -------------------------
+    //
+    // The row appends a single dot-separated dimensions segment to the
+    // existing distance / SOG line. Four branches matter:
+    //   1. LOA + Beam present    -> "32.5 × 6.2 m"
+    //   2. LOA only              -> "L 32.5 m"
+    //   3. Beam only             -> "B 6.2 m"
+    //   4. Neither               -> no dimensions span at all
+    // All four are exercised below. Reaching the fallback branch is
+    // important because most class-B targets never broadcast Type 24 --
+    // a regression that defaulted those to "0.0 × 0.0 m" would render
+    // a misleading chip on the most common harbour traffic.
+
+    [Test]
+    public async Task Dimensions_Both_Render_As_Joined_Chip()
+    {
+        // Helm is looking at a class-A target with full static; the
+        // "32.5 × 6.2 m" chip lets them eyeball the size without
+        // opening the popup.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<VesselsSection>(p => p
+            .Add(x => x.Vessels, new[] {
+                V("c1", "Big Ship", distNm: 1.0, loa: 32.5, beam: 6.2)
+            }));
+        Expand(cut);
+
+        await Assert.That(cut.Markup).Contains("32.5 × 6.2 m");  // U+00D7 = ×
+        // None of the single-axis fallback prefixes should appear when
+        // both dimensions are present -- otherwise the row renders both
+        // the joined chip AND a stray "L"/"B" segment.
+        await Assert.That(cut.Markup).DoesNotContain("L 32.5 m");
+        await Assert.That(cut.Markup).DoesNotContain("B 6.2 m");
+    }
+
+    [Test]
+    public async Task Dimensions_LoaOnly_Renders_LengthPrefixed_Chip()
+    {
+        // LOA without beam: AIS Type 5 dim A + dim B were broadcast,
+        // dim C + dim D missing or zero. Render "L 32.5 m" so the
+        // helm understands which axis is shown rather than guessing.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<VesselsSection>(p => p
+            .Add(x => x.Vessels, new[] {
+                V("c1", "Long Boat", distNm: 1.0, loa: 32.5, beam: null)
+            }));
+        Expand(cut);
+
+        await Assert.That(cut.Markup).Contains("L 32.5 m");
+        await Assert.That(cut.Markup).DoesNotContain("×");
+    }
+
+    [Test]
+    public async Task Dimensions_BeamOnly_Renders_BeamPrefixed_Chip()
+    {
+        // Beam without LOA is rarer in practice but the schema permits
+        // it. Mirror the LOA-only branch so the row is symmetric.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<VesselsSection>(p => p
+            .Add(x => x.Vessels, new[] {
+                V("c1", "Wide Boat", distNm: 1.0, loa: null, beam: 6.2)
+            }));
+        Expand(cut);
+
+        await Assert.That(cut.Markup).Contains("B 6.2 m");
+        await Assert.That(cut.Markup).DoesNotContain("×");
+    }
+
+    [Test]
+    public async Task Dimensions_NeitherSet_RendersNoChip()
+    {
+        // The common case for class-B traffic: never broadcast Type 24,
+        // so both LOA and beam stay null. The dimensions segment must
+        // be entirely absent -- no "0.0 m", no "L  m", no separator dot
+        // adding visual noise to the row.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<VesselsSection>(p => p
+            .Add(x => x.Vessels, new[] {
+                V("c1", "Small Boat", distNm: 1.0, loa: null, beam: null)
+            }));
+        Expand(cut);
+
+        // None of the dimension markers should leak through.
+        await Assert.That(cut.Markup).DoesNotContain("×");
+        await Assert.That(cut.Markup).DoesNotContain("L 0");
+        await Assert.That(cut.Markup).DoesNotContain("B 0");
+        // " m" alone is too generic (the SOG segment uses " kn"; no
+        // " m" appears anywhere else on the row when dimensions are
+        // absent), so its absence is a sharper sentinel for the chip.
+        await Assert.That(cut.Markup).DoesNotContain(" m</span>");
     }
 }

@@ -63,11 +63,17 @@ internal sealed class FakeSettings : IAppSettings
     public string OwnVesselType { get; set; } = "power";
     public bool KeepScreenAwake { get; set; } = true;
     public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
-    // Default false in tests so existing WaypointApproach rule tests
-    // keep exercising the client path -- production
-    // AppSettingsService defaults this to true (server-side preferred);
-    // tests covering the gate's "off" branch override per-test.
-    public bool ServerSideApproachAlarms { get; set; } = false;
+    // Mirror the production AppSettingsService default (true: server-
+    // side course-provider notifications preferred over the client
+    // rule). Defaulting to true here means a NEW test that doesn't
+    // think about this toggle gets the same gate state the helm sees
+    // in prod. The earlier `= false` invited a silent class of
+    // regression: a feature test could pass locally because the muted
+    // client rule never ran the path the prod helm exercises. Tests
+    // that DO want the client rule to fire (the WaypointApproach rule
+    // tests) override per-construction; see Ctx() in
+    // WaypointApproachAlarmRuleTests.
+    public bool ServerSideApproachAlarms { get; set; } = true;
     public bool ShowKeyboardHints { get; set; } = false;
     public bool ShowAutopilotHud { get; set; } = false;
     public bool ShowRadarHud { get; set; } = false;

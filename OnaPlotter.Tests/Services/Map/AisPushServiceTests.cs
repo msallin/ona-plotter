@@ -216,4 +216,72 @@ public class AisPushServiceTests
         var name = (string?)entry.GetType().GetProperty("displayName")?.GetValue(entry);
         await Assert.That(name).IsEqualTo("★ Friend");
     }
+
+    // --- LOA / Beam payload shape (PR #221) ---------------------------
+    //
+    // The popup + VesselsSection both render a "32m / 6m" dimensions
+    // row only when these fields are present on the JS-side payload.
+    // A rename in the anonymous record (loaM -> lengthOverallM,
+    // beamM -> beam, ...) would silently strip the row from the helm
+    // UI without any compile-time signal -- the JS reads via property
+    // name, which crosses the C#/JS contract gap. These pins go red on
+    // the C# side BEFORE the JS regression hits the helm.
+
+    [Test]
+    public async Task Payload_Carries_loaM_And_beamM_Fields()
+    {
+        // Field-presence check, mirroring Payload_Has_The_Expected_Shape:
+        // a renamed field on the anonymous record fails this test rather
+        // than silently dropping the dimensions row in production.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(new NavigationData());
+
+        var t = js.Pushes[0][0].GetType();
+        await Assert.That(t.GetProperty("loaM")).IsNotNull();
+        await Assert.That(t.GetProperty("beamM")).IsNotNull();
+    }
+
+    [Test]
+    public async Task Payload_Forwards_AisVessel_Loa_And_Beam_Values()
+    {
+        // Two vessels: one with both dimensions set via the canonical
+        // SK shapes, one with neither. Pin (a) values flow through to
+        // the JS payload verbatim, and (b) absence stays null (the JS
+        // popup's "no dimensions" path branches on null/non-null --
+        // a defaulted-to-0 leak here would render "0m / 0m").
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "design.length",
+            JsonSerializer.SerializeToElement(new { overall = 32.5 }));
+        store.Apply("vessels.urn:mrn:imo:mmsi:111", "design.beam",
+            JsonSerializer.SerializeToElement(6.2));
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:222", 47.1, 8.1);
+
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+        await svc.PushAsync(new NavigationData());
+
+        // Payload order is store-determined; locate by context.
+        var entries = js.Pushes[0];
+        var dims = entries.First(e =>
+            (string)e.GetType().GetProperty("context")!.GetValue(e)!
+                == "vessels.urn:mrn:imo:mmsi:111");
+        var bare = entries.First(e =>
+            (string)e.GetType().GetProperty("context")!.GetValue(e)!
+                == "vessels.urn:mrn:imo:mmsi:222");
+
+        var dimsLoa = dims.GetType().GetProperty("loaM")!.GetValue(dims);
+        var dimsBeam = dims.GetType().GetProperty("beamM")!.GetValue(dims);
+        await Assert.That(dimsLoa).IsEqualTo(32.5);
+        await Assert.That(dimsBeam).IsEqualTo(6.2);
+
+        var bareLoa = bare.GetType().GetProperty("loaM")!.GetValue(bare);
+        var bareBeam = bare.GetType().GetProperty("beamM")!.GetValue(bare);
+        await Assert.That(bareLoa).IsNull();
+        await Assert.That(bareBeam).IsNull();
+    }
 }

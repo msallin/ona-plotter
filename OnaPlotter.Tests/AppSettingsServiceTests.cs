@@ -1092,6 +1092,67 @@ public class AppSettingsServiceTests
         await Assert.That(svc2.WaypointArrivalRadiusMeters).IsEqualTo(75);
     }
 
+    // --- ServerSideApproachAlarms (PR #225) ---------------------------
+    //
+    // Default ON; the SK course-provider plugin is the single source of
+    // truth for arrival cues so two plotters on the same server agree
+    // with the autopilot. A helm who DID toggle it off (because the
+    // server isn't running the course-provider, or they want the
+    // OnaPlotter-specific banner cadence) MUST get their override back
+    // after a reload -- otherwise every restart silently drops them
+    // back into server-side mode mid-passage.
+
+    [Test]
+    public async Task ServerSideApproachAlarms_DefaultsTrue()
+    {
+        // Pin the prod default. FakeSettings mirrors this default;
+        // changing one without the other invites the silent test/prod
+        // divergence the polarity flip in PR #225 closed.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.ServerSideApproachAlarms).IsTrue();
+    }
+
+    [Test]
+    public async Task ServerSideApproachAlarms_RoundTrips_OffAndBackOn()
+    {
+        // Both directions of the toggle persist. The off->on round
+        // trip matters specifically: a helm who flipped off and later
+        // wants the server-side cue back must see it stick across a
+        // reload, not silently revert to whichever direction the
+        // refactor of the day "forgot" to write.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetServerSideApproachAlarmsAsync(false);
+        var svc2 = new AppSettingsService(kv);
+        await svc2.InitializeAsync();
+        await Assert.That(svc2.ServerSideApproachAlarms).IsFalse();
+
+        await svc2.SetServerSideApproachAlarmsAsync(true);
+        var svc3 = new AppSettingsService(kv);
+        await svc3.InitializeAsync();
+        await Assert.That(svc3.ServerSideApproachAlarms).IsTrue();
+    }
+
+    [Test]
+    public async Task ServerSideApproachAlarms_PersistsUnderVersionedKey()
+    {
+        // Pin the exact KV key so a future migration / rename can't
+        // silently drop helm overrides. The .v1 suffix follows the
+        // convention every other persisted bool uses on this service
+        // (keepScreenAwake.v1, showAutopilotHud.v1, ...). Drift here
+        // means a working helm override gets ignored on next boot.
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+        await svc.SetServerSideApproachAlarmsAsync(false);
+
+        await Assert.That(await kv.GetAsync("serverSideApproachAlarms.v1"))
+            .IsEqualTo("false");
+    }
+
     [Test]
     public async Task PreferMagneticHeadingAndCourse_RoundTrip()
     {

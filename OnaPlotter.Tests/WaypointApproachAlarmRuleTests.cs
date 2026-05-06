@@ -25,8 +25,21 @@ public class WaypointApproachAlarmRuleTests
         return nav;
     }
 
+    // Builds the evaluation context every below-the-line test in this
+    // file uses. Note the explicit `ServerSideApproachAlarms = false`
+    // override: FakeSettings defaults this to true to mirror prod (the
+    // helm runs server-side approach notifications by default), but
+    // every test below exercises the CLIENT rule's behaviour and would
+    // be muted by the gate without this override. The two tests that
+    // pin the gate's true-branch (ServerSideApproachAlarms_Mutes_Client_Rule
+    // and Toggling_ServerSide_Off_ResetsLatch_So_FreshFire) build their
+    // own contexts inline rather than going through this helper.
     private static AlarmEvaluationContext Ctx(NavigationData nav, double radius)
-        => new(nav, [], new FakeSettings { WaypointArrivalRadiusMeters = radius },
+        => new(nav, [], new FakeSettings
+            {
+                WaypointArrivalRadiusMeters = radius,
+                ServerSideApproachAlarms = false,
+            },
             DateTime.UtcNow, _ => false);
 
     [Test]
@@ -181,23 +194,46 @@ public class WaypointApproachAlarmRuleTests
     public async Task Toggling_ServerSide_Off_ResetsLatch_So_FreshFire()
     {
         // The gate's _alarmedFor reset is what lets the helm flip the
-        // toggle off mid-passage and still see a banner on the NEXT
-        // tick rather than waiting for the next entry into the radius.
+        // toggle off mid-passage on the SAME waypoint they were already
+        // alarmed for client-side, and still see a banner on the next
+        // tick. Without the reset, the latch from the prior client-side
+        // fire would suppress output until the boat left the radius or
+        // the next leg activated.
+        //
+        // The sequence below is what makes this test load-bearing: we
+        // first FIRE client-side so the latch is set, then go through
+        // server-on, then back to server-off on the SAME waypoint. If
+        // the gate's `_alarmedFor = (null, null)` line is deleted, the
+        // final assertion goes red because the latch from step 1 is
+        // still in place. (Without step 1, the latch starts already
+        // null and the test is a tautology.)
         var rule = new WaypointApproachAlarmRule();
         var nav = BuildNav(47.4, 8.5, distMeters: 30);
-        // Server-side ON: rule mutes; latch resets internally.
+
+        // 1. Server-side OFF: client fires once, latches on the
+        //    waypoint identity.
+        var clientCtx = new AlarmEvaluationContext(nav, [],
+            new FakeSettings { WaypointArrivalRadiusMeters = 50,
+                               ServerSideApproachAlarms = false },
+            DateTime.UtcNow, _ => false);
+        await Assert.That(rule.Check(clientCtx)).IsNotNull();
+        // 2. Confirm the latch is set: a follow-up tick on the same
+        //    waypoint stays silent (this is the "don't re-fire" contract
+        //    pinned by Does_Not_Re_Fire_While_Still_Inside above; we
+        //    re-verify it here so step 4 is unambiguous).
+        await Assert.That(rule.Check(clientCtx)).IsNull();
+
+        // 3. Helm flips toggle ON: the gate must both mute the rule AND
+        //    clear _alarmedFor so step 4 isn't blocked by the stale
+        //    latch from step 1.
         var serverOnCtx = new AlarmEvaluationContext(nav, [],
             new FakeSettings { WaypointArrivalRadiusMeters = 50,
                                ServerSideApproachAlarms = true },
             DateTime.UtcNow, _ => false);
         await Assert.That(rule.Check(serverOnCtx)).IsNull();
 
-        // Helm flips toggle off: same waypoint, same distance -- the
-        // latch was cleared so the next Check fires.
-        var serverOffCtx = new AlarmEvaluationContext(nav, [],
-            new FakeSettings { WaypointArrivalRadiusMeters = 50,
-                               ServerSideApproachAlarms = false },
-            DateTime.UtcNow, _ => false);
-        await Assert.That(rule.Check(serverOffCtx)).IsNotNull();
+        // 4. Helm flips back OFF on the SAME waypoint, SAME distance.
+        //    Fires only because step 3 cleared the latch.
+        await Assert.That(rule.Check(clientCtx)).IsNotNull();
     }
 }
