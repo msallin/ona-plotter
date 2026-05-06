@@ -1,0 +1,34 @@
+# Overlay on docker-compose.dev.yml that mounts a freshly-built
+# OnaPlotter staging bundle into the SignalK container as a webapp,
+# so the helm can browse the new build at
+#   http://localhost:3000/signalk-onaplotter/
+# alongside the SK admin UI on the same instance.
+#
+# Usage (PowerShell or bash):
+#   pwsh ./deploy/stage-only.ps1   # builds + stages deploy/staging/signalk-onaplotter
+#   docker compose -f docker/docker-compose.dev.yml -f docker/docker-compose.testing.yml up -d
+#   docker compose -f docker/docker-compose.dev.yml -f docker/docker-compose.testing.yml down
+#
+# Re-deploy a fresh build:
+#   pwsh ./deploy/stage-only.ps1
+#   docker compose -f docker/docker-compose.dev.yml -f docker/docker-compose.testing.yml restart sk
+#
+# The mount is read-only from the container's perspective; the helm
+# is editing the bundle on the host via the build pipeline, not
+# in-place inside the container.
+#
+# SignalK auto-discovers webapps at startup by scanning
+# node_modules for packages with the "signalk-webapp" keyword. Our
+# staged bundle has package.json with both signalk-webapp + plugin
+# keywords (see deploy/package.json.template), so the SK admin UI
+# shows OnaPlotter under Webapps and the SPA fallback (deploy/index.js)
+# is wired automatically.
+
+services:
+  sk:
+    volumes:
+      # Mount the staged bundle as a webapp under
+      # /home/node/.signalk/node_modules. SK's standard webapp scan
+      # picks it up on startup; the plugin half adds the Blazor SPA
+      # fallback for client-routed deep links.
+      - ../deploy/staging/signalk-onaplotter:/home/node/.signalk/node_modules/signalk-onaplotter:ro
