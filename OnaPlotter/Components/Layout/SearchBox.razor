@@ -163,6 +163,7 @@
             _results = [];
             _open = false;
             _loading = false;
+            StateHasChanged();
             return;
         }
 
@@ -176,24 +177,44 @@
 
         _loading = true;
         _open = true;
+        // Render the spinner + open-dropdown state immediately. Without
+        // an explicit StateHasChanged Blazor only renders when the
+        // outer Task completes, which is AFTER SearchAsync returns --
+        // so the helm never sees a spinner during the in-flight call.
+        StateHasChanged();
 
         IReadOnlyList<PlaceResult> results;
         try
         {
             results = await Search.SearchAsync(query);
         }
-        catch (OperationCanceledException)
+        catch
         {
-            return;
+            // Belt + braces: the IPlaceSearchService contract is
+            // "empty list on transient failure", so no implementation
+            // SHOULD throw, but a regression in any decorator (own /
+            // caching / fallback / photon / nominatim) would surface
+            // as a dropdown that stops updating until the helm resets
+            // the box. Catch everything, treat as empty.
+            results = [];
         }
 
         // Stale check: if a newer keystroke has bumped the counter
-        // while this search was in flight, drop the result.
+        // while this search was in flight, the newer HandleInput
+        // owns the next state update -- bail without touching
+        // _loading / _results so we don't fight it. The newer one
+        // will set _loading=true (idempotent) and eventually commit
+        // its own results.
         if (requestId != _requestId) return;
 
         _results = results;
         _highlight = 0;
         _loading = false;
+        // Explicit render so the new results are committed to the
+        // DOM at the EXACT moment we set the state. Belt-and-braces
+        // against any future Blazor lifecycle change that defers
+        // implicit post-handler renders.
+        StateHasChanged();
     }
 
     private async Task OnKeyDown(KeyboardEventArgs e)
