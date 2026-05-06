@@ -3,7 +3,13 @@
   "allow_readonly": true,
   "expiration": "1d",
   "secretKey": "dev-secret-not-for-production",
-  "users": [],
+  "users": [
+    {
+      "username": "admin",
+      "type": "admin",
+      "password": "$2a$10$GkRzD0qM16SgjXkcKbP4ZeZK8S3MyFyte9g0Z4nyUSdhVhJyPa4CO"
+    }
+  ],
   "devices": [],
   "immutableConfig": false,
   "acls": []
