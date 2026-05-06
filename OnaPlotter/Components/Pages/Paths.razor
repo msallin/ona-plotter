@@ -135,11 +135,28 @@
                 new("navigation.headingMagnetic", "Compass HUD when Settings prefers Magnetic",
                     "Fluxgate / rate compass via <code>signalk-n2k</code>",
                     GetValue: d => DegFromRad(d.HeadingMagnetic)),
-                new("navigation.anchor.maxRadius", "Anchor-watch circle size",
-                    "<code>signalk-anchoralarm-plugin</code>",
+            ]),
+            // OnaPlotter's anchor flow is plugin-driven end-to-end:
+            // Drop POSTs /plugins/anchoralarm/dropAnchor, the radius
+            // PUT lands on navigation.anchor.maxRadius, Raise PUTs
+            // the position to null. Without v2.0.0+ of the plugin
+            // (Settings -> SignalK admin -> App Store -> Anchor
+            // Alarm) the helm sees "plugin v2.0.0+ required" toasts
+            // on Drop / Set / Raise. The legacy JS-only manual
+            // fallback was removed so the alarm path is unambiguous:
+            // server-armed or no anchor at all.
+            new PathGroup("Anchor (signalk-anchoralarm-plugin v2.0.0+ REQUIRED)",
+            [
+                new("navigation.anchor.position", "Anchor pin on chart, drag-alarm reference point",
+                    "<code>signalk-anchoralarm-plugin</code> v2.0.0+ (POST /plugins/anchoralarm/dropAnchor)",
+                    GetValue: d => d.AnchorActive
+                        ? $"{d.AnchorLatitude:F5}, {d.AnchorLongitude:F5}"
+                        : null),
+                new("navigation.anchor.maxRadius", "Anchor-watch alarm circle size",
+                    "<code>signalk-anchoralarm-plugin</code> v2.0.0+ (PUT navigation.anchor.maxRadius)",
                     GetValue: d => Metres(d.AnchorMaxRadius, "F1")),
-                new("navigation.anchor.currentRadius", "Distance-from-anchor HUD",
-                    "<code>signalk-anchoralarm-plugin</code>",
+                new("navigation.anchor.currentRadius", "Distance-from-anchor HUD, drag detection",
+                    "<code>signalk-anchoralarm-plugin</code> v2.0.0+",
                     GetValue: d => Metres(d.AnchorCurrentRadius, "F1")),
             ]),
             new PathGroup("Environment (sensors)",

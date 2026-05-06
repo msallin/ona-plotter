@@ -148,20 +148,16 @@
     /// <c>IAnchorAlarmApi.DropAtCurrentPositionAsync</c>.</summary>
     [Parameter] public EventCallback OnDrop { get; set; }
 
-    /// <summary>Helm tapped a numeric chip -- fires immediately, no
-    /// separate Set tap. Parent calls
-    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(radius)</c>. Live-commit
-    /// UX: tapping a chip while the alarm is armed adjusts the
-    /// radius in place; the helm sees the chart circle resize as
-    /// the server delta echoes back.</summary>
+    /// <summary>Helm tapped a chip (numeric OR Auto) -- fires
+    /// immediately with the radius value to commit. Parent calls
+    /// <c>IAnchorAlarmApi.SetMaxRadiusAsync(radius)</c>. The Auto
+    /// chip computes its value from <see cref="AutoPreviewRadius"/>
+    /// (current armed radius + 5 m, or distance-derived on first
+    /// arming); numeric chips pass their face value. Both routes
+    /// land on the same PUT, which keeps the wire path uniform
+    /// and means tapping Auto repeatedly grows the radius in 5 m
+    /// steps without a separate plugin endpoint.</summary>
     [Parameter] public EventCallback<int> OnSetRadius { get; set; }
-
-    /// <summary>Helm tapped the Auto chip -- fires immediately.
-    /// Parent calls <c>IAnchorAlarmApi.AutoSetRadiusAsync()</c>.
-    /// Tapping Auto twice after the boat drifts further out is the
-    /// "recompute" gesture (each tap re-POSTs, plugin uses fresh
-    /// distance).</summary>
-    [Parameter] public EventCallback OnAutoSetRadius { get; set; }
 
     /// <summary>Cancel: parent closes the panel. In SetRadius mode
     /// this leaves the dropped pin in place server-side; the helm
@@ -219,14 +215,21 @@
         await OnSetRadius.InvokeAsync(radius);
     }
 
-    /// <summary>Tap Auto -- fires the Auto-set commit immediately
-    /// (POST /plugins/anchoralarm/setRadius). Plugin computes from
-    /// current distance + fudge factor. Tapping Auto repeatedly is
-    /// the "boat drifted further, recompute" gesture.</summary>
+    /// <summary>Tap Auto -- fires OnSetRadius with the previewed
+    /// value (current armed radius + 5 m, or distance-derived on
+    /// first arming). Each tap grows the radius by 5 m via PUT
+    /// maxRadius -- the "alarm circle just expanded" gesture for
+    /// when the boat has drifted further than the previous radius.
+    /// Skipped when the parent hasn't computed a preview yet
+    /// (Data missing) so a tap on a placeholder doesn't ship a
+    /// nonsense value.</summary>
     private async Task OnPickAuto()
     {
         if (Busy) return;
-        await OnAutoSetRadius.InvokeAsync();
+        if (AutoPreviewRadius is int r)
+        {
+            await OnSetRadius.InvokeAsync(r);
+        }
     }
 
     private async Task OnDropClicked()

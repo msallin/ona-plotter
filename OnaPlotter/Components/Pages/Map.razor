@@ -74,14 +74,11 @@
             BigType="Settings.BigType"
             TideVisible="Settings.TideVisible"
             Polar="Polar"
-            ManualAnchorActive="anchorManualActive"
-            ManualAnchorRadiusMeters="Settings.ManualAnchorRadiusMeters"
             WaypointArrivalRadiusMeters="Settings.WaypointArrivalRadiusMeters"
             CourseStopping="@(_activeRouteSync?.CourseStopPending ?? false)"
             ActiveRouteDistanceTotal="@(_activeRouteSync?.ActiveRouteDistanceTotal)"
             OnPrevWaypoint="PrevWaypoint"
             OnNextWaypoint="NextWaypoint"
-            OnSetAnchorRadius="SetManualAnchorRadius"
             OnAdjustAnchor="OpenAnchorSetRadiusPanel" />
 
     <MapControls Follow="follow"
@@ -217,11 +214,8 @@
                          SuggestionLabel="@anchorEditSuggestion"
                          Busy="@anchorEditBusy"
                          AutoPreviewRadius="@AutoRadiusPreview()"
-                         CanRaise="@(Data.AnchorActive && Data.AnchorMaxRadius is not null)"
                          OnDrop="OnAnchorPanelDrop"
                          OnSetRadius="OnAnchorPanelSetNumericRadius"
-                         OnAutoSetRadius="OnAnchorPanelAutoSetRadius"
-                         OnRaise="OnAnchorPanelRaise"
                          OnCancel="OnAnchorPanelCancel" />
     }
 
@@ -573,7 +567,6 @@
     /// exist; this is purely a UI computed value.</summary>
     private bool mobActive => NotificationStore.Active
         .Any(n => n.Path.StartsWith("notifications.mob.", StringComparison.Ordinal));
-    private bool anchorManualActive;
     private bool mapInitialized;
     private bool chartPanelOpen;
     private System.Threading.Timer? aisTimer;
@@ -1316,8 +1309,10 @@
         }
     }
 
-    // Anchor state: server anchor takes priority over manual.
-    private bool AnchorButtonActive => Data.AnchorActive || anchorManualActive;
+    // Anchor state: server-driven only (signalk-anchoralarm-plugin
+    // v2.0.0+ is required; the legacy JS-only manual fallback was
+    // removed because the helm explicitly required the plugin).
+    private bool AnchorButtonActive => Data.AnchorActive;
 
     // Anchor alarm: red when current radius exceeds max radius.
     private bool AnchorDragging => Data.AnchorActive
@@ -1384,20 +1379,7 @@
         _anchorSync = new OnaPlotter.Services.Map.ServerAnchorSync(
             _anchorJs,
             isSignalKConnected: () => SignalkClient.IsConnected,
-            raiseTimeoutWarning: msg => Toasts.Warning(msg))
-        {
-            // Server anchor takes priority over manual: when the SK
-            // server's anchor delta arrives, the manual drop has to
-            // clear so the helm doesn't see two overlapping rings.
-            OnServerAnchorAppeared = async () =>
-            {
-                if (anchorManualActive)
-                {
-                    await _anchorJs.ClearAnchorAsync();
-                    anchorManualActive = false;
-                }
-            },
-        };
+            raiseTimeoutWarning: msg => Toasts.Warning(msg));
         _routeJs = new OnaPlotter.Services.Js.MapRouteJs(module);
         // _controlsJs hoisted above _activeRouteSync because the
         // route sync uses it (SetRangeScaleHiddenAsync) to hide the
@@ -3374,15 +3356,6 @@
             return;
         }
 
-        if (anchorManualActive)
-        {
-            // Manual-anchor (JS-only) clear. Arm + confirm already handled
-            // on the button (same as the server-anchor raise above).
-            await _anchorJs.ClearAnchorAsync();
-            anchorManualActive = false;
-            return;
-        }
-
         // No anchor active -- open the Drop panel.
         if (Data.Latitude is null || Data.Longitude is null)
         {
@@ -3419,35 +3392,40 @@
         anchorEditMode = true;
     }
 
-    /// <summary>Client-side preview of what AutoSetRadiusAsync would
-    /// commit -- haversine distance from current GPS to the dropped
-    /// anchor + a small safety margin. Mirrors what the plugin does
-    /// (current distance + fudge factor); the plugin's exact fudge
-    /// factor is helm-configurable server-side so this is a
-    /// reasonable approximation, not the exact value the server will
-    /// land on. Field-study finding: helm wants to see the number
-    /// before committing, even if it's "approximately what Auto will
-    /// set" rather than the exact server result.
-    /// <para>Returns null when no anchor pin is published or no GPS
-    /// fix -- the chip then renders as plain "Auto" (no preview).
-    /// Recomputed on every render via Blazor's normal binding flow,
-    /// so a slow drift mid-decision updates the preview live.</para></summary>
+    /// <summary>Auto chip preview value: the radius the next tap on
+    /// Auto will commit. Two cases:
+    /// <list type="bullet">
+    ///   <item>Already armed (MaxRadius published): current radius
+    ///   rounded up to nearest 5 m, plus 5 m. Each Auto tap grows
+    ///   the alarm circle by 5 m -- the "boat drifted further,
+    ///   extend" gesture in the helm's words.</item>
+    ///   <item>Just dropped, not armed: round-up of current
+    ///   distance from boat to anchor (nearest 5 m). Gives a
+    ///   sensible first-arming value without a fudge factor; helm
+    ///   can tap Auto again to grow.</item>
+    /// </list>
+    /// Returns null when neither path can compute (no anchor pin OR
+    /// no GPS fix); the panel's Auto chip then renders as plain
+    /// "Auto" without the previewed number, and the OnPickAuto
+    /// handler refuses to commit a placeholder.
+    /// <para>Capped at <c>20</c> below so a stale GPS that puts the
+    /// boat right on top of the pin doesn't ship a 5 m alarm
+    /// radius (smaller than helm-typical anchor swing).</para></summary>
     private int? AutoRadiusPreview()
     {
+        if (Data.AnchorMaxRadius is double m && m > 0)
+        {
+            int basis = (int)Math.Ceiling(m / 5.0) * 5;
+            return Math.Max(basis + 5, 20);
+        }
         if (Data.AnchorLatitude is not double aLat
             || Data.AnchorLongitude is not double aLon
             || Data.Latitude is not double lat
             || Data.Longitude is not double lon) return null;
         double distM = OnaPlotter.Utilities.RouteProgress.HaversineMeters(aLat, aLon, lat, lon);
         if (!double.IsFinite(distM) || distM < 0) return null;
-        // Plugin docs: "current distance + fudge factor + safety
-        // margin". Default fudge factor is small (~5 m) but
-        // configurable; 10 m is a reasonable preview-side estimate
-        // that errs on the side of slightly-larger so the helm
-        // isn't surprised by a smaller actual circle. Round up to
-        // the nearest 5 m so the preview number is helm-friendly.
-        int approx = (int)Math.Ceiling((distM + 10.0) / 5.0) * 5;
-        return Math.Max(approx, 20);   // never below the smallest preset
+        int approx = (int)Math.Ceiling(distM / 5.0) * 5;
+        return Math.Max(approx, 20);
     }
 
     /// <summary>Open the panel in Set Radius state. When the anchor
@@ -3483,39 +3461,30 @@
         _ => $"{verb} failed: {r.Error ?? "see browser console"}",
     };
 
-    /// <summary>Step 1: PUT navigation.anchor.position with the helm's
-    /// current GPS. Plugin captures the drop point + arms the
-    /// Incomplete Anchor Alarm timeout. On success the panel closes;
-    /// the helm re-opens it (via the Anchor button) to set the radius
-    /// once the boat has settled.
-    /// <para>Fallback path: when the PUT fails with 404 or 405 (no
-    /// plugin OR v1.x plugin), drop to a JS-only local-only anchor
-    /// at the helm's last-picked radius. Field-study revisit of the
-    /// "fail-loud" decision: Margaret + Jordan both called the
-    /// no-fallback case indefensible -- "at anchor in no-LTE zone,
-    /// 'update the plugin' is not actionable". Local-only mode is
-    /// limited (won't sync to other plotters, no plugin alarms) but
-    /// keeps the helm safe with a working swing-watch ring + audio
-    /// alarm. Auth errors (401/403) DO still fail loud since they
-    /// indicate a permission misconfig, not a missing plugin.</para></summary>
+    /// <summary>Step 1: POST <c>/plugins/anchoralarm/dropAnchor</c>
+    /// with empty body. Plugin captures current GPS as the anchor
+    /// position; <c>maxRadius</c> stays null (unarmed) until the
+    /// helm picks a chip in step 2. Panel auto-flips to SetRadius
+    /// mode on success so the helm doesn't tap Anchor twice.
+    /// <para>Plugin v2.0.0+ is required (see Paths page). Failure
+    /// surfaces a helm-readable toast via
+    /// <see cref="AnchorFailureMessage"/>; no client-side fallback.</para></summary>
     private async Task OnAnchorPanelDrop()
     {
-        if (_anchorJs is null) return;
         // Parent-side busy guard. The child panel's Busy parameter is
         // the primary defence but Blazor's render queue can let a fast
         // double-tap fire OnDropClicked twice before StateHasChanged
         // propagates Busy=true back to the child -- two concurrent
-        // PUTs would land. _anchorRaiseInFlight pattern from RaiseAsync
-        // mirrored here.
+        // POSTs would land.
         if (anchorEditBusy) return;
-        if (Data.Latitude is not double lat || Data.Longitude is not double lon)
+        if (Data.Latitude is null || Data.Longitude is null)
         {
             Toasts.Error("No GPS fix -- can't drop anchor");
             return;
         }
         anchorEditBusy = true;
         ApiResult r;
-        try { r = await AnchorAlarmApi.DropAtCurrentPositionAsync(lat, lon, Data.Depth); }
+        try { r = await AnchorAlarmApi.DropAsync(); }
         catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
 
         if (r.Success)
@@ -3528,16 +3497,10 @@
                 try { await CourseApi.ClearAsync(); }
                 catch (Exception ex) { Toasts.LogException(ex, "Stop course"); }
             }
-            Toasts.Success("Anchor dropped -- back down + arm the alarm radius");
+            Toasts.Success("Anchor dropped -- back down, then tap Auto or pick a radius");
             // Flip the panel directly to SetRadius mode so the helm
-            // doesn't have to tap Anchor a second time to reopen it.
-            // Previous flow closed the panel + relied on a second tap
-            // -- but the second tap then raced with the Anchor
-            // button's "always raise" semantics, trapping the helm
-            // in a half-armed state. The flip keeps the Drop -> Set
-            // transition inside one panel session.
-            // Auto chip is the default (UnseededInitialRadius sentinel);
-            // see OpenAnchorSetRadiusPanel for the rationale.
+            // doesn't have to tap Anchor twice. Auto chip is the
+            // default selection (UnseededInitialRadius sentinel).
             anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
             anchorEditSuggestion = OnaPlotter.Utilities.AnchorRadiusHeuristic
                 .DescribeSuggestion(Data.Depth);
@@ -3546,42 +3509,17 @@
             return;
         }
 
-        // Plugin missing / v1.x: fall back to JS-only manual anchor.
-        // Auth errors fail loud (the helm needs to know the difference
-        // between "plugin issue" and "your role can't write").
-        if (r.StatusCode is 404 or 405)
-        {
-            int radiusMeters = (int)Math.Round(Settings.ManualAnchorRadiusMeters);
-            if (Data.HasActiveCourse)
-            {
-                try { await CourseApi.ClearAsync(); }
-                catch (Exception ex) { Toasts.LogException(ex, "Stop course"); }
-            }
-            try { await _anchorJs.SetAnchorAsync(lat, lon, radiusMeters); }
-            catch (Exception ex)
-            {
-                Toasts.LogException(ex, "Set local anchor");
-                anchorEditBusy = false;
-                return;
-            }
-            anchorManualLat = lat;
-            anchorManualLon = lon;
-            anchorManualActive = true;
-            Toasts.Warning(
-                $"Local-only anchor at {radiusMeters} m (server plugin v2.0.0+ unavailable). " +
-                "Won't sync to other plotters; tweak radius from the HUD card.");
-            anchorEditMode = false;
-            anchorEditBusy = false;
-            return;
-        }
-
         Toasts.Error(AnchorFailureMessage("Drop", r));
         anchorEditBusy = false;
     }
 
-    /// <summary>Step 2 (numeric chip): PUT navigation.anchor.maxRadius
-    /// with the helm-chosen value. Plugin arms the alarm circle
-    /// + starts publishing currentRadius for drift monitoring.</summary>
+    /// <summary>Step 2: PUT <c>navigation.anchor.maxRadius</c> with
+    /// the helm-chosen value. Plugin arms the alarm circle + starts
+    /// publishing currentRadius for drift monitoring. Used for both
+    /// numeric-chip taps and the Auto chip (panel computes Auto's
+    /// value as current+5 m and routes through this same handler).
+    /// Subsequent calls adjust the radius in place -- no raise +
+    /// re-drop needed.</summary>
     private async Task OnAnchorPanelSetNumericRadius(int radiusMeters)
     {
         if (anchorEditBusy) return;     // double-tap guard, see OnAnchorPanelDrop
@@ -3592,120 +3530,32 @@
 
         if (r.Success)
         {
-            // Persist the choice so the next drop's heuristic
-            // fallback (no-depth case) suggests this value.
+            // Persist the choice so the heuristic-default on a future
+            // depth-less drop still has a sensible value to suggest.
             await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
-            Toasts.Success($"Anchor armed: {radiusMeters} m radius");
-            anchorEditMode = false;
             anchorEditBusy = false;
+            // Panel stays open so the helm can keep adjusting (live-
+            // commit UX). The active chip will track the published
+            // maxRadius via InitialRadiusMeters on the next render.
             return;
         }
         Toasts.Error(AnchorFailureMessage("Set radius", r));
         anchorEditBusy = false;
     }
 
-    /// <summary>Step 2 (Auto chip): POST /plugins/anchoralarm/setRadius
-    /// with empty body. Plugin computes the radius from current GPS
-    /// distance to the drop point + its fudge factor. Note this call
-    /// is non-idempotent: the plugin reads "now" each time, so two
-    /// rapid taps yield two different radii (whichever lands second
-    /// wins). The busy guard below collapses double-taps; the helm
-    /// also sees a "Computing..." Busy state on the child until the
-    /// maxRadius delta echoes back.</summary>
-    private async Task OnAnchorPanelAutoSetRadius()
-    {
-        if (anchorEditBusy) return;     // double-tap guard, see OnAnchorPanelDrop
-        anchorEditBusy = true;
-        ApiResult r;
-        try { r = await AnchorAlarmApi.AutoSetRadiusAsync(); }
-        catch (Exception ex) { r = ApiResult.Fail(ex.Message); }
-
-        if (r.Success)
-        {
-            Toasts.Success("Anchor armed -- radius computed by plugin");
-            anchorEditMode = false;
-            anchorEditBusy = false;
-            return;
-        }
-        Toasts.Error(AnchorFailureMessage("Auto-set radius", r));
-        anchorEditBusy = false;
-    }
-
     private void OnAnchorPanelCancel()
     {
-        // Renamed to "Close" in the UI per the field-study finding
-        // that "Cancel" misled both sailors into thinking the drop
-        // would be aborted. Behaviour here is unchanged: the dropped
-        // pin stays armed server-side; the helm can re-open the
-        // panel any time to finish step 2 (the plugin's Incomplete
-        // Anchor Alarm timeout is the safety net for "helm walks
-        // away forgetting step 2"). Field-study sailors understood
-        // "Close" as "I'm just dismissing this card".
+        // "Close" in the UI per the field-study finding that
+        // "Cancel" misled both sailors into thinking the drop
+        // would be aborted. Behaviour here: dismiss the panel; the
+        // dropped pin stays armed server-side. The plugin's
+        // Incomplete Anchor Alarm timeout is the safety net for
+        // "helm walks away forgetting step 2". Helm raises via
+        // the Anchor button (arm-then-confirm); to adjust the
+        // radius, helm taps the Anchor Watch HUD card to re-open
+        // this panel.
         anchorEditMode = false;
         anchorEditBusy = false;
-    }
-
-    /// <summary>Raise from inside the SetRadius panel (helm tapped
-    /// the in-panel Raise button after the arm-then-confirm two-tap
-    /// sequence resolved). Mirrors the previous Anchor-button raise
-    /// path: arm visual feedback BEFORE the PUT so the helm sees
-    /// progress during the in-flight window, watchdog ServerAnchorSync
-    /// catches a server that doesn't echo the clear.</summary>
-    private async Task OnAnchorPanelRaise()
-    {
-        if (_anchorJs is null) return;
-        if (_anchorRaiseInFlight) return;
-        _anchorRaiseInFlight = true;
-        // Close the panel immediately on raise so the helm sees
-        // the action took effect; the watchdog + chart marker dim
-        // carry the visual feedback during the in-flight PUT.
-        anchorEditMode = false;
-        anchorEditBusy = false;
-        _anchorSync?.MarkRaisePending();
-        try { await _anchorJs.SetAnchorRaisingAsync(true); }
-        catch (Exception ex) { Toasts.LogException(ex, "Set anchor raising"); }
-        ApiResult r;
-        try
-        {
-            try { r = await AnchorAlarmApi.RaiseAsync(); }
-            catch (Exception ex)
-            {
-                Toasts.LogException(ex, "Raise anchor");
-                return;
-            }
-            if (!r.Success)
-            {
-                _anchorSync?.CancelRaisePending();
-                try { await _anchorJs.SetAnchorRaisingAsync(false); }
-                catch (Exception ex) { Toasts.LogException(ex, "Reset anchor raising"); }
-                Toasts.Error(AnchorFailureMessage("Raise", r));
-                return;
-            }
-            Toasts.Success("Anchor raised");
-        }
-        finally
-        {
-            _anchorRaiseInFlight = false;
-        }
-    }
-
-    // Origin of the manual anchor drop. Captured at OnAnchorPanelDrop
-    // fallback time (PUT 404/405 -> drop a JS-only local-only anchor)
-    // so the HUD's chip row can re-draw the circle at the same centre
-    // without needing a fresh GPS fix. Default-init so CS0649 stays
-    // silent before the first manual drop.
-    private double anchorManualLat = 0;
-    private double anchorManualLon = 0;
-
-    /// <summary>
-    /// Updates the manual anchor's radius live without clearing the drop
-    /// point. Called from the inline chips on the anchor HUD card.
-    /// </summary>
-    private async Task SetManualAnchorRadius(double radiusMeters)
-    {
-        if (!anchorManualActive || _anchorJs is null) return;
-        await Settings.SetManualAnchorRadiusMetersAsync(radiusMeters);
-        await _anchorJs.SetAnchorAsync(anchorManualLat, anchorManualLon, radiusMeters);
     }
 
     private async Task ZoomToTrack()

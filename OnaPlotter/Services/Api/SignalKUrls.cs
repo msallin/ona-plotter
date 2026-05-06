@@ -74,11 +74,15 @@ public static class SignalKUrls
     public const string AnchorPositionPath = "/signalk/v1/api/vessels/self/navigation/anchor/position";
     public const string AnchorMaxRadiusPath = "/signalk/v1/api/vessels/self/navigation/anchor/maxRadius";
 
-    /// <summary>Plugin-specific endpoint for "compute the radius from
-    /// my current distance to the drop point". No SK-spec PUT exists
-    /// for this; the plugin owns the geometry. Body is empty <c>{}</c>;
-    /// plugin uses its own fudge factor + safety margin.</summary>
-    public const string AnchorAlarmAutoSetRadiusPath = "/plugins/anchoralarm/setRadius";
+    /// <summary>Plugin-specific drop endpoint. Empty JSON body sets
+    /// the anchor position from the current GPS without committing
+    /// a radius -- the helm's preferred two-step flow (drop now,
+    /// pick radius after backing down). The standard SK PUT path
+    /// (<see cref="AnchorPositionPath"/>) also works but the plugin
+    /// flow matches the plugin's admin UI behaviour exactly +
+    /// keeps the lat/lon read centralised in the plugin (no client
+    /// guess against a possibly-stale GPS sample).</summary>
+    public const string AnchorAlarmDropAnchorPath = "/plugins/anchoralarm/dropAnchor";
 
     public const string AutopilotStatePath = "/signalk/v2/api/vessels/self/steering/autopilot/state";
     public const string AutopilotAdjustHeadingPath = "/signalk/v2/api/vessels/self/steering/autopilot/actions/adjustHeading";

@@ -173,21 +173,6 @@ public class ServerAnchorSyncTests
     }
 
     [Test]
-    public async Task On_Server_Anchor_Appeared_Callback_Runs_Before_Draw()
-    {
-        // Page wires a callback to clear any in-progress manual drop
-        // before the server one renders, so the helm doesn't see two
-        // overlapping rings.
-        var (sync, js, _, _) = NewSync();
-        bool callbackRan = false;
-        sync.OnServerAnchorAppeared = () => { callbackRan = true; return Task.CompletedTask; };
-
-        await sync.SyncAsync(WithAnchor(54.5, 11.2, 30));
-
-        await Assert.That(callbackRan).IsTrue();
-    }
-
-    [Test]
     public async Task Raise_Pending_Watchdog_Fires_After_Timeout()
     {
         // Helm tapped raise; controller arms the watchdog. SK delta

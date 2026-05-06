@@ -770,7 +770,7 @@ public partial class Map
                 // they may be planning the next leg from the hook),
                 // but we DO surface a non-blocking note so the helm
                 // remembers to raise before getting under way.
-                if (Data.AnchorActive || anchorManualActive)
+                if (Data.AnchorActive)
                 {
                     Toasts.Show("Anchor still active -- raise it before getting under way to silence the drag alarm",
                         ToastLevel.Info, durationSec: 8);

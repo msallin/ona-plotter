@@ -47,18 +47,12 @@ public sealed class ServerAnchorSync
     /// but free is free.</summary>
     private bool _incompletePushed;
 
-    /// <summary>Visible state for the page: read-only view of whether the
-    /// last sync left a server-anchor visualisation on the map. Used by
-    /// the page's <c>ToggleAnchor</c> flow to decide whether the next
-    /// tap should raise via REST (server-driven anchor) or clear a
-    /// manual drop.</summary>
+    /// <summary>Visible state for the page: read-only view of whether
+    /// the last sync left a server-anchor visualisation on the map.
+    /// Used by the page's <c>ToggleAnchor</c> flow to decide whether
+    /// the next tap should raise via REST (anchor on screen) or open
+    /// the Drop panel (no anchor).</summary>
     public bool ServerAnchorDrawn => _serverAnchorDrawn;
-
-    /// <summary>Optional callback invoked when a server anchor first
-    /// appears -- the page uses it to clear an in-progress manual
-    /// anchor drop so the helm doesn't see two overlapping rings. Null
-    /// in tests that don't care.</summary>
-    public Func<Task>? OnServerAnchorAppeared { get; set; }
 
     public ServerAnchorSync(
         IMapAnchorJs anchorJs,
@@ -113,16 +107,7 @@ public sealed class ServerAnchorSync
             double radius = data.AnchorMaxRadius ?? 30;
             if (!_serverAnchorDrawn)
             {
-                // Server anchor just appeared -- clear any in-progress
-                // manual drop first so the helm doesn't see two
-                // overlapping rings, then draw the server one. The
-                // manual-clear callback is page-side because the manual
-                // anchor's rendering is also there (a page field
-                // captured at toggle-on time).
-                if (OnServerAnchorAppeared is not null)
-                {
-                    await OnServerAnchorAppeared();
-                }
+                // Server anchor just appeared -- draw it on the map.
                 await _anchorJs.SetAnchorAsync(
                     data.AnchorLatitude ?? 0,
                     data.AnchorLongitude ?? 0,

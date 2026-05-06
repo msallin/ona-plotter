@@ -4,23 +4,26 @@ using OnaPlotter.Components.Map.Hud;
 namespace OnaPlotter.Tests.Components;
 
 /// <summary>
-/// Component tests for HudAnchorCard. Same pattern as HudRouteCardTests:
-/// pin the snapshot-equality contract and the render branches for the
-/// server vs manual anchor cases.
+/// Component tests for HudAnchorCard. Pin the snapshot-equality
+/// contract (drives Blazor's render-skip optimisation), the render
+/// branches for distance / radius / peak / bearing, and the
+/// tap-to-adjust gesture wired through OnAdjust. Manual JS-only
+/// fallback was removed when v2.0.0+ of the anchor plugin became
+/// the only supported source -- the card has no chip row any more
+/// and the snapshot record dropped its Manual + ManualRadiusMeters
+/// fields. Tests pin the post-cleanup contract.
 /// </summary>
 public class HudAnchorCardTests
 {
     private static HudAnchorCard.AnchorHudSnapshot Snap(
         bool visible = true,
         bool dragging = false,
-        bool manual = false,
-        double manualRadius = 30,
         double? currentRadius = 12,
         double? maxRadius = 30,
         string? dormantReason = null,
         double? peakRadius = null,
         double? bearingTrue = null) =>
-        new(visible, dragging, manual, manualRadius, currentRadius, maxRadius,
+        new(visible, dragging, currentRadius, maxRadius,
             dormantReason, peakRadius, bearingTrue);
 
     [Test]
@@ -33,38 +36,17 @@ public class HudAnchorCardTests
     }
 
     [Test]
-    public async Task ServerDriven_ShowsDistAndRadius()
+    public async Task Visible_ShowsDistAndRadius()
     {
-        // Server-driven = Manual:false, plugin feeds maxRadius + currentRadius.
+        // Plugin feeds maxRadius + currentRadius; card renders both.
+        // Card visibility is parent-gated on AnchorActive AND
+        // MaxRadius set, so we don't need to pin "no chips when
+        // server owns the radius" -- there are no chips at all.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(manual: false)));
+            .Add(x => x.Snapshot, Snap()));
         await Assert.That(cut.Markup).Contains("Dist");
         await Assert.That(cut.Markup).Contains("Radius");
-        // Chips must not render when server owns the radius.
-        await Assert.That(cut.FindAll(".anchor-radius-chips").Count).IsEqualTo(0);
-    }
-
-    [Test]
-    public async Task Manual_ShowsRadiusChipsWhenCallbackProvided()
-    {
-        // Manual drop on this client: chips row + OnSetRadius wired.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(manual: true, currentRadius: null, maxRadius: null))
-            .Add(x => x.OnSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory.Create<double>(this, _ => { })));
-        await Assert.That(cut.FindAll(".anchor-radius-chips").Count).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task Manual_NoChips_WhenCallbackMissing()
-    {
-        // If the consumer doesn't wire OnSetRadius we still render the
-        // card but suppress the chips -- tapping them would be a no-op.
-        using var ctx = new Bunit.TestContext();
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(manual: true)));
-        await Assert.That(cut.FindAll(".anchor-radius-chips").Count).IsEqualTo(0);
     }
 
     [Test]
@@ -117,8 +99,8 @@ public class HudAnchorCardTests
     [Test]
     public async Task PeakRadius_HiddenWhenNull()
     {
-        // Manual anchors don't track peak (no plugin, no
-        // currentRadius). The card should omit the row entirely
+        // Plugin hasn't published a peak yet (just-armed, or older
+        // plugin version). The card should omit the row entirely
         // rather than render an empty placeholder.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudAnchorCard>(p => p
@@ -136,25 +118,51 @@ public class HudAnchorCardTests
         await Assert.That(a).IsNotEqualTo(b);
     }
 
-    [Test]
-    public async Task ChipClick_Fires_OnSetRadius_WithValue()
-    {
-        using var ctx = new Bunit.TestContext();
-        double? gotRadius = null;
-        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
-            .Add(x => x.Snapshot, Snap(manual: true, currentRadius: null, maxRadius: null))
-            .Add(x => x.OnSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory.Create<double>(this, r => gotRadius = r)));
+    // ---- Tap-to-adjust ----
 
-        // First chip in the preset list is 20. Clicking it reports 20 to
-        // the consumer.
-        cut.FindAll(".anchor-radius-chips .map-btn")[0].Click();
-        await Assert.That(gotRadius).IsEqualTo(20);
+    [Test]
+    public async Task OnAdjust_NotWired_CardIsNotInteractive()
+    {
+        // No OnAdjust -> the card has no role=button, no clickable
+        // class. Card stays read-only, which is fine: the helm can
+        // still raise via the Anchor button on the bottom bar.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap()));
+        var card = cut.Find(".anchor-panel");
+        await Assert.That(card.GetAttribute("role")).IsNull();
+        await Assert.That(card.ClassList.Contains("anchor-panel-tappable")).IsFalse();
     }
+
+    [Test]
+    public async Task OnAdjust_Wired_CardIsTappableAndFires()
+    {
+        // OnAdjust wired -> the whole card becomes a button: role,
+        // tappable class, click fires the callback. This is the
+        // dedicated adjust gesture (the bottom-bar Anchor button is
+        // the dedicated raise gesture, kept separate so the helm
+        // doesn't risk a misclick raising the anchor when they
+        // meant to nudge the radius).
+        using var ctx = new Bunit.TestContext();
+        bool fired = false;
+        var cut = ctx.RenderComponent<HudAnchorCard>(p => p
+            .Add(x => x.Snapshot, Snap())
+            .Add(x => x.OnAdjust, Microsoft.AspNetCore.Components.EventCallback.Factory
+                .Create(this, () => fired = true)));
+        var card = cut.Find(".anchor-panel");
+        await Assert.That(card.GetAttribute("role")).IsEqualTo("button");
+        await Assert.That(card.ClassList.Contains("anchor-panel-tappable")).IsTrue();
+
+        card.Click();
+        await Assert.That(fired).IsTrue();
+    }
+
+    // ---- Bearing ----
 
     [Test]
     public async Task Bearing_HiddenWhenNull()
     {
-        // No bearing data (manual flow, or first delta after drop
+        // No bearing data (older plugin, or first delta after drop
         // hasn't arrived). The needle row should NOT render so the
         // card height stays unchanged.
         using var ctx = new Bunit.TestContext();
@@ -250,5 +258,4 @@ public class HudAnchorCardTests
         var b = Snap(bearingTrue: 1.5);
         await Assert.That(a).IsNotEqualTo(b);
     }
-
 }

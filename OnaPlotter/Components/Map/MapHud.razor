@@ -621,7 +621,6 @@
 <div class="hud-stack hud-stack-bc">
     <OnaPlotter.Components.Map.Hud.HudAnchorCard
         Snapshot="@BuildAnchorSnapshot()"
-        OnSetRadius="OnSetAnchorRadius"
         OnAdjust="OnAdjustAnchor" />
 
     <OnaPlotter.Components.Map.Hud.HudRouteCard
@@ -669,15 +668,6 @@
     /// exactly what number will trigger the audible alarm. 0 to hide.</summary>
     [Parameter] public double DepthAlarmThreshold { get; set; }
 
-    /// <summary>True when the user dropped a manual anchor via the Anchor
-    /// button (as opposed to the plugin-driven server-side alarm).
-    /// Enables the inline radius chips.</summary>
-    [Parameter] public bool ManualAnchorActive { get; set; }
-
-    /// <summary>Current manual-anchor radius (metres). Shown on the HUD
-    /// card and highlighted in the chip row.</summary>
-    [Parameter] public double ManualAnchorRadiusMeters { get; set; } = 30;
-
     /// <summary>User's configured waypoint arrival radius in metres;
     /// 0 means the APPROACH alarm is disabled. Drives the route-card
     /// dormancy hint so a silent rule doesn't surprise the helm.</summary>
@@ -705,13 +695,8 @@
     [Parameter] public EventCallback OnNextWaypoint { get; set; }
 
 
-    /// <summary>Invoked when the user picks a new radius from the inline
-    /// chips. The caller persists it to IAppSettings and re-draws the
-    /// anchor circle via JS.</summary>
-    [Parameter] public EventCallback<double> OnSetAnchorRadius { get; set; }
     /// <summary>Helm tapped the Anchor Watch HUD card -- parent
-    /// opens the SetRadius panel for radius adjustment. Server-
-    /// armed flow only; manual flow keeps its inline chip row.</summary>
+    /// opens the SetRadius panel for radius adjustment.</summary>
     [Parameter] public EventCallback OnAdjustAnchor { get; set; }
 
     /// <summary>Signed depth trend in metres per minute over the last
@@ -1159,19 +1144,22 @@
             // Manual flow always shows the card (it has its own
             // chip-based radius set) so the manual fallback remains
             // intact.
-            Visible: (Data.AnchorActive && Data.AnchorMaxRadius is not null)
-                || ManualAnchorActive,
+            // Card visible only once the alarm is fully ARMED. The
+            // legacy JS-only manual fallback was removed (plugin
+            // v2.0.0+ is required), so AnchorActive + MaxRadius is
+            // the only path. Drop / pre-arm states show the chart
+            // marker's amber-pulse + "RADIUS NOT SET" tooltip
+            // instead.
+            Visible: Data.AnchorActive && Data.AnchorMaxRadius is not null,
             Dragging: AnchorDragging,
-            Manual: ManualAnchorActive,
-            ManualRadiusMeters: ManualAnchorRadiusMeters,
             CurrentRadius: Data.AnchorCurrentRadius,
             MaxRadius: Data.AnchorMaxRadius,
             DormantReason: AnchorTideDormantReason(),
             PeakRadius: Data.AnchorPeakRadius,
             // Bearing-back-to-anchor computed client-side from anchor
-            // pin + own-ship position so the needle works on the
-            // JS-only manual flow too. Null when either endpoint is
-            // missing, which the HUD card uses as the hide signal.
+            // pin + own-ship position. Null when either endpoint is
+            // missing -- the HUD card uses that as the needle's hide
+            // signal.
             BearingTrue: OnaPlotter.Utilities.GeoBearing.RadiansFromTo(
                 Data.Latitude, Data.Longitude,
                 Data.AnchorLatitude, Data.AnchorLongitude));
