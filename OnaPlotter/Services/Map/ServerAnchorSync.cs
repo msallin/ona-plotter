@@ -40,6 +40,12 @@ public sealed class ServerAnchorSync
     private bool _serverAnchorDrawn;
     private double _lastPushedRadius;
     private DateTime? _raisePendingUtc;
+    /// <summary>Tracks the last-pushed "incomplete" state (pin set
+    /// but radius not yet armed). Diffed against the live state on
+    /// each tick so we only push the JS toggle when it actually
+    /// changes -- the JS-side `setAnchorIncomplete` is idempotent
+    /// but free is free.</summary>
+    private bool _incompletePushed;
 
     /// <summary>Visible state for the page: read-only view of whether the
     /// last sync left a server-anchor visualisation on the map. Used by
@@ -68,12 +74,22 @@ public sealed class ServerAnchorSync
 
     /// <summary>
     /// Arms the raise-confirmation watchdog. Called from the page's
-    /// raise path after <c>AnchorAlarmApi.RaiseAsync</c> returns
-    /// success; the next sync tick that still sees
-    /// <c>Data.AnchorActive</c> after <see cref="RaiseTimeoutSec"/>
-    /// fires the warning callback.
+    /// raise path BEFORE <c>AnchorAlarmApi.RaiseAsync</c> awaits so the
+    /// helm sees the visual "raising" feedback during the in-flight
+    /// PUT (HttpClient.Timeout is 8 s; arming after the response left
+    /// the helm with no signal during the wait). The next sync tick
+    /// that still sees <c>Data.AnchorActive</c> after
+    /// <see cref="RaiseTimeoutSec"/> fires the warning callback.
     /// </summary>
     public void MarkRaisePending() => _raisePendingUtc = _utcNow();
+
+    /// <summary>
+    /// Cancels a previously-armed raise watchdog. Called when the PUT
+    /// itself fails (network error, 4xx) so the watchdog doesn't fire
+    /// a misleading "didn't confirm" warning on top of the failure
+    /// toast the page already surfaced.
+    /// </summary>
+    public void CancelRaisePending() => _raisePendingUtc = null;
 
     /// <summary>
     /// Per-tick sync: draws the server anchor when it first appears,
@@ -87,6 +103,13 @@ public sealed class ServerAnchorSync
 
         if (data.AnchorActive)
         {
+            // v2.0.0+ two-step intermediate state: position is pinned
+            // (AnchorActive=true) but the helm hasn't set MaxRadius
+            // yet (or it cleared in transit). Use a placeholder
+            // radius for rendering, but flag the JS layer to render
+            // the pin in "incomplete" amber-pulse styling so the
+            // helm sees the half-armed state on the chart.
+            bool incomplete = data.AnchorMaxRadius is null;
             double radius = data.AnchorMaxRadius ?? 30;
             if (!_serverAnchorDrawn)
             {
@@ -114,6 +137,15 @@ public sealed class ServerAnchorSync
                 // we don't want to thrash that on every tick.
                 await _anchorJs.UpdateAnchorRadiusAsync(radius);
                 _lastPushedRadius = radius;
+            }
+
+            // Diff the incomplete state separately. The JS toggle
+            // is idempotent but the per-tick churn is wasteful, and
+            // diffing makes the wire log easier to read.
+            if (incomplete != _incompletePushed)
+            {
+                await _anchorJs.SetAnchorIncompleteAsync(incomplete);
+                _incompletePushed = incomplete;
             }
 
             // Watchdog: if the helm tapped raise and Data.AnchorActive
@@ -150,6 +182,7 @@ public sealed class ServerAnchorSync
             await _anchorJs.ClearAnchorAsync();
             _serverAnchorDrawn = false;
             _raisePendingUtc = null;
+            _incompletePushed = false;
         }
     }
 }

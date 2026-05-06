@@ -35,4 +35,15 @@ public interface IMapAnchorJs
     /// re-dropping the anchor. Used when the helm dials the radius
     /// up after dropping.</summary>
     Task UpdateAnchorRadiusAsync(double radiusMeters);
+
+    /// <summary>Visually mark the anchor as "drop committed but
+    /// radius not yet set" -- pulsing pin + dashed ring placeholder
+    /// + "RADIUS NOT SET" label. Mirrors v2.0.0+'s two-step flow:
+    /// once the helm taps Drop, the SK plugin's Incomplete Anchor
+    /// Alarm starts ticking server-side, but visually the chart
+    /// previously showed the same pin as a fully-armed anchor.
+    /// Field-study finding (Margaret + Jordan): the dropped-but-
+    /// unarmed state needs to LOOK incomplete on the chart so the
+    /// helm doesn't walk away thinking they're done.</summary>
+    Task SetAnchorIncompleteAsync(bool incomplete);
 }

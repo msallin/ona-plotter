@@ -297,4 +297,71 @@ public class MapHudTests
         public ClockHolder(DateTime now) { Now = now; }
         public DateTime Get() => Now;
     }
+
+    // ---- Anchor bearing precedence ----
+    // BuildAnchorSnapshot prefers Data.AnchorBearingTrue (plugin's
+    // bow-corrected value, v2.0.0+) over the GeoBearing fallback
+    // (GPS-antenna-to-anchor). A refactor that swaps the operands of
+    // the ?? expression would silently regress every helm with the
+    // v2 plugin to the GPS-antenna bearing -- pin the precedence here.
+
+    [Test]
+    public async Task BuildAnchorSnapshot_PrefersAnchorBearingTrue_OverGeoBearing()
+    {
+        // Setup: anchor at (0, 0), boat at (0.001, 0) -- GeoBearing
+        // would give ~270deg (boat north of anchor -> bearing south
+        // back to anchor, 180; but boat at (0.001,0) is north, so
+        // bearing back to anchor = south = 180). Plugin publishes 90deg
+        // (1.5708 radians) -- a different number that the helm should
+        // see, not the GeoBearing-derived one.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.ApplyAnchorPosition(0.0, 0.0);
+        data.Apply("navigation.anchor.maxRadius", 30.0);
+        data.ApplyPosition(0.001, 0.0);     // boat slightly north of anchor
+        data.Apply("navigation.anchor.bearingTrue", System.Math.PI / 2);  // 90deg from plugin
+
+        var cut = Render(ctx, data);
+
+        // Anchor card visible because anchor active. Needle reads the
+        // plugin value (90deg), not the GeoBearing fallback (180deg).
+        var bearingValue = cut.Find(".anchor-bearing-value").TextContent;
+        await Assert.That(bearingValue).Contains("90");
+        await Assert.That(bearingValue).DoesNotContain("180");
+    }
+
+    [Test]
+    public async Task BuildAnchorSnapshot_FallsBackToGeoBearing_WhenAnchorBearingTrueNull()
+    {
+        // No plugin bearing published (v1.x or manual flow). Needle
+        // renders the client-side GeoBearing-derived value so the
+        // helm still gets a sight aid.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.ApplyAnchorPosition(0.0, 0.0);
+        data.Apply("navigation.anchor.maxRadius", 30.0);
+        data.ApplyPosition(0.001, 0.0);     // boat slightly north of anchor
+
+        var cut = Render(ctx, data);
+
+        // The needle MUST render (some bearing is available via the
+        // fallback) and MUST NOT contain the plugin-only value.
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task BuildAnchorSnapshot_HidesNeedle_WhenBothSourcesMissing()
+    {
+        // Manual anchor with no GPS fix on own-ship -- both sources
+        // null, the needle hides.
+        using var ctx = new Bunit.TestContext();
+        var data = new NavigationData();
+        data.ApplyAnchorPosition(0.0, 0.0);
+        data.Apply("navigation.anchor.maxRadius", 30.0);
+        // No ApplyPosition for own-ship -- GeoBearing returns null.
+
+        var cut = Render(ctx, data);
+
+        await Assert.That(cut.FindAll(".anchor-bearing").Count).IsEqualTo(0);
+    }
 }

@@ -42,6 +42,9 @@ public sealed class MapAnchorJs : IMapAnchorJs
     public Task UpdateAnchorRadiusAsync(double radiusMeters)
         => InvokeSafe("updateAnchorRadius", radiusMeters);
 
+    public Task SetAnchorIncompleteAsync(bool incomplete)
+        => InvokeSafe("setAnchorIncomplete", incomplete);
+
     /// <summary>
     /// Single safe-call helper for every interop in this wrapper.
     /// Swallows the three "page is unmounting" exceptions that

@@ -47,13 +47,15 @@ public class AnchorEditPanelTests
         Action<int>? onSetRadius = null,
         Action? onAutoSetRadius = null,
         Action? onCancel = null,
-        string suggestion = "")
+        string suggestion = "",
+        int? autoPreview = null)
     {
         return ctx.RenderComponent<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
             .Add(x => x.InitialRadiusMeters, initial)
             .Add(x => x.Busy, busy)
             .Add(x => x.SuggestionLabel, suggestion)
+            .Add(x => x.AutoPreviewRadius, autoPreview)
             .Add(x => x.OnSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create<int>(p, r => onSetRadius?.Invoke(r)))
             .Add(x => x.OnAutoSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
@@ -103,9 +105,13 @@ public class AnchorEditPanelTests
         await Assert.That(drop.HasAttribute("disabled")).IsTrue();
         await Assert.That(drop.TextContent.Trim()).IsEqualTo("Dropping...");
 
-        var cancel = cut.FindAll("button.map-btn")
-            .First(b => b.TextContent.Trim() == "Cancel");
-        await Assert.That(cancel.HasAttribute("disabled")).IsTrue();
+        // The escape button is labelled "Close" not "Cancel" -- field
+        // study showed both sailors read "Cancel" as "abort the
+        // anchor", but the dropped pin actually stays armed
+        // server-side. "Close" matches what the action does.
+        var close = cut.FindAll("button.map-btn")
+            .First(b => b.TextContent.Trim() == "Close");
+        await Assert.That(close.HasAttribute("disabled")).IsTrue();
     }
 
     [Test]
@@ -122,14 +128,17 @@ public class AnchorEditPanelTests
     }
 
     [Test]
-    public async Task DropMode_Cancel_FiresOnCancel()
+    public async Task DropMode_Close_FiresOnCancel()
     {
+        // Button is labelled "Close" but still wired to OnCancel
+        // (the parent callback name is unchanged; only the visible
+        // label flipped to match what the button actually does).
         using var ctx = new Bunit.TestContext();
         bool fired = false;
         var cut = RenderDrop(ctx, onCancel: () => fired = true);
 
         cut.FindAll("button.map-btn")
-            .First(b => b.TextContent.Trim() == "Cancel").Click();
+            .First(b => b.TextContent.Trim() == "Close").Click();
         await Assert.That(fired).IsTrue();
     }
 
@@ -258,7 +267,7 @@ public class AnchorEditPanelTests
     public async Task SetRadiusMode_Busy_DisablesEverything()
     {
         // While the PUT is in flight: Set disabled, every chip
-        // disabled, Cancel disabled.
+        // disabled, Close disabled.
         using var ctx = new Bunit.TestContext();
         var cut = RenderSetRadius(ctx, initial: 30, busy: true);
 
@@ -268,9 +277,9 @@ public class AnchorEditPanelTests
         {
             await Assert.That(chip.HasAttribute("disabled")).IsTrue();
         }
-        var cancel = cut.FindAll("button.map-btn")
-            .First(b => b.TextContent.Trim() == "Cancel");
-        await Assert.That(cancel.HasAttribute("disabled")).IsTrue();
+        var close = cut.FindAll("button.map-btn")
+            .First(b => b.TextContent.Trim() == "Close");
+        await Assert.That(close.HasAttribute("disabled")).IsTrue();
     }
 
     [Test]
@@ -368,5 +377,116 @@ public class AnchorEditPanelTests
         await Assert.That(cut.FindAll(".anchor-edit-chips").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".anchor-edit-set").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".anchor-edit-drop").Count).IsEqualTo(0);
+    }
+
+    // ---- Auto preview ----
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_RendersPlainAuto_WhenNoPreview()
+    {
+        // No AutoPreviewRadius -> chip face reads "Auto" alone.
+        // Field-study finding: helm wants to see the number before
+        // committing; the unset state is acceptable for "still
+        // loading", not the steady state.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30);
+
+        await Assert.That(cut.Find(".anchor-edit-auto").TextContent.Trim())
+            .IsEqualTo("Auto");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_RendersPreviewedRadius_WhenSet()
+    {
+        // AutoPreviewRadius=47 -> chip face reads "Auto: 47m". Helm
+        // sees the number before tapping Set.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+            .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
+            .Add(x => x.InitialRadiusMeters, 30)
+            .Add(x => x.AutoPreviewRadius, 47));
+
+        var auto = cut.Find(".anchor-edit-auto");
+        await Assert.That(auto.TextContent).Contains("Auto:");
+        await Assert.That(auto.TextContent).Contains("47");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_TooltipReflectsPreview()
+    {
+        // The tooltip (long-press / hover surface) carries the same
+        // information as the chip face. Without it, a helm long-
+        // pressing Auto on iPad would see the generic "plugin
+        // computes" tooltip and miss the actual number.
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+            .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
+            .Add(x => x.InitialRadiusMeters, 30)
+            .Add(x => x.AutoPreviewRadius, 47));
+
+        var auto = cut.Find(".anchor-edit-auto");
+        await Assert.That(auto.GetAttribute("title")!).Contains("47");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_LivePreviewUpdatesOnReRender()
+    {
+        // Boat drifts; parent recomputes preview on each render.
+        // The chip must reflect the latest value without losing the
+        // helm's chip pick (Auto is implicit-active when picked is
+        // null; the preview number is just label decoration).
+        using var ctx = new Bunit.TestContext();
+        var cut = ctx.RenderComponent<AnchorEditPanel>(p => p
+            .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
+            .Add(x => x.InitialRadiusMeters, 30)
+            .Add(x => x.AutoPreviewRadius, 40));
+
+        await Assert.That(cut.Find(".anchor-edit-auto").TextContent).Contains("40");
+
+        cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 55));
+
+        await Assert.That(cut.Find(".anchor-edit-auto").TextContent).Contains("55");
+        await Assert.That(cut.Find(".anchor-edit-auto").TextContent).DoesNotContain("40");
+    }
+
+    // ---- UnseededInitialRadius sentinel ----
+
+    [Test]
+    public async Task SetRadiusMode_UnseededInitial_NoNumericChipActive()
+    {
+        // Parent passes UnseededInitialRadius -> picked stays null,
+        // Auto chip becomes the implicit active (no numeric chip
+        // gets a synthetic ".active"). This is the Drop-mode panel
+        // pre-fill behaviour for when there's no depth source.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: AnchorEditPanel.UnseededInitialRadius);
+
+        // No numeric chip should be active; Auto IS active.
+        var numericActives = cut.FindAll(".anchor-edit-chips .map-btn.active")
+            .Where(b => !b.ClassList.Contains("anchor-edit-auto")).ToList();
+        await Assert.That(numericActives.Count).IsEqualTo(0);
+        await Assert.That(cut.Find(".anchor-edit-auto").ClassList.Contains("active")).IsTrue();
+    }
+
+    [Test]
+    public async Task SetRadiusMode_UnseededThenNumericPicked_FiresOnSetRadius()
+    {
+        // Helm starts with no opinion (Unseeded), taps 50, then Set
+        // -> fires OnSetRadius(50), not OnAutoSetRadius.
+        using var ctx = new Bunit.TestContext();
+        int? captured = null;
+        bool autoFired = false;
+        var cut = RenderSetRadius(ctx,
+            initial: AnchorEditPanel.UnseededInitialRadius,
+            onSetRadius: r => captured = r,
+            onAutoSetRadius: () => autoFired = true);
+
+        cut.FindAll(".anchor-edit-chips .map-btn")
+            .First(b => b.TextContent.Contains("50") && !b.ClassList.Contains("anchor-edit-auto"))
+            .Click();
+        cut.Find(".anchor-edit-set").Click();
+
+        await Assert.That(captured).IsEqualTo(50);
+        await Assert.That(autoFired).IsFalse();
     }
 }

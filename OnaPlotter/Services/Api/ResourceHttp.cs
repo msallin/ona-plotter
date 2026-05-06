@@ -81,8 +81,9 @@ internal static class ResourceHttp
         {
             using var response = await http.PostAsJsonAsync(url, body, ct);
             if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            return ApiResult.Fail(await ReadErrorAsync(response, ct)
-                ?? $"HTTP {(int)response.StatusCode}");
+            return ApiResult.Fail(
+                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
+                (int)response.StatusCode);
         }
         catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
     }
@@ -100,8 +101,9 @@ internal static class ResourceHttp
         {
             using var response = await http.PutAsJsonAsync(url, body, ct);
             if (response.IsSuccessStatusCode) return ApiResult.Ok;
-            return ApiResult.Fail(await ReadErrorAsync(response, ct)
-                ?? $"HTTP {(int)response.StatusCode}");
+            return ApiResult.Fail(
+                await ReadErrorAsync(response, ct) ?? $"HTTP {(int)response.StatusCode}",
+                (int)response.StatusCode);
         }
         catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
     }

@@ -505,6 +505,15 @@ public sealed class NavigationData
             AnchorApparentBearing = null;
             AnchorRodeLength = null;
             AnchorDistanceFromBow = null;
+            // Clear the freshness stamp too. Without this, a raise
+            // followed by a fresh drop reports Live freshness the
+            // moment the new position lands but BEFORE any radius
+            // delta arrives -- the HUD's staleness badge would
+            // therefore show a Live anchor with null max/current
+            // radius, masking the "Missing" state. The next radius
+            // delta will set this stamp; until then it should be
+            // null so FreshnessOf reads as Missing.
+            AnchorRadiusUpdatedUtc = null;
         }
     }
 

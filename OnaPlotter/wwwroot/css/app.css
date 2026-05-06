@@ -7237,6 +7237,27 @@ main:has(.map-container.big-type) .alarm-hold-hint {
        eye. */
     border-color: rgba(245, 158, 11, 0.45);
 }
+
+/* "RADIUS NOT SET" tooltip permanently bound to the dropped-but-
+   not-armed anchor pin. Amber background + bold uppercase so it
+   reads as a warning without competing with the chart's own colour
+   palette. Pin alongside the marker (offset 10/0) so the tooltip
+   doesn't obscure the pin itself. */
+.anchor-incomplete-tooltip {
+    background: rgba(245, 158, 11, 0.92);
+    color: #1f2937;
+    border: none;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+.anchor-incomplete-tooltip::before {
+    /* Hide Leaflet's default tooltip pointer; we don't need the
+       arrow when the pin is small + tooltip sits adjacent. */
+    display: none;
+}
 .anchor-edit-stats {
     /* Stack title + subtitle vertically. flex parent gives us per-
        column control without an extra wrapper element. */

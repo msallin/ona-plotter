@@ -13,10 +13,19 @@
    The third state ("anchor fully armed") closes the panel entirely;
    the regular HUD card takes over.
 
-   Cancel is symmetric: in Drop mode it just closes the panel without
-   touching the server. In SetRadius mode it ALSO leaves the dropped
-   pin in place -- the plugin keeps the position armed; the helm can
-   re-open the panel any time to set the radius. *@
+   "Close" instead of "Cancel": field-study sailors uniformly read
+   "Cancel" as "abort the anchor" -- but in SetRadius mode the
+   dropped pin stays armed server-side. Naming the action "Close"
+   matches what the button actually does ("dismiss this card") and
+   removes the dangerous misread (silent armed state after what the
+   helm thought was an abort).
+
+   AutoPreviewRadius parameter: when the helm taps Auto, the parent
+   asynchronously computes what the plugin WOULD set + feeds it
+   back here. The chip then renders as "Auto: 47 m" instead of a
+   black-box "Auto" chip -- field-study finding (both sailors
+   wanted to see the number before committing). Null = no preview
+   available yet (still loading, or no plugin). *@
 
 <div class="route-edit-bar anchor-edit-bar" role="dialog" aria-label="@AriaLabel">
     <span class="route-edit-stats anchor-edit-stats">
@@ -35,20 +44,32 @@
            Numeric chips PUT navigation.anchor.maxRadius with the
            helm's exact value. *@
         <div class="anchor-edit-chips" role="radiogroup" aria-label="Swing radius">
-            <button class="map-btn anchor-edit-auto"
+            <button class="map-btn anchor-edit-auto @(picked is null ? "active" : "")"
                     type="button" role="radio"
-                    aria-checked="@(_picked is null ? "true" : "false")"
+                    aria-checked="@(picked is null ? "true" : "false")"
                     @onclick="OnPickAuto"
-                    title="Plugin computes the radius from current distance to the anchor"
+                    title="@AutoTooltip"
                     disabled="@Busy">
-                Auto
+                @* Auto-preview label: "Auto" alone when no preview,
+                   "Auto: N m" when the parent computed one. Field-
+                   study sailors needed to see the number before
+                   committing -- a black-box "Auto" chip didn't
+                   build trust. *@
+                @if (AutoPreviewRadius is int autoR)
+                {
+                    <span>Auto:&nbsp;@autoR<span class="hud-unit">m</span></span>
+                }
+                else
+                {
+                    <span>Auto</span>
+                }
             </button>
             @foreach (var preset in RadiusPresets)
             {
                 var p = preset;
-                <button class="map-btn @(p == _picked ? "active" : "")"
+                <button class="map-btn @(p == picked ? "active" : "")"
                         type="button" role="radio"
-                        aria-checked="@(p == _picked ? "true" : "false")"
+                        aria-checked="@(p == picked ? "true" : "false")"
                         @onclick="() => OnPickNumeric(p)"
                         title="@p m swing radius"
                         disabled="@Busy">@p<span class="hud-unit">m</span></button>
@@ -60,7 +81,7 @@
                 title="@(Busy ? "Setting..." : "Arm the alarm at the chosen radius")">
             @(Busy ? "Setting..." : "Set")
         </button>
-        <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Cancel</button>
+        <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Close</button>
     }
     else
     {
@@ -71,7 +92,7 @@
                 title="@(Busy ? "Dropping..." : "Mark the anchor at the current GPS position; set the radius after backing down")">
             @(Busy ? "Dropping..." : "Drop")
         </button>
-        <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Cancel</button>
+        <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Close</button>
     }
 </div>
 
@@ -87,8 +108,28 @@
 
     /// <summary>Heuristic-derived initial radius in metres (only used
     /// in <see cref="AnchorPanelMode.SetRadius"/>). Same heuristic
-    /// the v1 panel used: <c>AnchorRadiusHeuristic.Suggest</c>.</summary>
-    [Parameter] public int InitialRadiusMeters { get; set; } = 30;
+    /// the v1 panel used: <c>AnchorRadiusHeuristic.Suggest</c>.
+    /// Sentinel <see cref="UnseededInitialRadius"/> means "no opinion"
+    /// -- panel skips the snap-to-preset step and the chip row opens
+    /// without an active numeric chip (Auto becomes the default).</summary>
+    [Parameter] public int InitialRadiusMeters { get; set; } = UnseededInitialRadius;
+
+    /// <summary>Sentinel for "parent has no initial-radius opinion"
+    /// (e.g. Drop mode or no depth). Distinct from any valid preset.
+    /// Picked as int.MinValue so a corrupted setting that lands on
+    /// 0 still re-seeds correctly (0 was the previous in-range
+    /// sentinel, which silently behaved like "snap to lowest preset"
+    /// because of the round-up rule -- a footgun for whoever next
+    /// adds Drop-mode chip preview).</summary>
+    public const int UnseededInitialRadius = int.MinValue;
+
+    /// <summary>Plugin-computed preview of what Auto would commit
+    /// (metres). Null = no preview available (still loading, or no
+    /// plugin). Renders inline on the Auto chip ("Auto: 47 m") so
+    /// the helm sees the number before committing -- field-study
+    /// finding from Margaret + Jordan: a black-box Auto didn't
+    /// build trust.</summary>
+    [Parameter] public int? AutoPreviewRadius { get; set; }
 
     /// <summary>True while the parent's drop / set callback is in
     /// flight (REST round-trip). Disables every button so a double-
@@ -127,8 +168,14 @@
     /// <summary>Currently-picked numeric chip; null = Auto chip is
     /// active. Distinct nullable so the renderer can highlight
     /// EITHER Auto OR a numeric, never both.</summary>
-    private int? _picked;
-    private int _seededFromInitial = int.MinValue;
+    private int? picked;
+    /// <summary>Tracks the most recently seeded InitialRadiusMeters
+    /// value so an unrelated parent re-render with the same value
+    /// doesn't clobber the helm's chip pick. Plain bool + value
+    /// instead of a sentinel-overload so int.MinValue stays safely
+    /// usable as the "no opinion" parameter sentinel.</summary>
+    private bool seeded;
+    private int seededValue;
 
     private string TitleLabel => Mode switch
     {
@@ -139,23 +186,37 @@
 
     private string AriaLabel => TitleLabel;
 
+    /// <summary>Tooltip for the Auto chip. Surfaces the previewed
+    /// number when present so the helm gets the same information
+    /// in the long-press tooltip as on the chip face. Field-study:
+    /// the chip's title text is the helm's first hover-or-long-
+    /// press touchpoint when they ask "what is this?".</summary>
+    private string AutoTooltip => AutoPreviewRadius is int r
+        ? $"Plugin-computed radius: {r} m (current distance to anchor + safety margin)"
+        : "Plugin computes the radius from current distance to the anchor";
+
     protected override void OnParametersSet()
     {
         // Snap onto the nearest preset (rounded UP, see SnapToPreset)
-        // when the parent passes a fresh InitialRadiusMeters. Same
-        // sentinel-based "only re-seed on change" guard as v1 so an
-        // unrelated parent re-render doesn't clobber the helm's chip
-        // pick mid-decision.
-        if (InitialRadiusMeters != _seededFromInitial)
+        // when the parent passes a fresh InitialRadiusMeters. The
+        // "only re-seed on change" guard prevents an unrelated parent
+        // re-render from clobbering the helm's chip pick mid-decision.
+        // UnseededInitialRadius means "Drop mode / no opinion" --
+        // skip the seed entirely so picked stays null and the Auto
+        // chip is the implicit active.
+        if (!seeded || InitialRadiusMeters != seededValue)
         {
-            _seededFromInitial = InitialRadiusMeters;
-            _picked = SnapToPreset(InitialRadiusMeters);
+            seeded = true;
+            seededValue = InitialRadiusMeters;
+            picked = InitialRadiusMeters == UnseededInitialRadius
+                ? null
+                : SnapToPreset(InitialRadiusMeters);
         }
     }
 
-    private void OnPickNumeric(int radius) => _picked = radius;
+    private void OnPickNumeric(int radius) => picked = radius;
 
-    private void OnPickAuto() => _picked = null;
+    private void OnPickAuto() => picked = null;
 
     private async Task OnDropClicked()
     {
@@ -166,7 +227,7 @@
     private async Task OnSetClicked()
     {
         if (Busy) return;
-        if (_picked is int r)
+        if (picked is int r)
         {
             await OnSetRadius.InvokeAsync(r);
         }

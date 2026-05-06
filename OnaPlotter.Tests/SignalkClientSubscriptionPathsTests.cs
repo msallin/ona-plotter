@@ -104,6 +104,25 @@ public class SignalkClientSubscriptionPathsTests
     }
 
     [Test]
+    public async Task V2_Anchor_Paths_Subscribed()
+    {
+        // signalk-anchoralarm-plugin v2.0.0+ publishes four extra
+        // paths beyond the v1 trio (position / maxRadius /
+        // currentRadius). Without these subscribed, the HUD's
+        // bow-corrected distance + bearing + rode length readouts
+        // stay null on a properly-configured plugin -- silent
+        // regression.
+        await Assert.That(SignalkClient.SlowSelfPaths)
+            .Contains("navigation.anchor.bearingTrue");
+        await Assert.That(SignalkClient.SlowSelfPaths)
+            .Contains("navigation.anchor.apparentBearing");
+        await Assert.That(SignalkClient.SlowSelfPaths)
+            .Contains("navigation.anchor.rodeLength");
+        await Assert.That(SignalkClient.SlowSelfPaths)
+            .Contains("navigation.anchor.distanceFromBow");
+    }
+
+    [Test]
     public async Task V2_Course_Paths_Subscribed()
     {
         // The v2 navigation.course API (+ course-provider-plugin's

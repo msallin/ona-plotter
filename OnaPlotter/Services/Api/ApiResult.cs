@@ -16,7 +16,14 @@ namespace OnaPlotter.Services.Api;
 /// HttpRequestException. Null on success; may also be null on
 /// failure if the response body had nothing parseable -- callers
 /// still know the operation failed from <see cref="Success"/>.</param>
-public sealed record ApiResult(bool Success, string? Error = null)
+/// <param name="StatusCode">HTTP status of the response, when one
+/// arrived. Null when the call failed before getting a response
+/// (network exception, cancellation). Lets callers distinguish
+/// permission errors (401 / 403) from missing-endpoint errors
+/// (404 / 405) for context-specific toasts -- the helm sees
+/// "permission denied" vs "plugin v2.0.0+ required" depending on
+/// which actually failed.</param>
+public sealed record ApiResult(bool Success, string? Error = null, int? StatusCode = null)
 {
     /// <summary>Singleton success. Allocation-free happy path.</summary>
     public static ApiResult Ok { get; } = new(true);
@@ -24,8 +31,8 @@ public sealed record ApiResult(bool Success, string? Error = null)
     /// <summary>Builds a failure result. Null or empty error becomes
     /// null on the record (normalised so consumers can write
     /// <c>?? "default message"</c>).</summary>
-    public static ApiResult Fail(string? error = null) =>
-        new(false, string.IsNullOrWhiteSpace(error) ? null : error);
+    public static ApiResult Fail(string? error = null, int? statusCode = null) =>
+        new(false, string.IsNullOrWhiteSpace(error) ? null : error, statusCode);
 }
 
 /// <summary>

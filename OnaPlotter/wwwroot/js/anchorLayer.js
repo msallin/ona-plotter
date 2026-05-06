@@ -22,6 +22,12 @@ let anchorCircle = null;
 // anchor / how much rode is out" into a first-class affordance instead
 // of only showing the watch circle.
 let anchorRadiusLine = null;
+// "Incomplete" state: helm dropped the pin (server has the position)
+// but hasn't set the alarm radius yet. Tracked here so setBoatPosition
+// keeps the pin pulsing and doesn't flip the circle to the green
+// "inside the alarm circle" colour the moment the radius arrives -- the
+// helm needs to see ON THE CHART that step 2 is still pending.
+let anchorIncomplete = false;
 // Swing-arc history: own-boat positions sampled while the anchor is
 // set, trimmed to ANCHOR_TRAIL_MINUTES so the captain sees at a glance
 // how much water the boat has actually covered on this tide cycle.
@@ -44,7 +50,11 @@ export function init(map, deps) {
 export function setBoatPosition(lat, lon) {
     selfLat = lat;
     selfLon = lon;
-    if (anchorMarker && anchorCircle) {
+    // Skip the inside/outside circle recolour while the anchor is in
+    // the incomplete state -- the alarm circle isn't really armed
+    // yet and the green/red colour would mislead. setAnchorIncomplete
+    // owns the styling in that state.
+    if (anchorMarker && anchorCircle && !anchorIncomplete) {
         const all = anchorMarker.getLatLng();
         const dist = haversineMeters(lat, lon, all.lat, all.lng);
         const inside = dist <= anchorCircle.getRadius();
@@ -77,6 +87,7 @@ export function setAnchor(lat, lon, radiusM) {
 }
 
 export function clearAnchor() {
+    anchorIncomplete = false;
     if (!mapRef) {
         anchorMarker = null; anchorCircle = null; anchorTrailLayer = null;
         anchorTrail.length = 0; anchorRadiusLine = null;
@@ -87,6 +98,51 @@ export function clearAnchor() {
     if (anchorTrailLayer) { mapRef.removeLayer(anchorTrailLayer); anchorTrailLayer = null; }
     if (anchorRadiusLine) { mapRef.removeLayer(anchorRadiusLine); anchorRadiusLine = null; }
     anchorTrail.length = 0;
+}
+
+// Visually mark the anchor as "drop committed but radius not yet set"
+// (v2.0.0+ two-step flow's intermediate state). Pulses the marker +
+// switches the circle to a heavier dash + binds a "RADIUS NOT SET"
+// tooltip so the helm SEES on the chart that step 2 is pending.
+// Without this, the chart looks identical to a fully-armed anchor and
+// the helm walks away thinking they're done -- the field-study
+// finding from Margaret + Jordan.
+//
+// Idempotent: safe to call with the same value, safe to call when no
+// anchor is set (the toggles fall through to no-op).
+export function setAnchorIncomplete(incomplete) {
+    anchorIncomplete = !!incomplete;
+    if (!mapRef || !anchorMarker || !anchorCircle) return;
+    if (anchorIncomplete) {
+        // Heavier dashed ring + amber-ish tone so the chart visibly
+        // says "this isn't fully armed yet". Reuse the anchorDrag
+        // colour as the visual cue (fallback to amber): drag is the
+        // attention-grabbing red, but for a not-yet-armed anchor we
+        // want amber-grade attention. Marker class triggers the
+        // CSS pulse animation.
+        anchorMarker.setStyle({ color: '#f59e0b', fillColor: '#f59e0b', weight: 2 });
+        anchorCircle.setStyle({
+            color: '#f59e0b', fillColor: '#f59e0b',
+            fillOpacity: 0.04, weight: 1.5, dashArray: '2,8'
+        });
+        if (!anchorMarker.getTooltip()) {
+            anchorMarker.bindTooltip('RADIUS NOT SET', {
+                permanent: true, direction: 'right', offset: [10, 0],
+                className: 'anchor-incomplete-tooltip'
+            });
+        }
+    } else {
+        // Restore the fully-armed look. setBoatPosition will replace
+        // the colour on the next tick based on inside/outside the
+        // circle; we set anchorOk here so the brief pre-tick render
+        // doesn't flash amber.
+        anchorMarker.setStyle({ color: colors.anchorOk, fillColor: colors.anchorOk, weight: 1 });
+        anchorCircle.setStyle({
+            color: colors.anchorOk, fillColor: colors.anchorOk,
+            fillOpacity: 0.06, weight: 2, dashArray: '6,4'
+        });
+        if (anchorMarker.getTooltip()) anchorMarker.unbindTooltip();
+    }
 }
 
 // Visually mark the anchor as "raising" while we wait for the server's

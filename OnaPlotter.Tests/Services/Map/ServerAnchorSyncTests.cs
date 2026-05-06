@@ -19,6 +19,7 @@ public class ServerAnchorSyncTests
         public int Clears { get; private set; }
         public List<bool> Raisings { get; } = [];
         public List<double> RadiusUpdates { get; } = [];
+        public List<bool> Incompletes { get; } = [];
 
         public Task SetAnchorAsync(double lat, double lon, double radiusMeters)
         {
@@ -41,6 +42,12 @@ public class ServerAnchorSyncTests
         public Task UpdateAnchorRadiusAsync(double radiusMeters)
         {
             RadiusUpdates.Add(radiusMeters);
+            return Task.CompletedTask;
+        }
+
+        public Task SetAnchorIncompleteAsync(bool incomplete)
+        {
+            Incompletes.Add(incomplete);
             return Task.CompletedTask;
         }
     }
