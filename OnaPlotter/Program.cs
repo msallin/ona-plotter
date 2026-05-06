@@ -214,6 +214,19 @@ builder.Services.AddSingleton<OnaPlotter.Services.INavigationAverages, OnaPlotte
 // relay a caught exception explicitly. See Services/ClientErrorRelay.cs.
 builder.Services.AddSingleton<ClientErrorRelay>();
 
+// Place search (topbar geocoder). The helm-facing IPlaceSearchService
+// is the caching decorator wrapping the live Photon client. Cache
+// + provider are registered as concrete types so the decorator can
+// resolve both. Photon is online-only; offline / rate-limited
+// failures return an empty list per the IPlaceSearchService contract,
+// no exception bubbles out.
+builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>();
+builder.Services.AddSingleton<OnaPlotter.Services.Places.PlaceSearchCache>();
+builder.Services.AddSingleton<OnaPlotter.Services.Places.IPlaceSearchService>(sp =>
+    new OnaPlotter.Services.Places.CachingPlaceSearchService(
+        sp.GetRequiredService<OnaPlotter.Services.Places.PhotonPlaceSearchService>(),
+        sp.GetRequiredService<OnaPlotter.Services.Places.PlaceSearchCache>()));
+
 var host = builder.Build();
 
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).
