@@ -119,6 +119,15 @@ public sealed class AppSettingsService : IAppSettings
     public string OwnVesselType { get; private set; } = "power";
     public bool KeepScreenAwake { get; private set; } = true;
     public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
+    /// <summary>Default true: prefer server-side
+    /// <c>notifications.navigation.*</c> from signalk-course-data
+    /// over the client-side WaypointApproach alarm. Helms with a
+    /// course-provider plugin get one consistent arrival cue (the
+    /// banner agrees with the autopilot's arrival logic). Helms
+    /// running an SK install without a course-provider plugin can
+    /// flip this off to fall back to the client rule using
+    /// <see cref="WaypointArrivalRadiusMeters"/>.</summary>
+    public bool ServerSideApproachAlarms { get; private set; } = true;
     public bool ShowKeyboardHints { get; private set; } = false;
     public bool ShowAutopilotHud { get; private set; } = false;
     public bool ShowRadarHud { get; private set; } = false;
@@ -266,6 +275,7 @@ public sealed class AppSettingsService : IAppSettings
             OwnVesselType = NormalizeOwnVesselType(await LoadString("ownVesselType.v1"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
             WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
+            ServerSideApproachAlarms = await LoadBool("serverSideApproachAlarms.v1", true);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
             ShowRadarHud = await LoadBool("showRadarHud.v1", false);
@@ -692,6 +702,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         WaypointArrivalRadiusMeters = value;
         await Save("waypointArrivalRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetServerSideApproachAlarmsAsync(bool value)
+    {
+        ServerSideApproachAlarms = value;
+        await Save("serverSideApproachAlarms.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

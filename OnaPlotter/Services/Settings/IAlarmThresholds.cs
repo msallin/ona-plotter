@@ -65,8 +65,25 @@ public interface IAlarmThresholds
 
     /// <summary>Waypoint arrival radius (metres). The
     /// WaypointApproach alarm fires when distance-to-go drops below
-    /// this threshold.</summary>
+    /// this threshold. Only consulted when
+    /// <see cref="ServerSideApproachAlarms"/> is false (legacy /
+    /// helm-fallback mode); the server-side path uses the SK
+    /// course-provider plugin's own arrival circle.</summary>
     double WaypointArrivalRadiusMeters { get; }
+
+    /// <summary>When true (default), OnaPlotter mutes its client-side
+    /// APPROACH alarm and instead surfaces the SK course-provider
+    /// plugin's <c>notifications.navigation.arrivalCircleEntered</c>
+    /// + <c>perpendicularPassed</c> + <c>routeComplete</c>
+    /// notifications via <c>ServerNotificationsAlarmRule</c>. One
+    /// source of truth: whatever radius the autopilot is steering
+    /// against, the helm sees the alarm against. When false the
+    /// client rule fires on
+    /// <see cref="WaypointArrivalRadiusMeters"/> -- helm-only fallback
+    /// for SK installs without a course-provider plugin or for helms
+    /// who want a different arrival radius from the autopilot's.
+    /// </summary>
+    bool ServerSideApproachAlarms { get; }
 
     /// <summary>Deadman / watch-timer interval in minutes.
     /// 0 disables the feature.</summary>
@@ -90,6 +107,7 @@ public interface IAlarmThresholds
     Task SetAnchorTideSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);
+    Task SetServerSideApproachAlarmsAsync(bool value);
     Task SetDeadmanTimeoutMinutesAsync(double value);
     Task SetDeadmanNightMinutesAsync(double value);
     Task SetSnoozeDurationMinutesAsync(int value);

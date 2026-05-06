@@ -157,4 +157,47 @@ public class WaypointApproachAlarmRuleTests
         // Same waypoint within epsilon -- must stay silent.
         await Assert.That(rule.Check(Ctx(jitter, 50))).IsNull();
     }
+
+    [Test]
+    public async Task ServerSideApproachAlarms_Mutes_Client_Rule()
+    {
+        // Helm-feedback round: when the helm has opted into server-side
+        // approach alarms (default in production), the client rule must
+        // mute itself entirely so the SK course-provider plugin's
+        // notifications are the single source of truth. Pin so a
+        // future "always run client rule as backup" tweak goes red
+        // here first.
+        var rule = new WaypointApproachAlarmRule();
+        var nav = BuildNav(47.4, 8.5, distMeters: 30);     // well inside any radius
+        var ctx = new AlarmEvaluationContext(nav, [],
+            new FakeSettings { WaypointArrivalRadiusMeters = 50,
+                               ServerSideApproachAlarms = true },
+            DateTime.UtcNow, _ => false);
+
+        await Assert.That(rule.Check(ctx)).IsNull();
+    }
+
+    [Test]
+    public async Task Toggling_ServerSide_Off_ResetsLatch_So_FreshFire()
+    {
+        // The gate's _alarmedFor reset is what lets the helm flip the
+        // toggle off mid-passage and still see a banner on the NEXT
+        // tick rather than waiting for the next entry into the radius.
+        var rule = new WaypointApproachAlarmRule();
+        var nav = BuildNav(47.4, 8.5, distMeters: 30);
+        // Server-side ON: rule mutes; latch resets internally.
+        var serverOnCtx = new AlarmEvaluationContext(nav, [],
+            new FakeSettings { WaypointArrivalRadiusMeters = 50,
+                               ServerSideApproachAlarms = true },
+            DateTime.UtcNow, _ => false);
+        await Assert.That(rule.Check(serverOnCtx)).IsNull();
+
+        // Helm flips toggle off: same waypoint, same distance -- the
+        // latch was cleared so the next Check fires.
+        var serverOffCtx = new AlarmEvaluationContext(nav, [],
+            new FakeSettings { WaypointArrivalRadiusMeters = 50,
+                               ServerSideApproachAlarms = false },
+            DateTime.UtcNow, _ => false);
+        await Assert.That(rule.Check(serverOffCtx)).IsNotNull();
+    }
 }

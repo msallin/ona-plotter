@@ -91,6 +91,45 @@ public class ServerNotificationsAlarmRuleTests
     }
 
     [Test]
+    public async Task DeriveTitleAndDefault_CourseProvider_ArrivalCircleEntered()
+    {
+        // signalk-course-data publishes the arrival cue under
+        // notifications.navigation.course.arrivalCircleEntered (or
+        // the bare notifications.navigation.arrivalCircleEntered on
+        // some builds). Both must surface as title "APPROACH" so
+        // MainLayout.razor's `a.Title == "APPROACH"` test still
+        // renders the "Next WP" advance button on the banner. Pin
+        // both shapes here so a future schema flip is caught.
+        var (title1, msg1) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.navigation.course.arrivalCircleEntered");
+        await Assert.That(title1).IsEqualTo("APPROACH");
+        await Assert.That(msg1).IsEqualTo("arrival circle entered");
+
+        var (title2, msg2) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.navigation.arrivalCircleEntered");
+        await Assert.That(title2).IsEqualTo("APPROACH");
+        await Assert.That(msg2).IsEqualTo("arrival circle entered");
+    }
+
+    [Test]
+    public async Task DeriveTitleAndDefault_CourseProvider_PerpendicularPassed()
+    {
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.navigation.perpendicularPassed");
+        await Assert.That(title).IsEqualTo("APPROACH");
+        await Assert.That(msg).IsEqualTo("perpendicular passed");
+    }
+
+    [Test]
+    public async Task DeriveTitleAndDefault_CourseProvider_RouteComplete()
+    {
+        var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
+            "notifications.navigation.routeComplete");
+        await Assert.That(title).IsEqualTo("APPROACH");
+        await Assert.That(msg).IsEqualTo("route complete");
+    }
+
+    [Test]
     public async Task DeriveTitleAndDefault_UnknownPath_FallsBackToLeafSegment()
     {
         // Plugin that doesn't fit a known prefix: leaf segment
