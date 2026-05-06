@@ -2,50 +2,36 @@
    IPlaceSearchService, pick a result -> parent flies the map and
    drops a search-pin.
 
-   Implementation notes (helm reported "type-ahead unreliable, often
+   Implementation note (helm reported "type-ahead unreliable, often
    no request fires even"):
 
-   - Use @bind with @bind:event="oninput" + @bind:after instead of
-     `value="@_query"` + manual @oninput. Blazor's @bind has anti-
-     clobber logic that prevents the renderer from overwriting the
-     helm's typed text mid-render -- the previous controlled-input
-     pattern was racing keystrokes against the StateHasChanged()
-     calls inside the handler, causing some keystrokes to never
-     reach OnInput at all. With @bind, the input is the source of
-     truth for the helm's typed value; we observe the change and
-     debounce + search.
+   The input is INTENTIONALLY UNCONTROLLED on the Blazor side.
+   No `value="@_query"`, no `@bind`. Blazor's renderer never writes
+   the `value` attribute, so the helm's typing stays in the DOM
+   exactly as typed -- no controlled-input race, no clobbering of
+   in-progress keystrokes by an in-handler StateHasChanged that
+   pushes a stale `_query` back to the DOM.
 
-   - Track in-flight searches by a monotonic request ID instead of
-     a chain of CancellationTokenSource. The previous design's
-     cascading CTS cancellation was the right idea but invited
-     OperationCanceledException leaks across the cache + geocoder
-     decorators (each has its own CTS handling), some of which
-     surfaced past the OnInput catch. The request-ID approach is
-     dead-simple: when a search returns, drop the result if a newer
-     search has been kicked off in the meantime.
+   Trade-off: programmatic value updates (clear button, fill on
+   pick) need a JS hop. That's what searchBoxJs.js provides.
 
-   - No StateHasChanged() inside the handler. Blazor renders
-     automatically after an async event handler completes; the
-     extra render mid-handler is what raced the controlled-input
-     pattern in the first place. We let Blazor handle the lifecycle.
-
-   - Debounce trimmed from 300 ms to 200 ms. The helm's typing
-     pattern reported requests "often not firing" -- if a
-     character lands within 300 ms of the previous, the debounce
-     resets. 200 ms is still well above keystroke jitter (~50 ms)
-     but more forgiving for fast typing. *@
+   Stale-search guard: a monotonic request-id counter. Each
+   keystroke bumps it; a returning search drops its result if a
+   newer keystroke has bumped the counter in the meantime. *@
 
 @using OnaPlotter.Services.Places
+@using Microsoft.JSInterop
 @inject IPlaceSearchService Search
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <div class="topbar-search @(_open ? "topbar-search--open" : "")"
      @onfocusout="HandleFocusOut">
-    <input type="search"
+    <input @ref="_inputRef"
+           type="search"
            class="topbar-search-input"
            placeholder="@Placeholder"
-           @bind="_query"
-           @bind:event="oninput"
-           @bind:after="OnQueryChanged"
+           @oninput="HandleInput"
            @onkeydown="OnKeyDown"
            @onfocusin="HandleFocusIn"
            autocomplete="off"
@@ -55,7 +41,7 @@
     {
         <span class="topbar-search-spinner" role="status" aria-label="Searching"></span>
     }
-    else if (!string.IsNullOrEmpty(_query))
+    else if (_hasInput)
     {
         <button type="button" class="topbar-search-clear"
                 @onclick="HandleClear"
@@ -66,15 +52,8 @@
     @if (_open)
     {
         <ul class="topbar-search-dropdown" role="listbox">
-            @if (_results.Count == 0 && !_loading && !string.IsNullOrEmpty(_query))
+            @if (_results.Count == 0 && !_loading)
             {
-                @* Empty-state copy: "no results -- check connection?"
-                   covers both real misses ("xyzqzy") and offline /
-                   rate-limited failures (geocoder returned empty).
-                   The component can't tell the two apart -- the
-                   IPlaceSearchService contract is "empty list on any
-                   transient failure" -- so the hint is a soft nudge
-                   that lets the helm decide. *@
                 <li class="topbar-search-empty" role="status">
                     <div class="topbar-search-empty-title">No results</div>
                     <div class="topbar-search-empty-hint">Check your connection?</div>
@@ -132,8 +111,7 @@
 
     /// <summary>Fired when the helm clears the input (clear button
     /// or Escape on an empty query). Parent should tear down the
-    /// search-pin on the JS side so a stale ring doesn't linger on
-    /// the chart after the dropdown is gone.</summary>
+    /// search-pin on the JS side.</summary>
     [Parameter] public EventCallback OnCleared { get; set; }
 
     /// <summary>Optional debounce override (milliseconds). Default
@@ -147,37 +125,40 @@
     /// the cache key short and the dropdown fast on every keystroke.</summary>
     public const int MaxQueryLength = 200;
 
-    private string _query = "";
+    private ElementReference _inputRef;
+    private IJSObjectReference? _jsModule;
+
     private IReadOnlyList<PlaceResult> _results = [];
     private int _highlight = 0;
     private bool _loading = false;
     private bool _open = false;
+    /// <summary>Tracked separately from the (uncontrolled) input
+    /// value so the clear button only renders when there's actually
+    /// something to clear. Updated on every keystroke from
+    /// <c>e.Value</c>.</summary>
+    private bool _hasInput = false;
     /// <summary>Monotonic counter incremented on every helm keystroke.
     /// A search Task captures this on entry; on completion it discards
     /// its result if a newer keystroke has bumped the counter (i.e.
-    /// the helm has typed since this search was kicked off). Replaces
-    /// the previous CancellationTokenSource chain which had subtle
-    /// OperationCanceledException leaks across the cache + geocoder
-    /// decorators.</summary>
+    /// the helm has typed since this search was kicked off).</summary>
     private int _requestId;
     /// <summary>Set by HandlePick so the immediately-following blur
     /// doesn't close the dropdown after we've already navigated.</summary>
     private bool _suppressNextFocusOut;
 
-    private async Task OnQueryChanged()
+    private async Task HandleInput(ChangeEventArgs e)
     {
-        // Bind ran first; _query already reflects the helm's input
-        // (truncated below if the helm pasted something huge).
-        if (_query.Length > MaxQueryLength)
-        {
-            _query = _query[..MaxQueryLength];
-        }
+        var raw = e.Value?.ToString() ?? "";
+        // Cap the helm-typed length defensively. A multi-KB paste
+        // would URL-encode into an oversized GET; cap it before the
+        // service ever sees it.
+        var query = raw.Length > MaxQueryLength ? raw[..MaxQueryLength] : raw;
+        _hasInput = !string.IsNullOrEmpty(query);
 
-        // Bump the request id so any in-flight search knows it's
-        // stale by the time it returns.
+        // Bump the request id: any in-flight search becomes stale.
         var requestId = ++_requestId;
 
-        if (string.IsNullOrWhiteSpace(_query))
+        if (string.IsNullOrWhiteSpace(query))
         {
             _results = [];
             _open = false;
@@ -185,36 +166,29 @@
             return;
         }
 
-        // Debounce: only proceed if no newer keystroke has bumped the
-        // counter during the wait. Catches both the normal cancel-on-
-        // fresh-keystroke path and any stray timer cancellation.
+        // Debounce. If the helm types again within DebounceMs the
+        // requestId check below catches it and we abandon.
         if (DebounceMs > 0)
         {
-            try { await Task.Delay(DebounceMs); }
-            catch (OperationCanceledException) { return; }
+            await Task.Delay(DebounceMs);
             if (requestId != _requestId) return;
         }
 
         _loading = true;
         _open = true;
-        // Render the spinner / dropdown-open state. Safe: no
-        // controlled-input clobber because @bind owns the input.
 
         IReadOnlyList<PlaceResult> results;
         try
         {
-            results = await Search.SearchAsync(_query);
+            results = await Search.SearchAsync(query);
         }
         catch (OperationCanceledException)
         {
-            // A decorator's internal cancellation surfaced -- treat
-            // as empty (the contract says transient failures are
-            // empty lists, so this is a defensive belt + braces).
             return;
         }
 
-        // Stale check: a newer keystroke has bumped the counter
-        // while this search was in flight; discard the result.
+        // Stale check: if a newer keystroke has bumped the counter
+        // while this search was in flight, drop the result.
         if (requestId != _requestId) return;
 
         _results = results;
@@ -226,7 +200,7 @@
     {
         if (!_open || _results.Count == 0)
         {
-            if (e.Key == "Escape" && !string.IsNullOrEmpty(_query))
+            if (e.Key == "Escape" && _hasInput)
             {
                 await HandleClear();
             }
@@ -257,19 +231,19 @@
     {
         _suppressNextFocusOut = true;
         _open = false;
-        _query = result.Name;
-        // Bump the id so any in-flight search for the partial query
-        // doesn't overwrite the dropdown after we've already
-        // navigated away.
-        _requestId++;
+        _hasInput = true;
+        _requestId++;  // stale any in-flight search
+        // Push the picked name into the (uncontrolled) input via JS
+        // so the helm sees the resolved place name. The dropdown is
+        // closed and the map is about to fly; updating the input is
+        // a UX cue confirming the pick.
+        await SetInputValueAsync(result.Name);
         await OnPicked.InvokeAsync(result);
     }
 
     private void HandleFocusIn()
     {
-        // Re-open the dropdown when refocusing the input WITH
-        // existing results -- helm clicked away then back.
-        if (_results.Count > 0 && !string.IsNullOrEmpty(_query))
+        if (_results.Count > 0 && _hasInput)
         {
             _open = true;
         }
@@ -287,17 +261,54 @@
 
     private async Task HandleClear()
     {
-        _query = "";
         _results = [];
         _open = false;
         _loading = false;
+        _hasInput = false;
         _requestId++;
+        await SetInputValueAsync("");
         if (OnCleared.HasDelegate) await OnCleared.InvokeAsync();
     }
 
-    /// <summary>The own-data source tags (set by OwnPlacesIndex on
-    /// each PlaceResult). Used by the SearchBox to insert a "Online"
-    /// separator between own-data and geocoded blocks.</summary>
+    /// <summary>Lazy-load the JS module (cached on the field so each
+    /// SetInputValueAsync call doesn't re-import). The catch is
+    /// intentionally broad: bUnit's JS runtime, browser disconnects
+    /// during navigation, missing module file -- all share the same
+    /// degrade path here (skip the programmatic input update; the
+    /// helm just doesn't see the input visually clear or fill).
+    /// Crucially, this MUST NOT propagate -- the calling path is
+    /// HandlePick / HandleClear, neither of which has anywhere
+    /// useful to surface a JS-load failure.</summary>
+    private async Task<IJSObjectReference?> GetJsModuleAsync()
+    {
+        if (_jsModule is not null) return _jsModule;
+        try
+        {
+            _jsModule = await JS.InvokeAsync<IJSObjectReference>(
+                "import", "./js/searchBoxJs.js");
+            return _jsModule;
+        }
+        catch { return null; }
+    }
+
+    private async Task SetInputValueAsync(string value)
+    {
+        var mod = await GetJsModuleAsync();
+        if (mod is null) return;
+        try { await mod.InvokeVoidAsync("setValue", _inputRef, value); }
+        catch { /* intentional swallow: see GetJsModuleAsync rationale */ }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsModule is null) return;
+        try { await _jsModule.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>The own-data source tags. Used by the SearchBox to
+    /// insert a "Online" separator between own-data and geocoded
+    /// blocks.</summary>
     private static bool IsOwnSource(string source) =>
         source is "waypoint" or "note" or "region";
 

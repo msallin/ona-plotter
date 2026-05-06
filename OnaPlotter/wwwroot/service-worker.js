@@ -162,7 +162,12 @@
 //             raced keystrokes against in-handler StateHasChanged
 //             calls, dropping characters and (often) preventing
 //             a search request from firing at all.
-const CACHE_NAME = 'ona-plotter-v30';
+// v30 -> v31: SearchBox.razor rewritten AGAIN -- fully uncontrolled
+//             input (no value=, no @bind). The renderer never
+//             writes the value attribute, so the helm's typing
+//             can't be clobbered. Added searchBoxJs.js for the
+//             programmatic clear / fill-on-pick paths.
+const CACHE_NAME = 'ona-plotter-v31';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
