@@ -35,7 +35,18 @@ public sealed class CachingPlaceSearchService : IPlaceSearchService
         var fresh = await _inner.SearchAsync(query, ct);
         if (fresh.Count > 0)
         {
-            await _cache.PutAsync(query, fresh, ct);
+            // Persist with a NON-cancellable token: we already have
+            // the fresh result in hand; if the helm cancels via a
+            // fresh keystroke between SearchAsync returning and
+            // PutAsync completing, dropping the persist isn't a
+            // failure -- it just means the next call hits the
+            // network again. Without this guard, IJSRuntime threw
+            // OperationCanceledException out of the localStorage
+            // write, which surfaced to the helm as "API request
+            // fires but no suggestions appear" (the OnInput catch
+            // bailed on the cancellation before _results = results).
+            try { await _cache.PutAsync(query, fresh, CancellationToken.None); }
+            catch (OperationCanceledException) { /* persist gave up; result still returned */ }
         }
         return fresh;
     }

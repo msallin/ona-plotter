@@ -171,10 +171,21 @@
         // Debounce: wait DebounceMs unless cancelled by a fresh
         // keystroke. Cancellation is the normal path here, not an
         // exceptional one -- swallow silently.
+        //
+        // Catch OperationCanceledException (the BASE) not just
+        // TaskCanceledException: IJSRuntime.InvokeAsync (which the
+        // localStorage cache uses underneath) throws the base type
+        // on cancellation, NOT the derived TaskCanceledException.
+        // A narrow catch let the exception propagate up through
+        // Search.SearchAsync into this handler and abort OnInput
+        // before _results = results, which manifested as "API
+        // request fires but no suggestions appear" when the helm
+        // typed fast enough that a fresh keystroke cancelled the
+        // CTS mid-cache-write.
         if (DebounceMs > 0)
         {
             try { await Task.Delay(DebounceMs, ct); }
-            catch (TaskCanceledException) { return; }
+            catch (OperationCanceledException) { return; }
         }
 
         _loading = true;
@@ -183,7 +194,7 @@
 
         IReadOnlyList<PlaceResult> results;
         try { results = await Search.SearchAsync(_query, ct); }
-        catch (TaskCanceledException) { return; }
+        catch (OperationCanceledException) { return; }
 
         if (ct.IsCancellationRequested) return;
         _results = results;

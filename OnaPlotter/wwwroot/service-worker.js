@@ -152,7 +152,11 @@
 // v27 -> v28: Place-search Phase 4 -- Nominatim fallback + offline
 //             empty-state hint. Adds .topbar-search-empty-title
 //             / -hint CSS under APP_SHELL.
-const CACHE_NAME = 'ona-plotter-v28';
+// v28 -> v29: Place-search dropdown switched to HUD-card tokens
+//             (--hud-card-bg / -stroke-in / -stroke-out / -halo /
+//             --hud-ink) so the dropdown matches HUD opacity in
+//             night / dark themes instead of looking transparent.
+const CACHE_NAME = 'ona-plotter-v29';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

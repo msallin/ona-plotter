@@ -345,4 +345,18 @@ public class SearchBoxTests
 
         await Assert.That(search.LastQuery!.Length).IsEqualTo(SearchBox.MaxQueryLength);
     }
+
+    // Note: a regression test for the OnInput catch broadening to
+    // OperationCanceledException would normally live here, but a
+    // bUnit InputAsync against a stub that throws synchronously
+    // hangs the runtime in the current TUnit + bUnit + Blazor WASM
+    // combination -- the test framework can't observe that the
+    // exception was caught vs the entire dispatch was aborted, and
+    // the test runner pegs on the first cold dispatch. The fix is
+    // verified by manual helm-test (fast typing no longer leaves
+    // the dropdown empty after a Photon hit). The narrow
+    // TaskCanceledException catch was the root cause; the broadened
+    // OperationCanceledException catch is the fix; the regression
+    // path is the SearchBox.razor source itself rather than a unit
+    // test.
 }
