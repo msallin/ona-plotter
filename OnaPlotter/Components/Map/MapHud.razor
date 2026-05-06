@@ -1142,7 +1142,20 @@
 
     private OnaPlotter.Components.Map.Hud.HudAnchorCard.AnchorHudSnapshot BuildAnchorSnapshot() =>
         new(
-            Visible: Data.AnchorActive || ManualAnchorActive,
+            // Card is only visible once the alarm is fully ARMED, not
+            // merely dropped. Helm-driven: with the v2 two-step flow,
+            // AnchorActive flips true on Drop (before Arm) and the
+            // card was appearing prematurely -- helm read it as
+            // "anchor watch is active" before they'd actually set
+            // a radius. Hidden during the dropped-but-not-armed
+            // window; the chart marker's amber-pulse + "RADIUS NOT
+            // SET" tooltip + the still-open SetRadius panel are the
+            // visible signals that step 2 is pending.
+            // Manual flow always shows the card (it has its own
+            // chip-based radius set) so the manual fallback remains
+            // intact.
+            Visible: (Data.AnchorActive && Data.AnchorMaxRadius is not null)
+                || ManualAnchorActive,
             Dragging: AnchorDragging,
             Manual: ManualAnchorActive,
             ManualRadiusMeters: ManualAnchorRadiusMeters,

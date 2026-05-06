@@ -3470,15 +3470,16 @@
         return Math.Max(approx, 20);   // never below the smallest preset
     }
 
-    /// <summary>Open the panel in Set Radius state. Pre-fill via the
-    /// heuristic + persisted ManualAnchorRadiusMeters fallback so a
-    /// chip is active when the panel mounts.
-    /// AnchorRadiusHeuristic owns the decision so the radius + eyebrow
-    /// share one source of truth.</summary>
+    /// <summary>Open the panel in Set Radius state. Auto chip is the
+    /// default selection (helm-driven preference: most boats use the
+    /// plugin's distance-from-drop computation rather than a fixed
+    /// preset). The depth-based heuristic still drives the eyebrow
+    /// subtitle so the helm sees "5x 11.8 m depth" as a sanity check
+    /// against what Auto picked, but the chip selection starts on
+    /// Auto via the UnseededInitialRadius sentinel.</summary>
     private void OpenAnchorSetRadiusPanel()
     {
-        anchorEditInitialRadius = OnaPlotter.Utilities.AnchorRadiusHeuristic
-            .Suggest(Data.Depth, Settings.ManualAnchorRadiusMeters);
+        anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
         anchorEditSuggestion = OnaPlotter.Utilities.AnchorRadiusHeuristic
             .DescribeSuggestion(Data.Depth);
         anchorEditBusy = false;
@@ -3552,8 +3553,9 @@
             // button's "always raise" semantics, trapping the helm
             // in a half-armed state. The flip keeps the Drop -> Set
             // transition inside one panel session.
-            anchorEditInitialRadius = OnaPlotter.Utilities.AnchorRadiusHeuristic
-                .Suggest(Data.Depth, Settings.ManualAnchorRadiusMeters);
+            // Auto chip is the default (UnseededInitialRadius sentinel);
+            // see OpenAnchorSetRadiusPanel for the rationale.
+            anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
             anchorEditSuggestion = OnaPlotter.Utilities.AnchorRadiusHeuristic
                 .DescribeSuggestion(Data.Depth);
             _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.SetRadius;
