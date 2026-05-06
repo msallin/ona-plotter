@@ -35,6 +35,21 @@ public sealed class WaypointApproachAlarmRule : IAlarmRule
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
+        // Gate: when the helm has opted into server-side approach
+        // alarms (default), this client rule mutes itself --
+        // ServerNotificationsAlarmRule surfaces the SK course-provider
+        // plugin's `notifications.navigation.arrivalCircleEntered` /
+        // `perpendicularPassed` / `routeComplete` deltas with title
+        // "APPROACH" (see DeriveTitleAndDefault in that file). One
+        // arrival cue, agreeing with the autopilot's logic. The
+        // _alarmedFor latch is reset so a future toggle-off doesn't
+        // see stale state from the previous active waypoint.
+        if (ctx.Settings.ServerSideApproachAlarms)
+        {
+            _alarmedFor = (null, null);
+            return null;
+        }
+
         if (!ctx.Data.HasActiveCourse) { _alarmedFor = (null, null); return null; }
 
         var wpLat = ctx.Data.CourseNextPointLatitude;

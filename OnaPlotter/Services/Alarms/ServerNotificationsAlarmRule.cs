@@ -170,6 +170,22 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             return ("ANCHOR", HumaniseTail(tail, "navigation.anchor."));
         if (tail == "navigation.anchor")
             return ("ANCHOR", "anchor");
+        // Course-provider plugin (signalk-course-data) emits arrival-
+        // related notifications under navigation.course.* and the bare
+        // navigation.arrivalCircleEntered / perpendicularPassed /
+        // routeComplete leaves. The "APPROACH" title is load-bearing:
+        // MainLayout.razor checks `a.Title == "APPROACH"` to render
+        // the "Next WP" advance button on the banner; using the same
+        // string for the bridged alarm preserves that behaviour
+        // without a per-rule special case in the layout.
+        if (tail.StartsWith("navigation.course.", StringComparison.Ordinal))
+            return ("APPROACH", HumaniseTail(tail, "navigation.course."));
+        if (tail == "navigation.arrivalCircleEntered")
+            return ("APPROACH", "arrival circle entered");
+        if (tail == "navigation.perpendicularPassed")
+            return ("APPROACH", "perpendicular passed");
+        if (tail == "navigation.routeComplete")
+            return ("APPROACH", "route complete");
         if (tail == "mob" || tail.StartsWith("mob.", StringComparison.Ordinal))
             return ("MOB", "Man overboard");
         if (tail.StartsWith("security.collision", StringComparison.Ordinal))

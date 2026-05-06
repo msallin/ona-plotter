@@ -63,6 +63,11 @@ internal sealed class FakeSettings : IAppSettings
     public string OwnVesselType { get; set; } = "power";
     public bool KeepScreenAwake { get; set; } = true;
     public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
+    // Default false in tests so existing WaypointApproach rule tests
+    // keep exercising the client path -- production
+    // AppSettingsService defaults this to true (server-side preferred);
+    // tests covering the gate's "off" branch override per-test.
+    public bool ServerSideApproachAlarms { get; set; } = false;
     public bool ShowKeyboardHints { get; set; } = false;
     public bool ShowAutopilotHud { get; set; } = false;
     public bool ShowRadarHud { get; set; } = false;
@@ -152,6 +157,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetOwnVesselTypeAsync(string v) { OwnVesselType = v; return Task.CompletedTask; }
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;
     public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;
+    public Task SetServerSideApproachAlarmsAsync(bool v) => Task.CompletedTask;
     public Task SetShowKeyboardHintsAsync(bool v) { ShowKeyboardHints = v; return Task.CompletedTask; }
     public Task SetShowAutopilotHudAsync(bool v) { ShowAutopilotHud = v; return Task.CompletedTask; }
     public Task SetShowRadarHudAsync(bool v) { ShowRadarHud = v; return Task.CompletedTask; }

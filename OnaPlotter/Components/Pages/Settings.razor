@@ -429,17 +429,49 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
+                @* Server-side approach alarms toggle (default ON).
+                   When ON, the bridged SK course-provider plugin's
+                   notifications drive APPROACH; the radius input
+                   below is dimmed because the SK plugin's own
+                   arrival circle wins. When OFF, the client-side
+                   WaypointApproach rule fires on the helm-set
+                   radius -- helm-only fallback for SK installs
+                   without a course-provider plugin. *@
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="server-approach-switch"
+                           checked="@AppSettings.ServerSideApproachAlarms"
+                           @onchange="OnServerSideApproachAlarmsChanged" />
+                    <label class="form-check-label" for="server-approach-switch">
+                        Use server-side approach alarms
+                    </label>
+                </div>
+                <small class="text-muted d-block mb-3">
+                    Default. The SK course-provider plugin's
+                    <code>arrivalCircleEntered</code> /
+                    <code>perpendicularPassed</code> /
+                    <code>routeComplete</code> notifications drive
+                    the APPROACH banner; the chartplotter agrees
+                    with the autopilot's arrival logic. Turn off
+                    for SK installs without a course-provider
+                    plugin -- the client-side rule below takes
+                    over.
+                </small>
+
                 <label class="form-label">Waypoint Arrival Radius</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="5" min="0" max="1000"
                            aria-label="Waypoint arrival radius in meters"
                            value="@AppSettings.WaypointArrivalRadiusMeters"
+                           disabled="@AppSettings.ServerSideApproachAlarms"
                            @onchange="(e) => OnWaypointArrivalChanged(e)" />
                     <span class="input-group-text">m</span>
                 </div>
                 <small class="text-muted">
-                    Distance at which an active-course waypoint triggers the APPROACH
-                    alarm. Set to 0 to disable. Typical inshore: 30-50 m.
+                    Client-side fallback radius. Only consulted when
+                    "Use server-side approach alarms" is OFF. Set to
+                    0 to disable the client rule entirely. Typical
+                    inshore: 30-50 m.
                 </small>
                 <div class="form-check form-switch mt-2">
                     <input class="form-check-input" type="checkbox"
@@ -1138,6 +1170,12 @@
         if (System.Math.Abs(clamped - raw) > 0.001)
             Toasts.Show($"Clamped to {clamped:F0} m (range 0–1000)");
         await AppSettings.SetWaypointArrivalRadiusMetersAsync(clamped);
+    }
+
+    private async Task OnServerSideApproachAlarmsChanged(ChangeEventArgs e)
+    {
+        bool val = e.Value is bool b && b;
+        await AppSettings.SetServerSideApproachAlarmsAsync(val);
     }
 
     private async Task OnDeadmanTimeoutChanged(ChangeEventArgs e)
