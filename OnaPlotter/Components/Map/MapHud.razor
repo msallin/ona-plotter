@@ -621,7 +621,8 @@
 <div class="hud-stack hud-stack-bc">
     <OnaPlotter.Components.Map.Hud.HudAnchorCard
         Snapshot="@BuildAnchorSnapshot()"
-        OnSetRadius="OnSetAnchorRadius" />
+        OnSetRadius="OnSetAnchorRadius"
+        OnAdjust="OnAdjustAnchor" />
 
     <OnaPlotter.Components.Map.Hud.HudRouteCard
         Snapshot="@BuildRouteSnapshot()"
@@ -708,6 +709,10 @@
     /// chips. The caller persists it to IAppSettings and re-draws the
     /// anchor circle via JS.</summary>
     [Parameter] public EventCallback<double> OnSetAnchorRadius { get; set; }
+    /// <summary>Helm tapped the Anchor Watch HUD card -- parent
+    /// opens the SetRadius panel for radius adjustment. Server-
+    /// armed flow only; manual flow keeps its inline chip row.</summary>
+    [Parameter] public EventCallback OnAdjustAnchor { get; set; }
 
     /// <summary>Signed depth trend in metres per minute over the last
     /// minute. Positive = getting deeper; negative = shallower. Null

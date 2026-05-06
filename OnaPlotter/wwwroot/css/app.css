@@ -7274,6 +7274,18 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     row-gap: 4px;
 }
 
+/* Tappable Anchor Watch HUD card: cursor + subtle hover hint so the
+   helm reads it as interactive. Tapping opens the SetRadius panel
+   for radius adjustment; the bottom-bar Anchor button remains the
+   dedicated raise gesture. Manual-flow cards stay non-interactive
+   (their own chip row handles adjustment). */
+.anchor-panel-tappable {
+    cursor: pointer;
+}
+.anchor-panel-tappable:hover {
+    border-color: rgba(245, 158, 11, 0.55);
+}
+
 /* "RADIUS NOT SET" tooltip permanently bound to the dropped-but-
    not-armed anchor pin. Amber background + bold uppercase so it
    reads as a warning without competing with the chart's own colour

@@ -78,22 +78,10 @@
             }
         </div>
 
-        @* Raise button only renders when the helm is REVISITING the
-           panel on an already-armed anchor (CanRaise=true). On the
-           first arming (panel auto-flipped from Drop), the helm
-           hasn't committed a radius yet -- nothing to raise -- so
-           the button stays hidden. Two-tap arm-then-confirm pattern
-           matches the previous Anchor-button raise gesture: first
-           tap flips the label to "Tap to raise" for 3 s; a
-           second tap within the window fires OnRaise. *@
-        @if (CanRaise)
-        {
-            <button class="map-btn anchor-edit-raise @(_raiseArmed ? "anchor-edit-raise-armed" : "")"
-                    @onclick="OnRaiseClicked" disabled="@Busy"
-                    title="@(_raiseArmed ? "Tap again within 3 s to confirm" : "Raise the anchor (two-tap to confirm)")">
-                @(_raiseArmed ? "Tap to raise" : "Raise")
-            </button>
-        }
+        @* Raise lives on the Anchor button (MapControls' arm-then-
+           confirm gesture), not in this panel. The Close button
+           dismisses the panel; the helm raises via the bottom-bar
+           Anchor button. *@
         <button class="map-btn" @onclick="OnCancelClicked" disabled="@Busy">Close</button>
     }
     else
@@ -180,29 +168,6 @@
     /// can re-open later to finish step 2.</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    /// <summary>Helm requested raise from inside the panel (after
-    /// the two-tap arm-then-confirm pattern resolved). Parent calls
-    /// <c>IAnchorAlarmApi.RaiseAsync()</c>. Only fires when
-    /// <see cref="CanRaise"/> is true (panel was opened on an
-    /// already-armed anchor for adjustment).</summary>
-    [Parameter] public EventCallback OnRaise { get; set; }
-
-    /// <summary>True when the panel is being re-opened on an
-    /// already-armed anchor (helm came back to adjust the radius,
-    /// or to raise). Drives the Raise-button visibility. False on
-    /// the first-arming flow (just dropped, no radius yet); the
-    /// Raise button stays hidden because there's nothing to
-    /// raise from. Default false so existing call sites that don't
-    /// pass it stay in the conservative "no raise" state.</summary>
-    [Parameter] public bool CanRaise { get; set; } = false;
-
-    /// <summary>How long the Raise button stays armed after the
-    /// first tap before reverting. Matches the existing Anchor-
-    /// button arm-then-confirm gesture window. 3 s is field-tested
-    /// long enough to confirm without being so long that an
-    /// accidental first tap leaves the button armed indefinitely.</summary>
-    private const int RaiseArmTimeoutSec = 3;
-
     /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
     /// dropped from the v1 set on field-study feedback -- 5:1 scope
     /// at 30 m of water is already 150 m and that's deeper than the
@@ -276,40 +241,6 @@
         await OnCancel.InvokeAsync();
     }
 
-    /// <summary>Arm-then-confirm Raise. First tap flips the button
-    /// label + sets a timer to disarm; second tap within the
-    /// <see cref="RaiseArmTimeoutSec"/> window fires OnRaise.
-    /// Mirrors the existing Anchor-button raise gesture (two-tap
-    /// confirm) so the helm's muscle memory carries over.
-    /// <para>Timer reset on each first-tap so a held-finger
-    /// doesn't pre-disarm; ResetRaiseAfter implements the
-    /// auto-disarm via fire-and-forget Task.Delay (we don't keep
-    /// a CTS because the click handler's gate makes a stale-tick
-    /// no-op; the visual state just decays.</para></summary>
-    private bool _raiseArmed;
-    private DateTime _raiseArmedUtc;
-
-    private async Task OnRaiseClicked()
-    {
-        if (Busy) return;
-        if (_raiseArmed && (DateTime.UtcNow - _raiseArmedUtc).TotalSeconds <= RaiseArmTimeoutSec)
-        {
-            _raiseArmed = false;
-            await OnRaise.InvokeAsync();
-            return;
-        }
-        // First tap: arm.
-        _raiseArmed = true;
-        _raiseArmedUtc = DateTime.UtcNow;
-        // Auto-disarm after the timeout so the button doesn't stay
-        // armed indefinitely if the helm walks away.
-        _ = Task.Delay(TimeSpan.FromSeconds(RaiseArmTimeoutSec))
-            .ContinueWith(_ =>
-            {
-                _raiseArmed = false;
-                InvokeAsync(StateHasChanged);
-            }, TaskScheduler.Default);
-    }
 
     /// <summary>Smallest preset >= radius. Same round-up rationale as
     /// v1 -- 5:1 scope is the cruising-rule-of-thumb minimum, rounding

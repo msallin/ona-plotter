@@ -9,7 +9,18 @@
 
 @if (Snapshot.Visible)
 {
-    <div class="hud-panel hud-card anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "")">
+    @* Tap-to-adjust: when a server-driven anchor is armed (Manual=
+       false) and the parent has wired OnAdjust, the whole card
+       becomes a click target that re-opens the SetRadius panel.
+       Manual flow keeps its existing inline chip row -- no point
+       in routing through the parent panel for the JS-only anchor.
+       The cursor + hover styles depend on canAdjust so the card
+       reads as static when not tappable. *@
+    var canAdjust = !Snapshot.Manual && OnAdjust.HasDelegate;
+    <div class="hud-panel hud-card anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "") @(canAdjust ? "anchor-panel-tappable" : "")"
+         @onclick="@(canAdjust ? OnAdjust : default)"
+         role="@(canAdjust ? "button" : null)"
+         title="@(canAdjust ? "Tap to adjust the alarm radius" : null)">
             <div class="hud-card-title">
                 <span class="hud-card-name">Anchor Watch</span>
                 @* Small compass needle pointing back at the anchor, north-up.
@@ -100,6 +111,14 @@
 @code {
     [Parameter, EditorRequired] public AnchorHudSnapshot Snapshot { get; set; }
     [Parameter] public EventCallback<double> OnSetRadius { get; set; }
+
+    /// <summary>Tap on the (server-armed) card opens the SetRadius
+    /// panel for adjustment. The Anchor button on the bottom bar
+    /// remains the dedicated raise gesture; this is the dedicated
+    /// adjust gesture so the two operations don't share a button.
+    /// Null / not-wired = card is non-interactive (manual flow,
+    /// or older parents that haven't wired this up).</summary>
+    [Parameter] public EventCallback OnAdjust { get; set; }
 
     private static readonly double[] AnchorRadiusPresets = [20, 30, 50, 75, 100, 150];
 

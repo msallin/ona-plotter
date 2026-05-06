@@ -81,7 +81,8 @@
             ActiveRouteDistanceTotal="@(_activeRouteSync?.ActiveRouteDistanceTotal)"
             OnPrevWaypoint="PrevWaypoint"
             OnNextWaypoint="NextWaypoint"
-            OnSetAnchorRadius="SetManualAnchorRadius" />
+            OnSetAnchorRadius="SetManualAnchorRadius"
+            OnAdjustAnchor="OpenAnchorSetRadiusPanel" />
 
     <MapControls Follow="follow"
                  OrientationLabel="@mapOrientationLabel"
@@ -3331,20 +3332,45 @@
         if (_anchorJs is null) return;
         if (_anchorRaiseInFlight) return;
 
-        // The Anchor button always opens the panel; raise lives
-        // INSIDE the SetRadius panel as a button (with arm-then-
-        // confirm). This lets the helm adjust the radius any time
-        // (boat dragging? pick a larger chip / Auto) without first
-        // tearing down the anchor. Two routes:
-        //   1. AnchorActive=false -> Drop panel.
-        //   2. AnchorActive=true  -> SetRadius panel (chips +
-        //      Set + Raise). When MaxRadius is published the panel
-        //      pre-selects the current radius; otherwise (just
-        //      dropped, helm closed before arming, SK restart wiped
-        //      radius) it defaults to Auto.
+        // Anchor button is the RAISE gesture once an anchor is
+        // active. Two-tap arm-then-confirm pattern lives on the
+        // button itself (MapControls.razor); by the time
+        // ToggleAnchor runs in this branch the helm has already
+        // confirmed. Adjusting the radius is a SEPARATE gesture --
+        // tap on the Anchor Watch HUD card -- so the Anchor button
+        // stays unambiguously the "stop watching" action.
         if (Data.AnchorActive)
         {
-            OpenAnchorSetRadiusPanel();
+            _anchorRaiseInFlight = true;
+            // Arm the visual "raising" state + watchdog BEFORE the
+            // PUT so the helm sees feedback during the in-flight
+            // window. HttpClient.Timeout is 8 s; if we waited until
+            // after success the helm would stare at a frozen Anchor
+            // button + un-dimmed marker for up to 8 s on a slow
+            // server.
+            _anchorSync?.MarkRaisePending();
+            try { await _anchorJs.SetAnchorRaisingAsync(true); }
+            catch (Exception ex) { Toasts.LogException(ex, "Set anchor raising"); }
+            ApiResult r;
+            try
+            {
+                try { r = await AnchorAlarmApi.RaiseAsync(); }
+                catch (Exception ex) { Toasts.LogException(ex, "Raise anchor"); return; }
+
+                if (!r.Success)
+                {
+                    _anchorSync?.CancelRaisePending();
+                    try { await _anchorJs.SetAnchorRaisingAsync(false); }
+                    catch (Exception ex) { Toasts.LogException(ex, "Reset anchor raising"); }
+                    Toasts.Error(AnchorFailureMessage("Raise", r));
+                    return;
+                }
+                Toasts.Success("Anchor raised");
+            }
+            finally
+            {
+                _anchorRaiseInFlight = false;
+            }
             return;
         }
 
