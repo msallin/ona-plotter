@@ -1,0 +1,213 @@
+@* Topbar place-search: type a name, debounced query against the
+   IPlaceSearchService (Photon today, with a cache decorator), pick
+   a result -> parent flies the map and drops a search-pin. The pin
+   wiring lives on the parent (MainLayout) so this component stays
+   transport-agnostic; we only emit the picked PlaceResult.
+
+   Why this isn't done with @bind: the input is a controlled-vs-
+   uncontrolled hybrid -- the helm types freely (controlled) but
+   the dropdown highlight + Escape semantics need keyboard handling
+   that @bind doesn't expose. Manual @oninput / @onkeydown gives us
+   both. *@
+
+@using OnaPlotter.Services.Places
+@inject IPlaceSearchService Search
+
+<div class="topbar-search @(_open ? "topbar-search--open" : "")"
+     @onfocusout="HandleFocusOut">
+    <input type="search"
+           class="topbar-search-input"
+           placeholder="@Placeholder"
+           value="@_query"
+           @oninput="OnInput"
+           @onkeydown="OnKeyDown"
+           @onfocusin="HandleFocusIn"
+           autocomplete="off"
+           spellcheck="false"
+           aria-label="Search for a place" />
+    @if (_loading)
+    {
+        <span class="topbar-search-spinner" role="status" aria-label="Searching"></span>
+    }
+    else if (!string.IsNullOrEmpty(_query))
+    {
+        <button type="button" class="topbar-search-clear"
+                @onclick="HandleClear"
+                title="Clear search"
+                aria-label="Clear search">&times;</button>
+    }
+
+    @if (_open)
+    {
+        <ul class="topbar-search-dropdown" role="listbox">
+            @if (_results.Count == 0 && !_loading && !string.IsNullOrEmpty(_query))
+            {
+                <li class="topbar-search-empty" role="status">
+                    No results
+                </li>
+            }
+            else
+            {
+                @for (int i = 0; i < _results.Count; i++)
+                {
+                    var idx = i;
+                    var r = _results[idx];
+                    var rowKey = $"{r.Source}-{r.Lat}-{r.Lon}-{idx}";
+                    <li @key="rowKey"
+                        role="option"
+                        aria-selected="@(idx == _highlight)"
+                        class="topbar-search-row @(idx == _highlight ? "topbar-search-row--active" : "")"
+                        @onmousedown:preventDefault
+                        @onmousedown="() => HandlePick(r)"
+                        @onmouseenter="() => _highlight = idx">
+                        <div class="topbar-search-name">@r.Name</div>
+                        @if (!string.Equals(r.DisplayLabel, r.Name, StringComparison.Ordinal))
+                        {
+                            <div class="topbar-search-meta">@r.DisplayLabel</div>
+                        }
+                    </li>
+                }
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    /// <summary>Placeholder text shown when the input is empty.
+    /// Defaults to "Search places" -- the spec calls for that copy
+    /// but tests may override.</summary>
+    [Parameter] public string Placeholder { get; set; } = "Search places";
+
+    /// <summary>Fired when the helm picks a result from the dropdown
+    /// (mouse click or Enter on a highlighted row). Parent flies the
+    /// map + drops a search-pin via the leaflet JS interop.</summary>
+    [Parameter] public EventCallback<PlaceResult> OnPicked { get; set; }
+
+    /// <summary>Optional debounce override (milliseconds). Default
+    /// 300 ms balances "feels live" against "don't hammer the
+    /// geocoder on every keystroke". Tests pass 0 for instant.</summary>
+    [Parameter] public int DebounceMs { get; set; } = 300;
+
+    private string _query = "";
+    private IReadOnlyList<PlaceResult> _results = [];
+    private int _highlight = 0;
+    private bool _loading = false;
+    private bool _open = false;
+    /// <summary>Cancels the in-flight debounce + search call when a
+    /// new keystroke lands. Without this a slow Photon response from
+    /// the previous query would clobber the dropdown when it
+    /// eventually returns.</summary>
+    private CancellationTokenSource? _searchCts;
+    /// <summary>Set by HandlePick so the immediately-following blur
+    /// doesn't close the dropdown after we've already navigated.
+    /// Avoids a flicker when the helm clicks a row.</summary>
+    private bool _suppressNextFocusOut;
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        // Cancel any in-flight previous search and start a fresh CTS.
+        _searchCts?.Cancel();
+        _searchCts = new CancellationTokenSource();
+        var ct = _searchCts.Token;
+
+        if (string.IsNullOrWhiteSpace(_query))
+        {
+            _results = [];
+            _open = false;
+            _loading = false;
+            return;
+        }
+
+        // Debounce: wait DebounceMs unless cancelled by a fresh
+        // keystroke. Cancellation is the normal path here, not an
+        // exceptional one -- swallow silently.
+        if (DebounceMs > 0)
+        {
+            try { await Task.Delay(DebounceMs, ct); }
+            catch (TaskCanceledException) { return; }
+        }
+
+        _loading = true;
+        _open = true;
+        StateHasChanged();
+
+        IReadOnlyList<PlaceResult> results;
+        try { results = await Search.SearchAsync(_query, ct); }
+        catch (TaskCanceledException) { return; }
+
+        if (ct.IsCancellationRequested) return;
+        _results = results;
+        _highlight = 0;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (!_open || _results.Count == 0)
+        {
+            if (e.Key == "Escape" && !string.IsNullOrEmpty(_query))
+            {
+                HandleClear();
+            }
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                _highlight = Math.Min(_highlight + 1, _results.Count - 1);
+                break;
+            case "ArrowUp":
+                _highlight = Math.Max(_highlight - 1, 0);
+                break;
+            case "Enter":
+                if (_highlight >= 0 && _highlight < _results.Count)
+                {
+                    await HandlePick(_results[_highlight]);
+                }
+                break;
+            case "Escape":
+                _open = false;
+                break;
+        }
+    }
+
+    private async Task HandlePick(PlaceResult result)
+    {
+        _suppressNextFocusOut = true;
+        _open = false;
+        _query = result.Name;
+        await OnPicked.InvokeAsync(result);
+    }
+
+    private void HandleFocusIn()
+    {
+        // Re-open the dropdown when refocusing the input WITH
+        // existing results -- helm clicked away then back.
+        if (_results.Count > 0 && !string.IsNullOrEmpty(_query))
+        {
+            _open = true;
+        }
+    }
+
+    private void HandleFocusOut()
+    {
+        if (_suppressNextFocusOut)
+        {
+            _suppressNextFocusOut = false;
+            return;
+        }
+        _open = false;
+    }
+
+    private void HandleClear()
+    {
+        _searchCts?.Cancel();
+        _query = "";
+        _results = [];
+        _open = false;
+        _loading = false;
+    }
+}

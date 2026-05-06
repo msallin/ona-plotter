@@ -2069,6 +2069,69 @@ export function panTo(lat, lon) {
     map.panTo([lat, lon]);
 }
 
+// Search-pin overlay. The topbar SearchBox calls flyToSearchResult
+// after the helm picks a place; the marker is a visually distinct
+// short-lived ring (NOT a waypoint icon) so it reads as "result of
+// my search" rather than "saved place". Cleared on the next search
+// pick or by an explicit clearSearchPin call.
+let searchPinMarker = null;
+
+/**
+ * Fly the map to a place-search result and drop a search-pin at
+ * the same lat/lon. The pin replaces any previous search-pin so the
+ * overlay never accumulates as the helm tries multiple queries.
+ * `zoom` is optional: when omitted (or null) we keep the helm's
+ * current zoom but lift it to a sensible minimum (12) so a
+ * world-zoom helm searching "Berlin" actually sees Berlin instead
+ * of a continent. Animation duration kept short (0.6 s) so the
+ * helm isn't waiting on the camera.
+ */
+export function flyToSearchResult(lat, lon, zoom) {
+    if (!map) return;
+    const targetZoom = (typeof zoom === 'number' && Number.isFinite(zoom))
+        ? zoom
+        : Math.max(map.getZoom(), 12);
+    map.flyTo([lat, lon], targetZoom, { duration: 0.6 });
+    setSearchPin(lat, lon);
+}
+
+/**
+ * Drop or move the search-pin without panning. Exported separately
+ * so a future Phase-3 own-data hit (which is already on the helm's
+ * map) can re-use the same visual without re-zooming.
+ */
+export function setSearchPin(lat, lon) {
+    if (!map) return;
+    if (searchPinMarker) {
+        searchPinMarker.setLatLng([lat, lon]);
+        return;
+    }
+    // divIcon with a CSS-styled ring: lighter than a waypoint marker
+    // so it doesn't compete with saved-resource icons on the map.
+    // Non-interactive: we don't want clicks on the pin to compete
+    // with chart-tile / waypoint clicks underneath; the helm
+    // converts to a waypoint via the existing long-press menu.
+    searchPinMarker = L.marker([lat, lon], {
+        icon: L.divIcon({
+            className: 'search-pin',
+            html: '<span class="search-pin-dot"></span>',
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
+        }),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 900,
+    }).addTo(map);
+}
+
+/** Remove the search-pin overlay. No-op if no pin is currently
+ *  drawn (e.g. helm cleared the search box without ever picking). */
+export function clearSearchPin() {
+    if (!map || !searchPinMarker) return;
+    map.removeLayer(searchPinMarker);
+    searchPinMarker = null;
+}
+
 // Return the current map centre as [lat, lon]. Used by the FAB
 // menu so Create-at-map-centre actions can reuse the same target
 // fields the context-menu handlers already write.

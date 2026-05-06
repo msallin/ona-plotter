@@ -112,15 +112,29 @@
                 </a>
             }
 
-            @* Zoom in / out. Only rendered when the Map page is
-               active; other pages have no map to zoom, so showing
-               inert zoom buttons would be a lie. The first button
-               of the right-side cluster carries `ms-auto` so the
-               whole group right-aligns; subsequent buttons sit
-               flush. *@
+            @* Place-search box. Only rendered on the Map page (off-
+               map pages have no map to fly + no pin overlay to
+               drop, so a search would do nothing visible). Sits
+               BEFORE the right-side cluster's `ms-auto` button so
+               the search input grows into the gap between the
+               status chips on the left and the icon buttons on
+               the right. Pick handler flies the map + drops the
+               search-pin via the leaflet JS module. *@
             @if (IsMapRoute)
             {
-                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn ms-auto"
+                <SearchBox OnPicked="HandlePlacePicked" />
+            }
+
+            @* Zoom in / out. Only rendered when the Map page is
+               active; other pages have no map to zoom, so showing
+               inert zoom buttons would be a lie. The right-side
+               cluster carries `ms-auto` (on the SearchBox above
+               when the map is shown, else on the first icon below)
+               so the whole group right-aligns; subsequent buttons
+               sit flush. *@
+            @if (IsMapRoute)
+            {
+                <button class="btn btn-sm btn-outline-secondary topbar-icon-btn"
                         @onclick="ZoomInAsync"
                         title="Zoom in" aria-label="Zoom in">
                     @((MarkupString)OnaPlotter.Utilities.Icons.Small.Plus)
@@ -751,6 +765,28 @@
         {
             await EnsureLeafletModuleAsync();
             await leafletModule!.InvokeVoidAsync("zoomIn", 1);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    /// <summary>
+    /// Topbar SearchBox -> picked PlaceResult. Flies the map and
+    /// drops the search-pin via the leaflet JS module. The pin
+    /// replaces any previous one (the JS side handles the swap).
+    /// JSDisconnectedException swallowed because the helm could
+    /// have navigated away mid-search; failing silently is the
+    /// right move when the target map no longer exists.
+    /// </summary>
+    private async Task HandlePlacePicked(OnaPlotter.Services.Places.PlaceResult result)
+    {
+        try
+        {
+            await EnsureLeafletModuleAsync();
+            // null zoom -> JS keeps current zoom but lifts to a
+            // sensible minimum (12) so a world-zoom helm searching
+            // a city doesn't end up looking at a continent.
+            await leafletModule!.InvokeVoidAsync(
+                "flyToSearchResult", result.Lat, result.Lon, null);
         }
         catch (JSDisconnectedException) { }
     }
