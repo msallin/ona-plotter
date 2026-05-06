@@ -52,15 +52,33 @@
                 {
                     var idx = i;
                     var r = _results[idx];
+                    // Separator row when transitioning from an own-data
+                    // source ("waypoint" / "note" / "region") to an
+                    // online geocoder source ("photon" / "nominatim").
+                    // Helm reads the dropdown as two distinct blocks:
+                    // "your places" on top, "found online" below.
+                    bool prevWasOwn = idx > 0 && IsOwnSource(_results[idx - 1].Source);
+                    bool currentIsOnline = !IsOwnSource(r.Source);
+                    if (prevWasOwn && currentIsOnline)
+                    {
+                        <li class="topbar-search-separator" role="separator"
+                            aria-hidden="true">Online</li>
+                    }
                     var rowKey = $"{r.Source}-{r.Lat}-{r.Lon}-{idx}";
                     <li @key="rowKey"
                         role="option"
                         aria-selected="@(idx == _highlight)"
-                        class="topbar-search-row @(idx == _highlight ? "topbar-search-row--active" : "")"
+                        class="topbar-search-row topbar-search-row--@r.Source @(idx == _highlight ? "topbar-search-row--active" : "")"
                         @onmousedown:preventDefault
                         @onmousedown="() => HandlePick(r)"
                         @onmouseenter="() => _highlight = idx">
-                        <div class="topbar-search-name">@r.Name</div>
+                        <div class="topbar-search-name">
+                            @r.Name
+                            @if (IsOwnSource(r.Source))
+                            {
+                                <span class="topbar-search-badge">@SourceBadge(r.Source)</span>
+                            }
+                        </div>
                         @if (!string.Equals(r.DisplayLabel, r.Name, StringComparison.Ordinal))
                         {
                             <div class="topbar-search-meta">@r.DisplayLabel</div>
@@ -210,4 +228,21 @@
         _open = false;
         _loading = false;
     }
+
+    /// <summary>The own-data source tags (set by OwnPlacesIndex on
+    /// each PlaceResult). Used by the SearchBox to insert a "Online"
+    /// separator between own-data and geocoded blocks.</summary>
+    private static bool IsOwnSource(string source) =>
+        source is "waypoint" or "note" or "region";
+
+    /// <summary>Short label for the source-badge next to the row's
+    /// Name. Distinguishes a saved waypoint from a same-named OSM
+    /// hit at a glance.</summary>
+    private static string SourceBadge(string source) => source switch
+    {
+        "waypoint" => "WPT",
+        "note"     => "NOTE",
+        "region"   => "RGN",
+        _          => source.ToUpperInvariant(),
+    };
 }

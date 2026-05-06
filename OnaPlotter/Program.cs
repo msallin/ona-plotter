@@ -215,17 +215,32 @@ builder.Services.AddSingleton<OnaPlotter.Services.INavigationAverages, OnaPlotte
 builder.Services.AddSingleton<ClientErrorRelay>();
 
 // Place search (topbar geocoder). The helm-facing IPlaceSearchService
-// is the caching decorator wrapping the live Photon client. Cache
-// + provider are registered as concrete types so the decorator can
-// resolve both. Photon is online-only; offline / rate-limited
-// failures return an empty list per the IPlaceSearchService contract,
-// no exception bubbles out.
+// is a Merged(Own + Caching(Photon)) composition:
+//
+//   helm types -> SearchBox calls IPlaceSearchService
+//   IPlaceSearchService = MergedPlaceSearchService
+//     own-data branch: OwnPlacesIndex (in-mem substring match
+//                       over waypoints + notes + regions, lazy-loaded
+//                       via the *Api singletons, 5-minute TTL)
+//     online branch:   CachingPlaceSearchService(PhotonPlaceSearchService)
+//                       cache hit -> immediate; miss -> Photon HTTP
+//
+// Both branches run in parallel; the helm sees own-data hits even
+// when the geocoder is slow. Photon is online-only; offline / rate-
+// limited failures return an empty list per the IPlaceSearchService
+// contract, no exception bubbles out.
 builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.PlaceSearchCache>();
+builder.Services.AddSingleton<OnaPlotter.Services.Places.OwnPlacesIndex>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.IPlaceSearchService>(sp =>
-    new OnaPlotter.Services.Places.CachingPlaceSearchService(
+{
+    var caching = new OnaPlotter.Services.Places.CachingPlaceSearchService(
         sp.GetRequiredService<OnaPlotter.Services.Places.PhotonPlaceSearchService>(),
-        sp.GetRequiredService<OnaPlotter.Services.Places.PlaceSearchCache>()));
+        sp.GetRequiredService<OnaPlotter.Services.Places.PlaceSearchCache>());
+    return new OnaPlotter.Services.Places.MergedPlaceSearchService(
+        sp.GetRequiredService<OnaPlotter.Services.Places.OwnPlacesIndex>(),
+        caching);
+});
 
 var host = builder.Build();
 

@@ -146,7 +146,10 @@
 //             (Phase 2 of the geocoder feature). New CSS rules
 //             under .topbar-search* / .search-pin* land in the
 //             APP_SHELL precache; bump invalidates the stale shell.
-const CACHE_NAME = 'ona-plotter-v26';
+// v26 -> v27: Place-search Phase 3 -- own-data separator + source
+//             badge. Adds .topbar-search-separator + -badge CSS
+//             under APP_SHELL.
+const CACHE_NAME = 'ona-plotter-v27';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

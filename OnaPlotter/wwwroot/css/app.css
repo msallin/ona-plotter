@@ -3742,6 +3742,41 @@ main:has(.alarm-banner-stack) .snooze-chips {
     font-style: italic;
 }
 
+/* Separator between the own-data block (waypoints / notes / regions)
+   and the geocoded-online block. Renders as a small all-caps label
+   on a faint horizontal rule so the helm reads the dropdown as
+   "your places" + "online matches" without label clutter. */
+.topbar-search-separator {
+    padding: 6px 10px 4px;
+    color: var(--sk-text-muted, #64748b);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-top: 1px solid var(--panel-border, rgba(255, 255, 255, 0.1));
+    margin-top: 4px;
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Source badge appended to the row's Name on own-data hits. The
+   geocoded rows don't carry a badge -- they're the default --
+   so the helm's eye is drawn to the WPT / NOTE / RGN tags above
+   the separator. */
+.topbar-search-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--sk-text-muted, #64748b);
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 2px;
+    line-height: 1.4;
+    vertical-align: 1px;
+}
+
 /* Coarse pointer (touchscreen) -- match the 44px touch-target floor
    the icon buttons get. Same reasoning: gloved helm in a moving
    cockpit needs a forgiving target. */
