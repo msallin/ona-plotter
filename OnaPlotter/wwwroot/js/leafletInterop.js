@@ -73,6 +73,10 @@ let boatMarker = null;
 let boatVector = null;
 let boatVectorTip = null;  // Filled dot at the COG-vector end -- matches AIS layer's tip.
 let vectorLabel = null;  // Time/distance label at end of COG vector.
+// Tidal-current arrow (full implementation lower down). Hoisted here
+// because setShipLinesVisible() needs to tear it down on toggle, and
+// declaring it lower than its first use trips eslint no-use-before-define.
+let currentArrow = null;
 let trackLayer = null;
 let followBoat = true;
 let mapOrientation = 'north'; // 'north', 'course', 'head'
@@ -2235,8 +2239,9 @@ export function triggerFileDownload(filename, content) {
 }
 
 // --- Tidal Current Arrow ---
-
-let currentArrow = null;
+// State (`currentArrow`) is declared at the top of the module so
+// setShipLinesVisible() can clear it on layer-toggle without tripping
+// eslint no-use-before-define.
 
 export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
     if (!map) return;
