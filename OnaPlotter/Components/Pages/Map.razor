@@ -3329,32 +3329,25 @@
         if (_anchorJs is null) return;
         if (_anchorRaiseInFlight) return;
 
-        // State machine driven off the published anchor data. The
-        // three states the helm walks through:
-        //   1. AnchorActive=false -> open panel in Drop mode.
-        //   2. AnchorActive=true && MaxRadius=null -> open panel in
-        //      SetRadius mode (helm dropped, hasn't armed yet).
-        //   3. AnchorActive=true && MaxRadius=set -> arm-then-confirm
-        //      raise (existing flow).
-        // Edge state 4 (AnchorActive=false && MaxRadius!=null) IS
-        // reachable in practice -- SK delta ordering across paths is
-        // not guaranteed, so position can clear before maxRadius for
-        // one tick. Falls through to state 1 (Drop panel); a fresh
-        // Drop overwrites the dangling maxRadius once the position
-        // delta lands. Tests pin the fall-through.
-        // The bool gate on the button ensures arm+confirm has already
-        // happened by the time ToggleAnchor runs in state 3; no second
-        // modal here.
-        if (Data.AnchorActive && Data.AnchorMaxRadius is null)
-        {
-            // State 2: position pinned but no radius yet. The helm
-            // tapped Anchor again (after backing down + letting out
-            // chain) and wants to finish step 2. Open the panel in
-            // SetRadius mode rather than racing into a raise.
-            OpenAnchorSetRadiusPanel();
-            return;
-        }
-
+        // Two-state state machine driven off the published anchor
+        // data:
+        //   1. AnchorActive=false -> open Drop panel.
+        //   2. AnchorActive=true  -> arm-then-confirm raise.
+        // The two-step Drop -> SetRadius transition is handled IN
+        // PANEL: OnAnchorPanelDrop flips the panel mode to SetRadius
+        // on a successful Drop, so the helm doesn't tap Anchor twice.
+        // This means tapping the Anchor button when "anchor watch is
+        // active" (i.e. AnchorActive=true) always means RAISE, even
+        // if MaxRadius hasn't been set yet (edge case: helm closed
+        // the SetRadius panel without arming, or a SK restart wiped
+        // the radius). The plugin's Incomplete Anchor Alarm warns
+        // the helm server-side if step 2 was skipped; the chart
+        // marker pulses amber via setAnchorIncomplete -- both visible
+        // signals that the helm can choose to address by raising +
+        // re-dropping. Previous "AnchorActive && MaxRadius=null
+        // -> open SetRadius panel" branch trapped the helm in
+        // SetRadius with no escape to raise; field-tested as
+        // confusing on the dev test instance.
         if (Data.AnchorActive)
         {
             // State 3: full anchor armed -- raise via the SK PUT. The
@@ -3551,8 +3544,19 @@
                 try { await CourseApi.ClearAsync(); }
                 catch (Exception ex) { Toasts.LogException(ex, "Stop course"); }
             }
-            Toasts.Success("Anchor dropped -- set the radius once you've backed down");
-            anchorEditMode = false;
+            Toasts.Success("Anchor dropped -- back down + arm the alarm radius");
+            // Flip the panel directly to SetRadius mode so the helm
+            // doesn't have to tap Anchor a second time to reopen it.
+            // Previous flow closed the panel + relied on a second tap
+            // -- but the second tap then raced with the Anchor
+            // button's "always raise" semantics, trapping the helm
+            // in a half-armed state. The flip keeps the Drop -> Set
+            // transition inside one panel session.
+            anchorEditInitialRadius = OnaPlotter.Utilities.AnchorRadiusHeuristic
+                .Suggest(Data.Depth, Settings.ManualAnchorRadiusMeters);
+            anchorEditSuggestion = OnaPlotter.Utilities.AnchorRadiusHeuristic
+                .DescribeSuggestion(Data.Depth);
+            _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.SetRadius;
             anchorEditBusy = false;
             return;
         }

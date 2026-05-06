@@ -160,10 +160,12 @@
     /// can re-open later to finish step 2.</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    /// <summary>Same chip set as the v1 panel + the manual-anchor HUD
-    /// card so the helm's anchor-radius vocabulary stays consistent
-    /// across surfaces.</summary>
-    private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100, 150];
+    /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
+    /// dropped from the v1 set on field-study feedback -- 5:1 scope
+    /// at 30 m of water is already 150 m and that's deeper than the
+    /// helm's typical anchorage; the chip was almost never picked
+    /// and was crowding the row visually.</summary>
+    private static readonly int[] RadiusPresets = [20, 30, 50, 75, 100];
 
     /// <summary>Currently-picked numeric chip; null = Auto chip is
     /// active. Distinct nullable so the renderer can highlight

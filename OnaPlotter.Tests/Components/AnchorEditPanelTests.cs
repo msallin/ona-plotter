@@ -164,9 +164,11 @@ public class AnchorEditPanelTests
         await Assert.That(cut.FindAll(".anchor-edit-set").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".anchor-edit-drop").Count).IsEqualTo(0);
 
-        // 6 numeric chips (20/30/50/75/100/150) + 1 Auto = 7 inside the chip row
+        // 5 numeric chips (20/30/50/75/100) + 1 Auto = 6 inside the chip row.
+        // 150m was dropped on field-study feedback (rarely picked, was
+        // crowding the row).
         var chips = cut.FindAll(".anchor-edit-chips .map-btn");
-        await Assert.That(chips.Count).IsEqualTo(7);
+        await Assert.That(chips.Count).IsEqualTo(6);
     }
 
     [Test]

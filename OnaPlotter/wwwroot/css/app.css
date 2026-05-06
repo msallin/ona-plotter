@@ -7247,6 +7247,14 @@ main:has(.map-container.big-type) .alarm-hold-hint {
        both bars read at equal weight in the corner of the helm's
        eye. */
     border-color: rgba(245, 158, 11, 0.45);
+    /* Override the inherited flex-wrap: nowrap on .route-edit-bar.
+       Anchor's SetRadius mode renders title + Auto chip + 5 numeric
+       chips + Arm + Close which won't fit on one line at iPad-portrait
+       widths -- chips were running off the right edge with the row
+       cropping. Wrap to a second line when needed; the .anchor-edit-stats
+       title block claims a full first row via flex-basis: 100% below. */
+    flex-wrap: wrap;
+    row-gap: 4px;
 }
 
 /* "RADIUS NOT SET" tooltip permanently bound to the dropped-but-
@@ -7277,11 +7285,16 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     align-items: flex-start;
     gap: 2px;
     line-height: 1.2;
-    /* Don't let the stats column eat too much horizontal space when
-       the chip row + buttons are both present. */
-    flex: 0 1 auto;
-    max-width: 12rem;
-    margin-right: 6px;
+    /* Claim the full first row inside the wrapping flex bar -- the
+       chip row + Arm + Close drop to row two. Without flex-basis: 100%
+       the title sits inline with the chips and the row-1 / row-2 split
+       only kicks in on very narrow viewports. Helm wants the two-line
+       shape every time SetRadius is open so the panel reads as a
+       clear title-then-controls card.
+       margin-right: 0 (was 6px) because there's no neighbour to space
+       from on row 1 any more. */
+    flex: 1 0 100%;
+    margin-right: 0;
 }
 .anchor-edit-title {
     font-size: 0.85rem;
