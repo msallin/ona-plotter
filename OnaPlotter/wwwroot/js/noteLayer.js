@@ -146,7 +146,10 @@ export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
     // Hover tooltip showing the title. Helps the helm scan a chart
     // dotted with notes without clicking each pin. Empty title falls
     // through to "(untitled)" so the tooltip always carries something.
-    marker.bindTooltip(title || '(untitled)', {
+    // bindTooltip writes its string argument to innerHTML, so the
+    // server-supplied title needs to be HTML-escaped -- a title like
+    // '<img src=x onerror=...>' would otherwise execute on hover.
+    marker.bindTooltip(esc(title || '(untitled)'), {
         direction: 'top',
         offset: [0, -22],   // matches popupAnchor so tooltip clears the icon
         opacity: 0.95,

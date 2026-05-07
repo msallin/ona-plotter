@@ -298,7 +298,15 @@
 //             RegionApi.GetAllAsync) so the Leaflet polygon
 //             actually renders. Resources page gains a manual
 //             Refresh button that calls RefreshAllAsync.
-const CACHE_NAME = 'ona-plotter-v43';
+// v43 -> v44: HTML-escape route name + note title before they reach
+//             Leaflet's bindTooltip (leafletInterop.js addRoute /
+//             updateRoute, noteLayer.js addNoteMarker). Without
+//             this, a remote-edited resource name like
+//             '<img src=x onerror=...>' executed on hover because
+//             bindTooltip writes its string argument straight to
+//             innerHTML. waypointLayer was already safe via
+//             formatWaypointTooltip's existing esc() calls.
+const CACHE_NAME = 'ona-plotter-v44';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
