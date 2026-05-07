@@ -413,6 +413,10 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             var note = value.Deserialize<SignalkNote>();
             if (note is null) return;
+            // Mirror NoteApi.GetAllAsync's filter: notes without a
+            // position are not renderable on the chart and would
+            // confuse marker code that assumes lat/lon.
+            if (note.Position is null) return;
             note.Id = id;
             _noteById[id] = note;
             try { OnNoteChanged?.Invoke(id); }
@@ -440,6 +444,21 @@ public sealed class ResourceStore : IAsyncDisposable
             var region = value.Deserialize<SignalkRegion>();
             if (region is null) return;
             region.Id = id;
+            // Populate OuterRings the same way RegionApi.GetAllAsync does
+            // for REST results -- consumers (Map.razor's region layer)
+            // expect Leaflet-ordered [lat, lon] rings, not the GeoJSON
+            // [lon, lat] coords on the wire. Without this hoist a
+            // delta-fed region renders as an empty polygon on the chart.
+            // Drop the region entirely when geometry is missing /
+            // unrenderable, matching REST's filter.
+            var coords = region.Feature?.Geometry?.Coordinates;
+            var type = region.Feature?.Geometry?.Type;
+            if (coords is not null)
+            {
+                region.OuterRings = OnaPlotter.Services.Api.RegionApi
+                    .ExtractOuterRings(coords.Value, type);
+            }
+            if (region.OuterRings.Count == 0) return;
             _regionById[id] = region;
             try { OnRegionChanged?.Invoke(id); }
             catch (Exception ex) { _logger.LogWarning(ex, "[resources] region changed handler threw"); }

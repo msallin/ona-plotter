@@ -1716,15 +1716,20 @@
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
 
-        // Live route sync via ResourceStore: when another plotter PUTs
-        // a route document, the SK server broadcasts a resources.routes.<id>
-        // delta which lands in ResourceStore -> we redraw the polyline
-        // in place + force-resync the active overlay if needed. This
-        // closes the multi-plotter gap that previously left plotter B's
-        // route polyline stuck on pre-edit geometry until a manual
-        // page reload.
+        // Live multi-plotter sync via ResourceStore. Each event fires
+        // when SK broadcasts a resources.<type>.<id> delta OR when the
+        // store completes a REST reconcile (initial load /
+        // reconnect-edge). Routes get an in-place polyline update;
+        // waypoints / notes / regions remove-then-add their marker
+        // (single-point geometry, no flicker concern).
         ResourceStore.OnRouteChanged += HandleRouteChangedFromStore;
         ResourceStore.OnRouteRemoved += HandleRouteRemovedFromStore;
+        ResourceStore.OnWaypointChanged += HandleWaypointChangedFromStore;
+        ResourceStore.OnWaypointRemoved += HandleWaypointRemovedFromStore;
+        ResourceStore.OnNoteChanged += HandleNoteChangedFromStore;
+        ResourceStore.OnNoteRemoved += HandleNoteRemovedFromStore;
+        ResourceStore.OnRegionChanged += HandleRegionChangedFromStore;
+        ResourceStore.OnRegionRemoved += HandleRegionRemovedFromStore;
         // SignalkClient is a singleton so on a page reload the WS
         // can already be connected by the time the Map mounts. The
         // OnConnectionChanged subscription above only fires on
@@ -3282,6 +3287,92 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    // --- Waypoint / Note / Region store-event handlers ----------------
+    //
+    // Same shape as the route handlers above: ResourceStore fires the
+    // typed event when SK delta or REST reconcile lands an update for
+    // <type>/<id>; the handler updates the page-local list (so any
+    // UI binding that reads it stays in sync) and pushes the new
+    // marker to the leaflet layer via MapResourceController's per-
+    // resource Redraw / Drop methods.
+
+    private void HandleWaypointChangedFromStore(string id) => _ = ApplyWaypointChangedFromStoreAsync(id);
+
+    private async Task ApplyWaypointChangedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return;
+        var wp = ResourceStore.GetWaypoint(id);
+        if (wp is null) return;
+        var idx = loadedWaypoints.FindIndex(w => w.Id == id);
+        if (idx >= 0) loadedWaypoints[idx] = wp;
+        else loadedWaypoints.Add(wp);
+        await _resources.RedrawWaypointAsync(wp);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleWaypointRemovedFromStore(string id) => _ = ApplyWaypointRemovedFromStoreAsync(id);
+
+    private async Task ApplyWaypointRemovedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return;
+        loadedWaypoints.RemoveAll(w => w.Id == id);
+        await _resources.DropWaypointAsync(id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleNoteChangedFromStore(string id) => _ = ApplyNoteChangedFromStoreAsync(id);
+
+    private async Task ApplyNoteChangedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return;
+        var note = ResourceStore.GetNote(id);
+        if (note is null) return;
+        var idx = loadedNotes.FindIndex(n => n.Id == id);
+        if (idx >= 0) loadedNotes[idx] = note;
+        else loadedNotes.Add(note);
+        await _resources.RedrawNoteAsync(note);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleNoteRemovedFromStore(string id) => _ = ApplyNoteRemovedFromStoreAsync(id);
+
+    private async Task ApplyNoteRemovedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return;
+        loadedNotes.RemoveAll(n => n.Id == id);
+        await _resources.DropNoteAsync(id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleRegionChangedFromStore(string id) => _ = ApplyRegionChangedFromStoreAsync(id);
+
+    private async Task ApplyRegionChangedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return;
+        var region = ResourceStore.GetRegion(id);
+        if (region is null) return;
+        var idx = loadedRegions.FindIndex(r => r.Id == id);
+        if (idx >= 0) loadedRegions[idx] = region;
+        else loadedRegions.Add(region);
+        // Mirror into RegionStore so HazardousRegionAlarmRule sees the
+        // new geometry on its next tick. Same call site pattern as
+        // RefreshServerResourcesAsync.
+        RegionStore.SetRegions(loadedRegions);
+        await _resources.RedrawRegionAsync(region);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleRegionRemovedFromStore(string id) => _ = ApplyRegionRemovedFromStoreAsync(id);
+
+    private async Task ApplyRegionRemovedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return;
+        loadedRegions.RemoveAll(r => r.Id == id);
+        RegionStore.SetRegions(loadedRegions);
+        await _resources.DropRegionAsync(id);
+        await InvokeAsync(StateHasChanged);
+    }
+
     // ServerTrackController owns the server-track state + interop;
     // wired in OnAfterRenderAsync.
 
@@ -3841,6 +3932,12 @@
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
         ResourceStore.OnRouteChanged -= HandleRouteChangedFromStore;
         ResourceStore.OnRouteRemoved -= HandleRouteRemovedFromStore;
+        ResourceStore.OnWaypointChanged -= HandleWaypointChangedFromStore;
+        ResourceStore.OnWaypointRemoved -= HandleWaypointRemovedFromStore;
+        ResourceStore.OnNoteChanged -= HandleNoteChangedFromStore;
+        ResourceStore.OnNoteRemoved -= HandleNoteRemovedFromStore;
+        ResourceStore.OnRegionChanged -= HandleRegionChangedFromStore;
+        ResourceStore.OnRegionRemoved -= HandleRegionRemovedFromStore;
         Atons.OnAtonsUpdated -= HandleAtonsUpdated;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         RemoveEditNavGuard();

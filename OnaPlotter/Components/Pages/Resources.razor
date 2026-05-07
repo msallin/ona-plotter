@@ -77,6 +77,29 @@
                 Cancel
             </button>
         }
+        @* Manual refresh: drop the cache + REST-fetch every resource
+           type. Live deltas usually keep the page current automatically,
+           but the helm sometimes wants a hard "is this REALLY what's
+           on the server" check (e.g. after a server-side restore from
+           backup, after toggling the SK plugin, or just for peace of
+           mind). RefreshAllAsync wipes the in-memory cache and replaces
+           it with the REST snapshot, firing per-type Removed events
+           for any id that disappeared. *@
+        <button type="button" class="btn btn-outline-secondary"
+                @onclick="HandleManualRefresh"
+                disabled="@loading"
+                title="Drop the local cache and re-fetch every resource type from the server."
+                style="white-space:nowrap;">
+            @if (loading)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                <span>Refreshing...</span>
+            }
+            else
+            {
+                <span>Refresh</span>
+            }
+        </button>
     </header>
 
     <ul class="nav nav-tabs resources-tabs" role="tablist">
@@ -382,6 +405,42 @@
         ResourceStore.OnRegionRemoved += HandleStoreRegionRemoved;
 
         await LoadAllAsync();
+    }
+
+    /// <summary>Manual refresh button handler. Force the store to
+    /// re-fetch every resource type via REST, replacing the cached
+    /// snapshot. Per-type events fire as the new state lands so the
+    /// page re-renders. Helm uses this for "is this REALLY what's on
+    /// the server" sanity checks; live deltas normally keep the page
+    /// current without manual intervention.</summary>
+    private async Task HandleManualRefresh()
+    {
+        if (loading) return;
+        loading = true;
+        try
+        {
+            await ResourceStore.RefreshAllAsync();
+            // RefreshAllAsync fires per-type Changed/Removed events as
+            // the cache mutates, so HandleStore* hooks above already
+            // copied the new state into our local lists. The explicit
+            // CopyFromStore here is a belt-and-braces sync in case the
+            // event order observation skipped a type (e.g. all four
+            // tasks failed and no events fired -- IsLoaded still flips
+            // true, the user expects the failure flags to clear).
+            CopyFromStore();
+            Toasts.Info("Resources refreshed.");
+        }
+        catch (Exception ex)
+        {
+            // ResourceStore.RefreshAllAsync swallows per-type failures
+            // internally, so reaching the catch here is a genuine
+            // unexpected throw (logger threw, etc.). Surface it.
+            Toasts.LogException(ex, "Refresh resources");
+        }
+        finally
+        {
+            loading = false;
+        }
     }
 
     private async Task LoadAllAsync()

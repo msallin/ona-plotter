@@ -289,7 +289,16 @@
 //             parameters during diff. Bump invalidates the
 //             precache so the helm pulls the new framework on
 //             next launch.
-const CACHE_NAME = 'ona-plotter-v42';
+// v42 -> v43: Multi-plotter sync extended to waypoints / notes /
+//             regions. Map.razor subscribes to ResourceStore's
+//             per-type Changed/Removed events and pushes redraws
+//             via MapResourceController.Redraw{Waypoint,Note,
+//             Region}Async. ResourceStore.HandleRegionDelta now
+//             populates OuterRings on delta-fed regions (mirrors
+//             RegionApi.GetAllAsync) so the Leaflet polygon
+//             actually renders. Resources page gains a manual
+//             Refresh button that calls RefreshAllAsync.
+const CACHE_NAME = 'ona-plotter-v43';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
