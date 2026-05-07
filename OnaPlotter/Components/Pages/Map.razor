@@ -571,12 +571,6 @@
     private const int RouteStatsPollIntervalMs = 500;
     private const int RaceTimerTickMs = 1_000;
     private const int LaylinePushEveryNFixes = 5;
-    /// <summary>How often to re-sync waypoints / routes / notes / regions
-    /// from the server. 60 s balances "picks up another plotter's changes
-    /// within a minute" against "don't thrash the REST endpoints on a
-    /// battery-constrained Pi". The Layers-panel-open path still triggers
-    /// an immediate refresh on top of this for when the helm is watching.</summary>
-    private const int ResourcePollIntervalMs = 60_000;
     /// <summary>Below this drift (m/s) the tidal current arrow is suppressed (~0.1 kn).</summary>
     private const double MinCurrentDriftMs = 0.05;
 
@@ -595,7 +589,6 @@
     private bool mapInitialized;
     private bool chartPanelOpen;
     private System.Threading.Timer? aisTimer;
-    private System.Threading.Timer? resourcePollTimer;
     // Active-route session state (href / wpIdx diff, geometry cache,
     // regular-polyline suppression id, course-stop watchdog) lives in
     // ActiveRouteSync so the page stays a wiring layer. Page accesses
@@ -819,69 +812,19 @@
             // don't fight for the tap. Same reason the menu auto-
             // dismisses on a map pan.
             contextMenuVisible = false;
-            _ = RefreshServerResourcesAsync();
+            // Resource lists (waypoints / routes / notes / regions)
+            // stream live via ResourceStore's SK delta subscriptions
+            // and reconnect-reconcile, so opening the panel doesn't
+            // need a REST refresh on those any more.
+            //
+            // Radar state DOES still need a poke on panel-open: the
+            // Mayara SK plugin doesn't publish radar fields over the
+            // delta stream (probed against openplotter -- 195 unique
+            // paths, zero radar-related), so range / status changes
+            // made from another plotter's UI only land via REST.
+            _ = RefreshRadarsAsync();
         }
     }
-
-    // Monotonic counter for in-flight refresh calls. Each call captures
-    // its own sequence number at kick-off and only applies results if
-    // it's still the latest. Without this, a user toggling the panel
-    // rapidly enough to overlap two GET chains would see the LATER
-    // request's payload get overwritten by the EARLIER one on any tick
-    // where the older request completed second -- classic lost-update.
-    private int _resourceRefreshSeq;
-
-    private async Task RefreshServerResourcesAsync()
-    {
-        int mySeq = System.Threading.Interlocked.Increment(ref _resourceRefreshSeq);
-        try
-        {
-            var waypoints = await SafeLoad(() => WaypointApi.GetAllAsync(), "waypoints");
-            var routes    = await SafeLoad(() => RouteApi.GetAllAsync(), "routes");
-            var notes     = await SafeLoad(() => NoteApi.GetAllAsync(), "notes");
-            var regions   = await SafeLoad(() => RegionApi.GetAllAsync(), "regions");
-            // Radar list + per-radar runtime fields (status, range).
-            // 60 s is appropriate -- radar discovery is rare; range +
-            // status changes from another plotter's UI are also rare
-            // and not safety-critical (the JS layer adapts on the
-            // next spoke frame's reported range).
-            var radars    = await SafeLoad(() => RadarApi.GetAllAsync(), "radars");
-
-            // Drop stale results. If another refresh was kicked off while
-            // we were fetching, its results are fresher; let it win.
-            if (mySeq != System.Threading.Volatile.Read(ref _resourceRefreshSeq))
-                return;
-
-            if (waypoints is not null) loadedWaypoints = waypoints;
-            if (routes is not null) { availableRoutes = routes; PrecomputeRouteBounds(); }
-            if (notes is not null) loadedNotes = notes;
-            if (regions is not null)
-            {
-                loadedRegions = regions;
-                // Mirror into the singleton store so the
-                // HazardousRegionAlarmRule (and any future
-                // region-aware consumer) sees fresh data without a
-                // separate plumb. Cheap reference replacement;
-                // alarm tick polls Regions per evaluation, no event.
-                RegionStore.SetRegions(regions);
-            }
-            // Invalidate the topbar-search own-data index so a fresh
-            // resource refresh (whether from helm-side CRUD or another
-            // plotter's edit landing via the resource bus) is reflected
-            // in the search dropdown without waiting on the index's
-            // internal TTL. Cheap: the index lazy-reloads on the next
-            // search call.
-            OwnPlacesIndex.Invalidate();
-            if (radars is not null)
-            {
-                await RadarOverlay.OnRadarListUpdatedAsync(radars);
-            }
-            RebuildFilteredLayers();
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (ObjectDisposedException) { }
-    }
-
 
     // Delete-route + delete/rename-waypoint entry points from the
     // Layers panel. DeleteRouteById already handles the full flow
@@ -1023,13 +966,14 @@
     }
 
     // Re-fetch ONLY the radar list and feed it through the manager.
-    // Avoids the broad RefreshServerResourcesAsync which also pulls
-    // waypoints / routes / notes / regions / charts -- noise the
-    // operator's network tab fills up with on every Transmit click.
-    // The Mayara SK plugin doesn't publish radar paths over the SK
-    // WebSocket delta stream (probed against openplotter -- 195
+    // Used by both Transmit / range writes (where the helm wants the
+    // settled state right after a write) and by the Layers-panel-open
+    // path. The Mayara SK plugin doesn't publish radar paths over the
+    // SK WebSocket delta stream (probed against openplotter -- 195
     // unique paths, zero radar-related), so REST polling is the only
-    // way to learn about state changes.
+    // way to learn about state changes; the rest of the resources tab
+    // (waypoints / routes / notes / regions) is delta-driven now and
+    // doesn't need a parallel REST refresh on this hot path.
     private async Task RefreshRadarsAsync()
     {
         try
@@ -1763,15 +1707,12 @@
         {
             await _marinePoi.InitAsync();
         }
-        // Resource re-sync: waypoints / routes / notes / regions added
-        // from another plotter are otherwise invisible until the user
-        // toggles the Layers panel. 60 s poll keeps the list in sync
-        // without hammering the REST endpoints. Initial delay matches
-        // AisPushInitialDelayMs so the first poll doesn't collide with
-        // the page-load resource fetch from OnInitializedAsync.
-        resourcePollTimer = new System.Threading.Timer(
-            _ => _ = RefreshServerResourcesAsync(),
-            null, ResourcePollIntervalMs, ResourcePollIntervalMs);
+        // No resource-poll timer here any more. ResourceStore subscribes
+        // to resources.* SK deltas at startup and reconciles via REST
+        // on every reconnect, so waypoints / routes / notes / regions
+        // added from another plotter land on the chart within delta
+        // RTT (or one reconnect cycle for offline-edits). The previous
+        // 60 s REST poll is now redundant.
 
         await _controlsJs.EnableKeyboardShortcutsAsync(dotNetRef);
 
@@ -3212,6 +3153,7 @@
         // that iterates availableRoutes (Layers panel, Resources page
         // when re-opened) sees the new geometry / name.
         var existingIndex = availableRoutes.FindIndex(r => r.Id == id);
+        bool isNew = existingIndex < 0;
         if (existingIndex >= 0)
         {
             availableRoutes[existingIndex] = route;
@@ -3219,6 +3161,16 @@
         else
         {
             availableRoutes.Add(route);
+        }
+        // Adds change availableRoutes.Count, which is one of the keys
+        // RebuildFilteredLayers caches against -- flush + rebuild so
+        // the Layers panel section reflects the new entry immediately.
+        // Topbar search index gets invalidated for the same reason.
+        if (isNew)
+        {
+            lastFilterKey = default;
+            RebuildFilteredLayers();
+            OwnPlacesIndex.Invalidate();
         }
 
         // Invalidate the parsed-coords cache so the new geometry is
@@ -3267,10 +3219,19 @@
     {
         if (!mapInitialized || _routeJs is null) return;
 
-        availableRoutes.RemoveAll(r => r.Id == id);
+        int removed = availableRoutes.RemoveAll(r => r.Id == id);
         routeCoordsCache.Remove(id);
         enabledRoutes.Remove(id);
         await _routeJs.RemoveRouteAsync(id);
+        if (removed > 0)
+        {
+            // availableRoutes.Count went down -- flush the filter cache
+            // and topbar-search index so the Layers panel + search
+            // dropdown stop showing the deleted route.
+            lastFilterKey = default;
+            RebuildFilteredLayers();
+            OwnPlacesIndex.Invalidate();
+        }
 
         // If the deleted route was active, deactivate. ActiveRouteSync's
         // next pass would also catch this when nextPoint goes null, but
@@ -3304,9 +3265,18 @@
         var wp = ResourceStore.GetWaypoint(id);
         if (wp is null) return;
         var idx = loadedWaypoints.FindIndex(w => w.Id == id);
+        bool isNew = idx < 0;
         if (idx >= 0) loadedWaypoints[idx] = wp;
         else loadedWaypoints.Add(wp);
         await _resources.RedrawWaypointAsync(wp);
+        if (isNew)
+        {
+            // loadedWaypoints.Count grew -- flush the filter cache and
+            // topbar-search index so the panel + dropdown pick it up.
+            lastFilterKey = default;
+            RebuildFilteredLayers();
+            OwnPlacesIndex.Invalidate();
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -3315,8 +3285,14 @@
     private async Task ApplyWaypointRemovedFromStoreAsync(string id)
     {
         if (!mapInitialized || _resources is null) return;
-        loadedWaypoints.RemoveAll(w => w.Id == id);
+        int removed = loadedWaypoints.RemoveAll(w => w.Id == id);
         await _resources.DropWaypointAsync(id);
+        if (removed > 0)
+        {
+            lastFilterKey = default;
+            RebuildFilteredLayers();
+            OwnPlacesIndex.Invalidate();
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -3328,9 +3304,16 @@
         var note = ResourceStore.GetNote(id);
         if (note is null) return;
         var idx = loadedNotes.FindIndex(n => n.Id == id);
+        bool isNew = idx < 0;
         if (idx >= 0) loadedNotes[idx] = note;
         else loadedNotes.Add(note);
         await _resources.RedrawNoteAsync(note);
+        if (isNew)
+        {
+            lastFilterKey = default;
+            RebuildFilteredLayers();
+            OwnPlacesIndex.Invalidate();
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -3339,8 +3322,14 @@
     private async Task ApplyNoteRemovedFromStoreAsync(string id)
     {
         if (!mapInitialized || _resources is null) return;
-        loadedNotes.RemoveAll(n => n.Id == id);
+        int removed = loadedNotes.RemoveAll(n => n.Id == id);
         await _resources.DropNoteAsync(id);
+        if (removed > 0)
+        {
+            lastFilterKey = default;
+            RebuildFilteredLayers();
+            OwnPlacesIndex.Invalidate();
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -3355,8 +3344,10 @@
         if (idx >= 0) loadedRegions[idx] = region;
         else loadedRegions.Add(region);
         // Mirror into RegionStore so HazardousRegionAlarmRule sees the
-        // new geometry on its next tick. Same call site pattern as
-        // RefreshServerResourcesAsync.
+        // new geometry on its next tick. RegionStore subscribes to
+        // ResourceStore directly too (closes the alarm-evaluation
+        // safety hole when the Map page is unmounted), so this call
+        // is belt-and-braces for the Map-mounted path.
         RegionStore.SetRegions(loadedRegions);
         await _resources.RedrawRegionAsync(region);
         await InvokeAsync(StateHasChanged);
@@ -3964,7 +3955,6 @@
         // active".
         MobChartRenderer.DetachJs();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
-        if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
         // Cancel any in-flight Overpass debounce / fetch so a
         // straggler doesn't try to push markers into a torn-down
         // JS module.
