@@ -441,12 +441,23 @@
                          .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
             {
                 bool active = _charts.EnabledCharts.Contains(chart.Identifier);
+                @* Truncate long chart names so a single chart called
+                   "Bahamas Northern Cays - 2024 raster v2" doesn't
+                   eat half the bar. 10 chars + ellipsis is the
+                   helm-tested cut-off: long enough to disambiguate
+                   the typical SK chart pack, short enough that
+                   four chips fit on a 390-wide phone viewport. The
+                   full name still shows on hover via the title
+                   attribute below for desktop pointer users. *@
+                string label = chart.Name.Length > 10
+                    ? chart.Name[..10] + "…"
+                    : chart.Name;
                 <button @key="chart.Identifier"
                         class="chart-quick-chip @(active ? "active" : "")"
                         @onclick="() => _charts.ToggleAsync(chart, !active)"
                         aria-pressed="@(active ? "true" : "false")"
-                        title="@(active ? "Showing -- tap to hide" : "Hidden -- tap to show")">
-                    @chart.Name
+                        title="@(active ? $"{chart.Name} -- showing, tap to hide" : $"{chart.Name} -- hidden, tap to show")">
+                    @label
                 </button>
             }
         </div>

@@ -203,8 +203,36 @@
     --z-fullscreen: 9999;
 
     /* Map overlay positioning. All floating panels above the control bar use
-       --panel-bottom so they stack predictably. Update in one place. */
-    --ctrl-bar-height: 64px;  /* Approx height of .map-controls (icon + label + padding). */
+       --panel-bottom so they stack predictably. Update in one place.
+       --ctrl-bar-height MUST match the actual rendered bar height per
+       viewport class -- if it underestimates, --panel-bottom underestimates
+       too, and the bc-stack (route HUD + anchor card) ends up sitting
+       inside / under the bar instead of above it. The tokens below are
+       calibrated against the rendered configs:
+         desktop mouse  : ctrl-btn ~38px content + 6/6 padding -> ~50px
+                          button -> bar = 50 + 8 (.map-controls 4/4) +
+                          2 (border) = ~60px ish, 64 keeps a small
+                          breathing margin.
+         pointer:coarse : ctrl-btn min-height 56 + 8/12 padding ->
+                          .map-controls padding 6/6 + border 2 ->
+                          ~70px (override below).
+         mobile phone   : ctrl-btn min-height 44 + 3/4 padding ->
+                          .map-controls inherits pointer:coarse 6/6
+                          padding -> 44 + 12 + 2 = 58px (override
+                          inside the phone @media block below).
+         big-type       : ctrl-btn min-height 56 + 10/14 padding ->
+                          rendered ~70px regardless of pointer
+                          (override under main:has(.big-type) below).
+       Each config's override sets --ctrl-bar-height to the real
+       rendered height so --panel-bottom = ctrl-bar-height +
+       ctrl-bar-offset + panel-gap places the route HUD's bottom
+       edge exactly --panel-gap above the bar's top edge. The helm
+       has reported this spacing breaking after several earlier
+       passes; the source of regression has always been a config
+       (mobile, iPad, big-type) where the variable wasn't bumped to
+       match a button-padding change. The override-per-config
+       approach below avoids that drift. */
+    --ctrl-bar-height: 64px;
     --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
     /* Gap between the bottom action bar and the bc-stack cards
        (anchor watch + active route). Helm-tuned: 4 px reads as a
@@ -2585,6 +2613,14 @@ html:fullscreen .hud-stack-br {
     }
     .ctrl-btn .ctrl-ico svg { width: 22px; height: 22px; }
     .map-controls { padding: 6px; gap: 3px; }
+    /* Touch grows the bar: 56 button + 12 padding + 2 border = 70.
+       Bump --ctrl-bar-height to match so --panel-bottom places the
+       route HUD --panel-gap above the bar's top edge. Without this
+       override iPad in landscape (pointer:coarse, width > 600 so
+       the mobile @media doesn't apply) inherited the 64px desktop
+       value and the route card sat 6px too low -- helm reported it
+       overlapping the bar's top stroke. */
+    :root { --ctrl-bar-height: 70px; }
     .hud-panel { padding: 10px 16px; }
     .hud-value { font-size: 1.8rem; }
     .chart-item {
@@ -4323,9 +4359,14 @@ html.night-mode-global body {
        which is why this lives inside the @media block, after the
        .ctrl-more-overflow re-enable above. */
     .ctrl-more-mobile-hide { display: none !important; }
-    /* Tighter control bar on mobile -> recompute --panel-bottom so the
-       bottom-center stack still sits one --panel-gap above the bar. */
-    :root { --ctrl-bar-height: 48px; }
+    /* Phone bar: ctrl-btn min-height 44 (WCAG floor, set in this
+       same @media block above) + .map-controls padding 6/6 inherited
+       from pointer:coarse + 2px border = ~58px rendered. The earlier
+       48px guess matched a now-defunct ctrl-btn padding shape and
+       left the route HUD overlapping the bar by ~6px on every phone
+       reload. Update keeps --panel-bottom = 58 + 12 + 4 = 74px so
+       the HUD sits exactly --panel-gap above the bar's top edge. */
+    :root { --ctrl-bar-height: 58px; }
     /* If the More menu still overflows after the mobile-hide trim
        (long route name + race-mode timer + active-anchor row), let
        it scroll inside its own bounds rather than running past the
@@ -4601,18 +4642,20 @@ html.night-mode-global body {
     .route-total-label {
         font-size: 0.55rem;
     }
-    /* Phone route HUD: drop the prev / next chevron buttons + the
-       per-leg TTG / ETA fields so DTW / BRG / VMG fit on one line
-       inside a 390-wide viewport without wrapping. The macro TTG /
-       ETA still ride along at the bottom inside the .route-total-row
-       (route-passed / route-remaining + ETA-of-arrival), which is
-       what the helm actually wants on a phone -- the per-leg time
-       changes every leg, the route-total reads steady. The helm can
-       still re-route on the fly by tapping a waypoint dot on the
-       polyline (the same gesture the chevrons fire under the hood).
-       Per-leg fields tagged in HudRouteCard with
-       .route-info-item-leg-time. */
-    .route-panel .route-wp-step-btn { display: none !important; }
+    /* Phone route HUD: drop the per-leg TTG / ETA fields so DTW /
+       BRG / VMG fit on one line inside a 390-wide viewport without
+       wrapping. The macro ETA still rides along at the bottom
+       inside the .route-total-row (route-passed / route-remaining
+       + ETA-of-arrival), which is what the helm actually wants on
+       a phone -- the per-leg time changes every leg, the route-
+       total reads steady. Per-leg fields tagged in HudRouteCard
+       with .route-info-item-leg-time.
+       Prev/next chevron buttons KEPT on phone (helm flagged "there
+       is room for them"); they sit absolute-positioned in the
+       gutters of the compact route panel and skip a leg with one
+       tap, faster than tapping the polyline waypoint dot. Their
+       tap target stays at the desktop ~36x32 size set on
+       .route-wp-step-btn below. */
     .route-panel .route-info-item-leg-time { display: none !important; }
 }
 /* Default (non-phone): show the full alarm-log text label, hide
@@ -5757,12 +5800,16 @@ html.night-mode-global body {
     white-space: nowrap;
 }
 
-/* Route-total row: single-line summary of distance / TTG / ETA for
-   the whole route (vs per-WP numbers above). Small + dim so the
-   next-WP values stay the primary reading. The dashed divider only
-   shows in big-screen mode (see .map-container.big-type override
-   below); at small/regular size the helm reads the two-line shape
-   without needing a separator. */
+/* Route-total row: single-line summary of distance + ETA for the
+   whole route (vs per-WP numbers above). Small + dim so the
+   next-WP values stay the primary reading. The dashed divider
+   only shows in big-screen mode (see .map-container.big-type
+   override below); at small/regular size the helm reads the
+   two-line shape without needing a separator.
+   nowrap: helm asked for the row to stay on ONE line. The
+   route-total content (label + "passed / total nm" + "ETA HH:MM")
+   is short enough to fit in a 390-wide phone viewport without
+   wrap once the variable-width TTG span is dropped. */
 .route-total-row {
     display: flex;
     gap: 10px;
@@ -5770,7 +5817,8 @@ html.night-mode-global body {
     font-size: 0.75rem;
     color: var(--sk-text-muted);
     font-variant-numeric: tabular-nums;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 .map-container.big-type .route-total-row {
     /* Big mode runs the rows wider with bigger glyphs; without the
@@ -6580,15 +6628,11 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     font-size: 1.1rem;
 }
 
-/* Big screen mode: control bar grows because the buttons inside
-   bumped to min-height 56px + 10/14 padding. The default
-   --ctrl-bar-height: 64px is an approximation of the rendered
-   bar; in big mode it's actually ~70 px tall (56 px button
-   content-area + 4 px bar padding × 2 + 1 px border × 2). To get
-   the SAME visual gap above the bar the helm sees on desktop
-   (~18 px between the route card and the bar), the override
-   here uses 70 px so the card sits at the same visual elevation
-   as the desktop equivalent.
+/* Big-type: ctrl-btn min-height bumps to 56 + padding 10/14 +
+   .map-controls padding (4 default, 6 with pointer:coarse) +
+   2px border. Bar renders ~66px on mouse, ~70px with touch.
+   Cover the worst case (touch, which is the dominant big-type
+   user -- helm screens are typically capacitive).
    Two layers of fix:
      (a) Bump --ctrl-bar-height for big mode so any future
          consumer of the variable picks up the right value.
@@ -6598,14 +6642,14 @@ main:has(.map-container.big-type) .chart-reorder-btn {
          (Safari has shipped two different evaluation orders for
          var() inside calc() inside custom-property values), and
          the helm reported the gap was still missing after fix (a)
-         alone. The hard value is calc'd from the same tokens so
-         a future --ctrl-bar-offset / --panel-gap change still
+         alone. The hard value uses the variable directly so a
+         future --ctrl-bar-offset / --panel-gap change still
          lands here. */
 main:has(.map-container.big-type) {
     --ctrl-bar-height: 70px;
 }
 main:has(.map-container.big-type) .hud-stack-bc {
-    bottom: calc(70px + var(--ctrl-bar-offset) + var(--panel-gap));
+    bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 }
 
 /* Big screen mode: AIS ship icons. Scale the SVG inside the
@@ -7231,6 +7275,25 @@ main:has(.map-container.big-type) .alarm-hold-hint {
         font-size: 0.8rem;
         display: flex;
         align-items: center;
+    }
+}
+
+/* Phone overrides for the chip-size pointer:coarse rule above.
+   Helm flagged the 44px touch-floor as "too tall" on a 390-wide
+   viewport where the chips dominate the top-of-chart band. The
+   chip text is truncated in C# at 10 chars + ellipsis, so a
+   tighter tap target (28px) is acceptable -- the helm reads the
+   chip and then taps; the tap surface stays well above the 24px
+   minimum readability floor and the chips don't crowd out the
+   chart underneath. Combined query so the override only fires on
+   phones, NOT on iPad / touch-laptop where the 44px floor still
+   applies. */
+@media (pointer: coarse) and (max-width: 600px) {
+    .chart-quick-chip {
+        min-height: 0;
+        padding: 3px 8px;
+        font-size: 0.62rem;
+        line-height: 1.2;
     }
 }
 

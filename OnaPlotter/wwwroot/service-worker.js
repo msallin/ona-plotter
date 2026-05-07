@@ -351,7 +351,33 @@
 //             unchanged via custom event accessors that forward to
 //             the inner cache; existing subscribers keep working
 //             without any code change on their side.
-const CACHE_NAME = 'ona-plotter-v48';
+// v48 -> v49: Mobile layout helm round.
+//             - chart-quick chips: 10-char + ellipsis truncation in
+//               C#; combined (pointer:coarse) AND (max-width:600)
+//               override drops the touch-floor 44px chip height to
+//               28px on phones so the strip doesn't crowd the
+//               chart underneath.
+//             - prev/next waypoint chevrons re-shown on phones
+//               (previously display:none in the phone @media).
+//               Per-leg TTG/ETA stays hidden so DTW/BRG/VMG fit
+//               on one line.
+//             - Route-total row drops the TTG span (variable-width,
+//               sometimes wrapped onto a second line on phone);
+//               keeps the fixed-width "ETA HH:MM". flex-wrap:
+//               nowrap + white-space: nowrap enforce single line.
+//             - --ctrl-bar-height bumped per config to match
+//               actual rendered bar heights (mobile 48->58,
+//               pointer:coarse new override 70). Earlier guesses
+//               left the route HUD overlapping the bar; new values
+//               place it exactly --panel-gap above the bar's top
+//               edge across desktop / iPad / mobile / big-type.
+//             - Free/Follow promoted from the More menu's phone-
+//               overflow block to the always-visible bar so the
+//               phone bar reads [More, Free/Follow, Layers]. The
+//               More-menu row carries .ctrl-more-mobile-hide so
+//               it's suppressed on phones to avoid duplicating
+//               the bar version.
+const CACHE_NAME = 'ona-plotter-v49';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
