@@ -203,11 +203,25 @@ export function addRegion(id, rings, title, description,
     // Leaflet DivIcon so it picks up CSS theming and stays sharp at
     // every zoom; non-interactive so a click on the glyph doesn't
     // intercept popup-open.
+    //
+    // Glyph is an inline SVG, not the Unicode warning sign U+26A0:
+    // the codepoint has font-dependent baseline metrics that flex-
+    // centering can't compensate for, so the triangle ends up
+    // visually offset inside the disk on Safari / Firefox / Chrome
+    // each in their own way. SVG paths are pixel-deterministic;
+    // currentColor inherits the helm's accent (#fff7ed) from the
+    // parent .region-hazard-glyph rule. The 14x14 SVG sits flex-
+    // centered inside the 24x24 disk.
     if (isHazard && centroid) {
         const warn = L.marker(centroid, {
             icon: L.divIcon({
                 className: 'region-hazard-glyph',
-                html: '<span aria-hidden="true">&#9888;</span>',
+                html:
+                    '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">' +
+                    '<path d="M8 1.8 L14.4 13 L1.6 13 Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>' +
+                    '<line x1="8" y1="6" x2="8" y2="9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>' +
+                    '<circle cx="8" cy="11.4" r="0.95" fill="currentColor"/>' +
+                    '</svg>',
                 iconSize: [24, 24],
                 iconAnchor: [12, 12],
             }),
