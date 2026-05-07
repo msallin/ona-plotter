@@ -1893,6 +1893,67 @@ function wireRouteDeactivate(popup) {
 
 export function removeRoute(id) { routeLayers.remove(id); }
 
+// Updates the geometry + popup metadata of an existing route layer
+// in place. Mirrors REST PUT semantics on /resources/routes/<id>:
+// same id, possibly different waypoint count + total nm + name.
+//
+// Falls through to addRoute when the id isn't yet known (upsert
+// behaviour) so callers don't need to branch on whether this is the
+// first delta the helm has seen for this id.
+//
+// Why in-place vs remove+add: a remove+add cycle has a flicker
+// window where the polyline disappears, and forces the helm to
+// re-locate the dashed-leg overlay (active-route layer) which
+// hooks into the route's coords. setLatLngs is the leaflet-native
+// "the geometry changed; keep everything else" path -- click
+// handlers + popupopen wiring + the layer's identity in the
+// activeRouteLayer's diff stay valid. Vertex DOTS are the one
+// piece that has to rebuild because their count is geometry-
+// dependent (route-edit can add or remove waypoints).
+export function updateRoute(id, name, coords, totalNm) {
+    if (!map) return;
+    const group = routeLayers.get(id);
+    if (!group) {
+        // Upsert: first time we hear about this route. Defer to addRoute
+        // which builds the full layer stack from scratch.
+        return addRoute(id, name, coords, totalNm);
+    }
+
+    const layers = group.getLayers();
+    if (layers.length < 2) {
+        // Defensive: layer group somehow lost its line + hitLine. Rebuild.
+        routeLayers.remove(id);
+        return addRoute(id, name, coords, totalNm);
+    }
+
+    // Layer order from addRoute(): [line, hitLine, ...vertex_dots].
+    const [line, hitLine, ...dots] = layers;
+
+    // Update visible polyline + invisible touch hitbox geometry.
+    line.setLatLngs(coords);
+    hitLine.setLatLngs(coords);
+
+    // Refresh popup labels (waypoint count + total nm + name may all
+    // have changed). buildRoutePopupHtml is referenced by addRoute as
+    // well; same call site keeps the two paths in lockstep.
+    const nmTotal = (typeof totalNm === 'number' && isFinite(totalNm)) ? totalNm : 0;
+    const html = buildRoutePopupHtml(id, name, coords.length, nmTotal);
+    line.setPopupContent(html);
+    hitLine.setPopupContent(html);
+
+    // Vertex dots: count is geometry-dependent (route-edit adds /
+    // removes waypoints), so rebuild rather than try to setLatLng
+    // each surviving one.
+    for (const d of dots) group.removeLayer(d);
+    for (let i = 0; i < coords.length; i++) {
+        const dot = L.circleMarker(coords[i], {
+            radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
+        });
+        dot.bindTooltip(name ? `${name} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
+        dot.addTo(group);
+    }
+}
+
 // --- Server Track ---
 //
 // Shows the server-side historical track. Two modes:

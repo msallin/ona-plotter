@@ -30,6 +30,15 @@ public class ActiveRouteSyncTests
             return Task.CompletedTask;
         }
 
+        public Task UpdateRouteAsync(string id, string? name, double[][] coords, double totalNm)
+        {
+            // ActiveRouteSync doesn't drive saved-route updates today
+            // (that's the page's HandleRouteChangedFromStore path); the
+            // fake just records the call for completeness.
+            Added.Add((id, coords));
+            return Task.CompletedTask;
+        }
+
         public Task RemoveRouteAsync(string id)
         {
             Removed.Add(id);

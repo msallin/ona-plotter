@@ -19,6 +19,7 @@
 @inject IToastService Toasts
 @inject NavigationManager Nav
 @inject SignalkClient SignalkClient
+@inject OnaPlotter.Services.Resources.ResourceStore ResourceStore
 @inject Microsoft.JSInterop.IJSRuntime JS
 @using OnaPlotter.Services.Json
 @using Microsoft.AspNetCore.Components.Forms
@@ -363,6 +364,23 @@
             new("notes",     "Notes",     () => notes.Count),
             new("regions",   "Regions",   () => regions.Count),
         ];
+
+        // Subscribe to ResourceStore so live deltas (route created /
+        // edited / deleted on another plotter; same plotter's Map page
+        // creating a waypoint, etc.) re-render this page immediately
+        // without the helm having to manually refresh. Cheap re-pull of
+        // the cached snapshots on every event -- the store already has
+        // the current state, so this is just a list copy.
+        ResourceStore.OnReloaded += HandleStoreReloaded;
+        ResourceStore.OnRouteChanged += HandleStoreRouteChanged;
+        ResourceStore.OnRouteRemoved += HandleStoreRouteRemoved;
+        ResourceStore.OnWaypointChanged += HandleStoreWaypointChanged;
+        ResourceStore.OnWaypointRemoved += HandleStoreWaypointRemoved;
+        ResourceStore.OnNoteChanged += HandleStoreNoteChanged;
+        ResourceStore.OnNoteRemoved += HandleStoreNoteRemoved;
+        ResourceStore.OnRegionChanged += HandleStoreRegionChanged;
+        ResourceStore.OnRegionRemoved += HandleStoreRegionRemoved;
+
         await LoadAllAsync();
     }
 
@@ -374,29 +392,49 @@
         routesLoadFailed = waypointsLoadFailed = notesLoadFailed = regionsLoadFailed = false;
         try
         {
-            // Parallel load: the four endpoints are independent and the
-            // server has no shared-lock hazard we'd hit by asking at once.
-            // Cuts perceived load time on a typical Raspberry Pi SK server
-            // from ~600 ms serial to ~200 ms.
-            var rTask = SafeCall("routes", () => RouteApi.GetAllAsync());
-            var wTask = SafeCall("waypoints", () => WaypointApi.GetAllAsync());
-            var nTask = SafeCall("notes", () => NoteApi.GetAllAsync());
-            var gTask = SafeCall("regions", () => RegionApi.GetAllAsync());
-            await Task.WhenAll(rTask, wTask, nTask, gTask);
-            routes    = rTask.Result ?? [];
-            waypoints = wTask.Result ?? [];
-            notes     = nTask.Result ?? [];
-            regions   = gTask.Result ?? [];
-            routesLoadFailed    = rTask.Result is null;
-            waypointsLoadFailed = wTask.Result is null;
-            notesLoadFailed     = nTask.Result is null;
-            regionsLoadFailed   = gTask.Result is null;
+            // Source of truth is the ResourceStore singleton -- it owns
+            // the REST initial-load + delta-driven cache + reconcile-on-
+            // reconnect, so this page reads from it instead of issuing
+            // its own REST round-trips. If the store hasn't loaded yet
+            // (page mounted before the singleton's startup refresh
+            // completed) we kick a refresh and await it.
+            if (!ResourceStore.IsLoaded)
+            {
+                await ResourceStore.RefreshAllAsync();
+            }
+            CopyFromStore();
         }
         finally
         {
             loading = false;
         }
     }
+
+    private void CopyFromStore()
+    {
+        // List<>(IEnumerable) copies each entry into a fresh list so
+        // the page can mutate (sort, group) without aliasing the store.
+        routes    = new List<SignalkRoute>(ResourceStore.Routes);
+        waypoints = new List<SignalkWaypoint>(ResourceStore.Waypoints);
+        notes     = new List<SignalkNote>(ResourceStore.Notes);
+        regions   = new List<SignalkRegion>(ResourceStore.Regions);
+        // Failure flags drive empty-state messaging. With the store as
+        // the source of truth we can't tell per-type from here whether
+        // a particular fetch failed -- the worst case is the empty
+        // tab shows the generic "no items" copy instead of a network-
+        // failure hint, which is acceptable. The store logs failures.
+        routesLoadFailed = waypointsLoadFailed = notesLoadFailed = regionsLoadFailed = false;
+    }
+
+    private void HandleStoreReloaded()       => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreRouteChanged(string _)    => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreRouteRemoved(string _)    => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreWaypointChanged(string _) => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreWaypointRemoved(string _) => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreNoteChanged(string _)     => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreNoteRemoved(string _)     => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreRegionChanged(string _)   => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
+    private void HandleStoreRegionRemoved(string _)   => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
 
     // Any one endpoint being down shouldn't take the whole page with it --
     // the Settings / Paths pages follow the same pattern so a partial
@@ -822,6 +860,16 @@
 
     public async ValueTask DisposeAsync()
     {
+        ResourceStore.OnReloaded -= HandleStoreReloaded;
+        ResourceStore.OnRouteChanged -= HandleStoreRouteChanged;
+        ResourceStore.OnRouteRemoved -= HandleStoreRouteRemoved;
+        ResourceStore.OnWaypointChanged -= HandleStoreWaypointChanged;
+        ResourceStore.OnWaypointRemoved -= HandleStoreWaypointRemoved;
+        ResourceStore.OnNoteChanged -= HandleStoreNoteChanged;
+        ResourceStore.OnNoteRemoved -= HandleStoreNoteRemoved;
+        ResourceStore.OnRegionChanged -= HandleStoreRegionChanged;
+        ResourceStore.OnRegionRemoved -= HandleStoreRegionRemoved;
+
         if (_fileTransfer is not null)
         {
             try { await _fileTransfer.DisposeAsync(); }
