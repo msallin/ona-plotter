@@ -395,7 +395,14 @@
 //               replaced with " - " (hyphen) in comments, README,
 //               UI strings - helm-readability pass, no behavioural
 //               impact.
-const CACHE_NAME = 'ona-plotter-v50';
+// v50 -> v51: Range-scale chip now carries the zoom level inline
+//             (e.g. "0.5 nm  | z14") so the helm reads distance and
+//             zoom from the same chip; the standalone Leaflet
+//             zoom-level badge (already display:none for a few
+//             revisions) stays hidden. CSS + JS only; bump
+//             invalidates the precache so the helm picks up the new
+//             .ona-range-scale-zoom rule on next launch.
+const CACHE_NAME = 'ona-plotter-v51';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

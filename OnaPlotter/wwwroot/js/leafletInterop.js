@@ -244,6 +244,7 @@ const ZoomBadge = L.Control.extend({
 let _rangeScaleEl = null;
 let _rangeScaleLabelEl = null;
 let _rangeScaleBarEl = null;
+let _rangeScaleZoomEl = null;
 let _rangeScaleHideTimer = null;
 function initRangeScale(mapInstance) {
     _rangeScaleEl = L.DomUtil.create('div', 'ona-range-scale',
@@ -251,6 +252,14 @@ function initRangeScale(mapInstance) {
     _rangeScaleLabelEl = L.DomUtil.create('span', 'ona-range-scale-label',
         _rangeScaleEl);
     _rangeScaleBarEl = L.DomUtil.create('span', 'ona-range-scale-bar',
+        _rangeScaleEl);
+    // Zoom indicator. Pairs with the distance label so the helm sees
+    // both "how wide is the bar in nautical miles" AND "what zoom
+    // level am I on" without a separate badge. The Leaflet zoom-level
+    // badge in the bottom-left was hidden a few revisions ago because
+    // it duplicated this information; folding it into the scale chip
+    // here is the one-place answer.
+    _rangeScaleZoomEl = L.DomUtil.create('span', 'ona-range-scale-zoom',
         _rangeScaleEl);
     L.DomEvent.disableClickPropagation(_rangeScaleEl);
     // Compute the value once at init so the first show carries the
@@ -282,7 +291,14 @@ function updateRangeScale() {
     const { label, widthPx } = computeNiceScale(map, 100, 8);
     _rangeScaleLabelEl.textContent = label;
     _rangeScaleBarEl.style.width = `${widthPx}px`;
-    _rangeScaleEl.title = `Range: ${label}`;
+    // Leaflet allows fractional zoom (zoomSnap: 0.5 lands on .0 / .5);
+    // round for the chip so "z 14.5" doesn't read as a precision the
+    // chart can't actually deliver. Falls back to the full Leaflet
+    // value in the title attribute for the helm who long-presses.
+    const zRaw = map.getZoom();
+    const zRounded = Math.round(zRaw);
+    if (_rangeScaleZoomEl) _rangeScaleZoomEl.textContent = `z${zRounded}`;
+    _rangeScaleEl.title = `Range: ${label} - Zoom ${zRaw}`;
 }
 
 /**

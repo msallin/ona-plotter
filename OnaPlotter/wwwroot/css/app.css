@@ -4878,6 +4878,16 @@ html.night-mode-global body {
     border-left:  1.5px solid currentColor;
     border-right: 1.5px solid currentColor;
 }
+/* Zoom indicator inside the scale chip. Reads as the dimmer
+   sibling of the distance label so the helm's eye lands on the
+   nautical-mile value first and picks up "z14" as supporting
+   context. */
+.ona-range-scale-zoom {
+    color: var(--hud-ink-dim, var(--hud-ink));
+    opacity: 0.75;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
 
 /* (Earlier iteration shipped a centred pinch-zoom preview chip
    (.ona-zoom-preview) that duplicated the bottom-centre range-scale
