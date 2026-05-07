@@ -20,7 +20,14 @@
          publish duration but gives a 2-5x speedup on the hot data-apply
          and alarm-eval path at runtime, measurable on a Raspberry Pi
          kiosk where the old interpreted path bottlenecked the main
-         thread. -->
+         thread.
+         WASM exception-handling note: .NET 10's runtime emits the
+         older `try` instruction; Firefox console flags it as
+         "deprecated, recompile to use try_table". The instruction
+         choice is dotnet/runtime's; no SDK property surfaces a knob
+         today. The warning is harmless until Firefox actually drops
+         the older form; track the runtime ticket rather than working
+         around it here. -->
     <RunAOTCompilation>true</RunAOTCompilation>
     <!-- TrimMode investigation gate. Default Blazor WASM trim mode
          is 'partial'; full mode would shave another 100-200 KB

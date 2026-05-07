@@ -44,9 +44,18 @@ internal static class ResourceHttp
     public static async Task<Dictionary<string, T>?> GetDictAsync<T>(
         HttpClient http, string url, CancellationToken ct = default)
     {
-        using var response = await http.GetAsync(url, ct);
-        if (!response.IsSuccessStatusCode) return null;
-        return await response.Content.ReadFromJsonAsync<Dictionary<string, T>>(s_jsonOptions, ct);
+        try
+        {
+            using var response = await http.GetAsync(url, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync<Dictionary<string, T>>(s_jsonOptions, ct);
+        }
+        catch (HttpRequestException) { return null; }
+        // Caller-initiated cancel still rethrows; the HttpClient timeout
+        // (no caller CT) returns the empty-result sentinel so the
+        // calling SafeLoad path doesn't have to know about transport
+        // failure modes.
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
     }
 
     /// <summary>
@@ -66,6 +75,13 @@ internal static class ResourceHttp
                 ?? $"HTTP {(int)response.StatusCode}");
         }
         catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+        // Caller-initiated cancellation rethrows so a deliberate cancel
+        // surfaces as cancel; HttpClient's internal timeout (the
+        // 8-second default; ct is never user-driven for fire-and-forget
+        // callers like AutoAdvanceAsync) lands here as a Fail rather
+        // than bubbling up to Blazor's renderer error UI.
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { return ApiResult.Fail("request timed out"); }
     }
 
     /// <summary>
@@ -86,6 +102,8 @@ internal static class ResourceHttp
                 (int)response.StatusCode);
         }
         catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { return ApiResult.Fail("request timed out"); }
     }
 
     /// <summary>
@@ -106,6 +124,8 @@ internal static class ResourceHttp
                 (int)response.StatusCode);
         }
         catch (HttpRequestException ex) { return ApiResult.Fail(ex.Message); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { return ApiResult.Fail("request timed out"); }
     }
 
     /// <summary>
@@ -133,6 +153,8 @@ internal static class ResourceHttp
             return ApiResult<string>.Ok(id);
         }
         catch (HttpRequestException ex) { return ApiResult<string>.Fail(ex.Message); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { return ApiResult<string>.Fail("request timed out"); }
     }
 
     /// <summary>

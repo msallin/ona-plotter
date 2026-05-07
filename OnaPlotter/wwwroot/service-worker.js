@@ -221,7 +221,24 @@
 //             except for the new History icon helper. Bump
 //             invalidates the precache so helms pull the new CSS +
 //             markup together.
-const CACHE_NAME = 'ona-plotter-v37';
+// v37 -> v38: Route HUD spacing + ResourceHttp timeout handling.
+//             - Bumped --panel-gap 9 -> 16 px so the bc-stack
+//               (anchor + active route) has visible breathing room
+//               above the bottom bar.
+//             - On phone, lifted .hud-stack-bc by an extra 64 px so
+//               it floats ABOVE the depth / heading corner cards
+//               instead of sharing the bottom band (route card was
+//               340 px wide on a 390-wide viewport, leaving no room
+//               for the corners next to it).
+//             - ResourceHttp.{Get,Post,Put,Delete,PostCreate} now
+//               also catch OperationCanceledException when the
+//               caller didn't cancel -- that's the HttpClient
+//               timeout path, which previously bubbled past the
+//               helpers as TaskCanceledException and reached
+//               Blazor's renderer error UI ("An unhandled error has
+//               occurred"). Failures still surface as toasts; the
+//               banner only fires for genuine bugs now.
+const CACHE_NAME = 'ona-plotter-v38';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
