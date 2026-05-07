@@ -207,11 +207,15 @@
     --ctrl-bar-height: 64px;  /* Approx height of .map-controls (icon + label + padding). */
     --ctrl-bar-offset: 12px;  /* Distance of the bar from the viewport bottom. */
     /* Gap between the bottom action bar and the bc-stack cards
-       (anchor watch + active route). Helm: "too close to bottom
-       menu" at 9 px; bumped to 16 px so the route card has visible
-       breathing room above the bar without floating up so far that
-       the bar reads as a separate page region. */
-    --panel-gap: 16px;
+       (anchor watch + active route). Helm-tuned: 4 px reads as a
+       deliberate gutter without floating the cards too far above
+       the bar. Earlier 16 px felt "too much padding" -- the route
+       HUD sat way up the screen for no reason. Expanded corner
+       HUDs now use the :has() z-index lift below to paint OVER
+       the bc-stack + ctrl bar when the helm taps to expand them,
+       so a small base gap doesn't trap detail rows under the
+       route card any more. */
+    --panel-gap: 4px;
     --panel-bottom: calc(var(--ctrl-bar-height) + var(--ctrl-bar-offset) + var(--panel-gap));
 
     /* ===== HUD design system =====
@@ -1370,6 +1374,27 @@ article.content:has(.history-page) {
 .hud-panel-expanded {
     padding-bottom: calc(var(--hud-card-pad-y) + 4px);
     border-color: rgba(0, 0, 0, 0.85);
+    /* Lift the expanded card above its siblings within the same
+       stack so a tall expanded panel doesn't get hidden behind
+       the next card down. Combined with the :has() rule below
+       this also clears the bottom bar + bc-stack. */
+    position: relative;
+    z-index: 1;
+}
+
+/* Expanded-HUD z-index pop. .hud-stack itself is a stacking context
+   (position: absolute + z-index var(--z-hud)=500) so a child with a
+   bigger z-index can't escape -- the ctrl bar (z=800) and bc-stack
+   (z=500) still paint over it. When ANY corner card is expanded we
+   bump the parent stack's z-index above --z-controls so the popped
+   card can cover the bar + the route/anchor cards underneath. The
+   helm reads it as "tap a corner -> details overlay everything;
+   tap again to collapse". Browser support: :has() is in Chromium
+   105+, Safari 15.4+, Firefox 121+ (Dec 2023). Older browsers
+   fall back to "expanded card stays underneath the bar" which is
+   the previous behaviour, not a regression. */
+.hud-stack:has(.hud-panel-expanded) {
+    z-index: calc(var(--z-controls) + 5);
 }
 
 /* Extra-detail rows inside an expanded HUD panel. */
@@ -4456,28 +4481,44 @@ html.night-mode-global body {
     /* Phone topbar tightening. The row was overflowing horizontally
        on a 390-wide viewport because the icon-button cluster +
        SearchBox + auth chip + History button summed wider than the
-       container. Three lever pulls:
+       container. Levers:
          - drop the topbar's own .px-4 / 1rem horizontal padding,
-         - shrink topbar-icon-btn from 2rem -> 1.75rem (still WCAG
-           tappable through hit-target padding),
-         - tighten the gap between siblings so the cluster reads as
-           "right-aligned tools" without per-item halos. */
+         - shrink topbar-icon-btn from 2rem -> 1.5rem,
+         - tighten the gap between siblings,
+         - if the row STILL overflows (auth + update chips + search
+           + zoom + night cluster fights with a 360 px viewport),
+           let it scroll horizontally rather than disappear off
+           the right edge. FF Android specifically clipped the
+           tail rather than scrolling by default; opt-in
+           overflow-x:auto restores access without forcing wrap
+           onto a second row (which would cost 3 rem of vertical
+           map real estate on every page). */
     .top-row {
         padding-left: 0.5rem !important;
         padding-right: 0.5rem !important;
         gap: 0.25rem;
+        overflow-x: auto;
+        overflow-y: hidden;
+        flex-wrap: nowrap;
+        scrollbar-width: none;          /* Firefox */
     }
+    .top-row::-webkit-scrollbar { display: none; }   /* Chromium / Safari */
     .topbar-icon-btn {
-        width: 1.75rem !important;
-        height: 1.75rem !important;
+        width: 1.5rem !important;
+        height: 1.5rem !important;
+        flex: 0 0 auto;
     }
+    .topbar-icon-btn svg { width: 14px; height: 14px; }
     /* SearchBox squeeze: cap shorter on phone so the right-side
        icons keep their seat. text-overflow: ellipsis on the
        <input> renders the truncated tail as "..." while the input
        is unfocused (browsers honour it on type=search inputs);
        once focused the cursor controls what's visible, which is
        the right behaviour while typing. */
-    .topbar-search { max-width: 180px; }
+    .topbar-search {
+        max-width: 160px;
+        flex: 0 1 160px;
+    }
     .topbar-search-input {
         text-overflow: ellipsis;
         overflow: hidden;
@@ -4513,18 +4554,6 @@ html.night-mode-global body {
     .display-6 { font-size: 1.2rem; line-height: 1.1; }
     .dashboard-section .card-body { padding: 0.5rem 0.4rem; }
     .dashboard-section .card-subtitle { font-size: 0.7rem; }
-
-    /* Phone bc-stack lift: anchor + active-route cards float above
-       the bl/br corner cards on phone instead of sharing their
-       bottom band. Without this they overlap horizontally on a
-       390-wide viewport (route card is ~340 px wide and the depth
-       / heading corners eat the remaining 50 px on each side).
-       Pushing bc-stack up by ~64 px (the typical corner-card
-       height) clears the corners; the helm reads bottom-edge as
-       three rows: ctrl bar -> anchor / route -> bl/br corners. */
-    .hud-stack-bc {
-        bottom: calc(var(--panel-bottom) + 64px);
-    }
 
     /* Phone route HUD: compact mobile layout for the active-route
        card. The desktop / iPad layout has six metrics on one
@@ -7066,11 +7095,22 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
 /* ===== Quick Chart Switcher ===== */
 
-/* On phones the top-centre HUD (wind, route panel) already fights for
-   space with this row. Hide it; the full Layers panel is one tap away
-   via the control bar. */
+/* Phone: keep the quick-chart row visible but in a tighter form so
+   the helm can flip charts without diving into the full Layers
+   panel. Smaller font + padding + radius so the chips don't
+   dominate the top edge of the chart. */
 @media (max-width: 600px) {
-    .chart-quick-bar { display: none !important; }
+    .chart-quick-bar {
+        gap: 3px;
+        max-width: calc(100% - 16px);
+        top: 6px;
+    }
+    .chart-quick-chip {
+        padding: 2px 8px;
+        font-size: 0.62rem;
+        border-radius: 10px;
+        line-height: 1.15;
+    }
 }
 
 .chart-quick-bar {

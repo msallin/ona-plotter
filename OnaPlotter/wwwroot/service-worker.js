@@ -248,7 +248,27 @@
 //             precache. Closes the multi-plotter route-edit
 //             sync gap (plotter A edits, plotter B's polyline now
 //             updates without reload).
-const CACHE_NAME = 'ona-plotter-v39';
+// v39 -> v40: Mobile layout iteration 2.
+//             - --panel-gap 16 -> 4 px and dropped the 64 px phone
+//               lift on .hud-stack-bc. Helm: "too much padding".
+//             - Expanded HUDs paint OVER the bottom menu + the
+//               route/anchor cards via :has(.hud-panel-expanded)
+//               -> z-index pop on the parent stack. Tap a corner
+//               to expand; details overlay everything; tap again
+//               to collapse. Same behaviour on every breakpoint;
+//               desktop wasn't seeing the issue today but the
+//               policy is consistent.
+//             - Chart-quick-bar is no longer hidden on phone --
+//               smaller chips (font 0.62rem, padding 2px 8px) so
+//               the helm can flip charts without diving into the
+//               full Layers panel.
+//             - Topbar on phone: overflow-x:auto + scroll-bar-
+//               hidden so a still-wide row (auth chip + update
+//               chip + search + zoom + night) scrolls horizontally
+//               instead of clipping off the right edge on FF
+//               Android. Also shrunk topbar-icon-btn 1.75 -> 1.5
+//               rem and the SearchBox cap 180 -> 160 px.
+const CACHE_NAME = 'ona-plotter-v40';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
