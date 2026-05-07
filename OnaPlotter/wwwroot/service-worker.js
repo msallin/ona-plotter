@@ -329,7 +329,19 @@
 //             HashSet for the upsert-membership lookup and only
 //             allocates the stale-id list when there's actually one
 //             to remove.
-const CACHE_NAME = 'ona-plotter-v46';
+// v46 -> v47: Resource reconcile observability. RefreshAllAsync
+//             gains a `cause` parameter ("startup", "page-mount",
+//             "manual", "reconnect") that surfaces in the
+//             reconcile-started + reconcile-complete structured
+//             logs, so a helm reading the journal can tell why a
+//             reconcile fired without correlating timestamps. The
+//             reconcile-complete line now reports per-type added /
+//             updated / removed counts (not just totals), so it's
+//             obvious when "everything stayed the same" vs "5
+//             routes deleted server-side". Connection-edge
+//             transitions log explicitly so the journal shows when
+//             deltas paused / resumed.
+const CACHE_NAME = 'ona-plotter-v47';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

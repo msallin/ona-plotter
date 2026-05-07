@@ -419,7 +419,7 @@
         loading = true;
         try
         {
-            await ResourceStore.RefreshAllAsync();
+            await ResourceStore.RefreshAllAsync(cause: "manual");
             // RefreshAllAsync fires per-type Changed/Removed events as
             // the cache mutates, so HandleStore* hooks above already
             // copied the new state into our local lists. The explicit
@@ -459,7 +459,7 @@
             // completed) we kick a refresh and await it.
             if (!ResourceStore.IsLoaded)
             {
-                await ResourceStore.RefreshAllAsync();
+                await ResourceStore.RefreshAllAsync(cause: "page-mount");
             }
             CopyFromStore();
         }
