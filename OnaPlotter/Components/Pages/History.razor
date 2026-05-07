@@ -1170,41 +1170,6 @@
         catch (JSDisconnectedException) { }
     }
 
-    /// <summary>Pulls the current Leaflet viewport bounds from JS and
-    /// returns them as a <see cref="TrackBbox"/> padded outward by
-    /// <see cref="TrackBbox.DefaultPadFraction"/>. Returns null when
-    /// the map isn't ready, when JS interop fails (page teardown), or
-    /// when the bounds aren't a sensible numeric quadruple. Padding
-    /// the bounds avoids re-fetching every time the helm pans by a
-    /// few pixels.</summary>
-    private async Task<TrackBbox?> TryGetViewportBboxAsync()
-    {
-        try
-        {
-            // Returns [south, west, north, east] from Leaflet's
-            // getBounds(). Defensive: if any of those isn't a finite
-            // number, fall back to "no bbox" rather than send garbage.
-            var raw = await JS.InvokeAsync<double[]?>("eval", $@"
-                (function() {{
-                    var m = window._historyMap;
-                    if (!m) return null;
-                    var b = m.getBounds();
-                    return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
-                }})()
-            ");
-            if (raw is null || raw.Length != 4) return null;
-            double s = raw[0], w = raw[1], n = raw[2], e = raw[3];
-            if (!double.IsFinite(s) || !double.IsFinite(w)
-                || !double.IsFinite(n) || !double.IsFinite(e)) return null;
-            // Padding lives on the model so a test can drive it
-            // without going through the page's JS-interop code path.
-            return new TrackBbox(s, w, n, e).Pad(TrackBbox.DefaultPadFraction);
-        }
-        catch (JSDisconnectedException) { return null; }
-        catch (JSException) { return null; }
-        catch (ObjectDisposedException) { return null; }
-    }
-
     private async Task LoadTrack()
     {
         // While a fetch is in flight, the same button doubles as
@@ -1290,14 +1255,13 @@
             span = null;     // ignored when from is supplied; explicit for clarity
         }
 
-        // Optional bbox hint from the current viewport, oversized 20 %
-        // outward so a small pan doesn't trigger a re-fetch. The
-        // server may or may not honour the bbox; signalk-parquet does,
-        // others ignore unknown query params and we fall back to
-        // time-only filtering. Skipped when the map isn't ready yet
-        // or the bounds call fails.
-        TrackBbox? bbox = await TryGetViewportBboxAsync();
-
+        // No viewport bbox is sent. The helm wants the full track for
+        // the chosen time window regardless of where they happen to
+        // have zoomed; bbox-filtering caused the surprising "I loaded
+        // yesterday but only see the marina" failure mode whenever
+        // the map happened to be zoomed away from the passage. Time-
+        // window + resolution stay as the only filters.
+        //
         // Rich fetch: timestamps + sog + wind in one round-trip.
         // Segmenter splits into stationary/moving runs which JS
         // renders with distinct styling + per-segment hover tooltips.
@@ -1305,7 +1269,7 @@
         // Loading…/Cancel button.
         points = await TrackApi.GetServerTrackPointsAsync(
             from: fromUtc, to: toUtc, timespan: span,
-            resolution: resolution, bbox: bbox, ct: ct);
+            resolution: resolution, bbox: null, ct: ct);
         segments = points is { Length: > 0 } ? TrackSegmenter.Segment(points) : null;
         playbackIndex = 0;
         playing = false;

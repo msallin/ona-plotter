@@ -196,7 +196,14 @@
 //             helm could see the rows in the HTML inspector -- but
 //             the parent's stacking context capped its effective
 //             z-index at 1, so the chart painted over it.
-const CACHE_NAME = 'ona-plotter-v35';
+// v35 -> v36: History page no longer sends a viewport bbox to the
+//             track API. Helm-visible: loading "yesterday" while
+//             zoomed at home harbour now returns the full passage
+//             instead of just the marina pixels. Framework files
+//             go through cache-first, so without this bump a
+//             helm with the v35 cache would keep loading the
+//             old (bbox-sending) WASM after redeploy.
+const CACHE_NAME = 'ona-plotter-v36';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
