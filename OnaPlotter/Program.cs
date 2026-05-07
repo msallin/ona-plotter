@@ -233,7 +233,22 @@ builder.Services.AddSingleton<ClientErrorRelay>();
 // Own-data + online run in parallel; the helm sees own-data hits even
 // when both geocoders are slow / offline. All transient failures
 // return an empty list per the IPlaceSearchService contract.
-builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>();
+// Photon takes a position-provider thunk so each search call can
+// add &lat=&lon= to bias results by proximity to the helm's current
+// fix. The thunk reads NavigationData live each call -- if the SK
+// feed hasn't yielded a position yet, returns null and Photon skips
+// the bias params (global ranking).
+builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>(sp =>
+    new OnaPlotter.Services.Places.PhotonPlaceSearchService(
+        sp.GetRequiredService<HttpClient>(),
+        sp.GetRequiredService<ILogger<OnaPlotter.Services.Places.PhotonPlaceSearchService>>(),
+        () =>
+        {
+            var nav = sp.GetRequiredService<SignalkClient>().Data;
+            return nav.Latitude is double lat && nav.Longitude is double lon
+                ? (lat, lon)
+                : null;
+        }));
 builder.Services.AddSingleton<OnaPlotter.Services.Places.NominatimPlaceSearchService>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.PlaceSearchCache>();
 builder.Services.AddSingleton<OnaPlotter.Services.Places.OwnPlacesIndex>();

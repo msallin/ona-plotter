@@ -139,9 +139,100 @@ public class PhotonPlaceSearchServiceTests
         await Assert.That(results.Count).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task SearchAsync_Appends_LatLon_When_Position_Available()
+    {
+        // Position thunk returns the helm's current fix -> URL gets
+        // &lat=&lon= so Photon biases results by proximity.
+        var handler = new RecordingHandler();
+        var http = new HttpClient(handler);
+        var svc = new PhotonPlaceSearchService(
+            http,
+            NullLogger<PhotonPlaceSearchService>.Instance,
+            selfPosition: () => (52.3879, 13.0582));
+
+        await svc.SearchAsync("marina");
+
+        var url = handler.LastRequest!.RequestUri!.AbsoluteUri;
+        await Assert.That(url.Contains("lat=52.3879")).IsTrue();
+        await Assert.That(url.Contains("lon=13.0582")).IsTrue();
+        await Assert.That(url.Contains("dedupe")).IsTrue();
+        await Assert.That(url.Contains("osm_tag=place")).IsTrue();
+    }
+
+    [Test]
+    public async Task SearchAsync_Skips_LatLon_When_Position_Null()
+    {
+        // Before the first SK position fix lands the thunk returns
+        // null -- skip the bias params (Photon uses global ranking).
+        var handler = new RecordingHandler();
+        var http = new HttpClient(handler);
+        var svc = new PhotonPlaceSearchService(
+            http,
+            NullLogger<PhotonPlaceSearchService>.Instance,
+            selfPosition: () => null);
+
+        await svc.SearchAsync("marina");
+
+        var url = handler.LastRequest!.RequestUri!.AbsoluteUri;
+        await Assert.That(url.Contains("lat=")).IsFalse();
+        await Assert.That(url.Contains("lon=")).IsFalse();
+    }
+
+    [Test]
+    public async Task SearchAsync_Skips_LatLon_When_Position_Provider_Null()
+    {
+        // No provider injected at all (e.g., from a test rig that
+        // doesn't care about geo bias) -- still works, just without
+        // the lat/lon params.
+        var handler = new RecordingHandler();
+        var http = new HttpClient(handler);
+        var svc = new PhotonPlaceSearchService(
+            http,
+            NullLogger<PhotonPlaceSearchService>.Instance,
+            selfPosition: null);
+
+        await svc.SearchAsync("marina");
+
+        var url = handler.LastRequest!.RequestUri!.AbsoluteUri;
+        await Assert.That(url.Contains("lat=")).IsFalse();
+    }
+
+    [Test]
+    public async Task SearchAsync_Skips_LatLon_When_Position_Not_Finite()
+    {
+        // Defensive: NaN / Infinity slipping through (shouldn't happen
+        // but the chart-resource path taught us not to trust upstream
+        // sanitisation). Skip the bias params so the URL stays valid.
+        var handler = new RecordingHandler();
+        var http = new HttpClient(handler);
+        var svc = new PhotonPlaceSearchService(
+            http,
+            NullLogger<PhotonPlaceSearchService>.Instance,
+            selfPosition: () => (double.NaN, 13.0582));
+
+        await svc.SearchAsync("marina");
+
+        var url = handler.LastRequest!.RequestUri!.AbsoluteUri;
+        await Assert.That(url.Contains("lat=")).IsFalse();
+    }
+
     private sealed class ThrowingHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             => throw new InvalidOperationException("HttpClient should not have been called");
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        public HttpRequestMessage? LastRequest { get; private set; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            LastRequest = request;
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"features\":[]}", System.Text.Encoding.UTF8, "application/json"),
+            });
+        }
     }
 }

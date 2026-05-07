@@ -46,11 +46,22 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
 
     private readonly HttpClient _http;
     private readonly ILogger<PhotonPlaceSearchService> _logger;
+    /// <summary>Returns the helm's current position (or null if not
+    /// yet known) so each Photon call can bias results by proximity
+    /// via &amp;lat=...&amp;lon=... params. The helm searching "marina"
+    /// from the Mediterranean wants Mediterranean marinas first, not
+    /// the global ranking. DI threads this in from
+    /// <c>SignalkClient.Data</c>; tests can pass null or a stub.</summary>
+    private readonly Func<(double Lat, double Lon)?>? _selfPosition;
 
-    public PhotonPlaceSearchService(HttpClient http, ILogger<PhotonPlaceSearchService> logger)
+    public PhotonPlaceSearchService(
+        HttpClient http,
+        ILogger<PhotonPlaceSearchService> logger,
+        Func<(double Lat, double Lon)?>? selfPosition = null)
     {
         _http = http;
         _logger = logger;
+        _selfPosition = selfPosition;
     }
 
     public async Task<IReadOnlyList<PlaceResult>> SearchAsync(string query, CancellationToken ct = default)
@@ -74,11 +85,23 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
         //                       is looking for navigable destinations, not
         //                       roads / buildings / POIs that the default
         //                       Photon ranking otherwise mixes in.
+        //   lat,lon           : OPTIONAL bias by proximity to the helm's current
+        //                       fix. Re-ranks results so a "marina" search from
+        //                       the Mediterranean returns Mediterranean marinas
+        //                       before global ones. Skipped before the first
+        //                       SignalK position fix lands (selfPosition() is null).
         var url = EndpointBase
             + "?q=" + Uri.EscapeDataString(query)
             + "&limit=" + ResultLimit
             + "&dedupe"
             + "&osm_tag=place";
+
+        if (_selfPosition?.Invoke() is (double lat, double lon)
+            && double.IsFinite(lat) && double.IsFinite(lon))
+        {
+            url += "&lat=" + lat.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture)
+                +  "&lon=" + lon.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         HttpResponseMessage response;
         try
