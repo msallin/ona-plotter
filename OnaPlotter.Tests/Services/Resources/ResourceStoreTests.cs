@@ -260,6 +260,62 @@ public class ResourceStoreTests
         await Assert.That(store.IsLoaded).IsTrue();
     }
 
+    [Test]
+    public async Task Routes_Snapshot_Is_Reused_Across_Reads_Until_Mutation()
+    {
+        // PERF-001: the Routes / Waypoints / Notes / Regions snapshots
+        // are cached and only rebuilt when the underlying dictionary
+        // mutates. A handler that hits Routes twice in a row (e.g. a
+        // HUD that reads Count and then iterates) gets the same list
+        // reference. After a delta lands, the next read rebuilds.
+        var store = new ResourceStore(
+            new FakeRouteApi(), new FakeWaypointApi(), new FakeNoteApi(), new FakeRegionApi(),
+            NewStubClient(), NullLogger<ResourceStore>.Instance);
+
+        var doc = """{"name":"Berlin","feature":{"type":"Feature","geometry":{"type":"LineString","coordinates":[[13.4,52.5],[13.5,52.6]]}}}""";
+        store.HandleResourceDelta("routes", "r1", JsonDocument.Parse(doc).RootElement);
+
+        var first = store.Routes;
+        var second = store.Routes;
+        await Assert.That(ReferenceEquals(first, second)).IsTrue();
+
+        // Add another route -- next Routes read must be a fresh list.
+        store.HandleResourceDelta("routes", "r2", JsonDocument.Parse(doc).RootElement);
+        var third = store.Routes;
+        await Assert.That(ReferenceEquals(first, third)).IsFalse();
+        await Assert.That(third.Count).IsEqualTo(2);
+
+        // The previously-handed-out 'first' reference is still safe to
+        // iterate -- it's the snapshot at its time of read, with the
+        // single 'r1' entry. (Validates the contract that cached
+        // snapshots are immutable from the consumer's POV.)
+        await Assert.That(first.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Routes_Snapshot_Invalidates_On_Delete_Delta()
+    {
+        // Delete branch of HandleRouteDelta also nulls the snapshot
+        // cache. Without that, a "removed" route would keep showing
+        // up in subsequent Routes reads until the next add/update.
+        var routeApi = new FakeRouteApi();
+        routeApi.Routes.Add(NewRoute("r1", "Berlin"));
+
+        var store = new ResourceStore(
+            routeApi, new FakeWaypointApi(), new FakeNoteApi(), new FakeRegionApi(),
+            NewStubClient(), NullLogger<ResourceStore>.Instance);
+        await store.RefreshAllAsync();
+
+        var before = store.Routes;
+        await Assert.That(before.Count).IsEqualTo(1);
+
+        store.HandleResourceDelta("routes", "r1", JsonDocument.Parse("null").RootElement);
+
+        var after = store.Routes;
+        await Assert.That(ReferenceEquals(before, after)).IsFalse();
+        await Assert.That(after.Count).IsEqualTo(0);
+    }
+
     // --- Helpers ------------------------------------------------------
 
     private static SignalkRoute NewRoute(string id, string name) => new()

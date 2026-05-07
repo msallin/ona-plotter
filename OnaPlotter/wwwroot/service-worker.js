@@ -318,7 +318,18 @@
 //             filter cache + topbar-search index when an add /
 //             remove changes the cached counts so the panel and
 //             search pick up the change without waiting for a pan.
-const CACHE_NAME = 'ona-plotter-v45';
+// v45 -> v46: ResourceStore snapshot caching + event-fire cleanup.
+//             The Routes / Waypoints / Notes / Regions read
+//             properties cache the IReadOnlyList and only rebuild
+//             when the underlying dictionary mutates, so a HUD that
+//             reads Count + then iterates no longer allocates a
+//             fresh list per access. Event invocations route through
+//             a shared SafeInvoke helper instead of ~30 inline
+//             try/catch sites; Replace{Type} reuses one instance
+//             HashSet for the upsert-membership lookup and only
+//             allocates the stale-id list when there's actually one
+//             to remove.
+const CACHE_NAME = 'ona-plotter-v46';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
