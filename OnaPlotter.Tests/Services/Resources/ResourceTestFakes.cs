@@ -15,8 +15,16 @@ internal sealed class FakeRouteApi : IRouteApi
 {
     public List<SignalkRoute> Routes { get; } = [];
     public int LoadCount { get; private set; }
-    public Task<List<SignalkRoute>> GetAllAsync(CancellationToken ct = default)
-    { LoadCount++; return Task.FromResult(Routes.ToList()); }
+    /// <summary>Optional pre-return hook so a test can gate the GetAllAsync
+    /// task on a TaskCompletionSource (lets us drive coalesce-during-flight
+    /// + dispose-during-flight scenarios deterministically).</summary>
+    public Func<Task>? LoadHook { get; set; }
+    public async Task<List<SignalkRoute>> GetAllAsync(CancellationToken ct = default)
+    {
+        LoadCount++;
+        if (LoadHook is { } hook) await hook();
+        return Routes.ToList();
+    }
     public Task<double[][]?> GetCoordinatesAsync(string href, CancellationToken ct = default)
         => Task.FromResult<double[][]?>(null);
     public Task<ApiResult<string>> SaveAsync(string name, double[][] coordsLatLon, CancellationToken ct = default)
