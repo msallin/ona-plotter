@@ -293,7 +293,7 @@
     @* === Waypoint Name + Description Dialog ===
        Mirror of the Add Note layout so the two feel like one flow
        (name required, description optional). Description persists to
-       SignalK's properties.description per the Freeboard-SK schema.
+       SignalK's properties.description per the resource schema.
        Doubles as the Edit dialog (popup-side Edit button calls
        OpenWaypointEditDialog which sets waypointEditId + pre-fills the
        inputs); the only visible difference is the header label. *@
@@ -2834,8 +2834,7 @@
     private async Task NavigateHere()
     {
         contextMenuVisible = false;
-        // Use the direct-position endpoint (matches Freeboard-SK's
-        // "Navigate here" flow): SignalK v2 course accepts
+        // Use the direct-position endpoint: SignalK v2 course accepts
         //   PUT /navigation/course/destination { position: {lat, lon} }
         // and skips the persistent waypoint resource that the old
         // flow created as a side effect. The previous implementation

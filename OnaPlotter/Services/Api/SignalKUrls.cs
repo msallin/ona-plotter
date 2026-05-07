@@ -55,10 +55,10 @@ public static class SignalKUrls
     public const string CourseActiveRoutePath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute";
     public const string CourseActiveRouteNextPointPath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute/nextPoint";
     // Absolute jump to a leg index. Body is {value: N} with N the 0-based
-    // pointIndex. Mirrors Freeboard-SK's "tap a WP on the polyline to
-    // skip to it" gesture; lighter than re-PUTting the whole activeRoute
-    // because the server only has to flip the leg, not re-resolve the
-    // route href.
+    // pointIndex. Used by the "tap a WP on the polyline to skip to it"
+    // gesture; lighter than re-PUTting the whole activeRoute because
+    // the server only has to flip the leg, not re-resolve the route
+    // href.
     public const string CourseActiveRoutePointIndexPath = "/signalk/v2/api/vessels/self/navigation/course/activeRoute/pointIndex";
 
     /// <summary>Anchor v2.0.0+ standard SK PUT handler endpoints. PUT

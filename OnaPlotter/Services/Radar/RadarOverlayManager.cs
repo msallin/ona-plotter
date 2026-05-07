@@ -160,7 +160,7 @@ public sealed class RadarOverlayManager
         // compromised plugin could otherwise hand us an attacker URL
         // and the browser would dutifully open it (exfil / SSRF).
         // On mismatch or absence, build the canonical SK-proxied URL
-        // ourselves (matches freeboard-sk's fallback).
+        // ourselves.
         string url = !string.IsNullOrEmpty(radar.SpokeDataUrl)
                      && SignalKUrls.IsSpokeUrlOnSameOrigin(radar.SpokeDataUrl!, _baseUrl.BaseUrl)
             ? radar.SpokeDataUrl!

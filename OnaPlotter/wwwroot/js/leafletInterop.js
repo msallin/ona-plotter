@@ -518,9 +518,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         // 2x scale change when usually 1.4x is what's wanted to nudge
         // detail in / out. zoomSnap: 0.5 + zoomDelta: 0.5 lands every
         // mouse / topbar tap at half-integer levels (17.5, 18.0, 18.5).
-        // Pinch + wheel inherit the same snap. Matches Freeboard-SK's
-        // behaviour where its OpenLayers view allows fractional zoom
-        // by default.
+        // Pinch + wheel inherit the same snap.
         zoomSnap: 0.5,
         zoomDelta: 0.5,
         // Leaflet's default wheelPxPerZoomLevel = 60 means a 100 px
@@ -1552,13 +1550,12 @@ export function removeChartLayer(id) {
 
 // Graduated opacity for stacked charts. The bottom (primary) chart
 // always renders at full opacity so a single-chart helm sees the
-// chart's authored colours / contrast verbatim -- comparable to
-// Freeboard-SK's rendering, where Navionics MBTiles look noticeably
-// crisper than the previous flat-0.85 dim made them here. Each chart
-// stacked ABOVE the primary then ramps down to 0.45 so the helm
-// reads the stack as layers rather than the topmost chart hiding
-// what's underneath. The 0.45 floor keeps the top layer visible on
-// a 4+ chart stack.
+// chart's authored colours / contrast verbatim -- the previous
+// flat-0.85 dim made Navionics MBTiles look noticeably less crisp
+// than they should. Each chart stacked ABOVE the primary then ramps
+// down to 0.45 so the helm reads the stack as layers rather than the
+// topmost chart hiding what's underneath. The 0.45 floor keeps the
+// top layer visible on a 4+ chart stack.
 function restackChartOpacities() {
     if (!map || chartLayers.size === 0) return;
     // Order layers by their current z-index (bottom -> top). setZIndex
@@ -1571,8 +1568,7 @@ function restackChartOpacities() {
     ordered.sort((a, b) => (a.options.zIndex ?? 50) - (b.options.zIndex ?? 50));
     if (ordered.length === 1) {
         // Single chart: full opacity. Helm wants the chart's own
-        // contrast, no client-side dimming. Matches Freeboard-SK's
-        // single-chart behaviour.
+        // contrast, no client-side dimming.
         ordered[0].setOpacity(1.0);
         return;
     }

@@ -66,11 +66,11 @@ public class AtonTypeCatalogTests
     [Test]
     public async Task Lookup_BaseStationCode_MapsToBaseStation()
     {
-        // -1 isn't a real AIS Type 21 code; it's the convention we
-        // use internally (mirrored from Freeboard-SK) for
-        // shore.basestations.* contexts so they share the AtoN
-        // marker layer. Locked here so a future code-cleanup can't
-        // drop it without realising base stations stop rendering.
+        // -1 isn't a real AIS Type 21 code; it's the internal
+        // convention for shore.basestations.* contexts so they
+        // share the AtoN marker layer. Locked here so a future
+        // code-cleanup can't drop it without realising base
+        // stations stop rendering.
         await Assert.That(AtonTypeCatalog.Lookup(-1).Symbol)
             .IsEqualTo(AtonTypeCatalog.AtonSymbol.BaseStation);
     }

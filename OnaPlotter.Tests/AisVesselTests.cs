@@ -123,9 +123,9 @@ public class AisVesselTests
     public async Task Apply_DesignLength_BareScalar_SetsLoa()
     {
         // Some SK feeds (older signalk-n2k-ais, hand-rolled bridges)
-        // flatten design.length to a bare number. We mirror Freeboard-
-        // SK's permissive reader so OnaPlotter doesn't need a per-server
-        // config to surface the dimensions row.
+        // flatten design.length to a bare number. Accepting both the
+        // structured object AND the bare scalar means the dimensions
+        // row surfaces without a per-server config.
         var vessel = new AisVessel("vessels.test");
         var je = JsonSerializer.SerializeToElement(32.5);
         await Assert.That(vessel.Apply("design.length", je)).IsTrue();

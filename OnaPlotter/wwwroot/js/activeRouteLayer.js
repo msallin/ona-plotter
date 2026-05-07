@@ -188,7 +188,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
 
     // Waypoint markers (skip the next WP -- it gets the pulsing marker
     // below). Each remaining dot is tappable: clicking asks the C# side
-    // to jump pointIndex to that WP, mirroring Freeboard's gesture.
+    // to jump pointIndex to that WP (the on-the-fly leg-skip gesture).
     for (let i = 0; i < coords.length; i++) {
         const isPassed = i < idx;
         const isNext = i === idx;

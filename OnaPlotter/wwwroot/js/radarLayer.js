@@ -15,8 +15,8 @@
 //     which the first cut of this file did and which cost 10-50 ms
 //     per reposition on the main thread.
 //   * Spoke painting uses a precomputed polar -> pixel LUT (once per
-//     radar) indexed by (spokeIndex, rangeCell). Same trick the
-//     Freeboard-SK worker uses to avoid per-pixel trig.
+//     radar) indexed by (spokeIndex, rangeCell). Avoids per-pixel
+//     trig on every spoke.
 //   * North-up: if the spoke has a `bearing` field we paint there;
 //     else we rotate `angle` by the own-boat heading.
 //   * Pixel bytes are looked up in a Uint8ClampedArray of length 256
@@ -39,11 +39,10 @@ import { decodeRadarMessage } from './radarProtobuf.js';
 import { rangeRingLabel } from './format.js';
 
 // Fallback legend for servers that don't ship one in their
-// capabilities response. Lifted from Freeboard-SK's default (which
-// matches the Navico palette). 0 transparent, 1-4 blue, 5-9 green,
-// 10-15 red (weak -> strong returns), 16 target outline (grey),
-// 17 doppler approaching (yellow), 18 doppler receding (pale
-// blue), 19+ history trails (fading white -> grey).
+// capabilities response. Matches the Navico palette. 0 transparent,
+// 1-4 blue, 5-9 green, 10-15 red (weak -> strong returns), 16 target
+// outline (grey), 17 doppler approaching (yellow), 18 doppler
+// receding (pale blue), 19+ history trails (fading white -> grey).
 const DEFAULT_LEGEND_PIXELS = (() => {
     const p = new Array(256).fill(null);
     const set = (i, hex) => { p[i] = hex; };

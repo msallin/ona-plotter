@@ -666,7 +666,8 @@ public partial class Map
     /// Jumps the active route to a specific 0-based leg index. Wired to a
     /// click on a non-active waypoint dot in the route polyline (the
     /// pulsing next-WP marker is skipped since it's already the target).
-    /// Mirrors Freeboard-SK's "tap a WP to make it the next leg" gesture.
+    /// "Tap a WP to make it the next leg" gesture for re-routing on the
+    /// fly without entering edit mode.
     /// </summary>
     /// <remarks>
     /// Defence-in-depth: the JS side passes the route id it drew with,

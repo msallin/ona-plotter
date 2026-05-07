@@ -7,7 +7,7 @@ namespace OnaPlotter.Models;
 /// description. Polygons and multi-polygons share one wire shape
 /// (GeoJSON Feature with Polygon/MultiPolygon geometry). Circles are
 /// encoded as 32-vertex polygon approximations so consumers don't have
-/// to special-case them -- Freeboard-SK does the same.
+/// to special-case them.
 /// </summary>
 public sealed class SignalkRegion
 {

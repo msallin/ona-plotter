@@ -207,8 +207,8 @@ public sealed class AisVessel
                 // a bare number. Accept both shapes so OnaPlotter
                 // works against signalk-ais-tcp, signalk-n2k-ais,
                 // and the rare server that hand-publishes a flat
-                // length. The .overall sub-key is canonical per
-                // Freeboard-SK's reader; we mirror that.
+                // length. `overall` is the canonical sub-key per
+                // the SignalK schema.
                 if (rawValue is JsonElement lenEl)
                 {
                     if (lenEl.ValueKind == JsonValueKind.Object

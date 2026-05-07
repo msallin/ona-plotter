@@ -171,10 +171,9 @@
 
             @* Fullscreen button. Only rendered when the browser can
                actually fullscreen a non-video element -- iPad Safari
-               (tab mode) cannot, and matching Freeboard-SK's behaviour
-               we simply hide the button there; the user installs the
-               app via Share -> Add to Home Screen to get a true
-               fullscreen launcher. See wwwroot/js/platform/fullscreen.js
+               (tab mode) cannot, so we simply hide the button there;
+               the user installs the app via Share -> Add to Home
+               Screen to get a true fullscreen launcher. See wwwroot/js/platform/fullscreen.js
                ::isSupported(). Standalone PWAs also hide the button
                because they're already fullscreen at launch.
                NO Blazor @onclick -- fullscreen.js wires a native
@@ -1148,8 +1147,7 @@
         // and silently skip a waypoint. The absolute form
         // (PUT /activeRoute/pointIndex {value: N}) IS idempotent --
         // the second PUT lands on a value that's already set and is
-        // a no-op. Same reason Freeboard-SK uses pointIndex for its
-        // arrival-driven advance.
+        // a no-op.
         //
         // Last-leg exception: SetPointIndexAsync clamps out-of-range
         // values, so PUT pointIndex=total does NOT clear the active

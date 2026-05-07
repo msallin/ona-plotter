@@ -292,9 +292,10 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>atons.* @ 60 s. AIS Type 21 broadcasts AtoN positions
     /// every ~3 min and the data is mostly static (a buoy doesn't
     /// move much) -- 1 Hz would burn bandwidth + WASM main-thread
-    /// time for nothing. 60 s is what Freeboard-SK uses too. Anything
-    /// under the path tree (name, position, atonType, virtual,
-    /// communication) lands in <see cref="OnaPlotter.Services.AtonStore"/>.</summary>
+    /// time for nothing. 60 s lands well inside the 3-min refresh
+    /// window. Anything under the path tree (name, position,
+    /// atonType, virtual, communication) lands in
+    /// <see cref="OnaPlotter.Services.AtonStore"/>.</summary>
     private static readonly string[] AtonsTierPaths =
     [
         "*",
@@ -1246,8 +1247,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 //       of enumerating every leaf. We must treat a null
                 //       parent the same as nulling every child, otherwise
                 //       course state stays stale until a fresh route is
-                //       set. Freeboard does the same (its processCourseData
-                //       treats a null value as "clear everything").
+                //       set.
                 if (val.Path == Utilities.SkPaths.Navigation.Course.ActiveRouteHref
                     || val.Path == Utilities.SkPaths.Navigation.Course.ActiveRoute
                     || val.Path == Utilities.SkPaths.Navigation.Course.NextPoint)
