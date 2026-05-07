@@ -438,7 +438,18 @@
 //               flex group so they sit adjacent on the right;
 //               previously space-between pushed Import to the
 //               middle and Refresh to the far right.
-const CACHE_NAME = 'ona-plotter-v53';
+// v53 -> v54: Hazard region warning glyph centring fix.
+//             - .region-hazard-glyph picks up box-sizing: border-box
+//               so the rendered disk is exactly 24x24 (was 28x28
+//               under default content-box, putting the disk's
+//               visual centre 2px below-right of the iconAnchor
+//               coordinate).
+//             - Inner glyph swapped from Unicode U+26A0 to an
+//               inline SVG triangle + exclamation. The codepoint's
+//               font-dependent baseline metrics rendered off-centre
+//               on Safari / Firefox / Chrome each in their own way;
+//               the SVG is pixel-deterministic.
+const CACHE_NAME = 'ona-plotter-v54';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

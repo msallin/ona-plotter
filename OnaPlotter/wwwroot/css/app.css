@@ -8360,11 +8360,19 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 /* Hazard warning glyph rendered at the centroid of every hazard
    region. Always-on (independent of popup state) so a helm
    scanning the chart pre-attentively sees "this area has a
-   regulatory / safety flag". DivIcon, no Leaflet text styling. */
+   regulatory / safety flag". DivIcon, no Leaflet text styling.
+   box-sizing: border-box keeps the rendered disk size exactly
+   24x24 INCLUDING the 2px border; without it the default
+   content-box measurement makes the visible disk 28x28 while
+   Leaflet still iconAnchors at [12,12] of a 24x24 box, which
+   pushes the disk's visual centre 2px below-right of the
+   centroid coordinate. Helm reported the glyph sitting off-
+   centre over the hazard polygon -- this is the fix. */
 .region-hazard-glyph {
     display: flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
     width: 24px;
     height: 24px;
     background: rgba(220, 38, 38, 0.92);
@@ -8372,9 +8380,6 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.85);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
-    font-size: 14px;
-    font-weight: 700;
-    line-height: 1;
     pointer-events: none;
     user-select: none;
 }
