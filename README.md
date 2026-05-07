@@ -1,8 +1,8 @@
 # OnaPlotter
 
 A touch-first chartplotter for sailors on a [SignalK](https://signalk.org/)
-boat. One app for a 21" helm touchscreen, an iPad in the cockpit, or a phone
-in a jacket pocket -- same data, responsive layout, WCAG-sized tap targets.
+boat. One app for a 21" helm touchscreen with keyboard and mouse, an iPad in the cockpit, or a phone
+in a jacket pocket - same data, responsive layout, WCAG-sized tap targets.
 
 Built on Blazor WebAssembly + Leaflet + the SignalK stream. Deploys as a
 SignalK webapp on a Pi, or runs standalone from any browser.
@@ -10,36 +10,31 @@ SignalK webapp on a Pi, or runs standalone from any browser.
 ## Why this and not another plotter
 
 - **Freeboard-SK interop.** Routes, waypoints, notes, and regions round-trip
-  through `/resources/*` with the exact shape Freeboard expects. Create
-  here, see there. Tests pin the payload so it can't drift.
+  through `/resources/*` with the exact shape Freeboard expects.
 - **Real collision detection.** CPA / TCPA projection with COLREGS crossing
   classification, not a proximity beeper. Moored-vessel auto-mute,
   per-target snooze, pulsing danger ring, red/amber crossing lines.
   ([deep dive](docs/collision-detection.md))
 - **Plugin-aware, not plugin-locked.** Tide, buddy list, anchor alarm,
-  Mayara radar -- each lights up its own UI when installed; missing
-  plugins surface a clear "plugin vX.Y+ required" toast rather than a
-  silent fallback.
+  Mayara radar - each lights up its own UI when installed; missing
+  plugins surface a clear "plugin vX.Y+ required" toast.
 - **Touch-first.** Long-press context menu, bottom-sheet panels on phones,
   44 px minimum tap targets, full keyboard parity, branded boot screen.
 
 ## Features
 
-### Map (the primary view)
+### Map
 
 - **Four-corner HUD.** SOG/COG/position, wind (AWA + TWA, direction
   arrows, Beaufort), depth + tide countdown, heading compass. Tap a
   corner to expand (DMS, VMG, XTE, drift, tidal current, autopilot).
-- **Own-vessel track**, speed-coloured, magenta chevron.
-- **AIS targets** with COG vector, 60 s fading trail, ship-type colour
-  + small type glyph (diamond / net / dot / plus) so deuteranopes can
-  still tell sail from fishing from commercial. Tap a vessel for
+- **Own-vessel track**, history-plugin integration, speed-coloured.
+- **AIS targets** with COG vector, 60 s fading trail, ship-type colour. Tap a vessel for
   SOG/COG/HDG/bearing/distance/CPA + MarineTraffic / VesselFinder
   deep-links.
 - **CPA danger pulse.** Red ring + crossing lines for targets in the
   danger band; two-line vessel + CPA/TCPA label.
-- **Anchor watch** via [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin)
-  v2.0.0+. Two-step drop + set-radius with on-map preview as you pick
+- **Anchor watch** via [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin). Two-step drop + set-radius with on-map preview as you pick
   the chip; tide-aware grounding alarm when a tide plugin is feeding.
 - **MOB** -- one-tap drop with a pulsing red bullseye; non-snoozeable.
   Same treatment for SART / EPIRB.
