@@ -1722,12 +1722,17 @@ export function addRoute(id, name, coords, totalNm) {
     hitLine.on('popupopen', wirePopup);
 
     // Waypoint dots at each coordinate.
+    // bindTooltip writes its string argument to innerHTML, so the
+    // server-supplied route name has to be HTML-escaped or a name
+    // like '<img src=x onerror=...>' would execute. esc() once outside
+    // the loop -- name doesn't change per vertex.
     const group = L.layerGroup([line, hitLine]).addTo(map);
+    const safeTipName = name ? esc(name) : '';
     for (let i = 0; i < coords.length; i++) {
         const dot = L.circleMarker(coords[i], {
             radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
         });
-        dot.bindTooltip(name ? `${name} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
+        dot.bindTooltip(safeTipName ? `${safeTipName} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
         dot.addTo(group);
     }
     routeLayers.set(id, group);
@@ -1945,13 +1950,16 @@ export function updateRoute(id, name, coords, totalNm) {
 
     // Vertex dots: count is geometry-dependent (route-edit adds /
     // removes waypoints), so rebuild rather than try to setLatLng
-    // each surviving one.
+    // each surviving one. Escape the route name once -- bindTooltip
+    // writes its argument to innerHTML, so a remote-edited name must
+    // not be interpolated raw.
     for (const d of dots) group.removeLayer(d);
+    const safeTipName = name ? esc(name) : '';
     for (let i = 0; i < coords.length; i++) {
         const dot = L.circleMarker(coords[i], {
             radius: 4, color: MapColors.route, fillColor: MapColors.route, fillOpacity: 1, weight: 1
         });
-        dot.bindTooltip(name ? `${name} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
+        dot.bindTooltip(safeTipName ? `${safeTipName} [${i + 1}]` : `WPT ${i + 1}`, { className: 'bearing-tooltip' });
         dot.addTo(group);
     }
 }
