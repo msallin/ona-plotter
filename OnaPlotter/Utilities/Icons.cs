@@ -52,6 +52,10 @@ public static class Icons
     // is this?" -- used by the Tips / Shortcuts More-menu row so
     // it doesn't share a glyph with the Legend row right above.
     private const string PathHelp = "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/><line x1=\"12\" y1=\"17\" x2=\"12.01\" y2=\"17\"/>";
+    // Clipboard / note-block. Used as the icon-only form of the
+    // alarm-history button on mobile, where "Alarm History 12" /
+    // "History" text labels eat too much topbar real estate.
+    private const string PathHistory = "<rect x=\"6\" y=\"3\" width=\"12\" height=\"18\" rx=\"2\"/><line x1=\"9\" y1=\"3\" x2=\"15\" y2=\"3\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"9\"/><line x1=\"9\" y1=\"13\" x2=\"15\" y2=\"13\"/><line x1=\"9\" y1=\"17\" x2=\"13\" y2=\"17\"/>";
 
     /// <summary>
     /// Build the full <c>&lt;svg&gt;</c> wrapper at an arbitrary
@@ -102,6 +106,7 @@ public static class Icons
     public static readonly string FullscreenExit = Render(PathFullscreenExit, 20);
     public static readonly string Trash = Render(PathTrash, 20);
     public static readonly string Help = Render(PathHelp, 20);
+    public static readonly string History = Render(PathHistory, 20);
 
     /// <summary>
     /// 14-px variants for the topbar row, where the surrounding chrome
@@ -117,5 +122,6 @@ public static class Icons
         public static readonly string Sun = Render(PathSun, 14);
         public static readonly string FullscreenEnter = Render(PathFullscreenEnter, 14);
         public static readonly string FullscreenExit = Render(PathFullscreenExit, 14);
+        public static readonly string History = Render(PathHistory, 14);
     }
 }

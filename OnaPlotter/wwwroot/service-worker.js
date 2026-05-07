@@ -203,7 +203,25 @@
 //             go through cache-first, so without this bump a
 //             helm with the v35 cache would keep loading the
 //             old (bbox-sending) WASM after redeploy.
-const CACHE_NAME = 'ona-plotter-v36';
+// v36 -> v37: Mobile layout pass.
+//             - More menu trims Centre / Fit Track / Legend / Tips
+//               on phone + scrolls if it still overflows.
+//             - Depth HUD now expands on phone (rows were always
+//               hidden by mobile CSS; now hidden only when collapsed).
+//             - Topbar tightened (smaller icon buttons, narrower
+//               SearchBox, smaller padding).
+//             - Search input gets text-overflow: ellipsis on phone.
+//             - Alarm-history button replaces text with a clipboard
+//               icon + count badge (markup change: alarm-log-icon
+//               span replaces alarm-log-label-short).
+//             - Active-route HUD hides per-leg TTG / ETA + the
+//               prev/next chevron buttons on phone (route-total row
+//               carries the macro time).
+//             CSS-only + small markup tweak; WASM is unchanged
+//             except for the new History icon helper. Bump
+//             invalidates the precache so helms pull the new CSS +
+//             markup together.
+const CACHE_NAME = 'ona-plotter-v37';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

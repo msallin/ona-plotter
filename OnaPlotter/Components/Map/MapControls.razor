@@ -48,7 +48,13 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Follow)</span>
                     <span>@(Follow ? "Follow" : "Free")</span>
                 </button>
-                <button class="ctrl-more-item ctrl-more-overflow"
+                @* Centre / Fit Track are second-tier on mobile -- the
+                   helm pinch-zooms / pans by default, and the chevron
+                   buttons in the route HUD plus Follow give the
+                   one-tap "back to the boat" path. Hidden on phone to
+                   keep the More menu short enough to fit on a 390-
+                   wide viewport without scrolling. *@
+                <button class="ctrl-more-item ctrl-more-overflow ctrl-more-mobile-hide"
                         @onclick="() => Select(OnCentreOnBoat)"
                         title="Centre on boat">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Centre)</span>
@@ -79,7 +85,7 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Route)</span>
                     <span>Add Route</span>
                 </button>
-                <button class="ctrl-more-item ctrl-more-overflow"
+                <button class="ctrl-more-item ctrl-more-overflow ctrl-more-mobile-hide"
                         @onclick="() => Select(OnZoomToTrack)"
                         title="Fit track">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Fit)</span>
@@ -128,7 +134,11 @@
                    phone). *@
                 <div class="ctrl-more-sep ctrl-more-overflow"></div>
 
-                <button class="ctrl-more-item @(LegendOpen ? "ctrl-more-active" : "")"
+                @* Legend + Tips/Shortcuts hidden on mobile -- both are
+                   reference modals that aren't useful in a one-handed
+                   helm context, and Tips lists keyboard shortcuts that
+                   don't apply to a phone. *@
+                <button class="ctrl-more-item ctrl-more-mobile-hide @(LegendOpen ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleLegend)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
                     <span>Legend</span>
@@ -174,7 +184,7 @@
                    M = MOB, ...) plus pointer / touch tips. Gated on
                    the same callback the keyboard handler uses so a
                    helm with both inputs sees one entry point. *@
-                <button class="ctrl-more-item"
+                <button class="ctrl-more-item ctrl-more-mobile-hide"
                         @onclick="() => Select(OnShowShortcuts)"
                         title="Tips and keyboard shortcuts">
                     @* Help glyph (?-in-circle) NOT Legend so this row

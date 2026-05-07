@@ -60,12 +60,21 @@
                         title="@($"Alarm history ({historyCount} recent" +
                                   (Alarms.SnoozedTargets.Count > 0
                                     ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
-                    @* Two labels: full text for desktop, abbreviated
-                       for phone (CSS hides one or the other). Short
-                       form drops the count + the word "Alarm" because
-                       the topbar is critical real estate on a phone. *@
+                    @* Three forms:
+                         - desktop: full text "Alarm History 12"
+                         - phone:   icon (clipboard / note-block) +
+                                    a small count badge in the corner
+                       CSS picks one form per breakpoint. The icon was
+                       added because the abbreviated "History 12" text
+                       still wrapped + cluttered the phone topbar; an
+                       icon reads at a glance, the badge keeps the
+                       count visible without the text. *@
                     <span class="alarm-log-label-full">Alarm History @historyCount</span>
-                    <span class="alarm-log-label-short">History</span>
+                    <span class="alarm-log-icon" aria-hidden="true">@((MarkupString)OnaPlotter.Utilities.Icons.Small.History)</span>
+                    @if (historyCount > 0)
+                    {
+                        <span class="alarm-log-badge">@historyCount</span>
+                    }
                 </button>
             }
 

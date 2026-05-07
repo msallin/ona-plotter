@@ -54,9 +54,12 @@
                        small HUD only the buttons remain (next to
                        nothing -- the title row collapses) so the
                        chart underneath isn't eaten by the chip on
-                       landscape iPad. The buttons themselves are
-                       always present so the helm can always advance
-                       / step back without going to Big HUD first. *@
+                       landscape iPad. Hidden entirely on phones
+                       (.route-wp-step-btn is targeted by the phone
+                       breakpoint) -- on a 390-wide viewport the
+                       chevrons crowd the metric strip and the helm
+                       can always tap a waypoint dot on the polyline
+                       to skip there directly. *@
                     <button class="route-wp-step-btn"
                             disabled="@(idx <= 0)"
                             title="Previous waypoint" aria-label="Previous waypoint"
@@ -100,11 +103,17 @@
                 }
                 @if (Snapshot.TimeToGo is not null)
                 {
-                    <div class="route-info-item">
+                    @* TTG / ETA for the active leg. Hidden on phones
+                       (route-info-item-leg-time targets both via the
+                       phone media query) to leave the strip room for
+                       DTW + BRG + VMG; the route-total row at the
+                       bottom carries the macro TTG / ETA which is
+                       what the helm actually wants on a phone. *@
+                    <div class="route-info-item route-info-item-leg-time">
                         <div class="hud-label">TTG</div>
                         <div class="hud-value route-value">@Format.TimeToGo(Snapshot.TimeToGo)</div>
                     </div>
-                    <div class="route-info-item">
+                    <div class="route-info-item route-info-item-leg-time">
                         <div class="hud-label">ETA</div>
                         <div class="hud-value route-value">@Format.Eta(Snapshot.TimeToGo)</div>
                     </div>

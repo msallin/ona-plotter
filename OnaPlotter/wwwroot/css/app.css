@@ -4285,9 +4285,30 @@ html.night-mode-global body {
        separator is a plain block element. */
     .ctrl-more-overflow { display: flex !important; }
     div.ctrl-more-overflow { display: block !important; }
+    /* Items the helm flagged as second-tier on a phone (Centre / Fit
+       Track / Legend / Tips). Tagged in MapControls.razor with
+       .ctrl-more-mobile-hide; suppressed here so the menu stays
+       short enough to fit a 390-wide viewport. The wins-by-source-
+       order rule applies (later !important rule beats earlier),
+       which is why this lives inside the @media block, after the
+       .ctrl-more-overflow re-enable above. */
+    .ctrl-more-mobile-hide { display: none !important; }
     /* Tighter control bar on mobile -> recompute --panel-bottom so the
        bottom-center stack still sits one --panel-gap above the bar. */
     :root { --ctrl-bar-height: 48px; }
+    /* If the More menu still overflows after the mobile-hide trim
+       (long route name + race-mode timer + active-anchor row), let
+       it scroll inside its own bounds rather than running past the
+       viewport edge where some rows would be unreachable. dvh
+       includes the iOS bottom toolbar so the menu doesn't extend
+       behind it. */
+    .ctrl-more-menu {
+        max-height: calc(100dvh - var(--ctrl-bar-height) - 24px);
+        overflow-y: auto;
+        max-width: calc(100vw - 24px);
+        overflow-x: auto;
+        overscroll-behavior: contain;
+    }
 
     /* Topbar: drop the fullscreen toggle on phones. The browser's
        own fullscreen / immersive mode covers the same ergonomic
@@ -4322,11 +4343,19 @@ html.night-mode-global body {
         font-size: var(--hud-font-value);
         font-weight: 500;
     }
-    .hud-stack-bl .hud-threshold,
-    .hud-stack-bl .depth-tide-row,
-    .hud-stack-bl .depth-warn-glyph,
-    .hud-stack-bl .depth-trend,
-    .hud-stack-bl .hud-extra {
+    /* Compact-by-default on phone, but the helm can still tap to
+       expand the depth card and reveal the same rows the desktop
+       layout shows by default. The :not(.hud-panel-expanded)
+       guard keeps the collapsed phone card minimal (just label +
+       value); once the helm taps it the threshold / tide / trend /
+       extras come back. Without this scope the depth corner felt
+       broken vs. the other three corners (which all expand on
+       phone). */
+    .hud-stack-bl .hud-card:not(.hud-panel-expanded) .hud-threshold,
+    .hud-stack-bl .hud-card:not(.hud-panel-expanded) .depth-tide-row,
+    .hud-stack-bl .hud-card:not(.hud-panel-expanded) .depth-warn-glyph,
+    .hud-stack-bl .hud-card:not(.hud-panel-expanded) .depth-trend,
+    .hud-stack-bl .hud-card:not(.hud-panel-expanded) .hud-extra {
         display: none;
     }
     .hud-stack-tl .hud-position {
@@ -4390,22 +4419,70 @@ html.night-mode-global body {
         width: 7px !important;
         height: 7px !important;
     }
+    /* Phone alarm-log button: drop the text label entirely and show
+       the clipboard / note-block icon with a small count badge in
+       the corner. Helm reported the previous "History 12" text +
+       padding still crowded the topbar; an icon reads at a glance,
+       the badge keeps the count visible at a smaller footprint. */
     .alarm-log-label-full { display: none; }
-    .alarm-log-label-short { display: inline; }
-    /* Tighten the alarm-log button so it matches the dot's footprint;
-       on a viewport with no history the button isn't rendered at all
-       (gated in MainLayout) so this only kicks in once the helm has
-       a history to inspect. */
+    .alarm-log-icon { display: inline-flex; align-items: center; }
     .alarm-log-btn {
-        padding: 2px 8px;
-        font-size: 0.75rem;
-        line-height: 1.2;
+        position: relative;
+        padding: 4px 6px;
+        line-height: 1;
+        background: transparent;
+        border-color: rgba(255, 255, 255, 0.18);
+    }
+    .alarm-log-badge {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        border-radius: 7px;
+        background: var(--sev-warn, #f59e0b);
+        color: #1f2937;
+        font-size: 0.6rem;
+        font-weight: 700;
+        line-height: 14px;
+        text-align: center;
     }
     .auth-warning-chip {
         font-size: 0.7rem;
         padding: 2px 6px;
         line-height: 1.2;
         white-space: nowrap;
+    }
+
+    /* Phone topbar tightening. The row was overflowing horizontally
+       on a 390-wide viewport because the icon-button cluster +
+       SearchBox + auth chip + History button summed wider than the
+       container. Three lever pulls:
+         - drop the topbar's own .px-4 / 1rem horizontal padding,
+         - shrink topbar-icon-btn from 2rem -> 1.75rem (still WCAG
+           tappable through hit-target padding),
+         - tighten the gap between siblings so the cluster reads as
+           "right-aligned tools" without per-item halos. */
+    .top-row {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        gap: 0.25rem;
+    }
+    .topbar-icon-btn {
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+    }
+    /* SearchBox squeeze: cap shorter on phone so the right-side
+       icons keep their seat. text-overflow: ellipsis on the
+       <input> renders the truncated tail as "..." while the input
+       is unfocused (browsers honour it on type=search inputs);
+       once focused the cursor controls what's visible, which is
+       the right behaviour while typing. */
+    .topbar-search { max-width: 180px; }
+    .topbar-search-input {
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
 
     /* Phone-wide font shrink (~2pt). Cascades through everything
@@ -4478,20 +4555,25 @@ html.night-mode-global body {
     .route-total-label {
         font-size: 0.55rem;
     }
-    /* Chevrons on phone: smaller + tighter so they don't dominate
-       the panel. The bar's prev/next coarse-pointer min-width 36px
-       leaves no room for the chip; 28px is enough for a clear
-       glyph + tap target without 44px WCAG (the buttons aren't
-       safety-critical). */
-    .route-panel-compact .route-wp-step-btn {
-        min-width: 28px;
-        height: 28px;
-        font-size: 0.85rem;
-    }
+    /* Phone route HUD: drop the prev / next chevron buttons + the
+       per-leg TTG / ETA fields so DTW / BRG / VMG fit on one line
+       inside a 390-wide viewport without wrapping. The macro TTG /
+       ETA still ride along at the bottom inside the .route-total-row
+       (route-passed / route-remaining + ETA-of-arrival), which is
+       what the helm actually wants on a phone -- the per-leg time
+       changes every leg, the route-total reads steady. The helm can
+       still re-route on the fly by tapping a waypoint dot on the
+       polyline (the same gesture the chevrons fire under the hood).
+       Per-leg fields tagged in HudRouteCard with
+       .route-info-item-leg-time. */
+    .route-panel .route-wp-step-btn { display: none !important; }
+    .route-panel .route-info-item-leg-time { display: none !important; }
 }
-/* Default (non-phone): show the full alarm-log label, hide the
-   abbreviated one. Mirror block for the connection text. */
-.alarm-log-label-short { display: none; }
+/* Default (non-phone): show the full alarm-log text label, hide
+   the icon-only form. Phone breakpoint inverts via the alarm-log
+   block in the @media block above. */
+.alarm-log-icon { display: none; }
+.alarm-log-badge { display: none; }
 /* DEFAULT for every viewport: hide the More-menu overflow items.
    The default-off rule + the @media phone override that turns
    them back on live near the top of the mobile-responsive block
