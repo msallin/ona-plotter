@@ -306,7 +306,19 @@
 //             bindTooltip writes its string argument straight to
 //             innerHTML. waypointLayer was already safe via
 //             formatWaypointTooltip's existing esc() calls.
-const CACHE_NAME = 'ona-plotter-v44';
+// v44 -> v45: Drop Map.razor's 60 s resourcePollTimer +
+//             RefreshServerResourcesAsync. ResourceStore now keeps
+//             waypoints / routes / notes / regions live via the
+//             resources.* SK delta subscriptions (PR #238) and
+//             reconciles via REST on every reconnect, so the
+//             page-level poll was redundant work. The
+//             ToggleLayersPanel-open path narrows to a radar-only
+//             refresh (radar fields aren't published over the SK
+//             delta stream). Per-delta handlers now flush the
+//             filter cache + topbar-search index when an add /
+//             remove changes the cached counts so the panel and
+//             search pick up the change without waiting for a pan.
+const CACHE_NAME = 'ona-plotter-v45';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
