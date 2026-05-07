@@ -785,6 +785,26 @@ public sealed class SignalkClient : IAsyncDisposable
         IsConnected = true;
     }
 
+    /// <summary>Mirror of <see cref="MarkConnectionOpened"/> for the
+    /// disconnect side. Sets <see cref="IsConnected"/> to false
+    /// without touching the WS pump (production code's two
+    /// disconnect paths -- WS exception and clean close -- handle
+    /// the actual socket teardown). Tests use this paired with
+    /// <see cref="RaiseConnectionChanged"/> to drive
+    /// reconnect-reconcile flows deterministically.</summary>
+    internal void MarkConnectionClosed()
+    {
+        IsConnected = false;
+    }
+
+    /// <summary>Fire the public <see cref="OnConnectionChanged"/>
+    /// event from a test. Production code invokes the event right
+    /// after each Mark* call (see the WS-loop sites at the open
+    /// transition + the catch arms); test fixtures replicate the
+    /// pair (Mark* then RaiseConnectionChanged) to exercise
+    /// downstream reconcile / cleanup paths.</summary>
+    internal void RaiseConnectionChanged() => OnConnectionChanged?.Invoke();
+
     /// <summary>
     /// Test-facing string entry point. The WebSocket receive loop calls
     /// <see cref="ProcessMessageBytes"/> directly with the raw UTF-8
