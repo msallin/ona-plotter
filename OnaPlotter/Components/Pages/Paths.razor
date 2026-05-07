@@ -11,6 +11,7 @@
 @inject SignalkClient SignalkClient
 @inject IPathApi PathApi
 @inject AisStore AisStore
+@inject OnaPlotter.Services.Resources.ResourceStore ResourceStore
 @implements IDisposable
 
 <PageTitle>Paths</PageTitle>
@@ -112,6 +113,19 @@
     protected override void OnInitialized()
     {
         SignalkClient.OnDataChanged += HandleDataChanged;
+        // Resource deltas don't fire OnDataChanged (those are for
+        // navigation paths). Re-render on every per-type change so
+        // the cached-count column stays current as routes / waypoints
+        // / notes / regions arrive on the wire.
+        ResourceStore.OnRouteChanged += HandleResourceChanged;
+        ResourceStore.OnRouteRemoved += HandleResourceChanged;
+        ResourceStore.OnWaypointChanged += HandleResourceChanged;
+        ResourceStore.OnWaypointRemoved += HandleResourceChanged;
+        ResourceStore.OnNoteChanged += HandleResourceChanged;
+        ResourceStore.OnNoteRemoved += HandleResourceChanged;
+        ResourceStore.OnRegionChanged += HandleResourceChanged;
+        ResourceStore.OnRegionRemoved += HandleResourceChanged;
+        ResourceStore.OnReloaded += HandleResourceReloaded;
 
         groups =
         [
@@ -265,15 +279,65 @@
                         return n > 0 ? $"{n} vessel{(n == 1 ? "" : "s")} live" : null;
                     },
                     IsLive: s => s.Contains("vessels.*")),
-                // Resources served over REST, not the delta stream.
-                // One row per resource kind -- the old split into charts
-                // / flags / etc. just padded the table with three rows
-                // that all said the same thing ("REST-only, present").
+                // Resources served over REST: initial fetch + reconcile
+                // on WS reconnect via ResourceStore. The four typed rows
+                // below cover the WS delta side; this row stays as a
+                // pointer to the matching REST endpoint family (helm-
+                // facing diagnostic for "is the SK server reachable at
+                // all").
                 new("/signalk/v1|v2/api/resources/* (REST)",
-                    "Routes, waypoints, notes, regions, charts, flags",
+                    "Routes, waypoints, notes, regions, charts, flags (initial load + reconnect-reconcile)",
                     "<code>signalk-server</code> core + <code>signalk-charts-plugin</code>, "
                     + "<code>signalk-flags</code>",
                     IsLive: _ => true),
+            ]),
+            // Resources delivered as SK deltas via the WebSocket stream.
+            // The signalk-server emits resources.<type>.<id> deltas on
+            // every PUT/POST/DELETE; ResourceStore subscribes and turns
+            // them into typed cache mutations + per-type events that
+            // Map.razor and Resources.razor consume. Live count on each
+            // row shows what's currently cached -- a regression in the
+            // subscription tier or in the delta dispatcher would surface
+            // as zero-count rows even after the helm has REST-loaded.
+            new PathGroup("Resource deltas (WebSocket -- live multi-plotter sync)",
+            [
+                // Live state on these rows comes from the cached count
+                // rather than from the path-availability probe -- the
+                // SK server doesn't expose resources.* under
+                // /paths, so we read straight from ResourceStore.
+                // n > 0 -> live, n == 0 -> not seen this session.
+                new("resources.routes.*",
+                    "Saved routes -- multi-plotter live polyline sync",
+                    "<code>signalk-server</code> core (resources API)",
+                    GetValue: _ =>
+                    {
+                        int n = ResourceStore.Routes.Count;
+                        return n > 0 ? $"{n} cached" : null;
+                    }),
+                new("resources.waypoints.*",
+                    "Saved waypoints -- multi-plotter live marker sync",
+                    "<code>signalk-server</code> core (resources API)",
+                    GetValue: _ =>
+                    {
+                        int n = ResourceStore.Waypoints.Count;
+                        return n > 0 ? $"{n} cached" : null;
+                    }),
+                new("resources.notes.*",
+                    "Saved chart notes -- multi-plotter live marker sync",
+                    "<code>signalk-server</code> core (resources API)",
+                    GetValue: _ =>
+                    {
+                        int n = ResourceStore.Notes.Count;
+                        return n > 0 ? $"{n} cached" : null;
+                    }),
+                new("resources.regions.*",
+                    "Saved regions / hazard zones -- multi-plotter live polygon sync; HazardousRegionAlarmRule",
+                    "<code>signalk-server</code> core (resources API)",
+                    GetValue: _ =>
+                    {
+                        int n = ResourceStore.Regions.Count;
+                        return n > 0 ? $"{n} cached" : null;
+                    }),
             ]),
             // History + Radar are first-class APIs but ride REST, not
             // the delta stream, so they go in their own group rather
@@ -351,6 +415,15 @@
         catch (ObjectDisposedException) { }
     }
 
+    private async void HandleResourceChanged(string _) => await SafeStateHasChanged();
+    private async void HandleResourceReloaded() => await SafeStateHasChanged();
+
+    private async Task SafeStateHasChanged()
+    {
+        try { await InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { /* page is unmounting */ }
+    }
+
     private IEnumerable<PathGroup> VisibleGroups =>
         string.IsNullOrWhiteSpace(filter)
             ? groups
@@ -371,5 +444,14 @@
     public void Dispose()
     {
         SignalkClient.OnDataChanged -= HandleDataChanged;
+        ResourceStore.OnRouteChanged -= HandleResourceChanged;
+        ResourceStore.OnRouteRemoved -= HandleResourceChanged;
+        ResourceStore.OnWaypointChanged -= HandleResourceChanged;
+        ResourceStore.OnWaypointRemoved -= HandleResourceChanged;
+        ResourceStore.OnNoteChanged -= HandleResourceChanged;
+        ResourceStore.OnNoteRemoved -= HandleResourceChanged;
+        ResourceStore.OnRegionChanged -= HandleResourceChanged;
+        ResourceStore.OnRegionRemoved -= HandleResourceChanged;
+        ResourceStore.OnReloaded -= HandleResourceReloaded;
     }
 }
