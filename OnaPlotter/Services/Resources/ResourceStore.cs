@@ -238,24 +238,43 @@ public sealed class ResourceStore : IAsyncDisposable
     /// backfill deltas missed during the disconnect window. Per-type
     /// failures (one API down) degrade gracefully: that type keeps its
     /// previous cache; other types refresh normally.</para>
+    ///
+    /// <param name="cause">Free-form tag describing why the reconcile
+    /// fired -- "startup", "reconnect", "page-mount", "manual",
+    /// or whatever the caller wants. Surfaces in the structured
+    /// reconcile-complete log so a helm reading the journal can tell
+    /// "ah, the reconcile that just landed was the reconnect-edge
+    /// one" without correlating timestamps.</param>
     /// </summary>
-    public Task RefreshAllAsync(CancellationToken ct = default)
+    public Task RefreshAllAsync(string cause = "manual", CancellationToken ct = default)
     {
         // Coalesce concurrent callers. Two paths can call this at the
         // same moment on a flaky link: the manual Refresh button and
         // the reconnect-edge reconcile. Returning the in-flight Task
         // means the second caller awaits the first's REST round-trip
         // (and observes the same per-type events) instead of issuing
-        // 4 more parallel GETs and racing the cache mutations.
+        // 4 more parallel GETs and racing the cache mutations. The
+        // second caller's cause string is dropped on the floor; the
+        // first cause wins, which matches the actual story (the
+        // first call did the work).
         if (_inFlightRefresh is { IsCompleted: false } running) return running;
-        _inFlightRefresh = RefreshAllCoreAsync(ct);
+        _inFlightRefresh = RefreshAllCoreAsync(cause, ct);
         return _inFlightRefresh;
     }
 
-    private async Task RefreshAllCoreAsync(CancellationToken ct)
+    /// <summary>Per-type reconcile breakdown so the
+    /// reconcile-complete log can show added / updated / removed
+    /// counts. "added" = id wasn't in the cache before the reconcile;
+    /// "updated" = id was already there (reference replaced);
+    /// "removed" = id was in the cache but not in the fresh list.</summary>
+    private readonly record struct ReplaceCounts(int Added, int Updated, int Removed);
+
+    private static readonly ReplaceCounts ReplaceCountsZero = new(0, 0, 0);
+
+    private async Task RefreshAllCoreAsync(string cause, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        _logger.LogInformation("[resources] reconcile started");
+        _logger.LogInformation("[resources] reconcile started cause={Cause}", cause);
 
         var routesTask = SafeFetch(() => _routes.GetAllAsync(ct), "routes");
         var waypointsTask = SafeFetch(() => _waypoints.GetAllAsync(ct), "waypoints");
@@ -263,11 +282,12 @@ public sealed class ResourceStore : IAsyncDisposable
         var regionsTask = SafeFetch(() => _regions.GetAllAsync(ct), "regions");
         await Task.WhenAll(routesTask, waypointsTask, notesTask, regionsTask);
 
-        if (routesTask.Result is { } routes) ReplaceRoutes(routes);
-        if (waypointsTask.Result is { } waypoints) ReplaceWaypoints(waypoints);
-        if (notesTask.Result is { } notes) ReplaceNotes(notes);
-        if (regionsTask.Result is { } regions) ReplaceRegions(regions);
+        var routeCounts = routesTask.Result is { } routes ? ReplaceRoutes(routes) : ReplaceCountsZero;
+        var waypointCounts = waypointsTask.Result is { } waypoints ? ReplaceWaypoints(waypoints) : ReplaceCountsZero;
+        var noteCounts = notesTask.Result is { } notes ? ReplaceNotes(notes) : ReplaceCountsZero;
+        var regionCounts = regionsTask.Result is { } regions ? ReplaceRegions(regions) : ReplaceCountsZero;
 
+        bool firstLoad = !IsLoaded;
         IsLoaded = true;
         if (OnReloaded is { } reloaded)
         {
@@ -279,9 +299,16 @@ public sealed class ResourceStore : IAsyncDisposable
         }
 
         _logger.LogInformation(
-            "[resources] reconcile complete in {ElapsedMs}ms routes={RouteCount} waypoints={WpCount} notes={NoteCount} regions={RegionCount}",
-            sw.ElapsedMilliseconds,
-            _routeById.Count, _waypointById.Count, _noteById.Count, _regionById.Count);
+            "[resources] reconcile complete cause={Cause} in {ElapsedMs}ms first_load={FirstLoad} " +
+            "routes(total={RouteCount} +{RouteAdded}/~{RouteUpdated}/-{RouteRemoved}) " +
+            "waypoints(total={WpCount} +{WpAdded}/~{WpUpdated}/-{WpRemoved}) " +
+            "notes(total={NoteCount} +{NoteAdded}/~{NoteUpdated}/-{NoteRemoved}) " +
+            "regions(total={RegionCount} +{RegionAdded}/~{RegionUpdated}/-{RegionRemoved})",
+            cause, sw.ElapsedMilliseconds, firstLoad,
+            _routeById.Count, routeCounts.Added, routeCounts.Updated, routeCounts.Removed,
+            _waypointById.Count, waypointCounts.Added, waypointCounts.Updated, waypointCounts.Removed,
+            _noteById.Count, noteCounts.Added, noteCounts.Updated, noteCounts.Removed,
+            _regionById.Count, regionCounts.Added, regionCounts.Updated, regionCounts.Removed);
     }
 
     private async Task<List<T>?> SafeFetch<T>(Func<Task<List<T>>> fetch, string label)
@@ -307,15 +334,17 @@ public sealed class ResourceStore : IAsyncDisposable
 
     private readonly HashSet<string> _reconcileIdScratch = new();
 
-    private void ReplaceRoutes(List<SignalkRoute> fresh)
+    private ReplaceCounts ReplaceRoutes(List<SignalkRoute> fresh)
     {
         var newIds = _reconcileIdScratch;
         newIds.Clear();
+        int added = 0, updated = 0;
         bool mutated = false;
         foreach (var r in fresh)
         {
             if (string.IsNullOrEmpty(r.Id)) continue;
             newIds.Add(r.Id);
+            if (_routeById.ContainsKey(r.Id)) updated++; else added++;
             _routeById[r.Id] = r;
             mutated = true;
             SafeInvoke(OnRouteChanged, r.Id, "route changed");
@@ -328,6 +357,7 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             if (!newIds.Contains(k)) (stale ??= []).Add(k);
         }
+        int removed = 0;
         if (stale is not null)
         {
             foreach (var id in stale)
@@ -335,20 +365,24 @@ public sealed class ResourceStore : IAsyncDisposable
                 _routeById.Remove(id);
                 SafeInvoke(OnRouteRemoved, id, "route removed");
             }
+            removed = stale.Count;
             mutated = true;
         }
         if (mutated) _routesSnapshot = null;
+        return new ReplaceCounts(added, updated, removed);
     }
 
-    private void ReplaceWaypoints(List<SignalkWaypoint> fresh)
+    private ReplaceCounts ReplaceWaypoints(List<SignalkWaypoint> fresh)
     {
         var newIds = _reconcileIdScratch;
         newIds.Clear();
+        int added = 0, updated = 0;
         bool mutated = false;
         foreach (var w in fresh)
         {
             if (string.IsNullOrEmpty(w.Id)) continue;
             newIds.Add(w.Id);
+            if (_waypointById.ContainsKey(w.Id)) updated++; else added++;
             _waypointById[w.Id] = w;
             mutated = true;
             SafeInvoke(OnWaypointChanged, w.Id, "waypoint changed");
@@ -358,6 +392,7 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             if (!newIds.Contains(k)) (stale ??= []).Add(k);
         }
+        int removed = 0;
         if (stale is not null)
         {
             foreach (var id in stale)
@@ -365,20 +400,24 @@ public sealed class ResourceStore : IAsyncDisposable
                 _waypointById.Remove(id);
                 SafeInvoke(OnWaypointRemoved, id, "waypoint removed");
             }
+            removed = stale.Count;
             mutated = true;
         }
         if (mutated) _waypointsSnapshot = null;
+        return new ReplaceCounts(added, updated, removed);
     }
 
-    private void ReplaceNotes(List<SignalkNote> fresh)
+    private ReplaceCounts ReplaceNotes(List<SignalkNote> fresh)
     {
         var newIds = _reconcileIdScratch;
         newIds.Clear();
+        int added = 0, updated = 0;
         bool mutated = false;
         foreach (var n in fresh)
         {
             if (string.IsNullOrEmpty(n.Id)) continue;
             newIds.Add(n.Id);
+            if (_noteById.ContainsKey(n.Id)) updated++; else added++;
             _noteById[n.Id] = n;
             mutated = true;
             SafeInvoke(OnNoteChanged, n.Id, "note changed");
@@ -388,6 +427,7 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             if (!newIds.Contains(k)) (stale ??= []).Add(k);
         }
+        int removed = 0;
         if (stale is not null)
         {
             foreach (var id in stale)
@@ -395,20 +435,24 @@ public sealed class ResourceStore : IAsyncDisposable
                 _noteById.Remove(id);
                 SafeInvoke(OnNoteRemoved, id, "note removed");
             }
+            removed = stale.Count;
             mutated = true;
         }
         if (mutated) _notesSnapshot = null;
+        return new ReplaceCounts(added, updated, removed);
     }
 
-    private void ReplaceRegions(List<SignalkRegion> fresh)
+    private ReplaceCounts ReplaceRegions(List<SignalkRegion> fresh)
     {
         var newIds = _reconcileIdScratch;
         newIds.Clear();
+        int added = 0, updated = 0;
         bool mutated = false;
         foreach (var r in fresh)
         {
             if (string.IsNullOrEmpty(r.Id)) continue;
             newIds.Add(r.Id);
+            if (_regionById.ContainsKey(r.Id)) updated++; else added++;
             _regionById[r.Id] = r;
             mutated = true;
             SafeInvoke(OnRegionChanged, r.Id, "region changed");
@@ -418,6 +462,7 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             if (!newIds.Contains(k)) (stale ??= []).Add(k);
         }
+        int removed = 0;
         if (stale is not null)
         {
             foreach (var id in stale)
@@ -425,9 +470,11 @@ public sealed class ResourceStore : IAsyncDisposable
                 _regionById.Remove(id);
                 SafeInvoke(OnRegionRemoved, id, "region removed");
             }
+            removed = stale.Count;
             mutated = true;
         }
         if (mutated) _regionsSnapshot = null;
+        return new ReplaceCounts(added, updated, removed);
     }
 
     // --- Delta apply (WS push path) -----------------------------------
@@ -631,8 +678,18 @@ public sealed class ResourceStore : IAsyncDisposable
         // disconnect window via REST.
         var nowConnected = _signalk.IsConnected;
         var transitionedToConnected = !_wasConnected && nowConnected;
+        var transitionedToDisconnected = _wasConnected && !nowConnected;
         _wasConnected = nowConnected;
+        // Log both edges -- the disconnect log lets a helm reading the
+        // journal correlate "lost connection at HH:MM:SS" with "deltas
+        // stopped showing up", and the reconnect log paired with the
+        // reconcile-complete line tells the same story for recovery.
+        if (transitionedToDisconnected)
+        {
+            _logger.LogInformation("[resources] WS disconnected -- deltas paused, cache stale until reconnect");
+        }
         if (!transitionedToConnected) return;
+        _logger.LogInformation("[resources] WS reconnected -- kicking REST reconcile to backfill missed deltas");
 
         // Kick the reconcile and stash the Task on LastReconcileTask
         // so tests can await it.
@@ -653,7 +710,7 @@ public sealed class ResourceStore : IAsyncDisposable
 
     private async Task ReconcileOnReconnectAsync()
     {
-        try { await RefreshAllAsync(); }
+        try { await RefreshAllAsync(cause: "reconnect"); }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[resources] reconcile-on-reconnect failed");

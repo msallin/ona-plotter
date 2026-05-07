@@ -313,7 +313,7 @@ _ = signalkClient.StartAsync();
 
 // Initial REST reconcile fires in the background; pages poll
 // IsLoaded or subscribe to OnReloaded.
-_ = resourceStore.RefreshAllAsync();
+_ = resourceStore.RefreshAllAsync(cause: "startup");
 
 // Activate the cross-plotter alarm publisher. Resolving the singleton
 // runs the constructor which subscribes to IAlarmManager.OnAlarmsChanged;
