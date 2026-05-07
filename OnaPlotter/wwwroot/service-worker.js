@@ -449,7 +449,23 @@
 //               font-dependent baseline metrics rendered off-centre
 //               on Safari / Firefox / Chrome each in their own way;
 //               the SVG is pixel-deterministic.
-const CACHE_NAME = 'ona-plotter-v54';
+// v54 -> v55: Quick-chip + circle-preview helm round.
+//             - regionLayer.setCirclePreview switches from
+//               colors.region (amber) to colors.current (violet)
+//               so the in-progress circle reads as the same
+//               "shape I'm drawing" family as route-edit and
+//               polygon-edit. Finalised regions still amber.
+//             - chart.Name no longer truncated in C# to 10 chars.
+//               Truncation moves to a CSS clip (max-width:8em +
+//               text-overflow:ellipsis) gated to the phone @media
+//               so desktop / iPad get the full name and only a
+//               390-wide phone reads "Bahamas No...".
+//             - main:has(.big-type) .chart-quick-chip rule added:
+//               font 0.92rem, padding 6/14, radius 16 -- ~2pt
+//               taller than the default and noticeably bigger than
+//               the touch (pointer:coarse) override on the helm
+//               console where big-type lives.
+const CACHE_NAME = 'ona-plotter-v55';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

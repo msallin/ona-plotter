@@ -279,10 +279,17 @@ export function setCirclePreview(lat, lon, radiusMeters) {
         circlePreviewLayer.setRadius(radiusMeters);
         return;
     }
+    // Planning-mode preview uses the route / polygon-edit violet
+    // (colors.current = --map-current = #a78bfa) so the helm reads
+    // the three "in-progress shape" overlays as a single visual
+    // family. Finalised regions still render in the amber
+    // colors.region tone via createPolyAndCircleLayers above; this
+    // override applies only to the live preview while the helm is
+    // dragging the radius out.
     circlePreviewLayer = L.circle([lat, lon], {
         radius: radiusMeters,
-        color: colors.region,
-        fillColor: colors.region,
+        color: colors.current,
+        fillColor: colors.current,
         fillOpacity: 0.12,
         weight: 1.6,
         dashArray: '4,4',

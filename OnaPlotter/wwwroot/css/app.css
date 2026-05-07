@@ -6699,6 +6699,19 @@ main:has(.map-container.big-type) .chart-reorder-btn {
     min-width: 40px;
     font-size: 1.1rem;
 }
+/* Big-type: bump the chart-quick-bar chips in lockstep with the
+   rest of the bigger-glyph chrome. Default chip is 0.72rem; the
+   pointer:coarse override (which big-type touch screens hit) is
+   0.8rem. Helm flagged both as too small to read at a glance on
+   the helm-console size. 0.92rem reads roughly 2pt taller than
+   the default and 1pt taller than the touch override; padding
+   bumps proportionally so the chip doesn't look squashed under
+   the larger glyph. */
+main:has(.map-container.big-type) .chart-quick-chip {
+    font-size: 0.92rem;
+    padding: 6px 14px;
+    border-radius: 16px;
+}
 
 /* Big-type: ctrl-btn min-height bumps to 56 + padding 10/14 +
    .map-controls padding (4 default, 6 with pointer:coarse) +
@@ -7233,6 +7246,18 @@ main:has(.map-container.big-type) .alarm-hold-hint {
         font-size: 0.62rem;
         border-radius: 10px;
         line-height: 1.15;
+        /* Phone-only label truncation. Full chart.Name is rendered
+           in the markup so desktop / iPad show it intact; on a
+           390-wide viewport we clip with text-overflow: ellipsis
+           at ~10 chars worth of width (8em sized against the chip's
+           0.62rem font lands close to "Bahamas No..." for typical
+           ASCII names). max-width sized in em so wider chars (W,
+           M) clip slightly earlier and narrow ones (i, l) slightly
+           later -- the helm's hover title still has the full name
+           if disambiguation is needed. */
+        max-width: 8em;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 }
 
