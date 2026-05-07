@@ -44,6 +44,7 @@
 @inject NavigationManager Nav
 @inject OnaPlotter.Services.Radar.RadarOverlayManager RadarOverlay
 @inject OnaPlotter.Services.Radar.JsRadarOverlayHost RadarOverlayHost
+@inject OnaPlotter.Services.Resources.ResourceStore ResourceStore
 
 <PageTitle>Map</PageTitle>
 
@@ -1684,6 +1685,16 @@
 
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
+
+        // Live route sync via ResourceStore: when another plotter PUTs
+        // a route document, the SK server broadcasts a resources.routes.<id>
+        // delta which lands in ResourceStore -> we redraw the polyline
+        // in place + force-resync the active overlay if needed. This
+        // closes the multi-plotter gap that previously left plotter B's
+        // route polyline stuck on pre-edit geometry until a manual
+        // page reload.
+        ResourceStore.OnRouteChanged += HandleRouteChangedFromStore;
+        ResourceStore.OnRouteRemoved += HandleRouteRemovedFromStore;
         // SignalkClient is a singleton so on a page reload the WS
         // can already be connected by the time the Map mounts. The
         // OnConnectionChanged subscription above only fires on
@@ -3122,6 +3133,104 @@
         await _routeJs.AddRouteAsync(route.Id, route.Name, coordsArr, totalNm);
     }
 
+    /// <summary>
+    /// ResourceStore -> Map.razor adapter for delta-driven route updates.
+    /// Fires when the SK server publishes a <c>resources.routes.&lt;id&gt;</c>
+    /// delta (PUT / POST from any plotter on the network). Sync-side
+    /// signature; defers all I/O to a fire-and-forget async helper so
+    /// the event subscriber doesn't return a Task that ResourceStore
+    /// would have to await.
+    /// </summary>
+    private void HandleRouteChangedFromStore(string id)
+    {
+        _ = ApplyRouteChangedFromStoreAsync(id);
+    }
+
+    private async Task ApplyRouteChangedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _routeJs is null) return;
+        var route = ResourceStore.GetRoute(id);
+        if (route is null) return;
+
+        // Mirror the change into the page-local list so any UI binding
+        // that iterates availableRoutes (Layers panel, Resources page
+        // when re-opened) sees the new geometry / name.
+        var existingIndex = availableRoutes.FindIndex(r => r.Id == id);
+        if (existingIndex >= 0)
+        {
+            availableRoutes[existingIndex] = route;
+        }
+        else
+        {
+            availableRoutes.Add(route);
+        }
+
+        // Invalidate the parsed-coords cache so the new geometry is
+        // re-parsed on next push.
+        routeCoordsCache.Remove(id);
+
+        // If the route is currently shown on the chart (in enabledRoutes),
+        // push the geometry update via UpdateRouteAsync (in-place
+        // setLatLngs + popup refresh + dot rebuild -- no flicker).
+        // updateRoute upserts: if leaflet doesn't have this id yet
+        // it'll add fresh. Helm-toggleable visibility (enabledRoutes)
+        // still gates: a route that's not enabled stays off the chart.
+        if (enabledRoutes.Contains(id))
+        {
+            // Same coord-parse + total-nm-compute as AddRouteToMap.
+            var coords = ParseRouteCoords(route);
+            routeCoordsCache[id] = coords;
+            if (coords.Length > 0)
+            {
+                double totalNm = OnaPlotter.Utilities.RouteProgress.TotalDistanceMeters(coords) / 1852.0;
+                await _routeJs.UpdateRouteAsync(id, route.Name, coords, totalNm);
+            }
+        }
+
+        // If the changed route is the helm's active course, force the
+        // ActiveRouteSync to refetch + redraw. Without this the dashed-
+        // leg overlay stays on the pre-edit cached coords (the diff-
+        // skip logic short-circuits when href hasn't changed).
+        if (_activeRouteSync is not null
+            && Data.ActiveRouteHref is { } href
+            && OnaPlotter.Services.Api.SignalKUrls.ExtractRouteId(href) == id)
+        {
+            try { await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true); }
+            catch { /* swallow: best-effort, next data tick re-syncs */ }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleRouteRemovedFromStore(string id)
+    {
+        _ = ApplyRouteRemovedFromStoreAsync(id);
+    }
+
+    private async Task ApplyRouteRemovedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _routeJs is null) return;
+
+        availableRoutes.RemoveAll(r => r.Id == id);
+        routeCoordsCache.Remove(id);
+        enabledRoutes.Remove(id);
+        await _routeJs.RemoveRouteAsync(id);
+
+        // If the deleted route was active, deactivate. ActiveRouteSync's
+        // next pass would also catch this when nextPoint goes null, but
+        // doing it explicitly prevents a window where the overlay
+        // points at a no-longer-existent destination.
+        if (_activeRouteSync is not null
+            && Data.ActiveRouteHref is { } href
+            && OnaPlotter.Services.Api.SignalKUrls.ExtractRouteId(href) == id)
+        {
+            try { await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true); }
+            catch { /* deactivate-on-delete is best-effort */ }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
     // ServerTrackController owns the server-track state + interop;
     // wired in OnAfterRenderAsync.
 
@@ -3679,6 +3788,8 @@
         mapInitialized = false;
         SignalkClient.OnDataChanged -= HandleDataChanged;
         SignalkClient.OnConnectionChanged -= HandleConnectionChanged;
+        ResourceStore.OnRouteChanged -= HandleRouteChangedFromStore;
+        ResourceStore.OnRouteRemoved -= HandleRouteRemovedFromStore;
         Atons.OnAtonsUpdated -= HandleAtonsUpdated;
         Settings.OnSettingsChanged -= HandleSettingsChanged;
         RemoveEditNavGuard();

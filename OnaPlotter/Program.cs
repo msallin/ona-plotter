@@ -214,6 +214,14 @@ builder.Services.AddSingleton<OnaPlotter.Services.INavigationAverages, OnaPlotte
 // relay a caught exception explicitly. See Services/ClientErrorRelay.cs.
 builder.Services.AddSingleton<ClientErrorRelay>();
 
+// Single source of truth for resources.{routes,waypoints,notes,regions}.
+// Composes over SignalkClient.OnResourceDelta (WS push) and the four
+// *Api REST clients (initial load + reconcile-on-reconnect). Map.razor
+// and Resources.razor read from here and subscribe to typed change
+// events; this closes the multi-plotter sync gap where a route edited
+// on plotter A used to never appear on plotter B until a manual reload.
+builder.Services.AddSingleton<OnaPlotter.Services.Resources.ResourceStore>();
+
 // Place search (topbar geocoder). The helm-facing IPlaceSearchService
 // is a Merged(Own + Caching(Fallback(Photon -> Nominatim))) composition:
 //
@@ -270,6 +278,13 @@ var host = builder.Build();
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).
 var signalkClient = host.Services.GetRequiredService<SignalkClient>();
 _ = signalkClient.StartAsync();
+
+// Resolve ResourceStore at startup so its OnResourceDelta + OnConnectionChanged
+// subscriptions are attached to SignalkClient BEFORE the WS pump starts
+// delivering frames. Kick off the initial REST reconcile in the background;
+// pages that need data poll IsLoaded or subscribe to OnReloaded.
+var resourceStore = host.Services.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>();
+_ = resourceStore.RefreshAllAsync();
 
 // Activate the cross-plotter alarm publisher. Resolving the singleton
 // runs the constructor which subscribes to IAlarmManager.OnAlarmsChanged;

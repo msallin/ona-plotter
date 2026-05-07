@@ -305,6 +305,29 @@ public sealed class SignalkClient : IAsyncDisposable
     /// Both are static enough that 60 s is plenty.</summary>
     public const int AtonsSubscriptionPeriodMs = 60_000;
 
+    /// <summary>resources.{routes,waypoints,notes,regions}.* with no
+    /// vessel context. The signalk-server's resources API broadcasts
+    /// PUT/POST/DELETE on these paths automatically (see
+    /// <c>buildDeltaMsg</c> in <c>signalk-server/packages/server-api/
+    /// src/resourcesapi.ts</c>); subscribing here lets a remote plotter
+    /// edit a route on plotter A and have the change reach plotter B
+    /// without REST polling. Value field carries the full resource
+    /// document on create / update; <c>null</c> on delete. Routed via
+    /// <see cref="OnResourceDelta"/> to <c>ResourceStore</c> which
+    /// owns the in-memory cache + typed change events.
+    /// <para>The four subpaths listed explicitly (instead of a single
+    /// <c>resources.*</c> wildcard) so a future <c>resources.charts.*</c>
+    /// or other resource type isn't accidentally pulled into the helm-
+    /// route + waypoint + note + region working set, where it'd add
+    /// dead code paths in <see cref="DispatchResourceUpdates"/>.</para></summary>
+    private static readonly string[] ResourcesTierPaths =
+    [
+        "resources.routes.*",
+        "resources.waypoints.*",
+        "resources.notes.*",
+        "resources.regions.*",
+    ];
+
     /// <summary>
     /// The shipped-with-app subscription set. Reconnect iterates this
     /// in order and issues one <c>subscribe</c> per entry. Each tier
@@ -342,6 +365,16 @@ public sealed class SignalkClient : IAsyncDisposable
             Context: "atons.*",
             Paths: AtonsTierPaths,
             PeriodMs: AtonsSubscriptionPeriodMs),
+        // Resources have no vessel context; the SK server emits
+        // delta updates with context = "vessels.self" by default
+        // when a resource is PUT/POST/DELETE'd. Subscribing under
+        // "*" matches that default and any future server that
+        // emits without a context.
+        new SubscriptionTier(
+            Name: "Resources",
+            Context: "*",
+            Paths: ResourcesTierPaths,
+            Policy: "instant"),
     ];
 
     /// <summary>Back-compat view: every self-context path across all
@@ -383,6 +416,23 @@ public sealed class SignalkClient : IAsyncDisposable
     /// Raised when connection status changes.
     /// </summary>
     public event Action? OnConnectionChanged;
+
+    /// <summary>
+    /// Raised when a SignalK <c>resources.&lt;type&gt;.&lt;id&gt;</c> delta
+    /// arrives from the server. Args are (type, id, value):
+    /// <list type="bullet">
+    ///   <item><description><c>type</c>: "routes" / "waypoints" /
+    ///     "notes" / "regions"</description></item>
+    ///   <item><description><c>id</c>: the resource id (UUID urn or
+    ///     bare key as the server emits it)</description></item>
+    ///   <item><description><c>value</c>: full resource document on
+    ///     create / update; <c>JsonElement</c> with
+    ///     <c>ValueKind == Null</c> on delete</description></item>
+    /// </list>
+    /// Routed to <c>ResourceStore</c> which owns parsing into typed
+    /// records + the in-memory cache + typed change events.
+    /// </summary>
+    public event Action<string, string, System.Text.Json.JsonElement>? OnResourceDelta;
 
     public NavigationData Data => _data;
     public bool IsConnected { get; private set; }
@@ -825,6 +875,16 @@ public sealed class SignalkClient : IAsyncDisposable
                 return;
             }
 
+            // Resource deltas (resources.<type>.<id>) come independent of
+            // vessel context -- the server emits them with a default
+            // context (typically vessels.self) but the path itself is
+            // self-describing. Dispatch first so the existing self/ais/aton
+            // routing doesn't have to know anything about resource shapes;
+            // the resource-path scan also no-ops harmlessly on every other
+            // delta (it only fires when a value's path starts with
+            // "resources.").
+            DispatchResourceUpdates(delta);
+
             // Own-boat identification. Own-boat data may arrive BEFORE the
             // hello message resolves _selfContext, or on servers that only
             // emit the URN form ("vessels.urn:mrn:imo:mmsi:..."). Match all
@@ -907,6 +967,75 @@ public sealed class SignalkClient : IAsyncDisposable
         if (context == "vessels.self") return true;
         if (string.IsNullOrEmpty(_selfContext)) return false;
         return context == _selfContext;
+    }
+
+    /// <summary>
+    /// Scan a delta for <c>resources.&lt;type&gt;.&lt;id&gt;</c> path values
+    /// and re-fire each as <see cref="OnResourceDelta"/>. Independent of
+    /// the delta's vessel context: resource changes come with whatever
+    /// default context the server picks (typically vessels.self) but the
+    /// path itself uniquely identifies them, so we filter on path prefix.
+    /// <para>The id segment is everything after the second dot -- supports
+    /// urn-form ids (e.g. <c>resources.routes.urn:mrn:signalk:uuid:foo</c>)
+    /// where colons inside the id would otherwise confuse a naive
+    /// <c>Split('.')</c>.</para>
+    /// </summary>
+    private void DispatchResourceUpdates(SignalkDelta delta)
+    {
+        var handler = OnResourceDelta;
+        if (handler is null) return;
+        if (delta.Updates is null) return;
+
+        foreach (var update in delta.Updates)
+        {
+            if (update.Values is null) continue;
+            foreach (var val in update.Values)
+            {
+                if (string.IsNullOrEmpty(val.Path)) continue;
+                if (!val.Path.StartsWith("resources.", StringComparison.Ordinal)) continue;
+
+                // Path = "resources.<type>.<id>" -- find the second dot.
+                // Substring after the first '.' (length 10) is "<type>.<id>";
+                // the next '.' splits the two.
+                var rest = val.Path.AsSpan("resources.".Length);
+                var dotIdx = rest.IndexOf('.');
+                if (dotIdx <= 0 || dotIdx >= rest.Length - 1) continue;
+
+                var type = rest[..dotIdx].ToString();
+                var id = rest[(dotIdx + 1)..].ToString();
+
+                // The "value" field in SignalkValue is object?, which
+                // System.Text.Json materialises as JsonElement when the
+                // payload is a complex object. Convert to JsonElement so
+                // ResourceStore can deserialise into typed records.
+                System.Text.Json.JsonElement payload;
+                if (val.Value is System.Text.Json.JsonElement el)
+                {
+                    payload = el;
+                }
+                else if (val.Value is null)
+                {
+                    // value: null on delete. Materialise an explicit
+                    // JsonValueKind.Null element so the downstream
+                    // handler can branch cleanly on .ValueKind.
+                    using var nullDoc = System.Text.Json.JsonDocument.Parse("null");
+                    payload = nullDoc.RootElement.Clone();
+                }
+                else
+                {
+                    // Shouldn't happen for resource deltas (always
+                    // complex objects or null). Skip rather than guess.
+                    continue;
+                }
+
+                try { handler.Invoke(type, id, payload); }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Resource delta handler threw on {Type}/{Id}", type, id);
+                }
+            }
+        }
     }
 
     private void ProcessSelfDelta(SignalkDelta delta)

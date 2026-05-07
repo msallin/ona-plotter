@@ -19,6 +19,16 @@ public interface IMapRouteJs
     /// doesn't have to re-derive it.</summary>
     Task AddRouteAsync(string id, string? name, double[][] coords, double totalNm);
 
+    /// <summary>Update an existing route's geometry / name / total nm
+    /// in place. Mirrors REST PUT semantics: same id, possibly different
+    /// waypoint count + name. The leaflet polyline + popup update via
+    /// <c>setLatLngs</c> / <c>setPopupContent</c>; vertex dots rebuild.
+    /// Click handlers + popupopen wiring survive (no flicker, no
+    /// active-route diff thrash). Falls through to <c>addRoute</c> when
+    /// the id is unknown so callers can use this as upsert without
+    /// branching on cache state.</summary>
+    Task UpdateRouteAsync(string id, string? name, double[][] coords, double totalNm);
+
     /// <summary>Remove a previously-added saved-route polyline.</summary>
     Task RemoveRouteAsync(string id);
 

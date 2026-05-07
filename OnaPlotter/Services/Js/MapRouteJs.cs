@@ -24,6 +24,9 @@ public sealed class MapRouteJs : IMapRouteJs
     public Task AddRouteAsync(string id, string? name, double[][] coords, double totalNm)
         => InvokeSafe("addRoute", id, name, coords, totalNm);
 
+    public Task UpdateRouteAsync(string id, string? name, double[][] coords, double totalNm)
+        => InvokeSafe("updateRoute", id, name, coords, totalNm);
+
     public Task RemoveRouteAsync(string id)
         => InvokeSafe("removeRoute", id);
 

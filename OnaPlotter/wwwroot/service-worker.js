@@ -238,7 +238,17 @@
 //               Blazor's renderer error UI ("An unhandled error has
 //               occurred"). Failures still surface as toasts; the
 //               banner only fires for genuine bugs now.
-const CACHE_NAME = 'ona-plotter-v38';
+// v38 -> v39: ResourceStore added: live route / waypoint / note /
+//             region sync via SignalkClient.OnResourceDelta + REST
+//             reconcile on reconnect. Adds new JS export
+//             leafletInterop.updateRoute (in-place setLatLngs +
+//             popup refresh + dot rebuild). Stale leafletInterop.js
+//             without updateRoute throws "value is not a function"
+//             on first remote-route delta; bump invalidates the
+//             precache. Closes the multi-plotter route-edit
+//             sync gap (plotter A edits, plotter B's polyline now
+//             updates without reload).
+const CACHE_NAME = 'ona-plotter-v39';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
