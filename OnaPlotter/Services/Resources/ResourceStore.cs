@@ -454,6 +454,13 @@ public sealed class ResourceStore : IAsyncDisposable
 
     private bool _wasConnected;
 
+    /// <summary>The most recently kicked reconcile-on-reconnect Task,
+    /// or <c>null</c> if none has fired yet. Exposed internally so
+    /// tests can <c>await</c> the reconcile to completion before
+    /// asserting on the post-reconcile cache state. Production never
+    /// reads this -- the fire-and-forget runs on its own.</summary>
+    internal Task? LastReconcileTask { get; private set; }
+
     private void HandleConnectionChange()
     {
         // The OnConnectionChanged event doesn't carry old/new state, so
@@ -465,17 +472,30 @@ public sealed class ResourceStore : IAsyncDisposable
         _wasConnected = nowConnected;
         if (!transitionedToConnected) return;
 
-        // Fire-and-forget: the SignalkClient.OnConnectionChanged handler
-        // chain is sync, and we don't want to block the WS-loop pump
-        // on a multi-second REST reconcile.
-        _ = Task.Run(async () =>
+        // Kick the reconcile and stash the Task on LastReconcileTask
+        // so tests can await it.
+        //
+        // NOTE on threading: the synchronous prefix of
+        // ReconcileOnReconnectAsync (the SafeFetch task allocations +
+        // the first Task.WhenAll await) runs INLINE on whichever
+        // thread fired OnConnectionChanged -- we no longer wrap in
+        // Task.Run. On Blazor WASM that's a no-op (single-threaded);
+        // on the WS-loop site (SignalkClient line 578) the pre-await
+        // synchronous prefix is just task construction, so the loop
+        // doesn't appreciably stall. The catch-all inside
+        // ReconcileOnReconnectAsync still prevents an unobserved
+        // exception from escaping into the OnConnectionChanged
+        // invoker chain.
+        LastReconcileTask = ReconcileOnReconnectAsync();
+    }
+
+    private async Task ReconcileOnReconnectAsync()
+    {
+        try { await RefreshAllAsync(); }
+        catch (Exception ex)
         {
-            try { await RefreshAllAsync(); }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[resources] reconcile-on-reconnect failed");
-            }
-        });
+            _logger.LogWarning(ex, "[resources] reconcile-on-reconnect failed");
+        }
     }
 
     public ValueTask DisposeAsync()
