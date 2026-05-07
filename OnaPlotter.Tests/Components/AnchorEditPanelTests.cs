@@ -56,7 +56,8 @@ public class AnchorEditPanelTests
         Action<int>? onSetRadius = null,
         Action? onCancel = null,
         string suggestion = "",
-        int? autoPreview = null)
+        int? autoPreview = null,
+        string? autoBreakdown = null)
     {
         return ctx.RenderComponent<AnchorEditPanel>(p => p
             .Add(x => x.Mode, AnchorEditPanel.AnchorPanelMode.SetRadius)
@@ -64,6 +65,7 @@ public class AnchorEditPanelTests
             .Add(x => x.Busy, busy)
             .Add(x => x.SuggestionLabel, suggestion)
             .Add(x => x.AutoPreviewRadius, autoPreview)
+            .Add(x => x.AutoBreakdown, autoBreakdown)
             .Add(x => x.OnPreviewRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
                 .Create<int>(p, r => onPreviewRadius?.Invoke(r)))
             .Add(x => x.OnSetRadius, Microsoft.AspNetCore.Components.EventCallback.Factory
@@ -561,6 +563,56 @@ public class AnchorEditPanelTests
 
         var auto = cut.Find(".anchor-edit-auto");
         await Assert.That(auto.GetAttribute("title")!).Contains("47");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_TooltipIncludesParentBreakdown()
+    {
+        // Pin the new tooltip shape: when the parent passes the live
+        // breakdown alongside the rounded preview, the chip's title
+        // surfaces both so a long-press reveals the formula -- helm
+        // can sanity-check "47 m = swing 38 + tide 4 + 5 margin"
+        // without opening Settings or scrolling the eyebrow text.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx,
+            initial: 30,
+            autoPreview: 47,
+            autoBreakdown: "swing 38 m + tide drop 4 m + 5 m margin");
+
+        var title = cut.Find(".anchor-edit-auto").GetAttribute("title")!;
+        await Assert.That(title).Contains("47");
+        await Assert.That(title).Contains("swing 38 m");
+        await Assert.That(title).Contains("tide drop 4 m");
+        await Assert.That(title).Contains("5 m margin");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_TooltipFallsBackWhenNoBreakdown()
+    {
+        // Pre-load race: AutoPreviewRadius lands before AutoBreakdown
+        // (or the parent simply doesn't compute the breakdown for this
+        // path). Tooltip still surfaces the rounded value so the helm
+        // gets the same number on the chip face and on hover.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30, autoPreview: 47, autoBreakdown: null);
+
+        var title = cut.Find(".anchor-edit-auto").GetAttribute("title")!;
+        await Assert.That(title).Contains("47");
+    }
+
+    [Test]
+    public async Task SetRadiusMode_AutoChip_TooltipExplainsFormula_WhenNoPreview()
+    {
+        // No anchor pin / no GPS -> no preview -> chip face is plain
+        // "Auto" and the tooltip describes the formula in words so the
+        // helm understands what Auto would do once the inputs land.
+        using var ctx = new Bunit.TestContext();
+        var cut = RenderSetRadius(ctx, initial: 30, autoPreview: null, autoBreakdown: null);
+
+        var title = cut.Find(".anchor-edit-auto").GetAttribute("title")!;
+        await Assert.That(title).Contains("swing");
+        await Assert.That(title).Contains("tide");
+        await Assert.That(title).Contains("margin");
     }
 
     [Test]
