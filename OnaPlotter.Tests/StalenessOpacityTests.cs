@@ -22,7 +22,7 @@ public class StalenessOpacityTests
     public async Task Compute_AtFreshThreshold_StartsFade()
     {
         // 30 s -> first stale step. Linear formula at age=30:
-        // op = 1 - 0.65 * (0/270) = 1.00 -- but the F2 format clips
+        // op = 1 - 0.65 * (0/270) = 1.00 - but the F2 format clips
         // trailing zeros, "1.00" stays "1.00".
         await Assert.That(StalenessOpacity.Compute(30)).IsEqualTo("1.00");
     }

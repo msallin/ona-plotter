@@ -54,7 +54,7 @@ public sealed class SignalkChart
     /// behaviour. The built-in OSM + OpenSeaMap charts set this to
     /// false so they go blank past their native cap rather than
     /// rendering blurry tiles on top of the chart's GPU-upscaled view
-    /// -- helm reported the upscaled OSM as "OSM is loading on top of
+    /// - helm reported the upscaled OSM as "OSM is loading on top of
     /// my chart" because the second-frame rerender looked like a
     /// flicker. SK servers don't ship this field today; the JSON
     /// deserialiser keeps the default. Plumbed through

@@ -6,7 +6,7 @@
    has Focus (centre + popup), Go (route to the note's lat/lon via
    the SignalK course-destination PUT), Edit (opens the same
    create-dialog with title + description pre-filled), and Delete
-   (with confirm). The previous global "Show" toggle is gone --
+   (with confirm). The previous global "Show" toggle is gone -
    helms field-tested that the bbox-filter is the natural relevance
    cue, and the global hide was rarely used once notes started being
    created at all. *@
@@ -53,7 +53,7 @@
     /// title + description (see <c>Map.OpenNoteEditDialog</c>);
     /// the dialog round-trips the API call. Replaces the older
     /// <c>OnRename</c> two-tuple callback that was wired after a
-    /// single-field PromptAsync -- the dialog gives the helm
+    /// single-field PromptAsync - the dialog gives the helm
     /// description editing in the same surface, which the prompt
     /// couldn't.</summary>
     [Parameter] public EventCallback<SignalkNote> OnEdit { get; set; }

@@ -129,7 +129,7 @@ test.describe('Measure tool', () => {
         // long-press wipes the current measurement and stays in measure
         // mode (cursor stays as crosshair). Find the map in the
         // Leaflet-managed Maps registry rather than wiring a test-only
-        // export -- L.DomUtil keeps every map reachable via its DOM
+        // export - L.DomUtil keeps every map reachable via its DOM
         // container and that's stable across versions.
         const result = await page.evaluate(async () => {
             const mod = await import('/_content/OnaPlotter/js/leafletInterop.js')

@@ -32,7 +32,7 @@ public interface IMapRouteJs
     /// <summary>Remove a previously-added saved-route polyline.</summary>
     Task RemoveRouteAsync(string id);
 
-    /// <summary>Render the active course overlay -- the leg polyline +
+    /// <summary>Render the active course overlay - the leg polyline +
     /// pulsing next-WP marker. <paramref name="wpIndex"/> is the
     /// 0-based index of the leg currently being navigated; the JS side
     /// dims earlier legs as "passed".</summary>

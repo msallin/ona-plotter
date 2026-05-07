@@ -5,18 +5,18 @@ namespace OnaPlotter.Services;
 /// <summary>
 /// Tracks how long each AIS vessel has held near-zero speed AND honours
 /// SignalK's <c>navigation.state</c> when published. Once the dwell
-/// crosses <see cref="MooredHoldSeconds"/> -- or the vessel publishes a
-/// moored-class <c>navigation.state</c> -- it's considered moored
+/// crosses <see cref="MooredHoldSeconds"/> - or the vessel publishes a
+/// moored-class <c>navigation.state</c> - it's considered moored
 /// (harbour tug, anchored fishing boat, ferry holding for a berth) and
 /// alarm logic / harbour-mode filtering can skip it.
 /// <para>
 /// Trust order (decisive at the first hit):
 ///   1. <c>navigation.state == "moored" / "anchored" / "aground"</c>
-///      -- moored regardless of speed or dwell.
+///      - moored regardless of speed or dwell.
 ///   2. <c>navigation.state ==</c> any "underway" / "sailing" /
-///      "motoring" / "fishing" / "drifting" -- NOT moored regardless of
+///      "motoring" / "fishing" / "drifting" - NOT moored regardless of
 ///      speed (lets a sailboat ghost in light wind without being tagged).
-///   3. SOG &lt; 1 kn for &gt;= 60 s straight -- the legacy heuristic
+///   3. SOG &lt; 1 kn for &gt;= 60 s straight - the legacy heuristic
 ///      that handles the typical case where a vessel doesn't publish
 ///      <c>navigation.state</c> at all.
 /// </para>
@@ -31,7 +31,7 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
     /// <summary>Below this SOG (m/s, ~1 kn) a vessel is treated as
     /// stopped. The cutoff bands slow-drifting anchored boats,
     /// fishing vessels jogging on station, and ferries waiting for a
-    /// berth -- the classic false-positive CPA sources.</summary>
+    /// berth - the classic false-positive CPA sources.</summary>
     public const double MooredSpeedThresholdMs = 0.514;
 
     /// <summary>Dwell required before a stopped vessel is considered
@@ -84,7 +84,7 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
                 _lowSpeedSince.Remove(v.Context);
                 return false;
             }
-            // Unknown nav state value -- fall through to the heuristic.
+            // Unknown nav state value - fall through to the heuristic.
         }
 
         string key = v.Context;
@@ -122,7 +122,7 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
     /// <summary>Shared helper: drop every tracked entry whose key is
     /// NOT in the active set (per the supplied predicate). Lazily
     /// allocates the to-remove list only if a removal is actually
-    /// needed -- the steady-state "no churn" path stays zero-alloc.</summary>
+    /// needed - the steady-state "no churn" path stays zero-alloc.</summary>
     private void RemoveExcept(Func<string, bool> isActive)
     {
         List<string>? toRemove = null;

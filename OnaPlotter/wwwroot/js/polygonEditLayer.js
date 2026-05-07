@@ -178,7 +178,7 @@ export function removePolygonEditVertex(index) {
     }
     polygonEditMarkers = [];
     // Rebuild markers without re-entering addPolygonVertexInternal
-    // (which would redraw the polygon per vertex -- O(n^2)). Build
+    // (which would redraw the polygon per vertex - O(n^2)). Build
     // the markers in one pass, then call redrawPolygonShape() once
     // at the end.
     for (let i = 0; i < polygonEditCoords.length; i++) {

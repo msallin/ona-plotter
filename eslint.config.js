@@ -6,7 +6,7 @@
 //
 // Scope: just OnaPlotter/wwwroot/js. The Razor-managed WASM
 // runtime, OnaPlotter.UiTests (Playwright), and node_modules are
-// outside this config -- they have their own toolchains.
+// outside this config - they have their own toolchains.
 //
 // Rule philosophy: tight runtime-correctness rules, NO stylistic
 // rules. The codebase is hand-formatted and consistent; turning on
@@ -54,17 +54,17 @@ export default [
             // catches let/const/class TDZ and var-before-decl.
             // The actual rule that would have caught the editModeDeps
             // TDZ bug. Tuning:
-            //   functions:false -- function declarations hoist, so
+            //   functions:false - function declarations hoist, so
             //     forward refs to `function foo()` are legitimate at
             //     runtime. Only `let`/`const`/`class` are in TDZ.
-            //   classes:false -- L.Layer.extend({...}) and similar
+            //   classes:false - L.Layer.extend({...}) and similar
             //     class-style declarations are referenced inside
             //     deferred callbacks (Leaflet draws, mode handlers)
             //     that fire only after module init completes; TDZ
             //     can't actually trip in the patterns this codebase
             //     uses. Setting true generated 3 false positives in
             //     radarLayer.js with no real bug behind any of them.
-            //   variables:true -- catches the bug class. A `const X`
+            //   variables:true - catches the bug class. A `const X`
             //     used at module-init time before its declaration
             //     line will fire the rule here.
             'no-use-before-define': ['error', {

@@ -67,7 +67,7 @@ public class PlaceSearchCacheTests
     public async Task Empty_Results_Are_Not_Cached()
     {
         // An empty hit (provider couldn't match a partial word) shouldn't
-        // pin "no results" -- the helm finishing the word should re-query
+        // pin "no results" - the helm finishing the word should re-query
         // live, not return an empty cache entry.
         var (cache, kv) = NewCache();
         await cache.PutAsync("foo", Array.Empty<PlaceResult>());

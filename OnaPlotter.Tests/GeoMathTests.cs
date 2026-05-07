@@ -71,7 +71,7 @@ public class GeoMathTests
     [Test]
     public async Task HaversineMeters_Antipodal_ReturnsHalfCircumference()
     {
-        // (0, 0) to (0, 180) -- diametrically opposite on the equator.
+        // (0, 0) to (0, 180) - diametrically opposite on the equator.
         // Half the great-circle = pi * R = ~20,015 km. Pin so the
         // numerical degradation at the antipode (sin(pi/2) = 1 case
         // where the inner product loses precision) doesn't grow

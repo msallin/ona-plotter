@@ -2,7 +2,7 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
 
-// TrackBbox moved to OnaPlotter.Models -- it's a domain value type
+// TrackBbox moved to OnaPlotter.Models - it's a domain value type
 // (geographic bounds), not an API-specific shape. Old call-sites
 // imported it from this namespace; the using above + the relocated
 // definition keeps them compiling.

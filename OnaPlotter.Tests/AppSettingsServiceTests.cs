@@ -108,7 +108,7 @@ public class AppSettingsServiceTests
     public async Task SetWeatherOverlayOpacity_PersistsInvariantCulture()
     {
         // Same invariant-culture pin every other double setter on this
-        // service has -- a de-CH / fr-FR helm flipping the slider must
+        // service has - a de-CH / fr-FR helm flipping the slider must
         // store "0.7", not "0,7".
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
@@ -172,7 +172,7 @@ public class AppSettingsServiceTests
         // ArgumentException that crashed boot the moment the user had
         // tapped Night mode at least once before. The old parser
         // combined RoundtripKind | AssumeUniversal which the runtime
-        // rejects -- the fix uses RoundtripKind alone and forces Utc
+        // rejects - the fix uses RoundtripKind alone and forces Utc
         // when the parsed Kind is Unspecified. This test pins both
         // behaviours: a normal "o"-format Z-suffixed string and a
         // legacy stored value with no kind information must both
@@ -193,7 +193,7 @@ public class AppSettingsServiceTests
     {
         // Degenerate values (DateTime.MinValue, year 0001, etc.) can
         // round-trip through TryParse as legitimate dates but blow up
-        // downstream arithmetic -- e.g. the night-mode 12-hour manual-
+        // downstream arithmetic - e.g. the night-mode 12-hour manual-
         // override window does (now - lastToggle).TotalHours and a
         // year-0001 stamp produces a 17 million hour interval that
         // NEVER falls inside the override window. The loader should
@@ -211,7 +211,7 @@ public class AppSettingsServiceTests
     [Test]
     public async Task LastManualNightToggleUtc_FarFutureYearTreatedAsMissing()
     {
-        // Symmetric guard for the upper end -- a malformed payload
+        // Symmetric guard for the upper end - a malformed payload
         // with year 9999 would also break "is it recent" checks. The
         // device clock is the bound: anything beyond 2100 is almost
         // certainly storage corruption.
@@ -584,8 +584,8 @@ public class AppSettingsServiceTests
         //   just the last-toggled chart, then subsequent reorders
         //   couldn't find neighbouring ids and the swap silently failed.
         // This test passes Settings.ChartOrder.Append(x) straight to
-        // SetChartOrderAsync -- exactly the pattern Map.ToggleChart
-        // uses -- and asserts the accumulated list is preserved.
+        // SetChartOrderAsync - exactly the pattern Map.ToggleChart
+        // uses - and asserts the accumulated list is preserved.
         var svc = new AppSettingsService(new InMemoryKv());
         await svc.InitializeAsync();
 
@@ -739,7 +739,7 @@ public class AppSettingsServiceTests
     public async Task ApplyMobileFirstRunDefaults_RespectsExplicitFalse()
     {
         // Helm has previously expanded the rail on phone (stored false).
-        // The mobile auto-default must not flip it back to collapsed --
+        // The mobile auto-default must not flip it back to collapsed -
         // explicit user choice wins.
         var kv = new InMemoryKv();
         await kv.SetAsync("sidebarCollapsed.v1", "false");
@@ -772,7 +772,7 @@ public class AppSettingsServiceTests
     public async Task ApplyMobileFirstRunDefaults_IsIdempotent()
     {
         // Calling twice on phone width must not re-fire OnSettingsChanged
-        // or re-write the same value -- the second call sees the
+        // or re-write the same value - the second call sees the
         // explicit flag now true and bails out.
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
@@ -1002,7 +1002,7 @@ public class AppSettingsServiceTests
     public async Task SetFollowBoat_AndLaylinesVisible_RoundTrip()
     {
         // Pair test for two persistence-only setters (no event fire by
-        // design -- both are observed via @bind in their consuming
+        // design - both are observed via @bind in their consuming
         // pages, not via OnSettingsChanged).
         var kv = new InMemoryKv();
         var svc = new AppSettingsService(kv);
@@ -1078,7 +1078,7 @@ public class AppSettingsServiceTests
         await svc.SetHarborModeAsync(true);
         await Assert.That(fires).IsEqualTo(1);
 
-        // Setting again to the same value -- no second fire.
+        // Setting again to the same value - no second fire.
         await svc.SetHarborModeAsync(true);
         await Assert.That(fires).IsEqualTo(1);
     }
@@ -1103,7 +1103,7 @@ public class AppSettingsServiceTests
         await svc.SetSnoozeDurationMinutesAsync(9999);
         await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(120);
 
-        // Inside the band -- accepted as-is.
+        // Inside the band - accepted as-is.
         await svc.SetSnoozeDurationMinutesAsync(15);
         await Assert.That(svc.SnoozeDurationMinutes).IsEqualTo(15);
     }
@@ -1112,7 +1112,7 @@ public class AppSettingsServiceTests
     public async Task SetManualAnchorRadiusMeters_RoundTrips_InvariantCulture()
     {
         // Persisted doubles always use '.' regardless of OS locale.
-        // Belt-and-braces companion to the existing CPA/Wind tests --
+        // Belt-and-braces companion to the existing CPA/Wind tests -
         // anchor radius matters at sea, where a parse-failure default
         // could double the alarm radius.
         var kv = new InMemoryKv();
@@ -1169,7 +1169,7 @@ public class AppSettingsServiceTests
     // with the autopilot. A helm who DID toggle it off (because the
     // server isn't running the course-provider, or they want the
     // OnaPlotter-specific banner cadence) MUST get their override back
-    // after a reload -- otherwise every restart silently drops them
+    // after a reload - otherwise every restart silently drops them
     // back into server-side mode mid-passage.
 
     [Test]
@@ -1301,7 +1301,7 @@ public class AppSettingsServiceTests
     public async Task SetGuardZoneWarningFactor_RoundTrips()
     {
         // The guard-zone warning factor drives the warn-vs-danger CPA
-        // boundary. Persisted as F2 -- pin both the format and the
+        // boundary. Persisted as F2 - pin both the format and the
         // round-trip so a refactor that swaps to G3 (introducing
         // exponential notation) doesn't quietly invalidate every
         // helm's existing setting.
@@ -1351,7 +1351,7 @@ public class AppSettingsServiceTests
     {
         // The store throws JSException when localStorage is disabled
         // (private browsing). Reads must swallow that and use defaults
-        // so the app doesn't crash on first paint -- "missing key"
+        // so the app doesn't crash on first paint - "missing key"
         // and "storage disabled" are the same outcome from the
         // service's perspective.
         var kv = new ThrowingKv();
@@ -1371,7 +1371,7 @@ public class AppSettingsServiceTests
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
 
-        // Should not throw -- the in-memory state still updates even
+        // Should not throw - the in-memory state still updates even
         // though the persisted value is lost.
         await svc.SetNightModeAsync(true);
         await Assert.That(svc.NightMode).IsTrue();
@@ -1425,14 +1425,14 @@ public class AppSettingsServiceTests
     // === Chart upscale persistence ===
     // The setter clamps in C#, the JS decorator clamps in JS, the
     // Settings input clamps in HTML; this test covers the LOAD path
-    // -- a corrupt localStorage entry must collapse into [0, 3].
+    // - a corrupt localStorage entry must collapse into [0, 3].
     // Without these guards the JS decorator could see (e.g.) -1 and
     // the chart would render with a broken maxZoom calculation.
 
     // === Guard zone warning ring ===
     // Default true so existing installs gain the new advisory ring
     // without an opt-in step. Persistence pinned because the toggle
-    // is the only path the helm has to opt out -- the value MUST
+    // is the only path the helm has to opt out - the value MUST
     // round-trip across reloads.
 
     [Test]
@@ -1532,7 +1532,7 @@ public class AppSettingsServiceTests
         // Pins every (enabled, levels) pair through Set + reload. A
         // hypothetical "if (value == _current) return early" optimisation
         // in the setters would fail on the case where the helm's first
-        // explicit toggle matches the default (true, 2) -- write would
+        // explicit toggle matches the default (true, 2) - write would
         // be skipped, the second instance would read default-true, and
         // a later default flip would silently change the behaviour.
         // Same for the false-side: a helm who explicitly opts out today
@@ -1638,7 +1638,7 @@ public class AppSettingsServiceTests
         // cast semantics" (a refactor that switched to Math.Floor or
         // dropped IsFinite would surface); the second is "pinned by
         // clamp" (LoadDouble currently accepts these but ClampLevels
-        // catches the result -- a regression that drops Math.Clamp
+        // catches the result - a regression that drops Math.Clamp
         // would surface).
         var kv = new InMemoryKv();
         await kv.SetAsync("chartUpscaleLevels.v1", stored);
@@ -1668,7 +1668,7 @@ public class AppSettingsServiceTests
     [Test]
     [Arguments("banana")]
     [Arguments("")]
-    [Arguments("2,5")]              // comma locale -- LoadDouble rejects
+    [Arguments("2,5")]              // comma locale - LoadDouble rejects
     public async Task ChartUpscaleLevels_GarbageStored_FallsBackToDefault(string stored)
     {
         // Parse failure -> LoadDouble returns its fallback (DefaultLevels),
@@ -1733,8 +1733,8 @@ public class AppSettingsServiceTests
         // PR #160 default-on flip: corruption-path helms land in
         // upscale-off rather than the new default. Pinned across the
         // boundary cases a future "loosen LoadBool" change would
-        // most plausibly hit -- a switch to OrdinalIgnoreCase, a
-        // .Trim(), or bool.TryParse -- so the asymmetry is visible
+        // most plausibly hit - a switch to OrdinalIgnoreCase, a
+        // .Trim(), or bool.TryParse - so the asymmetry is visible
         // in tests rather than only in the docstring on
         // ChartUpscaleEnabled.
         var kv = new InMemoryKv();

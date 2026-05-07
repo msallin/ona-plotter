@@ -52,7 +52,7 @@ public class XteTests
     [Test]
     public async Task SymmetricInSign()
     {
-        // Sign should not change the band -- the legend's bands are
+        // Sign should not change the band - the legend's bands are
         // symmetric around the leg.
         await Assert.That(Xte.Classify(75.0)).IsEqualTo(Xte.Classify(-75.0));
         await Assert.That(Xte.Classify(250.0)).IsEqualTo(Xte.Classify(-250.0));

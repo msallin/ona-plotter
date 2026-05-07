@@ -30,7 +30,7 @@ public class AnchorRadiusHeuristicFuzzTests
         // when the depth-driven branch fires (see the next test for that
         // half of the contract); the fallback path intentionally
         // preserves a helm's stored "I really want 250 m for this deep
-        // anchorage" value -- pinned in the
+        // anchorage" value - pinned in the
         // NullDepth_LastChosenAboveCeiling_KeepsValue regression test.
         var rng = new Random(Seed);
         for (int i = 0; i < Iterations; i++)
@@ -53,7 +53,7 @@ public class AnchorRadiusHeuristicFuzzTests
         var rng = new Random(Seed ^ 8);
         for (int i = 0; i < 1000; i++)
         {
-            // 0.001..999.99 -- always a usable depth.
+            // 0.001..999.99 - always a usable depth.
             double depth = 0.001 + rng.NextDouble() * 999.0;
             double last = rng.NextDouble() * 100.0;     // last value irrelevant when depth fires
             int r = AnchorRadiusHeuristic.Suggest(depth, last);
@@ -75,7 +75,7 @@ public class AnchorRadiusHeuristicFuzzTests
         var rng = new Random(Seed ^ 1);
         for (int i = 0; i < 1000; i++)
         {
-            // 0.1..900 m -- well inside the IsUsableDepth range.
+            // 0.1..900 m - well inside the IsUsableDepth range.
             double depth = 0.1 + rng.NextDouble() * 899.0;
             int got = AnchorRadiusHeuristic.Suggest(depth, lastChosenMeters: 0);
             int expected = Math.Clamp(
@@ -134,7 +134,7 @@ public class AnchorRadiusHeuristicFuzzTests
     [Test]
     public async Task DescribeSuggestion_FallbackLabelWhenDepthMissing()
     {
-        // No depth -> "from last drop". Pin the wording -- the modal's
+        // No depth -> "from last drop". Pin the wording - the modal's
         // eyebrow text reads from this string verbatim.
         await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(null))
             .IsEqualTo("from last drop");

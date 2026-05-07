@@ -6,11 +6,11 @@ namespace OnaPlotter.Services.Pois;
 /// Pure parser turning an <see cref="OverpassResponse"/> into a
 /// <see cref="MarinePoi"/> array. No I/O; classification is a switch
 /// on tag values. Lives next to <see cref="OverpassQueryBuilder"/> so
-/// the two stay tightly co-evolved -- a tag added to the query that
+/// the two stay tightly co-evolved - a tag added to the query that
 /// isn't classified here would silently drop matches.
 ///
 /// <para>One element produces zero or one POI: zero when the element
-/// lacks a coordinate (a way without <c>out center</c> -- shouldn't
+/// lacks a coordinate (a way without <c>out center</c> - shouldn't
 /// happen given the query, defensive against schema drift) or its
 /// tags don't match any category; one otherwise. Categories are not
 /// mutually exclusive in OSM (a marina that's also a harbour), so the
@@ -125,7 +125,7 @@ public static class OverpassResponseParser
         if (tags.TryGetValue("seamark:type", out var seamark))
         {
             if (seamark == "harbour") return MarinePoiCategory.Harbour;
-            // Anything that starts with "mooring" -- mooring,
+            // Anything that starts with "mooring" - mooring,
             // mooring_buoy, mooring_anchorage etc. The query uses
             // a regex match so the parser must too.
             if (seamark.StartsWith("mooring", StringComparison.Ordinal)) return MarinePoiCategory.Mooring;

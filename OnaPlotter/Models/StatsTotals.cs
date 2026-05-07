@@ -13,7 +13,7 @@ namespace OnaPlotter.Models;
 /// </summary>
 /// <param name="From">Start of the analysis window (UTC). Mirrors what
 /// the helm asked for, not the timestamp of the first point in the
-/// fetched data -- a query that returned no data still renders this
+/// fetched data - a query that returned no data still renders this
 /// so the helm sees what window they queried.</param>
 /// <param name="To">End of the analysis window (UTC).</param>
 /// <param name="TripCount">Number of moving segments. Stationary
@@ -45,7 +45,7 @@ namespace OnaPlotter.Models;
 /// helm-facing question "how fast was I going?" without the outlier
 /// pull that arithmetic SogAvg means have. Null when no moving
 /// segments / zero moving duration.</param>
-/// <param name="Best24hMetres">Best 24-hour run -- the single rolling
+/// <param name="Best24hMetres">Best 24-hour run - the single rolling
 /// 24 h window with the most underway distance. The classic
 /// "noon-to-noon" bragging-rights number for ocean voyagers; relevant
 /// for any helm comparing "what was my biggest day?". A moving segment

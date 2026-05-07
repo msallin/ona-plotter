@@ -84,7 +84,7 @@ public class MobChartRendererTests
     {
         // OnPathChanged fires on every Apply, including a status-
         // only update. The renderer must not re-push setMob if the
-        // path + coords haven't changed -- otherwise the marker
+        // path + coords haven't changed - otherwise the marker
         // re-pulses on every server status tick.
         var (r, store, js) = NewFixture();
         r.AttachJs(js);
@@ -155,7 +155,7 @@ public class MobChartRendererTests
             id: "early", status: EmergencyStatus,
             latitude: 47.5, longitude: 8.5);
 
-        // No JS yet -- nothing painted.
+        // No JS yet - nothing painted.
         await Assert.That(js.SetMobCalls.Count).IsEqualTo(0);
 
         r.AttachJs(js);
@@ -191,7 +191,7 @@ public class MobChartRendererTests
     }
 
     /// <summary>Fake IMapControlsJs: records SetMob / ClearMob
-    /// calls. Other interface methods are no-ops -- the renderer
+    /// calls. Other interface methods are no-ops - the renderer
     /// only uses these two.</summary>
     private sealed class FakeJs : IMapControlsJs
     {

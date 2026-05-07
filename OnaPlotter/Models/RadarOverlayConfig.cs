@@ -20,7 +20,7 @@ public static class RadarOverlayLimits
     public const int MaxSpokeLength = 4096;
 
     /// <summary>Default when neither capabilities nor the radar list
-    /// reports a value -- matches Navico HALO native geometry.</summary>
+    /// reports a value - matches Navico HALO native geometry.</summary>
     public const int DefaultSpokesPerRevolution = 2048;
     public const int DefaultSpokeLength = 1024;
 

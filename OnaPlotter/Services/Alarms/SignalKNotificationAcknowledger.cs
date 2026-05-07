@@ -9,14 +9,14 @@ namespace OnaPlotter.Services.Alarms;
 /// from a server notification's id + status.canAcknowledge flags.
 /// Encapsulates the v2-specific REST POST so neither
 /// <see cref="AlarmInfo"/> nor <see cref="AlarmManager"/> need to know
-/// about notification ids or HTTP -- they just call
+/// about notification ids or HTTP - they just call
 /// <see cref="AcknowledgeAsync"/> and let this carry the message.
 /// <para>
 /// Constructed once per server notification when the bridge rule
 /// emits an <see cref="AlarmInfo"/>; record-equality on
 /// <see cref="AlarmInfo"/> means two equivalent ServerNotifications
 /// at successive Evaluate ticks build acknowledgers with equal field
-/// values that record-compare-equal -- the manager's existing-vs-new
+/// values that record-compare-equal - the manager's existing-vs-new
 /// dedup doesn't churn.
 /// </para>
 /// </summary>
@@ -45,7 +45,7 @@ public sealed record SignalKNotificationAcknowledger : IAlarmAcknowledger
         // Fire-and-forget at the manager call-site; we still await
         // here so any logging future-wired into the API surface (or
         // an Operator-style relay) sees the actual completion. The
-        // result is intentionally discarded -- per the contract
+        // result is intentionally discarded - per the contract
         // comment on IAlarmAcknowledger, transport failures must not
         // roll back the local dismiss.
         await _api.AcknowledgeAsync(_id);

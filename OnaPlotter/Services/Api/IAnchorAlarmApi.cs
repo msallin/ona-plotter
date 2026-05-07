@@ -15,7 +15,7 @@ namespace OnaPlotter.Services.Api;
 ///   <c>navigation.anchor.maxRadius</c>). Numeric chips PUT the
 ///   exact helm-picked value; the Auto chip PUTs current-radius
 ///   + 5 m (or distance-derived + 5 m on first arming) for the
-///   "grow on drift" gesture -- the 5 m increment lives on the
+///   "grow on drift" gesture - the 5 m increment lives on the
 ///   panel, the API call is the same PUT.</item>
 ///   <item><see cref="RaiseAsync"/> PUTs
 ///   <c>navigation.anchor.position</c> with <c>{value: null}</c>
@@ -24,14 +24,14 @@ namespace OnaPlotter.Services.Api;
 ///
 /// <para>Drop is plugin-specific (<c>POST /plugins/anchoralarm/dropAnchor</c>)
 /// rather than the SK-spec PUT because the helm preferred the
-/// plugin's flow -- it captures position from the SK bus
+/// plugin's flow - it captures position from the SK bus
 /// internally (no client lat/lon needed) and matches the plugin's
 /// admin UI behaviour. The other two methods stay on the SK PUT
 /// handlers (cross-plotter friendly, helm-pickable on a future
 /// non-anchor-plugin install).</para>
 ///
 /// <para>Docs: https://github.com/sbender9/signalk-anchoralarm-plugin
-/// (v2.0.0 README -- "REST API" + "Signal K PUT Handlers"
+/// (v2.0.0 README - "REST API" + "Signal K PUT Handlers"
 /// sections).</para>
 /// </summary>
 public interface IAnchorAlarmApi

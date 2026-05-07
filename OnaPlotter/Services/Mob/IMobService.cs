@@ -2,7 +2,7 @@ namespace OnaPlotter.Services.Mob;
 
 /// <summary>
 /// Local-first MOB pipeline. Provides immediate visual + audible
-/// confirmation when the helm taps the MOB button -- the alarm
+/// confirmation when the helm taps the MOB button - the alarm
 /// banner, chart marker and chime fire on the synthetic local
 /// notification while the REST POST happens in the background and
 /// retries until the server confirms. The server's WS echo
@@ -14,7 +14,7 @@ namespace OnaPlotter.Services.Mob;
 ///   <item><see cref="ClearAsync"/> on a single MOB by id.</item>
 ///   <item><see cref="ClearAllAsync"/> on the bar-button two-tap clear
 ///   (clears every active MOB, cancels in-flight pending raises).</item>
-///   <item><see cref="InitializeAsync"/> at startup -- replays the
+///   <item><see cref="InitializeAsync"/> at startup - replays the
 ///   pending-raise queue from localStorage and pulls the active
 ///   notification list from the server so any MOB raised pre-
 ///   reload is recovered.</item>
@@ -41,7 +41,7 @@ public interface IMobService
     /// <param name="message">Helm-readable banner copy. Defaults
     /// to "Person Overboard!" when null.</param>
     /// <param name="latitude">Helm-side fix at trigger time. Null
-    /// when the GPS hasn't reported yet -- the synthetic entry
+    /// when the GPS hasn't reported yet - the synthetic entry
     /// goes out without a position.</param>
     /// <param name="longitude">Companion to <paramref name="latitude"/>.</param>
     /// <returns>The local UUID. Used by tests + diagnostics.</returns>

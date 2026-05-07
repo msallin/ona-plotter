@@ -5,7 +5,7 @@ namespace OnaPlotter.Tests;
 /// <summary>Pin the SOG -&gt; rgb(...) ramp at every boundary speed
 /// the helm cares about. The JS layer mirrors this in
 /// <c>wwwroot/js/format.js</c>; if the constants here change, the
-/// JS mirror must move too -- otherwise the chart paints the same
+/// JS mirror must move too - otherwise the chart paints the same
 /// track in two different colours depending on which renderer touched
 /// it last.</summary>
 public class SpeedColorTests
@@ -26,7 +26,7 @@ public class SpeedColorTests
     [Test]
     public async Task Rgb_AtMidpoint_GreenAnchor()
     {
-        // ~3 knots = 1.543 m/s sits at t=0.5*8/8 -- but the math uses
+        // ~3 knots = 1.543 m/s sits at t=0.5*8/8 - but the math uses
         // kn/8 directly. 3 knots in m/s is 3 / 1.94384 = 1.5432... .
         // At kn=4 (m/s = 4/1.94384), t = 4/8 = 0.5 -> the seam between
         // the two interpolation halves -> exact green anchor (34,197,94).
@@ -58,7 +58,7 @@ public class SpeedColorTests
         await Assert.That(SpeedColor.Rgb(2)).IsNotEqualTo(SpeedColor.Rgb(8));
     }
 
-    // -- Bucket --------------------------------------------------
+    // - Bucket --------------------------------------------------
 
     [Test]
     public async Task Bucket_Null_ZeroBucket()
@@ -78,7 +78,7 @@ public class SpeedColorTests
     [Test]
     public async Task Bucket_HitsHighestThresholdAtOrBelow()
     {
-        // Buckets [0, 1, 2, 3, 5, 8] -- a sog of 4.5 picks index 3 (3<=4.5<5).
+        // Buckets [0, 1, 2, 3, 5, 8] - a sog of 4.5 picks index 3 (3<=4.5<5).
         await Assert.That(SpeedColor.Bucket(0.5)).IsEqualTo(0);
         await Assert.That(SpeedColor.Bucket(1.0)).IsEqualTo(1);
         await Assert.That(SpeedColor.Bucket(2.5)).IsEqualTo(2);

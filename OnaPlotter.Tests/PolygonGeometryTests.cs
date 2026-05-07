@@ -82,7 +82,7 @@ public class PolygonGeometryTests
     {
         // Helms drawing clockwise vs counter-clockwise both deserve a
         // positive area metric. The signed shoelace is taken absolute
-        // before return -- pin the contract.
+        // before return - pin the contract.
         var ccw = new double[][]
         {
             new[] { 47.0, 8.0 },

@@ -106,7 +106,7 @@ public sealed class NominatimPlaceSearchService : IPlaceSearchService
             // waiting on a real timer. Without the TimeProvider overload
             // a system-timer Delay would race the test's clock-advance
             // and force the test to insert a real Task.Delay(N) sleep
-            // to bridge the two -- which is exactly the kind of CI flake
+            // to bridge the two - which is exactly the kind of CI flake
             // vector the FakeTimeProvider seam exists to eliminate.
             var nowTicks = _time.GetUtcNow().UtcTicks;
             var elapsed = TimeSpan.FromTicks(nowTicks - _lastRequestTicks);
@@ -114,7 +114,7 @@ public sealed class NominatimPlaceSearchService : IPlaceSearchService
             {
                 var wait = MinRequestInterval - elapsed;
                 // Catch the BASE OperationCanceledException, not just
-                // TaskCanceledException -- the TimeProvider Task.Delay
+                // TaskCanceledException - the TimeProvider Task.Delay
                 // overload can surface either depending on runtime.
                 try { await Task.Delay(wait, _time, timeoutCts.Token); }
                 catch (OperationCanceledException) { return []; }
@@ -223,7 +223,7 @@ public sealed class NominatimPlaceSearchService : IPlaceSearchService
         if (lon < -180.0 || lon > 180.0) return null;
 
         // Nominatim's `name` is sometimes empty even for a real place
-        // (e.g. small admin boundaries) -- fall back to the head of
+        // (e.g. small admin boundaries) - fall back to the head of
         // display_name so the row still has a label.
         string? name = !string.IsNullOrWhiteSpace(row.Name) ? row.Name : null;
         if (name is null && !string.IsNullOrWhiteSpace(row.DisplayName))

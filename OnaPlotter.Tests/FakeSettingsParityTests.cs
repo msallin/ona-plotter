@@ -15,7 +15,7 @@ namespace OnaPlotter.Tests;
 /// Reflection check: every public instance member on IAppSettings
 /// (property getter + Set*Async method) must be realised by
 /// FakeSettings. When you add a new member to the interface and see
-/// this fail, the fix is one line in FakeSettings -- the error
+/// this fail, the fix is one line in FakeSettings - the error
 /// message tells you which.
 ///
 /// Not a substitute for per-feature tests. This only guarantees the
@@ -43,7 +43,7 @@ public class FakeSettingsParityTests
             .Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
 
         // Build the missing lists before asserting so the failure
-        // message reports ALL gaps at once -- less round-tripping when
+        // message reports ALL gaps at once - less round-tripping when
         // someone's just added three properties.
         var missingProps = ifaceProps
             .Select(p => p.Name)

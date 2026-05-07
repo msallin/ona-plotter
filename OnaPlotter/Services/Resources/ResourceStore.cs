@@ -10,8 +10,8 @@ namespace OnaPlotter.Services.Resources;
 /// notes,regions}.*</c> on the helm. Composition over <see cref="SignalkClient"/>
 /// (subscribes to its <see cref="SignalkClient.OnResourceDelta"/>) and
 /// over the four <c>*Api</c> REST clients (initial load + reconnect
-/// reconcile). Both pages that previously did their own REST polling --
-/// <c>Map.razor</c> and <c>Resources.razor</c> -- now read from this
+/// reconcile). Both pages that previously did their own REST polling -
+/// <c>Map.razor</c> and <c>Resources.razor</c> - now read from this
 /// store and subscribe to its typed change events.
 ///
 /// <para><b>Why this exists:</b> the helm reported a multi-plotter
@@ -21,7 +21,7 @@ namespace OnaPlotter.Services.Resources;
 /// to <c>resources.*</c> deltas, so the only refresh path was a local
 /// re-fetch after the user's OWN save. The signalk-server emits
 /// resource changes as ordinary deltas (full document on PUT/POST,
-/// <c>null</c> on DELETE) -- this store is the consumer that closes
+/// <c>null</c> on DELETE) - this store is the consumer that closes
 /// the loop. Same pattern as Freeboard-SK: WS delta is the
 /// invalidation signal + cache fill, REST reconcile on reconnect
 /// backfills any deltas missed during the disconnect window.</para>
@@ -36,7 +36,7 @@ namespace OnaPlotter.Services.Resources;
 /// returns.</para>
 ///
 /// <para><b>Architecture</b>: per-type cache + change-event behaviour
-/// lives on <see cref="ResourceTypeCache{T}"/> -- this class is the
+/// lives on <see cref="ResourceTypeCache{T}"/> - this class is the
 /// composition layer that owns four instances (one per resource type),
 /// dispatches WS deltas to the right cache, and orchestrates REST
 /// reconcile across all four in parallel.</para>
@@ -53,7 +53,7 @@ public sealed class ResourceStore : IAsyncDisposable
     // Per-type caches. Each owns its own dictionary, snapshot list,
     // Changed/Removed events, and the "log subscriber-throw" guard.
     // Blazor WASM is single-threaded so these don't need locks.
-    // Shared HashSet for Replace-side membership scratch -- one
+    // Shared HashSet for Replace-side membership scratch - one
     // allocation amortised across every reconcile pass.
     private readonly ResourceTypeCache<SignalkRoute> _routeCache;
     private readonly ResourceTypeCache<SignalkWaypoint> _waypointCache;
@@ -212,7 +212,7 @@ public sealed class ResourceStore : IAsyncDisposable
     /// previous cache; other types refresh normally.</para>
     ///
     /// <param name="cause">Free-form tag describing why the reconcile
-    /// fired -- "startup", "reconnect", "page-mount", "manual",
+    /// fired - "startup", "reconnect", "page-mount", "manual",
     /// or whatever the caller wants. Surfaces in the structured
     /// reconcile-complete log so a helm reading the journal can tell
     /// "ah, the reconcile that just landed was the reconnect-edge
@@ -423,7 +423,7 @@ public sealed class ResourceStore : IAsyncDisposable
             if (region is null) return;
             region.Id = id;
             // Populate OuterRings the same way RegionApi.GetAllAsync does
-            // for REST results -- consumers (Map.razor's region layer)
+            // for REST results - consumers (Map.razor's region layer)
             // expect Leaflet-ordered [lat, lon] rings, not the GeoJSON
             // [lon, lat] coords on the wire. Without this hoist a
             // delta-fed region renders as an empty polygon on the chart.
@@ -460,7 +460,7 @@ public sealed class ResourceStore : IAsyncDisposable
     /// or <c>null</c> if none has fired yet. Exposed internally so
     /// tests can <c>await</c> the reconcile to completion before
     /// asserting on the post-reconcile cache state. Production never
-    /// reads this -- the fire-and-forget runs on its own.</summary>
+    /// reads this - the fire-and-forget runs on its own.</summary>
     internal Task? LastReconcileTask { get; private set; }
 
     private void HandleConnectionChange()
@@ -473,16 +473,16 @@ public sealed class ResourceStore : IAsyncDisposable
         var transitionedToConnected = !_wasConnected && nowConnected;
         var transitionedToDisconnected = _wasConnected && !nowConnected;
         _wasConnected = nowConnected;
-        // Log both edges -- the disconnect log lets a helm reading the
+        // Log both edges - the disconnect log lets a helm reading the
         // journal correlate "lost connection at HH:MM:SS" with "deltas
         // stopped showing up", and the reconnect log paired with the
         // reconcile-complete line tells the same story for recovery.
         if (transitionedToDisconnected)
         {
-            _logger.LogInformation("[resources] WS disconnected -- deltas paused, cache stale until reconnect");
+            _logger.LogInformation("[resources] WS disconnected - deltas paused, cache stale until reconnect");
         }
         if (!transitionedToConnected) return;
-        _logger.LogInformation("[resources] WS reconnected -- kicking REST reconcile to backfill missed deltas");
+        _logger.LogInformation("[resources] WS reconnected - kicking REST reconcile to backfill missed deltas");
 
         // Kick the reconcile and stash the Task on LastReconcileTask
         // so tests can await it.
@@ -490,7 +490,7 @@ public sealed class ResourceStore : IAsyncDisposable
         // NOTE on threading: the synchronous prefix of
         // ReconcileOnReconnectAsync (the SafeFetch task allocations +
         // the first Task.WhenAll await) runs INLINE on whichever
-        // thread fired OnConnectionChanged -- we no longer wrap in
+        // thread fired OnConnectionChanged - we no longer wrap in
         // Task.Run. On Blazor WASM that's a no-op (single-threaded);
         // on the WS-loop site (SignalkClient line 578) the pre-await
         // synchronous prefix is just task construction, so the loop

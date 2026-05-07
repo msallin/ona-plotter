@@ -175,7 +175,7 @@ public class WaypointCourseApiTests
     [Test]
     public async Task CourseApi_AdvanceActiveRoute_SurfacesServerFailure()
     {
-        // 404 means no active route -- caller should see false so the
+        // 404 means no active route - caller should see false so the
         // "Next WP failed" toast fires instead of swallowing silently.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.NotFound));

@@ -89,7 +89,7 @@ public sealed class SignalkVesselNamesSeeder
         bool any = false;
 
         // SignalK wraps leaf values as { "value": ..., "timestamp": ... }
-        // -- so "name" might be under vessel.name.value or vessel.name
+        // - so "name" might be under vessel.name.value or vessel.name
         // depending on the server. Try both shapes.
         any |= TryApplyScalar(context, "name", vessel, "name");
         any |= TryApplyScalar(context, "mmsi", vessel, "mmsi");

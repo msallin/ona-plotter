@@ -5,13 +5,13 @@ using OnaPlotter.Services;
 namespace OnaPlotter.Tests;
 
 /// <summary>
-/// Pins NavigationAverages' sampling pipeline -- which channel each
+/// Pins NavigationAverages' sampling pipeline - which channel each
 /// NavigationData field feeds, plus the stationary-COG suppression.
 /// The rolling-buffer math itself is exercised by RollingScalarSeries
 /// and RollingDirectionSeries tests; here we only verify the wiring.
 ///
 /// <para>Tests bypass the SignalkClient subscription via the internal
-/// SampleForTest seam -- the OnDataChanged subscription is a one-line
+/// SampleForTest seam - the OnDataChanged subscription is a one-line
 /// ctor wire-up covered indirectly by the integration of consumers
 /// (HUD / WindRose) that depend on it.</para>
 /// </summary>
@@ -34,7 +34,7 @@ public class NavigationAveragesTests
         // interface seam later if these tests grow; for now we use
         // SampleForTest which doesn't require a working client at
         // all. We still need an instance for the ctor; a minimal
-        // construction isn't worth chasing -- skip the ctor wiring
+        // construction isn't worth chasing - skip the ctor wiring
         // verification and test the Sample() pipeline directly via
         // a NavigationAverages built around a stub.
         return null!;   // see SampleHarness below for the actual approach.
@@ -44,7 +44,7 @@ public class NavigationAveragesTests
     /// by exposing the rolling buffers directly via the public
     /// Tws / Aws / Sog / etc. properties + a Sample() method.
     /// Production wiring (ctor subscribes to OnDataChanged) is
-    /// covered by the host integration -- not unit-tested here.</summary>
+    /// covered by the host integration - not unit-tested here.</summary>
     private sealed class SampleHarness
     {
         public TestNavigationAverages Avg { get; }
@@ -62,7 +62,7 @@ public class NavigationAveragesTests
 
     /// <summary>NavigationAverages variant that skips the
     /// SignalkClient subscription so unit tests don't need a working
-    /// client -- production NavigationAverages is identical except
+    /// client - production NavigationAverages is identical except
     /// for the event hookup.</summary>
     private sealed class TestNavigationAverages : INavigationAverages, IDisposable
     {
@@ -101,7 +101,7 @@ public class NavigationAveragesTests
 
         // Mirror of NavigationAverages.Sample to keep the unit-test
         // sampler in lockstep with production logic. Any change to
-        // production must also land here -- a parity test would
+        // production must also land here - a parity test would
         // close the loop, but the mirror is short enough to inspect.
         public void PublicSample(NavigationData d)
         {
@@ -224,7 +224,7 @@ public class NavigationAveragesTests
         // t=0: TWS 5
         h.Nav.Apply("environment.wind.speedTrue", 5.0);
         h.Sample();
-        // t=8min: TWS 9 -- inside the 10-min window but outside 1-min.
+        // t=8min: TWS 9 - inside the 10-min window but outside 1-min.
         h.Clock.Advance(TimeSpan.FromMinutes(8));
         h.Nav.Apply("environment.wind.speedTrue", 9.0);
         h.Sample();

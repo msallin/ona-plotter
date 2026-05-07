@@ -20,7 +20,7 @@
          viewport, not the page). Helms double-tap on AIS targets
          and route lines constantly; without this, every other tap
          triggers an iOS zoom. Trade-off: disables browser-level
-         zoom for vision-impaired users -- mitigated by the high-
+         zoom for vision-impaired users - mitigated by the high-
          contrast theme + the Big-Type setting on the Map page. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -79,7 +79,7 @@
     <!-- Boot loading screen. Lives inside #app so Blazor swaps it
          out wholesale once the App component renders for the first
          time. Inline SVG of the favicon (rather than <img src="...">)
-         so it renders before any external asset has loaded -- on a
+         so it renders before any external asset has loaded - on a
          cold start the helm sees a recognisable brand frame within
          the first paint, not the literal text "Loading...". The
          build stamp is populated below from window.OnaPlotterBuild
@@ -119,7 +119,7 @@
          runtime so the console.error wrapper + window listeners are
          armed in time to catch boot-time component exceptions. The
          Blazor WASM dispatcher catches Razor lifecycle errors
-         internally and only logs them via console.error -- if our
+         internally and only logs them via console.error - if our
          wrapper isn't installed first, those errors never reach the
          SignalK server log. See errorRelayBoot.js header for the
          full rationale. -->

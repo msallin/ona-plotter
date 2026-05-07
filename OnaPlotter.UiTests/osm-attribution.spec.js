@@ -11,7 +11,7 @@
 //     sailing layer.
 //
 // Earlier versions of leafletInterop.js removed these layers when a
-// chart was added -- intended as an "OSM attribution leak" fix, but
+// chart was added - intended as an "OSM attribution leak" fix, but
 // the diagnosis was wrong. OSM data IS being used (as fallback) so
 // the attribution is correctly shown. Two regressions resulted:
 // helm using SignalK charts lost seamarks AND lost the fallback

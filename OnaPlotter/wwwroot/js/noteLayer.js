@@ -76,7 +76,7 @@ function getNoteIcon() {
     return noteIconCached;
 }
 
-/** "47.40123°N, 8.50456°E" -- comma-separated combined DMS via
+/** "47.40123°N, 8.50456°E" - comma-separated combined DMS via
  *  the shared formatter (canonical: Format.LatLonDms). */
 function formatLatLon(lat, lon) {
     return latLonDms(lat, lon, ', ');
@@ -147,7 +147,7 @@ export function addNoteMarker(id, lat, lon, title, description, createdAtIso) {
     // dotted with notes without clicking each pin. Empty title falls
     // through to "(untitled)" so the tooltip always carries something.
     // bindTooltip writes its string argument to innerHTML, so the
-    // server-supplied title needs to be HTML-escaped -- a title like
+    // server-supplied title needs to be HTML-escaped - a title like
     // '<img src=x onerror=...>' would otherwise execute on hover.
     marker.bindTooltip(esc(title || '(untitled)'), {
         direction: 'top',

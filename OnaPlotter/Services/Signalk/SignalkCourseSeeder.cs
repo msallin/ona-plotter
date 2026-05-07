@@ -11,7 +11,7 @@ namespace OnaPlotter.Services.Signalk;
 /// self-tree doesn't expose this endpoint at all, which is why a
 /// route activated BEFORE OnaPlotter connects (another plotter, a
 /// previous browser session, freeboard-sk in a second tab) stayed
-/// invisible -- the subscription stream only replays deltas on
+/// invisible - the subscription stream only replays deltas on
 /// change, and the activeRoute href hadn't changed since we
 /// connected.
 ///
@@ -29,7 +29,7 @@ namespace OnaPlotter.Services.Signalk;
 /// </code>
 /// activeRoute / nextPoint / previousPoint are nulls when no course
 /// is active; we no-op in that case. calcValues.* numbers are NOT in
-/// this body -- they come from the delta stream which the
+/// this body - they come from the delta stream which the
 /// course-provider plugin re-emits every tick as the boat moves, so
 /// they trickle in normally.
 /// </para>

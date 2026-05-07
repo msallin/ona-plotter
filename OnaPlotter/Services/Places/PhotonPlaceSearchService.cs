@@ -12,7 +12,7 @@ namespace OnaPlotter.Services.Places;
 ///
 /// <para>Provider behaviour relevant to this client:</para>
 /// <list type="bullet">
-///   <item><description>Fuzzy match -- "fowl cay" returns the right
+///   <item><description>Fuzzy match - "fowl cay" returns the right
 ///     "Fowl Cay" without the helm having to spell it precisely.</description></item>
 ///   <item><description>Returns a GeoJSON FeatureCollection;
 ///     coordinates are <c>[lon, lat]</c> per RFC 7946.</description></item>
@@ -81,7 +81,7 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
         //                       the same location collapse to one row (e.g. node +
         //                       way + relation for a city all reduce to one hit).
         //   osm_tag=place     : restrict to OSM elements tagged place=* (city,
-        //                       town, village, island, harbour, ...) -- the helm
+        //                       town, village, island, harbour, ...) - the helm
         //                       is looking for navigable destinations, not
         //                       roads / buildings / POIs that the default
         //                       Photon ranking otherwise mixes in.
@@ -141,7 +141,7 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
             }
             // ReadAsStringAsync over a flaky LTE link can drop the
             // connection mid-body and surface as HttpRequestException
-            // (wrapping IOException) -- not JsonException. Without
+            // (wrapping IOException) - not JsonException. Without
             // this widened catch the exception escapes past the
             // empty-list-on-failure contract into SearchBox.OnInput.
             catch (Exception ex) when (ex is JsonException
@@ -201,7 +201,7 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
     }
 
     /// <summary>
-    /// "Name -- City, Country" with each piece optional. Photon
+    /// "Name - City, Country" with each piece optional. Photon
     /// fields are independently nullable, so a small rural place
     /// might have a name but no city; a country still anchors it.
     /// Type ("marina", "harbour", "city", ...) is rendered by the
@@ -212,11 +212,11 @@ public sealed class PhotonPlaceSearchService : IPlaceSearchService
         var locality = props?.City ?? props?.State;
         var country = props?.Country;
         if (!string.IsNullOrWhiteSpace(locality) && !string.IsNullOrWhiteSpace(country))
-            return $"{name} -- {locality}, {country}";
+            return $"{name} - {locality}, {country}";
         if (!string.IsNullOrWhiteSpace(locality))
-            return $"{name} -- {locality}";
+            return $"{name} - {locality}";
         if (!string.IsNullOrWhiteSpace(country))
-            return $"{name} -- {country}";
+            return $"{name} - {country}";
         return name;
     }
 }

@@ -31,7 +31,7 @@ namespace OnaPlotter.Utilities;
 ///   <item>the <c>maxZoom: 19 + 3</c> literal on the <c>L.map(...)</c>
 ///     call in <c>leafletInterop.js</c>'s <c>initMap</c>: revert to
 ///     a plain <c>maxZoom: 19</c> so the helm can't zoom past native.
-///     OSM / OpenSeaMap layers already use <c>maxZoom: 19</c> --
+///     OSM / OpenSeaMap layers already use <c>maxZoom: 19</c> -
 ///     deliberately not bumped, so they go blank past native and
 ///     don't compete with the upscaled chart, which means there's
 ///     nothing to revert on the base layers.</item>

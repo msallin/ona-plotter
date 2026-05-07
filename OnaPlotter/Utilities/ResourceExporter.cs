@@ -15,13 +15,13 @@ namespace OnaPlotter.Utilities;
 /// Format philosophy:
 /// </para>
 /// <list type="bullet">
-///   <item><description>GPX -- universal interop with OpenCPN, Garmin
+///   <item><description>GPX - universal interop with OpenCPN, Garmin
 ///     plotters, Navionics. <c>rte</c> for routes, <c>wpt</c> for
 ///     points. Notes degrade to <c>wpt</c> with the description in
 ///     <c>desc</c>. Regions have no native shape in GPX 1.1, so
-///     <see cref="RegionGpx"/> is intentionally absent -- the UI
+///     <see cref="RegionGpx"/> is intentionally absent - the UI
 ///     hides the GPX option on the regions tab.</description></item>
-///   <item><description>GeoJSON -- Freeboard-SK + browsers + any
+///   <item><description>GeoJSON - Freeboard-SK + browsers + any
 ///     QGIS-style tool. Lossless for everything we store: routes
 ///     are LineString, waypoints / notes are Point, regions are
 ///     Polygon (or MultiPolygon for the rare multi-ring shape).</description></item>
@@ -196,7 +196,7 @@ public static class ResourceExporter
     /// of [lon, lat] coordinates with a properties bag carrying the
     /// trip's headline stats (name, start / end UTC, duration, distance,
     /// SOG / TWS aggregates). Stats are taken verbatim from the
-    /// supplied <see cref="TrackSegment"/> -- callers should pass the
+    /// supplied <see cref="TrackSegment"/> - callers should pass the
     /// segmenter's output rather than recomputing.</summary>
     public static string? TripGeoJson(
         string name, TrackSegment segment, IReadOnlyList<TrackPoint> points)
@@ -235,7 +235,7 @@ public static class ResourceExporter
 
     /// <summary>GeoJSON Polygon / MultiPolygon export. GPX has no
     /// equivalent so this is the only format on offer. Outer rings
-    /// only -- <see cref="SignalkRegion.OuterRings"/> already drops
+    /// only - <see cref="SignalkRegion.OuterRings"/> already drops
     /// inner holes during parse, matching the rendering pipeline.
     /// Order: each ring is closed (first == last) per RFC 7946; the
     /// model carries Leaflet-order [lat, lon] which we swap to

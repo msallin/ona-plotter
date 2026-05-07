@@ -86,7 +86,7 @@ public static class HarborAisFilter
         var kept = new List<AisVessel>(vessels.Count);
         foreach (var v in vessels)
         {
-            // Position is the bedrock prerequisite -- a vessel with
+            // Position is the bedrock prerequisite - a vessel with
             // null lat / lon can't render on the chart regardless of
             // harbor mode. Mirror what Map.razor was doing inline.
             if (v.Latitude is null || v.Longitude is null) continue;

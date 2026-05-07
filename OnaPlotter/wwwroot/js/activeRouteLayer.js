@@ -4,7 +4,7 @@
 // targeted popup on the polyline carrying Deactivate / Edit / Delete.
 //
 // The course line (boat -> next WP bearing + XTE perpendicular tick)
-// is drawn separately by courseLineLayer.js -- this module owns the
+// is drawn separately by courseLineLayer.js - this module owns the
 // route geometry, the other owns the live navigational overlay.
 //
 // Line-style convention used across the chartplotter:
@@ -66,21 +66,21 @@ export function getActiveRouteCoords() { return activeRouteCoords; }
 //
 // wpIdx is the index of the next un-reached waypoint, resolved on
 // the C# side from SignalK's next-point lat/lon. JS stays a thin
-// renderer here -- no geometry, no closest-vertex lookup.
+// renderer here - no geometry, no closest-vertex lookup.
 //
 // routeId is the SignalK resource UUID; passing it enables tap-to-
 // skip on each marker (any WP, including passed ones, can be set as
 // the new next-WP via the JumpToRouteWaypoint JSInvokable on the C#
-// side). Pass an empty string to disable taps -- e.g. when the active
+// side). Pass an empty string to disable taps - e.g. when the active
 // "course" is a single waypoint destination, not a multi-WP route.
 //
 // routeName is shown as the title of the tap-the-line popup
 // (Deactivate / Edit / Delete) so the helm doesn't have to read a
 // uuid prefix on a moving boat. Pass an empty string for unnamed
-// routes -- the popup falls back to "Route <first 6 chars of id>".
+// routes - the popup falls back to "Route <first 6 chars of id>".
 export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     clearActiveRoute();
-    // Suppress redraw while the helm is editing the active route --
+    // Suppress redraw while the helm is editing the active route -
     // any in-flight SyncActiveRouteAsync that races the edit (e.g.
     // a stale data tick that fired between EditRoute clearing the
     // overlay and the suppression flag landing) would otherwise
@@ -92,7 +92,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     // rejected with JSDisconnectedException, swallowed silently),
     // every subsequent setActiveRoute is a quiet no-op and the helm
     // stares at a chart that won't redraw the active leg. The warning
-    // makes that state visible in the console without spamming -- it
+    // makes that state visible in the console without spamming - it
     // only fires when a setActiveRoute call was actually attempted.
     if (activeOverlayHidden) {
         console.warn('[setActiveRoute] activeOverlayHidden is still true; route render suppressed.');
@@ -106,7 +106,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     const idx = Math.max(0, Math.min(coords.length - 1, wpIdx | 0));
     activeRouteLayer = L.layerGroup().addTo(mapRef);
     // Hide the course-line layer's own pulsing destination marker
-    // for the duration of this route -- our nextWpMarker (drawn
+    // for the duration of this route - our nextWpMarker (drawn
     // below) covers the same coord with a higher zIndex + a "WP N"
     // tooltip, so two pulses would stack visibly.
     if (setCoursePulseSuppressedFn) setCoursePulseSuppressedFn(true);
@@ -141,7 +141,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
     // Tap-target hit polyline covering the whole route. Same trick as
     // addRoute: the visible polylines (2-3 px) are a miserable touch
     // target, so a 36 px transparent sibling carries the popup.
-    // Bound only when we have a routeId AND a dotNetRef -- a single-
+    // Bound only when we have a routeId AND a dotNetRef - a single-
     // waypoint course (no route resource on the server) has nothing
     // for Deactivate / Edit / Delete to act on, so the popup would
     // open onto dead buttons. The Stop button in the bottom bar still
@@ -186,7 +186,7 @@ export function setActiveRoute(coords, wpIdx, routeId, routeName) {
         });
     }
 
-    // Waypoint markers (skip the next WP -- it gets the pulsing marker
+    // Waypoint markers (skip the next WP - it gets the pulsing marker
     // below). Each remaining dot is tappable: clicking asks the C# side
     // to jump pointIndex to that WP (the on-the-fly leg-skip gesture).
     for (let i = 0; i < coords.length; i++) {
@@ -263,10 +263,10 @@ export function clearActiveRoute() {
 // sits at 900 vs the route-edit drag handles' 800. With the pulse
 // still on the map during edit mode, pointer events on the
 // next-WP coordinate hit the (non-draggable) pulse marker first
-// and never reach the underlying drag handle -- the helm taps
+// and never reach the underlying drag handle - the helm taps
 // the WP, nothing happens, and the route edit feels broken.
 //
-// C# pairs every true with a false on edit cancel / save -- the
+// C# pairs every true with a false on edit cancel / save - the
 // next position frame's SyncActiveRouteAsync(force: true) then
 // redraws everything from the updated coords.
 export function setActiveOverlayHidden(hidden) {
@@ -280,7 +280,7 @@ export function setActiveOverlayHidden(hidden) {
 // Visually mark the active route as "stopping" while we wait for the
 // SK delta to confirm. Same single-source-of-truth pattern as
 // setAnchorRaising: dim the elements (so the helm sees their tap
-// landed) but never tear them down -- the delta drives the real
+// landed) but never tear them down - the delta drives the real
 // teardown via SyncActiveRouteAsync. Iterates the layer group's
 // children with setStyle so polyline + waypoint dots all dim
 // together. Course-line dimming is delegated to the courseLineLayer.

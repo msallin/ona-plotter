@@ -11,7 +11,7 @@ namespace OnaPlotter.Models;
 /// "123456789"). Used for the snoozed-target chip. Falls back to TargetKey
 /// when null.</param>
 /// <param name="Snoozeable">False for life-safety alarms that must not be
-/// silenced by a passing tap -- SART / MOB / EPIRB beacons, primarily. The
+/// silenced by a passing tap - SART / MOB / EPIRB beacons, primarily. The
 /// UI hides the Snooze button for these and the manager refuses snooze
 /// requests. Defaults to true for every other alarm type.</param>
 /// <param name="TimeToEventMinutes">Optional estimated minutes until the

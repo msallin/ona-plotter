@@ -32,7 +32,7 @@ public static class SkPaths
             public const string Position = "navigation.anchor.position";
             public const string CurrentRadius = "navigation.anchor.currentRadius";
             public const string MaxRadius = "navigation.anchor.maxRadius";
-            // v2.0.0+ paths -- only published when the
+            // v2.0.0+ paths - only published when the
             // signalk-anchoralarm-plugin is at least v2 and the helm
             // has the corresponding rode-counter / depth sensor wired.
             // Plumbing them all the way through means the HUD picks

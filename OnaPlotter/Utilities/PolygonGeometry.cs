@@ -12,14 +12,14 @@ public static class PolygonGeometry
     /// <summary>
     /// Area of a polygon defined by [lat, lon] vertex pairs, in square
     /// metres. Uses the shoelace formula on an equirectangular projection
-    /// anchored at the first vertex's latitude -- accurate to a small
+    /// anchored at the first vertex's latitude - accurate to a small
     /// fraction of a percent for the typical 100 m to 10 km regions
     /// sailors draw, and avoids the cost of a proper geodesic area for a
     /// metric the helm reads as "roughly this many hectares".
     /// </summary>
     /// <remarks>
     /// Returns 0 for fewer than three vertices (no enclosed area). The
-    /// ring is treated as closed implicitly -- the last vertex links back
+    /// ring is treated as closed implicitly - the last vertex links back
     /// to the first; callers do not need to repeat the opening point.
     /// Sign of the signed area is discarded so winding order does not
     /// matter (helms drawing clockwise vs counter-clockwise both get a

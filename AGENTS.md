@@ -160,7 +160,7 @@ FUZZ_SEED=12345 npm run test:fuzz                   # 40 random clicks
   smoke test (so it becomes a regression case rather than a
   fuzz-might-find-it-again case).
 
-Coverage report: `dotnet run --project OnaPlotter.Tests -- --coverage`
+Coverage report: `dotnet run --project OnaPlotter.Tests - --coverage`
 produces a `.coverage` file; merge with `dotnet-coverage merge ... -f
 cobertura` and run `reportgenerator`. Don't chase the overall line rate
 (Map.razor is a 2000-line view); target stateful sub-components with
@@ -224,15 +224,15 @@ yesterday's WASM with today's HTML.
 
 - `Components/Pages/*.razor` + code-behind. `Map.razor.cs` is the resource
   CRUD + routing.
-- `Components/Map/*` -- HUD, controls, per-resource `*Section.razor` rows in
+- `Components/Map/*` - HUD, controls, per-resource `*Section.razor` rows in
   LayersPanel.
-- `Services/Api/*Api.cs` -- one HTTP client per SignalK resource.
-- `Services/Alarms/*AlarmRule.cs` -- rule-per-file, DI-registered.
-- `Services/Map/*` -- diff-and-push controllers around JS interop.
-- `Utilities/*.cs` -- pure math (Cpa, Colregs, Format, AisPalette,
+- `Services/Api/*Api.cs` - one HTTP client per SignalK resource.
+- `Services/Alarms/*AlarmRule.cs` - rule-per-file, DI-registered.
+- `Services/Map/*` - diff-and-push controllers around JS interop.
+- `Utilities/*.cs` - pure math (Cpa, Colregs, Format, AisPalette,
   GeoBearing, RouteProgress).
-- `Models/*.cs` -- value records (TrackPoint, TrackBbox, ...).
-- `wwwroot/js/leafletInterop.js` + sibling modules -- renderer.
+- `Models/*.cs` - value records (TrackPoint, TrackBbox, ...).
+- `wwwroot/js/leafletInterop.js` + sibling modules - renderer.
 
 ## Branching + commits
 

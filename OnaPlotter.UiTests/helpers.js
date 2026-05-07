@@ -14,7 +14,7 @@ export function collectErrors(page) {
     // exception text + stack in its message. Without this, every CI
     // failure surfaces as a generic "Blazor error UI is visible: An
     // unhandled error has occurred" with no path back to the C#
-    // file:line that threw -- the trace.zip artifact has it but
+    // file:line that threw - the trace.zip artifact has it but
     // CI's --reporter=list output drops the trace path. critErrors
     // is the fallback that puts the stack inline in the test log.
     const critErrors = [];
@@ -38,7 +38,7 @@ export function collectErrors(page) {
         // with a status of XXX (YYY)". The C# side handles 4xx gracefully
         // (TrackApi returns null on non-2xx, SafeLoad surfaces a toast),
         // and the error-relay POST to the SignalK plugin's /log endpoint
-        // 400s in dev / CI where the plugin isn't loaded -- so these are
+        // 400s in dev / CI where the plugin isn't loaded - so these are
         // not crashes the smoke test should care about.
         //
         // Real-world cases we tolerate:
@@ -81,7 +81,7 @@ export function collectErrors(page) {
                 // and which isn't always uploaded by CI.
                 const critTail = critErrors.length
                     ? '\n--- Blazor crit logs ---\n' + critErrors.join('\n---\n')
-                    : '\n(no crit: console output captured -- check trace.zip)';
+                    : '\n(no crit: console output captured - check trace.zip)';
                 throw new Error(`Blazor error UI is visible: ${text.trim()}${critTail}`);
             }
         }
@@ -112,7 +112,7 @@ export async function waitForMapReady(page) {
 
 /** Dismiss any of the three click-blocking overlays that can appear on
  * a fresh session: welcome card, touch coachmark, load-failure toasts.
- * Silent if none of them are present -- the map page on day-2 of a
+ * Silent if none of them are present - the map page on day-2 of a
  * device has none of these, and the test must work there too.
  *
  * The welcome card surfaces inside Map.razor.OnAfterRenderAsync after
@@ -133,14 +133,14 @@ export async function dismissInitialOverlays(page) {
             try {
                 await gotIt.first().click({ force: true, timeout: 500 });
                 await page.waitForTimeout(150);
-                // Verify gone -- card hides after click. If something
+                // Verify gone - card hides after click. If something
                 // re-rendered it, loop continues.
                 if (await gotIt.count() === 0) break;
                 if (!(await gotIt.first().isVisible())) break;
             } catch { /* card disappeared mid-click */ break; }
         }
         // Also bail if the card doesn't appear in the first second of
-        // polling -- on day-2 devices and pre-seeded test contexts the
+        // polling - on day-2 devices and pre-seeded test contexts the
         // welcome dismissed flag is already set so the card never
         // surfaces. No need to wait the full 5 s in that case.
         if (Date.now() > pollDeadline - 4_000
@@ -149,7 +149,7 @@ export async function dismissInitialOverlays(page) {
     }
 
     // Touch coachmark: tap anywhere (its @onclick is on the whole div).
-    // Same poll shape as the welcome card -- coachmark is gated on the
+    // Same poll shape as the welcome card - coachmark is gated on the
     // welcome-dismissed flag so it can also appear late.
     const coachmark = page.locator('.touch-coachmark');
     const coachmarkDeadline = Date.now() + 2_000;

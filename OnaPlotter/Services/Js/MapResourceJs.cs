@@ -39,8 +39,13 @@ public sealed class MapResourceJs : IMapResourceJs
     public Task OpenNotePopupAsync(string id)
         => InvokeSafe("openNotePopup", id);
 
-    public Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings, string? title, string? description)
-        => InvokeSafe("addRegion", id, rings, title, description);
+    public Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings,
+        string? title, string? description, bool isHazard,
+        double areaSqM,
+        double? centerLat, double? centerLon, double? radiusMeters,
+        string? createdAtIso)
+        => InvokeSafe("addRegion", id, rings, title, description,
+            isHazard, areaSqM, centerLat, centerLon, radiusMeters, createdAtIso);
 
     public Task RemoveRegionAsync(string id)
         => InvokeSafe("removeRegion", id);

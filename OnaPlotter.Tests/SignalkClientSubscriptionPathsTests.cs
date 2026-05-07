@@ -16,7 +16,7 @@ public class SignalkClientSubscriptionPathsTests
     [Test]
     public async Task AisPaths_Contains_Shared_Nav_Fields()
     {
-        // Shared navigation fields live in the Ais tier -- vessels.*
+        // Shared navigation fields live in the Ais tier - vessels.*
         // matches self + others, so own-boat still receives them
         // without a duplicate self-subscription. If one of these ever
         // leaves Ais, AIS vessels go dark on the map.
@@ -83,7 +83,7 @@ public class SignalkClientSubscriptionPathsTests
     [Test]
     public async Task SelfPaths_And_AisPaths_Are_Disjoint()
     {
-        // No overlap in the new model -- Ais-tier paths don't appear
+        // No overlap in the new model - Ais-tier paths don't appear
         // in SelfPaths (which is SelfFast + SelfSlow). Previously the
         // two sets overlapped and the receive loop had to strip.
         var overlap = SignalkClient.SelfPaths.Intersect(SignalkClient.AisPaths).ToArray();
@@ -110,7 +110,7 @@ public class SignalkClientSubscriptionPathsTests
         // paths beyond the v1 trio (position / maxRadius /
         // currentRadius). Without these subscribed, the HUD's
         // bow-corrected distance + bearing + rode length readouts
-        // stay null on a properly-configured plugin -- silent
+        // stay null on a properly-configured plugin - silent
         // regression.
         await Assert.That(SignalkClient.SlowSelfPaths)
             .Contains("navigation.anchor.bearingTrue");
@@ -129,7 +129,7 @@ public class SignalkClientSubscriptionPathsTests
         // calcValues subtree) is what real Signal K v2 servers
         // publish today. If these drop off, the HUD next-WP /
         // distance / bearing / TTG / VMG starves against any
-        // properly-configured server -- the user-visible symptom
+        // properly-configured server - the user-visible symptom
         // was empty route info despite an active route.
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.activeRoute.href");
         await Assert.That(SignalkClient.SelfPaths).Contains("navigation.course.activeRoute.name");
@@ -150,11 +150,11 @@ public class SignalkClientSubscriptionPathsTests
     public async Task Course_LegAdvance_Notifications_Subscribed()
     {
         // Two trigger paths for auto-advance:
-        //   - notifications.navigation.course.{flag} -- emitted by the
+        //   - notifications.navigation.course.{flag} - emitted by the
         //     standard SignalK course-provider plugin via its
         //     Notification class (prepends "notifications." in
         //     src/lib/alarms.ts).
-        //   - navigation.course.calcValues.{flag} -- bare-boolean
+        //   - navigation.course.calcValues.{flag} - bare-boolean
         //     fallback for stock signalk-server builds and forks that
         //     publish the flag without going through the notifications
         //     subsystem.
@@ -170,7 +170,7 @@ public class SignalkClientSubscriptionPathsTests
     public async Task DeadCourse_Subscriptions_NotResurrected()
     {
         // velocityMadeGoodToCourse was a hopeful-but-wrong fallback
-        // subscription -- the course-provider plugin only emits
+        // subscription - the course-provider plugin only emits
         // velocityMadeGood. Pinning the absence so a future "let's
         // subscribe to everything" sweep doesn't drag dead paths back
         // in.
@@ -210,7 +210,7 @@ public class SignalkClientSubscriptionPathsTests
     public async Task Fast_And_Slow_Tiers_Are_Disjoint()
     {
         // SelfFast and SelfSlow have to be disjoint or the same path
-        // gets subscribed at two different periods -- the server
+        // gets subscribed at two different periods - the server
         // would deliver it twice.
         var fastPaths = SignalkClient.Tiers
             .Where(t => t.Name == "SelfFast")
@@ -233,7 +233,7 @@ public class SignalkClientSubscriptionPathsTests
         await Assert.That(SignalkClient.SlowSelfPaths).Contains("environment.sun");
         await Assert.That(SignalkClient.SlowSelfPaths).Contains("environment.tide.heightNow");
         // Position / SOG / COG / heading must NEVER end up in the slow
-        // tier -- they're the primary driver of the HUD and alarm eval.
+        // tier - they're the primary driver of the HUD and alarm eval.
         // (They live in the Ais tier now, so they're not in SlowSelfPaths
         // via any path.)
         await Assert.That(SignalkClient.SlowSelfPaths).DoesNotContain("navigation.position");
@@ -256,7 +256,7 @@ public class SignalkClientSubscriptionPathsTests
         // The "ServerNotifications" tier is what plumbs server-side
         // SignalK notifications (signalk-anchoralarm-plugin et al)
         // into the alarm banner. If this tier disappears, server-
-        // decided alarms go silent on our end -- helm relies on this
+        // decided alarms go silent on our end - helm relies on this
         // to surface plugin-driven alerts.
         var tier = SignalkClient.Tiers.SingleOrDefault(t => t.Name == "ServerNotifications");
         await Assert.That(tier).IsNotNull();

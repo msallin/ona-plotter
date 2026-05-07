@@ -3,7 +3,7 @@ namespace OnaPlotter.Services.Settings;
 /// <summary>
 /// Narrow surface for the OSM marine-POI overlay (Layers > Marine
 /// services). Carved from <see cref="OnaPlotter.Services.IAppSettings"/>
-/// per the same ISP pattern as <see cref="IMapDisplaySettings"/> --
+/// per the same ISP pattern as <see cref="IMapDisplaySettings"/> -
 /// nine category toggles is enough to merit a dedicated slice rather
 /// than bloating the map-display interface.
 ///

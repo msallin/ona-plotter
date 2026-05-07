@@ -1,7 +1,7 @@
 @* Two-state anchor panel matching signalk-anchoralarm-plugin v2.0.0+
    workflow: helm drops the pin first (no radius), then backs down +
    sets the radius once the boat has settled. The plugin's Incomplete
-   Anchor Alarm guards the gap if the helm forgets step 2 -- that fires
+   Anchor Alarm guards the gap if the helm forgets step 2 - that fires
    as a server-side notification surfaced via the existing alarm
    bridge, not as panel state.
 
@@ -22,14 +22,14 @@
        recomputes between data ticks), the panel re-emits
        OnPreviewRadius with the new value as long as Auto is still
        picked, so the on-map ring grows in 5 m steps as the boat
-       drifts further -- the "Auto means whatever Auto says right
+       drifts further - the "Auto means whatever Auto says right
        now" model.
      - Tapping Set commits via OnSetRadius(effective). Parent does
        PUT navigation.anchor.maxRadius and closes the panel.
      - There is no Cancel/Close in SetRadius mode. Helm escapes by
        raising via the bottom-bar Anchor button (arm-then-confirm).
 
-   Drop mode keeps a Close button as the only escape -- helm tapped
+   Drop mode keeps a Close button as the only escape - helm tapped
    Anchor accidentally and needs a way out before the drop.
 
    AutoPreviewRadius parameter: the parent's continuously-recomputed
@@ -50,7 +50,7 @@
 
     @if (Mode == AnchorPanelMode.SetRadius)
     {
-        @* Pick-then-Set chips. Tapping a chip is panel-internal --
+        @* Pick-then-Set chips. Tapping a chip is panel-internal -
            updates the active highlight and fires OnPreviewRadius so
            the parent can resize the on-map alarm ring as a visual
            preview. The PUT only fires when the helm taps Set. *@
@@ -98,7 +98,7 @@
     }
     else
     {
-        @* Drop state. No chips -- the radius decision is deferred
+        @* Drop state. No chips - the radius decision is deferred
            until the boat has actually settled. *@
         <button class="map-btn active anchor-edit-drop"
                 @onclick="OnDropClicked" disabled="@Busy"
@@ -111,7 +111,7 @@
 
 @code {
     /// <summary>Drives the two layouts. The parent picks the mode at
-    /// open time off the current anchor state -- not authoritative
+    /// open time off the current anchor state - not authoritative
     /// here, since a server-side raise mid-Set could move the panel
     /// out from under the helm; the parent re-evaluates on every
     /// data tick and closes the panel when the right state lands.</summary>
@@ -123,7 +123,7 @@
     /// in <see cref="AnchorPanelMode.SetRadius"/>). Same heuristic
     /// the v1 panel used: <c>AnchorRadiusHeuristic.Suggest</c>.
     /// Sentinel <see cref="UnseededInitialRadius"/> means "no opinion"
-    /// -- panel skips the snap-to-preset step and the chip row opens
+    /// - panel skips the snap-to-preset step and the chip row opens
     /// without an active numeric chip (Auto becomes the default).</summary>
     [Parameter] public int InitialRadiusMeters { get; set; } = UnseededInitialRadius;
 
@@ -132,7 +132,7 @@
     /// Picked as int.MinValue so a corrupted setting that lands on
     /// 0 still re-seeds correctly (0 was the previous in-range
     /// sentinel, which silently behaved like "snap to lowest preset"
-    /// because of the round-up rule -- a footgun for whoever next
+    /// because of the round-up rule - a footgun for whoever next
     /// adds Drop-mode chip preview).</summary>
     public const int UnseededInitialRadius = int.MinValue;
 
@@ -158,7 +158,7 @@
     /// before setting the radius") or be left empty.</summary>
     [Parameter] public string SuggestionLabel { get; set; } = "";
 
-    /// <summary>Drop button tapped (Drop mode). No radius arg -- step
+    /// <summary>Drop button tapped (Drop mode). No radius arg - step
     /// 2 carries that. Parent calls
     /// <c>IAnchorAlarmApi.DropAsync</c>.</summary>
     [Parameter] public EventCallback OnDrop { get; set; }
@@ -166,13 +166,13 @@
     /// <summary>Helm changed the picked chip (numeric OR Auto), or
     /// the live <see cref="AutoPreviewRadius"/> changed while Auto
     /// is the pick. Carries the resulting effective radius. Parent
-    /// updates the on-map alarm ring as a visual preview -- NO PUT.
+    /// updates the on-map alarm ring as a visual preview - NO PUT.
     /// Distinct from <see cref="OnSetRadius"/> so the wire round-trip
     /// only fires on the explicit Set tap; the helm can hover chips
     /// and see the ring change without spamming PUTs.</summary>
     [Parameter] public EventCallback<int> OnPreviewRadius { get; set; }
 
-    /// <summary>Set button tapped -- commit the picked value via
+    /// <summary>Set button tapped - commit the picked value via
     /// PUT maxRadius. Carries the effective radius (numeric chip
     /// face if a numeric chip is picked, <see cref="AutoPreviewRadius"/>
     /// if Auto is picked). Parent calls
@@ -180,13 +180,13 @@
     /// the panel on success.</summary>
     [Parameter] public EventCallback<int> OnSetRadius { get; set; }
 
-    /// <summary>Cancel: parent closes the panel. Drop mode only --
+    /// <summary>Cancel: parent closes the panel. Drop mode only -
     /// SetRadius has no Close, the helm escapes by raising the
     /// anchor.</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
 
     /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
-    /// dropped from the v1 set on field-study feedback -- 5:1 scope
+    /// dropped from the v1 set on field-study feedback - 5:1 scope
     /// at 30 m of water is already 150 m and that's deeper than the
     /// helm's typical anchorage; the chip was almost never picked
     /// and was crowding the row visually.</summary>
@@ -257,7 +257,7 @@
     /// <summary>Re-seed the pick whenever the parent pushes a new
     /// InitialRadiusMeters (panel just opened, or server echoed
     /// back a new MaxRadius). Re-emit OnPreviewRadius if the
-    /// effective value changed -- this is both the initial-mount
+    /// effective value changed - this is both the initial-mount
     /// emit (panel opens, parent draws the on-map ring) and the
     /// live boat-drift tracking (as the parent's AutoRadiusPreview()
     /// grows in 5 m steps with Auto picked, the ring follows).
@@ -281,7 +281,7 @@
             return;
         }
 
-        if (Busy) return;       // see XML doc -- avoid PUT-vs-preview race.
+        if (Busy) return;       // see XML doc - avoid PUT-vs-preview race.
 
         if (EffectiveRadius is int e && e != _lastEmittedPreview)
         {
@@ -292,7 +292,7 @@
 
     /// <summary>Tap a numeric chip. Updates the panel's pick and
     /// emits OnPreviewRadius so the parent resizes the on-map ring.
-    /// Does NOT commit (no PUT) -- helm has to tap Set for that.</summary>
+    /// Does NOT commit (no PUT) - helm has to tap Set for that.</summary>
     private async Task OnPickNumeric(int radius)
     {
         if (Busy) return;
@@ -314,7 +314,7 @@
             _lastEmittedPreview = r;
             await OnPreviewRadius.InvokeAsync(r);
         }
-        // No preview available yet (still loading) -- chip is
+        // No preview available yet (still loading) - chip is
         // visually picked but Set will stay disabled until
         // AutoPreviewRadius lands.
     }
@@ -344,7 +344,7 @@
 
 
     /// <summary>Smallest preset >= radius. Same round-up rationale as
-    /// v1 -- 5:1 scope is the cruising-rule-of-thumb minimum, rounding
+    /// v1 - 5:1 scope is the cruising-rule-of-thumb minimum, rounding
     /// down would silently drop below that.</summary>
     private static int SnapToPreset(int radius)
     {

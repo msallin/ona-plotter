@@ -137,7 +137,7 @@ public sealed class AisPushService
         var vessels = _aisStore.GetVessels();
         // AisStore filters on position when building the snapshot, but
         // defend against someone clearing a position between snapshots
-        // anyway -- force-unwrap is never worth the risk in a hot path.
+        // anyway - force-unwrap is never worth the risk in a hot path.
         // Pre-compute COLREGS per vessel (requires own lat/lon/cog/sog) so
         // the JS popup can render the category + give-way role without
         // re-implementing the math on the JS side.
@@ -157,7 +157,7 @@ public sealed class AisPushService
 
         // Effective CPA radius for THIS snapshot (anchor-narrowing
         // when applicable). The visible guard-zone rings AND the
-        // chip classifier MUST agree -- using the underway threshold
+        // chip classifier MUST agree - using the underway threshold
         // here while the rings show the anchor-narrowed radius made
         // chips appear outside the rings ("how can this be?").
         // See OnaPlotter.Utilities.Cpa.EffectiveRadiusNm for the
@@ -172,14 +172,14 @@ public sealed class AisPushService
         // Pre-allocate the result array (visible.Count is known) and
         // walk via index instead of Select(...).ToArray() so the
         // closure capturing ownLat/ownLon/ownCog/ownSog/now/etc.
-        // doesn't allocate per call -- the captured locals just
+        // doesn't allocate per call - the captured locals just
         // become method-frame locals, no heap.
         // Helper variables hoisted to keep the loop body short.
         var ownType = _settings.OwnVesselType == "sail"
             ? Colregs.VesselType.Sail
             : Colregs.VesselType.Power;
         // Pre-compute own-ship sin/cos of COG ONCE here rather than on
-        // every vessel inside the loop -- the own-ship trig is
+        // every vessel inside the loop - the own-ship trig is
         // invariant across the per-target pass. Null when own-ship
         // inputs are missing/non-finite so the inner loop skips CPA.
         var ownSnap = Cpa.PrecomputeOwn(
@@ -273,7 +273,7 @@ public sealed class AisPushService
                 lat = v.Latitude!.Value, lon = v.Longitude!.Value,
                 headingRad = v.Heading, cogRad = v.CourseOverGround,
                 sogMs = v.SpeedOverGround, shipType = v.ShipType,
-                // AIS-static dimensions (LOA + beam). Often absent --
+                // AIS-static dimensions (LOA + beam). Often absent -
                 // see AisVessel.LengthOverallMeters comments. JS popup
                 // renders the row only when at least one is non-null.
                 loaM = v.LengthOverallMeters,

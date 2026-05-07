@@ -189,7 +189,7 @@
     protected override Task OnInitializedAsync()
     {
         SignalkClient.OnRawMessage += HandleRawMessage;
-        // Only list paths the plotter actually subscribes to -- the
+        // Only list paths the plotter actually subscribes to - the
         // server exposes a much larger catalogue via PathApi, but
         // rows for unsubscribed paths would never fire in this view
         // (no delta -> no log entry) so showing them was just noise.

@@ -37,7 +37,7 @@ public sealed class ResolvedPositionStore
     /// <summary>Hydrate the in-memory cache from localStorage.
     /// Call once at app start (before <see cref="MobService.InitializeAsync"/>'s
     /// list-recovery loop reads). Corrupt JSON is treated as empty
-    /// rather than thrown -- a stale cache is recoverable; a startup
+    /// rather than thrown - a stale cache is recoverable; a startup
     /// crash isn't.</summary>
     public async Task LoadAsync(CancellationToken ct = default)
     {
@@ -78,7 +78,7 @@ public sealed class ResolvedPositionStore
     }
 
     /// <summary>Record / overwrite the position for
-    /// <paramref name="serverId"/>. Persist is fire-and-forget --
+    /// <paramref name="serverId"/>. Persist is fire-and-forget -
     /// in-memory state is the source of truth between writes.</summary>
     public void Save(string serverId, double lat, double lon)
     {
@@ -87,7 +87,7 @@ public sealed class ResolvedPositionStore
     }
 
     /// <summary>Drop the entry for <paramref name="serverId"/>.
-    /// No-op + no persist when the entry wasn't there -- avoids a
+    /// No-op + no persist when the entry wasn't there - avoids a
     /// spurious KV write on every clear.</summary>
     public void Forget(string serverId)
     {

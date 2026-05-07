@@ -345,7 +345,7 @@
     @* === Region Dialog ===
        Mode toggle at the top picks Circle or Polygon. Circle keeps the
        fast path (radius preset + Save = done). Polygon hands off to the
-       on-map drawing flow -- the dialog closes, polygon-edit mode starts,
+       on-map drawing flow - the dialog closes, polygon-edit mode starts,
        and the user collects name / description there so we don't ask
        for them twice. *@
     @if (regionDialogVisible)
@@ -378,7 +378,7 @@
                 @* Hazard toggle. Was previously polygon-only (lived
                    inside PolygonEditPanel which only appears AFTER
                    the dialog closes). Lifted into the dialog so the
-                   circle path can set it too -- focus-group field
+                   circle path can set it too - focus-group field
                    report: "Cant add hazard flag for circle". *@
                 <label class="route-edit-hazard" style="margin-top:10px;"
                        title="Raise an alarm whenever own-ship is inside this region">
@@ -431,7 +431,7 @@
        visible so the user can toggle rendering in the bar while
        the Layers panel handles membership / reorder. Active chips
        carry a strong filled-accent style so "which chart is on
-       the map" reads at a glance -- the old semi-transparent
+       the map" reads at a glance - the old semi-transparent
        accent was ambiguous against a bright ocean tile. *@
     @if (_charts is not null && _charts.QuickBarCharts.Count > 0)
     {
@@ -456,7 +456,7 @@
                         class="chart-quick-chip @(active ? "active" : "")"
                         @onclick="() => _charts.ToggleAsync(chart, !active)"
                         aria-pressed="@(active ? "true" : "false")"
-                        title="@(active ? $"{chart.Name} -- showing, tap to hide" : $"{chart.Name} -- hidden, tap to show")">
+                        title="@(active ? $"{chart.Name} - showing, tap to hide" : $"{chart.Name} - hidden, tap to show")">
                     @label
                 </button>
             }
@@ -650,7 +650,7 @@
     private bool measureActive;
     private bool fabMenuOpen;
     // Lifted here from MapControls so the three bottom-bar flyouts
-    // (More / Add / Layers) can be mutually exclusive -- opening any
+    // (More / Add / Layers) can be mutually exclusive - opening any
     // one of them closes the other two. Each toggle funnels through
     // OpenFlyoutOnly() below.
     private bool moreMenuOpen;
@@ -684,7 +684,7 @@
     private string mapOrientation = "north"; // "north", "course", "head"
     private string mapOrientationLabel = "N\u2191";
     // Route editing state.
-    // Route + polygon edit state lives in Map.Editing.razor.cs --
+    // Route + polygon edit state lives in Map.Editing.razor.cs -
     // both edit modes share the same shape and nav guard, so keeping
     // them together in a partial keeps Map.razor focused on layout
     // + lifecycle. Fields referenced from the markup
@@ -795,7 +795,7 @@
     // Mutual-exclusion guard for the three bottom-bar flyouts:
     // Layers panel, Add (FAB) menu, More overflow menu. Callers pass
     // the flag they're about to set true; the helper closes the other
-    // two first so only one flyout can be open at a time -- tapping a
+    // two first so only one flyout can be open at a time - tapping a
     // second one without explicitly dismissing the first was a common
     // stacked-modal bug in earlier builds.
     private enum BottomBarFlyout { Layers, Fab, More }
@@ -830,7 +830,7 @@
             //
             // Radar state DOES still need a poke on panel-open: the
             // Mayara SK plugin doesn't publish radar fields over the
-            // delta stream (probed against openplotter -- 195 unique
+            // delta stream (probed against openplotter - 195 unique
             // paths, zero radar-related), so range / status changes
             // made from another plotter's UI only land via REST.
             _ = RefreshRadarsAsync();
@@ -886,7 +886,7 @@
     /// <summary>Layers-panel "Go" button for notes: PUT the note's
     /// lat/lon as the SignalK course destination via the existing
     /// position-destination API. No throwaway waypoint resource is
-    /// created -- SignalK's course endpoint accepts a bare position
+    /// created - SignalK's course endpoint accepts a bare position
     /// directly, which keeps the helm's waypoint list uncluttered.
     /// </summary>
     private async Task NavigateToNote(SignalkNote n)
@@ -970,7 +970,7 @@
             if (!r.Success) { Toasts.Error($"Radar range change failed: {r.Error ?? "server rejected"}"); return; }
         }
         catch (Exception ex) { Toasts.LogException(ex, "Radar range change"); return; }
-        // Range writes apply immediately on Mayara -- a single
+        // Range writes apply immediately on Mayara - a single
         // targeted refresh is enough; no transitional state to
         // wait through.
         await RefreshRadarsAsync();
@@ -980,7 +980,7 @@
     // Used by both Transmit / range writes (where the helm wants the
     // settled state right after a write) and by the Layers-panel-open
     // path. The Mayara SK plugin doesn't publish radar paths over the
-    // SK WebSocket delta stream (probed against openplotter -- 195
+    // SK WebSocket delta stream (probed against openplotter - 195
     // unique paths, zero radar-related), so REST polling is the only
     // way to learn about state changes; the rest of the resources tab
     // (waypoints / routes / notes / regions) is delta-driven now and
@@ -1046,7 +1046,7 @@
 
         // Pre-compute own-ship sin/cos of COG ONCE for the per-vessel
         // CPA pass below. Skips the trig + null-checks N times per
-        // BuildVesselList tick. Null is fine -- inner loop's
+        // BuildVesselList tick. Null is fine - inner loop's
         // ownLat-null guard already handles the missing-own-ship case.
         var ownSnap = (ownLat is not null && ownLon is not null)
             ? Cpa.PrecomputeOwn(ownLat.Value, ownLon.Value, ownCog, ownSog)
@@ -1153,7 +1153,7 @@
         chartPanelOpen = false;
         // Follow-boat mode re-centres on own boat on every position
         // update (roughly once per second), so focusVessel's panTo was
-        // being overwritten within 1 s -- the user saw a brief flash
+        // being overwritten within 1 s - the user saw a brief flash
         // of the selected vessel, then a snap back to own boat. Treat
         // "tap a vessel in the list" as the user asking for a look at
         // that vessel; follow has to let go. Keyboard / F-toggle /
@@ -1163,7 +1163,7 @@
         bool found = await _aisJs.FocusVesselAsync(context);
         if (!found)
         {
-            // The JS side couldn't find the marker -- vessel aged
+            // The JS side couldn't find the marker - vessel aged
             // out, AIS filter hid it, or the list was stale.
             // Toast + put follow back where it was so the helm
             // doesn't lose their view for a no-op tap.
@@ -1244,7 +1244,7 @@
     /// haven't been observed yet (first paint, before the initial
     /// moveend), fall through to "always show" so the panel isn't
     /// briefly empty. Waypoints with missing lat/lon are treated as
-    /// "show always" too -- a waypoint without a fix is degenerate
+    /// "show always" too - a waypoint without a fix is degenerate
     /// data and hiding it would leave the helm wondering where it
     /// went.</summary>
     private bool WaypointIntersectsViewport(SignalkWaypoint wp)
@@ -1256,7 +1256,7 @@
     }
 
     /// <summary>Point-in-bbox test for a note. Same fallback rules as
-    /// the waypoint variant -- missing position or pre-bounds state
+    /// the waypoint variant - missing position or pre-bounds state
     /// keeps the note in the panel rather than dropping it silently.
     /// </summary>
     private bool NoteIntersectsViewport(SignalkNote note)
@@ -1283,7 +1283,7 @@
         // On reconnect: replay any persisted pending MOB raises
         // (offline-emit recovery) + pull the active notification
         // list (cross-reload recovery). Best-effort; an error here
-        // gets logged and ignored -- the helm still has the
+        // gets logged and ignored - the helm still has the
         // synthetic local entry on the chart.
         if (SignalkClient.IsConnected)
         {
@@ -1350,7 +1350,7 @@
         // Hand the loaded module to the radar overlay host so the
         // manager can drive it. Wired here (not in DI) because the
         // module reference only exists after the import resolves.
-        // Toast surface plugged in once -- the manager calls back
+        // Toast surface plugged in once - the manager calls back
         // through here on overlay-start failures.
         RadarOverlayHost.SetModule(module);
         RadarOverlay.OnError = msg => Toasts.Error(msg);
@@ -1372,7 +1372,7 @@
         // bottom-centre range scale while the route HUD card sits
         // in that slot. Other wrappers stay in their current order.
         _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
-        // (MobChartRenderer.AttachJs moved AFTER initMap below --
+        // (MobChartRenderer.AttachJs moved AFTER initMap below -
         //  attaching it here meant the renderer's first ResyncRender
         //  fired before mobLayerMod.init(map, ...) ran inside initMap,
         //  so the bridge SetMobAsync lined up against a still-null
@@ -1570,7 +1570,7 @@
         // switched to Wind / History mid-watch). No-op here.
 
         // Re-enable charts the user had turned on before navigating
-        // away / reloading. Snapshot the persisted set FIRST -- if we
+        // away / reloading. Snapshot the persisted set FIRST - if we
         // iterate against Settings.EnabledChartIds directly, the
         // controller's ToggleAsync calls SetEnabledChartsAsync on
         // every iteration, which rewrites the persisted set to "only
@@ -1587,7 +1587,7 @@
         // permanent Leaflet base layers in initMap) plus any
         // SK-server chart whose name reads as "seamap" so the map
         // isn't blank on first visit. ChartsSeeded is persisted so
-        // this fires EXACTLY ONCE in a device's history -- earlier
+        // this fires EXACTLY ONCE in a device's history - earlier
         // revisions re-seeded whenever EnabledChartIds was empty,
         // which "reset" the user's deliberate choice to disable every
         // chart (common when plotter is paired with offline tiles).
@@ -1661,7 +1661,7 @@
         // Push the persisted chart-display CSS filter once at init so
         // every chart layer added below picks it up. addChartLayer
         // re-applies the current filter on each layer creation, so
-        // the order of "set filter" vs "add layers" is forgiving --
+        // the order of "set filter" vs "add layers" is forgiving -
         // we set it here so a tab opened on a stack of charts
         // pre-tinted by the helm doesn't flash unfiltered for one
         // paint while the OnSettingsChanged path catches up.
@@ -1701,7 +1701,7 @@
         KickInitialDataSyncAfterSubscribe();
 
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
-        // AtoNs are static enough not to need a timer -- push on
+        // AtoNs are static enough not to need a timer - push on
         // store-change events plus once after init. AtonsVisible
         // setting is honoured by setAtonsVisible JS-side.
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
@@ -1735,7 +1735,7 @@
         if (!welcomeVisible) await MaybeShowTouchCoachmarkAsync();
 
         // Resolve any deep-link from /map?focus=<type>:<id> or
-        // ?edit=<type>:<id> -- set by the Resources page's View / Edit
+        // ?edit=<type>:<id> - set by the Resources page's View / Edit
         // buttons. Runs after the REST seed + map module are ready so
         // the target layers are already on the map.
         await ApplyMapDeepLinkAsync();
@@ -1748,7 +1748,7 @@
         // niche restore prompt.
         await MaybeShowRouteDraftRestoreAsync();
         }
-        catch (JSDisconnectedException) { /* circuit gone -- no-op */ }
+        catch (JSDisconnectedException) { /* circuit gone - no-op */ }
         catch (ObjectDisposedException) { /* navigated away during load */ }
     }
 
@@ -1814,7 +1814,7 @@
         // re-apply the deep-link every time, and the URL shows /map
         // cleanly from the user's perspective. Use a relative path so
         // the SignalK-webapp mount point (e.g. /signalk-onaplotter/)
-        // is preserved -- an absolute "/map" jumps off-mount.
+        // is preserved - an absolute "/map" jumps off-mount.
         Nav.NavigateTo("map", forceLoad: false, replace: true);
     }
 
@@ -1829,7 +1829,7 @@
         // Three render paths consume it: the alarm rule
         // (CpaAlarmRule.EffectiveCpaRadiusNm), the chip classifier
         // (AisPushService.BuildSnapshot), and the visible rings
-        // (this call site). All three MUST settle on one number --
+        // (this call site). All three MUST settle on one number -
         // a previous bug had the rings narrow under anchor while
         // chips kept the underway threshold, helm saw chips outside
         // the rings and asked "how can this be?".
@@ -1887,7 +1887,7 @@
         // Chart-display CSS filter: re-push on any settings broadcast
         // so a slider commit (or a Settings-page edit) reaches the JS
         // layer without the helm having to flip the chart. Idempotent
-        // when the filter hasn't changed -- setChartFilter walks the
+        // when the filter hasn't changed - setChartFilter walks the
         // chart-layer map and assigns the same string to every
         // container's style.filter, which the browser elides.
         _ = PushChartFilterAsync();
@@ -2103,7 +2103,7 @@
     // boats burst higher) that allocated ~200 bytes plus the double
     // formatting cost on every delta. The struct holds the same fields
     // in their native form, gets value-equality for free, and is a stack-
-    // local on the comparison path -- zero per-tick heap traffic.
+    // local on the comparison path - zero per-tick heap traffic.
     //
     // Quantisation matches the original key's :Fn suffixes so the render
     // gate fires at the same granularity as before (e.g. SOG only
@@ -2178,7 +2178,7 @@
     /// before <c>OnAfterRenderAsync</c> has finished its REST seeds +
     /// chart / route restores and reaches the subscription line. Without
     /// a kick, <see cref="NavigationData"/> holds the active-route href
-    /// but the map is oblivious -- and on a moored vessel with no live
+    /// but the map is oblivious - and on a moored vessel with no live
     /// position deltas, nothing ever triggers a follow-up sync, so the
     /// helm sees their active route silently disappear on every page
     /// reload. Calling <see cref="HandleDataChanged"/> once after the
@@ -2209,12 +2209,12 @@
         {
             anchorEditMode = false;
             anchorEditBusy = false;
-            // Anchor is gone -- ServerAnchorSync will tear the on-
+            // Anchor is gone - ServerAnchorSync will tear the on-
             // map ring down; just drop the preview flag so a
             // subsequent panel re-open doesn't think there's still
             // an outstanding revert to do.
             _anchorPreviewActive = false;
-            Toasts.Warning("Anchor was raised by another plotter or the server -- panel closed");
+            Toasts.Warning("Anchor was raised by another plotter or the server - panel closed");
         }
 
         // Keep the sticky last-heading field current for the HUD compass needle.
@@ -2234,7 +2234,7 @@
         // Push own callsign once the SK feed has delivered it so
         // the ownship popup can show MMSI + callsign together.
         // Re-pushable: an SK feed might re-publish callsignVhf on
-        // a sensor swap, so we don't latch -- the JS setter is
+        // a sensor swap, so we don't latch - the JS setter is
         // idempotent for unchanged values anyway.
         if (SignalkClient.OwnCallsign is string callsign
             && callsign != _lastPushedOwnCallsign
@@ -2321,14 +2321,14 @@
             // 60 s refresh keeps the server polyline catching up to
             // the active leg without the helm having to toggle the
             // layer manually. When either the route or the
-            // server-track turns off, local emission resumes -- the
+            // server-track turns off, local emission resumes - the
             // trail picks up from the current fix (not bridged from
             // the pre-route position; the transition resets PrevLat /
             // PrevLon).
             await SyncRouteActiveServerTrackAsync();
 
             // Only re-render Blazor component if HUD values actually changed.
-            // The snapshot is a record struct -- equality is by value, no
+            // The snapshot is a record struct - equality is by value, no
             // string allocation per tick.
             var hudSnap = BuildHudSnapshot();
             if (!hudSnap.Equals(_lastHudSnapshot))
@@ -2343,7 +2343,7 @@
         {
             // A JS-side regression in any of updatePosition / setCourseLine
             // / setLaylines etc. used to bubble into Blazor's error UI and
-            // freeze the render pass -- that's what hid the own-boat marker
+            // freeze the render pass - that's what hid the own-boat marker
             // in the chartLayers crash. Swallow + log so the UI stays live
             // and the browser console still surfaces the regression for
             // the dev. We fire at 1 Hz; a toast per tick would be spam.
@@ -2422,7 +2422,7 @@
             // Fire-and-forget: the controller's RefreshAsync is
             // self-contained (toasts on empty result, swallows JS
             // disconnects on its own). Awaiting it here would block
-            // the per-tick frame-emit on a server round-trip --
+            // the per-tick frame-emit on a server round-trip -
             // the helm shouldn't see the position update halt while
             // history fetches.
             _ = _serverTrack!.RefreshAsync();
@@ -2441,7 +2441,7 @@
     // staleness on AIS markers). The provider is the same one
     // SignalkClient already takes; injecting here lets the harbor
     // filter helper be tested deterministically. Only the two AIS-
-    // payload sites use it for now -- the various pending / debounce
+    // payload sites use it for now - the various pending / debounce
     // timestamps elsewhere (course-stop, anchor-raise, race timer)
     // are left on DateTime.UtcNow because they're behaviour-tested
     // through Playwright, not C# unit tests.
@@ -2521,7 +2521,7 @@
 
     /// <summary>Helm flipped the "Show laylines" toggle. Persist;
     /// the per-tick frame already reads Settings.LaylinesVisible
-    /// directly so no extra JS push is needed -- when the flag goes
+    /// directly so no extra JS push is needed - when the flag goes
     /// false the next applyFrame skips the laylines branch and the
     /// JS layer drops the polylines on its own. We do call the
     /// explicit clear here so the lines vanish on the same tick the
@@ -2722,7 +2722,7 @@
         // Pre-fill hazard so the user's dialog choice carries into
         // the edit panel (where they can still toggle it before
         // saving). Without this the dialog flag was a no-op for
-        // polygons -- the panel always defaulted false.
+        // polygons - the panel always defaulted false.
         polygonEditIsHazard = newRegionIsHazard;
     }
 
@@ -2803,7 +2803,7 @@
     /// Called from the AIS popup's "Snooze alarm" link. Looks up any
     /// active alarm on this vessel (CPA is the common one) and silences
     /// it via AlarmManager.SnoozeAsync. If no alarm is currently active
-    /// on the target, nothing happens -- we don't "pre-silence" a
+    /// on the target, nothing happens - we don't "pre-silence" a
     /// future alarm because the AlarmManager tracks snoozes per-target
     /// which already covers the common "this boat is a false positive,
     /// mute it for 10 min" workflow once the first alarm fires.
@@ -2921,7 +2921,7 @@
         // Visual "stopping in progress" feedback until the SK delta
         // confirms (Data.ActiveRouteHref clears). Same pattern as the
         // anchor-raise feedback in NavigateRouteInternal / ToggleAnchor:
-        // don't optimistically mutate Data here -- that would mask a
+        // don't optimistically mutate Data here - that would mask a
         // server-side failure (PUT 200 but the plugin didn't actually
         // clear) AND race the next delta tick that would re-establish
         // the cleared course from the server's still-stale state. Let
@@ -3078,7 +3078,7 @@
     /// Re-sorts <see cref="availableCharts"/> via the controller's
     /// pure helper and flushes the filtered-layers cache so the
     /// Layers panel reflects the new order. Without this, the
-    /// reorder button looked like it did nothing -- the underlying
+    /// reorder button looked like it did nothing - the underlying
     /// order was right, but the UI rendered against a stale cache.
     /// </summary>
     private void ReSortAvailableCharts()
@@ -3098,7 +3098,7 @@
         if (enabled)
         {
             // Suppress the regular polyline if this route is the active
-            // course -- the active overlay handles the visual and a
+            // course - the active overlay handles the visual and a
             // duplicate polyline underneath reads as a stuck progress
             // bar. Same logic as ActiveRouteSync.
             if (_activeRouteSync?.ActiveRouteRegularSuppressed != route.Id)
@@ -3174,7 +3174,7 @@
             availableRoutes.Add(route);
         }
         // Adds change availableRoutes.Count, which is one of the keys
-        // RebuildFilteredLayers caches against -- flush + rebuild so
+        // RebuildFilteredLayers caches against - flush + rebuild so
         // the Layers panel section reflects the new entry immediately.
         // Topbar search index gets invalidated for the same reason.
         if (isNew)
@@ -3190,7 +3190,7 @@
 
         // If the route is currently shown on the chart (in enabledRoutes),
         // push the geometry update via UpdateRouteAsync (in-place
-        // setLatLngs + popup refresh + dot rebuild -- no flicker).
+        // setLatLngs + popup refresh + dot rebuild - no flicker).
         // updateRoute upserts: if leaflet doesn't have this id yet
         // it'll add fresh. Helm-toggleable visibility (enabledRoutes)
         // still gates: a route that's not enabled stays off the chart.
@@ -3236,7 +3236,7 @@
         await _routeJs.RemoveRouteAsync(id);
         if (removed > 0)
         {
-            // availableRoutes.Count went down -- flush the filter cache
+            // availableRoutes.Count went down - flush the filter cache
             // and topbar-search index so the Layers panel + search
             // dropdown stop showing the deleted route.
             lastFilterKey = default;
@@ -3282,7 +3282,7 @@
         await _resources.RedrawWaypointAsync(wp);
         if (isNew)
         {
-            // loadedWaypoints.Count grew -- flush the filter cache and
+            // loadedWaypoints.Count grew - flush the filter cache and
             // topbar-search index so the panel + dropdown pick it up.
             lastFilterKey = default;
             RebuildFilteredLayers();
@@ -3388,7 +3388,7 @@
     ///
     /// MarkManualNightToggleAsync records the env.sun cluster at
     /// toggle time so CheckAutoNightAsync suppresses until the next
-    /// day/night transition -- a deliberate cycle counts as a
+    /// day/night transition - a deliberate cycle counts as a
     /// manual override.</summary>
     private async Task CycleNightMode()
     {
@@ -3439,7 +3439,7 @@
     // toggles capture the env.sun cluster at toggle time; auto-night
     // suppresses while the current cluster matches that override
     // and clears the override (= resumes auto-night) when env.sun
-    // transitions to a different cluster -- "until the next day/
+    // transitions to a different cluster - "until the next day/
     // night change in between", per helm-feedback. Persisted in
     // Settings.LastManualNightOverrideSunCluster so the override
     // survives navigation / reload.
@@ -3461,7 +3461,7 @@
         if (wantNightNullable is not bool wantNight) return;
 
         var now = DateTime.UtcNow;
-        // 30 s throttle -- sun altitude changes at ~0.004 rad/min so we
+        // 30 s throttle - sun altitude changes at ~0.004 rad/min so we
         // don't need sub-minute responsiveness.
         if ((now - _lastAutoNightCheckUtc).TotalSeconds < 30) return;
         _lastAutoNightCheckUtc = now;
@@ -3469,7 +3469,7 @@
         // Cluster-suppression: if the helm manually toggled while
         // env.sun was in cluster X and env.sun is STILL in cluster
         // X, leave the override in place. When env.sun transitions
-        // to the other cluster, clear the override -- helm's choice
+        // to the other cluster, clear the override - helm's choice
         // applied to "this cycle"; the next cycle starts fresh.
         var currentCluster = SunClusterFromState(Data.SunState);
         if (Settings.LastManualNightOverrideSunCluster is string overrideCluster)
@@ -3505,7 +3505,7 @@
 
     /// <summary>Re-entry guard for the MOB drop / clear path. A slow
     /// JS interop or chime playback shouldn't let a second tap fire
-    /// SetMobAsync / ClearMobAsync before the first finished -- helm
+    /// SetMobAsync / ClearMobAsync before the first finished - helm
     /// would see two MOB markers or a clear-then-set race.</summary>
     private bool _mobOpInFlight;
 
@@ -3520,14 +3520,14 @@
                 // GPS is best-effort: a missing fix doesn't block the
                 // raise (the SK MOB notification value's position
                 // block is allowed to be null). Still warn the helm
-                // so they reach for the VHF / handheld -- the raise
+                // so they reach for the VHF / handheld - the raise
                 // is logged on the server but won't show a chart
                 // marker until a fix exists.
                 double? lat = Data.Latitude;
                 double? lon = Data.Longitude;
                 if (lat is null || lon is null)
                 {
-                    Toasts.Warning("MOB raised without a GPS fix -- use VHF and handheld");
+                    Toasts.Warning("MOB raised without a GPS fix - use VHF and handheld");
                 }
                 // Local-first via MobService: the synthetic enters
                 // the alarm pipeline immediately; the chart marker
@@ -3578,8 +3578,8 @@
         // active. Two-tap arm-then-confirm pattern lives on the
         // button itself (MapControls.razor); by the time
         // ToggleAnchor runs in this branch the helm has already
-        // confirmed. Adjusting the radius is a SEPARATE gesture --
-        // tap on the Anchor Watch HUD card -- so the Anchor button
+        // confirmed. Adjusting the radius is a SEPARATE gesture -
+        // tap on the Anchor Watch HUD card - so the Anchor button
         // stays unambiguously the "stop watching" action.
         if (Data.AnchorActive)
         {
@@ -3616,10 +3616,10 @@
             return;
         }
 
-        // No anchor active -- open the Drop panel.
+        // No anchor active - open the Drop panel.
         if (Data.Latitude is null || Data.Longitude is null)
         {
-            Toasts.Error("No GPS fix -- can't drop anchor");
+            Toasts.Error("No GPS fix - can't drop anchor");
             return;
         }
         OpenAnchorDropPanel();
@@ -3666,7 +3666,7 @@
     /// <list type="bullet">
     ///   <item>Already armed (MaxRadius published): current radius
     ///   rounded up to nearest 5 m, plus 5 m. Each Auto tap grows
-    ///   the alarm circle by 5 m -- the "boat drifted further,
+    ///   the alarm circle by 5 m - the "boat drifted further,
     ///   extend" gesture in the helm's words.</item>
     ///   <item>Just dropped, not armed: round-up of current
     ///   distance from boat to anchor (nearest 5 m). Gives a
@@ -3703,7 +3703,7 @@
     /// want to change?" instead of an Auto chip that would silently
     /// commit a different value. When NOT armed (just dropped, or
     /// helm closed without arming), default to Auto via the
-    /// UnseededInitialRadius sentinel -- helm-driven preference for
+    /// UnseededInitialRadius sentinel - helm-driven preference for
     /// the plugin-computed value on first arming.</summary>
     private void OpenAnchorSetRadiusPanel()
     {
@@ -3721,11 +3721,11 @@
     /// based on the response status code. 401 / 403 = auth problem
     /// (often a read-only helm role); 404 / 405 = endpoint missing
     /// (plugin not installed or v1.x). Without this disambiguation
-    /// every failure read as "v2.0.0+ required" -- a permission
+    /// every failure read as "v2.0.0+ required" - a permission
     /// problem sent the helm down the wrong rabbit hole.</summary>
     private static string AnchorFailureMessage(string verb, ApiResult r) => r.StatusCode switch
     {
-        401 or 403 => $"{verb} failed: permission denied -- check your SignalK login role",
+        401 or 403 => $"{verb} failed: permission denied - check your SignalK login role",
         404 or 405 => $"{verb} failed: anchor plugin v2.0.0+ required (open SignalK admin -> App Store -> Anchor Alarm)",
         _ => $"{verb} failed: {r.Error ?? "see browser console"}",
     };
@@ -3743,12 +3743,12 @@
         // Parent-side busy guard. The child panel's Busy parameter is
         // the primary defence but Blazor's render queue can let a fast
         // double-tap fire OnDropClicked twice before StateHasChanged
-        // propagates Busy=true back to the child -- two concurrent
+        // propagates Busy=true back to the child - two concurrent
         // POSTs would land.
         if (anchorEditBusy) return;
         if (Data.Latitude is null || Data.Longitude is null)
         {
-            Toasts.Error("No GPS fix -- can't drop anchor");
+            Toasts.Error("No GPS fix - can't drop anchor");
             return;
         }
         anchorEditBusy = true;
@@ -3758,7 +3758,7 @@
 
         if (r.Success)
         {
-            // Course clear AFTER a successful drop -- previously this
+            // Course clear AFTER a successful drop - previously this
             // ran first, which left the helm with a cleared course
             // AND no anchor whenever the drop failed.
             if (Data.HasActiveCourse)
@@ -3766,7 +3766,7 @@
                 try { await CourseApi.ClearAsync(); }
                 catch (Exception ex) { Toasts.LogException(ex, "Stop course"); }
             }
-            Toasts.Success("Anchor dropped -- back down, then tap Auto or pick a radius");
+            Toasts.Success("Anchor dropped - back down, then tap Auto or pick a radius");
             // Flip the panel directly to SetRadius mode so the helm
             // doesn't have to tap Anchor twice. Auto chip is the
             // default selection (UnseededInitialRadius sentinel).
@@ -3784,7 +3784,7 @@
 
     /// <summary>Visual-only preview: helm tapped a chip (or Auto's
     /// recomputed value changed mid-drift). Push the new radius to
-    /// the on-map alarm ring directly via JS interop -- NO PUT.
+    /// the on-map alarm ring directly via JS interop - NO PUT.
     /// Stored in <see cref="_anchorPreviewActive"/> so we know to
     /// revert the ring back to the server's MaxRadius if the helm
     /// closes the panel without tapping Set. The helm-visible
@@ -3803,7 +3803,7 @@
     /// the helm-chosen value. Plugin arms the alarm circle + starts
     /// publishing currentRadius for drift monitoring. The radius
     /// arg is the panel's effective pick (numeric chip face if
-    /// numeric is picked, AutoPreviewRadius if Auto is picked --
+    /// numeric is picked, AutoPreviewRadius if Auto is picked -
     /// both routes land here so the wire path is uniform).
     /// On success the panel auto-closes (helm picked, helm set,
     /// done); on failure it stays open so the helm can retry or

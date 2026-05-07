@@ -9,7 +9,7 @@ namespace OnaPlotter.Services.Alarms;
 /// O(1).
 /// <para>
 /// Lifetime: singleton, scoped to the app session. We never persist
-/// the set -- a reload starts with an empty tracker. That's correct
+/// the set - a reload starts with an empty tracker. That's correct
 /// because <see cref="AlarmPublisher"/> also clears its server-side
 /// raises on dispose, and a new session re-raises any still-live
 /// alarms on the next Evaluate tick.

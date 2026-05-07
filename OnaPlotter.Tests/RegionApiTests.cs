@@ -282,8 +282,11 @@ public class RegionApiTests
 
         await Assert.That(r.Success).IsTrue();
         await Assert.That(captured).IsNotNull();
-        // Top-level isHazard:true.
-        await Assert.That(captured!).Contains(",\"isHazard\":true,\"feature\":");
+        // Top-level isHazard:true. Don't anchor against the next
+        // field name - the createdAt / circle metadata block lives
+        // between isHazard and feature now and a stable suffix
+        // would over-pin the wire shape for no test value.
+        await Assert.That(captured!).Contains(",\"isHazard\":true,");
         // And inside properties (use the description anchor to pin the
         // exact pairing rather than a global "isHazard":true match
         // that the top-level emission would already satisfy).
@@ -294,7 +297,7 @@ public class RegionApiTests
     public async Task CreatePolygon_DefaultsIsHazardFalse()
     {
         // Existing call sites that didn't pass isHazard must keep
-        // emitting decorative regions -- adding the parameter must
+        // emitting decorative regions - adding the parameter must
         // not silently start flagging existing call sites' regions
         // as hazardous.
         string? captured = null;
@@ -322,7 +325,7 @@ public class RegionApiTests
     [Test]
     public async Task UpdatePolygon_EmitsIsHazardFlag()
     {
-        // PUT path mirrors POST -- a re-save with the flag set must
+        // PUT path mirrors POST - a re-save with the flag set must
         // round-trip the new value, and a re-save with it cleared must
         // round-trip the false explicitly (so toggling OFF actually
         // disarms the alarm rather than silently keeping the old true).

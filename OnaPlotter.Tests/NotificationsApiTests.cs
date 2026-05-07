@@ -6,7 +6,7 @@ namespace OnaPlotter.Tests;
 /// <summary>
 /// Pins the wire shape of every verb on <see cref="NotificationsApi"/>.
 /// The HTTP client is mocked so each test asserts on the exact method,
-/// URL, and body the SignalK v2 server expects -- regression guard
+/// URL, and body the SignalK v2 server expects - regression guard
 /// against a refactor or copy-paste accidentally hitting v1 paths,
 /// dropping the JSON body, or mis-encoding an id with special characters.
 /// </summary>

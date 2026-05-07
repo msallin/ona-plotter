@@ -229,8 +229,8 @@ public class ConfirmationServiceTests
     [Test]
     public async Task ChooseAsync_NonDestructive_NoConfirmLabel()
     {
-        // Choosers don't have a single "confirm" button -- each option
-        // is its own button -- so ConfirmLabel is null. The dialog
+        // Choosers don't have a single "confirm" button - each option
+        // is its own button - so ConfirmLabel is null. The dialog
         // host branches on IsChoice and renders the option buttons
         // instead of a primary button.
         var svc = new ConfirmationService();

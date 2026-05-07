@@ -15,7 +15,7 @@ name: Publish to npm
 #   2. Configured OIDC trusted publishing for this repo
 #      (Package Settings -> Trusted publishers on npmjs.com)
 #
-# Until then CI remains useful -- the tarball is attached to the GitHub
+# Until then CI remains useful - the tarball is attached to the GitHub
 # Release so anyone can `npm install ./signalk-onaplotter-<ver>.tgz`.
 
 on:
@@ -79,7 +79,7 @@ jobs:
           { "SignalK": { "ServerUrl": "auto" } }
           EOF
 
-      # Version from the tag -- strip leading 'v'. So tag v1.2.3 maps
+      # Version from the tag - strip leading 'v'. So tag v1.2.3 maps
       # to npm version 1.2.3. Pre-release identifiers (-alpha / -beta
       # / -rc) pass through unchanged and pick up the matching npm
       # dist-tag in the publish step below.

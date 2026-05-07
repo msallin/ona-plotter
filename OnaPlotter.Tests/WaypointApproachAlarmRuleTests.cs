@@ -84,7 +84,7 @@ public class WaypointApproachAlarmRuleTests
     [Test]
     public async Task Does_Not_Re_Fire_While_Still_Inside()
     {
-        // Sitting on top of the waypoint for multiple ticks -- we should
+        // Sitting on top of the waypoint for multiple ticks - we should
         // NOT keep firing the alarm. The helmsman dismissed it once;
         // pestering them for every tick is the bug the stateful rule
         // exists to prevent.
@@ -108,7 +108,7 @@ public class WaypointApproachAlarmRuleTests
 
         // First entry fires.
         await Assert.That(rule.Check(Ctx(near, 50))).IsNotNull();
-        // Leave the radius -- re-arm.
+        // Leave the radius - re-arm.
         await Assert.That(rule.Check(Ctx(far, 50))).IsNull();
         // Re-enter: should fire again for the same waypoint.
         await Assert.That(rule.Check(Ctx(near, 50))).IsNotNull();
@@ -167,7 +167,7 @@ public class WaypointApproachAlarmRuleTests
         var jitter = BuildNav(47.4 + 1e-7, 8.5 + 1e-7, distMeters: 30);
 
         await Assert.That(rule.Check(Ctx(first,  50))).IsNotNull();
-        // Same waypoint within epsilon -- must stay silent.
+        // Same waypoint within epsilon - must stay silent.
         await Assert.That(rule.Check(Ctx(jitter, 50))).IsNull();
     }
 

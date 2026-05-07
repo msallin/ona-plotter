@@ -24,7 +24,7 @@ public class MapResourceJsTests
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(11.2);
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo("Buoy A");
-        // Fifth slot is the createdAt ISO string -- pinned by
+        // Fifth slot is the createdAt ISO string - pinned by
         // position so a future shape change shows up here, not at
         // runtime as a misplaced popup field.
         await Assert.That(fake.Calls[0].args[4]).IsEqualTo("2026-04-25T12:00:00Z");
@@ -144,14 +144,23 @@ public class MapResourceJsTests
             new[] { new[] { 54.5, 11.2 }, new[] { 54.6, 11.3 }, new[] { 54.4, 11.1 } }
         };
 
-        await sut.AddRegionAsync("rg1", rings, "title", "desc");
+        await sut.AddRegionAsync("rg1", rings, "title", "desc",
+            isHazard: true, areaSqM: 12500.0,
+            centerLat: 54.5, centerLon: 11.2, radiusMeters: 50.0,
+            createdAtIso: "2026-05-07T12:30:00Z");
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("addRegion");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(4);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(10);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("rg1");
         await Assert.That(fake.Calls[0].args[1]).IsSameReferenceAs(rings);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo("title");
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo("desc");
+        await Assert.That((bool)fake.Calls[0].args[4]!).IsTrue();
+        await Assert.That(fake.Calls[0].args[5]).IsEqualTo(12500.0);
+        await Assert.That(fake.Calls[0].args[6]).IsEqualTo(54.5);
+        await Assert.That(fake.Calls[0].args[7]).IsEqualTo(11.2);
+        await Assert.That(fake.Calls[0].args[8]).IsEqualTo(50.0);
+        await Assert.That(fake.Calls[0].args[9]).IsEqualTo("2026-05-07T12:30:00Z");
     }
 
     [Test]
@@ -216,7 +225,10 @@ public class MapResourceJsTests
         await sut.RemoveWaypointMarkerAsync("w");
         await sut.AddNoteMarkerAsync("n", 0, 0, null, null, null);
         await sut.ClearNotesAsync();
-        await sut.AddRegionAsync("r", new List<double[][]>(), null, null);
+        await sut.AddRegionAsync("r", new List<double[][]>(), null, null,
+            isHazard: false, areaSqM: 0,
+            centerLat: null, centerLon: null, radiusMeters: null,
+            createdAtIso: null);
         await sut.ClearCirclePreviewAsync();
 
         await Assert.That(fake.Calls.Count).IsEqualTo(0);

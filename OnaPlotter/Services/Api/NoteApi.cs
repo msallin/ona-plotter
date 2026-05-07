@@ -63,7 +63,7 @@ public sealed class NoteApi : INoteApi
         // round-trip from the existing note so the helm doesn't lose
         // the anchor when they only meant to fix a typo.
         // CreatedAt similarly round-trips so an Edit doesn't reset
-        // the "first seen" timestamp -- the UI is "when was this
+        // the "first seen" timestamp - the UI is "when was this
         // pinned", not "when did the title change".
         if (note.Position is null) return Task.FromResult(ApiResult.Fail("note has no position"));
         var body = new

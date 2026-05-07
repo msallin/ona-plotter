@@ -25,7 +25,7 @@
 // The plugin also registers POST /log as a client-side error sink.
 // Blazor's "An unhandled error has occurred" banner is opaque on
 // iPad, and SSH-tailing the SignalK server log is the practical
-// debug path at the helm -- so the Blazor host installs window
+// debug path at the helm - so the Blazor host installs window
 // error listeners that POST to this endpoint. We forward each
 // payload through app.error() so the entry appears in the
 // standard SignalK log (journalctl -u signalk / /var/log/signalk).

@@ -5,7 +5,7 @@
 //
 // All inputs / outputs are pixel-space points expressed as
 // {x, y} pairs (the shape Leaflet's latLngToLayerPoint emits).
-// No lat/lon / spherical math here -- the caller is expected to
+// No lat/lon / spherical math here - the caller is expected to
 // project before invoking.
 
 /**

@@ -38,7 +38,7 @@ public interface IAlarmManager
     /// with the originating <see cref="IAlarmRule"/>. Used by
     /// cross-plotter publishers to ask each rule for its own
     /// <see cref="IAlarmRule.GetPublishPath"/> mapping rather than
-    /// reverse-engineering it from the alarm title -- so a new
+    /// reverse-engineering it from the alarm title - so a new
     /// rule can declare its publish path on the rule itself, and
     /// the publisher needs no knowledge of any specific rule's
     /// title taxonomy.</summary>

@@ -67,7 +67,7 @@ public class CpaTests
     {
         // Two boats cruising abreast at the same SOG + COG never close. Returning
         // a bogus TCPA=0 (the earlier behaviour) would trip CpaAlarmRule the
-        // instant their current separation was inside the alarm radius -- false
+        // instant their current separation was inside the alarm radius - false
         // alarm on classic convoy formation. Null is the correct "no closing
         // event".
         double oneNmInLon = 1.0 / 60.0;
@@ -81,7 +81,7 @@ public class CpaTests
     {
         // Two vessels straddling the 180/-180 boundary. Without longitude
         // unwrap, this looks like ~40 000 km of separation and CPA never
-        // fires. With unwrap, ~20 km on the short side -- and a head-on
+        // fires. With unwrap, ~20 km on the short side - and a head-on
         // closing pair gives a real TCPA.
         // Own just west of the date line at lon 179.95, target just east at
         // lon -179.95; each closing at 5 kn along the parallel.
@@ -192,7 +192,7 @@ public class CpaTests
     [Test]
     public async Task Threat_DangerEdge_AtJustInsideGuardZone()
     {
-        // Exactly on the boundary should NOT fire (strict < per code) -- a
+        // Exactly on the boundary should NOT fire (strict < per code) - a
         // helm setting "0.5 nm" expects 0.5 to mean "ok" still.
         var t1 = Cpa.ClassifyThreat(0.5, 5.0, Radius, Lookahead, WarnFactor, false);
         await Assert.That(t1).IsEqualTo(Cpa.Threat.Warning);
@@ -232,7 +232,7 @@ public class CpaTests
     public async Task EffectiveRadius_AnchorRadiusLargerThanUnderway_KeepsUnderway()
     {
         // Helm asked for 0.3 nm underway but their anchor swing is
-        // 1000 m (~0.54 nm). The cautious choice is the smaller --
+        // 1000 m (~0.54 nm). The cautious choice is the smaller -
         // 0.3 nm.
         await Assert.That(Cpa.EffectiveRadiusNm(0.3, anchorActive: true, anchorMaxRadiusM: 1000.0))
             .IsEqualTo(0.3);
@@ -244,7 +244,7 @@ public class CpaTests
         // SK anchoralarm-plugin race: anchor.position arrives a tick
         // before anchor.maxRadius. We don't want chips disappearing
         // for one tick on the path between "anchor active" and "have
-        // a radius" -- they should keep using the underway value
+        // a radius" - they should keep using the underway value
         // until we know better.
         await Assert.That(Cpa.EffectiveRadiusNm(0.5, anchorActive: true, anchorMaxRadiusM: null))
             .IsEqualTo(0.5);

@@ -6,7 +6,7 @@
 
 * text=auto eol=lf
 
-# Binary formats -- never touch.
+# Binary formats - never touch.
 *.png binary
 *.jpg binary
 *.jpeg binary
@@ -18,7 +18,7 @@
 *.dll binary
 *.pdb binary
 
-# Preserve CRLF on files Windows tooling insists on -- PowerShell is
+# Preserve CRLF on files Windows tooling insists on - PowerShell is
 # the live wire and its parser chokes less on CRLF. This matches the
 # committed state of the deploy scripts.
 *.ps1 text eol=crlf

@@ -22,7 +22,7 @@ function ensureContext() {
 // The chartplotter's alarm path is reactive (alarms can fire from
 // SignalR delta events long after page mount, with no preceding
 // click), so we pre-warm the context on the FIRST pointerdown /
-// keydown / touchstart -- by then it's already running and the
+// keydown / touchstart - by then it's already running and the
 // next startAlarm call doesn't trip the autoplay warning. The
 // listeners self-remove after one fire so they don't stay hot.
 function warmUp() {

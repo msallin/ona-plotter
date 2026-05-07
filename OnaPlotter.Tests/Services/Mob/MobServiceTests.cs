@@ -17,7 +17,7 @@ namespace OnaPlotter.Tests.Services.Mob;
 /// loop backoff is deterministic. The retry-loop Task is exposed
 /// by <c>MobService.GetRaiseLoopForTest</c> and awaited explicitly
 /// instead of polling on a wall-clock <c>Task.Delay</c>; same for
-/// observing pending-state changes -- the tests don't sleep.</para>
+/// observing pending-state changes - the tests don't sleep.</para>
 /// </summary>
 public class MobServiceTests
 {
@@ -25,7 +25,7 @@ public class MobServiceTests
 
     /// <summary>Test harness wiring real MobService against fakes.
     /// Implements IDisposable so every test uses
-    /// <c>using var f = NewFixture()</c> -- guarantees the retry
+    /// <c>using var f = NewFixture()</c> - guarantees the retry
     /// loop is cancelled at scope exit even if an assertion fails.
     /// Without this, a Task.Run loop suspended on FakeTimeProvider
     /// Delay or on the fake API's SuspendRaise gate would leak into
@@ -69,7 +69,7 @@ public class MobServiceTests
     /// cancel); otherwise blocks until the Task.Run handle completes.
     /// Tests that expect the loop to PARK indefinitely (e.g. on a
     /// FakeTimeProvider Task.Delay with no advance) must spin-wait
-    /// on observable state instead -- see <see cref="WaitForRaiseCountAsync"/>.</summary>
+    /// on observable state instead - see <see cref="WaitForRaiseCountAsync"/>.</summary>
     private static Task AwaitRaiseLoopAsync(MobService svc, string localId)
     {
         var t = svc.GetRaiseLoopForTest(localId);
@@ -238,7 +238,7 @@ public class MobServiceTests
         await Assert.That(serverEntry).IsNotNull();
         await Assert.That(serverEntry!.Latitude).IsEqualTo(47.5);
         await Assert.That(serverEntry.Longitude).IsEqualTo(8.5);
-        // Local synthetic was torn down -- single banner / single marker.
+        // Local synthetic was torn down - single banner / single marker.
         await Assert.That(f.Store.Active.Any(n => n.Path == MobPathPrefix + localId)).IsFalse();
         // Resolved-position cache was persisted under the serverId
         // so a future reload / restart can recover the coords.
@@ -272,13 +272,13 @@ public class MobServiceTests
         await f.Api.WaitForSuspendedRaiseAsync();
 
         // Server-twin WS echo arrives WHILE the REST POST is still
-        // suspended -- ServerId hasn't been written into pending yet.
+        // suspended - ServerId hasn't been written into pending yet.
         // OnPathChanged fires; ReconcileMobPath has nothing to match.
         f.Store.Apply("notifications.mob.race-srv", "emergency", "MOB",
             id: "race-srv",
             status: new NotificationStatus(false, false, false, true, true),
             latitude: 47.5, longitude: 8.5);
-        // Both entries are in the store right now -- this is the
+        // Both entries are in the store right now - this is the
         // duplicate-banner state.
         await Assert.That(f.Store.Active.Any(n => n.Path == localPath)).IsTrue();
         await Assert.That(f.Store.Active.Any(n => n.Path == "notifications.mob.race-srv")).IsTrue();
@@ -349,7 +349,7 @@ public class MobServiceTests
 
         var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
         // First attempt is unconditional (no backoff). Wait for it
-        // to land before advancing the clock -- a Clock.Advance
+        // to land before advancing the clock - a Clock.Advance
         // before the loop has registered its Task.Delay timer is a
         // no-op, leaving the timer parked at the wrong deadline.
         await WaitForRaiseCountAsync(f.Api, 1);
@@ -446,12 +446,12 @@ public class MobServiceTests
         await f.Service.InitializeAsync();
         // Yield so the replayed Task.Run can register its first
         // Task.Delay timer with the FakeTimeProvider before we
-        // advance -- otherwise the advance fires no timers and the
+        // advance - otherwise the advance fires no timers and the
         // delay parks at the wrong deadline.
         await Task.Delay(50);
 
         // After 1s, the saved AttemptCount=2 wait of 2s hasn't
-        // expired -- no POST yet.
+        // expired - no POST yet.
         f.Clock.Advance(TimeSpan.FromSeconds(1));
         await Task.Delay(20);
         await Assert.That(f.Api.RaiseMobCalls.Count).IsEqualTo(0);
@@ -520,7 +520,7 @@ public class MobServiceTests
                       + "\"Latitude\":47.5,\"Longitude\":8.5}]";
         await f.Kv.SetAsync("mob.resolvedPositions.v1", cacheJson);
         // The server's list returns the MOB but with no position
-        // (the realistic shape -- /mob discards POSt body position).
+        // (the realistic shape - /mob discards POSt body position).
         f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
         {
             ["recovered-id"] = new(
@@ -644,7 +644,7 @@ public class MobServiceTests
     public async Task ClearAsync_Returns_False_On_Api_Failure()
     {
         // TEST-003: the failure path on ClearAsync is part of the
-        // contract -- callers may want to surface a toast.
+        // contract - callers may want to surface a toast.
         using var f = NewFixture();
         f.Api.FailClearCount = 1;
         f.Store.Apply("notifications.mob.bar", "emergency", "MOB",
@@ -670,7 +670,7 @@ public class MobServiceTests
         var path = MobPathPrefix + localId;
         await Assert.That(f.Store.Active.Any(n => n.Path == path)).IsTrue();
         // Synchronize on the background Task.Run actually entering
-        // the gate before we mutate service state -- otherwise
+        // the gate before we mutate service state - otherwise
         // ClearAsync cancels the CTS before the loop has even
         // executed its first line and no API call gets recorded.
         await f.Api.WaitForSuspendedRaiseAsync();
@@ -679,7 +679,7 @@ public class MobServiceTests
 
         await Assert.That(ok).IsTrue();
         await Assert.That(f.Store.Active.Any(n => n.Path == path)).IsFalse();
-        // No REST clear fired -- no serverId existed.
+        // No REST clear fired - no serverId existed.
         await Assert.That(f.Api.ClearCalls.Count).IsEqualTo(0);
         // Retry loop must have been cancelled. Releasing the
         // SuspendRaise gate here would let any leaked loop fire a
@@ -729,7 +729,7 @@ public class MobServiceTests
         f.Api.FailRaiseCount = 1000;   // never succeed
         f.Api.SuspendRaise = false;     // let the first attempt fly
         var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
-        // Spin-wait until the first POST is recorded -- the loop's
+        // Spin-wait until the first POST is recorded - the loop's
         // first iteration is unconditional (no backoff). Awaiting
         // the loop Task itself would hang forever because attempts
         // 2+ are gated on Task.Delay against FakeTimeProvider, which
@@ -811,7 +811,7 @@ public class MobServiceTests
         /// call" before mutating service state. Without this the
         /// thread-pool scheduler can leave Task.Run unstarted and
         /// a subsequent ClearAsync cancels the CTS before the loop
-        /// ever ran -- making the call count off-by-one.</summary>
+        /// ever ran - making the call count off-by-one.</summary>
         private TaskCompletionSource? _raiseEnteredGate;
         public bool SuspendRaise
         {
@@ -826,7 +826,7 @@ public class MobServiceTests
                 else
                 {
                     // Release any parked call so its gate.Task.WaitAsync
-                    // completes -- otherwise the loop stays suspended
+                    // completes - otherwise the loop stays suspended
                     // forever even after a test sets SuspendRaise=false.
                     _suspendGate?.TrySetResult();
                     _suspendGate = null;
@@ -850,7 +850,7 @@ public class MobServiceTests
                 // Signal that we've entered the gate so the test
                 // can stop racing on Task.Run scheduling.
                 _raiseEnteredGate?.TrySetResult();
-                // WaitAsync(ct) throws OCE on cancellation -- exactly
+                // WaitAsync(ct) throws OCE on cancellation - exactly
                 // what the production retry loop needs to break out
                 // when the service disposes.
                 try { await gate.Task.WaitAsync(ct); }

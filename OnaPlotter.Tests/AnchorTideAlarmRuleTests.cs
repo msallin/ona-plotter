@@ -6,7 +6,7 @@ namespace OnaPlotter.Tests;
 
 public class AnchorTideAlarmRuleTests
 {
-    // IAppSettings stub lives in OnaPlotter.Tests/FakeSettings.cs -- shared
+    // IAppSettings stub lives in OnaPlotter.Tests/FakeSettings.cs - shared
     // across every alarm-rule test class. Tests that need non-default
     // values use object-initialiser syntax on the mutable properties.
 
@@ -107,7 +107,7 @@ public class AnchorTideAlarmRuleTests
     public async Task NoSignalKDraft_NoAlarm()
     {
         // Draft comes from SignalK only. Without design.draft.current
-        // (or .maximum) the rule stays dormant -- better a quiet alarm
+        // (or .maximum) the rule stays dormant - better a quiet alarm
         // than one running on a guessed default that could mask a real
         // grounding risk. The dormancy hint in the HUD tells the user
         // to set vessel.json.
@@ -123,7 +123,7 @@ public class AnchorTideAlarmRuleTests
     public async Task RisingTide_NoAlarm()
     {
         // heightNow < heightLow means the next "low water" is actually
-        // higher than current height -- i.e. tide is rising into its
+        // higher than current height - i.e. tide is rising into its
         // next low or we're already past it. No grounding risk.
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
@@ -135,7 +135,7 @@ public class AnchorTideAlarmRuleTests
     [Test]
     public async Task LwTooFarInFuture_NoAlarm()
     {
-        // LW is 10 hours away -- beyond the 6h lookahead. Don't alarm
+        // LW is 10 hours away - beyond the 6h lookahead. Don't alarm
         // on things the user has time to wake up for.
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
@@ -172,7 +172,7 @@ public class AnchorTideAlarmRuleTests
 
         rule.OnDismissed(first!, now);
 
-        // Same conditions, minutes later -- still silent.
+        // Same conditions, minutes later - still silent.
         var later = rule.Check(Ctx(nav, new FakeSettings(), now.AddMinutes(5)));
         await Assert.That(later).IsNull();
     }
@@ -193,7 +193,7 @@ public class AnchorTideAlarmRuleTests
         await Assert.That(first).IsNotNull();
         rule.OnDismissed(first!, now);
 
-        // Anchor goes up -- the tick with AnchorActive=false resets the latch.
+        // Anchor goes up - the tick with AnchorActive=false resets the latch.
         var up = BuildNav(anchored: false);
         await Assert.That(rule.Check(Ctx(up, settings, now.AddMinutes(1)))).IsNull();
 
@@ -212,7 +212,7 @@ public class AnchorTideAlarmRuleTests
     {
         // Boundary: depth from below-transducer never showed up. Without
         // a depth reading the rule can't subtract the predicted drop, so
-        // it must stay quiet -- doing the math against null would mean
+        // it must stay quiet - doing the math against null would mean
         // emitting a phantom warn off zero clearance.
         var rule = new AnchorTideAlarmRule();
         var now = DateTime.UtcNow;
@@ -276,7 +276,7 @@ public class AnchorTideAlarmRuleTests
 
         var alarm = rule.Check(Ctx(nav, new FakeSettings(), now));
         await Assert.That(alarm).IsNotNull();
-        // Format is "{mm}min" (no leading h0) -- pin the absence of "h"
+        // Format is "{mm}min" (no leading h0) - pin the absence of "h"
         // so a refactor that always prints "0h35" doesn't ship.
         await Assert.That(alarm!.Message).Contains("min");
         await Assert.That(alarm.Message).DoesNotContain("0h");

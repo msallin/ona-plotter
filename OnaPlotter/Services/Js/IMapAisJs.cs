@@ -49,7 +49,7 @@ public interface IMapAisJs
     Task<bool> FocusVesselAsync(string context);
 
     /// <summary>Toggle the on-map guard-zone ring (Misc layers section).
-    /// Independent of the CPA alarm pipeline -- the alarm still fires
+    /// Independent of the CPA alarm pipeline - the alarm still fires
     /// off the radius / lookahead values. Helms can declutter the
     /// chart without disabling the alarm itself.</summary>
     Task SetGuardZoneVisibleAsync(bool visible);

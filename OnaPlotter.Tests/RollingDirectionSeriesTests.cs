@@ -95,7 +95,7 @@ public class RollingDirectionSeriesTests
         await Assert.That(s.Count).IsEqualTo(0);
     }
 
-    // -- ShiftRateDegPerMin ---------------------------------------
+    // - ShiftRateDegPerMin ---------------------------------------
 
     [Test]
     public async Task ShiftRate_FewerThanFiveSamples_Null()
@@ -160,7 +160,7 @@ public class RollingDirectionSeriesTests
             .Throws<ArgumentOutOfRangeException>();
     }
 
-    // -- SnapshotIn -----------------------------------------------
+    // - SnapshotIn -----------------------------------------------
 
     [Test]
     public async Task SnapshotIn_Empty_ReturnsEmpty()

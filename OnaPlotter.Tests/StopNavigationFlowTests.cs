@@ -5,7 +5,7 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Pinning the contract that the JS-invokable Deactivate path on the
-/// active-route popup -- and the Stop Navigation context-menu entry --
+/// active-route popup - and the Stop Navigation context-menu entry -
 /// share via Map.razor.StopNavigation. The pure helper is the testable
 /// surface; Map.razor's job is to drive the visual side-effects.
 ///
@@ -17,7 +17,7 @@ public class StopNavigationFlowTests
 {
     /// <summary>Fake CourseApi that records whether ClearAsync was
     /// called and lets the test set the result. Other ICourseApi
-    /// methods throw -- the helper only uses Clear.</summary>
+    /// methods throw - the helper only uses Clear.</summary>
     private sealed class FakeCourseApi : ICourseApi
     {
         public int ClearCalls { get; private set; }

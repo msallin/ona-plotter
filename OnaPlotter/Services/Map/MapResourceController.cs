@@ -72,9 +72,24 @@ public sealed class MapResourceController
         // multiple).
         foreach (var r in regions)
         {
-            await _resourceJs.AddRegionAsync(r.Id, r.OuterRings, r.Name, r.Description);
+            await _resourceJs.AddRegionAsync(
+                r.Id, r.OuterRings, r.Name, r.Description,
+                r.IsHazard,
+                AreaForRings(r.OuterRings),
+                r.CenterLat, r.CenterLon, r.RadiusMeters,
+                FormatCreatedAt(r.CreatedAt));
         }
     }
+
+    private static double AreaForRings(IReadOnlyList<double[][]> rings) =>
+        rings is null || rings.Count == 0
+            ? 0
+            : OnaPlotter.Utilities.PolygonGeometry.AreaSquareMeters(rings[0]);
+
+    private static string? FormatCreatedAt(DateTime? createdAt) =>
+        createdAt is DateTime t
+            ? t.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture)
+            : null;
 
     // --- Per-resource redraw (delta-driven path) ---------------------
     //
@@ -101,7 +116,7 @@ public sealed class MapResourceController
     }
 
     /// <summary>Re-render a note marker after a store delta. Skipped
-    /// while the notes layer is hidden -- the helm hid them on
+    /// while the notes layer is hidden - the helm hid them on
     /// purpose; a remote edit shouldn't pop them back into view.</summary>
     public async Task RedrawNoteAsync(SignalkNote note)
     {
@@ -121,7 +136,12 @@ public sealed class MapResourceController
         if (!_regionsVisible) return;
         if (region.OuterRings.Count == 0) return;
         await _resourceJs.RemoveRegionAsync(region.Id);
-        await _resourceJs.AddRegionAsync(region.Id, region.OuterRings, region.Name, region.Description);
+        await _resourceJs.AddRegionAsync(
+            region.Id, region.OuterRings, region.Name, region.Description,
+            region.IsHazard,
+            AreaForRings(region.OuterRings),
+            region.CenterLat, region.CenterLon, region.RadiusMeters,
+            FormatCreatedAt(region.CreatedAt));
     }
 
     /// <summary>Drop a waypoint marker after a store-side delete.</summary>
@@ -167,7 +187,12 @@ public sealed class MapResourceController
         {
             foreach (var r in regions)
             {
-                await _resourceJs.AddRegionAsync(r.Id, r.OuterRings, r.Name, r.Description);
+                await _resourceJs.AddRegionAsync(
+                    r.Id, r.OuterRings, r.Name, r.Description,
+                    r.IsHazard,
+                    AreaForRings(r.OuterRings),
+                    r.CenterLat, r.CenterLon, r.RadiusMeters,
+                    FormatCreatedAt(r.CreatedAt));
             }
         }
         else

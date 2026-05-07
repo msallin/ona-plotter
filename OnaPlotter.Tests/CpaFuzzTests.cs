@@ -173,7 +173,7 @@ public class CpaFuzzTests
             double sog2 = rng.NextDouble() * MaxSogMs;
 
             var r1 = Cpa.Compute(lat1, lon1, cog1, sog1, lat2, lon2, cog2, sog2);
-            // Shift both lons by +360 -- still the same physical points.
+            // Shift both lons by +360 - still the same physical points.
             var r2 = Cpa.Compute(lat1, lon1 + 360.0, cog1, sog1, lat2, lon2 + 360.0, cog2, sog2);
 
             if (r1 is null || r2 is null)
@@ -239,7 +239,7 @@ public class CpaFuzzTests
     {
         // The buddy-list opt-out must hold regardless of CPA / TCPA
         // values. A regression that ignored the buddy flag would paint
-        // a friend's boat red on the chart -- guaranteed UX bug.
+        // a friend's boat red on the chart - guaranteed UX bug.
         var rng = new Random(Seed ^ 5);
         for (int i = 0; i < 500; i++)
         {
@@ -309,7 +309,7 @@ public class CpaFuzzTests
     [Test]
     public async Task ClassifyThreat_NullOrZeroTcpaIsNone()
     {
-        // tcpa <= 0 means "CPA is in the past" -- the rule must say
+        // tcpa <= 0 means "CPA is in the past" - the rule must say
         // None, not Warning, regardless of cpa value. Mirror of the
         // null-cpa case.
         await Assert.That(Cpa.ClassifyThreat(0.1, null,  0.5, 10.0, 2.0, false))

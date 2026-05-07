@@ -128,7 +128,7 @@ public sealed class TrackApi : ITrackApi
         if (from is DateTimeOffset fromUtc)
         {
             // Absolute window. Default the upper bound to "now" if the
-            // caller passed only `from` -- common for "everything since
+            // caller passed only `from` - common for "everything since
             // yesterday at 8am".
             var toUtc = to ?? DateTimeOffset.UtcNow;
             url += $"&from={Uri.EscapeDataString(fromUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture))}"
@@ -137,7 +137,7 @@ public sealed class TrackApi : ITrackApi
         else
         {
             // Relative window. Falls back to 24 hours when no timespan
-            // was given -- a sensible default for the History page's
+            // was given - a sensible default for the History page's
             // first paint.
             string isoDuration = ToIsoDuration(timespan ?? "1d");
             url += $"&duration={Uri.EscapeDataString(isoDuration)}";
@@ -147,7 +147,7 @@ public sealed class TrackApi : ITrackApi
         {
             // bbox query convention: south,west,north,east. Same order
             // Leaflet's Bounds.toBBoxString uses, same order GeoJSON's
-            // bbox member uses (modulo lon/lat swap -- GeoJSON is
+            // bbox member uses (modulo lon/lat swap - GeoJSON is
             // (west,south,east,north); we go (south,west,north,east)
             // here because that's the order signalk-parquet's bbox
             // extension accepts and our server is the source of truth).
@@ -231,7 +231,7 @@ public sealed class TrackApi : ITrackApi
             // timestamp; without position there's nothing to plot.
             if (len <= posIdx + 1) continue;
 
-            // Timestamp column 0 -- ISO 8601 string per SK History API.
+            // Timestamp column 0 - ISO 8601 string per SK History API.
             if (entry[0].ValueKind != JsonValueKind.String) continue;
             if (!DateTime.TryParse(entry[0].GetString(), CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
@@ -249,7 +249,7 @@ public sealed class TrackApi : ITrackApi
                 SpeedOverGround: TryGetNumber(entry, sogIdx),
                 CourseOverGround: TryGetNumber(entry, cogIdx),
                 Heading: TryGetNumber(entry, hdgIdx),
-                WindAngleApparent: null,        // not fetched -- the AWS/AWA sensors give no useful history at 30 s grain
+                WindAngleApparent: null,        // not fetched - the AWS/AWA sensors give no useful history at 30 s grain
                 WindSpeedApparent: null,
                 WindAngleTrue: TryGetNumber(entry, twaIdx),
                 WindSpeedTrue: TryGetNumber(entry, twsIdx)));
@@ -260,7 +260,7 @@ public sealed class TrackApi : ITrackApi
     /// <summary>Parse a <c>navigation.position</c> value cell. Both
     /// the array form (<c>[lon, lat]</c>, signalk-parquet default) and
     /// the object form (<c>{longitude, latitude}</c>, some influx
-    /// setups) are tolerated -- the History page shouldn't have to know
+    /// setups) are tolerated - the History page shouldn't have to know
     /// which provider is configured.</summary>
     private static bool TryParsePosition(JsonElement value, out double lat, out double lon)
     {

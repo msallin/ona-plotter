@@ -36,7 +36,7 @@ SignalK webapp on a Pi, or runs standalone from any browser.
   danger band; two-line vessel + CPA/TCPA label.
 - **Anchor watch** via [signalk-anchoralarm-plugin](https://github.com/sbender9/signalk-anchoralarm-plugin). Two-step drop + set-radius with on-map preview as you pick
   the chip; tide-aware grounding alarm when a tide plugin is feeding.
-- **MOB** -- one-tap drop with a pulsing red bullseye; non-snoozeable.
+- **MOB** - one-tap drop with a pulsing red bullseye; non-snoozeable.
   Same treatment for SART / EPIRB.
 - **Route + waypoint editing.** Tap-to-add, drag-to-move with dashed
   ghost + live Δ-distance, numbered waypoint list, undo. Reverse,
@@ -54,32 +54,32 @@ SignalK webapp on a Pi, or runs standalone from any browser.
   ruler (multi-segment), N↑ / C↑ / H↑ orientation cycle, race timer,
   legend modal.
 - **Cruise / Race mode** preset (Settings) flips defaults and surfaces
-  a performance card -- target boat speed from your polar, optimal TWA.
+  a performance card - target boat speed from your polar, optimal TWA.
   Mode picks defaults; every individual toggle still works in either.
 
 ### Other pages
 
-- **Dashboard** -- speed, course, position, depth, wind, tide, polar
+- **Dashboard** - speed, course, position, depth, wind, tide, polar
   performance at a glance.
-- **Gauges** -- circular instruments with colour zones, responsive grid.
-- **SailSteer** -- compass-rose view combining wind, heading, COG,
+- **Gauges** - circular instruments with colour zones, responsive grid.
+- **SailSteer** - compass-rose view combining wind, heading, COG,
   laylines, waypoint bearing.
-- **Wind Rose** -- TWD history with a 15 m / 30 m / 1 h / 3 h window.
-- **History** -- replay the full track for any window with play / pause
+- **Wind Rose** - TWD history with a 15 m / 30 m / 1 h / 3 h window.
+- **History** - replay the full track for any window with play / pause
   / step / speed and a scrub bar.
-- **Stats** -- passage stats (distance, time, max/avg SOG, ...).
-- **Paths** -- live SignalK path inventory: which paths your boat
+- **Stats** - passage stats (distance, time, max/avg SOG, ...).
+- **Paths** - live SignalK path inventory: which paths your boat
   publishes, latest values, source plugin. For diagnosing "why is this
   gauge empty?" without leaving the app.
-- **Raw Stream** -- live delta viewer with per-path filtering.
-- **Settings** -- Theme (System / Light / Dark), Night Mode (Soft /
+- **Raw Stream** - live delta viewer with per-path filtering.
+- **Settings** - Theme (System / Light / Dark), Night Mode (Soft /
   Amber / Red), sailing mode, alarm thresholds (depth, CPA, guard-zone
   lookahead, wind shift), polar-file upload with live polar diagram.
 
 ### Alarms
 
 - Stacked banner (up to three), ordered by `(severity, time-to-event,
-  priority)` -- so SHALLOW at TTI=0 beats pending CPA.
+  priority)` - so SHALLOW at TTI=0 beats pending CPA.
 - Snooze 10 min per vessel; snoozed chips show a live countdown.
 - Server-side notifications: anything any plugin emits on
   `notifications.*` joins the same banner stack with appropriate

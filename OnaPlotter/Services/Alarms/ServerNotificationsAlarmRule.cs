@@ -39,7 +39,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
         _publishedTracker = publishedTracker;
     }
 
-    /// <summary>Empty title -- this rule never goes through the
+    /// <summary>Empty title - this rule never goes through the
     /// single-output <see cref="Check"/> path. <see cref="CheckMany"/>
     /// builds a per-notification title via
     /// <see cref="DeriveTitleAndDefault"/>. Empty string is safer than
@@ -60,7 +60,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     /// a side-channel ClearByKey.</summary>
     public bool AutoClear => true;
 
-    /// <summary>Single-output Check is unused for this rule -- the
+    /// <summary>Single-output Check is unused for this rule - the
     /// store can have several notifications armed at once. Returning
     /// null here is correct: the manager calls
     /// <see cref="CheckMany"/> instead.</summary>
@@ -82,7 +82,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             // POSTs locally-emitted alarms to the SK server so other
             // plotters see them; the same delta loops back to us via
             // the WS feed and lands here. Surfacing it would render
-            // the same alarm twice in the banner stack -- once from
+            // the same alarm twice in the banner stack - once from
             // the originating client rule, once from the bridge.
             if (_publishedTracker?.IsOwnedPath(n.Path) == true) continue;
             yield return BuildAlarmInfo(n, _api);
@@ -108,7 +108,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
         // wired (production DI; absent in some legacy test ctors) and
         // (b) the server actually gave us an id to address. The
         // CanAcknowledge field on the acknowledger then mirrors the
-        // server's status.canAcknowledge -- false for emergency-state
+        // server's status.canAcknowledge - false for emergency-state
         // notifications the spec forbids silencing.
         IAlarmAcknowledger? ack = null;
         if (api is not null && n.Id is string id)
@@ -122,7 +122,7 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
             Severity: n.Severity,
             TargetKey: n.Path,
             TargetLabel: title,
-            // Server-decided alarms can be snoozed too -- the snooze
+            // Server-decided alarms can be snoozed too - the snooze
             // suppresses the visible banner but doesn't talk back to
             // the server (we just stop surfacing). Useful when a noisy
             // plugin is firing on a path the helm has already

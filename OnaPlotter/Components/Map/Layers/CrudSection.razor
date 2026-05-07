@@ -3,7 +3,7 @@
    Notes / Regions / Buddies / Vessels sections all share the same shape:
 
    1. Empty-collection guard ("@if (Items.Count == 0) return;").
-   2. Optional LayerFilter match -- the panel-wide search box hides
+   2. Optional LayerFilter match - the panel-wide search box hides
       the section entirely when its filtered list goes empty AND a
       filter is active.
    3. SectionHeader with title + count + expand/collapse toggle.
@@ -18,16 +18,16 @@
    their hand-rolled markup.
 
    The parent supplies:
-   - Title -- shown in the SectionHeader.
-   - Items + ItemKey -- the list and its @key selector.
-   - MatchesFilter (optional) -- the per-section filter predicate
+   - Title - shown in the SectionHeader.
+   - Items + ItemKey - the list and its @key selector.
+   - MatchesFilter (optional) - the per-section filter predicate
      (Waypoint matches name + id; Note matches title + description;
-     Charts has its own complex match -- so each section keeps its
+     Charts has its own complex match - so each section keeps its
      own match function).
-   - RowTemplate -- a RenderFragment<TItem> that renders the row's
+   - RowTemplate - a RenderFragment<TItem> that renders the row's
      content INSIDE a wrapping .chart-item div. The component owns
      the wrapper so the styling stays uniform across sections.
-   - HeaderExtras (optional) -- ChildContent slot inside the
+   - HeaderExtras (optional) - ChildContent slot inside the
      SectionHeader for per-section affordances (the Notes / Regions
      "Show on map" master toggle, etc).
 
@@ -83,7 +83,7 @@
 
     /// <summary>Per-section filter predicate. Receives the item and
     /// the trimmed filter text; returns true if the item matches.
-    /// Null means "no filter applied" -- the LayerFilter parameter
+    /// Null means "no filter applied" - the LayerFilter parameter
     /// passes through to the parent without affecting visibility.</summary>
     [Parameter] public Func<TItem, string, bool>? MatchesFilter { get; set; }
 

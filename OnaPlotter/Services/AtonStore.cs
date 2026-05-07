@@ -76,7 +76,7 @@ public sealed class AtonStore
 
     /// <summary>Drop everything. Called from SignalkClient on a websocket
     /// drop so a stale AtoN from before the disconnect doesn't haunt
-    /// the map while we're offline -- the server re-publishes the
+    /// the map while we're offline - the server re-publishes the
     /// active set on reconnect anyway. Resets the prune-timer too so
     /// the post-Reset state is symmetric with a freshly-constructed
     /// store.</summary>

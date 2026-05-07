@@ -4,7 +4,7 @@ using OnaPlotter.Utilities;
 namespace OnaPlotter.Services.Alarms;
 
 /// <summary>WIND SHIFT: TWD has moved more than the configured threshold
-/// over the lookback window. Transient -- latches on the banner until
+/// over the lookback window. Transient - latches on the banner until
 /// the user dismisses, since the underlying condition (a large shift
 /// over X minutes) is a point-in-time event, not a steady state.
 ///
@@ -20,7 +20,7 @@ namespace OnaPlotter.Services.Alarms;
 /// <c>environment.wind.speedTrue</c> = null on ticks where it can't
 /// derive TWS (typically: SOG is missing or zero, so AWS-minus-boat-
 /// motion can't be computed). That null is functionally identical to
-/// "below threshold" -- the wind data is unreliable and the helm
+/// "below threshold" - the wind data is unreliable and the helm
 /// asked the gate to suppress on unreliable data. We track whether
 /// TWS has EVER been live this session: once we've seen a non-null
 /// TWS, a later null is treated as below-threshold (suppressed).
@@ -54,7 +54,7 @@ public sealed class WindShiftAlarmRule : IAlarmRule
         if (twdRad is null) return null;
 
         // Light-wind gate. Only enforced when the user opted in (>0 kn).
-        // A missing TWS path (never seen in this session) bypasses --
+        // A missing TWS path (never seen in this session) bypasses -
         // installs that don't publish TWS shouldn't silently lose all
         // wind-shift alarms. A null after we've seen TWS go live is
         // treated as below-threshold: the SK plugin emits null when it
@@ -77,7 +77,7 @@ public sealed class WindShiftAlarmRule : IAlarmRule
         }
         else if (minTwsKn > 0 && _anyTwsSeen)
         {
-            // TWS path is publishing nulls AFTER having been live --
+            // TWS path is publishing nulls AFTER having been live -
             // treat as below-threshold so the helm doesn't get a
             // shift alarm fired on heading-noise TWD while becalmed.
             _anchorDeg = null;

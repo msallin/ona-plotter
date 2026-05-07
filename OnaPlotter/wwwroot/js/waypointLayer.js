@@ -27,7 +27,7 @@ export function init(map, deps) {
 
 // Formats the hover-tooltip content for a waypoint marker: name (or
 // short id if unnamed) above a compact coordinate pair. Returned as
-// HTML so the tooltip can break onto two lines -- plain-string
+// HTML so the tooltip can break onto two lines - plain-string
 // tooltips can't wrap.
 function formatWaypointTooltip(name, id, lat, lon) {
     const title = name || (id ? id.substring(0, 8) : 'Waypoint');
@@ -84,7 +84,7 @@ function buildWaypointPopupHtml(id, name, lat, lon, createdAtIso) {
         </div>`;
 }
 
-/** Single-click button wiring -- same shape as noteLayer's
+/** Single-click button wiring - same shape as noteLayer's
  *  wireSimpleClick. Inlined here rather than promoted to popupHelpers
  *  because both note and waypoint layers will gain different
  *  destination methods and a shared helper would force a "method
@@ -138,7 +138,7 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
     });
     hit.on('click', (ev) => {
         // During edit modes, swallow the click and forward the
-        // waypoint's location to whatever the user is plotting --
+        // waypoint's location to whatever the user is plotting -
         // matches the note marker's edit-mode behaviour.
         const flags = getEditModeFlags();
         if (flags.routeEdit || flags.polygonEdit || flags.measure) {
@@ -157,7 +157,7 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
         }
     });
     hit.on('popupopen', (ev) => {
-        // No .waypoint-focus-btn binding -- the button was removed
+        // No .waypoint-focus-btn binding - the button was removed
         // per helm field-feedback (see buildPopupHtml). The
         // C# WaypointFocus JSInvokable stays for the layers-panel
         // path; it just isn't wired from the popup any more.

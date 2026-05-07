@@ -75,7 +75,7 @@
     opacity: 1;
 }
 
-/* Scrollable nav column. Hide the scrollbar completely -- the nav
+/* Scrollable nav column. Hide the scrollbar completely - the nav
    almost never overflows (<10 items), and on the rare narrow-
    viewport case where it does, the hover / swipe-scroll still works
    without the visual clutter of a scrollbar track running down the
@@ -84,7 +84,7 @@
    to the rail's foot via margin-top:auto without forcing a fixed
    height on the nav above it. dvh tracks the live visible area
    (matches our html content box, which has env(safe-area-inset-*)
-   padding) -- 100vh would overflow on iPad PWA standalone. */
+   padding) - 100vh would overflow on iPad PWA standalone. */
 .nav-scrollable {
     display: flex;
     flex-direction: column;
@@ -92,7 +92,7 @@
     overflow-y: auto;
     scrollbar-width: none;                  /* Firefox */
     /* iOS Safari rubber-bands an overflow:auto container even when the
-       inner content fits -- the helm could swipe the nav up/down on
+       inner content fits - the helm could swipe the nav up/down on
        any page where the page itself fit without scrolling. Containing
        the overscroll stops the bounce; horizontally, we don't scroll
        at all so contain on x is also safe. */

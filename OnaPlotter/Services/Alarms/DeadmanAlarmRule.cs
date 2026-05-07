@@ -51,7 +51,7 @@ public sealed class DeadmanAlarmRule : IAlarmRule
         // Escalate to Danger if the user has slept past 2x the configured
         // window. Warn severity is the 3-second cadence; Danger is 1-second,
         // louder, and requires hold-to-dismiss. This is the "still there?"
-        // becoming "WAKE UP" transition -- matches ship's-watch practice
+        // becoming "WAKE UP" transition - matches ship's-watch practice
         // where the deck speaker gets triggered after a missed first check.
         // Honoured by the dismiss-cooldown escalation-bypass so a warn
         // dismiss doesn't silence a subsequent danger.
@@ -61,7 +61,7 @@ public sealed class DeadmanAlarmRule : IAlarmRule
 
         return new AlarmInfo(
             Title: Title,
-            Message: $"No interaction for {(int)elapsed.TotalMinutes} min -- still there?",
+            Message: $"No interaction for {(int)elapsed.TotalMinutes} min - still there?",
             Severity: severity,
             // TTI=0: "happening now", pins it above a pending CPA at TTI=5min.
             TimeToEventMinutes: 0);

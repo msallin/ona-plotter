@@ -76,7 +76,7 @@ public sealed class ShallowAlarmRule : IAlarmRule
         }
 
         if (d is null || d >= threshold) return null;
-        // SHALLOW is happening now -- TTI=0 pins it above any pending
+        // SHALLOW is happening now - TTI=0 pins it above any pending
         // danger alarm (a CPA still 5min out).
         return new AlarmInfo(
             Title: Title,

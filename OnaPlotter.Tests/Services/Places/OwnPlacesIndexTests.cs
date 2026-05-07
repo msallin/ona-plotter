@@ -133,7 +133,10 @@ public class OwnPlacesIndexTests
             Task.FromResult(ApiResult<string>.Ok(""));
         public Task<ApiResult<string>> CreatePolygonAsync(string name, string description, double[][] vertices, bool isHazard = false, CancellationToken ct = default) =>
             Task.FromResult(ApiResult<string>.Ok(""));
-        public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description, double[][] vertices, bool isHazard = false, CancellationToken ct = default) =>
+        public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description, double[][] vertices,
+            bool isHazard = false, DateTime? createdAt = null,
+            double? centerLat = null, double? centerLon = null, double? radiusMeters = null,
+            CancellationToken ct = default) =>
             Task.FromResult(ApiResult.Ok);
         public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default) =>
             Task.FromResult(ApiResult.Ok);
@@ -262,7 +265,7 @@ public class OwnPlacesIndexTests
     public async Task Concurrent_First_Calls_Coalesce_To_One_Api_Load()
     {
         // Two SearchAsync calls landing within the same render pass
-        // must NOT each trigger their own three-API fetch -- the
+        // must NOT each trigger their own three-API fetch - the
         // _inFlightLoad gate is the production invariant. A regression
         // (e.g. clearing the field too early, swapping the order of
         // assign+await) would silently double the API load on every
@@ -302,7 +305,7 @@ public class OwnPlacesIndexTests
         // the helm's CRUD lands and Map.razor calls Invalidate(); the
         // load completes with PRE-CRUD data and would (without the
         // generation guard) install it as the current cache with a
-        // fresh timestamp -- which is exactly what Invalidate exists
+        // fresh timestamp - which is exactly what Invalidate exists
         // to prevent. The generation-counter guard discards the
         // stale load; the next SearchAsync triggers a real reload.
         var wpts = new GatedWaypointApi();
@@ -316,7 +319,7 @@ public class OwnPlacesIndexTests
         await wpts.Started.Task;
 
         // CRUD lands. The waypoint API now reflects the new entry
-        // (simulate by adding to Waypoints) -- but the in-flight load
+        // (simulate by adding to Waypoints) - but the in-flight load
         // captured an empty Waypoints list before the add by holding
         // a reference at the gate.
         // For the test we model this by adding to the API state AND
@@ -334,7 +337,7 @@ public class OwnPlacesIndexTests
         wpts.Gate.SetResult();
         var firstResult = await firstSearch;
         // The first search returns whatever the (now-discarded) load
-        // had in _entries -- which is null because Invalidate ran. So
+        // had in _entries - which is null because Invalidate ran. So
         // SearchAsync re-checks _entries after EnsureLoadedAsync and
         // finds null, returning empty. (This is a corner of the
         // current API: the in-flight-load coalescer doesn't retry

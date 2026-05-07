@@ -158,7 +158,7 @@ public class AisStoreTests
     public async Task EmptyPath_IdentityObject_ExtractsNameAndMmsi()
     {
         // SignalK servers publish AIS message type 5 (static vessel data)
-        // as { path: "", value: { name, mmsi, ... } } -- a bulk identity
+        // as { path: "", value: { name, mmsi, ... } } - a bulk identity
         // snapshot. The previous flat-path switch didn't handle empty
         // paths, so vessels in that scenario showed only a MMSI label
         // on the chart (the "Ship names sometimes missing" bug). This
@@ -329,7 +329,7 @@ public class AisStoreTests
     {
         // Radar tracking ends and SignalkClient calls RemoveContext to
         // clear the target. The same target id can come back later (a
-        // dropped contact reacquired) -- unlike Evict, RemoveContext
+        // dropped contact reacquired) - unlike Evict, RemoveContext
         // must NOT add the context to the blocklist or the new delta
         // is silently dropped and the operator sees the target vanish
         // from the chart.
@@ -385,7 +385,7 @@ public class AisStoreTests
     {
         // Snapshot rebuild must filter on .Latitude/.Longitude. A vessel
         // whose only delta was a name (AIS msg type 5 ahead of any 1/3/4)
-        // should NOT appear in the rendered list -- it would draw at
+        // should NOT appear in the rendered list - it would draw at
         // (0,0) off the African coast otherwise.
         var store = new AisStore();
         store.Apply("vessels.urn:mrn:imo:mmsi:1", "name",
@@ -448,7 +448,7 @@ public class AisStoreTests
     public async Task UpdateBuddies_NoChange_DoesNotFire()
     {
         // Calling UpdateBuddies with the same set as last time must not
-        // refire OnAisUpdated -- the observer would otherwise repaint
+        // refire OnAisUpdated - the observer would otherwise repaint
         // the entire vessel list on every settings tick. Boundary case
         // for the "if (changed)" guard.
         var store = new AisStore();
@@ -459,7 +459,7 @@ public class AisStoreTests
         int fires = 0;
         store.OnAisUpdated += () => fires++;
 
-        // Same set again -- the buddy flag for bud-1 is already true,
+        // Same set again - the buddy flag for bud-1 is already true,
         // so no flip happens and the event must not fire.
         store.UpdateBuddies(["vessels.urn:mrn:imo:mmsi:bud-1"]);
         await Assert.That(fires).IsEqualTo(0);
@@ -470,7 +470,7 @@ public class AisStoreTests
     {
         // Wire-protocol robustness: a malformed delta could feed an
         // empty context here. The guard mirrors RemoveContext and
-        // SetName -- early-return so no event fires and no spurious
+        // SetName - early-return so no event fires and no spurious
         // blocklist entry is added.
         var store = new AisStore();
         int fires = 0;

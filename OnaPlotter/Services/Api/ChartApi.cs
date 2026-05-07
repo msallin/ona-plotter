@@ -31,7 +31,7 @@ public sealed class ChartApi : IChartApi
         // panel and the quick-bar, matching the visual convention of
         // "basemap stays under everything" (chart order is render
         // order, with the first-listed chart drawn lowest in the
-        // z-stack -- ChartLayerController.ApplyOrder controls this).
+        // z-stack - ChartLayerController.ApplyOrder controls this).
         var charts = new List<SignalkChart>(BuiltInCharts.All.Count + 8);
         charts.AddRange(BuiltInCharts.All);
 
@@ -65,7 +65,7 @@ public sealed class ChartApi : IChartApi
             // client-side basemaps at all. Console.WriteLine so a
             // developer inspecting DevTools sees the SK failure
             // without the errorRelayBoot.js console.error wrapper
-            // surfacing it as an unhandled error -- this is fully
+            // surfacing it as an unhandled error - this is fully
             // recovered by the basemap fallback.
             Console.WriteLine($"[charts] SK fetch failed: {ex.Message}");
         }

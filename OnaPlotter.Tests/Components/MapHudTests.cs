@@ -24,7 +24,7 @@ public class MapHudTests
 
     /// <summary>Stub <see cref="INavigationAverages"/>: empty buffers,
     /// every mean returns null. The HUD renders the live numbers
-    /// without the smoothed parenthetical -- which is what these tests
+    /// without the smoothed parenthetical - which is what these tests
     /// already expected before the averaging surface landed.</summary>
     private sealed class StubNavigationAverages : INavigationAverages
     {
@@ -161,7 +161,7 @@ public class MapHudTests
     public async Task Expanded_BottomLeft_Hides_Data_Rows_Without_Tide_Plugin()
     {
         // Vessel sitting in a marina with no tide data should expand to
-        // a nearly-empty expanded panel -- the compact view shows Depth,
+        // a nearly-empty expanded panel - the compact view shows Depth,
         // the expanded view has no extra rows to render.
         using var ctx = new Bunit.TestContext();
         var data = new NavigationData();
@@ -223,7 +223,7 @@ public class MapHudTests
 
         var extras = cut.Find(".hud-stack-br .hud-extra").TextContent;
         // Drift of +10° should be visible. COG itself is intentionally
-        // not duplicated in BR's extras -- it lives on the TL card.
+        // not duplicated in BR's extras - it lives on the TL card.
         await Assert.That(extras).Contains("+10");
     }
 
@@ -321,13 +321,13 @@ public class MapHudTests
     [Test]
     public async Task BuildAnchorSnapshot_HidesNeedle_WhenOwnShipPositionMissing()
     {
-        // No GPS fix on own-ship -- GeoBearing returns null and
+        // No GPS fix on own-ship - GeoBearing returns null and
         // the needle hides.
         using var ctx = new Bunit.TestContext();
         var data = new NavigationData();
         data.ApplyAnchorPosition(0.0, 0.0);
         data.Apply("navigation.anchor.maxRadius", 30.0);
-        // No ApplyPosition for own-ship -- GeoBearing returns null.
+        // No ApplyPosition for own-ship - GeoBearing returns null.
 
         var cut = Render(ctx, data);
 

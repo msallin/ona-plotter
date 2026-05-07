@@ -5,7 +5,7 @@ namespace OnaPlotter.Services.Api;
 /// activate a saved route, clear course, advance to next waypoint.
 ///
 /// Every method is a thin PUT/DELETE over the SignalK v2
-/// <c>/navigation/course</c> endpoint family -- OnaPlotter does NOT
+/// <c>/navigation/course</c> endpoint family - OnaPlotter does NOT
 /// maintain its own route-execution state. The server's course engine
 /// owns <c>activeRoute.pointIndex</c>, DTG, BTW, TTG, XTE; the client
 /// reads them back as deltas on <c>navigation.course*.nextPoint.*</c>.

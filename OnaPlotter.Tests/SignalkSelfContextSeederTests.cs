@@ -83,7 +83,7 @@ public class SignalkSelfContextSeederTests
     [Test]
     public async Task SeedAsync_404_DoesNotInvokeCallback()
     {
-        // No /v1/api/self endpoint -- silent at Debug level, callback
+        // No /v1/api/self endpoint - silent at Debug level, callback
         // stays untouched so SignalkClient's existing self-resolution
         // paths (hello message, vessels.* delta) remain authoritative.
         var (seeder, calls) = Build(HttpStatusCode.NotFound, "");

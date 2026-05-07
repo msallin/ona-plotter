@@ -41,7 +41,7 @@ public sealed class AisVessel
     /// vessel's mode. Common values: <c>"moored"</c>, <c>"anchored"</c>,
     /// <c>"sailing"</c>, <c>"motoring"</c>, <c>"under way"</c>,
     /// <c>"fishing"</c>, <c>"drifting"</c>, <c>"restricted manoeuverability"</c>.
-    /// Authoritative when present -- the moored-vessel filter trusts it
+    /// Authoritative when present - the moored-vessel filter trusts it
     /// over the SOG &lt; 1 kn / 60 s heuristic, which would otherwise tag
     /// any boat ghosting under sail in light wind, or a fishing vessel
     /// jogging on station, as "moored".
@@ -61,7 +61,7 @@ public sealed class AisVessel
     /// messages (computed as dimension A + dimension B). May be
     /// absent for vessels whose AIS transponder hasn't broadcast
     /// static yet, or for vessels without AIS at all (radar-only
-    /// targets always have null here). Optional in the popup --
+    /// targets always have null here). Optional in the popup -
     /// the row is hidden entirely when null, never shows "--".</summary>
     public double? LengthOverallMeters { get; set; }
 
@@ -173,7 +173,7 @@ public sealed class AisVessel
                 //   { id: 60 }                    -> name absent; skip
                 //                                    (previous code stringified the JSON,
                 //                                    producing e.g. '{"id":60}' on
-                //                                    the HUD -- worse than falling back
+                //                                    the HUD - worse than falling back
                 //                                    to the existing value).
                 //   "Sailing"                     -> plain string
                 //   number (enum id only)         -> no human label; skip
@@ -191,7 +191,7 @@ public sealed class AisVessel
                         ShipType = typeEl.GetString();
                         return true;
                     }
-                    return false; // unrecognised shape -- don't clobber with raw JSON text
+                    return false; // unrecognised shape - don't clobber with raw JSON text
                 }
                 if (rawValue is string s)
                 {
@@ -326,7 +326,7 @@ public sealed class AisVessel
             string fullPath = prefix.Length == 0 ? prop.Name : $"{prefix}.{prop.Name}";
             if (prop.Value.ValueKind == JsonValueKind.Object)
             {
-                // Try the full dotted path first -- some leaves in the
+                // Try the full dotted path first - some leaves in the
                 // switch take an object (design.aisShipType = { id, name }).
                 // Then recurse so deeper-nested scalars (rare but possible)
                 // also get dispatched.

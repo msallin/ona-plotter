@@ -3,7 +3,7 @@
 //
 // Pinning rationale: a regression that off-by-ones the threshold,
 // drops the floor guard, or counts sub-cap errors would silently
-// degrade -- the only on-helm signal is a console.warn. The pure
+// degrade - the only on-helm signal is a console.warn. The pure
 // function is the smallest seam that lets the branches fail loud.
 
 import { describe, it } from 'node:test';

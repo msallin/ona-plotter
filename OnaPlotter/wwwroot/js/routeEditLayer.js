@@ -6,7 +6,7 @@
 //
 // Undo semantics: each addEditWaypoint or insertEditVertexOnSegment
 // pushes the inserted index onto routeEditAddStack. Undo pops the
-// most-recent index and splices that vertex out -- so "undo last
+// most-recent index and splices that vertex out - so "undo last
 // thing I added" works for both append and mid-route insert (the
 // previous "pop the last coord" behaviour was wrong on inserts).
 
@@ -144,7 +144,7 @@ function rebuildRouteEditMarkers() {
 // the original position visible as a hollow ghost marker and draw a
 // dashed rubber-band line from it to the live cursor, with a tooltip
 // showing the delta distance. This matches what Axiom/Aqua Map do
-// when repositioning a waypoint -- the sailor always sees "how far
+// when repositioning a waypoint - the sailor always sees "how far
 // from where it was".
 function bindEditMarker(marker, idx) {
     let ghostLine = null;
@@ -244,7 +244,7 @@ export function undoLastEditWaypoint() {
     // appends this is always "remove the last"; for mid-route
     // inserts it's the inserted vertex, which is what the user
     // actually wanted undone. Fallback to last-coord pop when the
-    // stack is empty (happens after a loadRouteForEdit hydrate --
+    // stack is empty (happens after a loadRouteForEdit hydrate -
     // the existing coords weren't "added" in this session).
     let removeIdx;
     if (routeEditAddStack.length > 0) {
@@ -314,7 +314,7 @@ export function loadRouteForEdit(coords) {
     for (const c of coords) {
         addEditWaypoint(c[0], c[1]);
     }
-    // The loaded waypoints weren't "added" in this edit session --
+    // The loaded waypoints weren't "added" in this edit session -
     // the user didn't tap them here, they came from the server.
     // Clear the stack so Undo only removes vertices the user added
     // AFTER opening the existing route for edit.

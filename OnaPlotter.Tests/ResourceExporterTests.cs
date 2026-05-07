@@ -158,7 +158,7 @@ public class ResourceExporterTests
     {
         // OuterRings are stored Leaflet-order [lat, lon]. The export
         // must swap to [lon, lat] AND close the ring (first = last)
-        // per RFC 7946 -- some downstream tools (mapbox-gl, QGIS)
+        // per RFC 7946 - some downstream tools (mapbox-gl, QGIS)
         // refuse the polygon if the ring isn't closed.
         var region = new SignalkRegion
         {

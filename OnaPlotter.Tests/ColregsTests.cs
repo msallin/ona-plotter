@@ -128,7 +128,7 @@ public class ColregsTests
         // sees the target dead ahead. This is unphysical (two boats
         // can't occupy the same point) but a noisy GPS or a SignalK
         // self/AIS dispatch race could produce it. Pin: must not throw,
-        // must return SOMETHING -- callers can decide whether to
+        // must return SOMETHING - callers can decide whether to
         // suppress display when ownDistance == 0.
         var r = Colregs.Classify(
             ownLat: 47.5, ownLon: 8.5, ownCogRad: 0, ownSogMs: 5,

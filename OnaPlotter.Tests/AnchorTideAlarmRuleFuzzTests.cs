@@ -21,7 +21,7 @@ public class AnchorTideAlarmRuleFuzzTests
     /// <summary>Fixed clock for deterministic fuzz reproduction. Any
     /// real-clock dependency here would interact with LW window math
     /// across daylight-savings rolls, leap seconds, and the moving
-    /// 6-hour lookahead boundary -- noise that hides real failures.</summary>
+    /// 6-hour lookahead boundary - noise that hides real failures.</summary>
     private static readonly DateTime FixedNow =
         new(2026, 4, 29, 12, 0, 0, DateTimeKind.Utc);
 
@@ -75,7 +75,7 @@ public class AnchorTideAlarmRuleFuzzTests
         // TimeToEventMinutes and a non-empty Message.
         var rng = new Random(Seed ^ 1);
         var rule = new AnchorTideAlarmRule();
-        // Fixed clock so the test reproduces from the seed alone --
+        // Fixed clock so the test reproduces from the seed alone -
         // a flaky DateTime.UtcNow inside the loop would interact
         // with the LW lookahead window in non-deterministic ways.
         var now = FixedNow;
@@ -195,12 +195,12 @@ public class AnchorTideAlarmRuleFuzzTests
         for (int i = 0; i < 200; i++)
         {
             var now = FixedNow;
-            // Pick LW between 6.1 and 24 hours out -- always outside
+            // Pick LW between 6.1 and 24 hours out - always outside
             // the alarm window.
             double hoursToLw = 6.1 + rng.NextDouble() * 18.0;
             var nav = BuildNav(anchored: true,
                 depth: 1.0,
-                heightNow: 3.0,        // huge tide drop -- would alarm at 3h
+                heightNow: 3.0,        // huge tide drop - would alarm at 3h
                 heightLow: 0.0,
                 now.AddHours(hoursToLw),
                 signalkDraft: 1.5);

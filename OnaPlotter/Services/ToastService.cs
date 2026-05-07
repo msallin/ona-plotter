@@ -32,7 +32,7 @@ public sealed class ToastService : IToastService
         // identical cards on top of each other. If the same
         // (message, level) is already active, refresh its expiry so
         // the latest occurrence drives the dismissal clock and skip
-        // the new entry. Pinned toasts are not deduplicated -- a
+        // the new entry. Pinned toasts are not deduplicated - a
         // pinned card has no expiry to refresh, and the only call site
         // (MOB) won't fire identical lat/lon often enough to matter.
         for (int i = 0; i < _toasts.Count; i++)
@@ -83,8 +83,8 @@ public sealed class ToastService : IToastService
     /// <inheritdoc/>
     public Guid Pinned(string message, ToastLevel level = ToastLevel.Info)
     {
-        // ExpiresAt is irrelevant on a pinned toast -- the Active
-        // sweep skips them -- but DateTime.MaxValue makes the intent
+        // ExpiresAt is irrelevant on a pinned toast - the Active
+        // sweep skips them - but DateTime.MaxValue makes the intent
         // visible if the value ever surfaces in a debugger.
         var t = new Toast(Guid.NewGuid(), message, level, DateTime.MaxValue, IsPinned: true);
         _toasts.Add(t);
@@ -155,7 +155,7 @@ public sealed class ToastService : IToastService
     /// timer (the Id is preserved, so we can't tell from out here
     /// that a refresh happened). If the original timer fires while
     /// the refreshed expiry is still in the future, we MUST NOT
-    /// remove the toast -- the helm sees the latest occurrence's
+    /// remove the toast - the helm sees the latest occurrence's
     /// dwell time, not the first occurrence's. The previous version
     /// (id-only RemoveAll) silently defeated the dedup-refresh in
     /// exactly the flaky-transport scenario the feature exists for.
@@ -170,7 +170,7 @@ public sealed class ToastService : IToastService
             // to propagate to TaskScheduler.UnobservedTaskException.
             try
             {
-                // The !IsPinned guard is defense-in-depth -- this
+                // The !IsPinned guard is defense-in-depth - this
                 // helper is only ever called from Show / ShowAction
                 // (neither creates a pinned toast) and Toast is a
                 // record so IsPinned can't flip after construction

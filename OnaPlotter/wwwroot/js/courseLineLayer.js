@@ -21,8 +21,8 @@ let courseLineLeg = null;
 let courseLineBearing = null;
 let courseLineXte = null;
 // Pulsing marker at the destination waypoint. Drawn here (not just
-// in activeRouteLayer.js) so the "Navigate Here" flow -- which
-// drops a course destination but never creates a route -- still
+// in activeRouteLayer.js) so the "Navigate Here" flow - which
+// drops a course destination but never creates a route - still
 // gets the active-WP visual cue. When a route IS active the
 // activeRouteLayer pulses its OWN marker at the same coord with a
 // higher zIndex + the "WP N" tooltip; the two stack visibly (helm-

@@ -3,7 +3,7 @@
 //
 // Display formatters (speed colour, lat/lon DMS, knots conversion,
 // range-ring label, ETA, MOB elapsed, AIS staleness opacity) live in
-// `format.js` -- their canonical home is C# Utilities/Format.cs +
+// `format.js` - their canonical home is C# Utilities/Format.cs +
 // SpeedColor.cs + StalenessOpacity.cs and the JS module mirrors those
 // with cross-reference comments. Re-exported below for back-compat
 // with existing callers; new code should import from `format.js`.

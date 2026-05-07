@@ -11,7 +11,7 @@ namespace OnaPlotter.Tests.Components;
 /// bUnit tests for RoutesSection. The section has three action
 /// buttons (Go, Edit, Delete) so the wiring between the row-local
 /// callbacks and the parent's OnToggle / OnEdit / OnNavigate /
-/// OnDelete is worth pinning -- misrouting any of them silently
+/// OnDelete is worth pinning - misrouting any of them silently
 /// activates the wrong flow.
 ///
 /// Delete goes through <see cref="IConfirmationService"/>. We

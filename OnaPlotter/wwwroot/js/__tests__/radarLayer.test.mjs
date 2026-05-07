@@ -1,6 +1,6 @@
 // Tests for the radarLayer helpers exported via _internal. The render
 // loop itself depends on Leaflet + Canvas + DOM and isn't unit-tested
-// here -- the helpers are the policy decisions worth pinning.
+// here - the helpers are the policy decisions worth pinning.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +36,7 @@ test('shouldSuppressLowReturn: blue-dominant normal pixel above mediumReturn is 
 
 test('shouldSuppressLowReturn: green-dominant normal pixel above mediumReturn is kept', () => {
     // Bytes 8+ on HALO transition to green-dominant
-    // (#009966, #00cc33, #00ff00, ...) -- those are real targets
+    // (#009966, #00cc33, #00ff00, ...) - those are real targets
     // and must stay visible.
     const legend = { mediumReturn: 5 };
     assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#009966ff' }, 8, legend), false);
@@ -51,10 +51,10 @@ test('shouldSuppressLowReturn: red / yellow normals are kept', () => {
 });
 
 test('shouldSuppressLowReturn: index 0 (no echo) is never suppressed', () => {
-    // Byte 0 is the "no echo" marker -- already transparent in any
+    // Byte 0 is the "no echo" marker - already transparent in any
     // sane palette. The metadata-path is gated on index >= 1 so the
-    // rule can't include it. The colour-path could otherwise -- a
-    // pixel of #000088ff at index 0 would be blue-dominant -- so
+    // rule can't include it. The colour-path could otherwise - a
+    // pixel of #000088ff at index 0 would be blue-dominant - so
     // pin both gating cases.
     const legend = { mediumReturn: 5 };
     assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#00000000' }, 0, legend), false);
@@ -81,7 +81,7 @@ test('shouldSuppressLowReturn: colour check still fires when legend lacks medium
 
 test('shouldSuppressLowReturn: null pixel returns false', () => {
     // Defensive: a malformed legend.pixels[] entry shouldn't crash
-    // the legend setup -- it just renders transparent via the
+    // the legend setup - it just renders transparent via the
     // existing parseLegendColor path.
     assert.equal(shouldSuppressLowReturn(null, 2, { mediumReturn: 5 }), false);
     assert.equal(shouldSuppressLowReturn(undefined, 2, { mediumReturn: 5 }), false);

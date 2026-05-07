@@ -13,7 +13,7 @@ namespace OnaPlotter.Services.Resources;
 /// blocks side by side.
 ///
 /// <para><b>Threading</b>: not thread-safe. Mirrors
-/// <see cref="ResourceStore"/>'s contract -- Blazor WASM is single-
+/// <see cref="ResourceStore"/>'s contract - Blazor WASM is single-
 /// threaded, so the lock-free read + mutate-on-event pattern is
 /// fine. Snapshots handed out to consumers are safe to iterate
 /// even while a mutation lands (the cached <see cref="Snapshot"/>
@@ -29,7 +29,7 @@ internal sealed class ResourceTypeCache<T> where T : class
 
     /// <param name="typeLabel">Singular form ("route", "waypoint",
     /// "note", "region") used as the prefix in subscriber-throw
-    /// log messages -- "[resources] route changed subscriber threw".
+    /// log messages - "[resources] route changed subscriber threw".
     /// Keep it lowercase to match the surrounding log style.</param>
     public ResourceTypeCache(string typeLabel, ILogger logger)
     {

@@ -43,7 +43,7 @@ public class RangeScaleTests
         // Helm zooms tight harbour: 200 px sample = 5 m on the
         // ground = 0.0027 nm. Ladder bottoms at 0.02. Without the
         // width cap the bar would render at 200 * 0.02 / 0.0027
-        // = 1481 px -- 7x wider than the reference sample, lying
+        // = 1481 px - 7x wider than the reference sample, lying
         // about its own length.
         var pick = RangeScale.PickFor(0.0027, 200, 8);
         await Assert.That(pick.NiceNm).IsEqualTo(0.02);

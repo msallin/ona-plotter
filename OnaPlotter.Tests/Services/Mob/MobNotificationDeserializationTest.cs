@@ -6,7 +6,7 @@ namespace OnaPlotter.Tests.Services.Mob;
 /// <summary>Pin the deserialiser against the actual JSON shape signalk-server
 /// returns from GET /signalk/v2/api/notifications. Helm pasted live data
 /// twice in a row showing the MOB + position + createdAt arriving on the
-/// wire but the chart marker still missing -- this test reproduces that
+/// wire but the chart marker still missing - this test reproduces that
 /// exact response and asserts every field round-trips correctly.</summary>
 public class MobNotificationDeserializationTest
 {

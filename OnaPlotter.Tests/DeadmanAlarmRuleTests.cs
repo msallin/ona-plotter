@@ -154,7 +154,7 @@ public class DeadmanAlarmRuleTests
     {
         // Inverse of the Night_Override case: a helm who only wants the
         // deadman watch at night sets day=0, night=15. During day mode
-        // the rule MUST stay silent -- the ternary picks the day value
+        // the rule MUST stay silent - the ternary picks the day value
         // (0) when NightMode is false, and 0 disables the feature. A
         // refactor that flipped the precedence (e.g. always preferring
         // the larger of the two) would silently re-enable a watch the

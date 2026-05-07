@@ -36,11 +36,11 @@ public sealed class CpaAlarmRule : IAlarmRule
     /// (<c>Map.razor.PushGuardZoneAsync</c>) all settle on one number.
     /// <para>
     /// The user-configured <see cref="IAlarmThresholds.CpaAlarmThreshold"/>
-    /// is the underway value -- typically 0.3..0.5 nm so a developing
+    /// is the underway value - typically 0.3..0.5 nm so a developing
     /// crossing situation has time to read. When the boat is anchored
     /// (<see cref="NavigationData.AnchorActive"/> = the SignalK
     /// anchoralarm-plugin has a drop point set) the threshold narrows
-    /// to the anchor's max swing radius -- an alarm fires only when a
+    /// to the anchor's max swing radius - an alarm fires only when a
     /// vessel could enter the anchor circle, not on every passer-by.
     /// </para>
     /// </summary>
@@ -85,7 +85,7 @@ public sealed class CpaAlarmRule : IAlarmRule
         // Harbor mode bundle: while the helm is entering / leaving a
         // busy harbour, every other vessel is a "near miss" so the
         // klaxon would fire continuously and the helm would silence
-        // it -- defeating the alarm. Suppressing the rule entirely
+        // it - defeating the alarm. Suppressing the rule entirely
         // (paired with hiding the CPA arcs JS-side) lets the helm
         // focus on the chart + immediate obstacles. Reset to false
         // on every page reload so a forgotten Harbor mode never
@@ -101,7 +101,7 @@ public sealed class CpaAlarmRule : IAlarmRule
         double tcpaLimit = ctx.Settings.GuardZoneLookaheadMinutes;
 
         // Pre-compute own-ship sin/cos of COG ONCE here rather than on
-        // every vessel inside the loop -- a busy harbour push has 200+
+        // every vessel inside the loop - a busy harbour push has 200+
         // targets at ~3 Hz and the own-ship trig is invariant across
         // the loop. Null short-circuits the whole pass.
         var ownSnap = Cpa.PrecomputeOwn(
@@ -136,15 +136,15 @@ public sealed class CpaAlarmRule : IAlarmRule
 
             string name = v.Name ?? v.Mmsi ?? "vessel";
             // Compact countdown format matching the on-chart CPA
-            // chip: "0.42nm T -5′" -- prime glyph for minutes,
+            // chip: "0.42nm T -5′" - prime glyph for minutes,
             // signed leading dash so it reads as "time-minus-N"
             // rather than "T plus N". Helm reads CPA distance +
             // time-to-encounter as one phrase.
             //
             // Append the COLREGS classification + role when the
-            // encounter resolves into a rule -- the helm reads the
+            // encounter resolves into a rule - the helm reads the
             // banner exactly when a decision is needed and the
-            // "Crossing -- give way" hint shaves seconds off the
+            // "Crossing - give way" hint shaves seconds off the
             // 'who turns?' lookup that otherwise lives in the AIS
             // popup. Indeterminate / no-role cases skip the suffix
             // so a parallel-course encounter doesn't get a
@@ -169,9 +169,9 @@ public sealed class CpaAlarmRule : IAlarmRule
             string? colregsShort = Colregs.ShortLabel(colregs.Category);
             string? colregsRole = Colregs.RoleLabel(colregs.Role);
             if (colregsShort is not null && colregsRole is not null)
-                suffix = $" -- {colregsShort}, {colregsRole}";
+                suffix = $" - {colregsShort}, {colregsRole}";
             else if (colregsShort is not null)
-                suffix = $" -- {colregsShort}";
+                suffix = $" - {colregsShort}";
             return new AlarmInfo(
                 Title: Title,
                 Message: $"{name}: CPA {cpa.Value.CpaNm:F2}nm T -{cpa.Value.TcpaMin:F0}′{suffix}",

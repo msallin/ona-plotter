@@ -38,6 +38,6 @@ public interface IAppSettings :
 
     /// <summary>One-shot bootstrap. Loads every persisted value
     /// from <see cref="IKeyValueStore"/>. Safe to call multiple
-    /// times -- subsequent calls re-read storage.</summary>
+    /// times - subsequent calls re-read storage.</summary>
     Task InitializeAsync();
 }

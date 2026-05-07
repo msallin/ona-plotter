@@ -77,7 +77,7 @@ public class HistorySegmentRenderTests
         // Moving segment but no SOG samples landed in the window
         // (e.g. AIS-feed-only position with no speed plumbing). The
         // tooltip MUST NOT print "SOG: 0.0 avg / 0.0 max / 0.0 min kn"
-        // because that's a lie -- the helm would conclude the boat
+        // because that's a lie - the helm would conclude the boat
         // was stationary while moving.
         var s = Seg(T0, T0.AddHours(1), stationary: false,
             distanceM: 5 * 1852.0,

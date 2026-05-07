@@ -58,7 +58,7 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Follow)</span>
                     <span>@(Follow ? "Follow" : "Free")</span>
                 </button>
-                @* Centre / Fit Track are second-tier on mobile -- the
+                @* Centre / Fit Track are second-tier on mobile - the
                    helm pinch-zooms / pans by default, and the chevron
                    buttons in the route HUD plus Follow give the
                    one-tap "back to the boat" path. Hidden on phone to
@@ -117,7 +117,7 @@
                 {
                     <button class="ctrl-more-item ctrl-more-overflow"
                             @onclick="() => Select(OnStopClicked)"
-                            title="Stop navigation -- clear the active route / destination">
+                            title="Stop navigation - clear the active route / destination">
                         <span class="ctrl-more-ico">@((MarkupString)Icons.X)</span>
                         <span>@(stopConfirming ? "Confirm?" : "Stop")</span>
                     </button>
@@ -138,13 +138,13 @@
                     </button>
                 }
                 @* Layers intentionally NOT in the More menu's
-                   phone-overflow list -- the helm flagged it as
+                   phone-overflow list - the helm flagged it as
                    the most-used button so it stays in the bar
                    alongside More (the only two visible buttons on
                    phone). *@
                 <div class="ctrl-more-sep ctrl-more-overflow"></div>
 
-                @* Legend + Tips/Shortcuts hidden on mobile -- both are
+                @* Legend + Tips/Shortcuts hidden on mobile - both are
                    reference modals that aren't useful in a one-handed
                    helm context, and Tips lists keyboard shortcuts that
                    don't apply to a phone. *@
@@ -162,24 +162,24 @@
                    without dropping into Settings. *@
                 <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnCycleNight)"
-                        title="Night mode (N) -- tap to cycle off / dusk / soft / amber / red">
+                        title="Night mode (N) - tap to cycle off / dusk / soft / amber / red">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
                     <span>Night @(NightMode ? "(" + NightModePreset + ")" : "")@(ShowKeyboardHints ? " (N)" : "")</span>
                 </button>
                 @* Harbor mode: a single switch that bundles AIS / collision
-                   suppressions for entering a busy port -- moored vessels
+                   suppressions for entering a busy port - moored vessels
                    hidden, name labels off, COG vectors off, CPA arcs off,
                    CPA audio alarm muted, guard ring hidden. Resets to OFF
                    on every page reload (in-memory only) so a forgotten
                    Harbor mode never silently rides into open water. *@
                 <button class="ctrl-more-item @(HarborMode ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleHarborMode)"
-                        title="Harbor mode -- hide moored vessels, names, COG, CPA, guard ring (resets on reload)">
+                        title="Harbor mode - hide moored vessels, names, COG, CPA, guard ring (resets on reload)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Harbor)</span>
                     <span>Harbor@(HarborMode ? " (on)" : "")</span>
                 </button>
                 @* Orient lives in the More menu now (was in the bar). It's a
-                   set-and-forget choice -- helms cycle North-up / Course-up /
+                   set-and-forget choice - helms cycle North-up / Course-up /
                    Heading-up at most a few times per passage, so it doesn't
                    earn a permanent bar slot. *@
                 <button class="ctrl-more-item"
@@ -244,7 +244,7 @@
        "end the current safety state" grouping: a route and a manual
        anchor are already mutually exclusive in the code, so rendering
        their kill-switches together mirrors that pairing. The button
-       only appears while a route is active -- no visual dead weight
+       only appears while a route is active - no visual dead weight
        when there's nothing to stop. *@
     @if (RouteNavigating)
     {
@@ -259,12 +259,12 @@
         <button class="ctrl-btn ctrl-btn-overflow ctrl-btn-danger @(stopConfirming ? "ctrl-btn-confirming" : "")"
                 style="--confirm-window: @(ConfirmWindowMs)ms;"
                 @onclick="OnStopClicked"
-                title="@(stopConfirming ? "Tap again to confirm" : "Stop navigation -- clear the active route / destination")">
+                title="@(stopConfirming ? "Tap again to confirm" : "Stop navigation - clear the active route / destination")">
             <span class="ctrl-ico">@((MarkupString)Icons.X)</span>
             <span class="ctrl-lbl">@(stopConfirming ? "Confirm?" : "Stop")</span>
         </button>
     }
-    @* MOB: one-tap DROP (no confirm -- every second matters in a real
+    @* MOB: one-tap DROP (no confirm - every second matters in a real
        MOB event), two-tap CLEAR when already active. Matches the Stop
        button's confirm pattern so the two safety-critical red buttons
        feel the same under stress. *@
@@ -291,13 +291,13 @@
        above the Add button.
 
        Route lives inside this menu rather than as its own top-level
-       button -- the bar was getting crowded and "add a new thing to
+       button - the bar was getting crowded and "add a new thing to
        the map" is the shared conceptual bucket. The route icon on the
        Add button gets an `.active` modifier during edit so the user
        sees the in-progress state without opening the menu. *@
     <div class="ctrl-more-wrap ctrl-btn-overflow">
         <button class="ctrl-btn @(FabMenuOpen || RouteEditMode ? "active" : "")" @onclick="OnToggleFab"
-                title="@(RouteEditMode ? "Editing a route -- see the panel above" : "Add waypoint / note / region / route at map centre")">
+                title="@(RouteEditMode ? "Editing a route - see the panel above" : "Add waypoint / note / region / route at map centre")">
             <span class="ctrl-ico">@((MarkupString)Icons.Plus)</span>
             <span class="ctrl-lbl">Add</span>
         </button>
@@ -319,7 +319,7 @@
                 <button class="ctrl-more-item @(RouteEditMode ? "active" : "")"
                         @onclick="() => SelectFab(OnStartRouteEdit)"
                         disabled="@RouteEditMode"
-                        title="@(RouteEditMode ? "Already editing a route" : "Start a new route -- tap the map to add waypoints")">
+                        title="@(RouteEditMode ? "Already editing a route" : "Start a new route - tap the map to add waypoints")">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Route)</span>
                     <span>Route</span>
                 </button>
@@ -330,7 +330,7 @@
     @* Measure sits immediately right of Add: helm asked for it next to
        the create-bucket since both are "shape work I'm doing on the
        chart". Was previously between Follow and Centre, where it
-       interrupted the navigation grouping. No `ctrl-btn-overflow` --
+       interrupted the navigation grouping. No `ctrl-btn-overflow` -
        Measure earns a permanent bar slot on every viewport (the More
        menu's phone-overflow Measure entry is gone too). *@
     <button class="ctrl-btn ctrl-btn-overflow @(MeasureActive ? "active" : "")"
@@ -356,7 +356,7 @@
        even though every other control collapsed into More. The
        More menu still carries a Layers row for the desktop overflow
        but it's gated by .ctrl-more-overflow which only shows on
-       phone -- on phone the bar version is enough so the duplicate
+       phone - on phone the bar version is enough so the duplicate
        is suppressed below in the @media block. *@
     <button class="ctrl-btn @(LayersPanelOpen ? "active" : "")" @onclick="OnToggleLayers"
             title="Layers panel">
@@ -526,7 +526,7 @@
     // menu. Measure used to be in this list, but it now lives on the
     // bar (right of Add) on every viewport size; the bar button itself
     // shows the active state, so the More dot would be misleading.
-    // Harbor mode IS in the list -- the helm needs to see at a glance
+    // Harbor mode IS in the list - the helm needs to see at a glance
     // "alarms are suppressed" so a forgotten Harbor mode doesn't ride
     // into open water. Laylines moved to the Layers panel under the
     // master "Show ship lines" toggle so they're no longer here.
@@ -551,7 +551,7 @@
     // --- More overflow menu ---
     // MoreMenuOpen is now owned by the parent (Map.razor) so the three
     // bottom-bar flyouts (More / Add / Layers) can be mutually
-    // exclusive -- opening one must close the others. The parent
+    // exclusive - opening one must close the others. The parent
     // routes the tap through OnToggleMore, which flips the flag and
     // closes the siblings.
     [Parameter] public bool MoreMenuOpen { get; set; }

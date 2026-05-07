@@ -10,7 +10,7 @@ namespace OnaPlotter.Services.Signalk;
 /// One-shot REST fetch of <c>design.draft</c> for the self vessel.
 /// Draft is declared statically in vessel.json on almost every
 /// install, so the delta stream never replays it after subscribe.
-/// No v2 equivalent exists yet -- v1 is the only source -- so this
+/// No v2 equivalent exists yet - v1 is the only source - so this
 /// stays on the v1 REST surface.
 ///
 /// <para>Architecture review (2026-04-28) ARCH-006 carved this out

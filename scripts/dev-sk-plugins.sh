@@ -2,10 +2,10 @@
 # One-time installer for the SK plugins OnaPlotter exercises in the
 # dev instance:
 #
-#   * signalk-anchoralarm-plugin (sbender9, v2.0.0+) -- target of the
+#   * signalk-anchoralarm-plugin (sbender9, v2.0.0+) - target of the
 #     v2 anchor flow rework. Without it OnaPlotter falls through to
 #     the manual JS-only flow on every drop.
-#   * signalk-tides-api -- supplies environment.tide.* paths so the
+#   * signalk-tides-api - supplies environment.tide.* paths so the
 #     tide HUD + anchor-tide alarm can leave their dormant state.
 #
 # Plugins land in the sk-data named volume so they persist across

@@ -17,7 +17,7 @@ public class AisSartAlarmRuleTests
         => await Assert.That(AisSart.Category(mmsi)).IsEqualTo(expected);
 
     [Test]
-    [Arguments("211234567")]     // German flag (21x) -- normal vessel
+    [Arguments("211234567")]     // German flag (21x) - normal vessel
     [Arguments("123456789")]     // no known prefix
     [Arguments("971234567")]     // 971 is reserved but not one of the three we watch
     [Arguments("979999999")]     // 979 ditto

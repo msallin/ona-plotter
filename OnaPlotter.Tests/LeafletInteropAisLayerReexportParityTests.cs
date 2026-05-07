@@ -8,7 +8,7 @@ namespace OnaPlotter.Tests;
 /// <see cref="OnaPlotter.Services.Js.IMapAisJs"/>) is also
 /// re-exported from <c>leafletInterop.js</c>. The C# JS module
 /// reference is the leafletInterop.js module, NOT aisLayer.js
-/// directly -- so an export that lives in aisLayer.js without a
+/// directly - so an export that lives in aisLayer.js without a
 /// matching re-export crashes at runtime in the helm's browser
 /// with "X is not a function".
 ///
@@ -42,7 +42,7 @@ public class LeafletInteropAisLayerReexportParityTests
         var aisLayer = ReadJs("aisLayer.js");
         var interop  = ReadJs("leafletInterop.js");
 
-        // Match `export function NAME(` -- covers the regular export-
+        // Match `export function NAME(` - covers the regular export-
         // function declarations the file uses for its public API.
         var rx = new Regex(@"export\s+function\s+(?<name>[a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(");
         var aisLayerExports = rx.Matches(aisLayer)

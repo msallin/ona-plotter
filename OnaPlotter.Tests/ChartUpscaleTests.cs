@@ -15,7 +15,7 @@ public class ChartUpscaleTests
         // Pinned because the Settings UI <input min/max>, the JS
         // decorator clamp, and the persistence loader all reference
         // these values; drift breaks the contract across surfaces.
-        // The analyzer thinks comparing constants is pointless --
+        // The analyzer thinks comparing constants is pointless -
         // it is, at compile time, but the assertion still runs at
         // test time, which is precisely the drift signal we want.
 #pragma warning disable TUnitAssertions0005
@@ -54,7 +54,7 @@ public class ChartUpscaleTests
     public async Task Effective_DisabledMaster_ReturnsZero()
     {
         // Even a configured value of 5 must be ignored when the master
-        // flag is off -- the call site uses Effective to collapse the
+        // flag is off - the call site uses Effective to collapse the
         // two settings into a single integer the JS decorator can use.
         await Assert.That(ChartUpscale.Effective(false, 5)).IsEqualTo(0);
         await Assert.That(ChartUpscale.Effective(false, 2)).IsEqualTo(0);

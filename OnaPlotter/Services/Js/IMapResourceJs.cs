@@ -47,8 +47,22 @@ public interface IMapResourceJs
 
     /// <summary>Draw a region polygon. Outer rings are stored as
     /// <see cref="IReadOnlyList{T}"/> on <c>SignalkRegion</c>; pass
-    /// the same shape through.</summary>
-    Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings, string? title, string? description);
+    /// the same shape through. The popup carries the helm-facing
+    /// metadata: <paramref name="isHazard"/> (drives both the red
+    /// stroke and the warning glyph at the centroid),
+    /// <paramref name="areaSqM"/> (computed by C# via
+    /// PolygonGeometry so the unit-test catches a regression),
+    /// <paramref name="centerLat"/> / <paramref name="centerLon"/>
+    /// + <paramref name="radiusMeters"/> (set when the region was
+    /// created as a circle so the popup renders "centre + radius"
+    /// instead of a vertex dump), and
+    /// <paramref name="createdAtIso"/> (ISO-8601 UTC; null = dash).
+    /// </summary>
+    Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings,
+        string? title, string? description, bool isHazard,
+        double areaSqM,
+        double? centerLat, double? centerLon, double? radiusMeters,
+        string? createdAtIso);
 
     /// <summary>Remove a previously-drawn region polygon.</summary>
     Task RemoveRegionAsync(string id);

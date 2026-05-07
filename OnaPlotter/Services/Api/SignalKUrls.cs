@@ -44,7 +44,7 @@ public static class SignalKUrls
 
     // Course paths MUST include /vessels/self/ per the SignalK v2
     // Course API spec. Earlier these omitted the prefix and the
-    // server returned 404 on every call -- Set Destination, Set
+    // server returned 404 on every call - Set Destination, Set
     // Active Route, Advance Next Point, Clear. Auto-advance
     // looked broken because even when the notification edge fired,
     // CourseApi.AdvanceActiveRouteAsync hit a 404 and the server
@@ -76,7 +76,7 @@ public static class SignalKUrls
 
     /// <summary>Plugin-specific drop endpoint. Empty JSON body sets
     /// the anchor position from the current GPS without committing
-    /// a radius -- the helm's preferred two-step flow (drop now,
+    /// a radius - the helm's preferred two-step flow (drop now,
     /// pick radius after backing down). The standard SK PUT path
     /// (<see cref="AnchorPositionPath"/>) also works but the plugin
     /// flow matches the plugin's admin UI behaviour exactly +
@@ -107,21 +107,21 @@ public static class SignalKUrls
     /// via the next delta echo.</summary>
     public const string NotificationsPath = "/signalk/v2/api/notifications";
 
-    /// <summary>POST /{id}/acknowledge -- mark a server notification
+    /// <summary>POST /{id}/acknowledge - mark a server notification
     /// acknowledged. Server re-emits the delta with
     /// <c>status.acknowledged = true</c> so every connected plotter
     /// drops its banner in lock-step.</summary>
     public static string NotificationAcknowledge(string id) =>
         $"{NotificationsPath}/{Uri.EscapeDataString(id)}/acknowledge";
 
-    /// <summary>POST /{id}/silence -- hide the audible portion of a
+    /// <summary>POST /{id}/silence - hide the audible portion of a
     /// notification while leaving its visual state intact. Useful for
     /// "I see it, stop the klaxon" without clearing the underlying
     /// condition.</summary>
     public static string NotificationSilence(string id) =>
         $"{NotificationsPath}/{Uri.EscapeDataString(id)}/silence";
 
-    /// <summary>DELETE /{id} -- clear a server notification (state
+    /// <summary>DELETE /{id} - clear a server notification (state
     /// transitions to <c>normal</c> and the entry is GC'd from the
     /// server's in-memory map after 60 s). Used by the "publish
     /// plotter alarms" flow when the underlying client-side rule
@@ -129,7 +129,7 @@ public static class SignalKUrls
     public static string NotificationById(string id) =>
         $"{NotificationsPath}/{Uri.EscapeDataString(id)}";
 
-    /// <summary>POST /mob -- raise a Man Overboard safety alarm. The
+    /// <summary>POST /mob - raise a Man Overboard safety alarm. The
     /// server generates the UUID; clients cannot inject one. Body is
     /// <c>{}</c> or <c>{ "message": "..." }</c>; response carries
     /// <c>{ state, id }</c>.</summary>
@@ -182,7 +182,7 @@ public static class SignalKUrls
     /// the expected SK origin (scheme is ws/wss, host+port match the
     /// page origin). A hostile or compromised plugin could otherwise
     /// hand the client an attacker-controlled URL and the browser
-    /// would dutifully open it -- exfiltration / SSRF-via-browser /
+    /// would dutifully open it - exfiltration / SSRF-via-browser /
     /// pivoting onto LAN hosts the SK server itself can't reach.
     /// Returns true when the URL is safe to connect to.
     /// </summary>

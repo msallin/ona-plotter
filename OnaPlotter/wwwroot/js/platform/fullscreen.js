@@ -5,12 +5,12 @@
 // iPad Safari caveat: the Fullscreen API only works for <video> (and
 // sometimes <iframe>) elements on iOS. Calling requestFullscreen() on
 // document.documentElement silently fails / no-ops, and subsequent
-// fullscreenchange events never fire -- so isFullscreen() stays false
+// fullscreenchange events never fire - so isFullscreen() stays false
 // and the topbar toggle is stuck "off" even though the user perceives
 // a fullscreen-ish state. We detect iOS and fall back to a CSS class
 // on <html> (.ios-fullbleed) that hides browser chrome-adjacent UI
 // via styling alone. A home-screen-installed PWA is the real
-// fullscreen path on iPad -- see manifest.json display: fullscreen.
+// fullscreen path on iPad - see manifest.json display: fullscreen.
 
 // Module-level refs hoisted to the top so unsubscribe() reads them
 // without ESLint's no-use-before-define firing. _attachedBtn /
@@ -29,7 +29,7 @@ function isIos() {
 }
 
 function isStandalone() {
-    // Home-screen installed PWA -- already "fullscreen" from the user's
+    // Home-screen installed PWA - already "fullscreen" from the user's
     // point of view. The topbar toggle should reflect that so we don't
     // prompt users to enter a fullscreen they're already in.
     try {
@@ -137,14 +137,14 @@ export function getState() {
 // True when tapping the button will produce a visible change.
 //
 // Three cases:
-//   1. Standalone PWA -- already fullscreen at launch, button is
+//   1. Standalone PWA - already fullscreen at launch, button is
 //      noise. Return false so it's hidden.
-//   2. iPad Safari tab -- requestFullscreen on the document root
+//   2. iPad Safari tab - requestFullscreen on the document root
 //      silently rejects, BUT toggle() falls back to a CSS class
 //      (.ios-fullbleed) that hides the topbar and narrows the
 //      sidebar. That's a real "give me more chart" affordance,
 //      worth showing the button for. Return true.
-//   3. Desktop / Android Chromium / Firefox -- standard
+//   3. Desktop / Android Chromium / Firefox - standard
 //      Fullscreen API works. Return document.fullscreenEnabled.
 export function isSupported() {
     if (isStandalone()) return false;

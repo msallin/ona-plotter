@@ -37,7 +37,7 @@ public interface IMapAnchorJs
     Task UpdateAnchorRadiusAsync(double radiusMeters);
 
     /// <summary>Visually mark the anchor as "drop committed but
-    /// radius not yet set" -- pulsing pin + dashed ring placeholder
+    /// radius not yet set" - pulsing pin + dashed ring placeholder
     /// + "RADIUS NOT SET" label. Mirrors v2.0.0+'s two-step flow:
     /// once the helm taps Drop, the SK plugin's Incomplete Anchor
     /// Alarm starts ticking server-side, but visually the chart

@@ -4,7 +4,7 @@
 // .mjs so the file-extension picks ESM without a package.json, and
 // under a dir the Blazor build pipeline doesn't copy (__tests__).
 //
-// The decoder is hand-rolled -- every pin below exists because a
+// The decoder is hand-rolled - every pin below exists because a
 // field-type we actually ship was easy to get wrong:
 //   * varint overflow past 28 bits (range can legitimately be up to
 //     the full 32-bit width on some radars)
@@ -103,7 +103,7 @@ test('spoke with bearing + lat/lon', () => {
     assert.deepEqual([...s.data], [0, 0, 5, 15]);
 });
 
-test('spoke with time field -- skipped, other fields intact', () => {
+test('spoke with time field - skipped, other fields intact', () => {
     // time is a uint64 varint we deliberately ignore. Verify that
     // skipping it doesn't corrupt the read position for fields that
     // follow.
@@ -133,7 +133,7 @@ test('large varint past 28 bits decodes without sign flip', () => {
     // range can legitimately exceed 2^28 = 268 million (would only
     // happen with absurd values, but this is the guard). Pick a
     // value that exercises the multiplication branch in Reader.varint.
-    const big = 0xF0000000; // 4,026,531,840 -- well into 32-bit unsigned range
+    const big = 0xF0000000; // 4,026,531,840 - well into 32-bit unsigned range
     const bytes = encodeMessage([{ angle: 0, range: big, data: [0] }]);
     const [s] = decodeRadarMessage(bytes).spokes;
     assert.equal(s.range, big);
@@ -150,7 +150,7 @@ test('double fields decode as little-endian', () => {
 });
 
 test('empty data bytes ok', () => {
-    // Zero-range spoke -- happens during startup / range change.
+    // Zero-range spoke - happens during startup / range change.
     const bytes = encodeMessage([{ angle: 0, range: 0, data: [] }]);
     const [s] = decodeRadarMessage(bytes).spokes;
     assert.equal(s.data.length, 0);

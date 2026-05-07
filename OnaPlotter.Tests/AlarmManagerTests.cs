@@ -365,7 +365,7 @@ public class AlarmManagerTests
     public async Task Dismiss_EscalatedSeverity_BypassesCooldown()
     {
         // Warning dismissed. If the next evaluation sees Danger (same
-        // title+target), the cooldown must NOT swallow it -- safety-
+        // title+target), the cooldown must NOT swallow it - safety-
         // critical. Same severity still suppressed.
         var rule = new StubRule("CPA", 200, AlarmSeverity.Warn, "vessels.x");
         var (mgr, clock, settings) = NewMgrWith(rule);
@@ -466,7 +466,7 @@ public class AlarmManagerTests
         clock.Now = clock.Now.AddSeconds(2);
         mgr.Evaluate(Nav(), [], settings);
         // Temporarily resurrect so we have an alarm to snooze.
-        // With cooldown suppressing, ActiveAlarm is null -- snooze needs
+        // With cooldown suppressing, ActiveAlarm is null - snooze needs
         // an alarm instance. Build one directly instead.
         var toSnooze = new AlarmInfo("CPA", "msg",
             AlarmSeverity.Danger, "vessels.x", "vessels.x");
@@ -474,7 +474,7 @@ public class AlarmManagerTests
 
         // After snooze, a subsequent evaluate still sees the alarm in
         // the rule's output, but the snooze path silences it. The
-        // cooldown state shouldn't matter -- pin behaviour: unsnooze
+        // cooldown state shouldn't matter - pin behaviour: unsnooze
         // + wait past cooldown -> alarm resumes on same tick.
         await mgr.UnsnoozeAsync("vessels.x");
         clock.Now = clock.Now.AddSeconds(AlarmManager.DismissCooldownSeconds + 2);
@@ -618,7 +618,7 @@ public class AlarmManagerTests
         // Instead just assert via the existing priority/order path:
         // the test below is enough to pin TTI as the second sort key.
         mgr.Evaluate(Nav(), [], settings);
-        // Both fire -- ordering here is priority based (NEAR rule has
+        // Both fire - ordering here is priority based (NEAR rule has
         // higher priority number = lower rank). Don't assert here;
         // the next test exercises TTI explicitly.
         await Assert.That(mgr.ActiveAlarms.Count).IsEqualTo(2);
@@ -657,7 +657,7 @@ public class AlarmManagerTests
         await Assert.That(mgr.ActiveAlarms[1].Title).IsEqualTo("CPA");
     }
 
-    // Stub that fires a single alarm with a configurable TTI -- pins
+    // Stub that fires a single alarm with a configurable TTI - pins
     // the TTI ordering without depending on the real rule
     // implementations (which each have independent reasons to fire).
     private sealed class TtiStubRule(string title, int priority, AlarmSeverity sev,
@@ -729,7 +729,7 @@ public class AlarmManagerTests
     public async Task Snooze_InitializeDropsExpiredEntries()
     {
         // A snooze that expired before we loaded must not be resurrected
-        // as "active, expires in the past" -- otherwise IsSnoozed would
+        // as "active, expires in the past" - otherwise IsSnoozed would
         // false-positive until the next sweep.
         var kv = new InMemoryKv();
         var clock = new MutableClock();
@@ -921,7 +921,7 @@ public class AlarmManagerTests
     [Test]
     public async Task RearmStatuses_EmptyByDefault()
     {
-        // No rule has been dismissed yet -- the panel chip section must
+        // No rule has been dismissed yet - the panel chip section must
         // be empty so the UI doesn't render a phantom "rearm pending" row.
         var rule = new ShallowAlarmRule();
         var (mgr, clock, settings) = NewMgrWith(rule);
@@ -1005,7 +1005,7 @@ public class AlarmManagerTests
     public async Task InitializeAsync_MalformedJson_StartsEmpty()
     {
         // Storage corruption / hand-edited entries must not crash the
-        // manager at boot -- the rest of the app is more useful than
+        // manager at boot - the rest of the app is more useful than
         // a perfectly-restored snooze list.
         var kv = new InMemoryKv();
         await kv.SetAsync("alarmSnoozes.v1", "{not-json");
@@ -1022,7 +1022,7 @@ public class AlarmManagerTests
     {
         // Multiple components (Map, Dashboard) call InitializeAsync
         // concurrently on first load. The second call must be a no-op
-        // -- otherwise the snooze list could double-up if a slow KV
+        // - otherwise the snooze list could double-up if a slow KV
         // read interleaved with a Snooze action between calls. The
         // _initialized flag guards this.
         var kv = new CountingKv();
@@ -1124,7 +1124,7 @@ public class AlarmManagerTests
     {
         // status.canAcknowledge=false (e.g. emergency MOB notification):
         // server explicitly says this can't be silenced. The plotter
-        // must respect that and not invoke the acknowledger -- the
+        // must respect that and not invoke the acknowledger - the
         // local dismiss is still allowed (the helm can clear the
         // banner from THIS plotter's view), but no cross-plotter sync.
         var ack = new FakeAcknowledger("mob-1", canAcknowledge: false);

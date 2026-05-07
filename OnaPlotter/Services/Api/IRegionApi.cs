@@ -31,10 +31,18 @@ public interface IRegionApi
 
     /// <summary>Rewrites an existing polygon region (name + description
     /// + vertices + hazard flag) in place via PUT. Used by the
-    /// Layers-panel Edit button; parallels RouteApi.UpdateAsync.</summary>
+    /// Layers-panel Edit button; parallels RouteApi.UpdateAsync.
+    /// <para>Caller passes the original <paramref name="createdAt"/>
+    /// + any circle metadata (<paramref name="centerLat"/>,
+    /// <paramref name="centerLon"/>, <paramref name="radiusMeters"/>)
+    /// so the resources-fs full-replacement PUT preserves them; null
+    /// arguments leave the corresponding wire fields null.</para></summary>
     Task<ApiResult> UpdatePolygonAsync(string id, string name, string description,
         double[][] vertices,
-        bool isHazard = false, CancellationToken ct = default);
+        bool isHazard = false,
+        DateTime? createdAt = null,
+        double? centerLat = null, double? centerLon = null, double? radiusMeters = null,
+        CancellationToken ct = default);
 
     Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default);
 }

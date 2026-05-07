@@ -66,7 +66,7 @@ public sealed class UpdateChecker : IDisposable
             period: TimeSpan.FromMinutes(CheckIntervalMinutes));
     }
 
-    /// <summary>Manual trigger -- used by tests + the "check now"
+    /// <summary>Manual trigger - used by tests + the "check now"
     /// path if we ever surface one. Same hash-extract parser as the
     /// timer path; safe to call concurrently (the timer's tick is
     /// also fire-and-forget so a manual call interleaving with the

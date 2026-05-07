@@ -39,7 +39,7 @@ public sealed class CachingPlaceSearchService : IPlaceSearchService
             // the fresh result in hand; if the helm cancels via a
             // fresh keystroke between SearchAsync returning and
             // PutAsync completing, dropping the persist isn't a
-            // failure -- it just means the next call hits the
+            // failure - it just means the next call hits the
             // network again. Without this guard, IJSRuntime threw
             // OperationCanceledException out of the localStorage
             // write, which surfaced to the helm as "API request

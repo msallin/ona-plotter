@@ -302,7 +302,7 @@ public class ChartLayerControllerTests
     {
         // A hostile or buggy chart provider sending negative MinZoom
         // would otherwise reach the JS layer where the `|| 1` falsy
-        // idiom doesn't catch negatives -- the layer's calibrator
+        // idiom doesn't catch negatives - the layer's calibrator
         // floor (`native <= minZ + 1`) would misfire.
         var (ctrl, js, _, _, _) = New();
         var chart = Chart("c1");
@@ -364,7 +364,7 @@ public class ChartLayerControllerTests
     [Test]
     public async Task Toggle_On_Js_Failure_Surfaces_Toast_And_Skips_State()
     {
-        // A JS regression must not corrupt the persisted state -- the
+        // A JS regression must not corrupt the persisted state - the
         // chart isn't actually on the map, so the enabled mirror stays
         // empty.
         var (ctrl, js, settings, _, errors) = New();

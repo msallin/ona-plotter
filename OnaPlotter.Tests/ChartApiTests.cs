@@ -131,7 +131,7 @@ public class ChartApiTests
     [Test]
     public async Task GetAllAsync_Drops_Charts_Without_A_TileUrl()
     {
-        // A chart entry with no tilemapUrl / url is unusable -- filter so
+        // A chart entry with no tilemapUrl / url is unusable - filter so
         // the Layers panel doesn't show an entry whose toggle does nothing.
         var body = """
         {

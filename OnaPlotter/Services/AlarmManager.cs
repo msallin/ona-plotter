@@ -12,7 +12,7 @@ public sealed class AlarmManager : IAlarmManager
     /// <summary>Fallback snooze duration used when no IAppSettings is wired
     /// (legacy test ctors). Production callers override via IAppSettings
     /// so the user can set a shorter / longer snooze to match the
-    /// passage style -- loitering fishing fleet vs. a distant freighter.</summary>
+    /// passage style - loitering fishing fleet vs. a distant freighter.</summary>
     public const int SnoozeMinutes = 10;
 
     /// <summary>After a dismiss, suppress re-firing the same (title, target)
@@ -218,7 +218,7 @@ public sealed class AlarmManager : IAlarmManager
     public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now)
     {
         // HUD reads this every render. Today only SHALLOW returns
-        // a non-null status, so the typical result is 0 entries --
+        // a non-null status, so the typical result is 0 entries -
         // the LINQ chain would still allocate two enumerators + a
         // List for the empty case. Lazy-allocate the result list
         // on the first hit; null + a small List<>(2) is much
@@ -240,7 +240,7 @@ public sealed class AlarmManager : IAlarmManager
     public int SnoozeDurationMinutes =>
         // User-configurable via IAppSettings. Falls back to the 10-min
         // default when settings aren't wired (test ctors, DI ordering
-        // race). Clamp at 1 min minimum -- zero would snooze forever.
+        // race). Clamp at 1 min minimum - zero would snooze forever.
         (_settings?.SnoozeDurationMinutes is int m && m > 0) ? m : SnoozeMinutes;
 
     public event Action<AlarmInfo?>? OnAlarmChanged;
@@ -501,7 +501,7 @@ public sealed class AlarmManager : IAlarmManager
     public Task SnoozeAsync(AlarmInfo alarm)
     {
         // Life-safety alarms (SART / MOB / EPIRB) refuse snooze even
-        // if asked. Belt-and-braces with the UI hiding the button --
+        // if asked. Belt-and-braces with the UI hiding the button -
         // a programmatic caller or a rogue JS call shouldn't be able
         // to silence a beacon.
         if (!alarm.Snoozeable) return Task.CompletedTask;
@@ -518,7 +518,7 @@ public sealed class AlarmManager : IAlarmManager
         // per alarm). Preserves the original no-cleanup-when-empty
         // semantics: when no active alarms match, the rest of the
         // method (cooldown drop, FireAlarmsChanged, persistence)
-        // still runs -- the snooze itself is the meaningful change.
+        // still runs - the snooze itself is the meaningful change.
         List<AlarmKey>? toDrop = null;
         foreach (var kv in _active)
         {
@@ -649,14 +649,14 @@ public sealed class AlarmManager : IAlarmManager
             return false;
         }
         // Escalation breaks the cooldown. Equal severity is still suppressed
-        // -- the helmsman already acknowledged this exposure.
+        // - the helmsman already acknowledged this exposure.
         return newSeverity <= c.DismissedAtSeverity;
     }
 
     private void SweepExpiredDismissCooldowns(DateTime now)
     {
         if (_dismissCooldown.Count == 0) return;
-        // Same shape as SweepExpiredSnoozes -- manual walk +
+        // Same shape as SweepExpiredSnoozes - manual walk +
         // lazy-allocated list. Cooldowns sit in the dict for
         // CpaDismissCooldownSeconds (15 min on CPA) or 30 s
         // on others, so most sweeps during the cooldown find

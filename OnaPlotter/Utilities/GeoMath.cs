@@ -68,7 +68,7 @@ public static class GeoMath
     /// <summary>
     /// Initial great-circle bearing (degrees, 0..360, clockwise from
     /// true north) from point 1 to point 2. Decimal-degree inputs.
-    /// Note: "initial" -- great-circle paths curve, so the bearing
+    /// Note: "initial" - great-circle paths curve, so the bearing
     /// at the endpoint differs from the bearing at the start. For
     /// short legs the difference is negligible.
     /// </summary>
@@ -112,7 +112,7 @@ public static class GeoMath
     /// Returns null when COG or SOG is missing (a vessel without a
     /// reported heading or speed produces no meaningful vector) OR
     /// when the speed is below the minimum the JS layer uses
-    /// (0.1 m/s) -- a stationary boat would otherwise render a stub
+    /// (0.1 m/s) - a stationary boat would otherwise render a stub
     /// pointing some arbitrary way. Mirrors the JS contract in
     /// <c>geoMath.js</c>: <c>cogRad == null || sogMs == null</c>
     /// returns null on both sides; the C# port previously took
@@ -128,7 +128,7 @@ public static class GeoMath
     {
         if (cogRad is not double cog) return null;
         if (sogMs is not double sog) return null;
-        // 0.1 m/s threshold mirrors geoMath.js -- below this the
+        // 0.1 m/s threshold mirrors geoMath.js - below this the
         // vector renders as a hairline that doesn't communicate
         // direction to the helm. Anchored / drifting boats fall here.
         if (sog < 0.1) return null;

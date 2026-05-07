@@ -1,6 +1,6 @@
 // High-level action coverage: exercise the common user flows so a
 // regression in one of them trips CI before the user hits it. No
-// SignalK server required -- these test UI-only flows (dialogs,
+// SignalK server required - these test UI-only flows (dialogs,
 // panels, navigation) that don't need live data to open/close.
 
 import { test, expect } from '@playwright/test';
@@ -44,7 +44,7 @@ test('Create Waypoint context-menu item opens the waypoint dialog', async ({ pag
 
     // Scope by the unique aria-label so the selector survives a future
     // dialog refactor (and so it doesn't accidentally match an input
-    // from a different open dialog -- the three create dialogs all
+    // from a different open dialog - the three create dialogs all
     // share .waypoint-dialog .note-dialog classes).
     const dialog = page.locator('.waypoint-dialog')
         .filter({ has: page.locator('input[aria-label="Waypoint name"]') });
@@ -127,7 +127,7 @@ test('settings page persists the depth-alarm threshold across reload', async ({ 
 
     // Settings.OnDepthChanged is an async event handler that awaits
     // AppSettings.SetDepthAlarmThresholdAsync, which writes through to
-    // localStorage using invariant-culture F1 format -- 4.5 stays "4.5"
+    // localStorage using invariant-culture F1 format - 4.5 stays "4.5"
     // but 3 is stored as "3.0". The poll parses the string to a number
     // so the test doesn't care about the exact string form.
     const readDepthKv = () => page.evaluate(() =>

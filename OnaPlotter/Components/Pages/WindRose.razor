@@ -12,7 +12,7 @@
 
 <PageTitle>Wind</PageTitle>
 
-@* Back-to-chart chip removed -- the sidebar + topbar already surface
+@* Back-to-chart chip removed - the sidebar + topbar already surface
    navigation back to the map, and the chip duplicated that affordance
    without earning its screen real estate. *@
 
@@ -21,14 +21,14 @@
    any helm display); single column below. Left = polar rose; right =
    live readouts + TWD history. Both columns sit inside .wind-card so
    the page reads as two grouped instrument clusters rather than four
-   floating tiles. Card chrome is now theme-agnostic -- the previous
+   floating tiles. Card chrome is now theme-agnostic - the previous
    "card on light only" rationale was wrong; what was missing on dark
    theme was containment, not contrast.
 
    SVG colours come from theme tokens (no hex literals on the page)
    so night-mode + high-contrast modes follow without per-chart
    overrides. SVG text inherits Inter Variable via .wind-page svg
-   text { font-family: inherit } -- one rule fixes the "mixed fonts"
+   text { font-family: inherit } - one rule fixes the "mixed fonts"
    complaint everywhere SVG text appears (compass / ring / axis).
 
    Subtitle dropped: it described "apparent wind angle vs speed"
@@ -59,7 +59,7 @@
             <div class="wind-rose-canvas">
                 @if (!HasAnyWind)
                 {
-                    @* State-aware empty state -- the helm landing on the page
+                    @* State-aware empty state - the helm landing on the page
                        with no rose data wants to know WHY. Three diagnoses:
                        (a) no SignalK feed at all, (b) feed up but cold-start
                        (no environment.wind.* paths yet), (c) feed up but
@@ -173,12 +173,12 @@
                 </svg>
 
                 @* Legend. Gradient id is per-component so if two WindRose
-                   instances co-exist on a page, their SVG defs don't collide --
+                   instances co-exist on a page, their SVG defs don't collide -
                    a stale cached gradient would otherwise paint the second
                    instance's rect grey. *@
                 <div class="wind-legend">
                     <span class="wind-legend-label">Wind (kn)</span>
-                    @* "Wind" not "Speed" -- the rose's radial axis is wind
+                    @* "Wind" not "Speed" - the rose's radial axis is wind
                        speed, not boat speed. The optional polar overlay
                        uses the same radial axis but encodes BOAT speed
                        (target BSP at given TWA / TWS), which is the dual-
@@ -189,10 +189,10 @@
                        the left edge, leaving x=20..44 for the labels.
                        At width 30 the labels were anchored at x=20 with
                        only 10 px of room, so a two-digit MaxSpeedKn
-                       like "30" was clipped at the right edge -- the
+                       like "30" was clipped at the right edge - the
                        helm saw "3" alone for the top tick. 44 px gives
                        room for up to three digits. *@
-                    @* SVG height 188 (was 180) -- the bottom "0" tick
+                    @* SVG height 188 (was 180) - the bottom "0" tick
                        sat at baseline y=178 with a 10 px font, and
                        the digit descender extended past y=180,
                        clipping the lower curve of the "0" against
@@ -203,7 +203,7 @@
                        inside the SVG. *@
                     <svg width="44" height="188" aria-hidden="true">
                         <defs>
-                            @* Viridis stops -- match SpeedColor() in the
+                            @* Viridis stops - match SpeedColor() in the
                                @code block. Perceptually uniform in
                                lightness so the legend reads the same
                                under colour-blindness and polarised sun. *@
@@ -245,7 +245,7 @@
         </section>
 
         @* === Right column: live readouts + TWD history.
-           Was <aside> -- semantically wrong: this column is the page's
+           Was <aside> - semantically wrong: this column is the page's
            primary live data, not a tangentially-related sidebar. <section>
            announces correctly to screen readers ("region" / labelled). *@
         <section class="wind-aside" aria-label="Live wind and direction history">
@@ -285,12 +285,12 @@
                 @* Gust / Lull / Mean over the last 2 min. Renders
                    nothing when sample count is too low so "this chip
                    is silent" stays meaningful. The Shift chip moved
-                   out of here -- it's now the always-on numeric
+                   out of here - it's now the always-on numeric
                    headline above the history chart, where it belongs
                    tactically (Marius and Tom both blocked without it
                    per the field study). *@
                 @* AWS variability chips + window selector. The window
-                   used to be hard-coded at 2 min -- great for racers
+                   used to be hard-coded at 2 min - great for racers
                    spotting a recent gust but useless for cruisers
                    asking "is this anchorage going to be gusty all
                    night?" (Ulrike, field study). Selector applies to
@@ -316,7 +316,7 @@
                             @mean.ToString("F1") kn
                         </span>
                         <span class="instrument-badge @(sigma > 4 ? "instrument-badge-warn" : "")"
-                              title="Standard deviation of AWS over the last @chipWindowMinutes min -- higher = gustier / more variable">
+                              title="Standard deviation of AWS over the last @chipWindowMinutes min - higher = gustier / more variable">
                             @* Helm feedback: "Σ" was math notation, not a
                                sailor word. "Var" (variability) parses
                                immediately and matches the tooltip copy. *@
@@ -337,7 +337,7 @@
                    a degenerate axis is misleading on a tactical display.
                  - Sample count moves to the section header (right-
                    aligned), separating "ambient state" from "chart
-                   legend" -- the previous one-line meta concatenated
+                   legend" - the previous one-line meta concatenated
                    three orthogonal facts. *@
             @{
                 // Pull the active view's samples from the shared
@@ -511,7 +511,7 @@
 
     // History view selector: "direction" plots TWD over time (shift
     // detection); "speed" plots TWS (settling / building trend).
-    // Per-session (no persistence) -- toggling history view is a quick
+    // Per-session (no persistence) - toggling history view is a quick
     // diagnostic check, not a stable preference.
     private string historyView = "direction";
 
@@ -563,10 +563,10 @@
     private int chipWindowMinutes = 2;
 
     // Choices match Race / Cruise / Long / Overnight expectations:
-    //   1m  -- "right now" / Marius mid-leg gust check
-    //   2m  -- default; balance of recency and statistical settle
-    //  10m  -- last leg / pre-tack assessment
-    //   1h  -- evening anchorage decision (Ulrike's ask)
+    //   1m  - "right now" / Marius mid-leg gust check
+    //   2m  - default; balance of recency and statistical settle
+    //  10m  - last leg / pre-tack assessment
+    //   1h  - evening anchorage decision (Ulrike's ask)
     private static readonly (int minutes, string label)[] ChipWindowChoices =
     [
         (1,  "1m"),
@@ -578,7 +578,7 @@
     // Shift rate has its own optimal window (~5 min: long enough to
     // smooth GPS / sensor jitter, short enough to flag a genuine veer
     // on typical mesoscale wind systems). Kept const, not user-tunable
-    // -- one less knob to fiddle with under sail.
+    // - one less knob to fiddle with under sail.
     private const int ShiftRateWindowMin = 5;
 
     // True when at least one live or historical wind reading exists.
@@ -592,7 +592,7 @@
     /// <summary>
     /// AWS variability over the helm-picked window: gust (+ above
     /// mean), lull (- below mean), mean, and sigma (standard deviation
-    /// -- a single-number summary of how variable the wind is). All
+    /// - a single-number summary of how variable the wind is). All
     /// in knots; gust and lull are non-negative magnitudes. Backed by
     /// the shared <see cref="INavigationAverages"/> rolling buffer
     /// (m/s); converted to knots here for display.
@@ -602,7 +602,7 @@
         get
         {
             // warmupRatio: 0 here because the chip stats happily
-            // surface partial-window data on first connect -- a 30s
+            // surface partial-window data on first connect - a 30s
             // partial fill of a 60-min window is still useful, and
             // the chip already shows "n samples" elsewhere so the
             // helm can read the coverage themselves.
@@ -736,7 +736,7 @@
             currentTrueWind = null;
 
         // Wind-history samples land in NavigationAverages on every
-        // SignalkClient delta -- WindRose just queries the snapshots
+        // SignalkClient delta - WindRose just queries the snapshots
         // it needs at render time (see GetHistorySamples).
     }
 
@@ -801,7 +801,7 @@
     private static string SpeedColor(double frac)
     {
         frac = Math.Clamp(frac, 0, 1);
-        // Five-stop viridis approximation -- the canonical 256-step
+        // Five-stop viridis approximation - the canonical 256-step
         // matplotlib colormap is overkill for a polar-rose dot scatter,
         // and linear interpolation between stops at 0 / 0.25 / 0.5 /
         // 0.75 / 1.0 is indistinguishable to the eye from the full
@@ -869,7 +869,7 @@
     /// <summary>
     /// Generates the SVG polyline points string for the history chart.
     /// Each <see cref="OnaPlotter.Utilities.TimeSeriesSample"/> already
-    /// carries the projected value (kn or deg) -- the view-specific
+    /// carries the projected value (kn or deg) - the view-specific
     /// projection happens in <see cref="GetHistorySamples"/>.
     /// </summary>
     private string HistoryPolylinePoints(

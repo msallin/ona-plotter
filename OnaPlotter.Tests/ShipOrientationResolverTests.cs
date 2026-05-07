@@ -17,7 +17,7 @@ public class ShipOrientationResolverTests
         return d;
     }
 
-    // -- Parse / ToSetting round-trip ------------------------------
+    // - Parse / ToSetting round-trip ------------------------------
 
     [Test]
     public async Task Parse_KnownStrings_RoundTrip()
@@ -53,7 +53,7 @@ public class ShipOrientationResolverTests
         }
     }
 
-    // -- Resolve happy paths --------------------------------------
+    // - Resolve happy paths --------------------------------------
 
     [Test]
     public async Task Resolve_PickedFieldPresent_ReturnsThat()
@@ -69,7 +69,7 @@ public class ShipOrientationResolverTests
     public async Task Resolve_SmoothedCog_OverridesCogVariant()
     {
         // When the picked source is a COG variant, the smoothed
-        // override wins -- the boat icon stops twitching even though
+        // override wins - the boat icon stops twitching even though
         // the raw COG is still reported by the server.
         var d = NewNav(cogTrue: 2.0);
         var smoothed = 1.95;
@@ -80,14 +80,14 @@ public class ShipOrientationResolverTests
     [Test]
     public async Task Resolve_SmoothedCog_DoesNotAffectHeadingPicks()
     {
-        // Heading picks pull from the heading fields directly --
+        // Heading picks pull from the heading fields directly -
         // a smoothed-COG argument is irrelevant.
         var d = NewNav(hdgTrue: 1.0);
         await Assert.That(ShipOrientationResolver.Resolve(
             ShipOrientationSource.HeadingTrue, d, smoothedCog: 99.0)).IsEqualTo(1.0);
     }
 
-    // -- Fallback chains ------------------------------------------
+    // - Fallback chains ------------------------------------------
 
     [Test]
     public async Task Resolve_HeadingTrueMissing_FallsBackToHeadingMagnetic()

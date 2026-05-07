@@ -1,13 +1,13 @@
 @* Own-ship layer toggles. One section gathers every chart layer
    that is "about my own boat":
-     * Show ship lines  -- COG vector + tidal current arrow
-     * Show laylines    -- close-hauled tack projections (sailing only)
-     * Show local trail -- in-memory SOG-coloured rolling polyline
-     * Guard zone ring  -- amber CPA-radius circle around own boat
-     * Ship track       -- server-side history polyline + its window /
+     * Show ship lines  - COG vector + tidal current arrow
+     * Show laylines    - close-hauled tack projections (sailing only)
+     * Show local trail - in-memory SOG-coloured rolling polyline
+     * Guard zone ring  - amber CPA-radius circle around own boat
+     * Ship track       - server-side history polyline + its window /
                             resolution / within-bounds controls
 
-   Bearing line + XTE tick are intentionally NOT in this group --
+   Bearing line + XTE tick are intentionally NOT in this group -
    they're navigation guidance, only show when a route is active, and
    hiding them mid-leg would be a foot-gun. *@
 
@@ -48,7 +48,7 @@
     @* Guard zone ring: amber CPA-radius circle drawn around own
        boat. Lives here (rather than Misc) because it's an own-ship
        indicator and the helm flips it to declutter the area
-       around the boat. Independent of the alarm pipeline -- the
+       around the boat. Independent of the alarm pipeline - the
        CPA-alarm thresholds in Settings still drive the alarm
        regardless. *@
     <label class="chart-item">
@@ -65,7 +65,7 @@
        that); helm-feedback consolidated all own-ship chart toggles
        into Own ship so the helm has one section to scan. The
        duration / resolution / within-bounds sub-controls only
-       render when the layer is on -- "track on / track off, here's
+       render when the layer is on - "track on / track off, here's
        how" reads cleaner than three peer-level pickers. *@
     <label class="chart-item">
         <input type="checkbox" checked="@ServerTrackVisible"
@@ -155,7 +155,7 @@
 
     /// <summary>Default collapsed to match every other Layers section.
     /// Helm-feedback: opening Layers and immediately seeing Own ship
-    /// expanded broke the visual rhythm -- helms expect "all closed,
+    /// expanded broke the visual rhythm - helms expect "all closed,
     /// tap what you want". Sticks at user-collapsed across renders;
     /// no separate persistence (consistent with sibling sections).</summary>
     private bool expanded = false;

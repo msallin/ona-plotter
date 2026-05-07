@@ -8,7 +8,7 @@
 // Injection path: raw TCP on port 10111, newline-delimited SignalK
 // delta JSON. signalk-server exposes this via a pipedProvider (see
 // settings.json "fake-data-tcp") which wraps providers/tcp + liner
-// + from_json. No auth -- this is the standard input pattern for
+// + from_json. No auth - this is the standard input pattern for
 // NMEA multiplexers / hardware feeds; HTTP writes require auth.
 
 import net from 'node:net';
@@ -145,7 +145,7 @@ function aisDeltas() {
 }
 
 // --- TCP server ---
-// signalk-server's providers/tcp is a CLIENT -- it connects to a
+// signalk-server's providers/tcp is a CLIENT - it connects to a
 // remote host:port and reads newline-delimited SignalK JSON. We are
 // that remote. Listen on LISTEN_PORT (default 10111); every connected
 // client gets each tick's deltas written as a single newline per delta.

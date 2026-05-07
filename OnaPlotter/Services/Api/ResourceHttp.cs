@@ -181,7 +181,7 @@ internal static class ResourceHttp
             }
             catch (JsonException)
             {
-                // Non-JSON body -- trim and cap to keep a wild 4k
+                // Non-JSON body - trim and cap to keep a wild 4k
                 // HTML error page from blowing a toast popover.
                 return body.Length > 200 ? body[..200] : body;
             }
@@ -209,10 +209,10 @@ internal static class ResourceHttp
     /// both:
     ///
     /// <list type="bullet">
-    ///   <item><description>Bare JSON string: <c>"abc-123"</c> --
+    ///   <item><description>Bare JSON string: <c>"abc-123"</c> -
     ///     older SK core.</description></item>
     ///   <item><description>Status envelope: <c>{"state":"COMPLETED",
-    ///     "statusCode":201,"id":"abc-123"}</c> -- newer SK / v2 REST.
+    ///     "statusCode":201,"id":"abc-123"}</c> - newer SK / v2 REST.
     ///     </description></item>
     /// </list>
     ///

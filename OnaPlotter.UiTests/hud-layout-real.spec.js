@@ -1,4 +1,4 @@
-// HUD layout spec -- REAL data variant.
+// HUD layout spec - REAL data variant.
 //
 // Same viewport / variant matrix as hud-layout.spec.js but does NOT
 // mock the SignalK WebSocket or stub the HTTP API. Drives a live
@@ -46,7 +46,7 @@ test.describe('HUD layout (real data)', () => {
 
             // Wait up to 10 s for the SignalK WS to deliver a first
             // delta so the cards have something other than `--`. If the
-            // server is silent we still take the screenshot -- the empty
+            // server is silent we still take the screenshot - the empty
             // state is itself useful evidence.
             await page.waitForFunction(() => {
                 const v = document.querySelector('.hud-stack-tl .hud-value');

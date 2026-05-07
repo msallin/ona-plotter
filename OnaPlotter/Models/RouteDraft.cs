@@ -14,7 +14,7 @@ namespace OnaPlotter.Models;
 /// (<c>route.draft.v1</c>) carries the version. A future model
 /// change that's not backward-compatible bumps to v2, leaving v1
 /// drafts orphaned in localStorage where the helm can drop them
-/// via the browser's storage tools. We don't try to migrate --
+/// via the browser's storage tools. We don't try to migrate -
 /// the population of helms with mid-edit drafts at the moment of
 /// a schema bump is small enough to live with the loss.</para>
 /// </summary>
@@ -37,6 +37,6 @@ public sealed record RouteDraft(
     /// <summary>UTC instant the draft was last persisted, ISO
     /// 8601. Used for the "from N minutes ago" hint on the
     /// restore prompt. String (not DateTime) because the JSON
-    /// round-trip stays explicit -- DateTime parsing modes have
+    /// round-trip stays explicit - DateTime parsing modes have
     /// bitten this codebase before.</summary>
     [property: JsonPropertyName("savedAt")] string SavedAtIso);

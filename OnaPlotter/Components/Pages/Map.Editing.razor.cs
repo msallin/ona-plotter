@@ -40,7 +40,7 @@ public partial class Map
     // start time. If a future code path throws synchronously before
     // the try/finally that clears _saveInFlight (or a JS interop
     // hangs forever), the flag would otherwise stick "true" and every
-    // subsequent Save tap would silently no-op -- the worst-case
+    // subsequent Save tap would silently no-op - the worst-case
     // failure for a button helms hammer when the server is unhappy.
     // SaveInFlightTimeoutSec defines how long the guard is allowed to
     // hold; past that the next caller treats the flag as stuck and

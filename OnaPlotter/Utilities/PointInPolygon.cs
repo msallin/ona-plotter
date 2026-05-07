@@ -11,7 +11,7 @@ namespace OnaPlotter.Utilities;
 /// formulation is standard and handles concave polygons cleanly. Edge
 /// cases:</para>
 /// <list type="bullet">
-///   <item>Polygons with fewer than 3 vertices return <c>false</c> --
+///   <item>Polygons with fewer than 3 vertices return <c>false</c> -
 ///   no enclosed area to be inside of.</item>
 ///   <item>The closing-vertex repetition that GeoJSON requires
 ///   (<c>ring[n] == ring[0]</c>) is harmless; the algorithm walks
@@ -27,13 +27,13 @@ namespace OnaPlotter.Utilities;
 /// regions arrive as <c>[lat, lon]</c> ring vertices (Leaflet-order
 /// after <c>RegionApi.ParseRing</c>), so callers pass <c>lat</c> as
 /// the y-axis and <c>lon</c> as the x-axis. The helper just operates
-/// on doubles -- the lat/lon distortion at the poles is irrelevant
+/// on doubles - the lat/lon distortion at the poles is irrelevant
 /// for the small-region scales (a few km at most) that anchor /
 /// hazard polygons cover.</para>
 ///
 /// <para>Performance: O(n) per polygon; constant work per edge. The
 /// caller (HazardousRegionAlarmRule) iterates over all regions per
-/// alarm tick (1 Hz), so the loop is on the cold path -- no
+/// alarm tick (1 Hz), so the loop is on the cold path - no
 /// allocations, no LINQ.</para>
 /// </summary>
 public static class PointInPolygon

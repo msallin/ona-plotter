@@ -37,6 +37,15 @@ public partial class Map
     // IsHazard so a re-save preserves the flag without forcing the
     // helm to re-tick it. Bound to the panel's `IsHazard` parameter.
     private bool polygonEditIsHazard;
+    // Originals carried through edit -> save so the resources-fs full-
+    // replacement PUT preserves them. New regions leave them null
+    // (RegionApi.CreatePolygonAsync stamps a fresh createdAt; circle
+    // metadata stays null for freeform polygons). Edit flows seed
+    // from the region the helm picked.
+    private DateTime? polygonEditCreatedAt;
+    private double? polygonEditCenterLat;
+    private double? polygonEditCenterLon;
+    private double? polygonEditRadiusMeters;
 
     private async Task StartPolygonEdit()
     {
@@ -49,6 +58,10 @@ public partial class Map
         polygonEditId = null;
         polygonEditDescription = "";
         polygonEditIsHazard = false;
+        polygonEditCreatedAt = null;
+        polygonEditCenterLat = null;
+        polygonEditCenterLon = null;
+        polygonEditRadiusMeters = null;
         InstallEditNavGuard();
         if (_editJs is not null)
             await _editJs.StartPolygonEditAsync();
@@ -61,7 +74,7 @@ public partial class Map
     /// outer ring into polygon-edit mode so the user can drag vertices
     /// / insert / remove; Save PUTs the update in place (see
     /// <see cref="SavePolygonRegion"/>). Regions with multiple rings
-    /// surface a toast -- we don't yet have a multi-ring UI.</summary>
+    /// surface a toast - we don't yet have a multi-ring UI.</summary>
     private async Task EditRegion(Models.SignalkRegion region)
     {
         if (_editJs is null) return;
@@ -91,6 +104,10 @@ public partial class Map
         polygonEditId = region.Id;
         polygonEditDescription = region.Description ?? "";
         polygonEditIsHazard = region.IsHazard;
+        polygonEditCreatedAt = region.CreatedAt;
+        polygonEditCenterLat = region.CenterLat;
+        polygonEditCenterLon = region.CenterLon;
+        polygonEditRadiusMeters = region.RadiusMeters;
         InstallEditNavGuard();
         // The stored ring is closed (last point == first); drop the
         // duplicate before seeding the edit vertices so the user
@@ -114,6 +131,10 @@ public partial class Map
         polygonEditId = null;
         polygonEditDescription = "";
         polygonEditIsHazard = false;
+        polygonEditCreatedAt = null;
+        polygonEditCenterLat = null;
+        polygonEditCenterLon = null;
+        polygonEditRadiusMeters = null;
         newRegionDescription = "";
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
@@ -156,7 +177,7 @@ public partial class Map
     }
 
     // Metric area formatter. Under 1 ha show square metres; above,
-    // switch to hectares or km^2 -- matches what sailors expect for
+    // switch to hectares or km^2 - matches what sailors expect for
     // anchorage / no-go zones.
     private static string FormatArea(double squareMeters)
     {
@@ -208,9 +229,15 @@ public partial class Map
             if (polygonEditId is string editingId)
             {
                 // In-place update of an existing region; thread the
-                // hazard flag so a re-save preserves (or toggles) it.
+                // hazard flag + createdAt + circle metadata so a
+                // re-save preserves them across the resources-fs
+                // full-replacement PUT.
                 var upd = await RegionApi.UpdatePolygonAsync(
-                    editingId, name, description, coords, polygonEditIsHazard);
+                    editingId, name, description, coords, polygonEditIsHazard,
+                    createdAt: polygonEditCreatedAt,
+                    centerLat: polygonEditCenterLat,
+                    centerLon: polygonEditCenterLon,
+                    radiusMeters: polygonEditRadiusMeters);
                 if (upd.Success) savedId = editingId;
                 else failReason = upd.Error ?? "server rejected";
             }
@@ -240,7 +267,11 @@ public partial class Map
             if (saved is not null)
             {
                 await _resourceJs.AddRegionAsync(
-                    saved.Id, saved.OuterRings, saved.Name, saved.Description);
+                    saved.Id, saved.OuterRings, saved.Name, saved.Description,
+                    saved.IsHazard,
+                    AreaForRings(saved.OuterRings),
+                    saved.CenterLat, saved.CenterLon, saved.RadiusMeters,
+                    FormatCreatedAt(saved.CreatedAt));
             }
             RebuildFilteredLayers();
         }
@@ -253,10 +284,34 @@ public partial class Map
         polygonEditId = null;
         polygonEditDescription = "";
         polygonEditIsHazard = false;
+        polygonEditCreatedAt = null;
+        polygonEditCenterLat = null;
+        polygonEditCenterLon = null;
+        polygonEditRadiusMeters = null;
         polygonStatsTimer?.Dispose();
         polygonStatsTimer = null;
         newRegionDescription = "";
         RemoveEditNavGuard();
         await _editJs.StopPolygonEditAsync();
     }
+
+    /// <summary>Square metres of the FIRST outer ring of a region.
+    /// Multi-ring regions only render the first; the popup metric
+    /// follows the same scope so the displayed area matches the
+    /// drawn polygon. Returns 0 for an empty list (the popup then
+    /// hides the area row rather than showing "0 m^2").</summary>
+    private static double AreaForRings(IReadOnlyList<double[][]> rings)
+    {
+        if (rings is null || rings.Count == 0) return 0;
+        return OnaPlotter.Utilities.PolygonGeometry.AreaSquareMeters(rings[0]);
+    }
+
+    /// <summary>ISO-8601 UTC string for a region's createdAt (or null
+    /// for regions that don't carry one). Same shape the note +
+    /// waypoint markers use so the JS-side popup formatter is
+    /// shared.</summary>
+    private static string? FormatCreatedAt(DateTime? createdAt) =>
+        createdAt is DateTime t
+            ? t.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture)
+            : null;
 }

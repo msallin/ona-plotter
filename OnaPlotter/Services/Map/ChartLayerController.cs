@@ -88,7 +88,7 @@ public sealed class ChartLayerController
                 // disable AllowUpscale because their upscaled tiles
                 // arriving a frame after a SK chart's GPU upscale
                 // looked like the basemap was loading on top of the
-                // chart -- helm reported the visual flicker as
+                // chart - helm reported the visual flicker as
                 // confusing during a close-quarters zoom.
                 int upscale = chart.AllowUpscale
                     ? OnaPlotter.Utilities.ChartUpscale.Effective(
@@ -105,7 +105,7 @@ public sealed class ChartLayerController
                 int safeMin = chart.MinZoom is int mn and > 0 ? mn : 1;
                 int safeMax = chart.MaxZoom is int mx and > 0 ? mx : 18;
                 // Attribution lands in Leaflet's AttributionControl
-                // which uses innerHTML -- a SK chart provider is an
+                // which uses innerHTML - a SK chart provider is an
                 // in-scope trust boundary, so untrusted values are
                 // HTML-escaped here. Only the built-in OSM + OpenSeaMap
                 // entries (synthesised in BuiltInCharts.cs) ship
@@ -131,7 +131,7 @@ public sealed class ChartLayerController
             }
             _enabled.Add(chart.Identifier);
             // Seed the chart order with any newly-seen id so user-
-            // driven reorders have something to reorder. Append --
+            // driven reorders have something to reorder. Append -
             // new charts go to the top of the draw stack (last
             // .addTo wins).
             if (!_settings.ChartOrder.Contains(chart.Identifier))
@@ -217,7 +217,7 @@ public sealed class ChartLayerController
         // earlier in the displayed Charts order. Since Charts is
         // iterated in ChartOrder (the same list we're editing),
         // "earlier" = lower index. direction is -1 for up / +1 for
-        // down, so swapWith is simply idx + direction -- no flip.
+        // down, so swapWith is simply idx + direction - no flip.
         int swapWith = idx + direction;
         if (swapWith < 0 || swapWith >= order.Count) return;
         (order[idx], order[swapWith]) = (order[swapWith], order[idx]);
@@ -242,7 +242,7 @@ public sealed class ChartLayerController
     /// Sorts the supplied chart list by
     /// <see cref="IAppSettings.ChartOrder"/>. Charts listed in the
     /// order come first (by index); unseen charts append in the
-    /// supplied order. Pure -- the page assigns the result back to
+    /// supplied order. Pure - the page assigns the result back to
     /// its own field. Called from <see cref="OnChartOrderChanged"/>
     /// hook.
     /// </summary>

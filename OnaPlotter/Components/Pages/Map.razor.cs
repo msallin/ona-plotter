@@ -9,7 +9,7 @@ namespace OnaPlotter.Components.Pages;
 
 /// <summary>
 /// Code-behind for the Map page. Holds the CRUD flow for the three
-/// server-stored resources the user can create from the chart --
+/// server-stored resources the user can create from the chart -
 /// waypoints, notes, regions. These share a shape (context-menu
 /// entry -> modal dialog -> POST -> JS marker draw) and moving them
 /// out of the .razor keeps the markup file focused on layout and
@@ -460,7 +460,7 @@ public partial class Map
         if (module is null || note.Position is null) return;
         chartPanelOpen = false;
         // Un-hide first so the pin's popup actually has something to
-        // open -- hidden notes have no marker instance in the JS side
+        // open - hidden notes have no marker instance in the JS side
         // and openNotePopup would silently no-op.
         if (!notesVisible)
         {
@@ -485,7 +485,7 @@ public partial class Map
 
     // ---- Region (create, save, delete, focus, show/hide) -------------
     private bool regionDialogVisible;
-    // "circle" -- quick radius preset; "polygon" -- freeform draw. Mode
+    // "circle" - quick radius preset; "polygon" - freeform draw. Mode
     // toggle lives inside the Add Region dialog; we keep the last choice
     // as the default for next time so a user who mostly draws polygons
     // doesn't re-pick every time.
@@ -601,9 +601,15 @@ public partial class Map
         // insert.
         loadedRegions = await SafeLoad(() => RegionApi.GetAllAsync(), "regions") ?? loadedRegions;
         var created = loadedRegions.FirstOrDefault(rg => rg.Id == id);
-        if (created is not null && module is not null)
-            await module.InvokeVoidAsync("addRegion",
-                created.Id, created.OuterRings, created.Name, created.Description);
+        if (created is not null && _resourceJs is not null)
+        {
+            await _resourceJs.AddRegionAsync(
+                created.Id, created.OuterRings, created.Name, created.Description,
+                created.IsHazard,
+                AreaForRings(created.OuterRings),
+                created.CenterLat, created.CenterLon, created.RadiusMeters,
+                FormatCreatedAt(created.CreatedAt));
+        }
         Toasts.Success($"Saved region '{title}'");
     }
 
@@ -620,6 +626,25 @@ public partial class Map
             await module.InvokeVoidAsync("removeRegion", id);
         loadedRegions.RemoveAll(rg => rg.Id == id);
         Toasts.Info($"Region '{label}' deleted");
+    }
+
+    /// <summary>Popup-side Edit gesture. The region popup's Edit button
+    /// fires this with the region's id; we look up the cached
+    /// <c>SignalkRegion</c> and hand it to the existing
+    /// <c>EditRegion(SignalkRegion)</c> path used by the Layers-panel
+    /// Edit button. Same code, two entry points; the popup just
+    /// short-circuits the "open Layers panel, find the row" flow for
+    /// the helm who tapped the region directly on the chart.</summary>
+    [JSInvokable]
+    public async Task EditRegion(string id)
+    {
+        var region = loadedRegions.FirstOrDefault(rg => rg.Id == id);
+        if (region is null)
+        {
+            Toasts.Warning($"Region '{id}' not found - it may have been deleted from another plotter");
+            return;
+        }
+        await EditRegion(region);
     }
 
     // --- Route popup actions -------------------------------------------
@@ -640,7 +665,7 @@ public partial class Map
         if (route is null) { Toasts.Error("Route not found"); return; }
 
         // If a DIFFERENT route is already the active course, don't
-        // silently switch -- one stray tap on the route-popup Activate
+        // silently switch - one stray tap on the route-popup Activate
         // button would drop whatever navigation is running. Prompt so
         // the intent is explicit. No prompt when:
         //   - nothing is active (first activation)
@@ -674,7 +699,7 @@ public partial class Map
     /// but the user could tap a stale dot a moment after a course change.
     /// Verify the id still matches the current active course before
     /// PUTting, otherwise we'd risk silently re-activating an old route.
-    /// Confirmation is on -- accidental taps mid-passage shouldn't
+    /// Confirmation is on - accidental taps mid-passage shouldn't
     /// re-route the boat.
     /// </remarks>
     [JSInvokable]
@@ -733,7 +758,7 @@ public partial class Map
     /// Stops the currently-active SignalK course. Called from the
     /// "Deactivate" button on the active-route popup (tap the polyline
     /// while a route is active). Mirrors the bottom-bar Stop Navigation
-    /// button so the helm has two paths to the same action -- the bar
+    /// button so the helm has two paths to the same action - the bar
     /// for "fast access while overlooking the chart", the popup for
     /// "I'm already pointing at the route I want to dismiss".
     /// </summary>
@@ -745,11 +770,11 @@ public partial class Map
     //
     // Note on anchor / route relationship: route activation NO LONGER
     // auto-raises the anchor. The reverse direction stays (dropping the
-    // anchor clears any active course -- see SyncServerAnchorAsync /
+    // anchor clears any active course - see SyncServerAnchorAsync /
     // ToggleAnchor) because anchoring is the more decisive intent: a
     // boat that just dropped the hook is unambiguously not under way.
     // Going the other direction (activating a route) does NOT mean the
-    // helm has actually lifted the anchor yet -- they may be planning
+    // helm has actually lifted the anchor yet - they may be planning
     // the next leg while still on the hook. Auto-raising on activate
     // was wrong for that workflow and surprised users when they
     // weren't ready to leave.
@@ -767,13 +792,13 @@ public partial class Map
                 // moving but the server's anchor watch is still armed.
                 // The drag alarm rule fires the moment the boat leaves
                 // the anchor radius, blasting ANCHOR DRAG repeatedly.
-                // We deliberately don't auto-raise (per user spec --
+                // We deliberately don't auto-raise (per user spec -
                 // they may be planning the next leg from the hook),
                 // but we DO surface a non-blocking note so the helm
                 // remembers to raise before getting under way.
                 if (Data.AnchorActive)
                 {
-                    Toasts.Show("Anchor still active -- raise it before getting under way to silence the drag alarm",
+                    Toasts.Show("Anchor still active - raise it before getting under way to silence the drag alarm",
                         ToastLevel.Info, durationSec: 8);
                 }
                 // Force an immediate route draw instead of waiting for
@@ -816,7 +841,7 @@ public partial class Map
     /// Turns off follow-boat mode when the user explicitly pans to
     /// something on the map (vessel, note, region, waypoint). Without
     /// this the next position update re-centres on own boat and the
-    /// user sees a flash of the target, then a snap back -- the
+    /// user sees a flash of the target, then a snap back - the
     /// field-reported "goes to wrong location" bug. Shared helper so
     /// every Focus* path uses the same logic.
     /// </summary>

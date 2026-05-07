@@ -126,7 +126,7 @@ internal sealed record GeoJsonRegionMultiPolygonFeature(
 // Wire-order note: the share Feature ctor is (type, geometry,
 // properties), the export Feature ctors above are
 // (type, properties, geometry). Both shapes match the previous
-// anonymous-type literal layout exactly -- preserving byte-level
+// anonymous-type literal layout exactly - preserving byte-level
 // parity with what the helm previously sent / shared. Don't
 // "normalise" the two to the same order: GeoJSON consumers parse
 // by key, but the exact byte sequence is what was field-tested

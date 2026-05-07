@@ -32,7 +32,7 @@ public interface IMapControlsJs
     /// <summary>Drop the laylines polylines (close-hauled tack
     /// projections). Push happens automatically on every applyFrame
     /// when laylines are enabled, so there's no setLaylines wrapper
-    /// here -- only the explicit clear on toggle-off / dispose.</summary>
+    /// here - only the explicit clear on toggle-off / dispose.</summary>
     Task ClearLaylinesAsync();
 
     /// <summary>Master gate for own-ship informational lines (COG
@@ -100,7 +100,7 @@ public interface IMapControlsJs
     /// label should show; null falls back to the local clock so
     /// pre-v2 servers and synthetic locally-raised entries still
     /// render a timestamp. <paramref name="selfMmsi"/> is the
-    /// helm vessel's MMSI -- shown in the marker's popup so a
+    /// helm vessel's MMSI - shown in the marker's popup so a
     /// helm reading the casualty fix off the chart can also read
     /// it onto the VHF mic without going to a separate page.</summary>
     Task SetMobAsync(double lat, double lon, string? createdAtIso, string? selfMmsi);

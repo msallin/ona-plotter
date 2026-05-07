@@ -20,7 +20,7 @@ public sealed record VesselListEntry(
     string? ColregsRole,
     /// <summary>LOA in metres from <c>design.length.overall</c> (AIS
     /// Type 5 / 24 static). Null when the AIS source hasn't broadcast
-    /// static -- common for class-B targets. Layers-panel row hides
+    /// static - common for class-B targets. Layers-panel row hides
     /// the dimensions chip entirely when both this and
     /// <see cref="BeamMeters"/> are null.</summary>
     double? LengthOverallMeters = null,

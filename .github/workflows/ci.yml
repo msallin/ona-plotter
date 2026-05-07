@@ -143,7 +143,7 @@ jobs:
 
       # Smoke is required. Fuzz uses a 200-click budget which fills
       # the test's 3-min cap (avg ~0.4 s per click on a healthy CI
-      # runner -- ~80 s real-time, plenty of headroom). Higher click
+      # runner - ~80 s real-time, plenty of headroom). Higher click
       # counts catch "banner path crashes after N random clicks"
       # regressions the local 10-min fuzz exercises. Seed is fixed
       # so a failure reproduces on a dev machine with the same input.

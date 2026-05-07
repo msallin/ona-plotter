@@ -6,7 +6,7 @@
 //   * Guard zone ring around own boat (CPA alarm radius).
 //   * Harbor mode declutter: drops name labels and hides the guard
 //     ring without losing per-context state. COG vectors + CPA
-//     crossing lines stay -- moored vessels are filtered out C#-side
+//     crossing lines stay - moored vessels are filtered out C#-side
 //     by HarborAisFilter, so every target still on screen is moving
 //     and the helm needs to see where it's heading + any closing
 //     geometry. Audio CPA alarm is suppressed by CpaAlarmRule on
@@ -32,14 +32,14 @@ let rotateMarker = null;
 const aisMarkers = {};
 const aisVectors = {};
 // Tip-of-vector dot. Reads as "this is where the boat will be in
-// VECTOR_MINUTES" -- without it the line just trails off and the
+// VECTOR_MINUTES" - without it the line just trails off and the
 // helm has to mentally extrapolate the endpoint.
 const aisVectorTips = {};
 const aisCpaOwnLines = {};
 const aisCpaTgtLines = {};
 // X markers at the closest-approach endpoints. Rendering each
 // CPA point as a small "×" rather than a midpoint label means the
-// helm can SEE the meeting point on the chart -- the previous
+// helm can SEE the meeting point on the chart - the previous
 // label hid it. The label is now a tooltip BOUND to the target's
 // X so it sits above without obscuring the point itself.
 const aisCpaTgtX = {};
@@ -61,7 +61,7 @@ const AIS_TRAIL_SECONDS = 300;
 // Best-effort external-lookup cache for vessels whose SignalK feed
 // hasn't yet delivered a static-data AIS message (message 5 / 24).
 // Keyed by MMSI. A value of null means "looked up and came back
-// empty" -- prevents endless retries. Bounded: on insert past
+// empty" - prevents endless retries. Bounded: on insert past
 // VESSEL_NAME_CACHE_MAX we drop the oldest entry. A Map is used
 // because its iteration is insertion-ordered, so the first key is
 // the oldest, which is all we need for a simple LRU with promote-
@@ -70,10 +70,10 @@ const VESSEL_NAME_CACHE_MAX = 500;
 const vesselNameCache = new Map();
 
 // Country-flag cache. Two layers keyed by MMSI:
-//   * flagPromiseCache (mmsi -> Promise<dataUri | null>) -- dedupes
+//   * flagPromiseCache (mmsi -> Promise<dataUri | null>) - dedupes
 //     in-flight fetches so two popup-opens for the same vessel in
 //     quick succession share one network round-trip.
-//   * flagSettledCache (mmsi -> dataUri | null) -- populated when
+//   * flagSettledCache (mmsi -> dataUri | null) - populated when
 //     the promise resolves. Subsequent popup builds read this
 //     synchronously and embed the data URI directly, so a second
 //     open for a vessel never hits the network at all (and doesn't
@@ -124,7 +124,7 @@ const sartIconCache = {};
 // AIS icon size. 28 leaves own boat (30) visibly bigger while making
 // other traffic actually legible at chart zoom. 24 read as "too
 // small" on a helm screen, especially with a ship-type glyph
-// overlaid -- the glyph shrank to noise.
+// overlaid - the glyph shrank to noise.
 const AIS_ICON_SIZE = 28;
 const RADAR_ICON_SIZE = 26;
 
@@ -132,9 +132,9 @@ const RADAR_ICON_SIZE = 26;
 let selfLat = 0, selfLon = 0, selfCogRad = null, selfSogMs = null;
 
 // Guard zone (CPA alarm envelope drawn around own boat). Two rings:
-//   * guardZoneRing -- DANGER band at radius. CPA chips with a
+//   * guardZoneRing - DANGER band at radius. CPA chips with a
 //     red/danger style appear when a vessel's CPA is inside this.
-//   * guardZoneWarningRing -- WARNING band at radius * warningFactor.
+//   * guardZoneWarningRing - WARNING band at radius * warningFactor.
 //     Drawn fainter + dashed so the helm SEES that amber CPA chips
 //     for vessels whose CPA falls between the two rings are still
 //     within the (wider) advisory band, not "outside the guard ring"
@@ -152,7 +152,7 @@ let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThres
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
 let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
 // Visibility toggle from the Misc layers section. The ring still
-// drives the CPA / TCPA alarm pipeline regardless -- this is a pure
+// drives the CPA / TCPA alarm pipeline regardless - this is a pure
 // rendering flag. Default true preserves the previous always-visible
 // behaviour for installs that haven't explicitly hidden it.
 let guardZoneVisible = true;
@@ -198,7 +198,7 @@ export function init(map, deps) {
     if (!map.getPane('aisCogVectors')) {
         const pane = map.createPane('aisCogVectors');
         pane.style.zIndex = '410';
-        // Pane events disabled -- we don't want the pane element
+        // Pane events disabled - we don't want the pane element
         // intercepting clicks meant for the marker pane above.
         pane.style.pointerEvents = 'none';
     }
@@ -361,7 +361,7 @@ function getFlagDataUri(mmsi) {
 /**
  * Build the popup-flag <img> HTML for an MMSI. When the flag is
  * already cached (second + opens for the same vessel) the data URI
- * is embedded directly -- no network, no flicker. On first miss a
+ * is embedded directly - no network, no flicker. On first miss a
  * placeholder is emitted with a unique id; the async fetch fills
  * it (or hides it on 404) once the data URI lands.
  */
@@ -369,7 +369,7 @@ function flagImgHtml(mmsi) {
     if (!mmsi) return '';
     if (flagSettledCache.has(mmsi)) {
         const settled = flagSettledCache.get(mmsi);
-        // Reading counts as "use" -- bump the LRU position so a
+        // Reading counts as "use" - bump the LRU position so a
         // helm cycling through the same handful of buddies doesn't
         // get them evicted by passing traffic.
         lruBump(flagSettledCache, mmsi);
@@ -457,7 +457,7 @@ export function resolveAisPopupTitle({ displayName, name, callsign, mmsi, buddy,
 
 /**
  * Builds the full AIS popup HTML string from a vessel snapshot.
- * Called lazily -- only when the popup is actually about to open or
+ * Called lazily - only when the popup is actually about to open or
  * is already open and the data changed. Building 200+ of these
  * every 3 s when the user isn't looking at any of them was visible
  * perf overhead on a weak client.
@@ -491,7 +491,7 @@ function buildAisPopupHtml(snap) {
     // Call V7A6238 · Sailing" reads as one quick line under the title;
     // previously each was a row in the data table eating vertical space).
     // Round 3 adds LOA / beam (AIS Type 5 / 24 static, often absent on
-    // class-B targets that don't broadcast static -- which is why we
+    // class-B targets that don't broadcast static - which is why we
     // append to the parts list rather than reserving a column: rows
     // without dimensions don't grow the popup at all).
     const subtitleParts = [];
@@ -499,7 +499,7 @@ function buildAisPopupHtml(snap) {
     if (callsign) subtitleParts.push(`Call ${callsign}`);
     if (type) subtitleParts.push(type);
     // Dimensions: "12.5 × 4.2 m" when both present, "L 12.5 m" or
-    // "B 4.2 m" when only one. Skip entirely when both null --
+    // "B 4.2 m" when only one. Skip entirely when both null -
     // helm-feedback was explicit: "show nothing if not present".
     const loa = (typeof v.loaM === 'number' && isFinite(v.loaM)) ? v.loaM : null;
     const beam = (typeof v.beamM === 'number' && isFinite(v.beamM)) ? v.beamM : null;
@@ -522,7 +522,7 @@ function buildAisPopupHtml(snap) {
     let cpaHtml = '';
     if (cpaInfo && cpaInfo.tcpa > 0) {
         const cls = isDangerEff ? 'ais-popup-cpa-danger' : 'ais-popup-cpa';
-        // Bold the NUMBERS only -- "nm" / "in" / "min" are scaffolding
+        // Bold the NUMBERS only - "nm" / "in" / "min" are scaffolding
         // and the eye should latch on the magnitudes. Per-token <strong>
         // wrapping; the surrounding cell drops its global font-weight
         // override (see .ais-popup-cpa rule in app.css) so the units
@@ -535,7 +535,7 @@ function buildAisPopupHtml(snap) {
 
     // COLREGS rows: label on the LEFT (like every other data row),
     // role + classification stacked in the value cell on the RIGHT.
-    // Role first (bold + coloured -- it's the action the helm has to
+    // Role first (bold + coloured - it's the action the helm has to
     // take), classification under it (regular weight). The "?" opens
     // an in-app modal via the data-ona-colregs hook (the previous
     // /help/colregs link was broken under the SK plugin mount and
@@ -696,7 +696,7 @@ export function updateAisTargets(vessels) {
         if (!marker) {
             marker = L.marker([v.lat, v.lon], { icon }).addTo(mapRef);
             // Stash the icon ref on the marker so the per-tick path
-            // below can skip setIcon when nothing changed -- the icon
+            // below can skip setIcon when nothing changed - the icon
             // caches return the SAME divIcon reference for the same
             // (color, category, source) tuple, so a strict-equality
             // compare detects "no rebuild needed". setIcon detaches
@@ -760,7 +760,7 @@ export function updateAisTargets(vessels) {
         }
 
         // Vessel staleness. Anything not heard from in >30 s is
-        // geometrically stale -- its rendered position is a guess,
+        // geometrically stale - its rendered position is a guess,
         // not a fix. Fade the marker + trail so the helm's eye lands
         // on live targets first. SART pulses regardless (life-safety
         // beacons can drop out briefly and still matter); buddies
@@ -788,7 +788,7 @@ export function updateAisTargets(vessels) {
         }
 
         // Name label visible at zoom >= 12. Resolution (name -> mmsi,
-        // with buddy star prefix) happens C#-side -- Map.razor.PushAisTargets
+        // with buddy star prefix) happens C#-side - Map.razor.PushAisTargets
         // stamps v.displayName so this label and any other label-rendering
         // surface share one fallback chain. Suppressed in harbor mode
         // to keep the chart legible when entering a busy port.
@@ -818,7 +818,7 @@ export function updateAisTargets(vessels) {
         // harbour, 3 s cadence) shows up in profiles as measurable
         // overhead even though most popups are never opened. We now
         // STASH the snapshot on the marker and only rebuild when the
-        // popup is actually visible -- once on popupopen and again on
+        // popup is actually visible - once on popupopen and again on
         // each tick the popup stays open. buildAisPopupHtml reads the
         // stashed data directly so the per-vessel HTML work is deferred
         // to the lazy path.
@@ -839,7 +839,7 @@ export function updateAisTargets(vessels) {
             // autoPan re-enabled (was false earlier under "no focus
             // change on collision course"): in the field a marker near
             // the top of the screen meant the popup rendered above it
-            // and went off-viewport entirely -- the helm couldn't
+            // and went off-viewport entirely - the helm couldn't
             // read the CPA / COG row at all. autoPan with a generous
             // padding still moves the map only when strictly needed
             // and keeps own-boat in view at all but the most extreme
@@ -859,7 +859,7 @@ export function updateAisTargets(vessels) {
                 }
             });
         } else if (marker.isPopupOpen()) {
-            // Popup is on screen right now -- user is watching. Refresh
+            // Popup is on screen right now - user is watching. Refresh
             // live so the SOG / CPA / buddy toggle label update without
             // a close-reopen round-trip.
             marker.setPopupContent(buildAisPopupHtml(marker._onaVesselSnapshot));
@@ -879,7 +879,7 @@ export function updateAisTargets(vessels) {
 
         // Course vector. Drawn for any vessel with a known COG and a
         // non-trivial SOG (vectorEnd returns null below the 0.1 m/s
-        // floor). Harbor mode no longer hides this -- the moored-
+        // floor). Harbor mode no longer hides this - the moored-
         // vessel filter on the C# side (HarborAisFilter) already
         // drops every dwelling target before it reaches us, so the
         // vessels still on screen in harbor mode are the ones
@@ -915,7 +915,7 @@ export function updateAisTargets(vessels) {
                 vec.setLatLngs([[v.lat, v.lon], end]);
                 vec.setStyle({ color: vecColor });
             }
-            // Small circle at the tip of the vector -- "boat is here
+            // Small circle at the tip of the vector - "boat is here
             // at +VECTOR_MINUTES" landmark so the helm reads the
             // endpoint without extrapolating from the trailing
             // dashes. Same colour as the vector so the eye groups
@@ -981,7 +981,7 @@ export function updateAisTargets(vessels) {
             // the label so it sits ABOVE the cross rather than over
             // it.
             const cpaName = v.displayName || v.name || v.mmsi || 'Unknown';
-            // Compact format (no spaces around units) -- focus-group
+            // Compact format (no spaces around units) - focus-group
             // readback. Helm reads "0.42nm in 5min" as one phrase.
             // "T -N′" (prime symbol) reads as "Time minus N
             // minutes" in countdown-clock convention, which is the
@@ -1003,7 +1003,7 @@ export function updateAisTargets(vessels) {
             const prevSeverity = aisCpaLastSeverity[v.context];
             aisCpaLastSeverity[v.context] = severity;
             if (severity === 'warn' && prevSeverity !== 'warn') {
-                // First-tick of a warn -- pop the tooltip briefly.
+                // First-tick of a warn - pop the tooltip briefly.
                 const m = aisCpaTgtX[v.context];
                 if (m) {
                     m.openTooltip();
@@ -1255,7 +1255,7 @@ export function setGuardZoneWarningRingVisible(visible) {
 // (a concurrent updateAisTargets that just deleted the key, or a
 // disposed Leaflet layer); without the guard map.removeLayer(undefined)
 // throws TypeError: Cannot read properties of undefined ('_layerAdd')
-// and the whole setHarborMode call rejects -- which the C# side
+// and the whole setHarborMode call rejects - which the C# side
 // then has to roll back via the toast path. Catching here makes the
 // JS-side teardown best-effort and lets the C# happy path stay
 // green.
@@ -1272,7 +1272,7 @@ export function setHarborMode(enabled) {
         // pontoon vessels visible the labels stack into a wall of text)
         // and the GUARD RING (anchored-helm-only feature; not useful
         // while making way through pontoon traffic). COG vectors and
-        // CPA crossing-lines stay visible -- the moored-vessel filter
+        // CPA crossing-lines stay visible - the moored-vessel filter
         // on the C# side already drops every dwelling target before it
         // reaches us, so the vessels still on screen are the moving
         // ones the helm needs to track. The next updateAisTargets tick
@@ -1371,7 +1371,7 @@ function drawGuardZone() {
             // style). Helm-feedback: the previous 4 % amber fill
             // tinted everything inside the inner guard, including
             // own boat's marker, the COG vector tip, and any AIS
-            // target sitting in port -- "I just want to see the
+            // target sitting in port - "I just want to see the
             // boundary, not a coloured area". Outer ring is dashed
             // already; making the inner ring dashed too gives the
             // pair a consistent visual language ("these are
@@ -1411,7 +1411,7 @@ function drawGuardZone() {
     // Hidden when:
     //   - the helm turned it off via Settings (guardZoneWarningRingVisible),
     //   - warningFactor <= 1 (helm collapsed warning into danger
-    //     band -- nothing meaningful to draw outside the inner ring),
+    //     band - nothing meaningful to draw outside the inner ring),
     //   - the computed warning radius would equal the inner radius
     //     pixel-for-pixel.
     if (!guardZoneWarningRingVisible) {

@@ -19,7 +19,7 @@ namespace OnaPlotter.Services;
 ///
 /// The previous version of this file imported a sibling ES module
 /// (<c>errorRelay.js</c>) that delegated back to the bootstrap; that
-/// shim is gone -- one less file, one less round-trip on cold start.
+/// shim is gone - one less file, one less round-trip on cold start.
 /// </summary>
 public sealed class ClientErrorRelay
 {
@@ -50,7 +50,7 @@ public sealed class ClientErrorRelay
         }
         catch
         {
-            // Relay failures must never propagate -- the relay exists
+            // Relay failures must never propagate - the relay exists
             // to surface OTHER errors, not generate its own.
             return false;
         }

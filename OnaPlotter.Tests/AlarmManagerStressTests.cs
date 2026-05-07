@@ -97,7 +97,7 @@ public class AlarmManagerStressTests
         sw.Stop();
 
         // 60 ticks at ~10 ms each in steady state = ~600 ms; budget
-        // 2 s gives ~3x slack -- catches a per-tick regression that
+        // 2 s gives ~3x slack - catches a per-tick regression that
         // would push us above the 30 ms / tick the alarm pipeline
         // budgets within the 1 Hz cadence.
         await Assert.That(sw.Elapsed.TotalSeconds)

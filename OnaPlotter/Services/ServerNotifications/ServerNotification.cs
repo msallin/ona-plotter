@@ -21,7 +21,7 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// <param name="Severity">Mapped from State: emergency/alarm = Danger,
 /// warn/alert = Warn. Unrecognised states fail safe to Danger so a
 /// genuine alarm with a typo'd state still surfaces.</param>
-/// <param name="Id">SignalK v2 server-assigned UUID -- stable for the
+/// <param name="Id">SignalK v2 server-assigned UUID - stable for the
 /// lifetime of this notification across re-emits. Null on
 /// pre-2.21 servers; the alarm pipeline falls back to the path-based
 /// dedup key in that case.</param>
@@ -30,15 +30,15 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// banner buttons and lets <see cref="ServerNotificationsAlarmRule"/>
 /// suppress already-acknowledged notifications.</param>
 /// <param name="Latitude">Optional latitude attached to the
-/// notification value (SignalK v2 safety alarms -- MOB / fire /
-/// collision -- carry a <c>position</c> block so the chart can
+/// notification value (SignalK v2 safety alarms - MOB / fire /
+/// collision - carry a <c>position</c> block so the chart can
 /// render a marker without the receiver having to look up the
 /// helm's last fix). Null when the server didn't publish one.</param>
 /// <param name="Longitude">Companion to <see cref="Latitude"/>;
 /// always travels paired (both null or both non-null).</param>
 /// <param name="CreatedAt">Server-stamped UTC time the notification
 /// was raised. SignalK v2 notifications carry a <c>createdAt</c>
-/// field on the value -- using it for the MOB chart-marker
+/// field on the value - using it for the MOB chart-marker
 /// timestamp (instead of each plotter's local clock at render time)
 /// keeps every connected plotter in lockstep on "when did this
 /// happen". Null on pre-v2 servers / synthetic locally-raised

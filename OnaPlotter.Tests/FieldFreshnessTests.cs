@@ -110,7 +110,7 @@ public class FieldFreshnessTests
     [Test]
     public async Task FreshnessOf_JustBefore10s_IsLive()
     {
-        // The other side of the same boundary -- 9.999 s is still live.
+        // The other side of the same boundary - 9.999 s is still live.
         var (nav, clock) = Make();
         nav.Apply("environment.depth.belowTransducer", 5.0);
         clock.Now = clock.Now.AddMilliseconds(9999);

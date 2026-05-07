@@ -11,13 +11,13 @@ namespace OnaPlotter.Utilities;
 /// <c>IMapOverlaysJs.AddChartLayerAsync</c>) so the helm gets the
 /// same uniform control surface (toggle, reorder, quick-bar, opacity
 /// stacking) over them as over SignalK-served charts. Tiles still
-/// fetch from the original internet URLs -- not from the SignalK
-/// server -- to preserve the offline-friendly fallback behaviour
+/// fetch from the original internet URLs - not from the SignalK
+/// server - to preserve the offline-friendly fallback behaviour
 /// (the boat doesn't need to host a basemap tileset).
 ///
 /// <para>Identifiers (<c>osm</c>, <c>openseamap</c>) are deliberately
 /// short and lowercase so they survive any future SK chart server
-/// that happens to also publish a chart with the same name -- a
+/// that happens to also publish a chart with the same name - a
 /// real SK chart would be prefixed with the plugin's namespace
 /// (<c>signalk-charts-foo:osm</c>), so collisions are unlikely.
 /// Both charts disable upscale (<see cref="SignalkChart.AllowUpscale"/>

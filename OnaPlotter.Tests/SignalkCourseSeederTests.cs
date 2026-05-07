@@ -141,7 +141,7 @@ public class SignalkCourseSeederTests
     public async Task SeedAsync_404_DoesNotFireOnDataChanged()
     {
         // SignalK servers without the v2 Course API or course-provider
-        // plugin return 404 -- silent no-op at Debug level.
+        // plugin return 404 - silent no-op at Debug level.
         var data = new NavigationData();
         int calls = 0;
         var seeder = new SignalkCourseSeeder(

@@ -8,7 +8,7 @@ namespace OnaPlotter.Services.Api;
 /// capabilities / legend, and control read + write. The binary spoke
 /// stream is opened JS-side (we hand it the URL constructed via
 /// <see cref="SignalKUrls.RadarSpokeWs"/>). ARPA target polling is
-/// not exposed yet -- the consumer (overlay markers) doesn't exist;
+/// not exposed yet - the consumer (overlay markers) doesn't exist;
 /// adding the call now would force an API shape (3-state null,
 /// discriminated result, or pre-cached capability) without a real
 /// caller to design for. Re-add when the targets UI lands.
@@ -36,7 +36,7 @@ public interface IRadarApi
     /// fields (value only for numbers, value+endValue for sectors, etc.).
     /// Returns an <see cref="ApiResult"/> whose <c>Error</c> is the
     /// server's <c>error</c> field when present (e.g. "Control range
-    /// value 12000 is not a legal value" -- worth surfacing verbatim
+    /// value 12000 is not a legal value" - worth surfacing verbatim
     /// so the helm knows which value the server rejected).</summary>
     Task<ApiResult> SetControlAsync(string radarId, string controlId, ControlValue value, CancellationToken ct = default);
 }

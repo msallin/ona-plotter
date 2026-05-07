@@ -1,10 +1,10 @@
 // Single source of truth for the JS-side renderer formatters.
 //
 // Every helper here mirrors a tested C# canonical in
-// OnaPlotter/Utilities/ -- the C# tests pin the exact strings, this
+// OnaPlotter/Utilities/ - the C# tests pin the exact strings, this
 // module reproduces the formula so JS-tick-rate callers don't need
 // an interop round-trip per render. If you change one side, change
-// the other -- the C# tests are the contract; this file is the
+// the other - the C# tests are the contract; this file is the
 // renderer-side mirror.
 //
 // Cross-references (each function names its C# canonical):
@@ -22,10 +22,10 @@
 /** m/s -> knots multiplier. Matches Format.MsToKnots. */
 export const MS_TO_KNOTS = 1.94384;
 
-/** SpeedColor.DefaultRgb -- default colour when SOG is unknown. */
+/** SpeedColor.DefaultRgb - default colour when SOG is unknown. */
 export const SPEED_COLOR_DEFAULT = '#3b82f6';
 
-/** SpeedColor.Buckets -- per-bucket lower bound (m/s). */
+/** SpeedColor.Buckets - per-bucket lower bound (m/s). */
 export const SPEED_BUCKETS = [0, 1, 2, 3, 5, 8];
 
 /** StalenessOpacity threshold constants. */
@@ -99,14 +99,14 @@ export function mobElapsed(seconds) {
     return `T+${hr}h${min % 60}m`;
 }
 
-/** Single-axis lat formatter -- "47.50000°N". Used by popup
+/** Single-axis lat formatter - "47.50000°N". Used by popup
  * tables that put lat / lon in separate cells. */
 export function latDms(lat) {
     const ns = lat >= 0 ? 'N' : 'S';
     return `${Math.abs(lat).toFixed(5)}°${ns}`;
 }
 
-/** Single-axis lon formatter -- "8.50000°E". */
+/** Single-axis lon formatter - "8.50000°E". */
 export function lonDms(lon) {
     const ew = lon >= 0 ? 'E' : 'W';
     return `${Math.abs(lon).toFixed(5)}°${ew}`;
@@ -116,7 +116,7 @@ export function lonDms(lon) {
  * Format.LatLonDms mirror. Returns "47.50000°N 8.50000°W"
  * (or with a custom separator e.g. ", ") with five decimals
  * (~1m precision). Default separator is a single space, matching
- * the C# canonical -- callers that need a comma pass
+ * the C# canonical - callers that need a comma pass
  * <c>latLonDms(lat, lon, ', ')</c>.
  */
 export function latLonDms(lat, lon, sep = ' ') {
@@ -127,7 +127,7 @@ export function latLonDms(lat, lon, sep = ' ') {
  * Format.RangeRingLabel mirror. Returns "0.5 nm" / "1.5 nm" /
  * "5 nm" / "" for non-finite or zero-or-negative input. Trailing
  * zeros are stripped ("0.50" -> "0.5", "1.0" -> "1") to keep
- * chart labels compact -- both AIS guard rings and radar range
+ * chart labels compact - both AIS guard rings and radar range
  * rings use this formatter.
  */
 export function rangeRingLabel(nm) {
@@ -144,7 +144,7 @@ export function rangeRingLabel(nm) {
 }
 
 /**
- * RouteEta.Format mirror -- canonical: OnaPlotter/Utilities/RouteEta.cs.
+ * RouteEta.Format mirror - canonical: OnaPlotter/Utilities/RouteEta.cs.
  * Returns the popup ETA line "ETA HH:MM (in 1h 23m)" / "ETA HH:MM
  * (in 5m)" / "ETA HH:MM (in >99h)", or null on null/non-finite/non-
  * positive input (callers drop the row in those cases). Hour cap

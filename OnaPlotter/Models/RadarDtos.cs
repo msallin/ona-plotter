@@ -15,7 +15,7 @@ namespace OnaPlotter.Models;
 //
 // Wire units follow the spec: distances in metres, angles in radians
 // (0..2pi for bearings, -pi..+pi for sectors/zones), speed in m/s,
-// time in seconds. We don't auto-convert on deserialise -- consumers
+// time in seconds. We don't auto-convert on deserialise - consumers
 // format for the helm's chosen units.
 
 /// <summary>
@@ -67,7 +67,7 @@ public sealed class RadarInfo
     public int? SpokesPerRevolution { get; set; }
 
     // Spec wire field is "maxSpokeLen" on the /radars list endpoint
-    // and "maxSpokeLength" on /capabilities -- same concept, two
+    // and "maxSpokeLength" on /capabilities - same concept, two
     // different keys depending on endpoint. We normalise to the
     // longer C# name so callers can write a uniform
     //   caps?.MaxSpokeLength ?? info?.MaxSpokeLength
@@ -172,8 +172,8 @@ public sealed class RadarLegend
 
     // The doppler-band byte indices (dopplerApproaching, dopplerReceding,
     // dopplerRain) are intentionally not modelled here. Two wire shapes
-    // exist -- a scalar (older SK spec docs, e.g. 18) and a 2-element
-    // array (Mayara, e.g. [17, 1] = startByte + count) -- and modelling
+    // exist - a scalar (older SK spec docs, e.g. 18) and a 2-element
+    // array (Mayara, e.g. [17, 1] = startByte + count) - and modelling
     // the field as int? made STJ throw on the array form, RadarApi's
     // catch swallowed it, capabilities returned null, and the JS layer
     // fell back to a default palette that paints sea-clutter bytes
@@ -314,7 +314,7 @@ internal sealed class LegendColorConverter : JsonConverter<RadarColor>
 
 /// <summary>
 /// Schema for a single radar control. Clients render UI widgets off
-/// <see cref="DataType"/> + the min/max/step/descriptions fields --
+/// <see cref="DataType"/> + the min/max/step/descriptions fields -
 /// no brand-specific rendering code required.
 /// </summary>
 public sealed class ControlDefinition
@@ -455,7 +455,7 @@ public sealed class ControlValue
     /// double, or null when the control is a string / button / the
     /// value is missing. <see cref="JsonIgnoreAttribute"/> because
     /// this is a typed accessor over <see cref="Value"/>, not a wire
-    /// field -- without the attribute STJ would serialise it on
+    /// field - without the attribute STJ would serialise it on
     /// every PUT and the radar provider would reject the unknown
     /// "NumericValue" property.</summary>
     [JsonIgnore]
@@ -492,8 +492,8 @@ public sealed class ControlValue
     /// but the live SK + Mayara stack only accepts string for range; we
     /// emit <c>{"value":"1852"}</c> not <c>{"value":1852}</c>. The
     /// <see cref="System.Globalization.CultureInfo.InvariantCulture"/>
-    /// argument is defensive only -- <c>int.ToString()</c> is implicitly
-    /// culture-invariant for the default ("G") format -- but it locks
+    /// argument is defensive only - <c>int.ToString()</c> is implicitly
+    /// culture-invariant for the default ("G") format - but it locks
     /// the contract against a future refactor that adopts a culture-
     /// sensitive format string.
     /// </summary>

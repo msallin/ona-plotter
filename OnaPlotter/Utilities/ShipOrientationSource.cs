@@ -44,7 +44,7 @@ public static class ShipOrientationResolver
 
     /// <summary>Persisted-string &lt;-&gt; enum mapping. Unknown
     /// strings fall back to <see cref="ShipOrientationSource.HeadingTrue"/>
-    /// rather than throw -- a corrupt localStorage value should
+    /// rather than throw - a corrupt localStorage value should
     /// never crash the chart.</summary>
     public static ShipOrientationSource Parse(string? raw) =>
         (raw ?? string.Empty).Trim().ToLowerInvariant() switch
@@ -69,7 +69,7 @@ public static class ShipOrientationResolver
     /// preferred source, with a deterministic fallback through the
     /// remaining three fields. The optional <paramref name="smoothedCog"/>
     /// override is used in place of <c>data.CourseOverGround*</c>
-    /// when the resolved field is a COG variant -- the boat icon
+    /// when the resolved field is a COG variant - the boat icon
     /// stops twitching with every wave because the rotation
     /// pulls from <c>NavigationAverages.CogMean30Sec</c>.
     /// </summary>

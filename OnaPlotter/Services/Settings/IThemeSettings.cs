@@ -39,7 +39,7 @@ public interface IThemeSettings
     string? LastManualNightOverrideSunCluster { get; }
 
     /// <summary>"system" (follow OS) / "light" / "dark". Independent
-    /// of <see cref="NightMode"/> -- night applies on top.</summary>
+    /// of <see cref="NightMode"/> - night applies on top.</summary>
     string Theme { get; }
 
     /// <summary>When true, the sidebar collapses to icon-only.</summary>
@@ -64,7 +64,7 @@ public interface IThemeSettings
     /// redundancy backstop.</summary>
     Task MarkManualNightToggleAsync(string? sunCluster);
 
-    /// <summary>Drop the manual-override cluster -- called when the
+    /// <summary>Drop the manual-override cluster - called when the
     /// auto-night check sees env.sun transition out of the override
     /// cluster, signalling the helm's manual choice is now stale
     /// and auto-night should resume.</summary>

@@ -9,7 +9,7 @@ namespace OnaPlotter.Services.Mob;
 /// store's <see cref="ServerNotificationStore.OnPathChanged"/> event
 /// and translates each <c>notifications.mob.*</c> mutation to a
 /// <c>setMob</c> / <c>clearMob</c> JS call so the chart visual
-/// stays in lockstep with the alarm pipeline -- no separate
+/// stays in lockstep with the alarm pipeline - no separate
 /// "is mobActive" boolean to drift out of sync.
 ///
 /// <para>v1 limit: the JS <c>mobLayer</c> single-marker
@@ -25,7 +25,7 @@ public sealed class MobChartRenderer : IDisposable
 
     private readonly ServerNotificationStore _store;
 
-    /// <summary>Provider for the helm vessel's MMSI -- shown in
+    /// <summary>Provider for the helm vessel's MMSI - shown in
     /// the MOB marker's popup so the helm can read MMSI + position
     /// onto the VHF mic without leaving the chart. Optional: tests
     /// pass null and the popup just omits the MMSI row. Production
@@ -36,7 +36,7 @@ public sealed class MobChartRenderer : IDisposable
     /// <summary>Current JS attachment (bridge handle + dedup state),
     /// or null when no Map page is mounted. Bundling the bridge with
     /// its dedup slots means each <see cref="AttachJs"/> creates a
-    /// fresh dedup slate by construction -- no chance of a previous
+    /// fresh dedup slate by construction - no chance of a previous
     /// page's "rendered path / coords / createdAt" memory bleeding
     /// into the new bridge and short-circuiting its first paint.</summary>
     private Attachment? _attachment;
@@ -58,7 +58,7 @@ public sealed class MobChartRenderer : IDisposable
         if (js is null) throw new ArgumentNullException(nameof(js));
         // Always construct a new Attachment so the dedup slots
         // start null. ResyncRender then pushes the current MOB
-        // unconditionally on the first call -- the JS layer comes
+        // unconditionally on the first call - the JS layer comes
         // up clean and gets a complete paint without any prior
         // dedup state short-circuiting it.
         _attachment = new Attachment(js);
@@ -119,7 +119,7 @@ public sealed class MobChartRenderer : IDisposable
         }
         // Position is optional on the wire (server can emit MOB
         // without a fix). Without one, the marker can't be drawn
-        // -- the alarm banner still fires; the chart just shows
+        // - the alarm banner still fires; the chart just shows
         // no marker until the helm does something else.
         if (first.Latitude is not double lat || first.Longitude is not double lon)
         {
@@ -128,7 +128,7 @@ public sealed class MobChartRenderer : IDisposable
         // Hand the server-stamped raise time across as ISO-8601 so
         // every connected plotter shows the same "MOB HH:MM:SS"
         // label. Null when the server is pre-v2 (no createdAt
-        // field) -- the JS layer falls back to the local clock.
+        // field) - the JS layer falls back to the local clock.
         var iso = first.CreatedAt is DateTime ts
             ? ts.ToUniversalTime().ToString("o", System.Globalization.CultureInfo.InvariantCulture)
             : null;

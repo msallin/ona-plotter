@@ -11,7 +11,7 @@ namespace OnaPlotter.Tests;
 ///
 /// <para>The drift this catches: someone bumps <see cref="ChartUpscale.MaxLevels"/>
 /// to 4 in C# (and the Settings input picks it up), but the JS
-/// decorator still clamps at 3 -- the helm picks 4, the JS silently
+/// decorator still clamps at 3 - the helm picks 4, the JS silently
 /// reduces to 3, and the chart looks identical to "3" with no
 /// indication anything's wrong. This test fails before that ships.</para>
 /// </summary>
@@ -90,7 +90,7 @@ public class ChartUpscaleJsParityTests
         // unbumped maxZoom: 19 so they go blank past native and the
         // chart's upscaled tiles dominate the view. An earlier
         // iteration bumped them too and the helm reported "OSM
-        // loading on top of my chart" -- the second-frame appearance
+        // loading on top of my chart" - the second-frame appearance
         // of upscaled OSM looked like a flicker. So this parity test
         // expects exactly ONE 'maxZoom: 19 + N' literal (the map
         // itself) and pins it to ChartUpscale.MaxLevels.

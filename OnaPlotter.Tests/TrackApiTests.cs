@@ -181,7 +181,7 @@ public class TrackApiTests
     {
         // Every path the rich query asks for present in `values`,
         // every cell populated. The TrackPoint should carry SOG, COG,
-        // heading, TWS, TWA -- all from the per-row column indices the
+        // heading, TWS, TWA - all from the per-row column indices the
         // server reported via the `values` array.
         string body = """
         {
@@ -390,7 +390,7 @@ public class TrackApiTests
 
         await Assert.That(capturedQuery).IsNotNull();
         // URL-encoded comma is %2C; the order in the query value is
-        // s,w,n,e. Pin the formatted values as substrings -- a future
+        // s,w,n,e. Pin the formatted values as substrings - a future
         // serialiser change that adds extra precision (47.300000)
         // shouldn't break the test, hence the substring matches.
         await Assert.That(capturedQuery!).Contains("bbox=47.3");

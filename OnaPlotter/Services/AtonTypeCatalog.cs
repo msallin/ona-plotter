@@ -46,7 +46,7 @@ public static class AtonTypeCatalog
     }
 
     /// <summary>One row of the catalog: numeric type-id maps to a
-    /// (symbol, side, virtual?) triple. Virtual is a hint -- the
+    /// (symbol, side, virtual?) triple. Virtual is a hint - the
     /// AtoN's own <c>Virtual</c> property is authoritative; the
     /// 20-25 codes happen to be pre-marked virtual in AIS Type 21
     /// but a plugin can publish a different shape.</summary>

@@ -28,7 +28,7 @@ public interface IAlarmAcknowledger
     /// <summary>True when the underlying transport will accept an ack
     /// for this alarm. False on transports that explicitly forbid
     /// acknowledgement (SignalK v2 spec mandates this for emergency-
-    /// state notifications -- MOB, fire, collision -- so the helm
+    /// state notifications - MOB, fire, collision - so the helm
     /// can't silence the audible at one station and have the wheel-
     /// side helm miss it). The banner hides the Acknowledge button
     /// when this is false; local dismiss still clears the helm's own
@@ -39,7 +39,7 @@ public interface IAlarmAcknowledger
     /// <c>AlarmManager.DismissAsync</c> after the local banner has
     /// already cleared. Implementations should swallow transport
     /// failures (network blip, server 5xx) silently or log via the
-    /// shared error relay -- the local dismiss already happened, and
+    /// shared error relay - the local dismiss already happened, and
     /// rolling the UI back on a flaky link is worse than a silent
     /// failure to propagate.</summary>
     Task AcknowledgeAsync();

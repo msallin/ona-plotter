@@ -21,7 +21,7 @@ namespace OnaPlotter.Utilities;
 /// <para>
 /// Format detection is content-sniffing: first non-whitespace
 /// character. <c>&lt;</c> -&gt; XML / GPX; <c>{</c> or <c>[</c> -&gt;
-/// JSON / GeoJSON. Filename extension is not consulted -- helms
+/// JSON / GeoJSON. Filename extension is not consulted - helms
 /// drop in files from various sources and the extension is
 /// sometimes wrong (e.g. a "<c>passage.txt</c>" that contains
 /// GPX). Sniffing makes the import robust to that.

@@ -25,7 +25,7 @@ namespace OnaPlotter.Services.Mob;
 /// path-keyed dict shape and that the WS-driven Apply path doesn't
 /// need. The current dual-entry-with-reconciliation approach keeps
 /// the store API minimal at the cost of one extra Clear per
-/// successful raise -- acceptable.</para>
+/// successful raise - acceptable.</para>
 ///
 /// <para>Persistence: the pending-raise queue is written to
 /// localStorage (key <c>mob.pendingRaise.v1</c>) so an offline
@@ -39,14 +39,14 @@ public sealed class MobService : IMobService, IDisposable
     private const string MobPathPrefix = "notifications.mob.";
 
     /// <summary>Default banner copy when the helm doesn't pass an
-    /// explicit message. Single source of truth -- Map.razor passes
+    /// explicit message. Single source of truth - Map.razor passes
     /// null and inherits this so a future i18n / wording change has
     /// one site to edit.</summary>
     public const string DefaultRaiseMessage = "Person Overboard!";
 
     /// <summary>Backoff schedule for the REST retry loop. After
     /// the table is exhausted the service falls back to the last
-    /// entry indefinitely -- per spec, "never hide or block the
+    /// entry indefinitely - per spec, "never hide or block the
     /// alarm because of network failure".</summary>
     internal static readonly TimeSpan[] BackoffSchedule =
     [
@@ -67,7 +67,7 @@ public sealed class MobService : IMobService, IDisposable
     /// <summary>Live pending raises keyed by localId. One entry per
     /// in-flight MOB; bundles the persistable state, the cancel
     /// handle, and the retry-loop task so add/remove is a single
-    /// dictionary operation -- no chance of leaving an orphan CTS
+    /// dictionary operation - no chance of leaving an orphan CTS
     /// or task behind. The persistable <see cref="PendingRaise"/>
     /// inside survives reload via localStorage; the cancel handle
     /// + loop task are session-scoped.</summary>
@@ -90,8 +90,8 @@ public sealed class MobService : IMobService, IDisposable
         _time = time ?? TimeProvider.System;
 
         // Reconciliation: when any notifications.mob.* path mutates in
-        // the store -- WS echo from the server, our own synthetic, or
-        // a clear -- ReconcileMobPath checks if a pending raise's
+        // the store - WS echo from the server, our own synthetic, or
+        // a clear - ReconcileMobPath checks if a pending raise's
         // recorded serverId matches the path and, if so, tears down
         // the local synthetic so the helm sees one banner / one marker.
         // Also serves the alarm-pipeline wake-up: MainLayout
@@ -141,7 +141,7 @@ public sealed class MobService : IMobService, IDisposable
 
         // Background retry. The CTS is the loop's exit signal
         // (echo arrival, explicit cancel, dispose). The Task is
-        // captured so tests can await it -- production callers
+        // captured so tests can await it - production callers
         // ignore the handle.
         live.Loop = Task.Run(() => RunRaiseLoopAsync(raise, live.Cts.Token));
 
@@ -154,7 +154,7 @@ public sealed class MobService : IMobService, IDisposable
         // Resolve "is this a pending local id (no server twin yet)
         // or an already-synced server id?" If a pending raise's
         // localId matches OR its serverId matches, cancel the retry
-        // loop first -- otherwise the loop completes a successful
+        // loop first - otherwise the loop completes a successful
         // POST after the helm has cleared, and the WS echo of the
         // server twin resurrects the MOB.
         string? matchedLocalId = null;
@@ -203,7 +203,7 @@ public sealed class MobService : IMobService, IDisposable
             return true;
         }
 
-        // DELETE /signalk/v2/api/notifications/<id> -- the actual
+        // DELETE /signalk/v2/api/notifications/<id> - the actual
         // clear path on signalk-server. The previous POST .../clear
         // endpoint returned 404 (it isn't routed), so the local
         // plotter cleared its own banner but no WS delta ever
@@ -269,7 +269,7 @@ public sealed class MobService : IMobService, IDisposable
         // Each entry is a delta-style envelope { context, path,
         // value }; the notification payload sits under .Value, NOT
         // at the top level. Filter by env.Path so a non-MOB emergency
-        // (depth, fire, etc.) doesn't leak into the MOB pipeline --
+        // (depth, fire, etc.) doesn't leak into the MOB pipeline -
         // ListActiveAsync returns every active notification regardless
         // of category and this service only owns notifications.mob.*.
         var active = await _api.ListActiveAsync(ct).ConfigureAwait(false);
@@ -293,7 +293,7 @@ public sealed class MobService : IMobService, IDisposable
             // signalk-server's /mob endpoint discards the POST body's
             // position field so dto.Position is usually null. Fall
             // back to the resolved-position cache so the chart marker
-            // recovers across a reload / restart -- without it the
+            // recovers across a reload / restart - without it the
             // helm sees an emergency banner with no fix on the chart.
             if (lat is null && lon is null
                 && _resolvedPositions.TryGet(dto.Id, out var savedLat, out var savedLon))
@@ -338,7 +338,7 @@ public sealed class MobService : IMobService, IDisposable
         // arrives with Latitude / Longitude == null even when the
         // helm raised the MOB at a known fix. The MOB chart marker
         // can't draw without coords (MobChartRenderer bails on null
-        // lat/lon), and on reload the local synthetic is gone -- the
+        // lat/lon), and on reload the local synthetic is gone - the
         // server twin is all that remains. Copy the pending raise's
         // recorded position onto the server-twin entry before we
         // drop the synthetic; the position survives reconcile, the
@@ -366,7 +366,7 @@ public sealed class MobService : IMobService, IDisposable
                 serverEntry.CreatedAt);
             return;
         }
-        // Server-twin path was just removed (clear delta) -- drop the
+        // Server-twin path was just removed (clear delta) - drop the
         // resolved-position cache entry too so the next raise of a
         // different MOB doesn't pick up a stale fix.
         if (serverEntry is null)
@@ -388,7 +388,7 @@ public sealed class MobService : IMobService, IDisposable
         {
             // Pace by the backoff table on retries. First attempt
             // (attempt == 0) skips the wait so the helm sees the
-            // POST go out immediately -- the visual / chime are
+            // POST go out immediately - the visual / chime are
             // already up; we just want the server to know.
             if (attempt > 0)
             {
@@ -415,7 +415,7 @@ public sealed class MobService : IMobService, IDisposable
                     // hops than the REST round-trip). In that case
                     // the OnPathChanged event for the WS frame already
                     // fired with pending.ServerId still null, so
-                    // ReconcileMobPath couldn't match -- and the
+                    // ReconcileMobPath couldn't match - and the
                     // local synthetic + server twin would both stay
                     // armed (two banners on the local plotter) until
                     // the next store mutation re-triggered the event.
@@ -514,9 +514,9 @@ public sealed class MobService : IMobService, IDisposable
     internal Task? GetRaiseLoopForTest(string localId) =>
         _pending.TryGetValue(localId, out var l) ? l.Loop : null;
 
-    /// <summary>Bundles the pieces of a live retry loop -- the
+    /// <summary>Bundles the pieces of a live retry loop - the
     /// persistable raise record (replaced as ServerId / AttemptCount
-    /// change), the cancel handle, and the running task -- into a
+    /// change), the cancel handle, and the running task - into a
     /// single dictionary entry so add/remove can never leave an
     /// orphan CTS or task behind.</summary>
     private sealed class LivePending

@@ -57,7 +57,7 @@ public class ShallowAlarmRuleTests
 
         rule.OnDismissed(firstAlarm!, t0);
 
-        // Same shallow depth on the next tick -- rule is muted.
+        // Same shallow depth on the next tick - rule is muted.
         await Assert.That(rule.Check(Ctx(NavAtDepth(1.5), 3.0, t0.AddSeconds(1)))).IsNull();
         await Assert.That(rule.Check(Ctx(NavAtDepth(2.0), 3.0, t0.AddSeconds(30)))).IsNull();
     }
@@ -73,11 +73,11 @@ public class ShallowAlarmRuleTests
         var alarm = rule.Check(Ctx(NavAtDepth(1.5), 3.0, t0));
         rule.OnDismissed(alarm!, t0);
 
-        // Clear at +1 min -- rule stays quiet.
+        // Clear at +1 min - rule stays quiet.
         await Assert.That(rule.Check(Ctx(NavAtDepth(4.0), 3.0, t0.AddMinutes(1)))).IsNull();
 
         // Brief dip back under threshold at +2 min should restart the
-        // sustained-clear timer -- still quiet.
+        // sustained-clear timer - still quiet.
         await Assert.That(rule.Check(Ctx(NavAtDepth(2.5), 3.0, t0.AddMinutes(2)))).IsNull();
 
         // Back clear at +3 min, still under the 5 min gate from NOW
@@ -101,11 +101,11 @@ public class ShallowAlarmRuleTests
         await Assert.That(rule.Check(Ctx(NavAtDepth(5.0), 3.0, t0.AddMinutes(3)))).IsNull();
         await Assert.That(rule.Check(Ctx(NavAtDepth(5.0), 3.0, t0.AddMinutes(5)))).IsNull();
 
-        // Just past 5 min, still clear -- rearm has occurred; rule is
+        // Just past 5 min, still clear - rearm has occurred; rule is
         // silent because depth is still above threshold.
         await Assert.That(rule.Check(Ctx(NavAtDepth(5.0), 3.0, t0.AddMinutes(6)))).IsNull();
 
-        // Now we dip back into shallow again -- this must re-alarm.
+        // Now we dip back into shallow again - this must re-alarm.
         var reArmed = rule.Check(Ctx(NavAtDepth(1.0), 3.0, t0.AddMinutes(7)));
         await Assert.That(reArmed).IsNotNull();
         await Assert.That(reArmed!.Title).IsEqualTo("SHALLOW");
@@ -115,7 +115,7 @@ public class ShallowAlarmRuleTests
     public async Task Null_Depth_After_Dismiss_Does_Not_Start_Rearm_Clock()
     {
         // Instrument dropped out mid-dismiss. Null depth is "unknown",
-        // not "clear" -- we must NOT start the 5 min clock until we
+        // not "clear" - we must NOT start the 5 min clock until we
         // have a real reading above threshold.
         var rule = new ShallowAlarmRule();
         var t0 = new DateTime(2024, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -160,7 +160,7 @@ public class ShallowAlarmRuleTests
         var alarm = rule.Check(Ctx(NavAtDepth(1.5), 3.0, t0));
         rule.OnDismissed(alarm!, t0);
 
-        // Still shallow on the next tick -- no sustained-clear timer.
+        // Still shallow on the next tick - no sustained-clear timer.
         rule.Check(Ctx(NavAtDepth(1.4), 3.0, t0.AddSeconds(1)));
 
         var status = rule.GetRearmStatus(t0.AddSeconds(2));
@@ -184,7 +184,7 @@ public class ShallowAlarmRuleTests
         var alarm = rule.Check(Ctx(NavAtDepth(1.5), 3.0, t0));
         rule.OnDismissed(alarm!, t0);
 
-        // Clear from t0+1 min -- that becomes _sustainedClearFrom.
+        // Clear from t0+1 min - that becomes _sustainedClearFrom.
         rule.Check(Ctx(NavAtDepth(5.0), 3.0, t0.AddMinutes(1)));
 
         // Probe 2 min later: 5 min total - 2 min elapsed = 3 min remaining.
@@ -203,7 +203,7 @@ public class ShallowAlarmRuleTests
         // Edge-case: the wall clock has already crossed the 5 min gate
         // but Check hasn't yet run to flip _dismissedAt back to null.
         // The status method must not return a negative SecondsRemaining
-        // (which would render as "-2s" on the chip) -- it should report
+        // (which would render as "-2s" on the chip) - it should report
         // 0 and the "about to arm" hint so the chip can fade out
         // gracefully on the next render.
         var rule = new ShallowAlarmRule();

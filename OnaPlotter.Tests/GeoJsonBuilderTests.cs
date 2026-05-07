@@ -6,8 +6,8 @@ namespace OnaPlotter.Tests;
 /// <summary>
 /// Wire-shape pinning for GeoJsonBuilder. Output lands in HTTP
 /// request bodies that Signal K servers (+ Freeboard-SK) parse
-/// directly, so a shape change -- a missing "properties" block, a
-/// flipped coord order -- silently breaks resource creation. Round-
+/// directly, so a shape change - a missing "properties" block, a
+/// flipped coord order - silently breaks resource creation. Round-
 /// tripping each builder through JsonSerializer lets us assert the
 /// exact wire JSON without hand-rolling it.
 /// </summary>
@@ -104,7 +104,7 @@ public class GeoJsonBuilderTests
     [Test]
     public async Task RegionFeatureBody_CarriesDescriptionAtBothLevels()
     {
-        // Regions are the odd one out -- description at top level AND
+        // Regions are the odd one out - description at top level AND
         // in properties because different Freeboard builds read
         // different copies. The isHazard flag rides along the same
         // way (top + nested) for the same compatibility reason.
@@ -153,8 +153,73 @@ public class GeoJsonBuilderTests
         await Assert.That(json).Contains("\"isHazard\":true");
         // Both levels carry it; assert each occurrence is paired with
         // the right scope rather than just counting "true" globally.
-        await Assert.That(json).Contains(",\"isHazard\":true,\"feature\":");
+        // Top-level isHazard sits before the createdAt / centre /
+        // radius optional metadata block.
+        await Assert.That(json).Contains(",\"isHazard\":true,\"createdAt\":");
         await Assert.That(json).Contains("\"description\":\"rocky\",\"isHazard\":true}");
+    }
+
+    [Test]
+    public async Task RegionFeatureBody_CircleMetadata_RoundTripsThroughTopLevel()
+    {
+        // Circle-created regions stamp the centre + radius + createdAt
+        // at the top level so the resources-fs full-replacement PUT
+        // preserves the hint and the popup can render "centre + radius"
+        // instead of a 32-vertex polygon dump. Pin the wire shape so a
+        // future refactor that drops one of the four fields breaks
+        // here.
+        var ring = new[]
+        {
+            new[] { 0.0, 0.0 },
+            new[] { 0.0, 1.0 },
+            new[] { 1.0, 1.0 },
+            new[] { 1.0, 0.0 },
+            new[] { 0.0, 0.0 },
+        };
+        var created = new DateTime(2026, 5, 7, 12, 30, 0, DateTimeKind.Utc);
+        var body = GeoJsonBuilder.RegionFeatureBody(
+            "Bay", GeoJsonBuilder.Polygon(ring),
+            description: "favourite anchorage",
+            isHazard: false,
+            createdAt: created,
+            centerLat: 47.4, centerLon: 8.55, radiusMeters: 250);
+        var json = Serialize(body);
+
+        // All four fields ride at the TOP level; the inner GeoJSON
+        // properties block stays the minimum compatible shape so a
+        // peer client (Freeboard, KIP) sees the standard region
+        // structure even when our extras are unknown.
+        await Assert.That(json).Contains("\"createdAt\":\"2026-05-07T12:30:00Z\"");
+        await Assert.That(json).Contains("\"centerLat\":47.4");
+        await Assert.That(json).Contains("\"centerLon\":8.55");
+        await Assert.That(json).Contains("\"radiusMeters\":250");
+        // Inner properties stays clean - name + description + isHazard,
+        // no extras.
+        await Assert.That(json).Contains("\"properties\":{\"name\":\"Bay\",\"description\":\"favourite anchorage\",\"isHazard\":false}");
+    }
+
+    [Test]
+    public async Task RegionFeatureBody_NullExtras_EmitNullsAtTopLevel()
+    {
+        // Default (polygon, not circle, no createdAt): extras emit as
+        // null at the top level. The DTO's nullable types parse null
+        // back to .NET null, so a round-trip through the SK server
+        // and a re-fetch yields the same shape.
+        var ring = new[]
+        {
+            new[] { 0.0, 0.0 },
+            new[] { 0.0, 1.0 },
+            new[] { 1.0, 0.0 },
+            new[] { 0.0, 0.0 },
+        };
+        var body = GeoJsonBuilder.RegionFeatureBody(
+            "Anchorage", GeoJsonBuilder.Polygon(ring));
+        var json = Serialize(body);
+
+        await Assert.That(json).Contains("\"createdAt\":null");
+        await Assert.That(json).Contains("\"centerLat\":null");
+        await Assert.That(json).Contains("\"centerLon\":null");
+        await Assert.That(json).Contains("\"radiusMeters\":null");
     }
 
     [Test]

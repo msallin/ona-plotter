@@ -98,7 +98,7 @@ public class CpaAlarmRuleTests
         // Harbor mode bundle: helm entering / leaving a busy port
         // suppresses every CPA alarm at the rule level. The
         // collision-warning overlays are also gated JS-side, but the
-        // audio alarm comes through here -- pinning that the rule
+        // audio alarm comes through here - pinning that the rule
         // short-circuits when Settings.HarborMode is true so a
         // dismissed visual overlay can't keep the klaxon chirping.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
@@ -126,7 +126,7 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task Silent_WhenOwnShipNotUnderway()
     {
-        // If own SOG is null the rule can't project -- must return null
+        // If own SOG is null the rule can't project - must return null
         // rather than compute on bogus defaults.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var nav = new NavigationData();
@@ -155,7 +155,7 @@ public class CpaAlarmRuleTests
         // A vessel parked at 0.25 kn right in front of us should be
         // treated as moored once the dwell (60s, see
         // MooredVesselTracker.MooredHoldSeconds) has elapsed. First
-        // tick still fires -- the tracker isn't convinced yet; the
+        // tick still fires - the tracker isn't convinced yet; the
         // second tick past 60s later skips. Exercises the dwell flow
         // end-to-end through the rule's private tracker.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
@@ -178,7 +178,7 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task FiresOnSlowButMoving()
     {
-        // Just above the 1 kn cutoff -- still a threat. Pins the
+        // Just above the 1 kn cutoff - still a threat. Pins the
         // boundary so a future refactor doesn't accidentally widen
         // the filter into "ignore anyone under 2 kn".
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
@@ -189,7 +189,7 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task ExemptsBuddies()
     {
-        // Same closing scenario as "fires" but marked as buddy -- must
+        // Same closing scenario as "fires" but marked as buddy - must
         // NOT fire. This is the spec: friends are never threats.
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var buddy = ThreatNorthOf(200, name: "Sailing Companion", buddy: true);
@@ -311,7 +311,7 @@ public class CpaAlarmRuleTests
     public async Task EffectiveCpaRadius_Anchored_ClampsToAnchorRadius()
     {
         // SignalK anchoralarm-plugin active with 30 m max radius:
-        // the focus-group field report -- a stationary boat in a
+        // the focus-group field report - a stationary boat in a
         // crowded anchorage was firing CPA alarms on every passing
         // vessel because the underway 0.5 nm threshold (~926 m) was
         // wildly inappropriate. Effective threshold drops to the
@@ -332,7 +332,7 @@ public class CpaAlarmRuleTests
     {
         // Pathological: someone dropped anchor with a huge max radius
         // (200 m boat-length cable on a 50 ft boat). Don't INCREASE
-        // the threshold past the underway value -- always use the
+        // the threshold past the underway value - always use the
         // smaller of the two.
         var nav = OwnShipUnderway();
         nav.ApplyAnchorPosition(OwnLat, OwnLon);
@@ -359,7 +359,7 @@ public class CpaAlarmRuleTests
     [Test]
     public async Task DoesNotFire_WhenVesselPassingOutsideAnchorRadius()
     {
-        // Own boat anchored (SOG=0 -- a real anchored boat doesn't
+        // Own boat anchored (SOG=0 - a real anchored boat doesn't
         // move). A vessel passing 200 m east of own at 5 m/s heading
         // north never gets closer than 200 m. Underway 0.5 nm
         // threshold (~926 m) would have fired; the anchor 30 m

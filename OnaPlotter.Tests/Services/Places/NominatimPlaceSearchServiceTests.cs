@@ -11,12 +11,12 @@ namespace OnaPlotter.Tests.Services.Places;
 ///
 /// <list type="bullet">
 ///   <item><description>Static <see cref="NominatimPlaceSearchService.TryMapResult"/>
-///     -- the row-shape contract (string lat/lon, name fallback to
+///     - the row-shape contract (string lat/lon, name fallback to
 ///     display_name head, range checks).</description></item>
-///   <item><description>HTTP path -- a stubbed
+///   <item><description>HTTP path - a stubbed
 ///     <see cref="HttpMessageHandler"/> verifies the URL shape, the
 ///     User-Agent header, and the empty-list-on-failure contract.</description></item>
-///   <item><description>Rate limit -- a fake clock confirms the second
+///   <item><description>Rate limit - a fake clock confirms the second
 ///     call waits the required <see cref="NominatimPlaceSearchService.MinRequestInterval"/>
 ///     after the first.</description></item>
 /// </list>
@@ -107,7 +107,7 @@ public class NominatimPlaceSearchServiceTests
     [Test]
     public async Task TryMapResult_Parses_With_InvariantCulture()
     {
-        // German locale would use "52,5" -- Nominatim emits "52.5"
+        // German locale would use "52,5" - Nominatim emits "52.5"
         // regardless. Pinning that we always parse invariantly.
         var row = new NominatimResult(
             Lat: "52.5", Lon: "13.4",
@@ -276,7 +276,7 @@ public class NominatimPlaceSearchServiceTests
         await svc.SearchAsync("Berlin");
         await Assert.That(handler.RequestCount).IsEqualTo(1);
 
-        // Kick off second call. Don't await yet -- it will park inside
+        // Kick off second call. Don't await yet - it will park inside
         // the rate gate's Task.Delay until the fake clock advances.
         var second = svc.SearchAsync("Bremen");
 

@@ -190,7 +190,7 @@ public class AisPushServiceTests
         var entry = js.Pushes[0][0];
         var threat = (string?)entry.GetType().GetProperty("cpaThreat")?.GetValue(entry);
         // 0.09 nm CPA is OUTSIDE the anchor-narrowed warning band
-        // (~0.032 nm) -- the chip should be classified None. Without
+        // (~0.032 nm) - the chip should be classified None. Without
         // the AisPushService fix this returns "warning" because the
         // 0.5 nm underway threshold's warning band reaches to 1.0 nm.
         await Assert.That(threat)
@@ -223,7 +223,7 @@ public class AisPushServiceTests
     // row only when these fields are present on the JS-side payload.
     // A rename in the anonymous record (loaM -> lengthOverallM,
     // beamM -> beam, ...) would silently strip the row from the helm
-    // UI without any compile-time signal -- the JS reads via property
+    // UI without any compile-time signal - the JS reads via property
     // name, which crosses the C#/JS contract gap. These pins go red on
     // the C# side BEFORE the JS regression hits the helm.
 
@@ -251,7 +251,7 @@ public class AisPushServiceTests
         // Two vessels: one with both dimensions set via the canonical
         // SK shapes, one with neither. Pin (a) values flow through to
         // the JS payload verbatim, and (b) absence stays null (the JS
-        // popup's "no dimensions" path branches on null/non-null --
+        // popup's "no dimensions" path branches on null/non-null -
         // a defaulted-to-0 leak here would render "0m / 0m").
         var store = new AisStore();
         SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);

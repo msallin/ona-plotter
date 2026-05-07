@@ -9,7 +9,7 @@ namespace OnaPlotter.Utilities;
 /// helper (see <see cref="Services.Api.NoteApi"/>).
 ///
 /// <para>The anonymous objects returned here are serialised by
-/// System.Text.Json's default camelCase-from-PascalCase mapping --
+/// System.Text.Json's default camelCase-from-PascalCase mapping -
 /// property names are fine as-is. Callers pass coordinates in
 /// Leaflet order (<c>[lat, lon]</c>); the builder flips to GeoJSON
 /// order (<c>[lon, lat]</c>) internally so no caller has to remember
@@ -95,14 +95,23 @@ internal static class GeoJsonBuilder
     /// <summary>
     /// Region variant: carries <c>description</c> at the TOP level
     /// as well as inside <c>properties</c>. Some Freeboard builds
-    /// read the top-level copy, some read the inner one -- shipping
+    /// read the top-level copy, some read the inner one - shipping
     /// both is the compatible choice. The <paramref name="isHazard"/>
     /// flag rides along the same way: top level (where the C# DTO
     /// reads it back) and inside properties (so a future
     /// non-OnaPlotter consumer that walks GeoJSON-only sees it too).
+    /// <para>The optional <paramref name="createdAt"/> /
+    /// <paramref name="centerLat"/> / <paramref name="centerLon"/> /
+    /// <paramref name="radiusMeters"/> ride along at the top level
+    /// only - the SignalK resources-fs provider preserves them
+    /// across round-trip; the GeoJSON `properties` block stays the
+    /// peer-facing surface so non-OnaPlotter consumers see the
+    /// minimum compatible shape.</para>
     /// </summary>
     public static object RegionFeatureBody(string name, object geometry,
-        string? description = null, bool isHazard = false)
+        string? description = null, bool isHazard = false,
+        DateTime? createdAt = null,
+        double? centerLat = null, double? centerLon = null, double? radiusMeters = null)
     {
         var desc = description ?? "";
         return new
@@ -110,6 +119,10 @@ internal static class GeoJsonBuilder
             name,
             description = desc,
             isHazard,
+            createdAt,
+            centerLat,
+            centerLon,
+            radiusMeters,
             feature = new
             {
                 type = "Feature",

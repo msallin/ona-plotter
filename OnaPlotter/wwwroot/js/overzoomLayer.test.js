@@ -6,7 +6,7 @@
 // (clamp `levels|0` to 0..3, branch on lv === 0, fallback chain
 // `maxNativeZoom ?? maxZoom ?? 18`). Without a test, a regression
 // that drops the lower clamp, mutates the input, or changes the
-// default-18 fallback ships green -- C# can't see it. The project
+// default-18 fallback ships green - C# can't see it. The project
 // rule (CLAUDE.md) says decisions in C# with C# tests; until the
 // decorator is lifted, this is the next-best protection.
 
@@ -24,7 +24,7 @@ describe('withOverzoom: zero-levels no-op path', () => {
     });
 
     it('does not add an internal _chartUpscaleLevels tag', () => {
-        // The tag was dropped (zero readers) -- a future re-introduction
+        // The tag was dropped (zero readers) - a future re-introduction
         // for diagnostics needs to be a deliberate code change with
         // a real consumer, not a quiet sneak-back.
         const result = withOverzoom({ maxNativeZoom: 18 }, 0);
@@ -72,7 +72,7 @@ describe('withOverzoom: levels > 0 path', () => {
     });
 
     it('clamps fractional levels via |0 truncation toward zero', () => {
-        // `2.7 | 0 === 2`, not 3 -- pin the truncation semantic so a
+        // `2.7 | 0 === 2`, not 3 - pin the truncation semantic so a
         // refactor to Math.round / Math.floor surfaces visibly.
         const result = withOverzoom({ maxNativeZoom: 18 }, 2.7);
         assert.equal(result.maxZoom, 20);

@@ -73,7 +73,7 @@ public class MapDeepLinkTests
     public async Task Parse_UnknownKeysIgnored()
     {
         // Foreign query params (analytics, third-party redirects) must
-        // not derail the parse -- only focus / edit are meaningful.
+        // not derail the parse - only focus / edit are meaningful.
         var t = MapDeepLink.Parse("?utm_source=email&focus=waypoint:w1&ref=share");
         await Assert.That(t!.Value.Kind).IsEqualTo("waypoint");
         await Assert.That(t!.Value.Id).IsEqualTo("w1");

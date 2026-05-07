@@ -96,7 +96,7 @@ public class SignalkDraftSeederTests
     [Test]
     public async Task SeedAsync_404_LeavesDraftUntouched()
     {
-        // No design data on server -- silent no-op at Debug level.
+        // No design data on server - silent no-op at Debug level.
         var (seeder, data, _) = Build(HttpStatusCode.NotFound, "");
         await seeder.SeedAsync(CancellationToken.None);
         await Assert.That(data.DraftFromSignalK).IsNull();

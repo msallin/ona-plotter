@@ -9,7 +9,7 @@ namespace OnaPlotter.Services;
 /// the live values from <see cref="SignalkClient.Data"/> and feeds
 /// them into the rolling buffers below.
 ///
-/// <para>One singleton for the whole app -- buffers live for the
+/// <para>One singleton for the whole app - buffers live for the
 /// lifetime of the WASM process. Disposed at host shutdown so the
 /// event subscription doesn't leak across hot-reloads in dev.</para>
 /// </summary>
@@ -39,7 +39,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _time = time ?? TimeProvider.System;
 
-        // Wind: 180 min retention -- covers WindRose's longest
+        // Wind: 180 min retention - covers WindRose's longest
         // history window (3 h) and its 60-min chip query, plus the
         // HUD's 1-min and 10-min canonical means as sub-windows.
         Tws = new RollingScalarSeries(TimeSpan.FromMinutes(180), _time);
@@ -64,7 +64,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
 
     /// <summary>Test seam: feed a NavigationData snapshot directly
     /// without going through SignalkClient. Production callers
-    /// should not use this -- the OnDataChanged subscription
+    /// should not use this - the OnDataChanged subscription
     /// handles sampling automatically.</summary>
     internal void SampleForTest(NavigationData data) => Sample(data);
 
@@ -98,7 +98,7 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         if (d.SpeedOverGround is double sog)
         {
             Sog.Add(sog);
-            // COG only contributes when actually moving -- zero-weight
+            // COG only contributes when actually moving - zero-weight
             // sample below the stationary threshold so the buffer
             // entry exists (for warmup coverage) but doesn't pull
             // the mean toward the GPS-noise direction.

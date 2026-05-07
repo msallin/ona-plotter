@@ -23,7 +23,7 @@ main {
     background: var(--sk-sidebar-bg);
     border-right: 1px solid var(--sk-sidebar-border);
     /* Always-dark navigation rail (Pattern 1: VSCode / Linear / Slack).
-       The rail is "frame", not content -- keeping it constant gives the
+       The rail is "frame", not content - keeping it constant gives the
        eye a stable anchor regardless of theme. Drop-shadow below floats
        it above the chart in light theme so the dark rail reads as a
        deliberate frame instead of an unflipped island. */
@@ -31,9 +31,9 @@ main {
     /* Default expanded width (icons + labels). iPad touch target
        floor is 44 px; 10 rem leaves comfortable room for every
        label without wrapping. Collapses to 4 rem in fullscreen
-       -- see rules below. */
+       - see rules below. */
     width: 10rem;
-    /* dvh (dynamic viewport height) -- vh is the FULL screen incl.
+    /* dvh (dynamic viewport height) - vh is the FULL screen incl.
        any browser chrome that may currently be hidden, which on
        iPad PWA standalone exceeds the html content box (which is
        shrunk by env(safe-area-inset-*) padding). The mismatch was
@@ -60,7 +60,7 @@ main {
    off Settings.SidebarCollapsed in MainLayout. The fullscreen modes
    (`:fullscreen` / `html.ios-fullbleed`) used to ALSO force this
    class via CSS, but that overrode the user's chevron-toggle in
-   the rail -- the helm couldn't re-expand the sidebar while
+   the rail - the helm couldn't re-expand the sidebar while
    fullscreen was on. Now MainLayout flips Settings.SidebarCollapsed
    in OnFullscreenChanged so entering fullscreen still defaults to
    the icon rail (matches prior behaviour) but the manual toggle
@@ -83,7 +83,7 @@ main {
        ABOVE the leaflet map (z-index 200-700) and the HUD cards
        (--z-hud: 500). `position: sticky` makes this a stacking
        context, so the dropdown's own local z-index can't escape it
-       -- the topbar's value is the ceiling for everything inside.
+       - the topbar's value is the ceiling for everything inside.
        Was z-index: 1; the dropdown was rendered (visible in the
        DOM) but painted under the map, looking like search returned
        no results. Stays under modals (--z-modal: 900 wraps overlays

@@ -32,7 +32,7 @@ public class PointInPolygonTests
     ];
 
     // Concave "L" shape so a horizontal ray through it crosses 4 edges
-    // for some y -- catches a refactor that breaks the inside/outside
+    // for some y - catches a refactor that breaks the inside/outside
     // alternation when the ray hits more than two edges.
     private static readonly double[][] ConcaveL =
     [
@@ -79,7 +79,7 @@ public class PointInPolygonTests
         await Assert.That(PointInPolygon.Contains(ConcaveL, 8.0, 2.0)).IsTrue();
         // Inside the L's horizontal arm.
         await Assert.That(PointInPolygon.Contains(ConcaveL, 2.0, 6.0)).IsTrue();
-        // The notch -- visually inside the bounding box, but OUTSIDE
+        // The notch - visually inside the bounding box, but OUTSIDE
         // the L itself. Most algorithm bugs surface here.
         await Assert.That(PointInPolygon.Contains(ConcaveL, 8.0, 8.0)).IsFalse();
     }
@@ -143,9 +143,9 @@ public class PointInPolygonTests
             [47.6580, 9.1700],
         ];
 
-        // Boat in the middle of the lane -- alarm should fire.
+        // Boat in the middle of the lane - alarm should fire.
         await Assert.That(PointInPolygon.Contains(ferryLane, 47.6600, 9.1760)).IsTrue();
-        // Boat ~150 m north of the lane -- safe.
+        // Boat ~150 m north of the lane - safe.
         await Assert.That(PointInPolygon.Contains(ferryLane, 47.6635, 9.1760)).IsFalse();
     }
 

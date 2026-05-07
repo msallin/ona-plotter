@@ -5,7 +5,7 @@ namespace OnaPlotter.Models;
 /// <summary>
 /// A SignalK note resource: a short text annotation anchored at a lat/lon
 /// on the chart. Unlike routes and waypoints, notes don't use a GeoJSON
-/// Feature wrapper -- the SignalK spec uses a bare <c>position</c> object.
+/// Feature wrapper - the SignalK spec uses a bare <c>position</c> object.
 /// See https://github.com/panaaj/sk-types/blob/master/src/resources/index.ts
 /// for the authoritative Note shape used by Freeboard-SK and the default
 /// resources-fs provider.
@@ -33,7 +33,7 @@ public sealed class SignalkNote
     public string? Url { get; set; }
 
     /// <summary>UTC instant the note was first PUT to the server. The
-    /// SignalK Note schema doesn't include this -- it's a custom field
+    /// SignalK Note schema doesn't include this - it's a custom field
     /// OnaPlotter writes on Create + preserves on Update. The
     /// resources-fs provider (and most third-party providers) round-trip
     /// arbitrary JSON fields on the resource body unchanged, so it's a

@@ -30,7 +30,7 @@
 // finished evaluating; the previous "declare-where-it-feels-natural"
 // layout was static-analysis-noisy without buying any runtime
 // safety. _scratchReader stays null until the first decode call
-// `??=` initialises it -- the comment that used to live next to
+// `??=` initialises it - the comment that used to live next to
 // the declaration explained why a let-then-init pattern was used:
 // eager `new Reader(...)` here would TDZ-trip the class declaration
 // further down in the file.
@@ -95,7 +95,7 @@ function decodeSpoke(r, end) {
             case 1: angle = r.varint(); break;           // wire 0
             case 2: bearing = r.varint(); break;         // wire 0
             case 3: range = r.varint(); break;           // wire 0
-            case 4: r.varint(); break;                   // time uint64 -- skip; we don't use it
+            case 4: r.varint(); break;                   // time uint64 - skip; we don't use it
             case 5: data = r.bytes(); break;             // wire 2
             case 6: lat = r.double(); break;             // wire 1
             case 7: lon = r.double(); break;             // wire 1
@@ -150,7 +150,7 @@ class Reader {
             shift += 7;
             if (shift > 63) throw new Error('radar: varint > 10 bytes');
         }
-        // <<32 overflow to negative via bitwise or above -- fix up.
+        // <<32 overflow to negative via bitwise or above - fix up.
         return result < 0 ? result + 0x100000000 : result;
     }
 
@@ -182,7 +182,7 @@ class Reader {
     /** Skips a field of the given wire type. Bounds-checks so a
      *  truncated frame throws rather than silently running past the
      *  buffer. Wire types 3 / 4 (deprecated start/end group) are
-     *  rejected -- real proto3 servers never emit them. */
+     *  rejected - real proto3 servers never emit them. */
     skip(wire) {
         switch (wire) {
             case 0: this.varint(); break;            // varint

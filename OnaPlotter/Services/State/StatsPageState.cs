@@ -39,7 +39,7 @@ public sealed class StatsPageState
     public bool ShowDaily { get; set; }
 
     /// <summary>The last computed totals, or null if no compute has
-    /// run yet. Cached as the actual record, not just the inputs --
+    /// run yet. Cached as the actual record, not just the inputs -
     /// the helm sees the SAME numbers they saw, even if the
     /// underlying server data has shifted while they were on
     /// /map.</summary>

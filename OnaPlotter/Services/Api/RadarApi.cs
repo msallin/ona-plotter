@@ -6,7 +6,7 @@ namespace OnaPlotter.Services.Api;
 
 /// <summary>
 /// Signal K Radar API v3.1 client. Server responses follow two shapes
-/// depending on implementation age -- the spec says "dict keyed by
+/// depending on implementation age - the spec says "dict keyed by
 /// radar id" on <c>GET /radars</c>, but the reference implementation
 /// (mayara-server) currently returns a plain array with <c>id</c>
 /// baked into each entry. We accept both.
@@ -19,7 +19,7 @@ public sealed class RadarApi : IRadarApi
     // One reusable options bag. The legend-color converter is
     // registered on the DTOs via attribute; no options-level setup
     // required. WhenWritingNull keeps PUT bodies (control writes)
-    // minimal -- ControlValue's optional sector / zone / rect fields
+    // minimal - ControlValue's optional sector / zone / rect fields
     // would otherwise serialise as "auto":null,"endValue":null,...
     // and Mayara rejects the bloated body with HTTP 400.
     private static readonly JsonSerializerOptions s_json = new()
@@ -46,7 +46,7 @@ public sealed class RadarApi : IRadarApi
 
             // Three shapes in the wild; parse the JSON once and branch.
             // A malformed body just means "no radars visible right now"
-            // rather than an error toast -- the UI polls again later.
+            // rather than an error toast - the UI polls again later.
             try
             {
                 using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -178,7 +178,7 @@ public sealed class RadarApi : IRadarApi
                 return body.Length > 200 ? body[..200] : body;
             }
         }
-        catch { /* body read failed -- caller falls back to status code */ }
+        catch { /* body read failed - caller falls back to status code */ }
         return null;
     }
 

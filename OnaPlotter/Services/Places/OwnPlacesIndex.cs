@@ -4,7 +4,7 @@ using OnaPlotter.Services.Api;
 namespace OnaPlotter.Services.Places;
 
 /// <summary>
-/// In-memory substring index over the helm's own resources --
+/// In-memory substring index over the helm's own resources -
 /// waypoints, notes, regions. Surface a quick substring match in
 /// the topbar place-search dropdown so the helm finds their saved
 /// "Anchorage Cay" without leaving the search box for the layers
@@ -17,8 +17,8 @@ namespace OnaPlotter.Services.Places;
 /// so a CRUD that lands a new waypoint can call it and the next
 /// search picks up the fresh row.</para>
 ///
-/// <para>Source tags on each <see cref="PlaceResult"/> -- "waypoint",
-/// "note", "region" -- let the SearchBox render a tiny badge so
+/// <para>Source tags on each <see cref="PlaceResult"/> - "waypoint",
+/// "note", "region" - let the SearchBox render a tiny badge so
 /// the helm can tell at a glance whether a match comes from their
 /// vault or an online geocoder.</para>
 /// </summary>
@@ -52,7 +52,7 @@ public sealed class OwnPlacesIndex : IPlaceSearchService
     private Task? _inFlightLoad;
     /// <summary>Generation counter bumped by <see cref="Invalidate"/>.
     /// An in-flight <see cref="LoadAsync"/> snapshots this at entry
-    /// and only commits its result if the generation hasn't moved --
+    /// and only commits its result if the generation hasn't moved -
     /// otherwise the load completed against a now-stale view (a CRUD
     /// landed mid-flight) and its result is discarded so the next
     /// EnsureLoadedAsync starts a fresh load. Without this the
@@ -112,7 +112,7 @@ public sealed class OwnPlacesIndex : IPlaceSearchService
         _lastLoadUtc = DateTime.MinValue;
         // Bump the generation so any in-flight LoadAsync that was
         // started against the pre-Invalidate view discards its result
-        // when it completes -- otherwise the pre-CRUD data would
+        // when it completes - otherwise the pre-CRUD data would
         // resurrect itself with a fresh timestamp and the next
         // SearchAsync would return stale rows for up to StaleTtl.
         _generation++;
@@ -186,7 +186,7 @@ public sealed class OwnPlacesIndex : IPlaceSearchService
         // by the API calls; SafeFetchAsync caught the resulting
         // exceptions and returned null, so `fresh` is empty even
         // though the underlying API never actually answered. Don't
-        // commit that empty snapshot to _entries with a fresh TTL --
+        // commit that empty snapshot to _entries with a fresh TTL -
         // doing so would block real own-data hits from showing up
         // for the next StaleTtl window. Leaving _entries null forces
         // the next non-cancelled SearchAsync to retry the load.
@@ -208,7 +208,7 @@ public sealed class OwnPlacesIndex : IPlaceSearchService
         {
             // Log the exception OBJECT (type + stack) instead of just
             // ex.Message so 3am triage can tell apart 401 (logged out),
-            // network timeout, and a null-deref bug in the *Api -- a
+            // network timeout, and a null-deref bug in the *Api - a
             // bare ".Message" collapses these into the same line.
             _logger.LogWarning(ex, "[own-places] {Label} fetch failed", label);
             return null;

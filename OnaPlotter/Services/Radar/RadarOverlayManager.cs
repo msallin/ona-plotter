@@ -9,11 +9,11 @@ namespace OnaPlotter.Services.Radar;
 /// painted, the user's sticky-off preferences, and the last range
 /// pushed to the JS layer) and the orchestration that ties them
 /// together. Pulled out of <c>Map.razor</c> so the policy is
-/// testable in isolation -- the page becomes a thin wiring layer
+/// testable in isolation - the page becomes a thin wiring layer
 /// that injects this manager and forwards UI callbacks into it.
 ///
 /// Lifecycle: scoped to the page session (the same as Map.razor's
-/// own lifetime). Cleared on page reload by design -- session-only
+/// own lifetime). Cleared on page reload by design - session-only
 /// preferences (sticky off, last-range cache) are intentional;
 /// nothing here belongs in IAppSettings.
 ///
@@ -51,7 +51,7 @@ public sealed class RadarOverlayManager
     public IReadOnlySet<string> EnabledRadarIds => _enabled;
 
     /// <summary>Optional sink for user-facing error messages (toasts).
-    /// Null in tests -- they assert against thrown exceptions or the
+    /// Null in tests - they assert against thrown exceptions or the
     /// captured fake-host calls instead.</summary>
     public Action<string>? OnError { get; set; }
 
@@ -119,7 +119,7 @@ public sealed class RadarOverlayManager
     // --- internals ----------------------------------------------------
 
     /// <summary>Open the overlay canvas + spoke WS for one radar.
-    /// Idempotent -- a second call when the overlay is already on is
+    /// Idempotent - a second call when the overlay is already on is
     /// a no-op so both the user-driven and the auto pass can call
     /// freely without checking themselves.</summary>
     private async Task EnableAsync(RadarInfo radar, CancellationToken ct)
@@ -156,7 +156,7 @@ public sealed class RadarOverlayManager
         int range = radar.Range ?? RadarOverlayLimits.DefaultRangeMetres;
 
         // Spoke WebSocket URL. Prefer the server-supplied value (spec
-        // intent), but only if it points back at our SK origin -- a
+        // intent), but only if it points back at our SK origin - a
         // compromised plugin could otherwise hand us an attacker URL
         // and the browser would dutifully open it (exfil / SSRF).
         // On mismatch or absence, build the canonical SK-proxied URL
@@ -214,7 +214,7 @@ public sealed class RadarOverlayManager
     /// radar we don't have caps for yet. Idempotent: previously-fetched
     /// ids are skipped (spec guarantees capabilities are static per
     /// radar). Failures are stored as null so we don't re-request on
-    /// every poll -- we re-try on the next add of the same id via the
+    /// every poll - we re-try on the next add of the same id via the
     /// enable path.</summary>
     private async Task EnsureCapabilitiesAsync(CancellationToken ct)
     {
@@ -262,7 +262,7 @@ public sealed class RadarOverlayManager
     }
 
     /// <summary>Forward range changes for any active overlay. Skips
-    /// radars whose range is unchanged since the last push -- the JS
+    /// radars whose range is unchanged since the last push - the JS
     /// layer recomputes its bounds + reposition on every range update
     /// and we don't want to thrash that on every poll.</summary>
     private async Task PushRangeUpdatesAsync(CancellationToken ct)

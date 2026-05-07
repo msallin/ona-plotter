@@ -8,7 +8,7 @@ namespace OnaPlotter.Services.Alarms;
 /// Needs both an active anchor (SignalK anchor-alarm plugin) AND a
 /// tide plugin publishing <c>environment.tide.heightNow</c> +
 /// <c>heightLow</c> + <c>timeLow</c>. Goes silent when either is
-/// missing -- there's no reasonable fallback without tide data.
+/// missing - there's no reasonable fallback without tide data.
 ///
 /// <para>Math: current under-keel depth at anchor time - (nowHeight -
 /// lowHeight) = predicted depth at LW. If that's less than the user's
@@ -36,18 +36,18 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
     public bool AutoClear => true;
 
     /// <summary>Cross-plotter publish path. Sibling of
-    /// <c>anchor.dragging</c> -- both render under Title="ANCHOR"
+    /// <c>anchor.dragging</c> - both render under Title="ANCHOR"
     /// on receivers but the leaf differs so they clear independently.</summary>
     public string? GetPublishPath(AlarmInfo alarm) =>
         "notifications.navigation.anchor.tide";
 
     /// <summary>Only look this far ahead. A LW that's 14 hours away
-    /// isn't an actionable alarm -- sleep first, re-evaluate later.
+    /// isn't an actionable alarm - sleep first, re-evaluate later.
     /// Six hours covers one full tidal half-cycle with some slack.</summary>
     private const double LookaheadHours = 6.0;
 
     // Once the helm dismisses ANCHOR TIDE, don't keep re-nagging every
-    // 30s (the manager's default cooldown) -- the warning is about a
+    // 30s (the manager's default cooldown) - the warning is about a
     // predicted event hours away, so the helm's "yes, I know" should
     // stick for the duration of the current anchored session. We
     // re-arm when the anchor is lifted (AnchorActive transitions to
@@ -61,7 +61,7 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         // Prerequisites: anchor down AND tide plugin feeding the bus.
         if (!d.AnchorActive)
         {
-            // Anchor is up -- reset the dismiss latch so the next
+            // Anchor is up - reset the dismiss latch so the next
             // anchoring session starts with a clean rule.
             _dismissedForThisAnchoring = false;
             return null;
@@ -82,7 +82,7 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         if (drop <= 0) return null;                // tide still rising
 
         // Draft comes from SignalK (design.draft.current / .maximum)
-        // only -- "don't re-enter what the bus already knows". The
+        // only - "don't re-enter what the bus already knows". The
         // tide-aware anchor alarm stays dormant when draft is absent
         // rather than run on a stale client-side default.
         if (ctx.Data.DraftFromSignalK is not double draft) return null;

@@ -29,7 +29,7 @@ namespace OnaPlotter.Tests.Services.Resources;
 ///   <item><description>Route deletion via delta drops the cached
 ///     entry + fires <see cref="ResourceStore.OnRouteRemoved"/>.</description></item>
 ///   <item><description>End-to-end through SignalkClient.ProcessMessage
-///     with raw delta JSON -- proves the
+///     with raw delta JSON - proves the
 ///     <c>resources.&lt;type&gt;.&lt;id&gt;</c> path-prefix dispatcher
 ///     wires correctly under realistic SK wire format.</description></item>
 /// </list>
@@ -153,7 +153,7 @@ public class ResourceLifecycleTests
         // Helm scenario: route loaded, helm activates it (SK server sets
         // navigation.course.activeRoute.href), THEN another plotter
         // edits the route (e.g. moves a waypoint). This test verifies
-        // the CACHE half of the contract -- the route catalog reflects
+        // the CACHE half of the contract - the route catalog reflects
         // the new geometry while the active-route href stays the same.
         // The active-route OVERLAY redraw is in Map.razor and is not
         // exercised here (would require bUnit + Leaflet stubs); this
@@ -166,7 +166,7 @@ public class ResourceLifecycleTests
             (13.4, 52.5), (13.5, 52.6), (13.6, 52.7)));
         await store.RefreshAllAsync();
 
-        // Step 2: helm activates -- the client tracks active-route
+        // Step 2: helm activates - the client tracks active-route
         // identity in NavigationData. Wire the SK delta that the
         // server publishes when the helm activates a route.
         client.ProcessMessage(@"{
@@ -180,7 +180,7 @@ public class ResourceLifecycleTests
         }");
         await Assert.That(client.Data.ActiveRouteHref).IsNotNull();
 
-        // Step 3: another plotter edits route -- moves WP[1] from
+        // Step 3: another plotter edits route - moves WP[1] from
         // (13.5, 52.6) to (13.55, 52.65) AND adds a new WP at the
         // end (13.7, 52.8). Server emits a delta with the full new
         // document.
@@ -189,7 +189,7 @@ public class ResourceLifecycleTests
         client.ProcessMessage(RouteDeltaJson("r1", routeV2));
 
         // Step 4: cache reflects the new geometry (4 WPs). The active-
-        // route href identity stays the same -- the overlay layer in
+        // route href identity stays the same - the overlay layer in
         // Map.razor reads that and decides whether to refetch.
         await Assert.That(WpCount(store.GetRoute("r1"))).IsEqualTo(4);
         await Assert.That(client.Data.ActiveRouteHref).IsEqualTo("/resources/routes/r1");
@@ -209,7 +209,7 @@ public class ResourceLifecycleTests
         // RefreshAllAsync.
         var (client, store, routes, _, _, _) = BuildHarness();
 
-        // Step 1: initial load -- route v1.
+        // Step 1: initial load - route v1.
         routes.Routes.Add(MakeRoute("r1", "Berlin",
             (13.4, 52.5), (13.5, 52.6)));
         await store.RefreshAllAsync();
@@ -239,10 +239,10 @@ public class ResourceLifecycleTests
         routes.Routes.Clear();
         routes.Routes.Add(MakeRoute("r1", "Berlin",
             (13.4, 52.5), (13.5, 52.6), (13.6, 52.7)));
-        // Cache still has v1 -- nothing has refreshed yet.
+        // Cache still has v1 - nothing has refreshed yet.
         await Assert.That(WpCount(store.GetRoute("r1"))).IsEqualTo(2);
 
-        // Step 5: WS reconnects -- store kicks a fire-and-forget
+        // Step 5: WS reconnects - store kicks a fire-and-forget
         // RefreshAllAsync. Test awaits the stashed task to completion.
         // The API's LoadCount must increment beyond the post-step-2
         // baseline; a regression where the edge detector short-circuits
@@ -254,7 +254,7 @@ public class ResourceLifecycleTests
         await store.LastReconcileTask!;
         await Assert.That(routes.LoadCount).IsGreaterThan(loadCountAfterFirstReconcile);
 
-        // Step 6: cache now has v2 (3 waypoints) -- reconcile picked
+        // Step 6: cache now has v2 (3 waypoints) - reconcile picked
         // up the missed change.
         await Assert.That(WpCount(store.GetRoute("r1"))).IsEqualTo(3);
     }
@@ -398,7 +398,7 @@ public class ResourceLifecycleTests
         // Active-route identity should NOT have changed.
         await Assert.That(client.Data.ActiveRouteHref).IsEqualTo("/resources/routes/r1");
 
-        // Delete r2 -- assert BOTH the cache mutation AND the
+        // Delete r2 - assert BOTH the cache mutation AND the
         // OnRouteRemoved event fire. A regression where the cache
         // drops the entry but the event doesn't fire would leave
         // consumer overlays (Map.razor's leaflet route layer) with
@@ -421,7 +421,7 @@ public class ResourceLifecycleTests
     public async Task ProcessMessageBytes_RouteDelta_LandsInStore()
     {
         // The production WS receive loop calls ProcessMessageBytes
-        // with a UTF-8 ReadOnlySpan -- not the string overload tests
+        // with a UTF-8 ReadOnlySpan - not the string overload tests
         // typically use. Verify the bytes path also wires the
         // resource-delta dispatcher, since that's the path SignalkClient
         // actually uses on a live socket.
@@ -518,7 +518,7 @@ public class ResourceLifecycleTests
 
         // No new reconcile was kicked: API LoadCount didn't budge.
         // (Reference-equality on LastReconcileTask isn't a reliable
-        // signal -- async methods that complete synchronously can
+        // signal - async methods that complete synchronously can
         // share Task instances. LoadCount is the direct observable.)
         await Assert.That(routes.LoadCount).IsEqualTo(loadCountAfterFirst);
     }
@@ -580,7 +580,7 @@ public class ResourceLifecycleTests
         // ResourceStore parses the GeoJSON Feature shape and hoists the
         // top-level Latitude / Longitude on the DTO, mirroring
         // WaypointApi.GetAllAsync. Map.razor's HandleWaypointChangedFromStore
-        // then redraws the marker (not exercised here -- requires the
+        // then redraws the marker (not exercised here - requires the
         // leaflet JS module).
         var (client, store, _, waypoints, _, _) = BuildHarness();
         waypoints.Waypoints.Add(new SignalkWaypoint
@@ -645,7 +645,7 @@ public class ResourceLifecycleTests
     public async Task RemoteRegionEdit_DeltaPopulatesOuterRingsForLeafletRender()
     {
         // The Map.razor region layer renders OuterRings (Leaflet-ordered
-        // [lat, lon]) -- not the wire-shape feature.geometry.coordinates
+        // [lat, lon]) - not the wire-shape feature.geometry.coordinates
         // ([lon, lat]). RegionApi.GetAllAsync hoists the rings on REST
         // results; ResourceStore's HandleRegionDelta must do the same on
         // delta-fed entries so a remote-edit lands a region the chart
@@ -715,7 +715,7 @@ public class ResourceLifecycleTests
         // RegionApi.GetAllAsync drops regions whose Feature.Geometry
         // produces an empty OuterRings list (Point geometry, empty
         // Polygon coords, etc.). HandleRegionDelta must mirror that
-        // filter -- otherwise the chart-side region layer hits a null
+        // filter - otherwise the chart-side region layer hits a null
         // ring on render. Pin the contract so a regression that adds
         // empty-rings regions to the cache surfaces.
         var (client, store, _, _, _, _) = BuildHarness();
@@ -765,7 +765,7 @@ public class ResourceLifecycleTests
     {
         // SK note resources without a position aren't renderable on the
         // chart. ResourceStore.HandleNoteDelta must filter them, mirroring
-        // NoteApi.GetAllAsync's filter -- otherwise a position-less
+        // NoteApi.GetAllAsync's filter - otherwise a position-less
         // remote-edit would land in the cache and trip a Map.razor
         // marker draw with null lat/lon.
         var (client, store, _, _, _, _) = BuildHarness();
@@ -806,7 +806,7 @@ public class ResourceLifecycleTests
         var first = store.RefreshAllAsync(cause: "manual");
         var second = store.RefreshAllAsync(cause: "page-mount");
 
-        // Both callers got the same Task instance back -- second was
+        // Both callers got the same Task instance back - second was
         // coalesced onto first.
         await Assert.That(ReferenceEquals(first, second)).IsTrue();
 
@@ -855,7 +855,7 @@ public class ResourceLifecycleTests
         // Dispose runs before the refresh completes.
         var disposeTask = store.DisposeAsync().AsTask();
 
-        // Neither task can complete yet -- both blocked on the gate.
+        // Neither task can complete yet - both blocked on the gate.
         await Assert.That(refreshTask.IsCompleted).IsFalse();
         await Assert.That(disposeTask.IsCompleted).IsFalse();
 
@@ -898,7 +898,7 @@ public class ResourceLifecycleTests
         await refreshTask;
 
         // The reconcile sees ONLY r1 in the fresh list (since the
-        // routes.Routes list still has only r1 -- the delta path
+        // routes.Routes list still has only r1 - the delta path
         // doesn't push back to the fake API). Replace with-only-r1
         // would normally remove r2, but Replace runs against the
         // dictionary at the time of the call, so r2 (added during

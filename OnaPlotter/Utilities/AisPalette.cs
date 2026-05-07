@@ -4,7 +4,7 @@ namespace OnaPlotter.Utilities;
 /// Central AIS visual catalogue: ship-type -> colour, ship-type ->
 /// coarse-category (for the inside glyph). Lives on the C# side so
 /// the tests exercise the classifier and the JS receives fully-resolved
-/// values in the push payload -- no duplicate palette to drift out of
+/// values in the push payload - no duplicate palette to drift out of
 /// sync between client and renderer.
 ///
 /// <para>Palette is tuned for blue water: all warm earth hues so every
@@ -30,7 +30,7 @@ public static class AisPalette
 
     /// <summary>
     /// Pick the rendering colour for an AIS target. Buddies always win
-    /// (intentional friendly boats -- no red overlay even if close);
+    /// (intentional friendly boats - no red overlay even if close);
     /// danger overlays second (CPA alarm active); ship-type third;
     /// unknown fourth.
     /// </summary>

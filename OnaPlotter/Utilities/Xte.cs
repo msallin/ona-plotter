@@ -24,7 +24,7 @@ public static class Xte
 
     /// <summary>
     /// Classifies a signed cross-track error (metres) into a severity
-    /// band. Sign is irrelevant -- the bands are symmetric. Pass null /
+    /// band. Sign is irrelevant - the bands are symmetric. Pass null /
     /// NaN through as <see cref="Severity.OnLine"/> so the caller can
     /// always paint a default tick rather than branching for "no XTE".
     /// </summary>

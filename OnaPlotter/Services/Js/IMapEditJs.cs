@@ -66,7 +66,7 @@ public interface IMapEditJs
     Task RemovePolygonEditVertexAsync(int index);
 
     /// <summary>Returns the current polygon-edit vertices as
-    /// Leaflet-ordered <c>[lat, lon]</c> pairs (open ring -- no closing
+    /// Leaflet-ordered <c>[lat, lon]</c> pairs (open ring - no closing
     /// duplicate). Returns null when the JS side has torn down.</summary>
     Task<double[][]?> GetPolygonEditCoordsAsync();
 

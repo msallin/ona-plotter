@@ -36,7 +36,7 @@ public class StatsAggregatorTests
         await Assert.That(t.StationaryDurationSeconds).IsEqualTo(0);
         await Assert.That(t.TotalDistanceMetres).IsEqualTo(0);
         // Window 7 days = 7 * 86400 = 604800 s. The helm's queried
-        // duration drives this, not segment data -- a "this week"
+        // duration drives this, not segment data - a "this week"
         // query that returned nothing still reports 7 days total.
         await Assert.That(t.TotalDurationSeconds).IsEqualTo(7 * 86400.0);
         await Assert.That(t.MaxTripDistanceMetres).IsNull();
@@ -85,7 +85,7 @@ public class StatsAggregatorTests
     public async Task MaxTripDistance_TakesLongestMovingSegment_NotStationary()
     {
         // Two moving (100 m, 200 m) + one stationary with a larger
-        // distance (300 m of jitter -- pathological but possible
+        // distance (300 m of jitter - pathological but possible
         // over hours of dwell). MaxTripDistanceMetres must come from
         // moving only.
         var segs = new[]
@@ -255,7 +255,7 @@ public class StatsAggregatorTests
     {
         // Three trips spaced 30h apart. No rolling 24h window
         // contains more than one. Best24h = max single-trip distance,
-        // not the sum -- this is the headline test that pins the
+        // not the sum - this is the headline test that pins the
         // "rolling window, not lifetime sum" semantics.
         var segs = new[]
         {
@@ -332,7 +332,7 @@ public class StatsAggregatorTests
     {
         // Two moving + one stationary on the same day. Aggregator
         // sums trip distances + durations, peaks the max SOG across
-        // ALL segments on the day (including stationary -- a surge
+        // ALL segments on the day (including stationary - a surge
         // inside ferry-wash is still a real reading).
         var d = new DateTime(2026, 4, 1, 8, 0, 0, DateTimeKind.Utc);
         var segs = new[]
@@ -401,7 +401,7 @@ public class StatsAggregatorTests
     public async Task AggregateDaily_AttributesByStartDay_NotCrossingMidnight()
     {
         // Segment crosses midnight UTC: starts April 1 23:00, ends
-        // April 2 01:00. Attributed to April 1 in full -- splitting
+        // April 2 01:00. Attributed to April 1 in full - splitting
         // distance across two days would need a uniform-speed
         // assumption (over-engineered for the rare case).
         var start = new DateTime(2026, 4, 1, 23, 0, 0, DateTimeKind.Utc);

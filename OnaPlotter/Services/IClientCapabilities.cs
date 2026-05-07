@@ -4,7 +4,7 @@ namespace OnaPlotter.Services;
 /// Environment-derived capabilities of the client device. Consumed by
 /// the Map page (and AIS layer) to gate perf-heavy effects like SVG
 /// drop-shadows / detectRetina tile fetches / synced AIS updates
-/// during a drag. These are NOT user preferences -- they're detected
+/// during a drag. These are NOT user preferences - they're detected
 /// once at startup from <c>navigator</c> and stay fixed for the
 /// session, so they live in their own service rather than IAppSettings.
 ///

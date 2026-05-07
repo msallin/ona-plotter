@@ -151,7 +151,7 @@ public class VesselsSectionTests
     //   3. Beam only             -> "B 6.2 m"
     //   4. Neither               -> no dimensions span at all
     // All four are exercised below. Reaching the fallback branch is
-    // important because most class-B targets never broadcast Type 24 --
+    // important because most class-B targets never broadcast Type 24 -
     // a regression that defaulted those to "0.0 × 0.0 m" would render
     // a misleading chip on the most common harbour traffic.
 
@@ -170,7 +170,7 @@ public class VesselsSectionTests
 
         await Assert.That(cut.Markup).Contains("32.5 × 6.2 m");  // U+00D7 = ×
         // None of the single-axis fallback prefixes should appear when
-        // both dimensions are present -- otherwise the row renders both
+        // both dimensions are present - otherwise the row renders both
         // the joined chip AND a stray "L"/"B" segment.
         await Assert.That(cut.Markup).DoesNotContain("L 32.5 m");
         await Assert.That(cut.Markup).DoesNotContain("B 6.2 m");
@@ -214,7 +214,7 @@ public class VesselsSectionTests
     {
         // The common case for class-B traffic: never broadcast Type 24,
         // so both LOA and beam stay null. The dimensions segment must
-        // be entirely absent -- no "0.0 m", no "L  m", no separator dot
+        // be entirely absent - no "0.0 m", no "L  m", no separator dot
         // adding visual noise to the row.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<VesselsSection>(p => p

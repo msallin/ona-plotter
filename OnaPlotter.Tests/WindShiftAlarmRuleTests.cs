@@ -60,7 +60,7 @@ public class WindShiftAlarmRuleTests
     public async Task Within_Lookback_Silent()
     {
         // Anchor at 90deg, 2 min later wind is at 140deg. 5-min lookback
-        // hasn't elapsed, so even a big shift stays silent -- the rule
+        // hasn't elapsed, so even a big shift stays silent - the rule
         // won't rotate the anchor until the window passes.
         var rule = new WindShiftAlarmRule();
         var t0 = DateTime.UtcNow;
@@ -91,7 +91,7 @@ public class WindShiftAlarmRuleTests
         var rule = new WindShiftAlarmRule();
         var t0 = DateTime.UtcNow;
         rule.Check(Ctx(NavWithTwd(90), t0));
-        // 10deg shift, threshold 15 -- no alarm, but the anchor rotates.
+        // 10deg shift, threshold 15 - no alarm, but the anchor rotates.
         await Assert.That(rule.Check(Ctx(NavWithTwd(100), t0.AddMinutes(5)))).IsNull();
     }
 
@@ -120,7 +120,7 @@ public class WindShiftAlarmRuleTests
         var first = rule.Check(Ctx(NavWithTwd(40), t0.AddMinutes(5)));
         await Assert.That(first).IsNotNull();
 
-        // Next 5 min: TWD stable at 40 -- 0deg shift against the new
+        // Next 5 min: TWD stable at 40 - 0deg shift against the new
         // anchor, no alarm.
         await Assert.That(rule.Check(Ctx(NavWithTwd(40), t0.AddMinutes(10)))).IsNull();
     }
@@ -137,7 +137,7 @@ public class WindShiftAlarmRuleTests
     [Test]
     public async Task Custom_Threshold_And_Lookback_Honoured()
     {
-        // 50deg shift but threshold 60 -- no alarm even though lookback
+        // 50deg shift but threshold 60 - no alarm even though lookback
         // has elapsed.
         var rule = new WindShiftAlarmRule();
         var t0 = DateTime.UtcNow;
@@ -149,7 +149,7 @@ public class WindShiftAlarmRuleTests
     public async Task Below_Min_Tws_Suppresses_Alarm_Even_With_Big_Shift()
     {
         // 60 deg shift across 5 min, but TWS is 2 kn against a 3 kn
-        // gate -- the rule should never arm. In light air the TWD
+        // gate - the rule should never arm. In light air the TWD
         // computation is dominated by heading / SOG noise and a 60 deg
         // swing means nothing.
         var rule = new WindShiftAlarmRule();
@@ -162,7 +162,7 @@ public class WindShiftAlarmRuleTests
     [Test]
     public async Task Above_Min_Tws_Behaves_Normally()
     {
-        // Same shift, but TWS 8 kn -- well above the 3 kn gate. The
+        // Same shift, but TWS 8 kn - well above the 3 kn gate. The
         // alarm should fire as it would without the gate.
         var rule = new WindShiftAlarmRule();
         var t0 = DateTime.UtcNow;
@@ -175,7 +175,7 @@ public class WindShiftAlarmRuleTests
     [Test]
     public async Task Missing_Tws_Path_Bypasses_Gate()
     {
-        // Server doesn't publish environment.wind.speedTrue -- the gate
+        // Server doesn't publish environment.wind.speedTrue - the gate
         // must not silently suppress every shift on those installs. The
         // rule falls back to its un-gated behaviour.
         var rule = new WindShiftAlarmRule();
@@ -207,7 +207,7 @@ public class WindShiftAlarmRuleTests
 
         // Tick 3: real wind returns at 8 kn, but the anchor was
         // dropped on the null tick, so this is a fresh first-armed
-        // sample -- no alarm against the pre-null anchor.
+        // sample - no alarm against the pre-null anchor.
         var rearmed = rule.Check(Ctx(NavWithTwd(140, twsKn: 8.0), t0.AddMinutes(10), minTws: 3));
         await Assert.That(rearmed).IsNull();
     }
@@ -244,7 +244,7 @@ public class WindShiftAlarmRuleTests
     [Test]
     public async Task Becalmed_Period_Drops_Anchor_Instead_Of_Reporting_Stale_Shift()
     {
-        // Anchor at 90 deg in 8 kn, then wind dies (1 kn) for an hour --
+        // Anchor at 90 deg in 8 kn, then wind dies (1 kn) for an hour -
         // boat lies to current and TWD drifts to 270. When real wind
         // returns at 280 deg, we must NOT report a "190 deg shift in 5
         // min" against the pre-becalmed anchor. The gate drops the
@@ -257,10 +257,10 @@ public class WindShiftAlarmRuleTests
         rule.Check(Ctx(NavWithTwd(180, twsKn: 1.0), t0.AddMinutes(10), minTws: 3));
         rule.Check(Ctx(NavWithTwd(270, twsKn: 1.0), t0.AddMinutes(30), minTws: 3));
         // Wind comes back: this is the FIRST armed sample post-becalm,
-        // so it just re-anchors -- no alarm.
+        // so it just re-anchors - no alarm.
         var first = rule.Check(Ctx(NavWithTwd(280, twsKn: 8.0), t0.AddMinutes(40), minTws: 3));
         await Assert.That(first).IsNull();
-        // 5 min later, wind steady at 285 -- 5 deg shift against the
+        // 5 min later, wind steady at 285 - 5 deg shift against the
         // post-becalm anchor, well below threshold, no alarm.
         var second = rule.Check(Ctx(NavWithTwd(285, twsKn: 8.0), t0.AddMinutes(45), minTws: 3));
         await Assert.That(second).IsNull();

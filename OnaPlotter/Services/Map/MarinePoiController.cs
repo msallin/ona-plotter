@@ -37,13 +37,13 @@ namespace OnaPlotter.Services.Map;
 /// <para><b>Zoom gate</b>. Below <see cref="MinFetchZoom"/> the bbox
 /// covers too much of the world for a useful Overpass call (a fetch
 /// at z6 across a continent would either time out or saturate the
-/// public endpoint). The cache still renders -- we just skip new
+/// public endpoint). The cache still renders - we just skip new
 /// fetches.</para>
 /// </summary>
 public sealed class MarinePoiController : IAsyncDisposable
 {
     /// <summary>Below this zoom level we skip the Overpass fetch.
-    /// z9 is roughly "regional view" -- a few hundred km on a side --
+    /// z9 is roughly "regional view" - a few hundred km on a side -
     /// which is the smallest bbox that still returns a useful result
     /// without timing out. Cache renders work at any zoom.</summary>
     public const int MinFetchZoom = 9;
@@ -148,7 +148,7 @@ public sealed class MarinePoiController : IAsyncDisposable
         if (north <= south) return false;
         // Lon span: handle the antimeridian case where west > east
         // (the bbox wraps around). The "degenerate" case is
-        // west == east AND not crossing -- reject that. Crossing is
+        // west == east AND not crossing - reject that. Crossing is
         // valid (rare but real for Pacific transits).
         if (west == east) return false;
         return true;
@@ -187,7 +187,7 @@ public sealed class MarinePoiController : IAsyncDisposable
         var enabled = GetEnabledCategories();
         if (enabled.Count == 0)
         {
-            // Nothing to show -- push an empty list so any leftover
+            // Nothing to show - push an empty list so any leftover
             // markers from a previous category-set drop off.
             await _js.SetMarinePoisAsync([]);
             return;
@@ -233,7 +233,7 @@ public sealed class MarinePoiController : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                // Helm panned / page unmounting / settings flipped --
+                // Helm panned / page unmounting / settings flipped -
                 // the next ScheduleFetch will replace this one's work.
             }
             catch (Exception ex)

@@ -1,7 +1,7 @@
 // Small id-keyed Leaflet-layer dictionary with consistent remove/clear
 // semantics. Extracted so it can be unit-tested in node without a DOM
 // or Leaflet; leafletInterop.js used to inline this class and that's
-// what allowed the "chartLayers.map" bug to hide -- callers were typing
+// what allowed the "chartLayers.map" bug to hide - callers were typing
 // in an API that didn't exist on the actual shape.
 
 /**
@@ -44,7 +44,7 @@ export class MarkerLayer {
     }
 
     /** Generator so callers can `for (const [id, layer] of layer.entries())`
-     *  without reaching into .items. Not used by the old MarkerLayer --
+     *  without reaching into .items. Not used by the old MarkerLayer -
      *  added here because `chartLayers.map.entries()` was the shape
      *  recomputeChartOverzoom WANTED and it's natural. */
     * entries() {

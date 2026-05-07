@@ -14,7 +14,7 @@ namespace OnaPlotter.Tests.Components;
 ///     control validValues (the actual PUT whitelist) and disables
 ///     the appropriate end button at the boundaries
 ///   - power buttons fire the right RadarPower value (Stby instant,
-///     Transmit via the hold-to-engage path -- the latter is exercised
+///     Transmit via the hold-to-engage path - the latter is exercised
 ///     in MapHud's autopilot tests; here we just check the click
 ///     wiring on Stby)
 /// </summary>
@@ -149,7 +149,7 @@ public class HudRadarCardTests
         // firmware, or a stale server-side state), GetRangeOptions
         // splices it into the sorted options. Stepping then moves to
         // the IMMEDIATE neighbour rather than to the first or last
-        // valid value -- which is the right UX (one tap, one step).
+        // valid value - which is the right UX (one tap, one step).
         // Pinning so a future "drop the splice" refactor surfaces
         // the regression: the off-list value would no longer be
         // selectable and StepRange would no-op.
@@ -165,7 +165,7 @@ public class HudRadarCardTests
                 },
             },
         };
-        // 999 is BETWEEN 926 and 1852 -- not in validValues.
+        // 999 is BETWEEN 926 and 1852 - not in validValues.
         // GetRangeOptions splices it in -> sorted = [463, 926, 999, 1852].
         // Click + steps to 1852 (next neighbour up).
         var cut = Render(ctx, [Radar("r1", range: 999)], caps,
@@ -208,12 +208,12 @@ public class HudRadarCardTests
         // it must report RadarPower.Standby for the radar whose card
         // is showing, not whatever was first in the list. The power
         // row collapsed to a single state-dependent toggle, so a
-        // transmitting radar shows exactly one button -- "Stby".
+        // transmitting radar shows exactly one button - "Stby".
         using var ctx = new Bunit.TestContext();
         (string Id, RadarPower P)? captured = null;
         var cut = Render(ctx, [Radar("r1")], onPower: t => captured = t);
 
-        // Single button in .ap-modes when transmitting -- Stby.
+        // Single button in .ap-modes when transmitting - Stby.
         var btns = cut.FindAll(".radar-hud-power .ap-mode-btn");
         await Assert.That(btns.Count).IsEqualTo(1);
         btns[0].Click();
@@ -247,7 +247,7 @@ public class HudRadarCardTests
         // Single-button toggle: one decision surface, label + click
         // behaviour switch by state. Transmitting -> "Standby"
         // (instant tap clicks straight back to standby); standby ->
-        // "Transmit" (also instant tap now -- helm dropped the
+        // "Transmit" (also instant tap now - helm dropped the
         // hold-to-engage gate). Helm also asked for the full word
         // "Standby" instead of "Stby" so the button reads at a
         // glance without abbreviation guesswork.

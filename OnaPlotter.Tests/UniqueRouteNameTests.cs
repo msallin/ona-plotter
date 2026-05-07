@@ -43,7 +43,7 @@ public class UniqueRouteNameTests
     [Test]
     public async Task Suggest_GappyCollisions_FillsTheGap()
     {
-        // (2) is taken but (3) isn't -- we don't need to walk past
+        // (2) is taken but (3) isn't - we don't need to walk past
         // existing higher numbers; the first free slot wins.
         var result = UniqueRouteName.Suggest(
             "Route 20260427",
@@ -79,7 +79,7 @@ public class UniqueRouteNameTests
         // another route with that exact name already exists, we still
         // produce a unique candidate. Reads odd ("Crossing (2) (2)")
         // but the user-typed-name path doesn't go through Suggest in
-        // production -- this case only matters if someone wires the
+        // production - this case only matters if someone wires the
         // helper into the manual path later.
         var result = UniqueRouteName.Suggest(
             "Crossing (2)", ["Crossing (2)"]);

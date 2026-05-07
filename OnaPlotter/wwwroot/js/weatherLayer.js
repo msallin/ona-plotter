@@ -2,7 +2,7 @@
 // map (z=0) and chart layers (z=50). Caps at z=12 server-side because
 // that's RainViewer's native max; Leaflet upscales above that so the
 // nowcast just blurs instead of erroring out from the upstream CDN.
-// (OpenWeatherMap would need an API key -- not threaded through yet.)
+// (OpenWeatherMap would need an API key - not threaded through yet.)
 //
 // Helm controls opacity via a Misc-section slider (10%..90%). 0.5
 // matches the previous baked-in default so an existing install

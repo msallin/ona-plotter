@@ -34,7 +34,7 @@ const VIEWPORTS = [
 ];
 
 // Canned SignalK delta. Values picked so every HUD card has something to
-// show -- and shows the *interesting* state that takes the most space /
+// show - and shows the *interesting* state that takes the most space /
 // widens the card the most. Depth is below the threshold (set via
 // localStorage in the spec setup) so the depth card renders the bar in
 // alarm colour + warning glyph + threshold label. SOG / COG / wind /
@@ -50,7 +50,7 @@ function buildDelta() {
                 { path: 'navigation.speedOverGround', value: 2.57 },          // ~5.0 kn
                 { path: 'navigation.courseOverGroundTrue', value: 2.42 },      // ~138 deg
                 { path: 'navigation.headingTrue', value: 2.36 },               // ~135 deg (3 deg drift)
-                // Depth 2.0 m -- below the 3.0 m default alarm threshold so
+                // Depth 2.0 m - below the 3.0 m default alarm threshold so
                 // the depth card shows its loudest variant: red bar fill,
                 // warning glyph, depth-danger digit colour. Path matches
                 // SignalkClient.SelfFastTierPaths (belowTransducer, not
@@ -68,7 +68,7 @@ function buildDelta() {
                 { path: 'steering.autopilot.state', value: 'auto' },
                 { path: 'steering.autopilot.target.headingTrue', value: 2.443 }, // ~140 deg
                 { path: 'steering.rudderAngle', value: 0.0524 },                 // ~3 deg STBD
-                // Tide -- next high in 4 h, low after that. The depth
+                // Tide - next high in 4 h, low after that. The depth
                 // card surfaces a "HW 4h 3.2m" line when these values
                 // are published. timeHigh/timeLow are ISO-8601 UTC.
                 { path: 'environment.tide.heightNow',  value: 1.8 },
@@ -105,7 +105,7 @@ test.describe('HUD layout', () => {
             // Stub the SignalK HTTP API endpoints the app fetches on
             // boot (resources/routes, /waypoints, /notes, /regions, etc.).
             // Without these the fetches throw and the toast-stack pile up
-            // four error toasts per page load -- they obscure the bottom
+            // four error toasts per page load - they obscure the bottom
             // of the screenshot.
             await page.route(/\/signalk\/v\d+\/api\/(resources|vessels)\/.*/, route => {
                 route.fulfill({
@@ -141,7 +141,7 @@ test.describe('HUD layout', () => {
             // Apply optional helm-console variants. The density class is
             // a CSS hook the user picks via Settings; we add it directly
             // for the screenshot. ExpandAllHud is wired via its own KV
-            // flag set in addInitScript -- but we set it per-test here so
+            // flag set in addInitScript - but we set it per-test here so
             // the same helm-console viewport produces both variants.
             if (vp.density) {
                 await page.evaluate((cls) => {
@@ -166,7 +166,7 @@ test.describe('HUD layout', () => {
 
             // Wait for at least one HUD value to populate from the mocked
             // delta. If the WS mock isn't wired up correctly, the page
-            // still renders with '--' placeholders -- screenshot anyway
+            // still renders with '--' placeholders - screenshot anyway
             // and let the human reviewer spot the empty card.
             await page.waitForFunction(() => {
                 const v = document.querySelector('.hud-stack-tl .hud-value');
@@ -196,7 +196,7 @@ test.describe('HUD layout', () => {
             ]));
 
             // Blazor error UI must NOT be visible. Console errors are
-            // logged but not asserted against -- the WS mock handshake
+            // logged but not asserted against - the WS mock handshake
             // and Leaflet tile noise produce benign chatter that varies
             // by browser engine; the visual + layout asserts above are
             // what catch real regressions.

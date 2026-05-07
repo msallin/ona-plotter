@@ -22,7 +22,7 @@ namespace OnaPlotter.Models;
 /// <param name="EndLon">Last-sample longitude (deg).</param>
 /// <param name="DistanceMetres">Sum of haversine distance between
 /// consecutive samples. For a stationary segment this is the GPS
-/// jitter accumulation -- usually under a few metres but a noisy fix
+/// jitter accumulation - usually under a few metres but a noisy fix
 /// can push it to tens.</param>
 /// <param name="SogAvgMs">Mean SOG over samples whose SOG was present.
 /// Null when no SOG samples landed in the segment (e.g. AIS-feed-only

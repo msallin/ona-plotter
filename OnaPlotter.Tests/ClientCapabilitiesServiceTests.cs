@@ -23,7 +23,7 @@ public class ClientCapabilitiesServiceTests
     [Test]
     public async Task FewCores_TriggersSlow()
     {
-        // Pi 4 reports 4 cores -- the boundary is "<= 4" so this lands
+        // Pi 4 reports 4 cores - the boundary is "<= 4" so this lands
         // on the slow side of the gate.
         bool slow = ClientCapabilitiesService.ResolveIsSlowClient(
             4, "Mozilla/5.0 (X11; Linux x86_64) ...");
@@ -33,7 +33,7 @@ public class ClientCapabilitiesServiceTests
     [Test]
     public async Task ArmUserAgent_TriggersSlow_EvenWithManyCores()
     {
-        // ARM signal alone is enough -- a hypothetical 8-core ARM
+        // ARM signal alone is enough - a hypothetical 8-core ARM
         // tablet should still get the slow-path treatment because the
         // bottleneck on those devices is GPU compositing, not core
         // count, and the JS perf gates were tuned around that.
@@ -86,7 +86,7 @@ public class ClientCapabilitiesServiceTests
     [Test]
     public async Task ArmInAnUnrelatedWord_DoesNotMatch()
     {
-        // "alarm" / "harmful" contain "arm" as a substring -- the regex
+        // "alarm" / "harmful" contain "arm" as a substring - the regex
         // uses \barm\b so unrelated words don't false-positive.
         bool slow = ClientCapabilitiesService.ResolveIsSlowClient(
             8, "Mozilla/5.0 (Windows; harmful-extension/1.0)");

@@ -27,7 +27,7 @@ public interface IConfirmationService
     /// or <c>null</c> on Cancel / Escape OR when OK is tapped on
     /// whitespace-only input (so callers can use <c>is null</c> to
     /// mean "no usable answer"). Prefer this over <c>window.prompt</c>
-    /// -- the native dialog is blocked in some iOS PWA / MDM profiles
+    /// - the native dialog is blocked in some iOS PWA / MDM profiles
     /// and ignores the app theme, while this one reuses the themed
     /// modal host. Destructive is forced to false so the OK button
     /// uses the primary palette (text-rename is rarely destructive).</summary>
@@ -37,7 +37,7 @@ public interface IConfirmationService
     /// <summary>N-option chooser. Shows the modal with one button per
     /// entry in <paramref name="options"/> plus a Cancel; resolves to
     /// the picked option string, or <c>null</c> on Cancel / Escape /
-    /// backdrop click. Used for "Export as GPX or GeoJSON?" -- where
+    /// backdrop click. Used for "Export as GPX or GeoJSON?" - where
     /// a yes/no Confirm would force misleading "Cancel = GeoJSON"
     /// labelling and a free-text Prompt would be slower than two
     /// taps. Caller can <c>switch</c> on the returned string; null

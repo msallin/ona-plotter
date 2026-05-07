@@ -10,7 +10,7 @@
 //
 // 2) Tapping the active-route polyline opens a popup with Deactivate
 //    / Edit / Delete. Pre-fix the active overlay had no popup at all
-//    -- the helm could only deactivate from the bottom-bar Stop button
+//    - the helm could only deactivate from the bottom-bar Stop button
 //    or the right-click context menu, both far from the polyline they
 //    were already pointing at.
 //
@@ -60,7 +60,7 @@ test.describe('Route popups', () => {
             // module doesn't expose one, so we open via the DOM by
             // finding the polyline path and dispatching a click.
             const paths = document.querySelectorAll('.leaflet-overlay-pane path');
-            // The hit polyline is wider (weight 36) -- it shows as a
+            // The hit polyline is wider (weight 36) - it shows as a
             // path with stroke-width 36. Click it to open the popup.
             const hit = Array.from(paths).find(p => p.getAttribute('stroke-width') === '36');
             if (!hit) return { found: false };
@@ -89,7 +89,7 @@ test.describe('Route popups', () => {
             const mod = await import('/_content/OnaPlotter/js/leafletInterop.js')
                 .catch(() => import('/js/leafletInterop.js'));
             mod.fitBounds(47.5, 7.5, 49.5, 8.5);
-            // setActiveRoute(coords, wpIdx, routeId, routeName) --
+            // setActiveRoute(coords, wpIdx, routeId, routeName) -
             // wpIdx=1 means "next WP is index 1" so coords.slice(0,1)
             // is dotted (passed) and coords.slice(0) is solid (future).
             mod.setActiveRoute(coords, 1, 'active-route-id', 'Active Test');
@@ -151,7 +151,7 @@ test.describe('Route popups', () => {
         }, COORDS);
 
         expect(result.foundBtn).toBe(true);
-        // Single-tap label -- not "Really?" or any confirming variant.
+        // Single-tap label - not "Really?" or any confirming variant.
         expect(result.labelBeforeClick).toBe('Deactivate');
         expect(result.popupGoneAfterClick).toBe(true);
     });

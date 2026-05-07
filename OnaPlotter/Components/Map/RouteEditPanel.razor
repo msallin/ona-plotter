@@ -48,7 +48,7 @@
         bool canSave = enoughPoints && !Saving;
     }
     @* Reverse: flips waypoint order. Classic case: "I planned the
-       outbound, now I want the return leg" -- without this the helm
+       outbound, now I want the return leg" - without this the helm
        would re-add waypoints in opposite order. *@
     <button class="map-btn" @onclick="OnReverse"
             disabled="@(!enoughPoints || Saving)"
@@ -67,7 +67,7 @@
     </button>
     @* Save as copy: only meaningful when editing an existing route
        (IsEditingExisting). Saves the current geometry as a NEW route
-       instead of overwriting the original -- useful when the helm
+       instead of overwriting the original - useful when the helm
        wants a variant without losing the source. Hidden in fresh-
        create flows where it'd be redundant with Save. *@
     @if (IsEditingExisting)
@@ -78,7 +78,7 @@
             Save copy
         </button>
     }
-    @* Save & Go: only useful when the route is NOT already active --
+    @* Save & Go: only useful when the route is NOT already active -
        saves AND sets it as the active course in one tap. Hidden when
        the route is already active because Save and Save & Go would
        then perform identical operations and the duplicated button
@@ -107,12 +107,12 @@
     [Parameter] public bool Saving { get; set; }
     /// <summary>True when the panel is editing an existing route
     /// (Layers-panel Edit), false on a fresh create. Drives whether
-    /// the "Save copy" button is rendered -- copying makes no sense
+    /// the "Save copy" button is rendered - copying makes no sense
     /// in the fresh-create flow.</summary>
     [Parameter] public bool IsEditingExisting { get; set; }
     /// <summary>True when the existing route is the currently-active
     /// course. In that case Save & Go is hidden because saving
-    /// already keeps the route active -- the two operations would be
+    /// already keeps the route active - the two operations would be
     /// identical. Also influences future deactivate / re-activate
     /// affordances if added.</summary>
     [Parameter] public bool IsEditingActiveRoute { get; set; }
@@ -125,7 +125,7 @@
 
     private async Task OnNameInput(ChangeEventArgs e)
     {
-        // Don't mutate the [Parameter] directly -- Blazor overwrites on
+        // Don't mutate the [Parameter] directly - Blazor overwrites on
         // the next parent render, which fights the user's typing if the
         // parent state round-trip is slow. Just bubble the new value;
         // the parent owns the state.

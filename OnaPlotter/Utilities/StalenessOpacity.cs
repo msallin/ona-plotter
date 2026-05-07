@@ -4,13 +4,13 @@ namespace OnaPlotter.Utilities;
 /// AIS marker fade ramp: the helm should see at-a-glance which
 /// targets are fresh (full opacity), drifting stale (mid-fade), or
 /// almost certainly gone (heavily faded). The threshold + the linear
-/// interpolation are the actual decision -- they live here so the C#
+/// interpolation are the actual decision - they live here so the C#
 /// tests pin the exact opacity at every boundary, and JS just mirrors
 /// the formula via <c>wwwroot/js/format.js</c>.
 ///
 /// <para>Schedule:
 /// <list type="bullet">
-///   <item>0-30 s old: full opacity (returns null -- caller leaves
+///   <item>0-30 s old: full opacity (returns null - caller leaves
 ///   the element's inline opacity unset so CSS defaults apply).</item>
 ///   <item>30-300 s old: linear fade from 1.0 down to 0.35 over
 ///   the 270 s window.</item>

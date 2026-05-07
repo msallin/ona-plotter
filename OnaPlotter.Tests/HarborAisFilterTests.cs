@@ -9,7 +9,7 @@ namespace OnaPlotter.Tests;
 /// Map.razor.PushAisTargets delegates to. The filter's three
 /// guarantees are: position-required, harbor-on drops moored, and
 /// Cleanup runs once per call. All three are exercised here without
-/// touching JS interop or bUnit -- which is what TEST-001 of the
+/// touching JS interop or bUnit - which is what TEST-001 of the
 /// review flagged as missing coverage.
 /// </summary>
 public class HarborAisFilterTests
@@ -81,7 +81,7 @@ public class HarborAisFilterTests
     [Test]
     public async Task HarborOn_NavStateAnchored_DroppedImmediately()
     {
-        // SK navigation.state = "anchored" is authoritative -- no
+        // SK navigation.state = "anchored" is authoritative - no
         // dwell required, no SOG check. Pins the integration with the
         // tracker's nav.state branch.
         var anchored = V("a1", sogMs: 0.0, navState: "anchored");
@@ -98,7 +98,7 @@ public class HarborAisFilterTests
     public async Task HarborOn_CallsCleanup_ToBoundDwellRing()
     {
         // The dwell ring must not leak across long sessions. Call the
-        // filter twice -- the second call's vessels list excludes the
+        // filter twice - the second call's vessels list excludes the
         // first call's contexts, so Cleanup must drop them.
         var tracker = new MooredVesselTracker();
         var t0 = DateTime.UtcNow;
@@ -128,7 +128,7 @@ public class HarborAisFilterTests
         await Assert.That(tracker.TrackedCount).IsEqualTo(1);
 
         // Now run the filter with harbor=false on a different vessel set.
-        // "ghost" is no longer in the visible list -- but because harbor
+        // "ghost" is no longer in the visible list - but because harbor
         // is off, Cleanup must NOT run, so "ghost" stays in the dwell
         // ring waiting for the next harbor toggle.
         HarborAisFilter.Apply(new[] { V("real", sogMs: 5.0) }, tracker, harbor: false, t0.AddSeconds(2));

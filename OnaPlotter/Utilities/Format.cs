@@ -62,7 +62,7 @@ public static class Format
     }
 
     /// <summary>Formats elapsed-since-MOB-raise as "T+5s" / "T+12m"
-    /// / "T+1h23m". Pure formatter -- caller passes the seconds
+    /// / "T+1h23m". Pure formatter - caller passes the seconds
     /// since the casualty was raised. JS layer uses this via the
     /// mirrored helper in <c>format.js</c>; tests live here to pin
     /// the exact strings.</summary>
@@ -78,7 +78,7 @@ public static class Format
 
     /// <summary>Formats a lat/lon pair as DMS with hemisphere
     /// indicators: "47.50000&deg;N 8.50000&deg;W". Five decimals on
-    /// the degrees ~= 1m precision -- enough for a chart popup. Used
+    /// the degrees ~= 1m precision - enough for a chart popup. Used
     /// by waypoint / note / MOB popups in JS via the mirrored helper.</summary>
     public static string LatLonDms(double lat, double lon)
     {
@@ -106,7 +106,7 @@ public static class Format
         }
         else if (nm < 10)
         {
-            // F1 then strip a trailing ".0" -- a non-zero tenths digit
+            // F1 then strip a trailing ".0" - a non-zero tenths digit
             // (e.g. "1.5") survives the strip.
             digits = nm.ToString("F1", inv);
             if (digits.EndsWith(".0", StringComparison.Ordinal))

@@ -31,7 +31,7 @@ namespace OnaPlotter.Models;
 public enum MarinePoiCategory
 {
     /// <summary>Marine fuel dock. Tag: <c>amenity=fuel</c> AND
-    /// <c>boat=yes</c>. The boat=yes filter is essential -- without
+    /// <c>boat=yes</c>. The boat=yes filter is essential - without
     /// it every road petrol station within 50 km of the coast comes
     /// back. Some marine fuel docks are missing the tag and won't
     /// show; field-tested as the cleaner trade-off.</summary>

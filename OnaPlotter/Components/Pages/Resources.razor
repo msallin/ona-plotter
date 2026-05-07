@@ -16,6 +16,7 @@
 @inject IWaypointApi WaypointApi
 @inject INoteApi NoteApi
 @inject IRegionApi RegionApi
+@inject ICourseApi CourseApi
 @inject IToastService Toasts
 @inject NavigationManager Nav
 @inject SignalkClient SignalkClient
@@ -56,7 +57,7 @@
            Backup section (focus-group field report 2026-04). *@
         <label class="btn btn-outline-primary @(importing ? "disabled" : "")"
                style="white-space:nowrap;"
-               title="Drop in a GPX or GeoJSON file -- format auto-detected">
+               title="Drop in a GPX or GeoJSON file - format auto-detected">
             @if (importing)
             {
                 <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
@@ -102,6 +103,54 @@
         </button>
     </header>
 
+    @* Active-route pin. Sits ABOVE the tabs so it's visible regardless
+       of which tab is open - a route the helm activated yesterday on
+       another plotter still shows here, with one-tap "View on map" /
+       "Stop" so the helm doesn't have to dig through the Routes tab
+       to find which one is currently in use. Re-renders on
+       SignalkClient.OnDataChanged via the subscription wired in
+       OnInitializedAsync. *@
+    @if (SignalkClient.Data.HasActiveCourse)
+    {
+        var data = SignalkClient.Data;
+        var name = string.IsNullOrWhiteSpace(data.ActiveRouteName)
+            ? "Active route"
+            : data.ActiveRouteName;
+        var idx = data.ActiveRoutePointIndex;
+        var total = data.ActiveRoutePointTotal;
+        <div class="active-route-pin" role="status" aria-label="Active route">
+            <div class="active-route-pin-body">
+                <span class="active-route-pin-icon" aria-hidden="true">&#9873;</span>
+                <span class="active-route-pin-name">@name</span>
+                @if (idx is int ii && total is int tt && tt > 0)
+                {
+                    <span class="active-route-pin-progress">WP @(ii + 1) of @tt</span>
+                }
+                @if (data.CourseNextPointDistance is double m)
+                {
+                    <span class="active-route-pin-meta">@($"{m / OnaPlotter.Utilities.Format.MetersPerNm:F2} nm to next")</span>
+                }
+            </div>
+            <div class="active-route-pin-actions">
+                @if (data.ActiveRouteHref is string href
+                     && OnaPlotter.Services.Api.SignalKUrls.ExtractRouteId(href) is string activeId
+                     && !string.IsNullOrEmpty(activeId))
+                {
+                    <button class="btn btn-sm btn-outline-secondary"
+                            @onclick="() => OpenOnMap(TypeRoute, activeId, edit: false)">
+                        View on map
+                    </button>
+                }
+                <button class="btn btn-sm btn-outline-danger"
+                        @onclick="StopActiveRoute"
+                        disabled="@_stoppingActiveRoute"
+                        title="Clear the active route on the SignalK server">
+                    @(_stoppingActiveRoute ? "Stopping..." : "Stop")
+                </button>
+            </div>
+        </div>
+    }
+
     <ul class="nav nav-tabs resources-tabs" role="tablist">
         @foreach (var t in _tabs)
         {
@@ -118,7 +167,7 @@
     </ul>
 
     @* Filter input. Surfaces above the table only when the active tab
-       has more than 6 rows -- below that, scanning the list is faster
+       has more than 6 rows - below that, scanning the list is faster
        than typing. Same threshold as the Layers panel filter on the
        Map page. Filter matches the name (case-insensitive substring)
        so "260" finds every "260322" / "260407" / "260409" route in
@@ -282,6 +331,11 @@
     private string activeTab = "routes";
     private bool loading = true;
 
+    /// <summary>True while a Stop-active-route REST call is in flight.
+    /// Disables the Stop button so a double-tap on the pinned banner
+    /// can't fire two PUTs against navigation/course.</summary>
+    private bool _stoppingActiveRoute;
+
     /// <summary>True while a page-level Import is in flight. Drives
     /// the Import button's spinner + disabled state so a slow
     /// SignalK server (per-feature POST round-trips) doesn't tempt
@@ -370,7 +424,7 @@
 
     // Per-resource load-failed flags so the empty-state copy can
     // distinguish "server returned an empty list" from "we couldn't
-    // reach the server". Shown as "Couldn't reach the server -- check
+    // reach the server". Shown as "Couldn't reach the server - check
     // the SignalK connection." instead of the misleading "No routes on
     // the server." when the fetch threw.
     private bool routesLoadFailed;
@@ -392,7 +446,7 @@
         // edited / deleted on another plotter; same plotter's Map page
         // creating a waypoint, etc.) re-render this page immediately
         // without the helm having to manually refresh. Cheap re-pull of
-        // the cached snapshots on every event -- the store already has
+        // the cached snapshots on every event - the store already has
         // the current state, so this is just a list copy.
         ResourceStore.OnReloaded += HandleStoreReloaded;
         ResourceStore.OnRouteChanged += HandleStoreRouteChanged;
@@ -404,7 +458,46 @@
         ResourceStore.OnRegionChanged += HandleStoreRegionChanged;
         ResourceStore.OnRegionRemoved += HandleStoreRegionRemoved;
 
+        // Active-route pin re-renders when the helm progresses through
+        // the route (next-WP delta, distance ticks) or activates / stops
+        // a route from another plotter. Cheap re-render - the page is
+        // mostly tabs and tables; a single banner re-paint at SK delta
+        // cadence is invisible on the helm.
+        SignalkClient.OnDataChanged += HandleNavigationDataChanged;
+
         await LoadAllAsync();
+    }
+
+    private void HandleNavigationDataChanged() =>
+        _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>Stop the currently-active route via the v2 course API.
+    /// PUT navigation.course.activeRoute = null clears the active
+    /// course; the WS delta then flips
+    /// <see cref="OnaPlotter.Models.NavigationData.HasActiveCourse"/>
+    /// to false and the pin un-renders. Mirrors the Map page's Stop
+    /// Navigation button so the helm has a one-tap exit from this
+    /// page too.</summary>
+    private async Task StopActiveRoute()
+    {
+        if (_stoppingActiveRoute) return;
+        _stoppingActiveRoute = true;
+        try
+        {
+            var r = await CourseApi.ClearAsync();
+            if (!r.Success)
+            {
+                Toasts.Error($"Stop failed: {r.Error ?? "server rejected"}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toasts.LogException(ex, "Stop active route");
+        }
+        finally
+        {
+            _stoppingActiveRoute = false;
+        }
     }
 
     /// <summary>Manual refresh button handler. Force the store to
@@ -425,7 +518,7 @@
             // copied the new state into our local lists. The explicit
             // CopyFromStore here is a belt-and-braces sync in case the
             // event order observation skipped a type (e.g. all four
-            // tasks failed and no events fired -- IsLoaded still flips
+            // tasks failed and no events fired - IsLoaded still flips
             // true, the user expects the failure flags to clear).
             CopyFromStore();
             Toasts.Info("Resources refreshed.");
@@ -451,7 +544,7 @@
         routesLoadFailed = waypointsLoadFailed = notesLoadFailed = regionsLoadFailed = false;
         try
         {
-            // Source of truth is the ResourceStore singleton -- it owns
+            // Source of truth is the ResourceStore singleton - it owns
             // the REST initial-load + delta-driven cache + reconcile-on-
             // reconnect, so this page reads from it instead of issuing
             // its own REST round-trips. If the store hasn't loaded yet
@@ -479,7 +572,7 @@
         regions   = new List<SignalkRegion>(ResourceStore.Regions);
         // Failure flags drive empty-state messaging. With the store as
         // the source of truth we can't tell per-type from here whether
-        // a particular fetch failed -- the worst case is the empty
+        // a particular fetch failed - the worst case is the empty
         // tab shows the generic "no items" copy instead of a network-
         // failure hint, which is acceptable. The store logs failures.
         routesLoadFailed = waypointsLoadFailed = notesLoadFailed = regionsLoadFailed = false;
@@ -495,7 +588,7 @@
     private void HandleStoreRegionChanged(string _)   => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
     private void HandleStoreRegionRemoved(string _)   => InvokeAsync(() => { CopyFromStore(); StateHasChanged(); });
 
-    // Any one endpoint being down shouldn't take the whole page with it --
+    // Any one endpoint being down shouldn't take the whole page with it -
     // the Settings / Paths pages follow the same pattern so a partial
     // outage still shows the healthy tabs with their real data. While
     // SignalK is offline we suppress per-kind toasts and let the
@@ -519,7 +612,7 @@
     // a misleading "your data is gone" message during a connection blip.
     private static string EmptyMessageFor(string kind, bool loadFailed) =>
         loadFailed
-            ? $"Couldn't reach the server -- {kind} couldn't be loaded. Check the SignalK connection."
+            ? $"Couldn't reach the server - {kind} couldn't be loaded. Check the SignalK connection."
             : $"No {kind} on the server.";
 
     private void SetTab(string key)
@@ -604,8 +697,8 @@
             ImportResult parsed;
             try { parsed = ResourceImporter.Parse(content); }
             catch (FormatException fx) { Toasts.Error($"Import failed: {fx.Message}"); return; }
-            catch (System.Xml.XmlException xx) { Toasts.Error($"Import failed: malformed GPX -- {xx.Message}"); return; }
-            catch (System.Text.Json.JsonException jx) { Toasts.Error($"Import failed: malformed GeoJSON -- {jx.Message}"); return; }
+            catch (System.Xml.XmlException xx) { Toasts.Error($"Import failed: malformed GPX - {xx.Message}"); return; }
+            catch (System.Text.Json.JsonException jx) { Toasts.Error($"Import failed: malformed GeoJSON - {jx.Message}"); return; }
 
             if (parsed.TotalCount == 0)
             {
@@ -749,7 +842,7 @@
     {
         if (w.Latitude is not double lat || w.Longitude is not double lon)
         {
-            Toasts.Error("Nothing to share -- this waypoint has no position.");
+            Toasts.Error("Nothing to share - this waypoint has no position.");
             return;
         }
         var feature = new GeoJsonShareWaypointFeature(
@@ -793,7 +886,7 @@
     /// <see cref="EditWaypointName"/>: themed prompt via the shared
     /// confirmation service, optimistic local mutation so the row
     /// reflects the new title without a list refresh. Description is
-    /// untouched -- single-field rename matches the layers-panel
+    /// untouched - single-field rename matches the layers-panel
     /// edit affordance, multi-field edit deferred to a dedicated
     /// dialog.</summary>
     private async Task EditNoteTitle(SignalkNote n)
@@ -817,7 +910,7 @@
 
     /// <summary>Resources-page Share for notes. Builds a GeoJSON
     /// Feature (point + title / description / createdAt properties)
-    /// and routes through the file-transfer helper's shareOrCopy --
+    /// and routes through the file-transfer helper's shareOrCopy -
     /// system share sheet on iPad / Android, clipboard fallback on
     /// desktop. Mirror of the popup-side <c>NoteShare</c> JSInvokable
     /// on Map.razor.cs so the helm gets the same affordance from
@@ -826,7 +919,7 @@
     {
         if (n.Position is null)
         {
-            Toasts.Error("Nothing to share -- this note has no position.");
+            Toasts.Error("Nothing to share - this note has no position.");
             return;
         }
         var feature = new GeoJsonShareNoteFeature(
@@ -858,7 +951,7 @@
     }
 
     /// <summary>Regions always export as GeoJSON (GPX 1.1 has no
-    /// native polygon shape) -- skip the dialog entirely. Confirming
+    /// native polygon shape) - skip the dialog entirely. Confirming
     /// "GeoJSON or Cancel?" would be cargo-cult: there's no choice
     /// to make.</summary>
     private Task ExportRegion(SignalkRegion r) =>
@@ -879,7 +972,7 @@
     {
         if (content is null)
         {
-            Toasts.Error("Nothing to export -- this resource is missing geometry.");
+            Toasts.Error("Nothing to export - this resource is missing geometry.");
             return;
         }
 
@@ -907,7 +1000,7 @@
     /// <summary>Strip filesystem-hostile characters from a resource
     /// name so the download lands as a readable filename. Falls back
     /// to a non-empty placeholder when stripping leaves nothing
-    /// (e.g. a name made entirely of slashes -- rare but possible
+    /// (e.g. a name made entirely of slashes - rare but possible
     /// when an old plugin generated an id-style title).</summary>
     private static string SanitiseForFilename(string name)
     {
@@ -928,6 +1021,7 @@
         ResourceStore.OnNoteRemoved -= HandleStoreNoteRemoved;
         ResourceStore.OnRegionChanged -= HandleStoreRegionChanged;
         ResourceStore.OnRegionRemoved -= HandleStoreRegionRemoved;
+        SignalkClient.OnDataChanged -= HandleNavigationDataChanged;
 
         if (_fileTransfer is not null)
         {
@@ -941,7 +1035,7 @@
     // the REST seed + module init complete) and either focuses the
     // target (pan + zoom) or opens it in the appropriate edit flow.
     // Waypoint edit is handled inline on this page via EditWaypointName
-    // rather than on the map -- it's a rename-only operation with no
+    // rather than on the map - it's a rename-only operation with no
     // map affordance.
     private void OpenOnMap(string type, string id, bool edit)
     {

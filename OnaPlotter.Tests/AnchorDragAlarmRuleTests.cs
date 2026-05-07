@@ -127,7 +127,7 @@ public class AnchorDragAlarmRuleTests
         // When the anchor-alarm plugin stops publishing (server crash,
         // network blip, GPS dead), the last currentRadius sticks on the
         // model forever. Raising a drag alarm off that frozen value
-        // would be a false positive -- the boat may not actually be
+        // would be a false positive - the boat may not actually be
         // dragging. The rule's staleness gate (FreshnessOf == Dead at
         // ~30s) silences the alarm; the HUD's separate freshness pill
         // is what flags the dropout to the helm.

@@ -5,7 +5,7 @@ using OnaPlotter.Services.Radar;
 namespace OnaPlotter.Tests.Services.Radar;
 
 /// <summary>
-/// Integration tests for the manager's orchestration loop -- the glue
+/// Integration tests for the manager's orchestration loop - the glue
 /// between <see cref="RadarOverlayAutoToggle.Decide"/>, the host
 /// (Start/Stop/UpdateRange), and the per-radar capability cache.
 /// The pure decision rule has its own unit tests; these pin the
@@ -27,7 +27,7 @@ public class RadarOverlayManagerTests
         public List<string> Stopped { get; } = [];
         public List<(string id, int range)> Ranges { get; } = [];
 
-        /// <summary>When set, StartOverlayAsync throws on next call --
+        /// <summary>When set, StartOverlayAsync throws on next call -
         /// drives the "host failed; manager surfaces toast" path.</summary>
         public Exception? NextStartError { get; set; }
 
@@ -264,7 +264,7 @@ public class RadarOverlayManagerTests
     {
         // RadarOverlayException from the host must reach OnError so
         // the page can toast it. Crucially the manager must NOT mark
-        // the radar as enabled in that case -- otherwise idempotency
+        // the radar as enabled in that case - otherwise idempotency
         // would block re-enable attempts.
         var (mgr, host, _) = NewManager();
         var errors = new List<string>();
@@ -368,7 +368,7 @@ public class RadarOverlayManagerTests
     [Test]
     public async Task EnabledRadarIds_Reference_Changes_On_Auto_Enable()
     {
-        // Same pin for the auto-toggle path -- arguably the more
+        // Same pin for the auto-toggle path - arguably the more
         // important case because the original bug surfaced after
         // hitting Transmit (auto-enable) rather than the layer
         // checkbox (user-toggle).

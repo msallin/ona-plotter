@@ -78,7 +78,7 @@ export function setMob(lat, lon, createdAtIso, selfMmsi) {
     clearMob();
     // createdAtIso: server-stamped ISO-8601 raise time. Falling
     // back to new Date() only when the server didn't supply one
-    // (pre-v2 SK server) -- the C# layer hands us the parsed
+    // (pre-v2 SK server) - the C# layer hands us the parsed
     // createdAt as ISO so every plotter shows the same minute-
     // and-second on the casualty.
     let createdAt;
@@ -135,7 +135,7 @@ export function setMob(lat, lon, createdAtIso, selfMmsi) {
         .addTo(mapRef);
 
     // T+ counter ticks every 10 s on the at-pin label (and on any
-    // open popup, indirectly -- closing + reopening rebuilds the
+    // open popup, indirectly - closing + reopening rebuilds the
     // popup HTML against the same currentMob). 10 s gives the helm
     // a near-live readout of elapsed time without flooding the
     // redraw loop; helm-feedback was that 30 s felt sluggish during
@@ -169,7 +169,7 @@ function formatElapsed(createdAt) {
 
 function pad2(n) { return String(n).padStart(2, '0'); }
 
-// At-pin label: short, glanceable -- "MOB HH:MM:SS / T+12m / lat / lon"
+// At-pin label: short, glanceable - "MOB HH:MM:SS / T+12m / lat / lon"
 function buildMobLabelHtml() {
     if (!currentMob) return '';
     const { lat, lon, createdAt } = currentMob;
@@ -181,7 +181,7 @@ function buildMobLabelHtml() {
            latLonDms(lat, lon);
 }
 
-// Popup: full dialog -- time + T+ + position + MMSI + GO + Share.
+// Popup: full dialog - time + T+ + position + MMSI + GO + Share.
 // Theme-styled via .mob-popup CSS so the dark / light / high-
 // contrast palettes flow through automatically.
 function buildMobPopupHtml() {

@@ -3,7 +3,7 @@
 
 @* Active-route HUD card. Extracted from MapHud so the heaviest subtree
    (~90 lines of conditional rows, 8+ formatted values) only re-renders
-   when a route-related value actually changes -- not when the parent
+   when a route-related value actually changes - not when the parent
    HUD re-renders because an unrelated field (wind, depth) ticked.
 
    Component takes a RouteHudSnapshot record struct. Blazor's parameter-
@@ -30,7 +30,7 @@
        delta confirming course-clear. Without this the helm sees the
        polyline dim on the chart but the HUD card stays bright with
        distance + ETA + waypoint count, and reads it as "Stop didn't
-       work" -- could double-tap or mistake it for a navigational
+       work" - could double-tap or mistake it for a navigational
        state mismatch. The dim resolves naturally when the delta
        lands and the whole card unmounts (Snapshot.Visible flips
        false). *@
@@ -52,14 +52,14 @@
                        The 'WP X of Y' progress chip + the buttons
                        live next to the route name in Big HUD; in
                        small HUD only the buttons remain (next to
-                       nothing -- the title row collapses) so the
+                       nothing - the title row collapses) so the
                        chart underneath isn't eaten by the chip on
-                       landscape iPad. Hidden entirely on phones
-                       (.route-wp-step-btn is targeted by the phone
-                       breakpoint) -- on a 390-wide viewport the
-                       chevrons crowd the metric strip and the helm
-                       can always tap a waypoint dot on the polyline
-                       to skip there directly. *@
+                       landscape iPad. Visible on phones too -
+                       per helm feedback "there is room for them";
+                       they absolute-position into the compact route
+                       panel's gutters and skip a leg with one tap,
+                       faster than tapping the waypoint dot on the
+                       polyline. *@
                     <button class="route-wp-step-btn"
                             disabled="@(idx <= 0)"
                             title="Previous waypoint" aria-label="Previous waypoint"
@@ -135,7 +135,7 @@
             @* The XTE deviation bar (ILS-localiser-style horizontal
                track + center mark + marker) used to live here. Helm
                flagged it as visually noisy without proportional
-               value -- the XTE numeric (in Big HUD) and the route
+               value - the XTE numeric (in Big HUD) and the route
                polyline + boat icon position on the chart already
                communicate the same off-track information clearly.
                Removed so the route card stays a metrics-and-actions
@@ -202,7 +202,7 @@
     [Parameter] public EventCallback OnNextWaypoint { get; set; }
 
     /// <summary>True when the helm has Big HUD mode enabled (Settings
-    /// page -- "Big type"). Drives the small-vs-big-HUD layout
+    /// page - "Big type"). Drives the small-vs-big-HUD layout
     /// trimming on the route card: the small layout drops fields the
     /// helm doesn't need at a glance (XTE numeric, route name in the
     /// title row) so the chart underneath isn't swallowed by the
@@ -214,7 +214,7 @@
     /// Immutable snapshot of every field the route card reads. Record-
     /// struct semantics give member-wise equality for free, so Blazor's
     /// parameter-change detection treats two equal snapshots as "no
-    /// change" and skips re-render -- the point of the split.
+    /// change" and skips re-render - the point of the split.
     /// </summary>
     public readonly record struct RouteHudSnapshot(
         bool Visible,

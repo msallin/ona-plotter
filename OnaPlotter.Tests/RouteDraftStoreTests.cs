@@ -8,7 +8,7 @@ namespace OnaPlotter.Tests;
 /// contract. Backed by an in-memory <see cref="IKeyValueStore"/>
 /// fake; the production wiring uses the localStorage-backed
 /// implementation but the JS round-trip isn't part of this layer's
-/// contract -- it's a transparent passthrough for any string.
+/// contract - it's a transparent passthrough for any string.
 /// </summary>
 public class RouteDraftStoreTests
 {
@@ -79,7 +79,7 @@ public class RouteDraftStoreTests
     {
         // Single-slot store: a second Save replaces the first. The
         // route-edit poll fires every sub-second so this is the
-        // common path -- pin it so a future "queue drafts" change
+        // common path - pin it so a future "queue drafts" change
         // gets a clear test break.
         var store = new RouteDraftStore(new InMemoryKv());
         await store.SaveAsync(NewDraft());
@@ -162,7 +162,7 @@ public class RouteDraftStoreTests
     {
         // A JSON number literal large enough to overflow double
         // (1e400) deserialises to PositiveInfinity in
-        // System.Text.Json -- IsFinite catches it and we drop the
+        // System.Text.Json - IsFinite catches it and we drop the
         // draft. Pinned because the alternative would be a polyline
         // anchored at (Inf, 8.5), which the renderer either NaN-
         // arithmetics into invisibility or, worse, draws a degenerate
@@ -182,7 +182,7 @@ public class RouteDraftStoreTests
         var kv = new InMemoryKv();
         // Hand-craft json so we can put a length-1 row in (the C#
         // type would reject this at the model level if double[][]
-        // were length-checked, but it isn't -- the validation
+        // were length-checked, but it isn't - the validation
         // belongs in LoadAsync).
         await kv.SetAsync(RouteDraftStore.StorageKey,
             """{"RouteId":"r","Name":"n","Coords":[[47.4]],"SavedAtIso":"2026-04-25T12:00:00Z"}""");

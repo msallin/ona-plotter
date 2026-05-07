@@ -46,7 +46,7 @@ public class RouteEditPanelTests
         var cut = ctx.RenderComponent<RouteEditPanel>(p => p
             .Add(x => x.OnSave, EventCallback.Factory.Create(this, () => fires++)));
 
-        // Save is the primary action -- carries the .active class
+        // Save is the primary action - carries the .active class
         // (helm-flagged: Save & Go is hidden when editing the active
         // route, and Save is the obvious commit verb in every flow).
         var save = cut.FindAll("button.map-btn")
@@ -80,7 +80,7 @@ public class RouteEditPanelTests
     public async Task CancelButton_Fires_OnCancel()
     {
         // The "Undo" button (and its OnUndo callback) was dropped on
-        // helm request -- the per-waypoint × on the list rows plus
+        // helm request - the per-waypoint × on the list rows plus
         // marker-drag-to-reposition cover the same UX, and Undo was
         // redundant chrome. Cancel remains; assert it still wires.
         using var ctx = new Bunit.TestContext();
@@ -121,7 +121,7 @@ public class RouteEditPanelTests
         var noCoords = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, null));
         await Assert.That(noCoords.FindAll(".route-edit-list").Count).IsEqualTo(0);
 
-        // Empty coords array: still no list -- "Waypoints (0)" would be noise.
+        // Empty coords array: still no list - "Waypoints (0)" would be noise.
         var empty = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, System.Array.Empty<double[]>()));
         await Assert.That(empty.FindAll(".route-edit-list").Count).IsEqualTo(0);
     }
@@ -170,7 +170,7 @@ public class RouteEditPanelTests
             .Add(x => x.Coords, coords)
             .Add(x => x.OnRemoveWaypoint, EventCallback.Factory.Create<int>(this, i => removed = i)));
 
-        // Click the middle row's remove button -- verifies the captured
+        // Click the middle row's remove button - verifies the captured
         // `idx` lambda closure captures per-iteration, not the final value.
         cut.FindAll(".route-edit-wp-remove")[1].Click();
 
@@ -180,7 +180,7 @@ public class RouteEditPanelTests
     [Test]
     public async Task Renders_Southern_Western_Hemisphere_Coords()
     {
-        // Covers the SW quadrant -- negative lat/lon should render with S/W
+        // Covers the SW quadrant - negative lat/lon should render with S/W
         // suffixes, not minus signs, and use absolute-value degrees.
         using var ctx = new Bunit.TestContext();
         var coords = new double[][] { new[] { -33.8688, -151.2093 } };

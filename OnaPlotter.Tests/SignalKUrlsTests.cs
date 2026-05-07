@@ -100,7 +100,7 @@ public class SignalKUrlsTests
     public async Task ExtractRouteId_EmptyString_Unchanged()
     {
         // Defensive: don't crash on an empty href (caller fed null /
-        // empty due to a stale state -- the routing layer fails
+        // empty due to a stale state - the routing layer fails
         // gracefully on a missing id).
         var id = SignalKUrls.ExtractRouteId("");
         await Assert.That(id).IsEqualTo("");
@@ -155,11 +155,11 @@ public class SignalKUrlsTests
     [Test]
     public async Task IsSpokeUrlOnSameOrigin_RejectsCrossOrigin()
     {
-        // Different host -- exfiltration vector.
+        // Different host - exfiltration vector.
         await Assert.That(SignalKUrls.IsSpokeUrlOnSameOrigin(
             "wss://attacker.example.com/signalk/v2/api/vessels/self/radars/r/stream",
             "https://h.local:443")).IsFalse();
-        // Different port -- LAN pivot vector.
+        // Different port - LAN pivot vector.
         await Assert.That(SignalKUrls.IsSpokeUrlOnSameOrigin(
             "ws://h.local:8080/signalk/v2/api/vessels/self/radars/r/stream",
             "http://h.local:3000")).IsFalse();
@@ -185,7 +185,7 @@ public class SignalKUrlsTests
     [Test]
     public async Task IsSpokeUrlOnSameOrigin_RejectsSchemeMismatch()
     {
-        // ws against an https origin should be rejected -- the
+        // ws against an https origin should be rejected - the
         // helm's TLS posture must transit to wss.
         await Assert.That(SignalKUrls.IsSpokeUrlOnSameOrigin(
             "ws://h.local:443/signalk/v2/api/vessels/self/radars/r/stream",

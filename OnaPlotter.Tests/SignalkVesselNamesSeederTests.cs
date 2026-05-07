@@ -12,7 +12,7 @@ namespace OnaPlotter.Tests;
 /// envelope vs bare scalar) and the static-data subset
 /// AisVessel.Apply understands (name / mmsi / callsign / ship type /
 /// position). The seeder is best-effort: a 404 or malformed body
-/// must NOT throw -- vessel names just trickle in via deltas instead.
+/// must NOT throw - vessel names just trickle in via deltas instead.
 /// </summary>
 public class SignalkVesselNamesSeederTests
 {
@@ -116,7 +116,7 @@ public class SignalkVesselNamesSeederTests
     public async Task SeedAsync_PrefixedKey_NotDoubledUp()
     {
         // Defensive: if the server already prefixes keys with
-        // "vessels.", we must NOT double the prefix -- the resulting
+        // "vessels.", we must NOT double the prefix - the resulting
         // context must match what the delta stream emits so a later
         // delta merges with the seeded vessel rather than creating a
         // second one.

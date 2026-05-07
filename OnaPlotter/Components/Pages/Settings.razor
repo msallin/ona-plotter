@@ -26,7 +26,7 @@
 @* Settings header: title on the left, build-stamp chip on the right.
    The chip (git short-hash + UTC build time) is pinned here rather
    than in the topbar because it's only useful when the helm is
-   actually trying to diagnose "is my cached bundle stale?" -- hiding
+   actually trying to diagnose "is my cached bundle stale?" - hiding
    it inside the Settings page keeps it out of the operational UI
    while staying one tap away. Values come from the generated
    BuildInfo.g.cs (see StampBuildInfo target in OnaPlotter.csproj). *@
@@ -40,7 +40,7 @@
 
 @* Quick-jump filter. Matches against every form-label on the page;
    first match gets a subtle highlight and scrolls into view. Page is
-   ~600 lines and growing -- Ctrl-F works but scrolls past group
+   ~600 lines and growing - Ctrl-F works but scrolls past group
    headings, and the helm screen doesn't always have a physical
    keyboard. Clearing the input removes the highlight. *@
 @* max-width 1200 (was 600) so iPad landscape + desktop actually use
@@ -124,7 +124,7 @@
                 <small class="text-muted d-block mt-1">
                     Holds a Screen Wake Lock across the whole app so the tablet
                     doesn't doze mid-watch. Covers Chart, SailSteer, Wind,
-                    History -- not just the Map page. Turn off if running on
+                    History - not just the Map page. Turn off if running on
                     battery without shore power. Quiet no-op on browsers without
                     Wake Lock support.
                 </small>
@@ -151,7 +151,7 @@
                 @* Re-open the welcome card. The card is normally one-shot
                    per device; helms who want to re-read the onboarding
                    click here. The page navigates to map?welcome=1 (NO
-                   leading slash -- absolute /map jumps off-mount under
+                   leading slash - absolute /map jumps off-mount under
                    the SignalK plugin path, e.g. /signalk-onaplotter/.
                    Same convention Resources.razor uses for its View /
                    Edit links). The Map page picks up the welcome=1
@@ -228,7 +228,7 @@
                 <small class="text-muted d-block mt-1">
                     Lets the helm zoom past a chart's native maximum.
                     Tiles at the native cap get GPU-upscaled to fill
-                    higher zoom levels -- pixelated but readable for
+                    higher zoom levels - pixelated but readable for
                     close-quarters work (reefs, harbour entries, dock
                     approaches). Above the cap + level limit, chart
                     tiles go blank and the OpenStreetMap fallback
@@ -402,7 +402,7 @@
                    raises Warning when CPA is between the inner radius
                    and radius * factor (default factor 2). Drawing the
                    advisory ring at radius * factor lets the helm see
-                   why amber chips appear in the band -- helm-flagged
+                   why amber chips appear in the band - helm-flagged
                    the chips as "outside my guard ring" before the
                    ring was drawn. The toggle is here so a helm
                    running a busy chart can opt out for a cleaner
@@ -435,7 +435,7 @@
                    below is dimmed because the SK plugin's own
                    arrival circle wins. When OFF, the client-side
                    WaypointApproach rule fires on the helm-set
-                   radius -- helm-only fallback for SK installs
+                   radius - helm-only fallback for SK installs
                    without a course-provider plugin. *@
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" role="switch"
@@ -454,7 +454,7 @@
                     the APPROACH banner; the chartplotter agrees
                     with the autopilot's arrival logic. Turn off
                     for SK installs without a course-provider
-                    plugin -- the client-side rule below takes
+                    plugin - the client-side rule below takes
                     over.
                 </small>
 
@@ -519,7 +519,7 @@
                 </div>
                 <small class="text-muted">
                     Used instead of the day value while Night Mode is on. Default 15 min
-                    -- a sleep-rotation guard for solo watches. 0 falls back to the day
+                    - a sleep-rotation guard for solo watches. 0 falls back to the day
                     value (no night override).
                 </small>
             </div>
@@ -598,7 +598,7 @@
                            @onchange="(e) => OnWindShiftMinTwsChanged(e)" />
                     <span class="input-group-text">kn</span>
                 </div>
-                <small class="text-muted">Suppress the alarm below this TWS -- in light air the derived TWD is dominated by sensor noise. 0 disables the gate.</small>
+                <small class="text-muted">Suppress the alarm below this TWS - in light air the derived TWD is dominated by sensor noise. 0 disables the gate.</small>
             </div>
         </div>
     </div>
@@ -661,7 +661,7 @@
         </div>
     </div>
 
-    @* Boat Draft card removed -- the same information is surfaced on
+    @* Boat Draft card removed - the same information is surfaced on
        the Paths page (`design.draft.current` / `.maximum` with live
        values) and is also called out in the Anchor Tide Alarm setup
        card below, so a third card here was redundant. *@
@@ -724,7 +724,7 @@
                         </span>
                         Tide data
                         @if (SignalkClient.Data.TideHeightNow is not null)
-                        { <span>(@SignalkClient.Data.TideStationName -- @SignalkClient.Data.TideHeightNow.Value.ToString("F1") m now)</span> }
+                        { <span>(@SignalkClient.Data.TideStationName - @SignalkClient.Data.TideHeightNow.Value.ToString("F1") m now)</span> }
                         else { <span class="text-muted">&mdash; install a SignalK tide plugin (e.g. signalk-tides)</span> }
                     </li>
                 </ul>
@@ -860,7 +860,7 @@
                         }
                     </div>
                     <small class="text-muted d-block mt-1">
-                        Dusk: dim + desaturated, no red-shift -- for the sun-just-set window.
+                        Dusk: dim + desaturated, no red-shift - for the sun-just-set window.
                         Soft / Amber / Red: progressively-redder presets that preserve dark-adapted
                         vision.
                     </small>
@@ -931,7 +931,7 @@
 
     @* === Advanced / developer tools ========================
        Data (raw delta stream) + Paths (which SK paths the plotter
-       consumes) are techie features -- useful when debugging why
+       consumes) are techie features - useful when debugging why
        a gauge is empty or a plugin isn't wired right, but out of
        the helmsman's daily flow. Surfacing them here so the top
        nav stays focused on sailing workflows. The /raw and
@@ -1048,7 +1048,7 @@
         try
         {
             // Synthetic payload: includes build info so the log line
-            // identifies WHICH build sent it -- useful when you've
+            // identifies WHICH build sent it - useful when you've
             // rebuilt multiple times and want to confirm the latest
             // landed on the Pi. ReportAsync returns false if the JS
             // bootstrap isn't reachable, so the toast tells the truth
@@ -1057,7 +1057,7 @@
             bool ok = await ErrorRelay.ReportAsync(
                 $"test log from Settings @ build {OnaPlotter.BuildInfo.CommitHash} ({OnaPlotter.BuildInfo.BuildUtc} UTC)");
             if (ok) Toasts.Success("Test log sent. Check the SignalK server log for [onaplotter].");
-            else    Toasts.Error("Test log relay unavailable -- is the SignalK plugin loaded?");
+            else    Toasts.Error("Test log relay unavailable - is the SignalK plugin loaded?");
         }
         finally
         {
@@ -1067,7 +1067,7 @@
 
     /// <summary>Raises a synthetic alarm at
     /// <c>notifications.onaplotter.test</c> via the SK v2 Notifications
-    /// API. Verifies the publish + ack path end-to-end -- the alarm
+    /// API. Verifies the publish + ack path end-to-end - the alarm
     /// appears on every connected plotter, and Acknowledge round-trips
     /// through the same v2 endpoint local rules use.</summary>
     private async Task SendTestNotification()
@@ -1161,7 +1161,7 @@
 
     private async Task OnWaypointArrivalChanged(ChangeEventArgs e)
     {
-        // 0 disables -- the rule returns null when the configured radius
+        // 0 disables - the rule returns null when the configured radius
         // is <= 0. Clamp rather than silently drop so a user who types
         // 5000 gets a useful 1000 m instead of wondering why nothing
         // changed. Toast if the clamp kicked in.
@@ -1311,7 +1311,7 @@
     {
         // Defensive parse: a malformed input keeps the previous value.
         // Clamp here AND toast on out-of-range so the helm sees the
-        // adjustment immediately -- matches the OnSnoozeDurationChanged
+        // adjustment immediately - matches the OnSnoozeDurationChanged
         // / OnDeadmanNightMinutes pattern. The setter clamps too as
         // belt-and-braces against future call paths and corrupted
         // localStorage; the in-handler clamp is purely for UX so the
@@ -1393,7 +1393,7 @@
             // while inspecting their CSV. The inline polar-status-error
             // card already renders polarError; a transient toast on
             // top duplicates the same string. Devs still see the trace
-            // via Console.Error -- helpful when the parse path itself
+            // via Console.Error - helpful when the parse path itself
             // throws unexpectedly.
             polarError = ex.Message;
             Console.Error.WriteLine($"OnaPlotter: Polar import failed: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
@@ -1569,7 +1569,7 @@
         // persisted value instead of the ctor default. InitializeAsync
         // is idempotent (guarded by an internal lock + _initialized
         // flag), so it's safe to call here even though MainLayout also
-        // calls it -- whichever runs first wins, the other no-ops.
+        // calls it - whichever runs first wins, the other no-ops.
         // Without this, a direct reload of /settings rendered with
         // defaults and the input values only became correct after a
         // user interaction that caused another render pass.

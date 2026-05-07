@@ -11,7 +11,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 // Shared HttpClient used by every *Api. The 8-second timeout caps the
 // .NET default of 100s so a half-baked TLS handshake on flaky LTE / a
 // dropped sat link surfaces as a fast Toast.Error instead of a frozen
-// UI -- Stop Nav, Drop / Raise Anchor, Activate Route, MOB position
+// UI - Stop Nav, Drop / Raise Anchor, Activate Route, MOB position
 // write would otherwise sit on a dead socket up to 100s before the
 // helm's tap registers a failure. Per-call timeouts on hot paths
 // (NotificationsApi.CallTimeout) override this when they need a tighter
@@ -160,7 +160,7 @@ builder.Services.AddSingleton<OnaPlotter.Services.Mob.ResolvedPositionStore>();
 // ServerNotificationStore + queues a background POST that retries
 // until the server confirms. The alarm pipeline wakes up via
 // MainLayout's subscription to ServerNotificationStore.OnPathChanged
-// (no separate callback needed -- the store fires synchronously
+// (no separate callback needed - the store fires synchronously
 // from inside Apply / Clear).
 builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService, OnaPlotter.Services.Mob.MobService>();
 
@@ -253,7 +253,7 @@ builder.Services.AddSingleton<OnaPlotter.Services.Resources.ResourceStore>();
 // return an empty list per the IPlaceSearchService contract.
 // Photon takes a position-provider thunk so each search call can
 // add &lat=&lon= to bias results by proximity to the helm's current
-// fix. The thunk reads NavigationData live each call -- if the SK
+// fix. The thunk reads NavigationData live each call - if the SK
 // feed hasn't yielded a position yet, returns null and Photon skips
 // the bias params (global ranking).
 builder.Services.AddSingleton<OnaPlotter.Services.Places.PhotonPlaceSearchService>(sp =>
@@ -289,7 +289,7 @@ builder.Services.AddSingleton<OnaPlotter.Services.Places.IPlaceSearchService>(sp
 //     eviction; survives offline so visited regions render their
 //     services without a fresh fetch.
 //   * MarinePoiController is constructed by Map.razor when the JS
-//     module ref lands -- not registered here because it carries the
+//     module ref lands - not registered here because it carries the
 //     module-bound MapMarinePoiJs wrapper.
 builder.Services.AddSingleton<OnaPlotter.Services.Pois.OverpassPoiService>();
 builder.Services.AddSingleton<OnaPlotter.Services.Pois.IMarinePoiService>(
@@ -318,12 +318,12 @@ _ = resourceStore.RefreshAllAsync(cause: "startup");
 // Activate the cross-plotter alarm publisher. Resolving the singleton
 // runs the constructor which subscribes to IAlarmManager.OnAlarmsChanged;
 // without this line the type would never be instantiated (no other
-// component injects it -- the bridge rule injects the tracker, not
+// component injects it - the bridge rule injects the tracker, not
 // the publisher) and locally-emitted alarms would never reach other
 // plotters. Stashed in a discard so the GC keeps the subscription alive.
 _ = host.Services.GetRequiredService<OnaPlotter.Services.Alarms.AlarmPublisher>();
 
-// NavigationAverages must resolve at startup too -- its ctor wires
+// NavigationAverages must resolve at startup too - its ctor wires
 // the OnDataChanged subscription, and no component injects it until
 // the chart HUD is mounted. Without this kick the rolling buffers
 // stay empty until the helm navigates to /map, which means the

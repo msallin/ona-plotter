@@ -7,7 +7,7 @@ namespace OnaPlotter.Tests;
 /// cardinal directions and at the equator/poles so a future refactor
 /// (sign convention swap, atan2 arg order swap, mid-formula radian
 /// confusion) shows up here. The result is in radians, normalised
-/// to [0, 2pi) clockwise from true north -- matching the SignalK
+/// to [0, 2pi) clockwise from true north - matching the SignalK
 /// <c>navigation.*.bearingTrue</c> path convention this helper
 /// replaces.
 /// </summary>

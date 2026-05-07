@@ -14,7 +14,7 @@
 export function setNightMode(enabled, preset) {
     const html = document.documentElement;
     // Drop every preset class, then add back the one we want. The
-    // preset name is untrusted input -- clamp to the known set to
+    // preset name is untrusted input - clamp to the known set to
     // prevent attribute-value injection via Settings storage.
     const known = ['soft', 'amber', 'red'];
     for (const p of known) html.classList.remove('night-mode-' + p);

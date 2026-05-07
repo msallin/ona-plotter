@@ -114,7 +114,7 @@ public sealed class PlaceSearchCache
         // identically: drop the cache to empty so the next PutAsync
         // overwrites cleanly. Without the JSException catch the
         // exception escapes into SearchBox.OnInput which then needs
-        // to handle it itself (which it does -- catches
+        // to handle it itself (which it does - catches
         // OperationCanceledException as the base type).
         //
         // OperationCanceledException is INTENTIONALLY NOT caught here:
@@ -135,7 +135,7 @@ public sealed class PlaceSearchCache
     /// localStorage cannot feed the SearchBox / leaflet flyTo NaN /
     /// out-of-range coordinates that the live geocoder would itself
     /// reject. Threat model is local (browser extension, shared
-    /// device, dev-tools paste) -- defense-in-depth, not remote.</summary>
+    /// device, dev-tools paste) - defense-in-depth, not remote.</summary>
     private static CachedQuery? SanitiseEntry(CachedQuery? entry)
     {
         if (entry is null) return null;

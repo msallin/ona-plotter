@@ -8,7 +8,7 @@
    The input is INTENTIONALLY UNCONTROLLED on the Blazor side.
    No `value="@_query"`, no `@bind`. Blazor's renderer never writes
    the `value` attribute, so the helm's typing stays in the DOM
-   exactly as typed -- no controlled-input race, no clobbering of
+   exactly as typed - no controlled-input race, no clobbering of
    in-progress keystrokes by an in-handler StateHasChanged that
    pushes a stale `_query` back to the DOM.
 
@@ -121,7 +121,7 @@
 
     /// <summary>Hard cap on the helm-typed query length. A pasted
     /// multi-KB string would URL-encode into an oversized GET that
-    /// the upstream rejects with 414 anyway -- truncating here keeps
+    /// the upstream rejects with 414 anyway - truncating here keeps
     /// the cache key short and the dropdown fast on every keystroke.</summary>
     public const int MaxQueryLength = 200;
 
@@ -179,7 +179,7 @@
         _open = true;
         // Render the spinner + open-dropdown state immediately. Without
         // an explicit StateHasChanged Blazor only renders when the
-        // outer Task completes, which is AFTER SearchAsync returns --
+        // outer Task completes, which is AFTER SearchAsync returns -
         // so the helm never sees a spinner during the in-flight call.
         StateHasChanged();
 
@@ -201,7 +201,7 @@
 
         // Stale check: if a newer keystroke has bumped the counter
         // while this search was in flight, the newer HandleInput
-        // owns the next state update -- bail without touching
+        // owns the next state update - bail without touching
         // _loading / _results so we don't fight it. The newer one
         // will set _loading=true (idempotent) and eventually commit
         // its own results.
@@ -294,10 +294,10 @@
     /// <summary>Lazy-load the JS module (cached on the field so each
     /// SetInputValueAsync call doesn't re-import). The catch is
     /// intentionally broad: bUnit's JS runtime, browser disconnects
-    /// during navigation, missing module file -- all share the same
+    /// during navigation, missing module file - all share the same
     /// degrade path here (skip the programmatic input update; the
     /// helm just doesn't see the input visually clear or fill).
-    /// Crucially, this MUST NOT propagate -- the calling path is
+    /// Crucially, this MUST NOT propagate - the calling path is
     /// HandlePick / HandleClear, neither of which has anywhere
     /// useful to surface a JS-load failure.</summary>
     private async Task<IJSObjectReference?> GetJsModuleAsync()

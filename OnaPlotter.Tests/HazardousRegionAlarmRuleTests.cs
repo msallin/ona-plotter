@@ -32,7 +32,7 @@ public class HazardousRegionAlarmRuleTests
             Regions = regions ?? Array.Empty<SignalkRegion>();
     }
 
-    /// <summary>5x5 square centred at (5, 5) in degrees -- mirrors the
+    /// <summary>5x5 square centred at (5, 5) in degrees - mirrors the
     /// PointInPolygon fixture so the in/out boundary is obvious.</summary>
     private static SignalkRegion SquareRegion(string id, string? name, bool isHazard,
         double minLat = 0, double maxLat = 10, double minLon = 0, double maxLon = 10)

@@ -133,7 +133,7 @@ public class ServerNotificationsAlarmRuleTests
     public async Task DeriveTitleAndDefault_UnknownPath_FallsBackToLeafSegment()
     {
         // Plugin that doesn't fit a known prefix: leaf segment
-        // uppercased becomes the title, the full tail (humanised --
+        // uppercased becomes the title, the full tail (humanised -
         // dots replaced with spaces, camelCase split) becomes the
         // default message.
         var (title, msg) = ServerNotificationsAlarmRule.DeriveTitleAndDefault(
@@ -381,7 +381,7 @@ public class ServerNotificationsAlarmRuleTests
     {
         // Phase B: when our own AlarmPublisher raised a notification,
         // the bridge rule must skip the echo. Otherwise the same
-        // alarm would render twice -- once from the originating
+        // alarm would render twice - once from the originating
         // client-side rule, once from the publish echo via the
         // bridge.
         var store = new ServerNotificationStore();

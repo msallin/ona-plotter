@@ -50,7 +50,17 @@ public sealed class RegionApi : IRegionApi
         bool isHazard = false, CancellationToken ct = default)
     {
         var ring = CircleGeometry.BuildRing(lat, lon, radiusMeters, CircleGeometry.DefaultVertexCount);
-        return PostPolygonAsync(name, description, ring, isHazard, ct);
+        // Stamp createdAt + circle metadata so the popup can render
+        // "Created" and "centre + radius" instead of a 32-vertex
+        // polygon dump. The resources-fs provider round-trips
+        // unknown top-level fields, so this is enough to preserve
+        // the hint across re-fetches.
+        var body = GeoJsonBuilder.RegionFeatureBody(
+            name, GeoJsonBuilder.Polygon(ring), description, isHazard,
+            createdAt: DateTime.UtcNow,
+            centerLat: lat, centerLon: lon, radiusMeters: radiusMeters);
+        return ResourceHttp.PostCreateAsync(
+            _http, _baseUrl.Combine(SignalKUrls.RegionsPath), body, ct);
     }
 
     public Task<ApiResult<string>> CreatePolygonAsync(string name, string description,
@@ -59,37 +69,35 @@ public sealed class RegionApi : IRegionApi
     {
         // Freeform polygon: map the [lat, lon] Leaflet vertices back to
         // GeoJSON [lon, lat] order and close the ring by repeating the
-        // first vertex at the end. Minimum 3 vertices -- the toast on
+        // first vertex at the end. Minimum 3 vertices - the toast on
         // fewer is more useful than a null return that looked identical
         // to a server-side rejection.
         var ring = BuildClosedRingFromLeaflet(vertices, out var err);
         if (ring is null) return Task.FromResult(ApiResult<string>.Fail(err!));
-        return PostPolygonAsync(name, description, ring, isHazard, ct);
-    }
-
-    /// <summary>Posts the common body shape for both circle-derived and
-    /// freeform polygons. Factored out so the two CreateXxxAsync methods
-    /// differ only in how they build their ring.</summary>
-    private Task<ApiResult<string>> PostPolygonAsync(string name, string description,
-        double[][] ring, bool isHazard, CancellationToken ct)
-    {
         var body = GeoJsonBuilder.RegionFeatureBody(
-            name,
-            GeoJsonBuilder.Polygon(ring),
-            description,
-            isHazard);
-        var url = _baseUrl.Combine(SignalKUrls.RegionsPath);
-        return ResourceHttp.PostCreateAsync(_http, url, body, ct);
+            name, GeoJsonBuilder.Polygon(ring), description, isHazard,
+            createdAt: DateTime.UtcNow);
+        return ResourceHttp.PostCreateAsync(
+            _http, _baseUrl.Combine(SignalKUrls.RegionsPath), body, ct);
     }
 
     /// <summary>In-place update for polygon regions. PUT /resources/regions/{id}
-    /// with a freshly-built polygon feature. Mirrors RouteApi.UpdateAsync --
+    /// with a freshly-built polygon feature. Mirrors RouteApi.UpdateAsync -
     /// used when the user opens an existing region via the Layers-panel
     /// Edit button so tweaks replace the original instead of spawning
-    /// a second region on save.</summary>
+    /// a second region on save.
+    /// <para>The resources-fs provider does FULL replacement on PUT, so the
+    /// caller passes the original <paramref name="createdAt"/> + any
+    /// circle metadata it has so those fields survive the round-trip.
+    /// Pass null for both if the original region didn't carry them
+    /// (legacy / imported regions); the UI falls back to a dash and
+    /// the polygon-centroid coords accordingly.</para></summary>
     public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description,
         double[][] vertices,
-        bool isHazard = false, CancellationToken ct = default)
+        bool isHazard = false,
+        DateTime? createdAt = null,
+        double? centerLat = null, double? centerLon = null, double? radiusMeters = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(id))
             return Task.FromResult(ApiResult.Fail("region id required"));
@@ -99,7 +107,9 @@ public sealed class RegionApi : IRegionApi
             name,
             GeoJsonBuilder.Polygon(ring),
             description,
-            isHazard);
+            isHazard,
+            createdAt: createdAt,
+            centerLat: centerLat, centerLon: centerLon, radiusMeters: radiusMeters);
         var url = _baseUrl.Combine(SignalKUrls.Region(id));
         return ResourceHttp.PutAsync(_http, url, body, ct);
     }

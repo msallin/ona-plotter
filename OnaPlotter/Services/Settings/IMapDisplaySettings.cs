@@ -3,7 +3,7 @@ namespace OnaPlotter.Services.Settings;
 /// <summary>
 /// Narrow surface for "what's drawn on the map" toggles. Excludes
 /// chart selection (lives in <see cref="IChartSettings"/>) and
-/// alarm thresholds (<see cref="IAlarmThresholds"/>) on purpose --
+/// alarm thresholds (<see cref="IAlarmThresholds"/>) on purpose -
 /// this is overlay visibility + opacity + harbor mode + display
 /// density flags.
 ///
@@ -33,7 +33,7 @@ public interface IMapDisplaySettings
     bool FollowBoat { get; }
 
     /// <summary>Layline overlay visibility. Independent toggle from
-    /// <see cref="ShipLinesVisible"/> -- helms who motor never want
+    /// <see cref="ShipLinesVisible"/> - helms who motor never want
     /// laylines, helms who race want them visible without losing the
     /// COG vector + current arrow that the master gate covers. Same
     /// flag drives the Map and SailSteer layline overlays.</summary>
@@ -45,7 +45,7 @@ public interface IMapDisplaySettings
     /// helms (or for racing) who want to see only the boat icon and
     /// active-route guidance. Defaults to true so existing installs
     /// see the indicators they always saw.
-    /// <para>Bearing line + XTE tick are NOT gated by this flag --
+    /// <para>Bearing line + XTE tick are NOT gated by this flag -
     /// they're navigation guidance, not info, and hiding them mid-
     /// leg would be a foot-gun. They show automatically when a route
     /// is active.</para></summary>
@@ -67,7 +67,7 @@ public interface IMapDisplaySettings
 
     /// <summary>Server-side ship-track helm-picked window: <c>1h</c>,
     /// <c>6h</c>, <c>1d</c>, <c>3d</c>, <c>7d</c>, or <c>all</c>.
-    /// Default <c>all</c> -- a fresh helm sees their full history-of-
+    /// Default <c>all</c> - a fresh helm sees their full history-of-
     /// record without having to dig into the dropdown.</summary>
     string ServerTrackDuration { get; }
 
@@ -87,7 +87,7 @@ public interface IMapDisplaySettings
     bool AtonsVisible { get; }
 
     /// <summary>Guard-zone amber ring visible on the map. Independent
-    /// of the CPA alarm pipeline -- helms can declutter the chart
+    /// of the CPA alarm pipeline - helms can declutter the chart
     /// without disabling the alarm. Defaults to true so existing
     /// installs see the ring as before.</summary>
     bool GuardZoneVisible { get; }
@@ -95,7 +95,7 @@ public interface IMapDisplaySettings
     /// <summary>Outer dashed warning ring visible on the map at
     /// <c>GuardZone × WarningFactor</c>. Helps the helm see why an
     /// amber CPA chip can sit between the inner danger ring and the
-    /// outer advisory band -- the chip is in the warning band, not
+    /// outer advisory band - the chip is in the warning band, not
     /// "outside the guard ring" as field-tested. Independent of the
     /// inner ring's visibility (helms can show the danger ring alone
     /// for a cleaner chart, or both rings for full context).
@@ -103,7 +103,7 @@ public interface IMapDisplaySettings
     /// ring without an opt-in step. Has no effect when the inner
     /// ring is hidden, when harbor mode is active, or when
     /// <c>GuardZoneWarningFactor &lt;= 1</c> (warning band collapsed
-    /// onto the danger band -- nothing to draw).</summary>
+    /// onto the danger band - nothing to draw).</summary>
     bool GuardZoneWarningRingVisible { get; }
 
     /// <summary>RainViewer weather overlay opacity, 0.05..0.95
@@ -128,7 +128,7 @@ public interface IMapDisplaySettings
 
     /// <summary>Chart-display CSS brightness percentage, 50..150.
     /// Default 100 (identity, no filter). Tighter range than
-    /// contrast/saturation -- past 150 the chart blooms out and
+    /// contrast/saturation - past 150 the chart blooms out and
     /// printed contour lines fade. The helm typically pulls this
     /// DOWN at night to take chart glare off a dark cockpit, not
     /// up.</summary>
@@ -150,7 +150,7 @@ public interface IMapDisplaySettings
     int ChartUpscaleLevels { get; }
 
     /// <summary>Harbor mode: bundled AIS + collision suppressions.
-    /// In-memory only -- never persisted (see settings rationale).</summary>
+    /// In-memory only - never persisted (see settings rationale).</summary>
     bool HarborMode { get; }
 
     /// <summary>Big-type mode: scales corner HUD values up for

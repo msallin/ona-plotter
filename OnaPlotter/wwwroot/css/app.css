@@ -1,26 +1,26 @@
 /* Dark nautical theme for OnaPlotter.
 
    Canonical media-query breakpoints (use these; don't add new ones):
-     (max-width: 640px)   -- phone portrait
-     (max-width: 820px)   -- tablet portrait / phone landscape
-     (max-width: 1024px)  -- laptop small
-     (pointer: coarse)    -- touch devices regardless of width
-     (max-height: 500px) and (orientation: landscape) -- phone landscape
+     (max-width: 640px)   - phone portrait
+     (max-width: 820px)   - tablet portrait / phone landscape
+     (max-width: 1024px)  - laptop small
+     (pointer: coarse)    - touch devices regardless of width
+     (max-height: 500px) and (orientation: landscape) - phone landscape
    Old stale values (600, 641, 900) exist in a few rules for grandfathered
    behaviour; migrating those carries regression risk without clear benefit,
    so leave in place and use the canonical set for new rules. */
 
-/* ===== Inter Variable -- self-hosted for offline use =====
+/* ===== Inter Variable - self-hosted for offline use =====
    One file covers weight 100..900. font-display: swap so the page
    renders immediately with the platform fallback while the font
    loads (matters on iPad over LTE / first boot at the dock).
    <para>
-   format('woff2') -- not 'woff2-variations'. The 'woff2-variations'
+   format('woff2') - not 'woff2-variations'. The 'woff2-variations'
    hint was a draft proposal that never made it into the final
    CSS Fonts spec; Firefox treats it as a foreign mismatch and
    refuses the source, then surfaces "downloadable font: download
    failed" with status NS_ERROR_CORRUPTED_CONTENT in the console.
-   The fix is the plain 'woff2' format hint -- browsers detect
+   The fix is the plain 'woff2' format hint - browsers detect
    variation-axis support inside the WOFF2 file itself, so no
    capability is lost.
    </para> */
@@ -66,7 +66,7 @@
     --sev-warn-bg:   rgba(245, 158, 11, 0.15);
     --sev-danger-bg: rgba(239, 68, 68, 0.18);
 
-    /* RGB triplets -- a companion to the severity / accent hex
+    /* RGB triplets - a companion to the severity / accent hex
        tokens above so downstream rules can alpha-blend via
        rgba(var(--tok-rgb), X). CSS doesn't let us do alpha math
        on a hex var directly; these triplets are the workaround.
@@ -95,7 +95,7 @@
        via var() for its swatches; leafletInterop.js reads the same
        values through readMapColors() at init so the hex strings it
        hands to Leaflet always match the legend. Edit here and both
-       sides follow -- no drift. */
+       sides follow - no drift. */
     --map-own:          #ec4899;     /* own-boat marker (magenta) */
     --map-cog-vector:   #f9a8d4;     /* dashed COG projection */
     --map-buddy:        #e9c46a;     /* buddy vessel; also snooze / star glyph */
@@ -109,7 +109,7 @@
     /* MOB pin + anchor-drag share the severity-danger hue. Both
        alias --sev-danger so a future palette tweak in one place
        cascades across the chart. Drift caught by ARCH-007 in the
-       2026-04-28 architecture review -- two tokens for one colour
+       2026-04-28 architecture review - two tokens for one colour
        had already led to night-mode having to redefine both at
        line 303-305 below. */
     --map-mob:          var(--sev-danger);     /* MOB pin */
@@ -165,7 +165,7 @@
          dialog boxes). Flips to a bright card in light theme.
        - `--panel-bg-map`: panels that float OVER the map tiles (route
          edit bar, context menu, FAB menu, nearest-WP chip). Stay dark
-         in every theme -- the map tiles are the "background" and these
+         in every theme - the map tiles are the "background" and these
          panels need contrast against blue water / satellite imagery.
        Text / border tokens follow the panel background. */
     --panel-bg:          rgba(15, 17, 22, 0.92);
@@ -173,7 +173,7 @@
     --panel-text:        #e2e8f0;
     --panel-text-muted:  #94a3b8;
     /* 0.22 (vs an earlier 0.12) so the panel edge is still visible
-       against the busiest dark-water tile -- the lower opacity blended
+       against the busiest dark-water tile - the lower opacity blended
        into the chart at typical Layers-panel size. */
     --panel-border:      rgba(255, 255, 255, 0.22);
     --panel-shadow:      0 12px 24px rgba(0, 0, 0, 0.4);
@@ -237,7 +237,7 @@
     /* Gap between the bottom action bar and the bc-stack cards
        (anchor watch + active route). Helm-tuned: 4 px reads as a
        deliberate gutter without floating the cards too far above
-       the bar. Earlier 16 px felt "too much padding" -- the route
+       the bar. Earlier 16 px felt "too much padding" - the route
        HUD sat way up the screen for no reason. Expanded corner
        HUDs now use the :has() z-index lift below to paint OVER
        the bc-stack + ctrl bar when the helm taps to expand them,
@@ -258,7 +258,7 @@
     --hud-gap: 8px;
     --hud-stack-max-w: 280px;
 
-    /* Card shell -- identical for every HUD card.
+    /* Card shell - identical for every HUD card.
        Two-stroke instrument edge: a 1 px inner highlight (white at 6 %)
        sits under a 1 px outer stroke (black at 50 %) so the card reads
        crisply over both bright satellite tiles and dark night charts.
@@ -279,7 +279,7 @@
     --hud-font-primary: clamp(1.6rem,  4.8dvh, 2.5rem);
     --hud-tnum: tabular-nums slashed-zero;
 
-    /* Colour encoding -- monochrome by default, colour IS alarm. */
+    /* Colour encoding - monochrome by default, colour IS alarm. */
     --hud-ink:       #E8ECF2;
     --hud-ink-dim:   rgba(232, 236, 242, 0.55);
     --hud-ink-stale: rgba(232, 236, 242, 0.40);
@@ -291,7 +291,7 @@
     /* Buttons inside HUD cards (radar +/-, Transmit, autopilot mode pills).
        Theme-aware so the affordance shape stays visible on both dark and
        white cards. Original hard-coded white-alpha background+border
-       vanished on the light-theme white card -- helm saw labels without
+       vanished on the light-theme white card - helm saw labels without
        button outlines. */
     --hud-btn-bg:           rgba(255, 255, 255, 0.05);
     --hud-btn-bg-hover:     rgba(255, 255, 255, 0.12);
@@ -299,7 +299,7 @@
     --hud-btn-border-hover: rgba(255, 255, 255, 0.25);
     /* Map overlay accents that need to flip with the page theme so they
        hold contrast against pastel light tiles. Anchor watch ring is
-       the most visible -- green-500 reads fine on a dark chart but
+       the most visible - green-500 reads fine on a dark chart but
        washes into the cyan water on the light Mapbox-style basemap. */
     --map-anchor-ok: #22c55e;
     --hud-pulse:     #7CC4FF;
@@ -363,7 +363,7 @@
    .page wrapper so the map HUD (which lives over chart tiles and needs
    to stay dark for readability) is unaffected.
 
-   Tuned for readability on a deck under direct sun -- the previous
+   Tuned for readability on a deck under direct sun - the previous
    palette read fine indoors but washed out topside under polarised
    sunglasses. Specifically:
      * --sk-text-muted bumped slate-500 -> slate-600 so labels stay
@@ -378,7 +378,7 @@
        cheaper LCD panels iPads ship with under sun; (2) a high-
        contrast dark anchor reads at-a-glance, mirroring how Garmin /
        Raymarine / B&G ship their light-theme chrome.
-     * Panels go fully opaque (was rgba 0.96) -- 4 % see-through
+     * Panels go fully opaque (was rgba 0.96) - 4 % see-through
        reads as "blurry" in sun and the panel content dragged below
        legible contrast against a busy chart underneath.
      * Hover surface bumped from slate-100 -> slate-200 so hover
@@ -396,11 +396,11 @@
 :root.theme-system {
     --sk-bg: #f8fafc;                 /* slate-50 */
     --sk-surface: #ffffff;
-    --sk-surface-hover: #e2e8f0;      /* slate-200 -- visible hover delta from slate-50 bg */
-    --sk-border: #94a3b8;             /* slate-400 -- holds up under polarised sunglasses */
-    --sk-text: #0f172a;               /* slate-900 -- ~18:1 against #ffffff */
-    --sk-text-muted: #475569;         /* slate-600 -- ~7.7:1, AAA-clear */
-    /* Sky-800/900 -- > 7:1 contrast on white surfaces, holds up in
+    --sk-surface-hover: #e2e8f0;      /* slate-200 - visible hover delta from slate-50 bg */
+    --sk-border: #94a3b8;             /* slate-400 - holds up under polarised sunglasses */
+    --sk-text: #0f172a;               /* slate-900 - ~18:1 against #ffffff */
+    --sk-text-muted: #475569;         /* slate-600 - ~7.7:1, AAA-clear */
+    /* Sky-800/900 - > 7:1 contrast on white surfaces, holds up in
        direct sunlight on a tablet. Shifted from earlier sky-700 which
        read too pale next to the sharper text. */
     --sk-accent: #075985;             /* sky-800 */
@@ -409,7 +409,7 @@
 
     /* Severity palette retuned for white surfaces. The defaults
        (#22c55e / #f59e0b / #ef4444) are calibrated for dark and read
-       as "highlighter" against #ffffff -- legible but washed-out, and
+       as "highlighter" against #ffffff - legible but washed-out, and
        below 4:1 contrast for the amber especially. The *-700 shades
        below clear 6:1 across the triad and stay clearly distinct from
        data text. Background tints raised to 0.18 so chip fills are
@@ -430,20 +430,20 @@
        anchor). Dark sidebar against light content also matches the
        commercial chartplotter convention (Garmin / Raymarine / B&G)
        so muscle memory transfers. */
-    --sk-sidebar-bg: #1e293b;          /* slate-800 -- solid, no banding */
-    --sk-sidebar-border: #0f172a;      /* slate-900 -- crisp right edge */
+    --sk-sidebar-bg: #1e293b;          /* slate-800 - solid, no banding */
+    --sk-sidebar-border: #0f172a;      /* slate-900 - crisp right edge */
     --sk-sidebar-text: rgba(255, 255, 255, 0.78);
     --sk-sidebar-text-active: #ffffff;
     --sk-sidebar-hover-bg: rgba(255, 255, 255, 0.10);
     --sk-sidebar-active-bg: rgba(255, 255, 255, 0.18);
     /* Top bar is one notch darker than the slate-50 page body so it
        reads as a distinct surface, not "the page with a thin line at
-       the top". Pure white blended into slate-50 under a 1px border --
+       the top". Pure white blended into slate-50 under a 1px border -
        the helm reported the top row "looked transparent". slate-100 +
        a slate-400 divider lifts it cleanly. */
-    --sk-top-row-bg: #f1f5f9;          /* slate-100 -- distinct from the slate-50 body */
-    --sk-top-row-text: #334155;        /* slate-700 -- darker so menu hits AAA */
-    --sk-top-row-border: #94a3b8;      /* slate-400 -- visible separator under sun */
+    --sk-top-row-bg: #f1f5f9;          /* slate-100 - distinct from the slate-50 body */
+    --sk-top-row-text: #334155;        /* slate-700 - darker so menu hits AAA */
+    --sk-top-row-border: #94a3b8;      /* slate-400 - visible separator under sun */
 
     /* Panel overrides. Chrome-docked / modal panels flip to opaque
        white cards; map-overlay panels (--panel-bg-map) stay dark for
@@ -453,7 +453,7 @@
     --panel-bg:         #ffffff;
     --panel-bg-strong:  #ffffff;
     --panel-text:       #0f172a;
-    --panel-text-muted: #475569;       /* slate-600 -- AAA */
+    --panel-text-muted: #475569;       /* slate-600 - AAA */
     --panel-border:     rgba(15, 23, 42, 0.22);   /* was 0.14 */
     --panel-shadow:     0 12px 28px rgba(15, 23, 42, 0.28);
 
@@ -538,7 +538,7 @@
         --panel-border:     rgba(255, 255, 255, 0.12);
         --panel-shadow:     0 12px 24px rgba(0, 0, 0, 0.4);
 
-        /* Snap HUD card tokens back to the dark defaults too --
+        /* Snap HUD card tokens back to the dark defaults too -
            the system-mode-OS-dark branch must mirror the original
            :root values, not the light-flipped ones from above. */
         --hud-card-bg:         rgba(14, 17, 23, 0.92);
@@ -649,19 +649,19 @@ html, body {
        default pinch-to-zoom so a helm with reduced vision can
        enlarge a paragraph of small text. Pinch-zoom IS suppressed
        on the chrome controls below (nav rail, layers panel, HUD
-       cards, dialogs, dropdowns, alarm banner) -- those are tap
+       cards, dialogs, dropdowns, alarm banner) - those are tap
        surfaces where accidental zoom on a moving boat is just
        noise. */
 }
 
 /* iOS Safari ignores `user-scalable=no` in the viewport meta tag
    (post-iOS-10 accessibility default). `touch-action: manipulation`
-   on a specific element tells the browser "tap + scroll only -- no
+   on a specific element tells the browser "tap + scroll only - no
    pinch-zoom, no double-tap-zoom" without affecting siblings.
    Applied to the chrome surfaces the focus-group flagged ("I can
    zoom on the nav list and scroll on pages that do not need it");
    long-form pages keep the default so a helm can pinch-to-read.
-   Each rule below opts out an individual control -- adding new
+   Each rule below opts out an individual control - adding new
    ones is one selector, no global flip needed. */
 .nav-scrollable,
 .chart-panel,
@@ -682,8 +682,8 @@ html, body {
    --sk-bg / --sk-text / etc), but the html, body rule above reads
    --sk-bg from :root, so the body backdrop stays dark even when
    the user picks Light or High-contrast. Result: any text rendered
-   OUTSIDE a card -- page h1, h2, h6.page-section-header,
-   .app-page-subtitle -- inherits the themed foreground colour but
+   OUTSIDE a card - page h1, h2, h6.page-section-header,
+   .app-page-subtitle - inherits the themed foreground colour but
    paints on the unthemed (still dark) body BG, dropping to ~1-2.5:1
    contrast (effectively invisible).
 
@@ -734,7 +734,7 @@ html:has(.page.theme-high-contrast) {
 #blazor-error-ui .reload { color: #fff; text-decoration: underline; margin-left: 10px; }
 
 /* Boot loading screen. Renders inside #app from index.html before
-   the Blazor runtime takes over -- the entire #app element is
+   the Blazor runtime takes over - the entire #app element is
    replaced when App.razor mounts, so no teardown is needed. The
    palette intentionally matches the dark-theme defaults
    (--sk-bg / accent blue) so the transition into the app feels
@@ -770,7 +770,7 @@ html:has(.page.theme-high-contrast) {
 }
 /* Spinner: a single rotating arc (3 px border, 32 px diameter).
    prefers-reduced-motion honors OS-level "reduce animation"
-   accessibility setting -- shows a static ring instead so we don't
+   accessibility setting - shows a static ring instead so we don't
    trigger vestibular discomfort. */
 .boot-spinner {
     width: 32px;
@@ -796,7 +796,7 @@ html:has(.page.theme-high-contrast) {
 /* Build stamp pinned to the bottom-right. Tiny + dim so it doesn't
    compete with the brand frame; populated only when version.g.js
    is present (gitignored, written by StampBuildInfo). The Settings
-   page carries the authoritative copy -- this is just a quick
+   page carries the authoritative copy - this is just a quick
    check-the-bundle affordance during boot. */
 .boot-version {
     position: fixed;
@@ -929,7 +929,7 @@ a, .btn-link {
    default-closed on phone (six section headers fit in one viewport
    so the helm picks what to expand). Native click-to-collapse is
    suppressed via @onclick:preventDefault in markup so C# state
-   stays the source of truth -- the chevron and the open attribute
+   stays the source of truth - the chevron and the open attribute
    stay in sync even after a re-render.
    Density tuned to match the previous bare <h6 class="page-section-
    header mb-2"> header: zero vertical padding inside the summary
@@ -994,7 +994,7 @@ a, .btn-link {
 
 /* Small inline unit (kn / m / deg) sitting after a metric digit on
    the dashboard. Reuses the muted-text colour the unit used to have
-   when it lived as a separate <small> below the digit -- the move
+   when it lived as a separate <small> below the digit - the move
    inline saves vertical space without losing the "this is the unit
    not part of the number" visual distinction. */
 .dash-unit {
@@ -1004,7 +1004,7 @@ a, .btn-link {
     margin-left: 0.18em;
     vertical-align: baseline;
     letter-spacing: 0.01em;
-    /* Reset the tabular-nums inherited from .metric-xl -- the unit
+    /* Reset the tabular-nums inherited from .metric-xl - the unit
        glyph ("kn" / "m" / "°") is alphabetic, not numeric, and the
        tabular variant table has no useful effect on it. Explicit
        reset signals intent so a future glyph (Greek, special) doesn't
@@ -1017,7 +1017,7 @@ a, .btn-link {
 }
 
 /* Suppress the route-change focus ring Blazor's <FocusOnNavigate
-   Selector="h1"/> would otherwise paint -- the H1 is focused
+   Selector="h1"/> would otherwise paint - the H1 is focused
    programmatically on route change for screen-reader orientation,
    not by user keyboard input, so the visible ring confused helmsmen
    into thinking the heading was an interactive control.
@@ -1054,7 +1054,7 @@ h2 {
    theme keeps no shadow because the slate-400 border on slate-900
    bg already silhouettes well; adding a shadow there would only
    eat GPU on every scroll for an invisible effect. The shadow is
-   tuned at ~5 px total reach (cap on the outer layer) -- enough for
+   tuned at ~5 px total reach (cap on the outer layer) - enough for
    depth, short enough that polarised sunglasses don't read it as a
    blur. */
 /* Card lift on light themes (incl. system on a light OS, which the
@@ -1091,11 +1091,11 @@ h2 {
 
 /* Bootstrap's default display-6 is weight 300 (Light cut). On Inter
    Variable, weight 300 reads as wispy at iPad arm's length under
-   sun -- the secondary tier of the Dashboard (AWA / AWS / TWA / TWS /
+   sun - the secondary tier of the Dashboard (AWA / AWS / TWA / TWS /
    HDG / COG / TWD / DTG / BRG / VMG / etc) all share this rule, so
    the whole supporting band ends up undersized vs the .metric-xl
    hero (700). 500 is the matching mid-range tier the HUD uses for
-   its .hud-value -- keeps cross-page rhythm consistent. */
+   its .hud-value - keeps cross-page rhythm consistent. */
 .card .display-6 {
     font-size: 2rem;
     font-weight: 500;
@@ -1128,7 +1128,7 @@ h2 {
 .connection-dot.disconnected { background-color: var(--sk-red); }
 .connection-dot.stale { background-color: var(--sev-warn); }
 
-/* Retry button -- only rendered when offline. Compact so it fits
+/* Retry button - only rendered when offline. Compact so it fits
    inside the top-row beside the chip without bumping the layout. */
 .connection-retry {
     margin-left: 8px;
@@ -1145,7 +1145,7 @@ h2 {
 .connection-retry:hover { background: var(--sev-warn-bg); }
 @media (pointer: coarse) {
     /* 44px to clear WCAG 2.5.5 target size. Earlier 32px failed on
-       touch -- the connection chip is something a user only taps when
+       touch - the connection chip is something a user only taps when
        already frustrated (wifi's dropped), so missing it hurts more. */
     .connection-retry { min-height: 44px; padding: 10px 16px; font-size: 0.85rem; }
 }
@@ -1191,6 +1191,68 @@ h2 {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Resources page active-route pin. Sits between the page header and
+   the tabs strip; visible regardless of which tab is open so a helm
+   who activated a route from another plotter can spot it + tap Stop
+   without hunting through the Routes tab. Borrows the accent-rgb
+   token for the left-edge stripe so it reads as "this page is
+   currently aware of an active route" rather than as a generic
+   alert. */
+.active-route-pin {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.85rem;
+    margin-bottom: 0.85rem;
+    border: 1px solid rgba(var(--sk-accent-rgb), 0.30);
+    border-left: 3px solid rgba(var(--sk-accent-rgb), 0.85);
+    border-radius: 6px;
+    background: rgba(var(--sk-accent-rgb), 0.06);
+    font-size: 0.85rem;
+    flex-wrap: wrap;
+}
+.active-route-pin-body {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+.active-route-pin-icon {
+    color: rgba(var(--sk-accent-rgb), 0.95);
+    font-size: 1rem;
+    line-height: 1;
+}
+.active-route-pin-name {
+    font-weight: 600;
+    color: var(--sk-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 24rem;
+}
+.active-route-pin-progress,
+.active-route-pin-meta {
+    color: var(--sk-text-muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+}
+.active-route-pin-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: nowrap;
+}
+@media (max-width: 600px) {
+    .active-route-pin {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.78rem;
+    }
+    .active-route-pin-name { max-width: 12rem; }
+    .active-route-pin-actions .btn { padding: 0.25rem 0.55rem; font-size: 0.72rem; }
 }
 
 /* Resources page tab strip: Bootstrap nav-tabs with a quieter count
@@ -1318,7 +1380,7 @@ h2 {
 /* Fullscreen / iOS fullbleed safe-area padding for the control bar
    so the bottom HUD + .map-controls cluster stay clear of the iPad
    home-indicator strip in PWA standalone. The HEIGHT stays at the
-   non-fullscreen baseline (calc(100dvh - 3rem)) -- the topbar is
+   non-fullscreen baseline (calc(100dvh - 3rem)) - the topbar is
    still rendered in fullscreen so the helm keeps zoom / night /
    liveness / exit-fullscreen affordances. */
 html.ios-fullbleed .map-container,
@@ -1334,7 +1396,7 @@ body:has(.map-container) {
 
 /* Make the map article flush to the edges (no horizontal padding steal).
    Same rule applies to the History page chrome since it shares the
-   "fill the article" intent -- toolbar / body / controls live inside
+   "fill the article" intent - toolbar / body / controls live inside
    .history-page directly without extra outer padding. */
 article.content:has(.map-container),
 article.content:has(.history-page) {
@@ -1359,7 +1421,7 @@ article.content:has(.history-page) {
 
 /* Unified card shell. .hud-panel is the legacy class still used inside
    the corner razor markup; .hud-card is the new alias for new code
-   paths and child components. Both render the same instrument shell --
+   paths and child components. Both render the same instrument shell -
    no blur (GPU + sun-glare cost wasn't worth it), two-stroke edge,
    16 px feathered halo, all driven by tokens. */
 .hud-panel,
@@ -1412,7 +1474,7 @@ article.content:has(.history-page) {
 
 /* Expanded-HUD z-index pop. .hud-stack itself is a stacking context
    (position: absolute + z-index var(--z-hud)=500) so a child with a
-   bigger z-index can't escape -- the ctrl bar (z=800) and bc-stack
+   bigger z-index can't escape - the ctrl bar (z=800) and bc-stack
    (z=500) still paint over it. When ANY corner card is expanded we
    bump the parent stack's z-index above --z-controls so the popped
    card can cover the bar + the route/anchor cards underneath. The
@@ -1470,9 +1532,9 @@ article.content:has(.history-page) {
     /* Tide / depth station names from SignalK can be arbitrarily long
        ("ZH-Wollishofen Tiefenmesser am Steg 4" and similar). Two
        things were needed for ellipsis to actually fire:
-        (a) display: block / inline-block -- the default <span>
+        (a) display: block / inline-block - the default <span>
             inline behaviour silently ignores overflow rules
-        (b) a width budget the text can hit -- max-width: 24ch on
+        (b) a width budget the text can hit - max-width: 24ch on
             the value caps the card itself instead of leaning on
             flex shrinkage from the row, which only triggers once
             the row is already constrained by something further up
@@ -1485,7 +1547,7 @@ article.content:has(.history-page) {
 
 /* === HUD stack containers ===
    Each corner is a flex column anchored to its corner. Cards become
-   children -- they stack with --hud-gap automatically and shift when
+   children - they stack with --hud-gap automatically and shift when
    one expands. NO per-card top/left/bottom/right anywhere; positioning
    lives ONLY on the stack.
 
@@ -1497,7 +1559,7 @@ article.content:has(.history-page) {
    Bottom corners: cards are written bottom-up in the markup so the
    corner-most card is the LAST DOM child. Visual reading order top-
    to-bottom matches DOM order, which matches keyboard tab order. No
-   flex-direction: column-reverse anywhere -- that fork breaks a11y.
+   flex-direction: column-reverse anywhere - that fork breaks a11y.
 
    Pointer-events stay off the stack so Leaflet pan works underneath;
    each card re-enables pointer-events for its interactive bits. */
@@ -1535,7 +1597,7 @@ article.content:has(.history-page) {
 /* Bottom-center: route + anchor (and future expanded autopilot) live
    here when active. Sits ABOVE the .map-controls bar via --panel-bottom
    (already calculated in :root). The stack itself is content-sized and
-   centred -- a short anchor-watch card stays narrow instead of stretching
+   centred - a short anchor-watch card stays narrow instead of stretching
    to the route card's width. max-width caps a long route card so it
    never spans more of the helm display than its info needs. */
 .hud-stack-bc {
@@ -1569,7 +1631,7 @@ html:fullscreen .hud-stack-br {
     right: max(24px, env(safe-area-inset-right));
 }
 
-/* HUD card -- direct children of .hud-stack. Inherits the unified shell
+/* HUD card - direct children of .hud-stack. Inherits the unified shell
    from .hud-panel,.hud-card above; this rule just locks pointer-events
    on (the stack is none, the card opts in) and the click-to-expand
    affordances. Cards inside corner stacks (TL/TR/BL/BR) are clickable;
@@ -1582,7 +1644,7 @@ html:fullscreen .hud-stack-br {
     flex: 0 0 auto;
 }
 /* Touch-target floor on every interactive child of a card. Density
-   classes never override this -- ergonomic floor for one-handed use
+   classes never override this - ergonomic floor for one-handed use
    in a seaway. */
 .hud-card button,
 .hud-card [role="button"] {
@@ -1609,7 +1671,7 @@ html:fullscreen .hud-stack-br {
    Why container queries and not @media: iPad portrait + landscape
    often produce SIMILAR right-column widths. Targeting the stack's
    width directly means both orientations reach the same density
-   automatically -- no per-orientation tuning. */
+   automatically - no per-orientation tuning. */
 @container hud (max-width: 220px) {
     .hud-card {
         padding: 6px 10px;
@@ -1619,7 +1681,7 @@ html:fullscreen .hud-stack-br {
     .hud-card .hud-label { font-size: clamp(0.6rem, 1.2dvh, 0.7rem); }
 }
 @container hud (max-width: 160px) {
-    /* Very narrow stack -- floor density. Keep text legible; assume
+    /* Very narrow stack - floor density. Keep text legible; assume
        this is a tight phone portrait or a heavily-zoomed viewport. */
     .hud-card {
         padding: 5px 8px;
@@ -1629,13 +1691,13 @@ html:fullscreen .hud-stack-br {
 
 /* === Stale + null state language ===
    stale: data hasn't refreshed in a while but is still on the wire.
-          Desaturate the value so it reads as muted -- no badge, no
+          Desaturate the value so it reads as muted - no badge, no
           competing colour. The freshness IS the colour channel.
    dead:  sensor silent. Stronger desaturation + the existing badge
           stays on (a missing reading is too dangerous to be subtle).
    null:  no data ever received. Render dotted baseline glyphs in the
           digit slots; reads as "the instrument is here, the signal
-          isn't yet" rather than the curt -- placeholder. */
+          isn't yet" rather than the curt - placeholder. */
 .hud-value.is-stale,
 .hud-value.is-stale .hud-unit {
     color: var(--hud-ink-stale);
@@ -1648,16 +1710,16 @@ html:fullscreen .hud-stack-br {
 /* === XTE deviation bar (route card) ===
    Centerline = on-track. Filled marker drifts left/right proportional
    to the cross-track-error magnitude (clamped to the bar range).
-   Same idea as an aviation ILS localizer -- the bar IS the data, the
+   Same idea as an aviation ILS localizer - the bar IS the data, the
    number is confirmation. Range: clamp -100 m .. +100 m. */
 
-/* Three type sizes only -- label, value, primary -- driven by tokens
+/* Three type sizes only - label, value, primary - driven by tokens
    so a single density change cascades to every card. Locked-grid digits
    (tabular-nums slashed-zero) so the layout doesn't twitch when 9.8
    becomes 10.1.
    white-space: nowrap so the unit suffix never wraps onto its own
    line. The .hud-unit <span> is its own inline box, which by default
-   allows a line break BEFORE it -- a depth of "38.2" + "m" was
+   allows a line break BEFORE it - a depth of "38.2" + "m" was
    wrapping to two lines on a narrow BL card ("38.2" / "m"). The TR
    wind card already had its own nowrap rule below; lifting it onto
    the base class covers the rest (depth, route DTW / BRG, ...). */
@@ -1669,7 +1731,7 @@ html:fullscreen .hud-stack-br {
     white-space: nowrap;
 }
 
-/* SOG, depth, primary wind speed -- the hero number on its card. */
+/* SOG, depth, primary wind speed - the hero number on its card. */
 .hud-value.hud-primary {
     font-size: var(--hud-font-primary);
     font-weight: 600;
@@ -1685,7 +1747,7 @@ html:fullscreen .hud-stack-br {
        label could share a line with the inline compass <svg>, putting
        the title beside the dial instead of above it. The wind-label-row
        still sits two .hud-label children side-by-side because the row
-       is flex with space-between -- block-level children cooperate. */
+       is flex with space-between - block-level children cooperate. */
     display: flex;
     align-items: center;
     gap: 4px;
@@ -1724,7 +1786,7 @@ html:fullscreen .hud-stack-br {
     font-size: 0.75rem;
     /* Theme-aware via --hud-ink-stale: dimmer than label, holds AA on
        both white and dark cards. The previous hard-coded white alpha
-       was invisible on a flipped light card -- "0.0 kn" on white
+       was invisible on a flipped light card - "0.0 kn" on white
        displayed as "0.0" with the unit suffix gone. */
     color: var(--hud-ink-stale);
     margin-left: 3px;
@@ -1739,7 +1801,7 @@ html:fullscreen .hud-stack-br {
 
    Colour is an ALPHA-COMPOSITED off-white at the same opacity as
    --hud-ink-dim so it lifts above WCAG AA body-text contrast on the
-   panel BG (was rgba(255,255,255,0.35), 3.2:1 -- below AA). Safety
+   panel BG (was rgba(255,255,255,0.35), 3.2:1 - below AA). Safety
    info; the sailor needs to read what threshold is armed in sun. */
 .hud-threshold {
     font-size: 0.6rem;
@@ -1756,7 +1818,7 @@ html:fullscreen .hud-stack-br {
 
 /* Position display in HUD.
    Colour aligned with --hud-ink-dim so the lat/lon row clears WCAG
-   AA on the HUD panel BG (was rgba(255,255,255,0.4), 3.82:1 -- below
+   AA on the HUD panel BG (was rgba(255,255,255,0.4), 3.82:1 - below
    AA body-text floor). Helm reads this for situational awareness;
    undermuting it was a sun-readability miss. */
 .hud-position {
@@ -1798,14 +1860,14 @@ html:fullscreen .hud-stack-br {
 /* === Wind dial =============================================
    Both apparent (blue) and true (green) arrows live on the SAME
    circle, rotated to their own angles. The angular delta between
-   the two arrows IS the lift/header you're sailing in -- pre-
+   the two arrows IS the lift/header you're sailing in - pre-
    attentive without reading any numbers. The combined "AW/TW kn"
    reading sits under the dial; colour-coding lives only on the
    arrows so the rest of the card matches every other HUD. */
 /* HUD-card dial scaffolding (wind dial + HDG compass). Theme-aware
    strokes / fills so the rim + cardinals + centre dot stay visible
    on white cards. Replaces hard-coded rgba(255,255,255,0.x) attrs
-   that vanished in light theme -- helm saw the wind / compass
+   that vanished in light theme - helm saw the wind / compass
    arrows but no rim or tick marks underneath. */
 .hud-dial-rim         { stroke: var(--hud-ink); opacity: 0.18; }
 .hud-dial-tick-major  { stroke: var(--hud-ink); opacity: 0.55; }
@@ -1829,7 +1891,7 @@ html:fullscreen .hud-stack-br {
 }
 
 /* === Right-side card alignment ===
-   BR (compass) right-aligns everything against the right edge -- the
+   BR (compass) right-aligns everything against the right edge - the
    card is content-sized around the 52 px dial so it visually anchors
    to the corner cleanly.
    TR (wind) centres everything because its dial is also centred. With
@@ -2029,7 +2091,7 @@ html:fullscreen .hud-stack-br {
 .map-btn {
     /* inline-flex + alignment so buttons with inline SVG icons (like
        the History "Boat" button) line up flush with plain-text
-       buttons in the same row. inline-flex alone wasn't enough --
+       buttons in the same row. inline-flex alone wasn't enough -
        the icon's 20px intrinsic height made the Boat button ~6 px
        taller than the plain-text "Load". The explicit min-height
        equalises them at 32 px on desktop; the coarse-pointer media
@@ -2254,7 +2316,7 @@ html:fullscreen .hud-stack-br {
 /* AIS popup structure. Compact one-font layout: every row uses
    the same 12 px size + 1.5 line-height so the popup stays
    roughly 1/4 of a phone screen tall (an early "CPA giant +
-   COLREGS two-row" layout grew to ~3/4 -- not workable on a
+   COLREGS two-row" layout grew to ~3/4 - not workable on a
    phone in landscape). Only
    the title is bold. CPA + COLREGS values are bold to keep their
    prominence without enlarging the row. */
@@ -2284,7 +2346,7 @@ html:fullscreen .hud-stack-br {
 }
 /* Buddy chip: amber. Specificity bumped via the parent class so
    we beat the `a, .btn-link { color: var(--sk-accent); }` rule
-   that paints every other anchor on the page sky-blue -- without
+   that paints every other anchor on the page sky-blue - without
    the parent qualifier the buddy chip rendered in the same blue
    as the MarineTraffic / VesselFinder links and lost its
    distinct "buddy = warn-coloured affordance" reading. The same
@@ -2306,7 +2368,7 @@ html:fullscreen .hud-stack-br {
     font-size: 11px;
     color: var(--panel-text-muted);
     margin-bottom: 6px;
-    /* Wrap is OK -- on the rare 3-letter-callsign + long type
+    /* Wrap is OK - on the rare 3-letter-callsign + long type
        combo the second line still reads as one phrase. */
 }
 
@@ -2335,7 +2397,7 @@ html:fullscreen .hud-stack-br {
 .ais-popup-table td:first-child {
     color: var(--panel-text-muted);
     width: 56px;
-    /* Same 12px font as the rest -- no special label sizing. */
+    /* Same 12px font as the rest - no special label sizing. */
 }
 .ais-popup-table td:last-child {
     text-align: right;
@@ -2642,7 +2704,7 @@ html:fullscreen .hud-stack-br {
         font-size: 0.85rem;
         align-items: center;
     }
-    /* Autopilot buttons -- 44px to hit WCAG 2.5.5 AAA. Engage / mode
+    /* Autopilot buttons - 44px to hit WCAG 2.5.5 AAA. Engage / mode
        select are safety-critical on a boat; missing the tap is worse
        than a slightly larger panel. */
     .ap-btn {
@@ -2690,7 +2752,7 @@ html {
        finger pan (both axes) still works, so scrollable pages like
        Settings / Resources / Dashboard stay scrollable. Leaflet's own
        map element manages its own touch-action internally and still
-       handles pinch-to-zoom on the chart -- this rule only suppresses
+       handles pinch-to-zoom on the chart - this rule only suppresses
        the default iOS browser zoom on chrome OUTSIDE the map (topbar,
        sidebar, HUD, settings cards). Viewport-level pinch-for-
        accessibility (3-finger tap OS gesture) is unaffected. */
@@ -2702,7 +2764,7 @@ html {
    safe-area padding + the sidebar's 100dvh used to add up to a
    scrollable html). Page content that legitimately overflows
    (Settings cards, Resources tables, Dashboard) scrolls inside
-   <main> instead -- single scroll container, no double-scrollbar
+   <main> instead - single scroll container, no double-scrollbar
    confusion. Tab-mode Safari is left alone so its address bar can
    still collapse on body scroll. */
 @media all and (display-mode: standalone), all and (display-mode: fullscreen) {
@@ -2717,7 +2779,7 @@ html {
     main {
         height: 100%;
         overflow-y: auto;
-        /* iOS momentum scroll inside a constrained container --
+        /* iOS momentum scroll inside a constrained container -
            noop on iOS 13+ but harmless and reads as intent. */
         -webkit-overflow-scrolling: touch;
     }
@@ -2789,7 +2851,7 @@ html.ios-fullbleed main {
    reading a downward drag as "reveal URL bar" or "exit fullscreen".
    Previously only .map-container had the hint; the gesture fires at
    the document level so the map hint was too late. We DO NOT set
-   overflow:hidden here -- that would block legit scrolling on
+   overflow:hidden here - that would block legit scrolling on
    Settings / History / Resources. Just the overscroll hint. */
 html, body {
     overscroll-behavior: none;
@@ -2800,7 +2862,7 @@ html, body {
    instead toggles this class on <html> so the sidebar collapses to an
    icon rail (via Settings.SidebarCollapsed mirrored from
    OnFullscreenChanged), giving the chart more room within the viewport
-   iOS permits. The browser's own URL bar stays -- we can't hide that
+   iOS permits. The browser's own URL bar stays - we can't hide that
    from JS. Home-screen-installed PWAs get true fullscreen via
    manifest.json display:standalone, no toggle needed.
 
@@ -2835,7 +2897,7 @@ html, body {
 /* ...BUT re-enable selection inside Leaflet popups. The blanket
    rule above would otherwise prevent users from copying an AIS
    target's MMSI, a note's description, or coordinates out of the
-   popup -- which is a legitimate daily action that should work in
+   popup - which is a legitimate daily action that should work in
    every browser, not just Safari. */
 .leaflet-popup-content,
 .leaflet-popup-content * {
@@ -2909,7 +2971,7 @@ html, body {
 }
 
 /* Legend is longer than the shortcuts list and the descriptions need
-   room to breathe -- widen the card specifically for the legend so the
+   room to breathe - widen the card specifically for the legend so the
    descriptions don't wrap to four lines each. Scroll the inner list
    when the content exceeds the viewport height. */
 .legend-card {
@@ -3038,7 +3100,7 @@ html, body {
    16 px of padding on each side, but the rail is only 64 px wide; the
    .nav-link auto-sized to its 19 px icon + 8 px padding inside that
    leftover 32 px window, ending up 25 px from the rail's left edge
-   but only 20 px from the right -- visibly off-centre. Zero out the
+   but only 20 px from the right - visibly off-centre. Zero out the
    horizontal padding on .nav-item and stretch .nav-link to 100 %, so
    justify-content: center actually centres the icon in the full
    rail width. Lives in the global stylesheet because Blazor CSS
@@ -3111,7 +3173,7 @@ html, body {
     cursor: pointer;
     /* iOS Safari: long-press on any clickable text element pops the
        native callout (Copy / Share / Look Up). On a critical-alarm
-       banner that's the worst UX -- the user is trying to acknowledge,
+       banner that's the worst UX - the user is trying to acknowledge,
        not copy the message text. Suppress the callout + selection so
        long-press reliably fires the hold-to-dismiss handler on danger
        alarms and stays quiet on warn banners. */
@@ -3153,7 +3215,7 @@ html, body {
     height: 100%;
     width: 0;
     background: rgba(255, 255, 255, 0.24);
-    /* Duration matches MainLayout.AlarmHoldMs -- keep in sync. */
+    /* Duration matches MainLayout.AlarmHoldMs - keep in sync. */
     animation: alarm-hold-fill 600ms linear forwards;
     pointer-events: none;
 }
@@ -3362,7 +3424,7 @@ html, body {
     transition: top 180ms ease;
 }
 
-/* Alarm fills are mostly opaque (80 %) -- the helm is expected to act
+/* Alarm fills are mostly opaque (80 %) - the helm is expected to act
    on them, so they should read clearly over a busy chart instead of
    leaving the chart bleeding through. The earlier 15-20 % alpha was
    too subtle and missed against satellite imagery / shallow-water
@@ -3381,7 +3443,7 @@ html, body {
 }
 
 @keyframes alarm-flash {
-    /* 2.5 s pulse with a moderate dim at the trough -- slow enough
+    /* 2.5 s pulse with a moderate dim at the trough - slow enough
        that the helm can read the alarm text comfortably, just deep
        enough to register as "this is moving / pay attention".
        0.55 is a deliberate step up from a previous 0.4: at 60 %
@@ -3398,7 +3460,7 @@ html, body {
    A centred modal-ish card that lists three concrete onboarding steps
    so a brand-new user knows how to enable charts, configure their
    depth alarm, and discover the long-press context menu. The card
-   suppresses the touch coachmark on that first visit -- the long-press
+   suppresses the touch coachmark on that first visit - the long-press
    tip is already covered by step 3. */
 .welcome-backdrop {
     position: fixed;
@@ -3478,7 +3540,7 @@ html, body {
     padding: 10px 18px;
     /* Shared surface + border tokens so the hint reads as "part of
        the same UI" rather than a stray alert widget. Previous look
-       was a nearly-opaque slate box with a cyan pulsing halo -- jarring
+       was a nearly-opaque slate box with a cyan pulsing halo - jarring
        on top of the map, which is why this got called out as ugly. */
     background: var(--sk-surface);
     color: var(--sk-text);
@@ -3491,7 +3553,7 @@ html, body {
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     /* Slide-in once, then a gentle opacity breathe. No colour halo,
-       no pulsing box-shadow -- the shape of the pill is enough to
+       no pulsing box-shadow - the shape of the pill is enough to
        say "this is a tip, tap to dismiss". */
     animation: coachmark-pop 0.3s ease-out, coachmark-breathe 3s ease-in-out 0.3s infinite;
     pointer-events: auto;
@@ -3592,7 +3654,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 
 /* Update-available chip. Sits in the topbar between the alarm log
    and the right-aligned cluster (zoom / theme buttons). Filled
-   accent style so it competes for attention -- this is a
+   accent style so it competes for attention - this is a
    "something on the server changed; tap to take it" signal that
    should NOT blend into the background like the other neutral
    chips. Pulses subtly so the helm catches it on a glance even if
@@ -3630,7 +3692,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
    than "good news, take this update". Anchor (not button) because
    it opens the SK admin login in a new tab. No pulse: a steady
    warning is less aggressive than the update-chip's polite tap-me
-   nudge -- helm doesn't need an animation reminding them every
+   nudge - helm doesn't need an animation reminding them every
    2.4 s that they're read-only. */
 .auth-warning-chip {
     display: inline-flex;
@@ -3769,7 +3831,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
    / -halo / --hud-ink) so the panel reads as a sibling of the
    on-chart HUD cards, not a different visual species. Helm flagged
    the previous --panel-bg-derived style as "very transparent" in
-   dark / night themes -- the HUD-card surface is consistently
+   dark / night themes - the HUD-card surface is consistently
    opaque (92%) AND carries the two-stroke instrument edge that
    distinguishes a helm-grade overlay from generic chrome. */
 .topbar-search-dropdown {
@@ -3853,7 +3915,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 }
 
 /* Source badge appended to the row's Name on own-data hits. The
-   geocoded rows don't carry a badge -- they're the default --
+   geocoded rows don't carry a badge - they're the default -
    so the helm's eye is drawn to the WPT / NOTE / RGN tags above
    the separator. */
 .topbar-search-badge {
@@ -3871,7 +3933,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     vertical-align: 1px;
 }
 
-/* Coarse pointer (touchscreen) -- match the 44px touch-target floor
+/* Coarse pointer (touchscreen) - match the 44px touch-target floor
    the icon buttons get. Same reasoning: gloved helm in a moving
    cockpit needs a forgiving target. */
 @media (pointer: coarse) {
@@ -3994,7 +4056,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 }
 
 /* Grab-handle bar visible only on the bottom-sheet variant, purely
-   visual -- the panel isn't actually draggable, but the handle is a
+   visual - the panel isn't actually draggable, but the handle is a
    universally-understood "this is a sheet, tap outside or the X to
    close" signal. */
 .alarm-log-handle { display: none; }
@@ -4241,7 +4303,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* Red-shift instrument SVGs (SailSteer, WindRose) for night vision.
    Preset-specific filters so amber reads amber and red reads pure red.
    NB: the map SVG icons (AIS triangles, radar outlines, SART bullseye)
-   are NOT filtered -- the AIS palette carries ship-type meaning via
+   are NOT filtered - the AIS palette carries ship-type meaning via
    hue and hue-rotate would silently destroy that. Leaflet containers
    opt out explicitly below. */
 .night-mode-global article svg {
@@ -4287,7 +4349,7 @@ html.night-mode-global body {
    bar collapses and the More menu becomes their home. The default
    rule MUST sit BEFORE the @media block so the @media override (at
    equal specificity + !important) wins by source order on phone
-   viewports -- having the default later was the historic source of
+   viewports - having the default later was the historic source of
    "phone More menu shows the same as desktop" because the !important
    tie-break favours the later rule. */
 .ctrl-more-overflow { display: none !important; }
@@ -4298,14 +4360,14 @@ html.night-mode-global body {
 }
 
 /* Mobile responsive: control-bar tweaks. HUD card density is handled
-   by the .density-compact class + container queries on the stacks --
+   by the .density-compact class + container queries on the stacks -
    no per-breakpoint padding/font overrides on .hud-panel anymore.
 
    Bar overflow strategy: secondary buttons (Centre / Orient / Add /
    Fit / Anchor / MOB) marked with .ctrl-btn-overflow disappear from
    the bar and surface in the More menu instead (those More items
    carry .ctrl-more-overflow and are hidden at >= 601 px). Keeps the
-   bar to the essentials -- Follow, Stop (when active), Layers -- so
+   bar to the essentials - Follow, Stop (when active), Layers - so
    it fits one row even on a phone.
 
    HUD layout strategy on phone: collapse all four corner cards into
@@ -4319,7 +4381,7 @@ html.night-mode-global body {
        same device rotated (844x390) without dragging in iPad
        landscape (1180x820, falls through to the regular layout)
    Without the second condition the helm flipping their phone to
-   landscape got the desktop HUDs back -- much too big for the
+   landscape got the desktop HUDs back - much too big for the
    small viewport. */
 @media (max-width: 600px),
        (max-height: 500px) and (max-width: 900px) {
@@ -4391,18 +4453,18 @@ html.night-mode-global body {
     /* === Phone HUD compact ===
        Cards stay anchored to their corners (same positions as desktop /
        tablet); only the CONTENT is trimmed:
-       - dials hidden (wind + compass) -- text only
+       - dials hidden (wind + compass) - text only
        - .hud-primary downgraded to .hud-value so SOG/depth match COG
        - wind: AW value only, TW + separator hidden
-       - depth: just DEPTH + value -- alarm threshold, tide row, warning
+       - depth: just DEPTH + value - alarm threshold, tide row, warning
          glyph, depth trend all hidden
-       - TL position (lat/lon) hidden -- intentionally minimal */
+       - TL position (lat/lon) hidden - intentionally minimal */
     .hud-stack-tr .wind-dial,
     .hud-stack-br .hud-card svg {
         display: none !important;
     }
     /* Compact-HUD typography: every corner card uses the same
-       value font size + weight on phone -- no card has the
+       value font size + weight on phone - no card has the
        desktop hero-primary look. Targeting all four stacks (not
        just the .hud-primary downgrade) ensures the helm sees a
        balanced four-corner readout regardless of which class
@@ -4459,12 +4521,12 @@ html.night-mode-global body {
         margin-left: 0.15em;
     }
 
-    /* Phone topbar: critical real-estate -- the chip stack (Live /
+    /* Phone topbar: critical real-estate - the chip stack (Live /
        History / Update / Not-logged-in / zoom / night) was wrapping
        onto two rows on a 390-wide iPhone. These tweaks shave the
        fat:
          - Live: hide the text, the chip background, the chip padding
-           -- only the small dot remains as the pre-attentive cue.
+           - only the small dot remains as the pre-attentive cue.
            Tooltip still carries the verbose state.
          - Alarm History: drop the count + the word "Alarm" via the
            shorter label span (markup carries both, CSS picks one).
@@ -4647,7 +4709,7 @@ html.night-mode-global body {
        wrapping. The macro ETA still rides along at the bottom
        inside the .route-total-row (route-passed / route-remaining
        + ETA-of-arrival), which is what the helm actually wants on
-       a phone -- the per-leg time changes every leg, the route-
+       a phone - the per-leg time changes every leg, the route-
        total reads steady. Per-leg fields tagged in HudRouteCard
        with .route-info-item-leg-time.
        Prev/next chevron buttons KEPT on phone (helm flagged "there
@@ -4709,7 +4771,7 @@ html.night-mode-global body {
    carry their own range cues).
 
    The bottom offset clears a typical depth card (~80 px tall when
-   expanded) plus the HUD edge token. Hand-tuned -- a CSS-variable-
+   expanded) plus the HUD edge token. Hand-tuned - a CSS-variable-
    based version would need an exact depth-card height which depends
    on density mode + content; the magic number is fine for the cases
    we render today and obvious in this comment if it ever drifts. */
@@ -4728,7 +4790,7 @@ html.night-mode-global body {
     flex: 0 0 auto;
 }
 
-/* Zoom-level badge: hidden -- the topbar +/- pair covers the
+/* Zoom-level badge: hidden - the topbar +/- pair covers the
    zoom-control case, and the badge ended up in an awkward spot
    inside Leaflet's bottom-left control stack on the helm's
    layout. Class stays defined (instantiation is currently
@@ -4744,14 +4806,14 @@ html.night-mode-global body {
    pan / zoom (cheap), but the chip itself stays invisible. The
    pinch-zoom preview overlay (centred, gesture-only) keeps
    working since it's a separate element. See the Obsidian
-   "Range scale chip placement" todo for the rework -- styling
+   "Range scale chip placement" todo for the rework - styling
    below preserved so flipping the display rule un-hides a fully
    themed chip. */
 /* Range-scale chip placement: bottom-centre, just above the bc-stack
    (anchor watch / route HUD). Sits 12 px above the top of the bc-stack
    so it groups visually with the card below it rather than floating
    over the action bar. The chip is a static element appended to
-   .map-container by initRangeScale -- not a Leaflet control -- so
+   .map-container by initRangeScale - not a Leaflet control - so
    absolute positioning relative to the chart container is straight
    CSS without fighting Leaflet's control rail flex layout.
 
@@ -4829,8 +4891,8 @@ html.night-mode-global body {
    helm asked for the original layout back, so the override is gone
    and zoom + scale now sit on the bottom-left lifted above the
    depth card via the bottom offset on .leaflet-bottom.leaflet-left
-   above. Attribution stays on the bottom-right -- Leaflet's default
-   for attributionControl -- so the two chrome strips read on
+   above. Attribution stays on the bottom-right - Leaflet's default
+   for attributionControl - so the two chrome strips read on
    opposite sides of the chart.) */
 
 /* Invisible full-area catcher that dismisses the Layers panel on a
@@ -4853,7 +4915,7 @@ html.night-mode-global body {
     background: var(--panel-bg);
     color: var(--panel-text);
     border: 1px solid var(--panel-border);
-    /* backdrop-filter: blur was the dominant cost on scroll -- every
+    /* backdrop-filter: blur was the dominant cost on scroll - every
        scroll frame re-rasterised a blurred snapshot of whatever the
        chart tiles were painting behind the panel. On a Raspberry-Pi
        kiosk this pushed scroll frames to 40-80 ms. Dropping it
@@ -4863,7 +4925,7 @@ html.night-mode-global body {
     padding: 10px 14px;
     min-width: 220px;
     max-width: 360px;
-    /* Was 300 px -- too short on a 21" helm screen, forced scroll
+    /* Was 300 px - too short on a 21" helm screen, forced scroll
        through a tiny window. min(75vh, 560px) keeps the panel usable
        on a phone and luxurious on a wide screen (fits ~20 chart rows). */
     max-height: min(75vh, 560px);
@@ -4880,7 +4942,7 @@ html.night-mode-global body {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    /* Theme-aware muted -- previous rgba(255,255,255,0.5) read fine
+    /* Theme-aware muted - previous rgba(255,255,255,0.5) read fine
        on the dark panel but rendered at near-zero contrast on the
        white light-theme panel, so the title + chevron only became
        visible on hover (which forces var(--sk-text)). */
@@ -4917,14 +4979,14 @@ html.night-mode-global body {
 }
 
 /* The amber .chart-item-rendering highlight was removed on user
-   feedback -- it fought with the quick-bar's active-chip styling
+   feedback - it fought with the quick-bar's active-chip styling
    and made the Layers panel look busier than it needed to be.
    The green .chart-rendering-dot next to the chart name carries
    the "this chart is on the map" signal now. */
 /* Reorder arrows used to be amber (the "route" colour family), which
    read as a status colour rather than a button. Helm asked for a
    neutral button shape that follows panel-text / panel-border so
-   they read like the "Transmit" radar HUD button -- ordinary
+   they read like the "Transmit" radar HUD button - ordinary
    chrome, not a coloured affordance. */
 .chart-reorder-btn {
     width: 22px;
@@ -4980,7 +5042,7 @@ html.night-mode-global body {
 
 /* Route-row action buttons (Go / Edit / Delete). Compact so three
    fit on a phone row. On coarse pointers we honour WCAG 2.5.5 AAA
-   (44x44) because these are the delete path for user content --
+   (44x44) because these are the delete path for user content -
    missing a tap and hitting Delete instead of Edit is expensive. */
 .route-action-btn {
     font-size: 0.68rem;
@@ -5111,8 +5173,8 @@ html.night-mode-global body {
    guessing. The default (inner-rings) variant is faint, matching
    the dashed scale-mark stroke; the .radar-ring-label--active
    variant pairs with the solid outer ring (the radar's actual
-   detection boundary) so both signals -- "this is the active
-   range" -- read together. The text-shadow gives legibility on
+   detection boundary) so both signals - "this is the active
+   range" - read together. The text-shadow gives legibility on
    any chart background without a heavy box around the text. */
 .radar-ring-label {
     color: #94a3b8;
@@ -5151,7 +5213,7 @@ html.night-mode-global body {
 }
 
 /* Layer search input. Neutral input surface that works on either
-   theme -- darker than --panel-bg on light, lighter on dark. */
+   theme - darker than --panel-bg on light, lighter on dark. */
 .layer-search {
     width: 100%;
     background: var(--sk-surface);
@@ -5229,7 +5291,7 @@ html.night-mode-global body {
 
 /* Weather (rain radar) opacity slider sitting under the radar
    checkbox in the Misc section. Hidden until the radar checkbox
-   is on -- a slider for an inactive overlay reads as broken. Inset
+   is on - a slider for an inactive overlay reads as broken. Inset
    alignment matches the existing chart-item lefthand padding so
    the row reads as a child control of the checkbox above. */
 .weather-opacity-row {
@@ -5261,7 +5323,7 @@ html.night-mode-global body {
    plus a Reset button when any channel is non-default. Mirrors the
    weather-opacity row shape (label + slider + value triple) so the
    helm reads it as the same kind of control. The wider lefthand
-   padding (0 -- not the 1.85rem of the weather inset) signals that
+   padding (0 - not the 1.85rem of the weather inset) signals that
    this group applies to the whole chart stack, not to a specific
    chart row above. */
 .chart-filter-group {
@@ -5349,7 +5411,7 @@ html.night-mode-global body {
 .ais-label::before { display: none !important; }
 /* Light flip via the effective-light synthetic class: white pill /
    slate ink on light themes, default dark pill / light ink elsewhere.
-   The previous theme-system + @media-prefers-dark inverter is gone --
+   The previous theme-system + @media-prefers-dark inverter is gone -
    theme-effective-light is computed in JS so the dark fallback simply
    doesn't apply the override, no media-query reverter needed. */
 .theme-effective-light .ais-label {
@@ -5764,7 +5826,7 @@ html.night-mode-global body {
 /* Horizontal strip: DTW / BRG / VMG / TTG / ETA / XTE on one row so
    the card eats width (plentiful on landscape) instead of height
    (scarce on the helm screen). flex-wrap: nowrap keeps every metric
-   visible at once -- helm asked for "all fields beside each other"
+   visible at once - helm asked for "all fields beside each other"
    so one glance covers distance + bearing + speed + time + cross-
    track. Each metric sits in its own .route-info-item; the gap
    tightens on narrow viewports rather than wrapping (the card
@@ -5786,7 +5848,7 @@ html.night-mode-global body {
        white-space: nowrap stops a value (e.g. "30m P") from
        wrapping inside its own item when the row is tight; the row
        container is nowrap, so the only way to wrap was within an
-       item -- pinning the contents nowrap closes that loophole. */
+       item - pinning the contents nowrap closes that loophole. */
     display: flex;
     flex-direction: row;
     align-items: baseline;
@@ -6021,7 +6083,7 @@ html.night-mode-global body {
    Collapsible section at the bottom of the Layers panel. Explains
    every recognised chart symbol in one line + a colour swatch so a
    newcomer can answer "what's the slate-blue pin?" without reading
-   the docs. Collapsed by default -- regular users don't need it in
+   the docs. Collapsed by default - regular users don't need it in
    their way. */
 .legend-list {
     list-style: none;
@@ -6038,7 +6100,7 @@ html.night-mode-global body {
     line-height: 1.25;
 }
 /* COLREGS modal reuses .legend-list/.legend-name/.legend-desc but
-   has no swatch column -- only [name | description]. Without this
+   has no swatch column - only [name | description]. Without this
    override the name lands in the 24 px swatch column (too narrow)
    and overflows into the description column starting at column 2,
    so "Head-on" / "Both vessels..." paint on top of each other.
@@ -6061,7 +6123,7 @@ html.night-mode-global body {
     display: inline-block;
     flex-shrink: 0;
 }
-/* Each swatch is a simple fill -- fidelity to the actual icon
+/* Each swatch is a simple fill - fidelity to the actual icon
    (SVG chevron etc.) would double the CSS for almost no gain; a
    solid swatch of the right hue anchors the name in the reader's
    memory well enough. */
@@ -6106,7 +6168,7 @@ html.night-mode-global body {
                      border: 1px solid var(--ann-region); }
 /* Guard-zone swatch mirrors the actual ring drawn on the map:
    amber (--sev-warn / #f59e0b), solid 1px stroke, faint amber fill.
-   Earlier this was a red dashed outline -- red signalled "danger"
+   Earlier this was a red dashed outline - red signalled "danger"
    which confused users because the map ring is advisory (alarm
    trigger radius), not an alarm state. */
 .legend-guard      { background: rgba(var(--sev-warn-rgb), 0.04);
@@ -6176,7 +6238,7 @@ html.night-mode-global body {
     border-radius: 0;
 }
 /* Active-WP pulse: cyan filled circle matching .active-wp-pulse on the
-   chart (the pulse uses --map-bearing, not --map-current any more --
+   chart (the pulse uses --map-bearing, not --map-current any more -
    the violet was switched to cyan to read as the same "active
    navigation" family as the bearing line + numbered waypoint dots). */
 .legend-active-wp {
@@ -6189,7 +6251,7 @@ html.night-mode-global body {
    so the swatch tracks whatever colour the actual circle on the map is
    drawn in (green-500 dark / green-600 light / green-700 high-contrast).
    Was previously --ann-route (amber) which didn't match the green ring
-   the helm sees on the chart -- exact kind of legend drift the palette
+   the helm sees on the chart - exact kind of legend drift the palette
    tokens exist to prevent. */
 .legend-anchor {
     background: rgba(34, 197, 94, 0.08);
@@ -6251,7 +6313,7 @@ html.night-mode-global body {
 /* ===== Depth + tide row =====
    Tide data (from mxtide / openwatersio / similar) lives inside the
    depth panel as a subtle one-liner. Only rendered when a plugin
-   publishes -- zero visual footprint on installs without one. Matches
+   publishes - zero visual footprint on installs without one. Matches
    the 'depth-ok / depth-warn / depth-danger' styling family the depth
    number already uses. */
 .depth-tide-row {
@@ -6336,7 +6398,7 @@ html.night-mode-global body {
 
 /* ===== Autopilot Panel =====
    Lives in .hud-stack-br between race and the heading compass. Stack
-   gap + flex column handle vertical positioning automatically -- no
+   gap + flex column handle vertical positioning automatically - no
    sibling pixel offsets to keep in sync any more. */
 .autopilot-panel { min-width: 140px; text-align: center; }
 
@@ -6362,7 +6424,7 @@ html.night-mode-global body {
    --hud-btn-* tokens flip with the HUD card so the buttons stay
    visible whether the card is dark or white. The original
    rgba(255,255,255,0.05) background + 0.12-alpha border vanished
-   on a white card -- helm saw a label without a button shape. */
+   on a white card - helm saw a label without a button shape. */
 .ap-btn {
     padding: 6px 10px;
     font-size: 0.78rem;
@@ -6447,7 +6509,7 @@ html.night-mode-global body {
    the existing radar-range-select dropdown so the row height stays
    stable when the picker swaps in/out. Border + bg routed through
    the shared --hud-btn-* tokens so the picker visually matches the
-   ap-btn range stepper + Transmit button on the same card -- all
+   ap-btn range stepper + Transmit button on the same card - all
    three controls read as one button family inside the HUD card,
    instead of three competing border colours that the helm flagged
    as "the radar HUD has a different border than the others". */
@@ -6484,7 +6546,7 @@ html.night-mode-global body {
     margin: 6px 0 4px;
 }
 .radar-hud-range-step {
-    /* Smaller buttons -- helm asked for the row height to come down
+    /* Smaller buttons - helm asked for the row height to come down
        so the radar card doesn't dominate the bottom-right HUD stack.
        Still wide enough to tap cleanly through gloves. */
     min-width: 24px;
@@ -6525,7 +6587,7 @@ html.night-mode-global body {
    Chrome-off mode for long offshore watches. The map + the alarm
    banner remain; everything else hides. Explicit opt-in via a long-
    press on the Night button; Esc or the Exit chip brings chrome back.
-   Intentionally aggressive -- if you want a subtler declutter, use
+   Intentionally aggressive - if you want a subtler declutter, use
    Fullscreen + Night mode instead. */
 .map-container.dark-ops .map-controls,
 .map-container.dark-ops .hud-stack,
@@ -6551,14 +6613,14 @@ html.night-mode-global body {
 /* Light themes: ensure the leaflet-container background follows the
    theme so any tile gap shows the page bg rather than Leaflet's
    default #ddd grey. theme-effective-light is set on <html> by
-   themeApply.js. Tile imagery itself stays unfiltered -- helm
+   themeApply.js. Tile imagery itself stays unfiltered - helm
    correction "HUDs are black, not the chart" supersedes the earlier
    tile-filter attempt. The HUD card token flips below carry the
    real fix. */
 .theme-effective-light .leaflet-container {
     background: var(--sk-bg);
 }
-/* Night mode also needs to red-shift the chart tile rasters -- the
+/* Night mode also needs to red-shift the chart tile rasters - the
    rest of the UI flips to warm red via token overrides, but Leaflet's
    OSM / OpenSeaMap tiles are bitmap PNGs and stay bright white without
    a pane-level filter. One bright chart tile ruins dark adaptation
@@ -6577,7 +6639,7 @@ html.night-mode-global body {
    mode" but the CSS class stays .big-type for compatibility with
    the existing C# property and persisted-settings key.
    Scopes:
-     - HUD numbers (corner cards) -- the original Big-type scope
+     - HUD numbers (corner cards) - the original Big-type scope
      - AIS ship icons + labels (so a ferry on the chart still reads
        at 2 m)
      - CPA chips on the chart
@@ -6774,7 +6836,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    helm having to scroll past the playback strip. The middle body
    hosts the map (or the table overlay, depending on viewMode), and
    the bottom controls strip carries playback + locate-boat + the
-   bbox-filtered chart picker -- visible only in map view since
+   bbox-filtered chart picker - visible only in map view since
    none of those controls are useful while reading the table. */
 .history-page {
     display: flex;
@@ -6790,7 +6852,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
        at z 900, the table overlay at z 850) to a stacking context
        owned by .history-page itself. Without this they leaked into
        the document root stacking context and competed with the
-       alarm-banner-stack -- which is also at --z-modal: 900 -- so
+       alarm-banner-stack - which is also at --z-modal: 900 - so
        a banner could land BEHIND the history-top-bar at the same z.
        Helm-feedback: "warnings hidden below the bar (filtering)".
        Now the page is a sealed stacking context; the banner (in the
@@ -6858,7 +6920,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
 /* History page: in-controls chart-toggle panel. Drops below the
    button row, scrolls if the SK server has a long chart list (rare
-   on a typical openplotter install -- usually 1-3 charts -- but a
+   on a typical openplotter install - usually 1-3 charts - but a
    ten-chart shop won't blow up the layout). Capped at 280 px wide
    so the controls panel doesn't grow off-centre. */
 .history-charts-panel {
@@ -6872,7 +6934,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     color: var(--panel-text);
 }
 
-/* History table view. Sits over the map -- the map div stays
+/* History table view. Sits over the map - the map div stays
    mounted underneath (so Leaflet keeps its tile cache + viewport
    state across flips) but visually hidden via .history-map-hidden.
    The overlay covers the whole map-container area so the helm sees
@@ -7012,7 +7074,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     position: absolute;
     inset: 12px;
     /* Slightly inset from the body edges so the page chrome is
-       visible behind the panel -- the helm reads it as "panel over
+       visible behind the panel - the helm reads it as "panel over
        table" rather than "this took over the screen". */
     background: var(--panel-bg-strong);
     color: var(--panel-text);
@@ -7192,7 +7254,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
 /* Inactive chip: dimmed text, hollow background, muted border. The
    big-dim / big-bright difference is what signals "off / on" at a
-   glance -- the old variant was a washed-out 25 %-accent glow that
+   glance - the old variant was a washed-out 25 %-accent glow that
    blended with sunlit chart tiles. */
 .chart-quick-chip {
     /* The chip is a <button>, which Safari + iOS give a default
@@ -7340,7 +7402,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    the checkbox + "Hazard" text sit next to each other instead of
    stacking (a bare <label> defaults to display:block). flex:0 0 auto
    matches the surrounding bar's no-shrink convention. Native browser
-   checkbox -- not restyled here; the default reads cleanly in both
+   checkbox - not restyled here; the default reads cleanly in both
    light and dark themes. */
 .route-edit-hazard {
     display: inline-flex;
@@ -7364,8 +7426,8 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    route name input + the violet stats text rendering as low-contrast
    or unreadable. Mirrors the anchor-panel theme override pattern.
    Both light branches keep the violet identity for stats / list
-   header / count -- "violet means route" stays consistent with the
-   dark theme -- but bumped to violet-700 so it clears AA contrast
+   header / count - "violet means route" stays consistent with the
+   dark theme - but bumped to violet-700 so it clears AA contrast
    on white. */
 :root.theme-effective-light .route-edit-bar,
 :root.theme-effective-light .route-edit-list {
@@ -7388,7 +7450,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 }
 :root.theme-effective-light .route-edit-stats,
 :root.theme-effective-light .route-edit-list-header {
-    /* violet-700 ~6.7:1 on white -- AA-clear, keeps the route accent. */
+    /* violet-700 ~6.7:1 on white - AA-clear, keeps the route accent. */
     color: #6d28d9;
 }
 :root.theme-effective-light .route-edit-list-count {
@@ -7414,7 +7476,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 }
 
 /* High-contrast theme: pure-white surfaces, jet-black text, solid-
-   black borders -- matches the chrome strategy used by the rest of
+   black borders - matches the chrome strategy used by the rest of
    the high-contrast theme (sunlit-readable, no alpha). The violet
    accent dims to violet-900 here so it stays as the route identity
    without competing with the black borders for visual weight. */
@@ -7426,7 +7488,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 }
 :root.theme-high-contrast .route-edit-hint {
     background: #ffffff;
-    color: #4c1d95;                        /* violet-900 -- ~12:1 on white */
+    color: #4c1d95;                        /* violet-900 - ~12:1 on white */
     border-color: #000000;
 }
 :root.theme-high-contrast .route-edit-stats,
@@ -7469,7 +7531,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     /* Override the inherited flex-wrap: nowrap on .route-edit-bar.
        Anchor's SetRadius mode renders title + Auto chip + 5 numeric
        chips + Arm + Close which won't fit on one line at iPad-portrait
-       widths -- chips were running off the right edge with the row
+       widths - chips were running off the right edge with the row
        cropping. Wrap to a second line when needed; the .anchor-edit-stats
        title block claims a full first row via flex-basis: 100% below. */
     flex-wrap: wrap;
@@ -7516,7 +7578,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     align-items: flex-start;
     gap: 2px;
     line-height: 1.2;
-    /* Claim the full first row inside the wrapping flex bar -- the
+    /* Claim the full first row inside the wrapping flex bar - the
        chip row + Arm + Close drop to row two. Without flex-basis: 100%
        the title sits inline with the chips and the row-1 / row-2 split
        only kicks in on very narrow viewports. Helm wants the two-line
@@ -7577,7 +7639,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    accent beats the base `.map-btn.active` rule (specificity 0,0,2,0)
    in every theme. Without this, light + high-contrast paint the
    Drop button in the sky-blue accent inherited from --sk-accent
-   while the rest of the panel uses anchor-amber -- a visual
+   while the rest of the panel uses anchor-amber - a visual
    incoherence the helm parses as two different actions on one bar.
    `color: var(--sk-text)` keeps the label readable across themes. */
 .anchor-edit-drop.map-btn.active {
@@ -7593,7 +7655,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    `.route-edit-bar` rule hard-codes a dark `rgba(15,17,22,0.92)`
    background, which leaves the panel as a dark blob in light +
    high-contrast modes while title / Drop / Cancel resolve to slate-
-   900 / black on top of it -- unreadable. These rules give the
+   900 / black on top of it - unreadable. These rules give the
    anchor panel an opaque-white surface and contrast-correct text
    in the light branches. `:root.theme-effective-light` matches both
    `theme-light` and `theme-system` resolved against a light OS,
@@ -7711,7 +7773,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     cursor: default;
 }
 /* Ghost shown at the pre-drag position while a measure point is being
-   moved -- mirrors the route-edit pattern (.edit-wp-ghost-circle) but
+   moved - mirrors the route-edit pattern (.edit-wp-ghost-circle) but
    in white to match the ruler's own colour family. */
 .ona-measure-ghost {
     width: 12px;
@@ -7854,7 +7916,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     outline: none;
 }
 
-/* Touch -- pinch the row tighter but keep the tap target on the × big
+/* Touch - pinch the row tighter but keep the tap target on the × big
    enough to hit reliably (44x44 min per Apple HIG). */
 @media (pointer: coarse) {
     .route-edit-list { width: 200px; font-size: 0.8rem; }
@@ -8034,14 +8096,14 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    bold, body pre-wrapped (line breaks preserved), delete button stays
    visually quiet until hover to avoid the "I might click it by accident"
    fear.
-   --
+   -
    The wrapper background flips through the base
    .leaflet-popup-content-wrapper rule (var(--panel-bg-strong)
    !important) so the popup is dark slate on dark theme and a clean
-   cream card on light. We keep the amber border across both -- it's
+   cream card on light. We keep the amber border across both - it's
    the "note pin colour" cue the helm reads as "from the note", and
    var(--ann-note) renders fine on either bg.
-   --
+   -
    Inner element colours (title, coords, body, delete-btn) used to be
    hardcoded slate-on-cream values that vanished on light theme: a
    pale gold "rodney" title and a near-white coords line on the cream
@@ -8212,15 +8274,68 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     white-space: pre-wrap;
     word-break: break-word;
 }
+/* Metadata rows under the title / description: area, coords,
+   created. Borrows the panel-text / muted token pairing so the
+   key reads dimmer than the value, matching the note popup
+   convention. */
+.region-popup-meta {
+    color: var(--panel-text);
+    font-size: 0.78rem;
+    line-height: 1.3;
+    margin-bottom: 2px;
+}
+.region-popup-meta .region-popup-k {
+    color: var(--sk-text-muted);
+    margin-right: 4px;
+}
+/* Hazard chip and tinted background. The chip uses the danger
+   token so it matches the alarm banner palette (helm reads the
+   chip and the banner as one alert family); the inner background
+   tint is faint enough that the title + body stay readable. */
+.region-popup-hazard {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--sev-danger);
+    background: rgba(220, 38, 38, 0.10);
+    border: 1px solid rgba(220, 38, 38, 0.45);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.7rem;
+    margin-bottom: 4px;
+}
+.region-popup-hazard-bg .region-popup-title {
+    color: var(--sev-danger);
+}
+
+.region-popup-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+.region-edit-btn,
 .region-delete-btn {
     background: transparent;
     color: var(--sk-text-muted);
-    border: 1px solid rgba(239, 68, 68, 0.4);
     padding: 3px 10px;
     font-size: 0.72rem;
     border-radius: 4px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+}
+.region-edit-btn {
+    border: 1px solid rgba(96, 165, 250, 0.45);
+}
+.region-edit-btn:hover {
+    background: rgba(96, 165, 250, 0.15);
+    color: #93c5fd;
+    border-color: #60a5fa;
+}
+.region-delete-btn {
+    border: 1px solid rgba(239, 68, 68, 0.4);
 }
 .region-delete-btn:hover {
     background: rgba(239, 68, 68, 0.15);
@@ -8228,7 +8343,30 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     border-color: var(--sev-danger);
 }
 @media (pointer: coarse) {
+    .region-edit-btn,
     .region-delete-btn { min-height: 44px; padding: 11px 18px; font-size: 0.85rem; }
+}
+
+/* Hazard warning glyph rendered at the centroid of every hazard
+   region. Always-on (independent of popup state) so a helm
+   scanning the chart pre-attentively sees "this area has a
+   regulatory / safety flag". DivIcon, no Leaflet text styling. */
+.region-hazard-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: rgba(220, 38, 38, 0.92);
+    color: #fff7ed;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
 }
 
 /* Route popup: amber-tinted variant aligned with the route polyline
@@ -8334,7 +8472,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     transform: translate(-50%, -50%);
     z-index: 2;
     padding: 18px 28px;
-    /* Theme-aware tokens. Hardcoded rgba(15, 17, 22, 0.82) before --
+    /* Theme-aware tokens. Hardcoded rgba(15, 17, 22, 0.82) before -
        on light theme that read as a black box over a bright SVG and
        the muted text inside was barely visible. --panel-bg + --panel-
        text-muted flip with the page theme so the overlay looks like
@@ -8412,10 +8550,10 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    same heading scale, the same subtitle treatment, and the same
    centred max-width gutter, without each page redefining it. */
 .app-page {
-    /* 1200px keeps long-form pages readable -- text starts to feel like
+    /* 1200px keeps long-form pages readable - text starts to feel like
        it's trailing the helm's eye past about 80-90 ch. 1400px (the
        previous value) was wide enough that on a 1920 px helm screen
-       the centring was barely visible -- only ~250 px of total margin
+       the centring was barely visible - only ~250 px of total margin
        split across both sides, which reads as "edge-to-edge" at a
        glance. 1200 leaves ~360 px of margin per side at 1920 px and
        still fits the WindRose two-column grid (480 + 32 + 520 =
@@ -8449,7 +8587,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
    The previous version had three problems the helm flagged:
      1. SVG text used the browser default (Times / Helvetica fallback)
-        while page chrome used Inter Variable -- the page read as two
+        while page chrome used Inter Variable - the page read as two
         products glued together. Fixed by inheriting font on the SVGs
         below.
      2. Two button systems coexisted in the right column: instrument-
@@ -8489,7 +8627,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    theme-conditional (light theme only had a card; dark theme had
    nothing) which left the dark-theme right column reading as three
    floating tiles instead of one instrument cluster. Containment is
-   what was missing, not contrast -- so the card now ships on every
+   what was missing, not contrast - so the card now ships on every
    theme. Surface colour comes from the theme tokens; on dark it's a
    subtle slate-800, on light a slate-50. */
 .wind-card {
@@ -8551,7 +8689,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
 /* Polar-curve key chip. Sits just below the rose canvas, identifies
    the dashed cyan curve (when polar data is loaded) as a target
-   boat-speed polar -- not a wind shape -- so the helm doesn't
+   boat-speed polar - not a wind shape - so the helm doesn't
    conflate the wind dots' radial axis (kn of wind) with the curve's
    radial encoding (kn of boat). Also hyperlinks to /sailsteer for
    the dedicated tactical view of the same data. */
@@ -8589,7 +8727,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 /* SVG canvases inherit the page font (Inter Variable) instead of
    falling back to whatever the browser default is. ONE rule fixes
    the "mixed fonts" complaint everywhere the page renders text in
-   SVG -- compass labels, ring labels, axis ticks, legend numbers. */
+   SVG - compass labels, ring labels, axis ticks, legend numbers. */
 .wind-page svg text {
     font-family: inherit;
     font-feature-settings: "tnum" 1, "ss01" 1;
@@ -8625,7 +8763,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     letter-spacing: 0.06em;
 }
 
-/* Right column container -- styled as a section, not aria-aside, so
+/* Right column container - styled as a section, not aria-aside, so
    screen readers don't announce it as "complementary". Holds hero +
    chips + TWD history vertically. */
 .wind-aside {
@@ -8637,7 +8775,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 
 /* Live "current wind" hero. Eyebrow ("Apparent wind") sits ABOVE the
    value pair so the qualifier doesn't compete with the number's unit
-   for the reader's eye -- the unit ("kn") and the qualifier
+   for the reader's eye - the unit ("kn") and the qualifier
    ("apparent") are different *kinds* of label and need different
    visual treatment. Hero rows reserve min-height so a sensor dropout
    doesn't collapse the column and shove subsequent sections up. */
@@ -9068,7 +9206,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 .active-wp-icon { background: none !important; border: none !important; }
 
 /* Next-waypoint pulse. Previous version animated transform AND
-   box-shadow -- box-shadow isn't GPU-compositable, so on a Raspi
+   box-shadow - box-shadow isn't GPU-compositable, so on a Raspi
    Chrome kiosk every frame triggered a full paint pass and the
    whole map felt sluggish. The new version keeps the inner dot
    static and paints a single expanding ring via ::before, using
@@ -9088,7 +9226,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     border-radius: 50%;
     background: var(--map-bearing);
     border: 2px solid #fff;
-    /* Static glow -- the animation is handled by ::before now. */
+    /* Static glow - the animation is handled by ::before now. */
     box-shadow: 0 0 8px rgba(var(--map-bearing-rgb), 0.65);
 }
 .active-wp-pulse::before {
@@ -9158,7 +9296,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    Routed through --sev-* tokens so the give-way / stand-on colours
    stay AA-readable on both the dark Layers panel and the white
    panel in light theme. The previous pastel literals (#fca5a5 /
-   #86efac) below AA contrast on white -- helm misread the label
+   #86efac) below AA contrast on white - helm misread the label
    under sun. */
 .vessel-colregs { font-size: 0.7rem; opacity: 0.85; }
 .colregs-role { font-weight: 600; }
@@ -9168,7 +9306,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 /* Guard-ring distance labels. Tiny text-only chips placed at the
    north of each ring (inner danger + outer dashed warning) so the
    helm reads "what's my CPA radius?" at a glance without going to
-   Settings. Pure-text + no background by design -- the rings
+   Settings. Pure-text + no background by design - the rings
    themselves carry the visual weight, the label is just a tag. */
 .guard-ring-label {
     background: transparent !important;
@@ -9192,7 +9330,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 .guard-ring-label::before { display: none !important; }
 .guard-ring-label-warn { opacity: 0.85; }
 .theme-effective-light .guard-ring-label {
-    color: #92400e;             /* amber-900 -- AA on white tiles */
+    color: #92400e;             /* amber-900 - AA on white tiles */
     text-shadow:
         0 0 2px rgba(255, 255, 255, 0.85),
         0 0 4px rgba(255, 255, 255, 0.55);
@@ -9201,7 +9339,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 /* CPA / crossing-situation labels on the map.
    Same theme-flip strategy as .ais-label: dark pill by default, white
    pill in light + high-contrast so the label reads as paper-on-chart
-   instead of a dark blob. The danger / warn class colours stay -- they
+   instead of a dark blob. The danger / warn class colours stay - they
    carry safety meaning, theme should never change them. */
 .cpa-label {
     background: rgba(10, 12, 18, 0.88) !important;
@@ -9217,7 +9355,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     text-align: center !important;
     line-height: 1.25 !important;
     white-space: normal;
-    /* Click / tap opens the full vessel popup -- see attachCpaLabelClick
+    /* Click / tap opens the full vessel popup - see attachCpaLabelClick
        in leafletInterop.js. Pointer cursor signals the affordance; the
        tap-highlight reset stops iOS showing its default blue flash
        which is distracting on a dark chart. */
@@ -9230,7 +9368,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 .cpa-label.cpa-warn   { border-color: var(--sev-warn) !important; color: #fde68a !important; }
 /* Light flip via .theme-effective-light: white pill / slate ink, with
    AA-passing darker red / amber for danger / warn. The previous
-   theme-system + @media-prefers-dark reverter is gone -- if
+   theme-system + @media-prefers-dark reverter is gone - if
    theme-effective-light isn't set, the default dark-pill rules above
    apply, no media-query inverter needed. */
 .theme-effective-light .cpa-label {
@@ -9280,7 +9418,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 .cpa-x-warn   .cpa-x { color: var(--sev-warn); }
 .theme-effective-light .cpa-x-danger .cpa-x { color: #b91c1c; }
 .theme-effective-light .cpa-x-warn   .cpa-x { color: #b45309; }
-/* Slight scale-up on hover -- same affordance hint as the AIS
+/* Slight scale-up on hover - same affordance hint as the AIS
    markers without resorting to a full filter:drop-shadow blur. */
 .cpa-x-marker:hover .cpa-x {
     transform: scale(1.15);
@@ -9292,7 +9430,7 @@ main:has(.map-container.big-type) .alarm-hold-hint {
    mutually exclusive in the code (NavigateRouteInternal /
    ToggleAnchor) so the slot is never double-booked. */
 .anchor-panel {
-    /* Sizes to its content -- the anchor card has much shorter content
+    /* Sizes to its content - the anchor card has much shorter content
        than the active-route card, and forcing a 120 px floor made it
        look as wide as the route when the two stacked together. The
        parent .hud-stack-bc centres each child at its own width. */
@@ -9323,13 +9461,13 @@ main:has(.map-container.big-type) .alarm-hold-hint {
 }
 
 /* Inline radius chips for the manual-drop anchor. Only shown when the
-   user dropped the anchor via the button -- server-plugin anchors own
+   user dropped the anchor via the button - server-plugin anchors own
    their own radius and never render these. Compact row so the HUD card
    doesn't balloon. */
 /* Midpoint label on the boat<->anchor radius line. Small pill,
    matches the anchor-ok severity palette so the three elements
    (anchor dot, line, label) read as one overlay. */
-/* .anchor-radius-label rules removed -- the midpoint distance chip
+/* .anchor-radius-label rules removed - the midpoint distance chip
    that used this class was dropped per user request (line alone is
    sufficient; the distance is implicit relative to the alarm radius
    circle, and the chip added noise). See redrawAnchorRadiusOverlay
@@ -9459,7 +9597,7 @@ html[data-slow-client="1"] * {
    same design tokens as the rest of the dialog so night mode / light
    theme / high-contrast all look consistent without a separate rule
    per theme. min-height 44px matches the WCAG tap target floor on
-   coarse pointers (iPad thumb) -- a rename dialog shouldn't need
+   coarse pointers (iPad thumb) - a rename dialog shouldn't need
    precision clicks. */
 .confirm-input {
     -webkit-appearance: none;
@@ -9556,7 +9694,7 @@ html[data-slow-client="1"] * {
      communicates state not decoration.
    * Alarm banner flash, MOB ping, coachmark breathe, connection
      pulse, value-change pulse, anchor-alert flash are all purely
-     decorative cues on top of visible state changes -- safe to kill.
+     decorative cues on top of visible state changes - safe to kill.
    Uses `animation: none !important` to override keyframe rules that
    already win on specificity against a plain reset. Keep this block
    the LAST rule in the file so nothing else overrides it. */

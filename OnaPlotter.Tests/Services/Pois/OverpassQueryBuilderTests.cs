@@ -86,7 +86,7 @@ public class OverpassQueryBuilderTests
     public async Task Build_CategoryOrder_IsStable()
     {
         // Two callers passing the same set must get byte-identical
-        // queries -- the cache key on the controller side is the
+        // queries - the cache key on the controller side is the
         // query string, and instability would invalidate cache hits
         // every time the helm toggled a checkbox off and on.
         var a = OverpassQueryBuilder.Build(40, -75, 41, -74,

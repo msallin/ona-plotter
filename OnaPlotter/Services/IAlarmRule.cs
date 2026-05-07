@@ -71,7 +71,7 @@ public interface IAlarmRule
     /// Note: manager-level <see cref="AlarmManager.DismissCooldownSeconds"/>
     /// is a baseline 30 s per-key cooldown that runs IN ADDITION to
     /// whatever a rule reports here. The manager-level cooldown is a
-    /// lower bound -- the rule's rearm policy can extend it further
+    /// lower bound - the rule's rearm policy can extend it further
     /// (e.g. SHALLOW's 5 min of sustained-clear depth) but can't shorten it.
     /// </para>
     /// </summary>
@@ -91,7 +91,7 @@ public interface IAlarmRule
     /// <c>notifications.*</c> path. Putting the mapping ON THE RULE
     /// (rather than in a switch on the publisher) means a new rule
     /// can declare its own publish path without editing the publisher
-    /// -- the compiler enforces the contract via the override and a
+    /// - the compiler enforces the contract via the override and a
     /// rule rename can't silently de-sync the publisher because the
     /// rule no longer dispatches off the Title string.
     /// </para>

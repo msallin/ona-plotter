@@ -4,7 +4,7 @@ namespace OnaPlotter.Utilities;
 /// Great-circle bearing from one geographic point to another. The
 /// canonical formulation (Aviation Formulary V1.46) using atan2 over
 /// the spherical-trig identity. Result is in radians, normalised to
-/// <c>[0, 2pi)</c> clockwise from true north -- the same convention
+/// <c>[0, 2pi)</c> clockwise from true north - the same convention
 /// SignalK uses for <c>navigation.anchor.bearingTrue</c>, so callers
 /// that previously consumed that path can swap to this helper without
 /// re-deriving the unit / sign convention.
@@ -12,11 +12,11 @@ namespace OnaPlotter.Utilities;
 /// <para>The anchor HUD card uses this to draw the "where is my
 /// anchor" needle without depending on the SignalK plugin to compute
 /// + publish the bearing. Same routine works for any A-to-B bearing
-/// (AIS popup brg, route leg headings) -- a deliberate landing pad
+/// (AIS popup brg, route leg headings) - a deliberate landing pad
 /// for further JS-to-C# moves of pure-math helpers.</para>
 ///
 /// <para>Pure function; no allocation. Safe to call per-tick at HUD
-/// cadence -- the trigonometric ops are constant-time.</para>
+/// cadence - the trigonometric ops are constant-time.</para>
 /// </summary>
 public static class GeoBearing
 {
@@ -28,7 +28,7 @@ public static class GeoBearing
     /// <paramref name="fromLon"/> TO <paramref name="toLat"/>/
     /// <paramref name="toLon"/>, in radians on <c>[0, 2pi)</c>.
     /// Returns null if either point lacks a coordinate (caller's
-    /// nullability flow stays clean -- no sentinel NaN to guard
+    /// nullability flow stays clean - no sentinel NaN to guard
     /// against downstream).
     /// </summary>
     public static double? RadiansFromTo(
@@ -43,7 +43,7 @@ public static class GeoBearing
     }
 
     /// <summary>
-    /// Non-nullable overload -- caller already knows both points
+    /// Non-nullable overload - caller already knows both points
     /// exist. Useful in test setups where the boundary check
     /// happens elsewhere.
     /// </summary>

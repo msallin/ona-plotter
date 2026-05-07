@@ -114,7 +114,7 @@ public sealed class ServerTrackController
     /// Used by the Map page's route-active 60 s refresher so the
     /// helm sees server-side history catching up to the active leg
     /// without having to toggle the layer manually. No-op when the
-    /// layer is hidden -- a refresh on an invisible polyline would
+    /// layer is hidden - a refresh on an invisible polyline would
     /// just burn an HTTP round-trip.
     /// </summary>
     public Task RefreshAsync() => _visible ? ReloadAsync() : Task.CompletedTask;
@@ -138,7 +138,7 @@ public sealed class ServerTrackController
     /// bins as the slowest band, visually consistent with "we did
     /// not see the boat moving fast" without dropping the segment.
     /// "all" maps to a 100-year ISO duration (P36500D) because the
-    /// SignalK History API doesn't define an "everything" shape --
+    /// SignalK History API doesn't define an "everything" shape -
     /// a span larger than any plausible cruise is the pragmatic
     /// stand-in. The within-bounds flag rides along so the initial
     /// render respects the toggle if it was on before the duration

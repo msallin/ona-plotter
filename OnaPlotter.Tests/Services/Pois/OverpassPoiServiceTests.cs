@@ -26,7 +26,7 @@ public class OverpassPoiServiceTests
             http,
             NullLogger<OverpassPoiService>.Instance,
             time,
-            // Endpoint not actually contacted -- the handler short-circuits.
+            // Endpoint not actually contacted - the handler short-circuits.
             endpoint: "http://test.local/interpreter");
     }
 

@@ -10,7 +10,7 @@
  *  The textContent -> innerHTML round-trip alone follows the HTML5 text-
  *  serialization spec, which only escapes `&`, `<`, `>`. That's safe for
  *  text nodes but NOT for attribute values: a vessel name from the SK
- *  delta containing a `"` (legitimate per ITU-R M.1371 6-bit ASCII -- it
+ *  delta containing a `"` (legitimate per ITU-R M.1371 6-bit ASCII - it
  *  fits the 64-char alphabet) would close the attribute and let the
  *  trailing string land in the DOM as new attributes. We additionally
  *  escape `"` and `'` so attr="..." and attr='...' are both safe to drop

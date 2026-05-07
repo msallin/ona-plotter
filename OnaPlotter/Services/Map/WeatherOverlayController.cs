@@ -19,7 +19,7 @@ public sealed class WeatherOverlayController
 {
     /// <summary>RainViewer precipitation-radar tile template. Free,
     /// no API key, CORS-friendly. If we ever want wind / temperature
-    /// overlays, OpenWeatherMap is the obvious upgrade -- would need
+    /// overlays, OpenWeatherMap is the obvious upgrade - would need
     /// a per-user API key threaded through IAppSettings and a
     /// dropdown picker. Not worth the plumbing until someone asks.</summary>
     private const string RainViewerTileUrl =
@@ -57,7 +57,7 @@ public sealed class WeatherOverlayController
 
     /// <summary>
     /// Slider drag tick: push the new opacity to the live Leaflet
-    /// layer so the helm sees the chart respond, but DON'T persist --
+    /// layer so the helm sees the chart respond, but DON'T persist -
     /// writing localStorage on every drag tick fires ~20 disk writes
     /// plus as many StateHasChanged cascades for a one-second drag.
     /// Commit lands the final value via <see cref="CommitOpacityAsync"/>

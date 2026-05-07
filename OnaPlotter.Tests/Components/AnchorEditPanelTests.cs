@@ -7,21 +7,21 @@ namespace OnaPlotter.Tests.Components;
 /// bUnit tests for the v2.0.0+ two-state anchor panel.
 ///
 /// State A (Drop): no anchor active; only a Drop button + Close.
-/// Tapping Drop fires <c>OnDrop</c> (no radius arg -- step 2 carries
+/// Tapping Drop fires <c>OnDrop</c> (no radius arg - step 2 carries
 /// that).
 ///
 /// State B (SetRadius): position pinned server-side; the helm picks
 /// the radius. Pick-then-Set UX:
 ///   - Chip taps (numeric OR Auto) update the panel's internal pick
 ///     and fire <c>OnPreviewRadius(N)</c>. The parent uses that to
-///     resize the on-map alarm ring as a visual preview -- NO PUT.
+///     resize the on-map alarm ring as a visual preview - NO PUT.
 ///   - The Set button fires <c>OnSetRadius(effective)</c>; that's
 ///     where the parent does the PUT and closes the panel.
 ///   - SetRadius mode has NO Close button (helm exits without
 ///     committing by raising via the bottom-bar Anchor button).
 ///   - Auto chip + boat drift: when AutoPreviewRadius changes while
 ///     Auto is the pick, the panel re-emits OnPreviewRadius with the
-///     new value -- the on-map ring follows the boat in 5 m steps.
+///     new value - the on-map ring follows the boat in 5 m steps.
 ///
 /// Pinning the contracts here so a future refactor that re-couples
 /// the preview/commit pair (e.g. live-commit chips that also fire
@@ -170,7 +170,7 @@ public class AnchorEditPanelTests
     {
         // Field-study: "Cancel" / "Close" misled both sailors into
         // thinking the dropped pin would be aborted. New SetRadius
-        // mode has no escape button -- helm raises via the Anchor
+        // mode has no escape button - helm raises via the Anchor
         // button if they don't want to set a radius.
         using var ctx = new Bunit.TestContext();
         var cut = RenderSetRadius(ctx);
@@ -409,7 +409,7 @@ public class AnchorEditPanelTests
     [Test]
     public async Task SetRadiusMode_Busy_BlocksChipPreviewToo()
     {
-        // The Busy gate also covers the preview path -- a preview
+        // The Busy gate also covers the preview path - a preview
         // PUT would race the in-flight Set PUT and confuse the helm
         // about which value committed.
         using var ctx = new Bunit.TestContext();
@@ -497,7 +497,7 @@ public class AnchorEditPanelTests
         await Assert.That(preview[^1]).IsEqualTo(75);
         int firesAfterPick = preview.Count;
 
-        // Boat drifts -- AutoPreviewRadius bumps but should NOT
+        // Boat drifts - AutoPreviewRadius bumps but should NOT
         // re-fire because numeric is the pick.
         cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 35));
         cut.SetParametersAndRender(p => p.Add(x => x.AutoPreviewRadius, 40));
@@ -523,7 +523,7 @@ public class AnchorEditPanelTests
 
         await Assert.That(preview).IsEquivalentTo([30]);
 
-        // Same value pushed again -- e.g., parent re-rendered for
+        // Same value pushed again - e.g., parent re-rendered for
         // an unrelated reason.
         cut.SetParametersAndRender(p => p.Add(x => x.SuggestionLabel, "5x 6m depth"));
 

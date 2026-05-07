@@ -175,7 +175,7 @@ push, which happens at 3 Hz on a fast delta feed.
   is feeding `radars.<radarId>.targets.<targetId>.*`, those targets are
   routed into `AisStore` under a synthesised `radar.<rid>.<tid>` context
   and run through the same CPA / snooze / banner pipeline as AIS vessels
-  -- they render as outline triangles to keep them visually distinct on
+  - they render as outline triangles to keep them visually distinct on
   the chart but participate in the same alarm logic.
 - **No buddy-list integration yet** — the `BuddyListApi` detects
   `sbender9/signalk-buddylist-plugin`, but the UI doesn't yet mark buddies

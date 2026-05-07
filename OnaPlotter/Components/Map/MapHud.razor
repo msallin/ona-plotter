@@ -22,7 +22,7 @@
     <div class="hud-panel hud-card @(IsExpanded(CornerTopLeft) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded(CornerTopLeft) ? "true" : "false")"
-         aria-label="Speed, course, position -- click for more detail"
+         aria-label="Speed, course, position - click for more detail"
          @onclick='() => ToggleExpanded(CornerTopLeft)' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, CornerTopLeft)'
          title="Click for more detail">
@@ -31,7 +31,7 @@
            primary readout once the buffer warms up; live SOG falls
            back during the 15 s warmup window. The dual "live (avg)"
            pair would be helpful in big-screen mode but isn't shown
-           in the compact HUD -- the smoothed number is what the
+           in the compact HUD - the smoothed number is what the
            helm steers / trims to. *@
         <div class="hud-value hud-primary"
              title="@(Avg.SogMean30Sec is not null ? "30s mean SOG" : "Live SOG (smoothed value pending)")">
@@ -43,7 +43,7 @@
             @Format.Degrees(Avg.CogMean30Sec ?? Data.CourseOverGround)<span class="hud-unit">&deg;</span>
         </div>
         @* lat/lon stays on a single horizontal line. Stacking them was
-           used to keep the card narrow, but it cramped SOG/COG -- the
+           used to keep the card narrow, but it cramped SOG/COG - the
            wider single-line position lets the hero numbers above breathe.
            Expanded view adds the DMS-formatted row underneath. *@
         <div class="hud-position">@NauticalFormat.FormatPosition(Data.Latitude, Data.Longitude)</div>
@@ -67,7 +67,7 @@
                 @* XTE + Drift: render unconditionally when their
                    inputs are present (route active for XTE; COG +
                    HDG present for Drift). Both happily display the
-                   zero-magnitude reading -- hiding-on-zero made the
+                   zero-magnitude reading - hiding-on-zero made the
                    row flap on every wave. *@
                 @if (Data.CrossTrackError is not null)
                 {
@@ -98,18 +98,18 @@
     <div class="hud-panel hud-card @(IsExpanded(CornerTopRight) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded(CornerTopRight) ? "true" : "false")"
-         aria-label="Wind -- click for more detail"
+         aria-label="Wind - click for more detail"
          @onclick='() => ToggleExpanded(CornerTopRight)' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, CornerTopRight)'
          title="Click for more detail">
-        @* Single dial -- both apparent (blue) and true (green) arrows
+        @* Single dial - both apparent (blue) and true (green) arrows
            share the same circle, rotated to their own angles. Reads as
            one wind picture, not two cards: the angular delta between
            the two arrows IS the lift/header you're sailing in. AWS
            and TWS values sit below in matching colours so the eye can
            pair value <-> arrow without needing the AWA/TWA letters
            spelled out (the colours do that work). *@
-        @* Label is "AW/TW" -- the dial draws BOTH arrows (apparent
+        @* Label is "AW/TW" - the dial draws BOTH arrows (apparent
            blue + true green) so the angular delta between the two
            IS the lift/header you're sailing in. The big number below
            shows apparent wind speed (smoothed); TWA / TWS appear in
@@ -123,7 +123,7 @@
             @* Rim + cardinals route through CSS classes so the colour
                flips with the HUD card theme. Hard-coded
                rgba(255,255,255,...) values used to vanish on the white
-               light-theme card -- the helm saw the arrows but no rim
+               light-theme card - the helm saw the arrows but no rim
                or tick marks. *@
             <circle cx="0" cy="0" r="24" fill="none"
                     class="hud-dial-rim" stroke-width="1"/>
@@ -147,7 +147,7 @@
             }
             <circle cx="0" cy="0" r="2" class="hud-dial-center"/>
         </svg>
-        @* Apparent wind speed -- smoothed (1 min mean) once warm,
+        @* Apparent wind speed - smoothed (1 min mean) once warm,
            live AWS during the warmup window. Compact-HUD shows one
            number; the gust / mean pair is a candidate for big-screen
            mode where there's room. The expanded view spells out
@@ -221,7 +221,7 @@
 
 @* === Bottom-Left: Depth (+ tide when a plugin feeds it) === *@
 @* Tide was a separate HUD card above depth; merging because they answer
-   the same question from a sailor's point of view -- water under the
+   the same question from a sailor's point of view - water under the
    boat NOW (depth) and where it's heading (tide). Depth alarm threshold
    still lives here; a tide row appears only when the plugin publishes.
    Gated by ShowDefaultHud. *@
@@ -231,7 +231,7 @@
     <div class="hud-panel hud-card @(IsExpanded(CornerBottomLeft) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded(CornerBottomLeft) ? "true" : "false")"
-         aria-label="Depth and tide -- click for more detail"
+         aria-label="Depth and tide - click for more detail"
          @onclick='() => ToggleExpanded(CornerBottomLeft)' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, CornerBottomLeft)'
          title="Click for more detail">
@@ -246,13 +246,13 @@
             }
             else if (depthFreshness == FieldFreshness.Dead)
             {
-                <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s -- do not rely on this reading">dead</span>
+                <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s - do not rely on this reading">dead</span>
             }
         </div>
         <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsExpanded(CornerBottomLeft) && FormatDepthTrend() is string trendLabel)
             {
                 @* Trend arrow is only meaningful when the user has room
-                   to parse it -- compact card stays to just "depth &
+                   to parse it - compact card stays to just "depth &
                    threshold" so the number stays big. Press / click the
                    card to expand and the trend arrow + m/min rate join
                    the depth reading in-line. *@
@@ -269,7 +269,7 @@
         @if (HasTideData && NextExtreme is var (label, height, time))
         {
             <div class="depth-tide-row"
-                 title="@(string.IsNullOrWhiteSpace(Data.TideStationName) ? "Tide" : $"Tide -- {Data.TideStationName}")">
+                 title="@(string.IsNullOrWhiteSpace(Data.TideStationName) ? "Tide" : $"Tide - {Data.TideStationName}")">
                 <span class="depth-tide-arrow"
                       aria-label="@TideDirectionLabel">@TideArrow</span>
                 <span class="depth-tide-label">@label</span>
@@ -296,7 +296,7 @@
                        and a 40-char NOAA name pushes the row off the
                        card. Full name stays in the row's title for
                        desktop hover (no helm benefit on touch but
-                       cheap). Dashboard renders the full name -- it
+                       cheap). Dashboard renders the full name - it
                        has the room. *@
                     <div class="hud-extra-row" title="@Data.TideStationName">
                         <span class="hud-extra-k">Station</span>
@@ -332,7 +332,7 @@
    Autopilot above heading when ShowAutopilotHud is enabled. Radar
    sits at the top of the stack when ShowRadarHud is on AND the
    server actually has radars. Flex column auto-stacks them with
-   --hud-gap, so adding/removing cards just collapses the gap -- no
+   --hud-gap, so adding/removing cards just collapses the gap - no
    sibling pixel offsets to keep in sync. *@
 <div class="hud-stack hud-stack-br">
 
@@ -362,7 +362,7 @@
             @{
                 // Polar lookup uses smoothed TWA/TWS so the target
                 // boat speed + optimal-TWA chips don't flap with every
-                // gust -- the polar curve is steep enough that a 1 kn
+                // gust - the polar curve is steep enough that a 1 kn
                 // wind oscillation flips the target reading by ~0.3 kn,
                 // which the helm reads as a trim problem and
                 // unnecessarily chases the trim. Live values fall back
@@ -445,7 +445,7 @@
                isn't being steered by the autopilot, so a +10 nudge is
                meaningless and would mislead the helm into thinking
                they applied it). When engaged, a tap fires a brief
-               toast with the signed delta -- helm with cold gloves
+               toast with the signed delta - helm with cold gloves
                or a brushed sleeve has audit trail of what the boat
                just got told to do, complementing the chime + visual
                heading change but surfacing it inline. *@
@@ -487,7 +487,7 @@
    Expanded: COG next to HDG and their signed delta (boat's apparent
    leeway/drift angle), plus the autopilot target heading when the
    autopilot is engaged. Gated by ShowDefaultHud (the autopilot /
-   radar / race cards above have their own gates -- toggling
+   radar / race cards above have their own gates - toggling
    "default cards" off doesn't affect them, so a helm running an
    external instrument cluster + the autopilot card stays
    coherent). *@
@@ -496,7 +496,7 @@
     <div class="hud-panel hud-card @(IsExpanded(CornerBottomRight) ? "hud-panel-expanded" : "")"
          role="button" tabindex="0"
          aria-expanded="@(IsExpanded(CornerBottomRight) ? "true" : "false")"
-         aria-label="Heading compass -- click for more detail"
+         aria-label="Heading compass - click for more detail"
          @onclick='() => ToggleExpanded(CornerBottomRight)' @onclick:stopPropagation
          @onkeydown='e => OnHudKeyDown(e, CornerBottomRight)'
          title="Click for more detail">
@@ -526,7 +526,7 @@
                 </g>
             }
             <circle cx="0" cy="0" r="2.5" fill="#60a5fa"/>
-            @* The compass-rose center dot keeps its accent blue --
+            @* The compass-rose center dot keeps its accent blue -
                it carries semantic meaning (matches the heading
                needle), so it doesn't theme-flip with the rim. *@
         </svg>
@@ -539,7 +539,7 @@
         @if (IsExpanded(CornerBottomRight))
         {
             <div class="hud-extra">
-                @* COG already lives on the TL card -- duplicating it here
+                @* COG already lives on the TL card - duplicating it here
                    crowded the expanded BR panel for no extra information. *@
                 @if (LeewayDeg is int lw)
                 {
@@ -601,14 +601,14 @@
 
 @* === Bottom-center stack: anchor + route ===
    Route progress when navigating, anchor watch when at anchor. The
-   two are NOT mutually exclusive -- a helm planning the next leg
+   two are NOT mutually exclusive - a helm planning the next leg
    from the hook still sees both cards (the anchor stays armed until
    they raise it explicitly). Each child guards its own rendering
    with the Snapshot.Visible flag, so the stack collapses to nothing
    when neither is active. Sits above the .map-controls bar via
    .hud-stack-bc's --panel-bottom anchor.
 
-   Anchor renders BEFORE route in the markup -- the stack is a
+   Anchor renders BEFORE route in the markup - the stack is a
    flex column so DOM order = visual stacking order, and the helm
    asked for anchor on top when both are active (peak drift +
    alarm radius is the time-critical readout while at the dock).
@@ -695,7 +695,7 @@
     [Parameter] public EventCallback OnNextWaypoint { get; set; }
 
 
-    /// <summary>Helm tapped the Anchor Watch HUD card -- parent
+    /// <summary>Helm tapped the Anchor Watch HUD card - parent
     /// opens the SetRadius panel for radius adjustment.</summary>
     [Parameter] public EventCallback OnAdjustAnchor { get; set; }
 
@@ -720,7 +720,7 @@
     /// compass). Default true so existing installs keep their corner
     /// readouts; toggle off when running an external instrument
     /// cluster or capturing a clean chart screenshot. Independent of
-    /// <see cref="ShowAutopilotHud"/> / <see cref="ShowRadarHud"/> --
+    /// <see cref="ShowAutopilotHud"/> / <see cref="ShowRadarHud"/> -
     /// those have their own gates further inside the bottom-right
     /// stack.</summary>
     [Parameter] public bool ShowDefaultHud { get; set; } = true;
@@ -754,7 +754,7 @@
     [Parameter] public EventCallback<(string radarId, int rangeMeters)> OnSetRadarRange { get; set; }
 
     /// <summary>Polar service for target-speed + optimal-TWA lookup.
-    /// Optional -- the race card hides when null or no polar is loaded.</summary>
+    /// Optional - the race card hides when null or no polar is loaded.</summary>
     [Parameter] public IPolarService? Polar { get; set; }
 
     private bool IsBelowDepthThreshold =>
@@ -794,7 +794,7 @@
     // becomes a compile error instead of "panel never expands".
     // Stays as raw strings (rather than an enum) because the same
     // values flow through dozens of @onclick lambda call sites + an
-    // aria-expanded attribute -- enum boxing each call would cost
+    // aria-expanded attribute - enum boxing each call would cost
     // more than it saves. The const block below is the single source.
     private const string CornerTopLeft     = "tl";
     private const string CornerTopRight    = "tr";
@@ -809,7 +809,7 @@
     /// for extra rows instead of hiding them behind a tap.</summary>
     [Parameter] public bool ExpandAllHud { get; set; }
 
-    /// <summary>True when the helm has Big HUD (Settings -- "Big type")
+    /// <summary>True when the helm has Big HUD (Settings - "Big type")
     /// enabled. Forwarded to HudRouteCard so the route-card layout
     /// drops fields that are too dense for the small landscape iPad
     /// layout (XTE numeric, route name, prev/next labels) and adds
@@ -831,7 +831,7 @@
 
     private void ToggleExpanded(string corner)
     {
-        // No-op while ExpandAllHud is on -- per-corner clicks would be
+        // No-op while ExpandAllHud is on - per-corner clicks would be
         // invisible (always expanded), so swallowing the toggle keeps
         // aria-expanded honest and avoids a state the operator can't
         // perceive.
@@ -857,7 +857,7 @@
 
     // --- Expanded-panel data helpers --------------------------------
     // Position in degrees-minutes-seconds. Complements the decimal
-    // format shown in the compact view -- some captains prefer DMS.
+    // format shown in the compact view - some captains prefer DMS.
     private string? PositionDms
     {
         get
@@ -901,7 +901,7 @@
     // (wind / current pushing it right). Not a true leeway angle because
     // tidal current + windage both contribute; useful as an indicator.
     // Always returns the rounded delta (including 0) when both inputs
-    // are present, so the row stays visible at zero crossings -- hiding-
+    // are present, so the row stays visible at zero crossings - hiding-
     // on-zero made the HUD flap as the value oscillated through 0.
     private int? LeewayDeg
     {
@@ -965,7 +965,7 @@
         if (speedMs is not double s || double.IsNaN(s)) return null;
         return s switch
         {
-            < 0.3  => null,             // Calm -- hide the row
+            < 0.3  => null,             // Calm - hide the row
             < 1.5  => "F1 Light air",
             < 3.3  => "F2 Light breeze",
             < 5.5  => "F3 Gentle",
@@ -1058,7 +1058,7 @@
         return minutes == 0 ? $"{hours}h" : $"{hours}h{minutes:D2}";
     }
 
-    // Wind dial arrow rotations -- 30 s circular mean once the
+    // Wind dial arrow rotations - 30 s circular mean once the
     // buffer warms up, falling back to the live angle during warmup.
     // Smoothing keeps the arrows from twitching every wave / gust;
     // helm reads the dial as a stable picture, not a strobing one.
@@ -1096,7 +1096,7 @@
     /// <summary>
     /// Explains why the ANCHOR TIDE alarm can't fire right now, or returns
     /// null when it's fully armed. The rule needs two things the user must
-    /// configure -- boat draft and a tide feed -- plus an active anchor.
+    /// configure - boat draft and a tide feed - plus an active anchor.
     /// Each missing piece is surfaced as a short actionable hint; if
     /// everything is there, no hint.
     /// </summary>
@@ -1109,7 +1109,7 @@
     }
 
     // Build child-card snapshots. Composing records here keeps the child
-    // components pure -- they only read from Snapshot and can decide
+    // components pure - they only read from Snapshot and can decide
     // "no change" with a single record-equality check, which is what
     // lets Blazor skip re-renders on ticks that don't touch route or
     // anchor fields.
@@ -1135,7 +1135,7 @@
             // Card is only visible once the alarm is fully ARMED, not
             // merely dropped. Helm-driven: with the v2 two-step flow,
             // AnchorActive flips true on Drop (before Arm) and the
-            // card was appearing prematurely -- helm read it as
+            // card was appearing prematurely - helm read it as
             // "anchor watch is active" before they'd actually set
             // a radius. Hidden during the dropped-but-not-armed
             // window; the chart marker's amber-pulse + "RADIUS NOT
@@ -1158,7 +1158,7 @@
             PeakRadius: Data.AnchorPeakRadius,
             // Bearing-back-to-anchor computed client-side from anchor
             // pin + own-ship position. Null when either endpoint is
-            // missing -- the HUD card uses that as the needle's hide
+            // missing - the HUD card uses that as the needle's hide
             // signal.
             BearingTrue: OnaPlotter.Utilities.GeoBearing.RadiansFromTo(
                 Data.Latitude, Data.Longitude,
@@ -1167,7 +1167,7 @@
     // NOAA / UKHO station names often run 40+ chars. The BL depth-
     // card width budget is tight; a long name pushes the row off the
     // card. 18 chars + a 3-char ellipsis (21 visible) is the same cap
-    // the Dashboard used to apply before the trim moved here -- the
+    // the Dashboard used to apply before the trim moved here - the
     // Dashboard now renders the full name, the HUD takes over the
     // truncation. Title attribute on the row carries the full name
     // for desktop hover.

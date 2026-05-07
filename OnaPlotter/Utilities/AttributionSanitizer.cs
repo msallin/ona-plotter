@@ -8,7 +8,7 @@ namespace OnaPlotter.Utilities;
 /// <c>innerHTML</c>. A SignalK chart provider is an in-scope trust
 /// boundary (the helm picks the URL of the chart server; a hostile or
 /// compromised provider would otherwise have a script-execution sink
-/// in the WASM origin -- read every other localStorage key, pivot to
+/// in the WASM origin - read every other localStorage key, pivot to
 /// the boat's LAN via fetch).
 ///
 /// <para>The shape of the contract: built-in attributions (OSM /

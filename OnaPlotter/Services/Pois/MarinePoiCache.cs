@@ -34,7 +34,7 @@ namespace OnaPlotter.Services.Pois;
 /// write at end-of-burst rather than one per fetch. The renderer
 /// thread doesn't see a hitch on every moveend tick; the helm
 /// loses at most one debounce window of merges if the tab closes
-/// before the timer fires (acceptable -- POIs refetch on next
+/// before the timer fires (acceptable - POIs refetch on next
 /// visit). <see cref="DisposeAsync"/> flushes any pending writes.</para>
 /// </summary>
 public sealed class MarinePoiCache : IAsyncDisposable
@@ -66,7 +66,7 @@ public sealed class MarinePoiCache : IAsyncDisposable
     // Debounce state. _persistCts cancels a pending flush when a new
     // merge lands; _pendingPersist tracks the in-flight delay task so
     // DisposeAsync can await the final flush. _dirty signals "memory
-    // is ahead of disk" -- consulted on dispose to decide whether a
+    // is ahead of disk" - consulted on dispose to decide whether a
     // forced flush is needed even when no debounce is pending.
     private CancellationTokenSource? _persistCts;
     private Task? _pendingPersist;
@@ -112,7 +112,7 @@ public sealed class MarinePoiCache : IAsyncDisposable
     /// <summary>
     /// Return cached POIs whose coordinates intersect the bbox AND
     /// whose category is in the enabled set. Used by the controller
-    /// on every render -- both after a fresh fetch (to render the
+    /// on every render - both after a fresh fetch (to render the
     /// merged union) and on a cache-only render (offline / before
     /// first fetch). Returns an empty list when no categories are
     /// enabled or the cache is empty.
@@ -190,7 +190,7 @@ public sealed class MarinePoiCache : IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
         try { await FlushAsync(); }
-        catch { /* tab teardown -- best-effort flush, never throw out of dispose */ }
+        catch { /* tab teardown - best-effort flush, never throw out of dispose */ }
         _persistCts?.Cancel();
         _persistCts?.Dispose();
         _persistCts = null;
@@ -293,7 +293,7 @@ public sealed class MarinePoiCache : IAsyncDisposable
     {
         if (entries.Count <= MaxEntries) return;
         // Sort by LastSeenUtc ascending, drop the oldest until we're
-        // back at the cap. O(n log n) once per merge that overflows --
+        // back at the cap. O(n log n) once per merge that overflows -
         // acceptable for n <= MaxEntries + a fetch's worth of new
         // entries.
         var ordered = entries.OrderBy(kv => kv.Value.LastSeenUtc).ToList();

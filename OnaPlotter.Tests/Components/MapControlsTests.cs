@@ -7,7 +7,7 @@ namespace OnaPlotter.Tests.Components;
 
 /// <summary>
 /// bUnit coverage for the bottom control bar. Focuses on the More menu
-/// because it's the most stateful part and easy to regress -- the dot
+/// because it's the most stateful part and easy to regress - the dot
 /// badge, active-item highlighting, backdrop dismiss, Race visibility,
 /// Route button's active-during-edit state.
 /// </summary>
@@ -60,7 +60,7 @@ public class MapControlsTests
         // Dot badge class = .ctrl-btn-dot. Tests each of the contained
         // toggles individually because a regression could easily drop
         // one from AnyMoreItemActive. Measure is intentionally NOT in
-        // this list any more -- it's a permanent bar button on every
+        // this list any more - it's a permanent bar button on every
         // viewport, and its bar slot already shows the active state, so
         // a More dot for Measure would be redundant + misleading.
         using var ctx = new Bunit.TestContext();
@@ -139,7 +139,7 @@ public class MapControlsTests
         await Assert.That(cut.FindAll(".ctrl-more-menu").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".ctrl-more-backdrop").Count).IsEqualTo(1);
 
-        // Backdrop click dismisses -- no re-toggle of More required.
+        // Backdrop click dismisses - no re-toggle of More required.
         cut.Find(".ctrl-more-backdrop").Click();
         await Assert.That(cut.FindAll(".ctrl-more-menu").Count).IsEqualTo(0);
     }
@@ -247,7 +247,7 @@ public class MapControlsTests
         using var ctx = new Bunit.TestContext();
         var cut = Render(ctx, p => p.Add(x => x.RouteEditMode, true));
 
-        // Find the bar-level Add button (not a menu item -- the menu is
+        // Find the bar-level Add button (not a menu item - the menu is
         // closed by default so only the toolbar button renders).
         var addBtn = cut.FindAll("button.ctrl-btn")
             .FirstOrDefault(b => b.TextContent.Contains("Add"));

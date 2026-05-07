@@ -9,7 +9,7 @@ namespace OnaPlotter.Tests.Components;
 /// branches for distance / radius / peak / bearing, and the
 /// tap-to-adjust gesture wired through OnAdjust. Manual JS-only
 /// fallback was removed when v2.0.0+ of the anchor plugin became
-/// the only supported source -- the card has no chip row any more
+/// the only supported source - the card has no chip row any more
 /// and the snapshot record dropped its Manual + ManualRadiusMeters
 /// fields. Tests pin the post-cleanup contract.
 /// </summary>
@@ -41,7 +41,7 @@ public class HudAnchorCardTests
         // Plugin feeds maxRadius + currentRadius; card renders both.
         // Card visibility is parent-gated on AnchorActive AND
         // MaxRadius set, so we don't need to pin "no chips when
-        // server owns the radius" -- there are no chips at all.
+        // server owns the radius" - there are no chips at all.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudAnchorCard>(p => p
             .Add(x => x.Snapshot, Snap()));
@@ -88,7 +88,7 @@ public class HudAnchorCardTests
     public async Task PeakRadius_Renders_WhenSet()
     {
         // Helm sees the peak observed distance during this anchor
-        // watch alongside the live "Dist" value -- "we drifted to N m
+        // watch alongside the live "Dist" value - "we drifted to N m
         // at the worst" without watching the live value tick.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudAnchorCard>(p => p

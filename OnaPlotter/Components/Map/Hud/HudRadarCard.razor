@@ -71,7 +71,7 @@
     @* Disabled rules: "-" at the first valid value, "+" at the last.
        An off-list current range can't actually arise here because
        GetRangeOptions splices the radar's Range into the options
-       array if it isn't already in validValues -- so currentIdx is
+       array if it isn't already in validValues - so currentIdx is
        always in [0, options.Count). The "currentIdx < 0" guard on
        "+" stays for defensive belt-and-braces but is unreachable. *@
     <div class="radar-hud-range-row">
@@ -119,7 +119,7 @@
 
     /// <summary>Fires when the helm taps Standby or Transmit. Map.razor
     /// handles by calling <c>RadarApi.SetControlAsync(radarId, "power", ...)</c>.
-    /// Both buttons are now plain clicks -- the SK radar plugin owns
+    /// Both buttons are now plain clicks - the SK radar plugin owns
     /// the warmup state machine, so the previous 600 ms hold-to-engage
     /// gate on Transmit was redundant safety theatre.</summary>
     [Parameter] public EventCallback<(string radarId, RadarPower power)> OnSetPower { get; set; }
@@ -158,7 +158,7 @@
         if (options.Count == 0) return;
         // GetRangeOptions splices radar.Range into the list if it isn't
         // already in validValues, so an off-list current range is
-        // impossible by construction -- FindIndex always returns >= 0
+        // impossible by construction - FindIndex always returns >= 0
         // here. The "next < 0 || >= Count" guard below catches the
         // edge case where StepRange is called from the last (or first)
         // valid value with the matching button still enabled (race on
@@ -176,7 +176,7 @@
 
     /// <summary>True when the radar is in a state worth showing the
     /// card for. The only state we explicitly hide on is the SK
-    /// plugin's "off" -- a powered-down array offers nothing
+    /// plugin's "off" - a powered-down array offers nothing
     /// reachable from the chart and the empty card just took up
     /// chart real estate. Anything else (transmit / standby /
     /// preparing / unknown / null) shows so the helm can both see

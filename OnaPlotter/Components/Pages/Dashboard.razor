@@ -17,7 +17,7 @@
      - !IsConnected -> "offline" (server unreachable; the dashboard
        cards below will show stale "--" rather than fresh data)
      - IsConnected + no fix yet -> "waiting" (connection up, but the
-       boat hasn't reported a position / SOG yet -- typically the
+       boat hasn't reported a position / SOG yet - typically the
        first 1-2 s after a connect, or a sensor that hasn't booted)
    Once LastReceivedUtc is set the empty-state hides; cards render. *@
 @if (Data.LastReceivedUtc is null)
@@ -40,7 +40,7 @@
    Units sit inline after each digit in .dash-unit (small + muted),
    not as a separate caption below; saves vertical space without
    losing the "this is the unit, not part of the number" cue.
-   Wrapped in a collapsible <details> -- desktop default-open,
+   Wrapped in a collapsible <details> - desktop default-open,
    phone default-closed (see ProbeViewportAsync). *@
 <details class="dashboard-section" open="@IsOpen("primary")">
     <summary class="dashboard-section-summary"
@@ -86,7 +86,7 @@
    Only rendered when a polar is actually loaded. Two states:
      1. Polar + wind data -> Performance % + Target BSP cards
      2. Polar loaded, no wind data yet -> "Waiting for TWD/TWS" card
-   No-polar boats get nothing here -- the Settings page is where you
+   No-polar boats get nothing here - the Settings page is where you
    go to upload one, and the Dashboard should stay focused on live
    numbers rather than an empty nag card. *@
 @if (Polar.HasPolar)
@@ -186,7 +186,7 @@
 
 @* === Navigation: HDG, COG, TWD, Position ===
    HDG repeats here (it's also one of the three primary cards above)
-   because navigators expect it next to COG -- the angular delta
+   because navigators expect it next to COG - the angular delta
    between the two is the heart of leeway / set-and-drift reading. *@
 <details class="dashboard-section" open="@IsOpen("navigation")">
     <summary class="dashboard-section-summary"
@@ -239,7 +239,7 @@
                    first line. *@
                 @* display-6 (300) matches every other dashboard metric;
                    metric-lg (600) used to render the lat / lon noticeably
-                   bolder than the rest of the grid -- helm wanted it to
+                   bolder than the rest of the grid - helm wanted it to
                    look the same as SOG / depth / etc. *@
                 <p class="card-text display-6 mb-0">@NauticalFormat.FormatLat(Data.Latitude)</p>
                 <p class="card-text display-6 mb-0">@NauticalFormat.FormatLon(Data.Longitude)</p>
@@ -270,7 +270,7 @@
             <div class="col-md-4 col-sm-6">
                 <div class="card">
                     <div class="card-body text-center">
-                        @* "Chart datum" is the proper term sailors recognise -- the
+                        @* "Chart datum" is the proper term sailors recognise - the
                            reference depth on the chart against which both tide heights
                            and depth soundings are stated. The previous "above datum"
                            was technically correct but read as jargon ("what is datum?").
@@ -425,7 +425,7 @@
     {
         if (_sectionOpen.TryGetValue(key, out var v)) return v;
         // Default-open everywhere on desktop. On phone, only the
-        // Primary section (SOG / Depth / HDG -- the trio every helm
+        // Primary section (SOG / Depth / HDG - the trio every helm
         // checks first on landing) is expanded; everything else
         // starts collapsed so the helm sees one viewport-sized
         // dashboard instead of an infinite scroll. User toggles
@@ -451,7 +451,7 @@
         // breakpoint stays in lockstep with app.css and MainLayout's
         // first-run sidebar default. A viewport that resizes across
         // the breakpoint at runtime (rare on a real plotter, common
-        // in dev devtools) needs a reload to re-probe -- acceptable
+        // in dev devtools) needs a reload to re-probe - acceptable
         // trade-off for not adding a resize listener that re-renders
         // the whole dashboard on every window-drag pixel.
         try

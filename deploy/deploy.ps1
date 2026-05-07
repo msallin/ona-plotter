@@ -83,7 +83,7 @@ Set-Content -Path (Join-Path $WebappStaging "package.json") -Value $pkgJson
 # dep-free; sits next to package.json at the package root.
 $PluginShim = Join-Path $PSScriptRoot "index.js"
 if (-not (Test-Path $PluginShim)) {
-    throw "Expected plugin shim at $PluginShim -- deploy/index.js is required."
+    throw "Expected plugin shim at $PluginShim - deploy/index.js is required."
 }
 Copy-Item -Path $PluginShim -Destination (Join-Path $WebappStaging "index.js")
 
@@ -102,7 +102,7 @@ Write-Host "Deploying to $SshTarget : $RemotePath ..." -ForegroundColor Cyan
 # one scp for the upload. The previous ControlMaster attempt was
 # supposed to collapse both into one prompt, but Microsoft's Windows
 # OpenSSH doesn't expand the %r@%h-%p tokens in ControlPath
-# reliably -- the socket file fails to bind, ssh silently falls
+# reliably - the socket file fails to bind, ssh silently falls
 # back to BatchMode-ish behaviour, and the helm sees a script that
 # "doesn't ask for a password" before exiting with auth failure.
 # Keeping it simple here: bare ssh + bare scp. For a one-prompt

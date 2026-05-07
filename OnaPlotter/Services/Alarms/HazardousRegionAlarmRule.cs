@@ -6,7 +6,7 @@ namespace OnaPlotter.Services.Alarms;
 /// <summary>
 /// HAZARD: fires while own-ship is inside any region whose
 /// <see cref="SignalkRegion.IsHazard"/> flag is true. Turns regions
-/// from decorative shapes into real safety geometry -- the helm draws
+/// from decorative shapes into real safety geometry - the helm draws
 /// a polygon over a reef / no-go area / racing exclusion zone, ticks
 /// "hazard", and a Danger banner appears whenever the boat enters it.
 ///
@@ -98,7 +98,7 @@ public sealed class HazardousRegionAlarmRule : IAlarmRule
 
     /// <summary>Per-region notification path so cross-plotter
     /// publishes don't collapse all hazards to one channel. Same
-    /// sanitisation pattern as CpaAlarmRule -- the region id is
+    /// sanitisation pattern as CpaAlarmRule - the region id is
     /// caller-controlled and could contain path separators that
     /// would extend the notifications hierarchy.</summary>
     public string? GetPublishPath(AlarmInfo alarm)

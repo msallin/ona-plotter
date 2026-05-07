@@ -27,7 +27,7 @@ public static class OverpassQueryBuilder
     /// timeout is 180 s; we cap at 25 s because a marine-POI query is
     /// small (a handful of tag filters in a bbox the helm just
     /// panned) and waiting longer than that is dead-time on the
-    /// chart -- the helm has already moved the viewport. Matches the
+    /// chart - the helm has already moved the viewport. Matches the
     /// per-call timeout below in <see cref="OverpassPoiService"/>.</summary>
     public const int ServerTimeoutSeconds = 25;
 
@@ -40,7 +40,7 @@ public static class OverpassQueryBuilder
     /// <summary>Build the Overpass QL query for the given bbox and
     /// category set. Returns null when no categories are requested
     /// (caller should not fire an empty query against the public
-    /// endpoint -- it'd return everything that happens to match
+    /// endpoint - it'd return everything that happens to match
     /// no filter, which is "nothing", but it still costs a round
     /// trip).</summary>
     /// <param name="south">Leaflet south bound.</param>

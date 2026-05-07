@@ -194,7 +194,7 @@ public class RouteProgressFuzzTests
             var coords = new double[n][];
             for (int j = 0; j < n; j++)
                 coords[j] = [rng.NextDouble() * 60.0 - 30.0, rng.NextDouble() * 60.0 - 30.0];
-            // nextLat / nextLon nowhere near serverIdx -- if the helper
+            // nextLat / nextLon nowhere near serverIdx - if the helper
             // falls back to FindClosest it'd pick a different index.
             double nextLat = 0.0, nextLon = 0.0;
 

@@ -17,7 +17,7 @@ public class HarborModeSettingsTests
     {
         public Dictionary<string, string> Storage { get; } = new();
         // Tracking Get + Set call sites separately so we can pin the
-        // "no harbor key was even ATTEMPTED to be loaded" contract --
+        // "no harbor key was even ATTEMPTED to be loaded" contract -
         // a future regression that adds a LoadBool("harborMode.vN")
         // would surface here even before the Storage dict shows
         // anything.
@@ -118,7 +118,7 @@ public class HarborModeSettingsTests
         // CALLED for a harbor-prefixed key". A regression that
         // accidentally adds LoadBool("harborMode.v2", false) to
         // InitializeAsync would silently rehydrate from any future
-        // KV key the helm typed -- catching that here means CI fails
+        // KV key the helm typed - catching that here means CI fails
         // the moment a load path appears, not after a helm complains
         // their forgotten Harbor mode came back on next sail.
         var kv = new FakeKv();

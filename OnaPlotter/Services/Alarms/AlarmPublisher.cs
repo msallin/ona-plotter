@@ -35,7 +35,7 @@ namespace OnaPlotter.Services.Alarms;
 /// Fail-soft: every API call is fire-and-forget, with failure
 /// removing the path from <see cref="PublishedAlarmTracker"/> so a
 /// retry can fire on the next OnAlarmsChanged event. A flaky link
-/// to the server doesn't break the local banner -- it just delays
+/// to the server doesn't break the local banner - it just delays
 /// cross-plotter sync until the link recovers. Failures route
 /// through <see cref="ClientErrorRelay"/> so they surface in the
 /// SignalK server log for SSH-from-helm debugging at 3 am.
@@ -98,7 +98,7 @@ public sealed class AlarmPublisher : IAsyncDisposable
     private void HandleAlarmsChanged()
     {
         if (_disposed) return;
-        // AllActiveEntries is the UNCAPPED (info, rule) view --
+        // AllActiveEntries is the UNCAPPED (info, rule) view -
         // ActiveAlarms is the banner stack (capped at MaxActiveAlarms).
         // Cross-plotter sync must not silently drop pile-up alarms,
         // and the rule pairing lets each rule declare its own publish
@@ -109,14 +109,14 @@ public sealed class AlarmPublisher : IAsyncDisposable
 
         // Pass 1: raise newcomers. Skip alarms that are already
         // server-emitted (they round-trip through this plotter via the
-        // bridge rule -- republishing would loop). The acknowledger
+        // bridge rule - republishing would loop). The acknowledger
         // handle is the marker: only bridge-rule output sets it.
         foreach (var (a, rule) in entries)
         {
             if (a.Acknowledger is not null) continue;
             // Ask the rule itself for the path. Rules that don't
-            // participate in cross-plotter publish (e.g. SART -- AIS
-            // feed already publishes; bridge rule -- already came
+            // participate in cross-plotter publish (e.g. SART - AIS
+            // feed already publishes; bridge rule - already came
             // from the server) return null and we skip.
             var path = rule.GetPublishPath(a);
             if (string.IsNullOrEmpty(path)) continue;
@@ -128,9 +128,9 @@ public sealed class AlarmPublisher : IAsyncDisposable
 
         // Pass 2: clear ones that left the active set. Snapshot the
         // keys to avoid mutating the dictionary mid-iteration.
-        // Lazy-allocate the snapshot list so the steady state -- "no
+        // Lazy-allocate the snapshot list so the steady state - "no
         // alarms cleared this tick", which is most ticks once raise
-        // settles -- doesn't allocate an enumerator chain + List<>.
+        // settles - doesn't allocate an enumerator chain + List<>.
         List<(AlarmKey Key, RaisedEntry Raised)>? toClear = null;
         foreach (var kv in _raised)
         {
@@ -169,7 +169,7 @@ public sealed class AlarmPublisher : IAsyncDisposable
         if (_raised.Count == 0) return;
 
         // Snapshot the paths we currently own + drop the local _raised
-        // map (it tracks in-flight raises -- their continuations will
+        // map (it tracks in-flight raises - their continuations will
         // see _disposed/!IsConnected and bail).  Keep the TRACKER paths
         // alive for the server-side GC window (~60s) so the bridge rule
         // continues to filter own-echoes when the server replays our
@@ -200,7 +200,7 @@ public sealed class AlarmPublisher : IAsyncDisposable
         foreach (var path in paths)
         {
             // If we re-raised this path post-reconnect, leave it alone
-            // -- the new raise has its own ownership claim.
+            // - the new raise has its own ownership claim.
             if (_raised.Values.Any(v => v.Path == path)) continue;
             _tracker.Remove(path);
         }
@@ -275,7 +275,7 @@ public sealed class AlarmPublisher : IAsyncDisposable
 
         // Late-clear race: the alarm may have left the active set while
         // we were awaiting. If our entry was removed by HandleAlarmsChanged
-        // in the meantime, fire the clear now -- otherwise the server
+        // in the meantime, fire the clear now - otherwise the server
         // notification would linger until the 60s GC.
         if (!_raised.ContainsKey(key))
         {
@@ -349,7 +349,7 @@ public sealed class AlarmPublisher : IAsyncDisposable
         }
         catch (OperationCanceledException)
         {
-            // Budget elapsed -- the server's GC will catch any clears
+            // Budget elapsed - the server's GC will catch any clears
             // that didn't finish. We don't surface this through the
             // relay because dispose-time noise just adds to whatever
             // shutdown mess the user is already in.

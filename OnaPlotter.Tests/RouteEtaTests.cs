@@ -142,7 +142,7 @@ public class RouteEtaTests
     {
         // 100h ttg should render "(in >99h)" rather than the truncated
         // "99h 59m" the previous JS twin produced (which lied about
-        // its own arrival time -- the wall-clock ETA at +100h would
+        // its own arrival time - the wall-clock ETA at +100h would
         // be ~4 days from now).
         var result = RouteEta.Format(100.0 * 3600, FixedNow);
         await Assert.That(result).Contains("(in >99h)");

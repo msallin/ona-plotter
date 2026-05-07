@@ -45,7 +45,7 @@ public readonly record struct StopNavigationResult(
 public static class StopNavigationFlow
 {
     /// <summary>
-    /// Checks the in-flight guard and -- if the request is actionable --
+    /// Checks the in-flight guard and - if the request is actionable -
     /// fires <see cref="ICourseApi.ClearAsync"/>. Returns the outcome
     /// the caller needs to update its visual state. Never throws on
     /// the API path: a thrown exception becomes

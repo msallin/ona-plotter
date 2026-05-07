@@ -14,7 +14,7 @@ namespace OnaPlotter.Tests;
 /// envelopes), and the null-elision contract that share blobs
 /// inherit from the previous per-call <c>DefaultIgnoreCondition</c>
 /// option. We don't compare byte-for-byte against reflection
-/// output -- property ordering is an implementation detail -- but
+/// output - property ordering is an implementation detail - but
 /// every type round-trips and every documented contract holds.
 /// </summary>
 public class OnaJsonContextTests
@@ -155,7 +155,7 @@ public class OnaJsonContextTests
         var unsubs = root.GetProperty("unsubscribe");
         await Assert.That(unsubs.GetArrayLength()).IsEqualTo(1);
         await Assert.That(unsubs[0].GetProperty("path").GetString()).IsEqualTo("navigation.position");
-        // Unsubscribe rows carry only "path" -- "period" / "policy" are absent.
+        // Unsubscribe rows carry only "path" - "period" / "policy" are absent.
         await Assert.That(unsubs[0].TryGetProperty("period", out _)).IsFalse();
         await Assert.That(unsubs[0].TryGetProperty("policy", out _)).IsFalse();
     }
@@ -215,7 +215,7 @@ public class OnaJsonContextTests
         await Assert.That(first.TryGetProperty("Coords", out _)).IsTrue();
         await Assert.That(first.TryGetProperty("IsStationary", out _)).IsTrue();
         await Assert.That(first.TryGetProperty("Tooltip", out _)).IsTrue();
-        // Negative assertion: lowercase variants must NOT appear -- a
+        // Negative assertion: lowercase variants must NOT appear - a
         // partial PascalCase migration (only some props renamed) is
         // worse than a full rename because the JS reads silently fail.
         await Assert.That(first.TryGetProperty("coords", out _)).IsFalse();

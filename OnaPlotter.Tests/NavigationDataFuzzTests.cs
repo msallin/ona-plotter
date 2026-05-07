@@ -42,7 +42,7 @@ public class NavigationDataFuzzTests
     {
         // A plugin pushing a 1e9 metre max radius (bug or corrupt
         // config) must not crash the apply path. HUD rendering may
-        // look absurd; that's fine -- "anchor watch configured with
+        // look absurd; that's fine - "anchor watch configured with
         // a silly radius" is better than "anchor watch not visible
         // because we crashed".
         var nav = new NavigationData();
@@ -82,7 +82,7 @@ public class NavigationDataFuzzTests
     public async Task ClearCourse_WipesRouteProgressFieldsToo()
     {
         // The new route-total + WP-progress fields (pointIndex etc.)
-        // must null out on ClearCourse too -- otherwise after Stop
+        // must null out on ClearCourse too - otherwise after Stop
         // Navigation the HUD would still show "WP 3 of 7" for a few
         // ticks until the server stopped publishing.
         var nav = new NavigationData();
@@ -170,7 +170,7 @@ public class NavigationDataFuzzTests
             }));
         }
         await Task.WhenAll(tasks);
-        // No assertion on specific values -- we only pin that the apply
+        // No assertion on specific values - we only pin that the apply
         // path didn't throw / deadlock. Completion is the signal.
         await Assert.That(nav.Depth).IsNotNull();
         await Assert.That(nav.SpeedOverGround).IsNotNull();

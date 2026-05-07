@@ -35,7 +35,7 @@ public sealed class GeoJsonFeature
     /// <c>GeoJsonBuilder.FeatureBody</c>: <c>{ name, description }</c>
     /// (plus optional hazard flag for regions). Exposed so callers
     /// can recover the description from a server-round-tripped
-    /// waypoint -- waypoints don't carry a top-level
+    /// waypoint - waypoints don't carry a top-level
     /// <c>description</c> field on the wire (only routes and notes do),
     /// so without parsing this block the description silently empties
     /// every time the helm edits the name.</summary>

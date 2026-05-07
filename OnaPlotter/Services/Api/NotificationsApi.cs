@@ -9,7 +9,7 @@ namespace OnaPlotter.Services.Api;
 /// <para>
 /// Every call applies a per-call 5 s timeout via a linked
 /// <see cref="CancellationTokenSource"/>. HttpClient's default 100 s
-/// is far too long for an alarm-attention path -- a half-baked TLS
+/// is far too long for an alarm-attention path - a half-baked TLS
 /// handshake or RST on a flaky helm Wi-Fi would otherwise stall the
 /// single-threaded WASM dispatcher up to 100 s, queueing every
 /// subsequent OnAlarmsChanged behind the dead socket. 5 s is the

@@ -7,7 +7,7 @@ namespace OnaPlotter.Tests.Components;
 /// <summary>
 /// bUnit tests for RadarsSection. The section is hidden when
 /// no radars are present and only the range dropdown's option
-/// list and labelling are non-trivial -- everything else is
+/// list and labelling are non-trivial - everything else is
 /// pass-through to parent callbacks. These tests pin:
 ///   - the dropdown sources its values from the range control's
 ///     validValues when present (not the looser supportedRanges
@@ -226,7 +226,7 @@ public class RadarsSectionTests
     public async Task Range_Dropdown_Selects_Exactly_The_Current_Range()
     {
         // Blazor renders `selected` on the option whose value matches
-        // the select's `value=` attribute -- we no longer have to (and
+        // the select's `value=` attribute - we no longer have to (and
         // shouldn't) emit an explicit `selected=@(v == rangeM)` per
         // option ourselves. Pin that exactly one option ends up
         // selected and it's the radar's current range.

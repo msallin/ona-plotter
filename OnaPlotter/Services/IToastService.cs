@@ -49,7 +49,7 @@ public interface IToastService
     /// server's <c>/log</c> endpoint (bounded at 800 chars message +
     /// 8000 chars stack). So a dev with SSH access to the boat reads
     /// the trace from the SK plugin log without the helm ever opening
-    /// DevTools. The toast itself stays helm-facing only -- "{action}
+    /// DevTools. The toast itself stays helm-facing only - "{action}
     /// failed" with no exception text.
     /// </para>
     /// <para>

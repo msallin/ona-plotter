@@ -34,7 +34,7 @@ public class AttributionSanitizerTests
 
         var result = AttributionSanitizer.Sanitize(hostile, trusted: false);
 
-        // No tag opening / closing -- innerHTML renders this as visible
+        // No tag opening / closing - innerHTML renders this as visible
         // text rather than an executing element.
         await Assert.That(result).DoesNotContain("<img");
         await Assert.That(result).DoesNotContain("</img");
@@ -62,8 +62,8 @@ public class AttributionSanitizerTests
     {
         // WebUtility.HtmlEncode encodes non-ASCII as numeric character
         // references (e.g. © -> &#169;). Browsers render this as the
-        // original glyph in textContent context -- the helm sees ©
-        // visually -- but the source text shows the entity. Pin so a
+        // original glyph in textContent context - the helm sees ©
+        // visually - but the source text shows the entity. Pin so a
         // future switch to a different encoder (which might leave
         // non-ASCII as raw UTF-8) is a visible test change rather
         // than a silent behaviour shift.

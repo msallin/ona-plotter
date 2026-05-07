@@ -139,7 +139,7 @@ public class FormatTests
         await Assert.That(Format.DepthClass(20)).IsEqualTo("depth-ok");
     }
 
-    // -- MobElapsed -----------------------------------------------
+    // - MobElapsed -----------------------------------------------
 
     [Test]
     public async Task MobElapsed_NegativeClamps_ToZero()
@@ -173,7 +173,7 @@ public class FormatTests
         await Assert.That(Format.MobElapsed(5025)).IsEqualTo("T+1h23m");
     }
 
-    // -- LatLonDms ------------------------------------------------
+    // - LatLonDms ------------------------------------------------
 
     [Test]
     public async Task LatLonDms_PositiveLat_PositiveLon_NE()
@@ -198,7 +198,7 @@ public class FormatTests
             .IsEqualTo("0.00000°N 0.00000°E");
     }
 
-    // -- RangeRingLabel -------------------------------------------
+    // - RangeRingLabel -------------------------------------------
 
     [Test]
     public async Task RangeRingLabel_ZeroOrNegative_Empty()

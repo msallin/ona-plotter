@@ -67,7 +67,7 @@ public class AnchorAlarmApiTests
     [Test]
     public async Task DropAsync_404_Returns_Failure_With_StatusCode()
     {
-        // Plugin not installed -- /plugins/anchoralarm prefix absent.
+        // Plugin not installed - /plugins/anchoralarm prefix absent.
         // Caller toast routes to "v2.0.0+ required".
         var (client, _) = CapturingClient(status: HttpStatusCode.NotFound);
         var api = NewApi(client);
@@ -81,7 +81,7 @@ public class AnchorAlarmApiTests
     [Test]
     public async Task DropAsync_403_Returns_Failure_With_StatusCode()
     {
-        // Auth misconfig -- read-only role can't write. Caller toast
+        // Auth misconfig - read-only role can't write. Caller toast
         // routes to "permission denied" via StatusCode disambiguation.
         var (client, _) = CapturingClient(status: HttpStatusCode.Forbidden);
         var api = NewApi(client);
@@ -152,7 +152,7 @@ public class AnchorAlarmApiTests
         // Boundary: radius of 0 must emit `"value": 0`, not omit the
         // key entirely. A future refactor that swaps to
         // DefaultIgnoreCondition.WhenWritingDefault would silently
-        // drop the property -- caught here.
+        // drop the property - caught here.
         var (client, log) = CapturingClient();
         var api = NewApi(client);
 

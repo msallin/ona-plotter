@@ -16,7 +16,7 @@ namespace OnaPlotter.Services.ServerNotifications;
 ///   <see cref="OnaPlotter.Services.Mob.MobService"/>).</item>
 /// </list>
 /// The store does NOT distinguish between the two surfaces in its
-/// data model -- the alarm pipeline + the
+/// data model - the alarm pipeline + the
 /// <see cref="ServerNotificationsAlarmRule"/> consume it uniformly.
 /// If a future caller cares about provenance ("which entries came
 /// from the server?"), add an <c>Origin</c> field to
@@ -33,7 +33,7 @@ public sealed class ServerNotificationStore
     /// publishing under unique paths (e.g. <c>notifications.junk.{seq}</c>
     /// on a counter) could otherwise grow this dictionary without bound
     /// on a long passage and OOM the WASM heap. 256 is a generous ceiling
-    /// -- a vessel with every standard plugin armed simultaneously sees
+    /// - a vessel with every standard plugin armed simultaneously sees
     /// less than a dozen active paths in practice. When the cap is hit
     /// we refuse the new entry rather than evict an existing one; the
     /// next clean delta will overwrite the placeholder so a transient
@@ -53,12 +53,12 @@ public sealed class ServerNotificationStore
     /// synchronously inside <see cref="Apply"/> / <see cref="Clear"/>,
     /// AFTER the dictionary mutation has completed and BEFORE the
     /// bool result propagates to the caller. This lets a handler
-    /// safely re-enter Apply on a different path -- <c>MobService</c>
+    /// safely re-enter Apply on a different path - <c>MobService</c>
     /// uses this for the local-synthetic / server-twin reconciliation
     /// dance: a handler reads <see cref="Active"/> to find the
     /// just-applied entry, then issues a follow-up Apply. Any change
     /// that introduces awaits between the mutation and the event fire
-    /// (or batches notifications) breaks that contract -- handlers
+    /// (or batches notifications) breaks that contract - handlers
     /// would read stale state and the reconcile would mis-fire.</para></summary>
     public event Action<string>? OnPathChanged;
 
@@ -91,7 +91,7 @@ public sealed class ServerNotificationStore
     /// On a SignalK v2 server (≥ 2.21), the value carries an <paramref
     /// name="id"/> (stable UUID per notification) and a <paramref
     /// name="status"/> block (ack / silence flags). Both are null on
-    /// older servers; the store still works -- only the v2 banner
+    /// older servers; the store still works - only the v2 banner
     /// affordances (Acknowledge button, server-side ack-clears) are
     /// inert in that case.
     /// </para>
@@ -187,7 +187,7 @@ public sealed class ServerNotificationStore
     /// <summary>Maps the SignalK state string to the coarse
     /// <see cref="AlarmSeverity"/> bucket. Returns null for
     /// "normal"/"cleared"/null so callers can use it as a clear-signal.
-    /// Unknown states fail safe to Danger -- a genuine alarm with a
+    /// Unknown states fail safe to Danger - a genuine alarm with a
     /// typo'd state still surfaces rather than being silently dropped.</summary>
     public static AlarmSeverity? MapSeverity(string? state)
     {

@@ -2,10 +2,10 @@
 // requires for the home-screen / PWA install path. iPad rejects SVG
 // for `apple-touch-icon` so without these PNGs the home-screen tile
 // silently falls back to a screenshot of the page (the user reported
-// this -- "OpenPlotter icon isn't shown in the PWA installation").
+// this - "OpenPlotter icon isn't shown in the PWA installation").
 //
 // Uses Playwright (already a dev dep for UI tests) so no extra
-// install is needed -- just `node scripts/generate-pwa-icons.mjs`.
+// install is needed - just `node scripts/generate-pwa-icons.mjs`.
 // The browser renders the SVG at the requested viewport size and
 // screenshots a transparent-bg PNG.
 //

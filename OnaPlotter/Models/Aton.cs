@@ -10,7 +10,7 @@ namespace OnaPlotter.Models;
 /// Modelled after the SignalK shape so populating it from raw deltas is
 /// almost path-for-path. Frequently-rendered fields (position, name,
 /// type, virtual) are typed; everything else lands in
-/// <see cref="Properties"/> for forward compatibility -- a plugin can
+/// <see cref="Properties"/> for forward compatibility - a plugin can
 /// publish new paths and we'll show them in the popover without code
 /// changes.
 /// </para>
@@ -48,7 +48,7 @@ public sealed class Aton
     public string? TypeName { get; set; }
 
     /// <summary>Virtual AtoNs (broadcast by AIS without a physical
-    /// mark in the water -- e.g. wreck warnings) render with a dashed
+    /// mark in the water - e.g. wreck warnings) render with a dashed
     /// outline so the helm doesn't go looking for an actual buoy.</summary>
     public bool? Virtual { get; set; }
 
@@ -79,7 +79,7 @@ public sealed class Aton
         // identity / position bundle: { name, mmsi, atonType:{id,name},
         // virtual, navigation: { position: { latitude, longitude } } }.
         // Plugins emit this on the first delta after the AIS Type 21
-        // arrives, then sometimes never resend the per-leaf paths --
+        // arrives, then sometimes never resend the per-leaf paths -
         // flatten so we don't have to wait for individual updates that
         // may never come. A non-object empty-path delta (rare, e.g.
         // a plugin error) is silently ignored rather than stashed
@@ -118,7 +118,7 @@ public sealed class Aton
                 return ApplyVirtual(rawValue);
             default:
                 // Stash unknown paths for the popover. Replace any
-                // existing value -- plugins re-publish on change.
+                // existing value - plugins re-publish on change.
                 Properties[path] = rawValue;
                 return true;
         }
@@ -211,7 +211,7 @@ public sealed class Aton
         if (rawValue is not JsonElement el) return false;
         // True / false set the flag; explicit JSON null clears it.
         // Anything else (numbers, strings, undefined value) is a no-op
-        // -- we don't want to flap the dashed outline based on a
+        // - we don't want to flap the dashed outline based on a
         // malformed delta.
         bool? newVal = el.ValueKind switch
         {

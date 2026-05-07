@@ -53,7 +53,7 @@
 
     private async Task ConfirmDelete(SignalkRoute route)
     {
-        // Shared confirmation service -- same prompt the Resources
+        // Shared confirmation service - same prompt the Resources
         // page (and other Layers sections) use. A destructive action
         // this central to the UI deserves a guard-rail.
         bool ok = await Confirmations.ConfirmAsync(

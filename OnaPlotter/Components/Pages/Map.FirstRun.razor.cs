@@ -26,7 +26,7 @@ public partial class Map
     // AppSettingsService.InitializeAsync ("any new key MUST follow
     // <camelCaseName>.vN"). The earlier unversioned key
     // "hints.mapLongPress.dismissed" is ignored on load so existing
-    // helms see the coachmark once more after upgrade -- acceptable
+    // helms see the coachmark once more after upgrade - acceptable
     // for a one-shot tutorial; bumps the version every revision so
     // future copy changes can re-trigger without a schema migration.
     private const string TouchCoachmarkKey = "hints.mapLongPress.v1.dismissed";
@@ -43,7 +43,7 @@ public partial class Map
     /// chain of REST seeds + JS interop init in OnAfterRenderAsync
     /// runs. Earlier the card waited until after those completed,
     /// which meant any "Couldn't reach SignalK" toast painted on
-    /// top of the welcome card during the same tick -- helms saw
+    /// top of the welcome card during the same tick - helms saw
     /// the card half-covered by the error and tapped Got It without
     /// reading. Pushing this into OnInitializedAsync lets the card
     /// land first and the toasts queue under it.
@@ -69,7 +69,7 @@ public partial class Map
     /// Pure helper: returns true iff the URI carries an explicit
     /// <c>welcome=1</c> query parameter (parsed, not substring-matched).
     /// Earlier code used <c>Contains("welcome=1")</c> which over-matched
-    /// on URLs like <c>/map?other=welcome=1abc</c> -- realistic when
+    /// on URLs like <c>/map?other=welcome=1abc</c> - realistic when
     /// a chart link or a forwarded URL accumulates query keys. The
     /// parsed approach also gates on the value being literal "1" so
     /// <c>?welcome=true</c> or <c>?welcome=yes</c> doesn't trigger.
@@ -84,7 +84,7 @@ public partial class Map
         if (string.IsNullOrEmpty(uri.Query)) return false;
         // Hand-roll the parse rather than reach for
         // Microsoft.AspNetCore.WebUtilities (not in the WASM bundle's
-        // dependency closure -- adding it would inflate cold-start
+        // dependency closure - adding it would inflate cold-start
         // download by tens of KB for one query check). The parse rule:
         // strip the leading '?' if present, split on '&', for each
         // chunk split on '=' once, and look for an exact key=value
@@ -117,7 +117,7 @@ public partial class Map
     /// coachmark when the user taps Got it.
     /// <para>
     /// <paramref name="forceShow"/> bypasses the KV "dismissed" flag
-    /// without clearing it -- the Settings page's "Show welcome again"
+    /// without clearing it - the Settings page's "Show welcome again"
     /// link uses this via the ?welcome=1 deep link so the helm can
     /// re-read the onboarding without losing the persisted dismissed
     /// state.

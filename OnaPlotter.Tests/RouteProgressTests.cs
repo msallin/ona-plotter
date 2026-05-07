@@ -8,7 +8,7 @@ public class RouteProgressTests
     // tests. Lat/lon values pick a small section so the equirectangular
     // approximation in FindClosestWaypointIndex is well within its
     // accurate operating range.
-    //   coords[0] -- coords[1] -- coords[2] -- coords[3]
+    //   coords[0] - coords[1] - coords[2] - coords[3]
     //        leg 0       leg 1       leg 2
     private static readonly double[][] Route =
     [
@@ -149,7 +149,7 @@ public class RouteProgressTests
     {
         // A corrupt route fetch could produce a NaN lat / lon at one
         // waypoint. The squared-distance compare must not let NaN
-        // silently outrank a real waypoint -- NaN < any is false in
+        // silently outrank a real waypoint - NaN < any is false in
         // IEEE-754, so the algorithm relies on that. Pin the contract
         // so a refactor that flips to >= or rearranges the compare
         // cannot silently "win" with the NaN entry.
@@ -191,7 +191,7 @@ public class RouteProgressTests
         // The fix for "every reload resets to WP 1": the SK course
         // engine is the source of truth for the active leg. The
         // lat/lon match exists only as a fallback for older servers
-        // -- if the server tells us pointIndex=2, we use 2 even when
+        // - if the server tells us pointIndex=2, we use 2 even when
         // the next-point lat/lon would match a different vertex
         // (e.g. boat already crossed past the next-point and the
         // server hasn't caught up yet).
@@ -221,7 +221,7 @@ public class RouteProgressTests
     public async Task ResolveLegIndex_Returns_Null_When_Nothing_Known()
     {
         // No pointIndex AND no next-point lat/lon yet. Must return
-        // null rather than defaulting to 0 -- the caller skips the
+        // null rather than defaulting to 0 - the caller skips the
         // JS dispatch in that case so the route doesn't briefly
         // render as entirely undriven.
         var idx = RouteProgress.ResolveLegIndex(
@@ -236,7 +236,7 @@ public class RouteProgressTests
     public async Task ResolveLegIndex_Returns_Null_When_Coords_Empty()
     {
         // Route geometry not loaded yet (HTTP fetch in flight). Even
-        // a known pointIndex isn't actionable without coords -- but
+        // a known pointIndex isn't actionable without coords - but
         // we still return the index so the caller can decide. (Caller
         // also guards on coords.Length > 0.) Pin the no-coords +
         // pointIndex case explicitly: returns the pointIndex.
@@ -333,7 +333,7 @@ public class RouteProgressTests
         var total = RouteProgress.TotalDistanceMeters(route);
 
         // Allow a tiny tolerance for floating-point drift across the
-        // intermediate Haversine calls -- equality between the sum-
+        // intermediate Haversine calls - equality between the sum-
         // of-three and the in-loop sum is exact today, but a refactor
         // to a Kahan-summation form would shift the LSBs.
         await Assert.That(Math.Abs(total - expected)).IsLessThan(1e-9);
@@ -342,7 +342,7 @@ public class RouteProgressTests
     [Test]
     public async Task TotalDistanceMeters_MalformedRows_AreSkipped()
     {
-        // Defensive: same robustness as FindClosestWaypointIndex --
+        // Defensive: same robustness as FindClosestWaypointIndex -
         // null rows / sparse arrays must be skipped without crashing
         // a flaky-wifi route fetch. A sparse row should NOT contribute
         // to the total (current contract: the leg using the bad row is

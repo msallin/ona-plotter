@@ -33,7 +33,7 @@ public sealed class AnchorAlarmApi : IAnchorAlarmApi
 
     public Task<ApiResult> RaiseAsync(CancellationToken ct = default) =>
         // PUT {value: null} on anchor.position is the SK-spec way
-        // to clear an anchor. Cast to (object?) is COMPILE-TIME --
+        // to clear an anchor. Cast to (object?) is COMPILE-TIME -
         // bare `null` has no inferable type for an anonymous-type
         // member (CS0815). Default JsonSerializerOptions emit JSON
         // null (tests pin the wire shape).

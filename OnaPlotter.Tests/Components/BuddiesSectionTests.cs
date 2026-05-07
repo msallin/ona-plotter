@@ -75,7 +75,7 @@ public class BuddiesSectionTests
     [Test]
     public async Task No_Refresh_Button_In_Section()
     {
-        // The Refresh button was pulled (user feedback -- the buddy list
+        // The Refresh button was pulled (user feedback - the buddy list
         // refreshes itself on reconnect / on the BuddyList seed, the
         // in-panel button was visual noise). If it comes back, ship an
         // explicit Parameter + test; don't leak the old title back in.

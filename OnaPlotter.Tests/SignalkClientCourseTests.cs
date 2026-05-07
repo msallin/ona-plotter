@@ -212,7 +212,7 @@ public class SignalkClientCourseTests
         // The Map page subscribes to OnDataChanged late (after a slow
         // sequence of REST seeds and JS interop). If the SignalK seed
         // races ahead and fires before the page subscribes, the
-        // subscriber misses the event -- but it still must be able to
+        // subscriber misses the event - but it still must be able to
         // observe the seeded state on Data when its own kick runs.
         // This is the contract Map.razor relies on for the catch-up
         // HandleDataChanged() call after subscribing.
@@ -238,7 +238,7 @@ public class SignalkClientCourseTests
     {
         // Some plotters / older SignalK servers return 404 on the v2
         // course endpoint when no route is active. The seed must
-        // tolerate this silently -- no exception, no spurious
+        // tolerate this silently - no exception, no spurious
         // OnDataChanged that would trigger redraw work.
         var c = NewClientWithHttp(new HttpClient(new JsonHandler("", HttpStatusCode.NotFound)));
         bool fired = false;

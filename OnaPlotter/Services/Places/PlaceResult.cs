@@ -6,7 +6,7 @@ namespace OnaPlotter.Services.Places;
 /// whether the row came from Photon, Nominatim, or an own-data
 /// store like waypoints / regions / notes.
 /// </summary>
-/// <param name="Name">Short label -- typically the place's primary
+/// <param name="Name">Short label - typically the place's primary
 /// name. Used as the dropdown row's leading text.</param>
 /// <param name="DisplayLabel">Longer human label combining name +
 /// city + country (or own-data type + parent context). Renders as

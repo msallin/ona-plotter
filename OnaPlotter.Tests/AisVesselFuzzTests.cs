@@ -89,7 +89,7 @@ public class AisVesselFuzzTests
     {
         // A freshly-booted AIS transmitter can emit (0, 0) while the
         // GPS is still acquiring. The code shouldn't filter on value
-        // magnitude -- (0, 0) is legitimate if rare. The downstream
+        // magnitude - (0, 0) is legitimate if rare. The downstream
         // marker will render in the Gulf of Guinea, which is the right
         // visual cue for the sailor that the AIS source is broken.
         var v = new AisVessel("vessels.urn:mrn:imo:mmsi:666");

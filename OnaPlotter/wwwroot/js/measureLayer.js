@@ -160,7 +160,7 @@ function bindMeasureMarker(marker, idx) {
         if (idx < 0 || idx >= measurePoints.length) return;
         measurePoints[idx].lat = ll.lat;
         measurePoints[idx].lon = ll.lng;
-        // Live update of just the segments adjacent to this marker --
+        // Live update of just the segments adjacent to this marker -
         // a full redraw would tear down the marker mid-drag and break
         // Leaflet's drag tracking.
         updateMeasureSegmentsAround(idx);

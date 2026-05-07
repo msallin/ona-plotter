@@ -7,7 +7,7 @@ namespace OnaPlotter.Utilities;
 /// <para>The JS twin (<c>formatRouteEta</c> in
 /// <c>leafletInterop.js</c>) uses identical math; <see
 /// cref="OnaPlotter.Tests.RouteEtaJsParityTests"/> guards against
-/// drift via a regex-scrape of the JS source -- same pattern as
+/// drift via a regex-scrape of the JS source - same pattern as
 /// <c>AisPaletteCssParityTests</c>. The C# port exists so the
 /// branch logic (hour overflow, minute floor, null guards) is
 /// unit-testable with a deterministic clock.</para>
@@ -27,7 +27,7 @@ public static class RouteEta
 
     /// <summary>
     /// Format the ETA line. Returns null when ttg is null, NaN,
-    /// infinite, or non-positive -- the popup drops the row in
+    /// infinite, or non-positive - the popup drops the row in
     /// those cases instead of showing "ETA --".
     /// </summary>
     /// <param name="ttgSeconds">Time-to-go in seconds, or null.</param>
@@ -42,7 +42,7 @@ public static class RouteEta
 
         var arrival = now.AddSeconds(ttg);
         // Math.Max(1, ...) clamps a sub-1m ttg to "1m" so the line
-        // never reads "(in 0m)" -- which would contradict a
+        // never reads "(in 0m)" - which would contradict a
         // populated ETA HH:MM.
         int totalMinutes = Math.Max(1, (int)Math.Round(ttg / 60.0));
         int totalHours = totalMinutes / 60;

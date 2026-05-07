@@ -25,7 +25,7 @@ namespace OnaPlotter.Services.Map;
 ///
 /// Lifecycle: the page constructs once the JS module is loaded and
 /// forwards <see cref="SyncAsync"/> from <c>HandleDataChanged</c>.
-/// Disposal is implicit -- the wrapped <see cref="IMapRouteJs"/> is
+/// Disposal is implicit - the wrapped <see cref="IMapRouteJs"/> is
 /// marked disposed by the page, after which interop becomes a silent
 /// no-op.
 ///
@@ -119,7 +119,7 @@ public sealed class ActiveRouteSync
     /// <summary>
     /// Wipes the cached href so the next <see cref="SyncAsync"/>
     /// refetches and redraws even when the SK href is unchanged. Used
-    /// after a deliberate "force a redraw now" event -- e.g. just
+    /// after a deliberate "force a redraw now" event - e.g. just
     /// activated a route via the popup and want the polyline to
     /// appear before the next delta tick.
     /// </summary>
@@ -169,12 +169,12 @@ public sealed class ActiveRouteSync
             else if ((_utcNow() - stopT).TotalSeconds > StopTimeoutSec)
             {
                 _courseStopPendingUtc = null;
-                _stopTimeoutWarning("Stop navigation not confirmed by server -- still navigating");
+                _stopTimeoutWarning("Stop navigation not confirmed by server - still navigating");
                 await _routeJs.SetActiveRouteStoppingAsync(false);
             }
         }
         // If the delta cleared the route, the pending flag should
-        // follow truth -- the dimming is moot once the polyline is
+        // follow truth - the dimming is moot once the polyline is
         // gone, but the flag drives the watchdog above.
         if (currentHref is null) _courseStopPendingUtc = null;
 
@@ -184,7 +184,7 @@ public sealed class ActiveRouteSync
         // on page reload: pointIndex tends to land in the connect-time
         // delta snapshot before nextPoint.position, and we want the
         // "passed legs" portion of the polyline to dim straight away
-        // -- not wait for the next-point coordinates to arrive.
+        // - not wait for the next-point coordinates to arrive.
         bool pointIndexChanged = currentPointIndex != _lastActiveRoutePointIndex;
         if (!force && !hrefChanged && !nextWpChanged && !pointIndexChanged) return;
 
@@ -241,7 +241,7 @@ public sealed class ActiveRouteSync
             }
 
             // Route activated: fetch geometry once. The HTTP round-trip
-            // is where dispose races most often -- by the time the fetch
+            // is where dispose races most often - by the time the fetch
             // completes the page may have navigated away. The wrapped
             // IMapRouteJs treats post-dispose calls as no-ops so
             // SetActiveRouteAsync below can safely run even on
@@ -251,7 +251,7 @@ public sealed class ActiveRouteSync
                 // Catch transport failures locally so a slow / unreachable
                 // SK server (8 s HttpClient timeout -> TaskCanceledException,
                 // or HttpRequestException on connection refused) doesn't
-                // bubble up to HandleDataChanged's async-void boundary --
+                // bubble up to HandleDataChanged's async-void boundary -
                 // an unhandled exception there terminates the WASM runtime
                 // (".NET runtime already exited with 1") and the helm has
                 // to reload. We log to console so the relay still surfaces
@@ -273,7 +273,7 @@ public sealed class ActiveRouteSync
                 {
                     // Console.WriteLine (not Console.Error) so a
                     // transient WS / HTTP outage doesn't surface as
-                    // an unhandled error via the relay -- the catch
+                    // an unhandled error via the relay - the catch
                     // here already preserves the previously-fetched
                     // geometry.
                     Console.WriteLine(

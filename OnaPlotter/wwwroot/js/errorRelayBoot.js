@@ -41,7 +41,7 @@
     var inWrapper = false;
     // Disable the relay outright after the first non-OK response so
     // we don't keep firing POSTs that the browser will log as
-    // "Failed to load resource: 400/404" on every error -- which
+    // "Failed to load resource: 400/404" on every error - which
     // happens in dev / CI where OnaPlotter runs standalone (no
     // SignalK plugin mount, so /log doesn't exist) and would
     // otherwise cascade into the smoke-test error collector. In
@@ -52,7 +52,7 @@
     function resolveRelayUrl() {
         if (relayUrl) return relayUrl;
         try {
-            // baseHref rather than `base` -- the latter reads as a
+            // baseHref rather than `base` - the latter reads as a
             // weakly-reserved word and trips up some minifiers /
             // strict-mode passes even though plain ES6 accepts it.
             var baseHref = document.baseURI || (window.location.origin + '/');
@@ -76,8 +76,8 @@
                 // tab close would silently drop. Firefox needs >= 116.
                 keepalive: true,
             }).then(function (resp) {
-                // Auto-disable on a server reject (404 -- plugin not
-                // installed; 400 -- standalone dev host; 401/403 --
+                // Auto-disable on a server reject (404 - plugin not
+                // installed; 400 - standalone dev host; 401/403 -
                 // auth lapse). One 400 still leaks a "Failed to load
                 // resource" console.error from the browser's network
                 // stack, but no more after that.
@@ -139,7 +139,7 @@
 
     // console.error wrapper: Blazor WASM catches component
     // exceptions internally and only logs via console.error before
-    // showing the banner. This is the critical hook -- without it,
+    // showing the banner. This is the critical hook - without it,
     // every Razor lifecycle exception vanishes from the relay.
     // The wrapper runs ONLY the throttle check on the hot path; the
     // payload-building only happens when we're actually going to send.
@@ -184,7 +184,7 @@
             return passthrough();
         };
         // displayName helps Firefox devtools show this as the wrapped
-        // console.error rather than as an opaque closure -- click-
+        // console.error rather than as an opaque closure - click-
         // through to source still lands here, but at least the
         // function name in the stack reads sensibly.
         try { Object.defineProperty(wrapped, 'name', { value: 'console.error' }); } catch (_) { }
@@ -199,7 +199,7 @@
     //
     // Reads `el.style.display` directly rather than getComputedStyle
     // so we don't trigger a synchronous style recalc on every banner
-    // mutation -- Blazor toggles inline style, so the property read
+    // mutation - Blazor toggles inline style, so the property read
     // is sufficient and free.
     function attachBannerObserver() {
         var el = document.getElementById('blazor-error-ui');

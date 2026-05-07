@@ -69,7 +69,7 @@ public class AnchorRadiusHeuristicTests
     [Test]
     public async Task DeepDepth_ClampsToCeiling()
     {
-        // 50 m * 5 = 250 m raw -- bigger than the chip row's biggest
+        // 50 m * 5 = 250 m raw - bigger than the chip row's biggest
         // preset (150 m). The 200 m ceiling caps it; a real 50 m
         // anchorage is unusual on small craft and the helm can still
         // tap a chip if they really want 250 m.
@@ -247,7 +247,7 @@ public class AnchorRadiusHeuristicTests
     [Test]
     public async Task DescribeSuggestion_UnusableDepth_FromLastDrop()
     {
-        // Same gate as Suggest -- non-finite or out-of-range depth
+        // Same gate as Suggest - non-finite or out-of-range depth
         // routes to the fallback message so the eyebrow doesn't lie
         // about what the heuristic actually used.
         await Assert.That(AnchorRadiusHeuristic.DescribeSuggestion(double.NaN))
@@ -267,7 +267,7 @@ public class AnchorRadiusHeuristicTests
     {
         // The eyebrow renders ScopeMultiplier as "(int)5" -> "5".
         // If a future bump to 5.5 lands silently the label would
-        // show "5x" while the heuristic uses 5.5x -- a one-line
+        // show "5x" while the heuristic uses 5.5x - a one-line
         // contradiction. Either the multiplier stays whole (this
         // test pins it) or the format string moves to "G3" so
         // the displayed value tracks the applied value.

@@ -47,7 +47,7 @@ internal sealed class FakeConfirmationService : IConfirmationService
     /// <summary>Auto-answer for <see cref="PromptAsync"/>. Defaults
     /// to null (simulates a Cancel). Tests that exercise the rename
     /// flow set this to the desired string; AutoConfirm also gates
-    /// this -- false means return null regardless.</summary>
+    /// this - false means return null regardless.</summary>
     public string? AutoPromptValue { get; set; }
 
     public Task<string?> PromptAsync(string message, string initialValue = "",
@@ -67,7 +67,7 @@ internal sealed class FakeConfirmationService : IConfirmationService
 
     /// <summary>Auto-answer for <see cref="ChooseAsync"/>. Tests that
     /// exercise the chooser flow set this to one of the offered
-    /// option labels; AutoConfirm gates this -- false means return
+    /// option labels; AutoConfirm gates this - false means return
     /// null (simulates Cancel) regardless.</summary>
     public string? AutoChooseValue { get; set; }
 

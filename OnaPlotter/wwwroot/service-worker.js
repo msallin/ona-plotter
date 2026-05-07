@@ -37,7 +37,7 @@
 //             (delete+re-put moves entries to end of insertion order
 //             so trim evicts least-recently-used). keepBuffer 4 -> 6
 //             on tile layers for snappier route-planning pans.
-// v13 -> v14: post-sail-readiness follow-ups -- sidebar-collapse
+// v13 -> v14: post-sail-readiness follow-ups - sidebar-collapse
 //             driven by user setting only (no longer forced by
 //             :fullscreen / .ios-fullbleed CSS so the chevron toggle
 //             works in fullscreen); active-route hides the regular
@@ -87,7 +87,7 @@
 //             v20 catches the residue (clone-throw on quirky
 //             Response bodies, sync-throws from cache.put on low-
 //             memory Firefox, ...). Also drops the LRU clone+put
-//             promotion on cache hits -- helm reported "no single
+//             promotion on cache hits - helm reported "no single
 //             tile loads" which points at body-stream contention
 //             between the served response and the background put.
 //             We accept FIFO eviction and ship reliable tile
@@ -120,7 +120,7 @@
 //             Blazor "value is not a function" because the new C#
 //             code calls a function the cached old JS doesn't
 //             have. The cache eventually refreshes in the
-//             background and the helm's NEXT-NEXT load works -- but
+//             background and the helm's NEXT-NEXT load works - but
 //             one crashed reload per deploy is one too many; e2e
 //             CI surfaces it as a hard failure.
 //             Network-first fetches fresh on every online load and
@@ -146,10 +146,10 @@
 //             (Phase 2 of the geocoder feature). New CSS rules
 //             under .topbar-search* / .search-pin* land in the
 //             APP_SHELL precache; bump invalidates the stale shell.
-// v26 -> v27: Place-search Phase 3 -- own-data separator + source
+// v26 -> v27: Place-search Phase 3 - own-data separator + source
 //             badge. Adds .topbar-search-separator + -badge CSS
 //             under APP_SHELL.
-// v27 -> v28: Place-search Phase 4 -- Nominatim fallback + offline
+// v27 -> v28: Place-search Phase 4 - Nominatim fallback + offline
 //             empty-state hint. Adds .topbar-search-empty-title
 //             / -hint CSS under APP_SHELL.
 // v28 -> v29: Place-search dropdown switched to HUD-card tokens
@@ -162,7 +162,7 @@
 //             raced keystrokes against in-handler StateHasChanged
 //             calls, dropping characters and (often) preventing
 //             a search request from firing at all.
-// v30 -> v31: SearchBox.razor rewritten AGAIN -- fully uncontrolled
+// v30 -> v31: SearchBox.razor rewritten AGAIN - fully uncontrolled
 //             input (no value=, no @bind). The renderer never
 //             writes the value attribute, so the helm's typing
 //             can't be clobbered. Added searchBoxJs.js for the
@@ -176,7 +176,7 @@
 //             a stale-WASM browser throws InvalidOperationException
 //             at render time. Bump invalidates the precache so the
 //             helm pulls the new framework on next launch.
-// v32 -> v33: SearchBox state-cleanup pass -- explicit
+// v32 -> v33: SearchBox state-cleanup pass - explicit
 //             StateHasChanged so the spinner shows during the
 //             in-flight call; catch-all around SearchAsync so
 //             any decorator regression degrades to empty list
@@ -192,8 +192,8 @@
 // v34 -> v35: .top-row z-index 1 -> 1000 so the SearchBox typeahead
 //             dropdown (which visually overflows from the topbar
 //             into the map area) renders ABOVE the leaflet map
-//             panes + HUD cards. The dropdown WAS rendering -- the
-//             helm could see the rows in the HTML inspector -- but
+//             panes + HUD cards. The dropdown WAS rendering - the
+//             helm could see the rows in the HTML inspector - but
 //             the parent's stacking context capped its effective
 //             z-index at 1, so the chart painted over it.
 // v35 -> v36: History page no longer sends a viewport bbox to the
@@ -232,7 +232,7 @@
 //               for the corners next to it).
 //             - ResourceHttp.{Get,Post,Put,Delete,PostCreate} now
 //               also catch OperationCanceledException when the
-//               caller didn't cancel -- that's the HttpClient
+//               caller didn't cancel - that's the HttpClient
 //               timeout path, which previously bubbled past the
 //               helpers as TaskCanceledException and reached
 //               Blazor's renderer error UI ("An unhandled error has
@@ -258,7 +258,7 @@
 //               to collapse. Same behaviour on every breakpoint;
 //               desktop wasn't seeing the issue today but the
 //               policy is consistent.
-//             - Chart-quick-bar is no longer hidden on phone --
+//             - Chart-quick-bar is no longer hidden on phone -
 //               smaller chips (font 0.62rem, padding 2px 8px) so
 //               the helm can flip charts without diving into the
 //               full Layers panel.
@@ -342,9 +342,9 @@
 //             transitions log explicitly so the journal shows when
 //             deltas paused / resumed.
 // v47 -> v48: ResourceStore extracted to a typed cache primitive
-//             (ResourceTypeCache<T>). Per-type duplication --
+//             (ResourceTypeCache<T>). Per-type duplication -
 //             dictionary, snapshot list, Changed/Removed events,
-//             subscriber-throw guard, Replace logic -- all collapse
+//             subscriber-throw guard, Replace logic - all collapse
 //             onto one generic class; ResourceStore composes four
 //             instances (one per resource type). The public API
 //             (Routes / Waypoints / OnRouteChanged / ...) is
@@ -377,7 +377,25 @@
 //               More-menu row carries .ctrl-more-mobile-hide so
 //               it's suppressed on phones to avoid duplicating
 //               the bar version.
-const CACHE_NAME = 'ona-plotter-v49';
+// v49 -> v50: Region popup + map upgrade + Resources active-route pin
+//             + global prose dash style.
+//             - leafletInterop.addRegion gained five params
+//               (isHazard, areaSqM, centerLat, centerLon,
+//               radiusMeters, createdAtIso). Cached v49 WASM
+//               calls the old 4-arg shape and the new JS would
+//               render the popup without metadata; bump invalidates
+//               the precache so the helm picks up matched bundles.
+//             - Hazard regions render in red with an always-on
+//               warning glyph at the centroid; popup includes
+//               area, coords, created, hazard chip, plus an Edit
+//               button next to Delete.
+//             - Resources page pins the active route at the top
+//               with View-on-map / Stop actions.
+//             - Codebase-wide prose dash style: " -- " (em-dash)
+//               replaced with " - " (hyphen) in comments, README,
+//               UI strings - helm-readability pass, no behavioural
+//               impact.
+const CACHE_NAME = 'ona-plotter-v50';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -386,7 +404,7 @@ const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // earlier LRU promotion on hits was dropped after helm reports of
 // "no single tile loads" pointed at body-stream contention between
 // the served response and the background re-put. With a 5000 entry
-// cap, FIFO is plenty for typical coastal / rivers use -- the home
+// cap, FIFO is plenty for typical coastal / rivers use - the home
 // anchorage tiles fall out only after several sessions of heavy
 // route-planning elsewhere. Bump this number rather than switching
 // to a separate offline-tiles feature.
@@ -437,7 +455,7 @@ self.addEventListener('activate', (event) => {
 // the respondWith() promise never rejects. A bare rejection is what
 // Firefox surfaces as "ServiceWorker intercepted the request and
 // encountered an unexpected error" and renders as a broken tile in
-// Leaflet -- the cause is hard to pin (Cache-API quota, transient
+// Leaflet - the cause is hard to pin (Cache-API quota, transient
 // IndexedDB corruption, body-clone on a partial 206, ...) but the
 // effect is uniform and so is the mitigation: any exception path,
 // however unlikely, falls back to a 504 placeholder.
@@ -448,8 +466,8 @@ async function tileCacheFirst(request) {
         // Last-resort fallback: a 504 placeholder so Leaflet can
         // render its errorTileUrl rather than the helm seeing the
         // generic Firefox SW-intercept error in the console plus a
-        // missing tile. This branch should be unreachable -- the
-        // inner function has its own per-step guards -- but the
+        // missing tile. This branch should be unreachable - the
+        // inner function has its own per-step guards - but the
         // outer net is what guarantees respondWith() never rejects.
         return new Response('', { status: 504, statusText: 'Tile error' });
     }
@@ -472,7 +490,7 @@ async function getTileCache() {
 // Cumulative-puts counter that throttles the trimTileCache scan.
 // trimTileCache used to fire after every successful put, which meant
 // a full cache.keys() walk (5000 entries on a busy passage) on every
-// tile cached -- the bookkeeping cost dwarfed the actual put. Now we
+// tile cached - the bookkeeping cost dwarfed the actual put. Now we
 // only scan after every TRIM_CHECK_EVERY puts, so a single tile-load
 // burst pays the scan once instead of N times. Choice of 50 keeps
 // the high-water-mark slop bounded (we may exceed the cap by ~50
@@ -496,7 +514,7 @@ async function tileCacheFirstInner(request) {
             // response share underlying state in a way that the
             // background put can lock, breaking every subsequent
             // tile read. The pure-FIFO eviction we land on without
-            // promotion is good enough -- with a 5000-tile cap a
+            // promotion is good enough - with a 5000-tile cap a
             // home anchorage stays in the cache for several
             // sessions of normal use, and the alternative
             // (every-tile failure) is not a trade we'd accept.
@@ -519,7 +537,7 @@ async function tileCacheFirstInner(request) {
     // Best-effort cache write. cache.put rejects on partial-content
     // (206), no-store headers, quota exceeded, and a few other Response
     // shapes that the spec disallows. None of those should affect the
-    // caller -- swallow the rejection and just return the response.
+    // caller - swallow the rejection and just return the response.
     if (cache && response.ok) {
         try {
             const clone = response.clone();
@@ -607,7 +625,7 @@ self.addEventListener('fetch', (event) => {
     // Network-first for "evolves with C# bundle" assets (JS modules,
     // CSS, the SPA document root). C# code that calls a JS export
     // ships in a content-hashed wasm filename, so the new wasm is
-    // always fetched fresh -- but the JS module URLs are stable
+    // always fetched fresh - but the JS module URLs are stable
     // (`./js/leafletInterop.js`, no hash), so a cache-first SW would
     // happily serve yesterday's leafletInterop.js (no new export) to
     // today's wasm (which calls it) and crash on the
@@ -660,7 +678,7 @@ async function networkFirstWithCacheFallback(request) {
 }
 
 /** Plain pass-through fetch with a safety net. Used for /signalk/*
- *  and WebSocket upgrades -- we don't cache or transform those, but
+ *  and WebSocket upgrades - we don't cache or transform those, but
  *  we still own the respondWith promise and need to settle it. */
 async function passThroughOrPlaceholder(request) {
     try {
@@ -706,7 +724,7 @@ async function appShellCacheFirst(request) {
 
     // Cache hit: serve cached + let the refresh run in the background.
     if (cached) {
-        // Don't await fetchPromise -- let it update the cache silently.
+        // Don't await fetchPromise - let it update the cache silently.
         // .catch keeps an unhandled rejection out of the SW's error
         // bus.
         fetchPromise.catch(() => { /* best-effort */ });

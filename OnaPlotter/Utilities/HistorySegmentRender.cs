@@ -72,7 +72,7 @@ public static class HistorySegmentRender
     /// tooltip. Stationary segments lead with the dwell duration;
     /// moving segments lead with distance because that's what the
     /// helm wants to see first for a passage segment. SOG / TWS
-    /// rows are omitted when the underlying samples were absent --
+    /// rows are omitted when the underlying samples were absent -
     /// rendering "0.0 avg / 0.0 max / 0.0 min kn" on a no-SOG track
     /// would mislead. Times rendered in
     /// <paramref name="tooltipTimeZone"/> (defaults to

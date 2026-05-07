@@ -25,7 +25,7 @@ namespace OnaPlotter.Services;
 /// </list>
 /// <para>
 /// Pure function: deterministic given the same inputs and constants.
-/// No DI, no clock, no IO -- the segmenter takes points in and
+/// No DI, no clock, no IO - the segmenter takes points in and
 /// segments out. Tests drive it directly.
 /// </para>
 /// </summary>
@@ -82,10 +82,10 @@ public static class TrackSegmenter
 
         // Pass 3: absorb sub-MinSegmentDuration segments into the
         // adjacent run. The merge needs the points array (to read
-        // segment timestamps) -- we previously called a pure
+        // segment timestamps) - we previously called a pure
         // index-only helper which only caught one-point segments and
         // missed sub-2-minute multi-point ones (e.g. a 90 s moving
-        // blip with 4 SOG-elevated samples -- exactly the "14-second
+        // blip with 4 SOG-elevated samples - exactly the "14-second
         // moving trip the helm caused by stepping on the throttle
         // while berthing" case the constant comment warns about).
         var merged = MergeShortSegments(rawSegments, points);
@@ -127,7 +127,7 @@ public static class TrackSegmenter
             {
                 if (points[j].Timestamp != p.Timestamp) { other = points[j]; break; }
             }
-            // No earlier point with a different timestamp -- look
+            // No earlier point with a different timestamp - look
             // forward instead.
             if (other is null)
             {
@@ -161,7 +161,7 @@ public static class TrackSegmenter
             if (currentState == runState)
             {
                 // Same classification as the committed run. If a
-                // candidate had started, abandon it -- the state
+                // candidate had started, abandon it - the state
                 // didn't persist long enough.
                 candStart = -1;
                 continue;
@@ -224,12 +224,12 @@ public static class TrackSegmenter
         //      blip with four SOG-elevated samples (e.g. the helm
         //      stepping on the throttle while berthing, then easing
         //      back) survives the debounce because the candidate
-        //      ran past the 3-min window before reverting --
+        //      ran past the 3-min window before reverting -
         //      MERGE catches it.
         //
         // The first segment is exempt from absorption: it has no
         // left neighbour. A short HEAD segment instead absorbs the
-        // SECOND segment (if needed) into itself -- the head's
+        // SECOND segment (if needed) into itself - the head's
         // classification wins because the head sample is what we
         // start with.
         if (segments.Count <= 1) return segments;
@@ -279,7 +279,7 @@ public static class TrackSegmenter
         }
 
         // Aggregate SOG + TWS over samples that carry the value. A
-        // null aggregate means "no samples in this segment had it" --
+        // null aggregate means "no samples in this segment had it" -
         // the UI renders that as "—" rather than "0".
         double sogSum = 0; int sogCount = 0;
         double sogMax = double.MinValue, sogMin = double.MaxValue;

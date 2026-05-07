@@ -12,7 +12,7 @@ namespace OnaPlotter.Tests.Services.Map;
 /// Pins the controller's contracts: degenerate-bbox guard, the
 /// no-categories-enabled short-circuit (push empty, don't fetch),
 /// and the cache-then-fetch render order. The fetch debounce
-/// (800 ms) isn't exercised here -- it's covered by integration
+/// (800 ms) isn't exercised here - it's covered by integration
 /// behaviour and would slow the suite without finding bugs the
 /// service / cache tests don't already cover.
 /// </summary>
@@ -63,7 +63,7 @@ public class MarinePoiControllerTests
     {
         // Cache pre-populated with one marina inside the test bbox.
         // Toggling Marina on + reporting bounds must push the marina
-        // to JS without waiting for the Overpass debounce -- the
+        // to JS without waiting for the Overpass debounce - the
         // cache is the source of truth for instant paint.
         var ctx = NewContext();
         ctx.Settings.MarinePoiMarinaEnabled = true;

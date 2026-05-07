@@ -41,7 +41,7 @@
     @* Hazard toggle. When set, HazardousRegionAlarmRule fires a Danger
        banner whenever own-ship enters this polygon. Living next to the
        name input keeps the safety-affecting flag in the helm's eye
-       during every region edit -- a hidden setting buried in a context
+       during every region edit - a hidden setting buried in a context
        menu would be too easy to forget. The label trails the checkbox
        so the panel reads "[name] [Hazard] N vertices Save Cancel" left
        to right. *@
@@ -85,13 +85,13 @@
 
     private async Task OnNameInput(ChangeEventArgs e)
     {
-        // Don't mutate the [Parameter] -- see RouteEditPanel.OnNameInput
+        // Don't mutate the [Parameter] - see RouteEditPanel.OnNameInput
         // for why. Parent owns state; child just notifies.
         var newName = e.Value?.ToString() ?? "";
         await NameChanged.InvokeAsync(newName);
     }
 
-    // "48.2144° N, 11.5753° E" -- matches RouteEditPanel so the two
+    // "48.2144° N, 11.5753° E" - matches RouteEditPanel so the two
     // editing flows feel identical at a glance.
     private static string FormatCoord(double[] c)
     {

@@ -125,7 +125,7 @@ public class MapAnchorJsTests
     [Test]
     public async Task JsDisconnectedException_IsSwallowed()
     {
-        // Page is unmounting -- the wrapper must not bubble
+        // Page is unmounting - the wrapper must not bubble
         // JSDisconnectedException to the caller, since every call
         // site would need the same try/catch otherwise.
         var fake = new RecordingJsRef { ThrowDisconnectedNext = true };

@@ -13,7 +13,7 @@
  * works in every modern browser without prompting for permission and
  * without leaving the URL alive longer than the click handler. The
  * 100 ms revoke delay is the safe minimum across Chromium / WebKit /
- * Firefox -- shorter values race the click event on slow tablets.
+ * Firefox - shorter values race the click event on slow tablets.
  */
 export function triggerFileDownload(filename, content) {
     const blob = (content instanceof Blob)
@@ -42,14 +42,14 @@ export function triggerFileDownload(filename, content) {
  * one button covers them all without a per-target link.
  *
  * Returns the string outcome:
- *   'shared'       -- Web Share completed (system sheet picked + sent)
- *   'cancelled'    -- helm tapped Cancel on the share sheet
- *   'copied'       -- fallback path; text is now on the clipboard
- *   'unavailable'  -- neither share nor clipboard worked
+ *   'shared'       - Web Share completed (system sheet picked + sent)
+ *   'cancelled'    - helm tapped Cancel on the share sheet
+ *   'copied'       - fallback path; text is now on the clipboard
+ *   'unavailable'  - neither share nor clipboard worked
  */
 export async function shareOrCopy(title, text) {
     // Web Share first. AbortError = the helm cancelled the sheet
-    // (still a valid outcome -- they saw the sheet, decided not to
+    // (still a valid outcome - they saw the sheet, decided not to
     // send). Other errors = the API barfed; fall through to clipboard.
     if (typeof navigator.share === 'function') {
         try {
@@ -58,7 +58,7 @@ export async function shareOrCopy(title, text) {
         } catch (err) {
             if (err && err.name === 'AbortError') return 'cancelled';
             // Anything else (NotAllowedError on insecure context,
-            // DataError on bad payload, etc.) -- try clipboard.
+            // DataError on bad payload, etc.) - try clipboard.
         }
     }
     // Clipboard API requires a secure context (https / localhost)

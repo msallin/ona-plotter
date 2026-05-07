@@ -2,7 +2,7 @@ namespace OnaPlotter.Services.Settings;
 
 /// <summary>
 /// Narrow surface for the Wind page only. Two knobs (apparent vs
-/// true hero, compact density) -- enough to deserve its own seam
+/// true hero, compact density) - enough to deserve its own seam
 /// rather than carrying a 43-property interface into a single page.
 ///
 /// <para>Carved from <see cref="IAppSettings"/> as part of ARCH-003.

@@ -3,19 +3,19 @@
 // can be exercised without a Leaflet TileLayer instance, a real map,
 // or DOM. The original handler still owns the side-effects (mutating
 // layer.options.maxNativeZoom, calling layer.redraw(), the
-// console.warn) -- this module only computes the decision.
+// console.warn) - this module only computes the decision.
 //
 // Deferred for discussion (see review SKEP-005 + PARA-004): whether
 // the calibrator is the right level of fix at all (the upstream SK
 // chart server should publish accurate maxzoom) and whether the
 // calibrator should re-arm on recovery rather than only ratcheting
 // the cap downward. This file is the seam those discussions will
-// cut against -- adding a recovery branch or lifting to C# becomes
+// cut against - adding a recovery branch or lifting to C# becomes
 // a localised change.
 
 /** Threshold: the chart needs to fail at its declared cap this many
  *  times in a row before we believe the metadata is lying. 2 is the
- *  sweet spot -- 1 trips on a single transient 404, 3+ delays the
+ *  sweet spot - 1 trips on a single transient 404, 3+ delays the
  *  downshift longer than the helm wants to see blank tiles. */
 export const CHART_DOWNSHIFT_THRESHOLD = 2;
 

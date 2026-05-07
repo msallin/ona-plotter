@@ -40,7 +40,7 @@ public class MapFrameBuilderTests
     [Test]
     public async Task FirstFix_Emits_Position_But_No_TrackSegment()
     {
-        // Track segments need BOTH endpoints -- the first tick after
+        // Track segments need BOTH endpoints - the first tick after
         // boot has no previous point to draw from, so only Pos fires.
         var b = new MapFrameBuilder();
         var frame = b.Build(NavAt(47.4, 8.5, sogMs: 3.0));
@@ -211,7 +211,7 @@ public class MapFrameBuilderTests
         };
         var frame = b.Build(NavAt(47.5, 8.6, sogMs: 4.0));
         await Assert.That(frame.Track).IsNull();
-        // Pos still fires -- we want the boat icon to keep moving;
+        // Pos still fires - we want the boat icon to keep moving;
         // it's only the trail polyline that's suppressed.
         await Assert.That(frame.Pos).IsNotNull();
     }

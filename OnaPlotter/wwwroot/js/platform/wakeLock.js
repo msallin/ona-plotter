@@ -7,7 +7,7 @@
 // Browser support: Chrome / Edge / Safari 16.4+. iOS Safari releases
 // the lock when the tab is hidden (switching apps, background); the
 // visibilitychange handler below re-acquires on return. Nothing to
-// clean up when the feature isn't available -- _acquireWakeLock
+// clean up when the feature isn't available - _acquireWakeLock
 // bails silently.
 
 let _sentinel = null;
@@ -24,7 +24,7 @@ async function _acquire() {
         // either way so a subsequent _acquire() can re-claim.
         _sentinel.addEventListener('release', () => { _sentinel = null; });
     } catch {
-        // Permission denied, battery-saver, etc. -- no retry;
+        // Permission denied, battery-saver, etc. - no retry;
         // nothing here short of bothering the user.
         _sentinel = null;
     }

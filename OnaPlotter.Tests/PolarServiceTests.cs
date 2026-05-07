@@ -219,12 +219,12 @@ public class PolarServiceTests
     public async Task GetOptimal_ZeroWind_DoesNotThrow()
     {
         // Zero TWS is below the sample polar's lowest column (6 kn).
-        // GetTargetSpeed clamps at the boundary -- documented behaviour,
+        // GetTargetSpeed clamps at the boundary - documented behaviour,
         // treats "below sample range" as "use the lowest row". A strict
         // out-of-range null would be more correct for extrapolation but
         // every existing caller (Dashboard, router) handles the clamped
         // value fine. What we DO NOT accept is a throw, a NaN, or an
-        // infinity -- those would crash the router's frontier expansion
+        // infinity - those would crash the router's frontier expansion
         // silently.
         var svc = NewService();
         await svc.ImportAsync(SampleCsv);
@@ -244,7 +244,7 @@ public class PolarServiceTests
         // Exact-boundary case: Bracket clamps when v <= axis[0]; if the
         // clamp condition were strict-less-than, an exact-6 TWS would
         // fall into the interior loop and use a span where v == axis[0]
-        // gives fraction 0 anyway -- both paths must produce the same
+        // gives fraction 0 anyway - both paths must produce the same
         // value. Pin the result so a future refactor of Bracket can't
         // silently shift the boundary.
         var svc = NewService();

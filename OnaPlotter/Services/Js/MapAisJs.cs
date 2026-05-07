@@ -53,7 +53,7 @@ public sealed class MapAisJs : IMapAisJs
     public Task SetGuardZoneWarningRingVisibleAsync(bool visible)
         => InvokeSafe("setGuardZoneWarningRingVisible", visible);
 
-    /// <summary>Returns false during disposal too -- the only caller
+    /// <summary>Returns false during disposal too - the only caller
     /// uses the false branch to surface a "vessel no longer on the
     /// chart" toast, which is a benign no-op when the page is unmounting
     /// and the toast system has already torn down.</summary>

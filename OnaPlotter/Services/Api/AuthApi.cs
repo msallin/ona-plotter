@@ -13,7 +13,7 @@ namespace OnaPlotter.Services.Api;
 /// (the chip retries on the next poll) so logs go through ILogger
 /// at Warning / Information level rather than <c>Console.Error</c>.
 /// The <c>errorRelayBoot.js</c> wrapper hooks <c>console.error</c>
-/// only -- routing handled-and-recoverable lines through ILogger
+/// only - routing handled-and-recoverable lines through ILogger
 /// keeps them out of the SK server's relayed-unhandled-error stream
 /// while still surfacing them in the helm's devtools console.</para></summary>
 public sealed class AuthApi : IAuthApi
@@ -21,7 +21,7 @@ public sealed class AuthApi : IAuthApi
     /// <summary>Per-probe timeout. Short (admin endpoint should
     /// answer in &lt; 100 ms locally; even on a sat link 8 s is
     /// generous). Without this, the default HttpClient timeout is
-    /// 100 s -- the 5-min poll fires again at 300 s and pending
+    /// 100 s - the 5-min poll fires again at 300 s and pending
     /// probes stack until the helm's connection pool is full of
     /// auth requests competing with the SignalK websocket.</summary>
     public static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(8);
@@ -39,7 +39,7 @@ public sealed class AuthApi : IAuthApi
 
     public async Task<LoginStatus?> GetLoginStatusAsync(CancellationToken ct = default)
     {
-        // Path is /skServer/loginStatus -- NOT under /signalk/. The
+        // Path is /skServer/loginStatus - NOT under /signalk/. The
         // SK spec doesn't define an auth-status surface; signalk-
         // server's internal admin endpoint is the de-facto source.
         // BaseUrl strips the plugin mount (origin only), so this
@@ -59,7 +59,7 @@ public sealed class AuthApi : IAuthApi
         {
             // Network error: log so a 3 a.m. "the chip just won't
             // appear" diagnosis has something to grep for. Warning
-            // level (not error) -- the chip retries on the next tick.
+            // level (not error) - the chip retries on the next tick.
             _logger.LogWarning("[auth] probe failed: {Message}", ex.Message);
             return null;
         }
@@ -67,7 +67,7 @@ public sealed class AuthApi : IAuthApi
         {
             // Either the caller cancelled or our 8 s timeout fired.
             // Both are "no signal this tick"; the next poll retries.
-            // Information level -- timeouts are routine on flaky LTE.
+            // Information level - timeouts are routine on flaky LTE.
             _logger.LogInformation("[auth] probe timed out");
             return null;
         }

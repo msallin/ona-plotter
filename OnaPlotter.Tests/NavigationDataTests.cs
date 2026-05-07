@@ -148,7 +148,7 @@ public class NavigationDataTests
         await Assert.That(nav.AnchorLongitude).IsNull();
         await Assert.That(nav.AnchorMaxRadius).IsNull();
         await Assert.That(nav.AnchorCurrentRadius).IsNull();
-        // Peak resets too -- the next anchor drop must not greet the
+        // Peak resets too - the next anchor drop must not greet the
         // helm with yesterday's worst-case distance.
         await Assert.That(nav.AnchorPeakRadius).IsNull();
         // v2.0.0+ plugin-published fields all clear so a raise +
@@ -499,7 +499,7 @@ public class NavigationDataTests
         // during multi-leg routing; the renderer needs it to draw the
         // active-leg line FROM the previous WP TO the next WP. Without
         // this pair the line would either be missing or drawn from the
-        // boat (wrong -- that's the boat-to-WP heading, not the leg).
+        // boat (wrong - that's the boat-to-WP heading, not the leg).
         var nav = new NavigationData();
         nav.ApplyCoursePreviousPointPosition(47.0, 8.5);
         await Assert.That(nav.HasPreviousPoint).IsTrue();
@@ -662,7 +662,7 @@ public class NavigationDataTests
     {
         // Stale auto-advance flags surviving across route changes would
         // cause a one-tick spurious advance the moment a new route
-        // activates -- the same bug that the original auto-advance fix
+        // activates - the same bug that the original auto-advance fix
         // had to fight. Pin the reset.
         var nav = new NavigationData();
         nav.ApplyBool("navigation.course.calcValues.perpendicularPassed", true);

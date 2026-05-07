@@ -6,7 +6,7 @@ namespace OnaPlotter.Services.Alarms;
 /// <summary>
 /// SART / MOB / EPIRB: fires the moment an AIS target with a
 /// distress-transmitter MMSI appears on the net. Doesn't care about
-/// distance, heading, CPA, or buddy status -- the beacon's existence
+/// distance, heading, CPA, or buddy status - the beacon's existence
 /// IS the alarm. Cannot be snoozed (life-safety). Auto-clears when
 /// the target drops off AIS (beacon switched off or out of range).
 ///

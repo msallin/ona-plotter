@@ -5,7 +5,7 @@ namespace OnaPlotter.Utilities;
 /// rain-radar overlay opacity. Single source of truth so the slider
 /// (5-95 %), the C# setting (0.05-0.95), and the JS leaflet layer
 /// (0.05-0.95) can't drift independently. Code review surfaced the
-/// triple-clamp drift risk -- if any of the three sites lowers the
+/// triple-clamp drift risk - if any of the three sites lowers the
 /// floor without updating the others, the constraint becomes
 /// silently inconsistent.
 ///
@@ -21,7 +21,7 @@ public static class WeatherOpacity
     public const double MinFraction = 0.05;
     /// <summary>Upper bound as a fraction (95 %).</summary>
     public const double MaxFraction = 0.95;
-    /// <summary>Default fraction (50 %) -- matches the previous
+    /// <summary>Default fraction (50 %) - matches the previous
     /// baked-in value before the slider shipped, so an existing
     /// install without a stored value keeps the same look.</summary>
     public const double DefaultFraction = 0.5;
@@ -46,7 +46,7 @@ public static class WeatherOpacity
         => Math.Clamp(percent, MinPercent, MaxPercent);
 
     /// <summary>Convert a slider percent to the leaflet-layer
-    /// fraction. Includes the clamp so the math is one-stop --
+    /// fraction. Includes the clamp so the math is one-stop -
     /// callers don't need to remember to clamp before dividing.
     /// </summary>
     public static double PercentToFraction(int percent)

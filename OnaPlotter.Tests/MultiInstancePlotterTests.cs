@@ -16,7 +16,7 @@ namespace OnaPlotter.Tests;
 ///   <item>An ack from ANY plotter clears the banner on EVERY plotter.</item>
 ///   <item>A locally-only dismiss (no v2 id, or canAcknowledge=false)
 ///         leaves the other plotters unchanged.</item>
-///   <item>Concurrent acks from two plotters don't corrupt state -- the
+///   <item>Concurrent acks from two plotters don't corrupt state - the
 ///         ack is idempotent on the server, and the second client sees
 ///         the already-cleared state.</item>
 ///   <item>Snoozes stay plotter-local: silencing a target on plotter A
@@ -24,7 +24,7 @@ namespace OnaPlotter.Tests;
 ///         not a system-wide silence).</item>
 /// </list>
 /// <para>
-/// The fixture is purely in-memory -- no HTTP, no WebSocket. The
+/// The fixture is purely in-memory - no HTTP, no WebSocket. The
 /// <see cref="FakeServer"/> models the server's canonical state and
 /// fans out deltas to every connected plotter. This lets us assert on
 /// the convergence after a series of operations without flakiness from
@@ -45,7 +45,7 @@ public class MultiInstancePlotterTests
     /// <summary>
     /// One plotter instance. Holds the alarm-stack pipeline (store ->
     /// rule -> manager) plus the AlarmManager-injected
-    /// <see cref="INotificationsApi"/> -- the latter routes acks +
+    /// <see cref="INotificationsApi"/> - the latter routes acks +
     /// publish + clear through the shared <see cref="FakeServer"/>.
     /// <para>
     /// Phase B additions: <see cref="PublishedAlarmTracker"/> +
@@ -89,7 +89,7 @@ public class MultiInstancePlotterTests
             var bridgeRule = new ServerNotificationsAlarmRule(Store, api, Tracker);
             // Compose: client-side local rules + bridge rule. The bridge
             // is last so its emissions overlay if a (Title, TargetKey)
-            // collides -- matches the production rule order.
+            // collides - matches the production rule order.
             var allRules = new List<IAlarmRule>(localRules) { bridgeRule };
             Manager = new AlarmManager(allRules, () => Clock.Now, kv: null, settings: null);
             Publisher = new AlarmPublisher(Manager, api, Tracker);
@@ -472,7 +472,7 @@ public class MultiInstancePlotterTests
         // Spec forbids silencing across plotters. PlotterA's helm can
         // dismiss locally (their own banner clears so they can keep
         // working) but PlotterB's banner stays up so the second helm
-        // sees the alarm on their station too -- that's the safety
+        // sees the alarm on their station too - that's the safety
         // property the spec is protecting.
         var server = new FakeServer();
         var a = new Plotter("PlotterA", server);
@@ -492,7 +492,7 @@ public class MultiInstancePlotterTests
         a.Tick(); b.Tick();
         // PlotterA cleared locally; the cooldown suppresses re-emit.
         await Assert.That(a.Manager.ActiveAlarms.Count).IsEqualTo(0);
-        // PlotterB still sees the MOB -- second helm hasn't seen it yet.
+        // PlotterB still sees the MOB - second helm hasn't seen it yet.
         await Assert.That(b.Manager.ActiveAlarms.Count).IsEqualTo(1);
         await Assert.That(b.Manager.ActiveAlarms[0].Title).IsEqualTo("MOB");
         // Server received NO ack call (canAcknowledge=false short-
@@ -572,7 +572,7 @@ public class MultiInstancePlotterTests
     public async Task RepeatedDeltaEcho_DoesNotResurrectClearedAlarm()
     {
         // After PlotterA acks, the server's 60s GC may not have fired
-        // yet -- a re-emission of the same path with the SAME
+        // yet - a re-emission of the same path with the SAME
         // status.acknowledged=true must not unclear the local state.
         // Without idempotency the alarm would flap on every echo.
         var server = new FakeServer();
@@ -598,7 +598,7 @@ public class MultiInstancePlotterTests
     public async Task MultipleConcurrentNotifications_AckIsolatedPerId()
     {
         // Three independent server alarms armed simultaneously. PlotterA
-        // acks ONE -- the other two stay live on both plotters. Per-id
+        // acks ONE - the other two stay live on both plotters. Per-id
         // ack isolation is what makes the cross-plotter flow tractable
         // (no bulk-ack semantics to trip over).
         var server = new FakeServer();
@@ -634,7 +634,7 @@ public class MultiInstancePlotterTests
     {
         // Helm acks an anchor drag at t=0. Server's 60s GC clears the
         // record; the plugin re-arms an hour later when the boat drifts
-        // again -- new id (server derives from context+path+$source but
+        // again - new id (server derives from context+path+$source but
         // a fresh "raise" cycle bumps the version). Both plotters must
         // see the fresh alarm: the dismiss-cooldown is keyed on
         // (Title, TargetKey) and the path is the TargetKey, so a
@@ -817,7 +817,7 @@ public class MultiInstancePlotterTests
         // delta. B's store drops, B's banner clears. A's store also
         // drops (bridge rule was suppressed anyway). A's LOCAL rule
         // keeps firing because the underlying threat hasn't gone away
-        // -- A's banner stays. The publisher tracker still holds the
+        // - A's banner stays. The publisher tracker still holds the
         // path because A's local alarm is still active.
         //
         // This semantics is intentional: ack from B is "I see this on
@@ -887,7 +887,7 @@ public class MultiInstancePlotterTests
         // same id and the system stays in steady state.
         //
         // This is what protects the cross-plotter sync from a thunder-
-        // herd -- N plotters with the same threat don't create N
+        // herd - N plotters with the same threat don't create N
         // distinct server notifications.
         var server = new FakeServer();
         var ruleA = new LocalStubRule("SHALLOW", 100, AlarmSeverity.Danger);

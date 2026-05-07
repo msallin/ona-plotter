@@ -19,7 +19,7 @@
 @* Wrap the page body in .app-page so the heading + tables centre at
    the same max-width gutter Resources / Settings / Wind already use.
    Drops the inline 820 px caps that used to live on the heading and
-   filter -- the .app-page-subtitle helper carries that constraint
+   filter - the .app-page-subtitle helper carries that constraint
    now, and the filter input sits under the subtitle so it inherits
    the same column. *@
 <div class="app-page">
@@ -296,18 +296,18 @@
             // every PUT/POST/DELETE; ResourceStore subscribes and turns
             // them into typed cache mutations + per-type events that
             // Map.razor and Resources.razor consume. Live count on each
-            // row shows what's currently cached -- a regression in the
+            // row shows what's currently cached - a regression in the
             // subscription tier or in the delta dispatcher would surface
             // as zero-count rows even after the helm has REST-loaded.
-            new PathGroup("Resource deltas (WebSocket -- live multi-plotter sync)",
+            new PathGroup("Resource deltas (WebSocket - live multi-plotter sync)",
             [
                 // Live state on these rows comes from the cached count
-                // rather than from the path-availability probe -- the
+                // rather than from the path-availability probe - the
                 // SK server doesn't expose resources.* under
                 // /paths, so we read straight from ResourceStore.
                 // n > 0 -> live, n == 0 -> not seen this session.
                 new("resources.routes.*",
-                    "Saved routes -- multi-plotter live polyline sync",
+                    "Saved routes - multi-plotter live polyline sync",
                     "<code>signalk-server</code> core (resources API)",
                     GetValue: _ =>
                     {
@@ -315,7 +315,7 @@
                         return n > 0 ? $"{n} cached" : null;
                     }),
                 new("resources.waypoints.*",
-                    "Saved waypoints -- multi-plotter live marker sync",
+                    "Saved waypoints - multi-plotter live marker sync",
                     "<code>signalk-server</code> core (resources API)",
                     GetValue: _ =>
                     {
@@ -323,7 +323,7 @@
                         return n > 0 ? $"{n} cached" : null;
                     }),
                 new("resources.notes.*",
-                    "Saved chart notes -- multi-plotter live marker sync",
+                    "Saved chart notes - multi-plotter live marker sync",
                     "<code>signalk-server</code> core (resources API)",
                     GetValue: _ =>
                     {
@@ -331,7 +331,7 @@
                         return n > 0 ? $"{n} cached" : null;
                     }),
                 new("resources.regions.*",
-                    "Saved regions / hazard zones -- multi-plotter live polygon sync; HazardousRegionAlarmRule",
+                    "Saved regions / hazard zones - multi-plotter live polygon sync; HazardousRegionAlarmRule",
                     "<code>signalk-server</code> core (resources API)",
                     GetValue: _ =>
                     {
@@ -342,7 +342,7 @@
             // History + Radar are first-class APIs but ride REST, not
             // the delta stream, so they go in their own group rather
             // than padding the AIS/resources block. Same "no per-path
-            // value" shape as the resources row -- the helm just wants
+            // value" shape as the resources row - the helm just wants
             // to see the endpoint URL + which plugin publishes it.
             new PathGroup("History API (REST)",
             [
@@ -353,7 +353,7 @@
                     + "(install one to populate the History page)",
                     IsLive: _ => true),
                 new("/signalk/v2/api/history/_providers",
-                    "Plugin discovery -- which provider serves history queries",
+                    "Plugin discovery - which provider serves history queries",
                     "<code>signalk-server</code> core (provider registry)",
                     IsLive: _ => true),
             ]),

@@ -66,7 +66,7 @@ public class MapOverlaysJsTests
         // Match the existing call-site behaviour:
         //   module.InvokeVoidAsync("setChartLayerOrder", order.ToArray())
         // No (object) cast at the call site, so C#'s params object?[]
-        // resolution treats string[] as the args array directly --
+        // resolution treats string[] as the args array directly -
         // each id arrives as a separate JS argument, NOT as a single
         // array argument. The wrapper preserves that contract; the
         // mismatch with the JS function shape is a pre-existing

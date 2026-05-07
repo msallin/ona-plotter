@@ -34,7 +34,7 @@ public sealed class ShareService
     /// clipboard (desktop). Toasts the outcome.</summary>
     /// <param name="title">Title shown in the system share sheet
     /// (e.g. waypoint name, "MOB", "Note").</param>
-    /// <param name="json">Pre-serialised payload -- typically a
+    /// <param name="json">Pre-serialised payload - typically a
     /// GeoJSON Feature.</param>
     /// <param name="errorContext">Label used when an unexpected
     /// JS exception leaks; lets log readers separate
@@ -50,7 +50,7 @@ public sealed class ShareService
             {
                 case "shared":    _toasts.Success("Shared"); break;
                 case "copied":    _toasts.Success("Copied to clipboard"); break;
-                case "cancelled": /* helm tapped cancel -- silent */ break;
+                case "cancelled": /* helm tapped cancel - silent */ break;
                 default:          _toasts.Error("Couldn't share or copy."); break;
             }
         }

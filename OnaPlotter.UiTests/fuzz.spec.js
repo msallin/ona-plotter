@@ -9,7 +9,7 @@ import { test } from '@playwright/test';
 import { collectErrors, waitForMapReady, seededRandom } from './helpers.js';
 
 const FUZZ_SEED = parseInt(process.env.FUZZ_SEED ?? `${Date.now() & 0x7fffffff}`, 10);
-// Local-default click budget. CI overrides via FUZZ_CLICKS in ci.yml --
+// Local-default click budget. CI overrides via FUZZ_CLICKS in ci.yml -
 // see the per-click cost note above the test.setTimeout call below.
 const FUZZ_CLICKS = parseInt(process.env.FUZZ_CLICKS ?? '40', 10);
 

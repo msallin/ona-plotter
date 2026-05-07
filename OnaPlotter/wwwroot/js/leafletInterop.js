@@ -36,7 +36,7 @@ let map = null;
 // internal layer lookups. See the moveend handler in initMap.
 let boundsTimer = null;
 // Weak-client detection (Raspberry Pi, older tablets). Gates
-// perf-heavy options -- tile streaming during pan, AIS updates
+// perf-heavy options - tile streaming during pan, AIS updates
 // during active drag, etc. Computed once in initMap() so the
 // same flag drives every layer created later.
 let isSlowClient = false;
@@ -56,7 +56,7 @@ let ownCogMinutes = 10;
 // Laylines have their own independent toggle: the C# frame builder
 // sets frame.laylines to null when the helm hides them, so no
 // dedicated JS gate is needed for that layer. Bearing line + XTE
-// tick are NOT gated -- they're navigation guidance.
+// tick are NOT gated - they're navigation guidance.
 let shipLinesVisible = true;
 
 // Own-boat MMSI, pushed from C# once SignalkClient.SetSelfContext
@@ -72,7 +72,7 @@ let ownMmsi = null;
 let ownCallsign = null;
 let boatMarker = null;
 let boatVector = null;
-let boatVectorTip = null;  // Filled dot at the COG-vector end -- matches AIS layer's tip.
+let boatVectorTip = null;  // Filled dot at the COG-vector end - matches AIS layer's tip.
 let vectorLabel = null;  // Time/distance label at end of COG vector.
 // Tidal-current arrow (full implementation lower down). Hoisted here
 // because setShipLinesVisible() needs to tear it down on toggle, and
@@ -111,7 +111,7 @@ export function setSignalKBaseUrl(url) {
  *  Leaflet moveend handler attached inline (via eval) can invoke
  *  back into C#. Replaces an earlier `eval("window._historyDotNet
  *  = arguments[0]", ref)` call which threw "arguments is not
- *  defined" -- eval runs in the surrounding script/module strict
+ *  defined" - eval runs in the surrounding script/module strict
  *  context where `arguments` isn't bound, and Blazor's eval interop
  *  doesn't pass extra args to the eval'd code anyway. A real
  *  exported function via JSObjectReference.InvokeVoidAsync DOES
@@ -129,12 +129,12 @@ function flagUrl(mmsi) {
 }
 
 // Guard-zone state is owned by aisLayer.js along with the rest of the
-// CPA pipeline -- the ring is the visual companion to the alarm
+// CPA pipeline - the ring is the visual companion to the alarm
 // thresholds it carries.
 
 // MarkerLayer now lives in markerLayer.js so it's unit-testable in
 // node (see markerLayer.test.js). Each instance needs a reference to
-// the Leaflet map for removeLayer() -- since `map` gets assigned in
+// the Leaflet map for removeLayer() - since `map` gets assigned in
 // initMap *after* these dicts are constructed, MarkerLayer takes the
 // map reference lazily via setMap() below, once initMap runs.
 
@@ -149,7 +149,7 @@ let zoomBadge = null;
 
 // "Nice round" nautical-mile values for the corner range scale chip
 // AND the pinch-zoom preview. Single source of truth so the bar in
-// the corner and the chip floating mid-gesture pick the same step --
+// the corner and the chip floating mid-gesture pick the same step -
 // previously this lived as a duplicated literal in both places. Same
 // ladder every commercial plotter uses (Garmin / B&G / Raymarine).
 const RANGE_SCALE_NM_LADDER = [
@@ -204,7 +204,7 @@ function computeNiceScale(map, sampleHalfPx, minPx) {
 // Zoom-level badge. Compact "z N" at glance; an amber "↑" appears
 // when the map is zoomed past the top chart's native max so tiles
 // are being scaled up. Full "native K" text moves to the title
-// tooltip rather than widening the badge -- the bottom-left row
+// tooltip rather than widening the badge - the bottom-left row
 // was pushing the depth HUD upward when the badge grew mid-pan.
 const ZoomBadge = L.Control.extend({
     onAdd() {
@@ -289,7 +289,7 @@ function updateRangeScale() {
  * Hide the range-scale chip while another HUD card occupies the
  * bottom-centre slot (active route during navigation). Toggled from
  * C# on setActiveRoute / clearActiveRoute. Idempotent. Safe to call
- * before initRangeScale -- the no-op early-return covers the bootstrap
+ * before initRangeScale - the no-op early-return covers the bootstrap
  * window.
  */
 export function setRangeScaleHidden(hidden) {
@@ -466,14 +466,14 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // parsed, then build the own-boat icon from the refreshed value.
     // Doing this inside initMap (instead of at module load) means a
     // palette tweak applied via :root takes effect without touching
-    // the JS -- the one edit site is app.css.
+    // the JS - the one edit site is app.css.
     readMapColors();
     selfIcon = makeIcon(makeBoatSvg(MapColors.own, 30, true), 30);
 
     // The slow-client flag is detected on the C# side
     // (ClientCapabilitiesService) and passed in here. Coercing to a
     // bool in case Blazor's interop hands us undefined for an older
-    // C# call site that hasn't been updated yet -- in that case we
+    // C# call site that hasn't been updated yet - in that case we
     // fall back to the desktop-class default of false.
     isSlowClient = !!slowClient;
 
@@ -483,7 +483,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // in app.css, so we don't have to thread the flag into every rule.
     try {
         document.documentElement.dataset.slowClient = isSlowClient ? '1' : '0';
-    } catch (_) { /* SSR / no DOM -- ignore */ }
+    } catch (_) { /* SSR / no DOM - ignore */ }
 
     // preferCanvas: true routes all L.polyline / L.polygon / L.circle /
     // L.circleMarker draw calls through a single HTML canvas instead of
@@ -503,7 +503,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // as "overzoom doesn't work"). OSM / OpenSeaMap (synthesised in
     // OnaPlotter/Utilities/BuiltInCharts.cs) deliberately ship with
     // AllowUpscale=false and MaxZoom=19, so they cap at native and
-    // go blank past 19 -- this is intentional, so the upscaled SK
+    // go blank past 19 - this is intentional, so the upscaled SK
     // chart on top dominates and a frame-late basemap upscale
     // doesn't compete with it (helm field-tested as flicker).
     //
@@ -515,7 +515,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         maxZoom: 19 + 5,         // 5 == ChartUpscale.MaxLevels (mirrored in C#)
         preferCanvas: isSlowClient,
         // Half-step zoom. Default 1.0 jumps a full power-of-two per
-        // tap which is too coarse for chart work -- the helm sees a
+        // tap which is too coarse for chart work - the helm sees a
         // 2x scale change when usually 1.4x is what's wanted to nudge
         // detail in / out. zoomSnap: 0.5 + zoomDelta: 0.5 lands every
         // mouse / topbar tap at half-integer levels (17.5, 18.0, 18.5).
@@ -529,7 +529,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         // notch == one zoom level on Linux. macOS / Windows trackpads
         // and high-resolution wheels emit smaller delta-values that
         // accumulate via wheelDebounceTime, so they still zoom
-        // smoothly -- this just removes the over-quantisation on the
+        // smoothly - this just removes the over-quantisation on the
         // notched mouse path.
         wheelPxPerZoomLevel: 100,
     }).setView([lat, lon], zoom);
@@ -575,7 +575,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // three spread `...editModeDeps` into their options bag, and `const`
     // is in the temporal dead zone until its line executes. The
     // previous order ("declare after the spreads, hoping function-scope
-    // hoisting saves us") threw ReferenceError at runtime -- `var`
+    // hoisting saves us") threw ReferenceError at runtime - `var`
     // would have hoisted, but `const` does not, and a freshly-loaded
     // page crashed the whole map render.
     const editModeDeps = {
@@ -614,7 +614,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         routeTotalNauticalMiles,
         clearCourseLine: () => courseLineLayerMod.clearCourseLine(),
         // Tell courseLineLayer to hide its own pulsing destination
-        // marker while we own one -- otherwise both render at the
+        // marker while we own one - otherwise both render at the
         // same coord and read as "one waypoint two symbols".
         setCoursePulseSuppressed: (s) => courseLineLayerMod.setCoursePulseSuppressed(s),
     });
@@ -630,7 +630,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // "z14" chip so the helm can tell at a glance whether they're at
     // z14 or z16 without poking the +/- buttons until tile detail
     // changes. The metric + nautical scale bars used to live here too
-    // but were removed -- the helm asked for a quieter chrome strip
+    // but were removed - the helm asked for a quieter chrome strip
     // and the rose / radar overlays both carry their own range cues
     // already (rings, radar range chip), so the scale was redundant.
     zoomBadge = new ZoomBadge({ position: 'bottomleft' });
@@ -640,7 +640,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
 
     // Range scale: instrument-styled tick + label so the helm can
     // gauge distance on the chart without poking the +/- buttons.
-    // Bottom-left corner -- same Leaflet control rail as the zoom
+    // Bottom-left corner - same Leaflet control rail as the zoom
     // badge so the two chips stack predictably even when the depth
     // HUD card moves on viewport changes.
     initRangeScale(map);
@@ -686,7 +686,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     boatMarker.bindPopup('', { className: 'ais-popup', maxWidth: 260, closeButton: false });
     boatMarker.on('popupopen', () => {
         // In measure mode, tapping the boat means "anchor this leg to the
-        // vessel" -- the measurement starts (or continues) from the boat
+        // vessel" - the measurement starts (or continues) from the boat
         // and tracks it as it moves. Swallow the popup so the helm doesn't
         // get the data card flashed up while they're plotting a distance.
         if (measureLayerMod.isActive()) {
@@ -697,7 +697,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         const data = boatMarker._onaSelfData || {};
         boatMarker.setPopupContent(buildSelfPopupHtml(data));
     });
-    // Own COG vector -- matches the AIS COG vector style (weight 1.5,
+    // Own COG vector - matches the AIS COG vector style (weight 1.5,
     // dash 6/4) but in MapColors.own (the boat's identity colour, same
     // chevron palette) instead of the lighter MapColors.cogVector. Helm
     // wants a single visual language: own + AIS vectors look the same,
@@ -766,7 +766,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         const y = Math.min(pt.y, sz.y - 125);
         // .catch: dotNetRef can be disposed between the null-check above
         // and the dispatch landing on the C# side. Same pattern across
-        // every invokeMethodAsync callsite -- silent-swallow is correct
+        // every invokeMethodAsync callsite - silent-swallow is correct
         // because the target page is already unmounting.
         dotNetRef.invokeMethodAsync('OnMapContextMenu',
             latlng.lat, latlng.lng, Math.max(x, 5), Math.max(y, 5)).catch(() => {});
@@ -800,7 +800,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // later at the original coordinate. Pointerdown on the alarm
     // is a stronger signal of intent than the lingering map timer.
     // Held in the module-scoped `_alarmBannerPointerDown` so dispose()
-    // can call removeEventListener -- without that, every Map mount /
+    // can call removeEventListener - without that, every Map mount /
     // unmount cycle (helm flipping between Chart and Settings) leaks
     // a fresh listener that holds a closure over the disposed map's
     // cancelLongPress.
@@ -819,7 +819,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
         // popup on tap; without excluding it, a touch on the CPA chip
         // also armed the long-press context menu, so both the popup
         // AND the context menu fired on the same finger-down.
-        // Not excluding .leaflet-interactive on purpose -- the context
+        // Not excluding .leaflet-interactive on purpose - the context
         // menu is "create at this point" and the user may very well
         // want that while their finger is over a route line or AIS
         // target; only TOOLTIPS that have their own tap semantics opt
@@ -839,7 +839,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
             // finger AFTER touchstart fired on the map, the original
             // pointerdown stays bound to its first target so our
             // existing alarm-pointerdown cancel never runs. Probe
-            // what's currently rendered at the press location -- if
+            // what's currently rendered at the press location - if
             // it's the banner, the user is dismissing the alarm, not
             // opening the chart context menu.
             const overEl = document.elementFromPoint(
@@ -917,7 +917,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     //
     // The 300 ms debounce is also the window where the user can navigate
     // away before the callback fires. Re-check `map` + `dotNetRef` inside
-    // the timeout -- both are nulled on dispose() and calling
+    // the timeout - both are nulled on dispose() and calling
     // `map.getBounds()` after that throws the infamous
     // "can't access property addLayer, t is null" via Leaflet's internal
     // layer lookups. Defensive re-check is cheap and covers the race.
@@ -937,7 +937,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // Fire OnMapBoundsChanged ONCE on init with the initial viewport.
     // Moveend won't fire until the user actually pans, so without this
     // the Layers panel lists every chart/route regardless of what's
-    // visible until the first interaction -- user-reported "bounds
+    // visible until the first interaction - user-reported "bounds
     // aren't respected on first load". Timeout = 0 lets Leaflet settle
     // its first render (size, CRS) before getBounds() is called.
     setTimeout(() => {
@@ -1002,7 +1002,7 @@ export function applyFrame(frame) {
     }
     if (frame.course) {
         const c = frame.course;
-        // Reuse the boat position from the frame -- course line needs
+        // Reuse the boat position from the frame - course line needs
         // it and the C# side already sent it, no reason to duplicate.
         const selfLat = frame.pos ? frame.pos.lat : null;
         const selfLon = frame.pos ? frame.pos.lon : null;
@@ -1034,7 +1034,7 @@ export function applyFrame(frame) {
  * Updates the gate and tears down the visible COG vector + current
  * arrow immediately so the change is felt on the next render tick
  * instead of "next time the boat moves". Laylines are NOT touched
- * here -- they have their own toggle (Settings.LaylinesVisible
+ * here - they have their own toggle (Settings.LaylinesVisible
  * gates the per-tick frame.laylines payload C#-side, and the
  * dedicated ClearLaylinesAsync call covers the on-disable
  * teardown). A subsequent applyFrame / updatePosition call paints
@@ -1081,7 +1081,7 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         : null;
     if (end) {
         boatVector.setLatLngs([[lat, lon], end]);
-        // Tip dot at the vector end -- mirrors aisLayer's vessel
+        // Tip dot at the vector end - mirrors aisLayer's vessel
         // vector tip so own + AIS vectors share the same visual
         // landmark ("boat will be here at +ownCogMinutes"). Same
         // shape: filled circle, MapColors.own, non-interactive.
@@ -1338,7 +1338,7 @@ export function setNightMode(enabled) {
 // A tileerror-driven downshift calibrator (see chartZoomErrors and
 // the layer.on('tileerror', ...) handler below) handles the case
 // where a chart's metadata over-declares maxzoom: after N 404s at
-// the current cap, drop maxNativeZoom by 1 and redraw. Idempotent --
+// the current cap, drop maxNativeZoom by 1 and redraw. Idempotent -
 // once we drop to the chart's actual native zoom, errors stop.
 //
 // Per-chart tile-error counter, surfaced via getChartTileErrors() for
@@ -1349,7 +1349,7 @@ const chartTileErrors = new Map();   // id -> total count
 
 // Per-chart per-zoom error tally for the downshift calibrator. When
 // N errors land at the layer's current `maxNativeZoom`, we drop the
-// cap by 1 and redraw -- the helm's chart server claims a maxzoom
+// cap by 1 and redraw - the helm's chart server claims a maxzoom
 // the tile pyramid doesn't actually reach (common with MBTiles
 // providers that publish the requested-build maxzoom even when the
 // build truncated earlier). v1 of the overzoom feature avoided
@@ -1393,13 +1393,13 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         // overrides this anyway (single-chart -> 1.0; stacked -> ramp
         // from 1.0 down). The literal here matches the default-final
         // state so a layer that's added but somehow never restacked
-        // (defensive only -- this path shouldn't exist) still renders
+        // (defensive only - this path shouldn't exist) still renders
         // at full contrast.
         opacity: opacity || 1.0,
         // keepBuffer + updateWhenIdle match base layers; don't re-fetch
         // chart tiles when the user zig-zags back into territory they
         // just panned away from. updateWhenIdle follows the client-
-        // strength detection -- slow devices defer tile fetches to pan-
+        // strength detection - slow devices defer tile fetches to pan-
         // end so the drag stays smooth. detectRetina on fast clients
         // sharpens chart tiles on high-DPI displays (iPad Retina would
         // otherwise blur the 256-px source up to 512 px of screen).
@@ -1418,7 +1418,7 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         attribution: attribution || '',
         // referrerPolicy: matches what the previous hardcoded
         // osmBaseLayer / seaBaseLayer used so the OSM tile servers
-        // see only the origin (not the full referrer URL) -- some
+        // see only the origin (not the full referrer URL) - some
         // tile providers reject when the referrer carries a path
         // they don't whitelist.
         referrerPolicy: 'strict-origin-when-cross-origin',
@@ -1428,7 +1428,7 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
     // provider sending [NaN, NaN, NaN, NaN] or [Infinity, ...] or
     // out-of-range lat/lon would otherwise reach L.latLngBounds and
     // produce a degenerate object whose tile-intersection check
-    // returns false for everything -- silent blank chart. Match the
+    // returns false for everything - silent blank chart. Match the
     // sanity range LoadMapView uses (-90 <= lat <= 90; lon clamped
     // generously since wrap-around mid-pacific charts are real).
     if (bounds && bounds.length === 4 &&
@@ -1469,7 +1469,7 @@ export function addChartLayer(id, tileUrl, minZoom, maxZoom, opacity, bounds, up
         // this handler reads layer state, asks decideDownshift what to
         // do, then applies side-effects. Refactor preserves the
         // historical behaviour (idempotent, only acts at the cap, only
-        // on bonafide tileerror events) -- pinned by chartDownshift.test.js.
+        // on bonafide tileerror events) - pinned by chartDownshift.test.js.
         const zoomMap = chartZoomErrors.get(id);
         if (!zoomMap) return;
         const z = ev?.coords?.z;
@@ -1536,7 +1536,7 @@ export function removeChartLayer(id) {
     // Stop the layer's tileerror handler before MarkerLayer.remove
     // detaches it. Leaflet doesn't unbind layer-level listeners on
     // _onRemove, and an in-flight <img> that 404s after detach would
-    // otherwise still fire the handler -- the .has(id) guard inside
+    // otherwise still fire the handler - the .has(id) guard inside
     // the handler defends against the resulting deleted-then-re-set
     // entry, but turning the dispatch off entirely is the simpler
     // belt-and-suspenders.
@@ -1552,7 +1552,7 @@ export function removeChartLayer(id) {
 
 // Graduated opacity for stacked charts. The bottom (primary) chart
 // always renders at full opacity so a single-chart helm sees the
-// chart's authored colours / contrast verbatim -- the previous
+// chart's authored colours / contrast verbatim - the previous
 // flat-0.85 dim made Navionics MBTiles look noticeably less crisp
 // than they should. Each chart stacked ABOVE the primary then ramps
 // down to 0.45 so the helm reads the stack as layers rather than the
@@ -1590,7 +1590,7 @@ function restackChartOpacities() {
 // matching IAppSettings.ChartOrder convention. Each enabled layer's
 // z-index is updated so Leaflet paints them in the requested order,
 // regardless of .addTo insertion order. Ids not currently enabled are
-// skipped silently -- they'll be positioned when they're re-enabled.
+// skipped silently - they'll be positioned when they're re-enabled.
 export function setChartLayerOrder(orderedIds) {
     if (!map || !orderedIds) return;
     const base = 50;
@@ -1604,7 +1604,7 @@ export function setChartLayerOrder(orderedIds) {
 // Current chart-display CSS filter (contrast / saturation / brightness
 // shorthand). Empty string = identity, no filter applied. Stored at
 // module level so addChartLayer can re-apply it to a chart added AFTER
-// the helm tweaked the slider -- otherwise the new chart would render
+// the helm tweaked the slider - otherwise the new chart would render
 // at default contrast while the existing stack stays boosted.
 //
 // The string is built C#-side by ChartFilter.Format (invariant culture,
@@ -1634,7 +1634,7 @@ function applyChartFilter(layer) {
         ? layer.getContainer()
         : layer._container;
     if (!el) return;
-    // '' assigns the empty string which clears the inline filter --
+    // '' assigns the empty string which clears the inline filter -
     // the compositor then sees no filter at all, not a no-op
     // contrast(1) which still costs a paint pass.
     el.style.filter = currentChartFilter;
@@ -1678,7 +1678,7 @@ export function addRoute(id, name, coords, totalNm) {
     }).addTo(map);
 
     // totalNm is precomputed in C# (see Map.razor's AddRouteToMap
-    // call site -- RouteProgress.TotalDistanceMeters / 1852). JS
+    // call site - RouteProgress.TotalDistanceMeters / 1852). JS
     // used to redo the haversine sum here; the duplication has been
     // removed per the project rule (decisions/math in C#). Defensive
     // fallback if a future caller forgets the arg: 0 reads as
@@ -1701,7 +1701,7 @@ export function addRoute(id, name, coords, totalNm) {
             // measuring AROUND an existing route was impossible
             // because the polyline ate every click. Marker / region /
             // active-route polyline clicks deliberately use the
-            // historical route-first order -- those targets are
+            // historical route-first order - those targets are
             // unambiguous (the helm tapped a specific item) so the
             // measure-first override is scoped to the empty-map and
             // stale-route polyline cases only.
@@ -1725,7 +1725,7 @@ export function addRoute(id, name, coords, totalNm) {
     // bindTooltip writes its string argument to innerHTML, so the
     // server-supplied route name has to be HTML-escaped or a name
     // like '<img src=x onerror=...>' would execute. esc() once outside
-    // the loop -- name doesn't change per vertex.
+    // the loop - name doesn't change per vertex.
     const group = L.layerGroup([line, hitLine]).addTo(map);
     const safeTipName = name ? esc(name) : '';
     for (let i = 0; i < coords.length; i++) {
@@ -1742,7 +1742,7 @@ export function addRoute(id, name, coords, totalNm) {
 // distance line. addRoute() no longer calls this (it accepts a
 // precomputed totalNm from C# via RouteProgress.TotalDistanceMeters
 // / 1852, per the project rule that decisions/math live in C#).
-// Still used by activeRouteLayer.js via dep injection -- the active-
+// Still used by activeRouteLayer.js via dep injection - the active-
 // route popup hasn't been migrated yet because the C# active-route
 // sync controller doesn't compute the total NM today; that's a
 // follow-up. When that lands this function can be deleted alongside
@@ -1769,7 +1769,7 @@ function buildRoutePopupHtml(id, name, wpCount, nmTotal) {
         </div>`;
 }
 
-// Single-tap Activate -- no two-step confirm like delete, because
+// Single-tap Activate - no two-step confirm like delete, because
 // activating a route is non-destructive (the old active course is
 // just replaced on the server side).
 function wireRouteActivate(popup, id, name) {
@@ -1787,7 +1787,7 @@ function wireRouteActivate(popup, id, name) {
     });
 }
 
-// Edit button -- matches the Layers-panel Edit action. Hands off to
+// Edit button - matches the Layers-panel Edit action. Hands off to
 // C# which flips routeEditLayerMod.isActive() on and loads the polyline into the
 // edit layer. Closes the popup immediately so a second tap doesn't
 // land on a now-invisible button (the edit toolbar takes over the
@@ -1830,7 +1830,7 @@ export function setActiveRouteTtgSeconds(seconds) {
 // Returns null when ttg is null / non-positive so the popup can drop
 // the row entirely instead of showing "ETA --". For >99h the
 // parenthetical collapses to "(in >99h)" rather than lying with a
-// truncated "(in 99h 59m)" -- that ambiguity surfaced in code
+// truncated "(in 99h 59m)" - that ambiguity surfaced in code
 // review. Realistically the helm doesn't sit on a >4-day leg
 // without an intermediate waypoint, but the contract holds.
 function formatRouteEta(ttgSeconds) {
@@ -1847,7 +1847,7 @@ function formatRouteEta(ttgSeconds) {
 }
 
 // Read the live TTG, decremented by the elapsed wall-clock since
-// the last C# push. This is what the popup actually wants -- a
+// the last C# push. This is what the popup actually wants - a
 // stale-from-30-minutes-ago cache returns the right answer because
 // we subtract the elapsed time. Returns null when no value has
 // ever been pushed or the decrement crossed zero (boat arrived).
@@ -1879,7 +1879,7 @@ function buildActiveRoutePopupHtml(id, name, wpCount, nmTotal) {
         </div>`;
 }
 
-// Single-tap Deactivate -- non-destructive (the route resource stays;
+// Single-tap Deactivate - non-destructive (the route resource stays;
 // only the active SignalK course is cleared), so no two-step confirm.
 // Mirrors the bottom-bar Stop Navigation button via the
 // DeactivateActiveRoute [JSInvokable] on Map.razor.cs.
@@ -1912,7 +1912,7 @@ export function removeRoute(id) { routeLayers.remove(id); }
 // window where the polyline disappears, and forces the helm to
 // re-locate the dashed-leg overlay (active-route layer) which
 // hooks into the route's coords. setLatLngs is the leaflet-native
-// "the geometry changed; keep everything else" path -- click
+// "the geometry changed; keep everything else" path - click
 // handlers + popupopen wiring + the layer's identity in the
 // activeRouteLayer's diff stay valid. Vertex DOTS are the one
 // piece that has to rebuild because their count is geometry-
@@ -1950,7 +1950,7 @@ export function updateRoute(id, name, coords, totalNm) {
 
     // Vertex dots: count is geometry-dependent (route-edit adds /
     // removes waypoints), so rebuild rather than try to setLatLng
-    // each surviving one. Escape the route name once -- bindTooltip
+    // each surviving one. Escape the route name once - bindTooltip
     // writes its argument to innerHTML, so a remote-edited name must
     // not be interpolated raw.
     for (const d of dots) group.removeLayer(d);
@@ -2015,7 +2015,7 @@ function _renderServerTrack() {
         if (coords.length === 0) return;
     }
     // Group consecutive samples by speed bucket and emit one
-    // polyline per run -- same scheme as setColoredTrack so the
+    // polyline per run - same scheme as setColoredTrack so the
     // server track and the local trail are visually identical.
     // Falls back to an L.featureGroup so all runs are added /
     // removed as one server-track layer.
@@ -2106,7 +2106,7 @@ export const loadRouteForEdit = (coords) => routeEditLayerMod.loadRouteForEdit(c
 // to the top of the module: the call sites (line click handlers,
 // drop-on-canvas dispatchers near 498/690/1344) are inside callback
 // bodies that would still resolve at runtime, but ESLint's
-// no-use-before-define can't see through the closure -- function
+// no-use-before-define can't see through the closure - function
 // declarations side-step the rule cleanly without disable comments
 // at every call site.
 function addEditWaypoint(lat, lon) { return routeEditLayerMod.addEditWaypoint(lat, lon); }
@@ -2225,8 +2225,14 @@ export const removeNoteMarker = (id) => noteLayerMod.removeNoteMarker(id);
 export const clearNotes = () => noteLayerMod.clearNotes();
 export const openNotePopup = (id) => noteLayerMod.openNotePopup(id);
 
-export const addRegion = (id, rings, title, description) =>
-    regionLayerMod.addRegion(id, rings, title, description);
+export const addRegion = (id, rings, title, description,
+                          isHazard, areaSqM,
+                          centerLat, centerLon, radiusMeters,
+                          createdAtIso) =>
+    regionLayerMod.addRegion(id, rings, title, description,
+                             isHazard, areaSqM,
+                             centerLat, centerLon, radiusMeters,
+                             createdAtIso);
 export const removeRegion = (id) => regionLayerMod.removeRegion(id);
 export const clearRegions = () => regionLayerMod.clearRegions();
 export const focusRegion = (id, firstRing) => regionLayerMod.focusRegion(id, firstRing);
@@ -2322,7 +2328,7 @@ export function setCurrentArrow(selfLat, selfLon, setRad, driftMs) {
         return;
     }
     // Arrow length proportional to drift. Helm flagged the arrow as
-    // "very prominent but not that important" -- drift magnitude is
+    // "very prominent but not that important" - drift magnitude is
     // already shown in the bottom-right HUD, so the on-chart arrow
     // is purely a directional cue. Tone it down to the same visual
     // weight class as the COG vector (thin + dashed + dim) and cap
@@ -2363,7 +2369,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
         // Don't hijack browser shortcuts. Ctrl+R / Cmd+R (reload),
-        // Ctrl+W (close tab), etc. all involve a modifier -- the map's
+        // Ctrl+W (close tab), etc. all involve a modifier - the map's
         // single-letter shortcuts don't, so dropping modifier combos
         // here is harmless and stops us clobbering "r" -> reload on
         // desktop Chromium + Safari. Arrow keys still fire below even
@@ -2372,7 +2378,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
 
         // Arrow keys pan the map. Leaflet's built-in keyboard handler
         // requires the map container to have focus, which gets lost
-        // whenever the user clicks any other element -- in practice
+        // whenever the user clicks any other element - in practice
         // arrows just scrolled the page. Drive it directly so arrows
         // always pan the chart, regardless of focus.
         //
@@ -2397,7 +2403,7 @@ export function enableKeyboardShortcuts(dotNetObjRef) {
             // A manual pan should drop follow-mode; otherwise the next
             // position delta would yank the view back. Mirror the
             // mouse-drag break-follow contract (suppressMoveEnd isn't
-            // what we want here -- that suppresses the callback, not
+            // what we want here - that suppresses the callback, not
             // the follow flag).
             if (followBoat) {
                 followBoat = false;

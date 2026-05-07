@@ -5,7 +5,7 @@
    on the map get inline reorder arrows that edit their position in
    the draw stack. Previously this section had a separate "yellow
    box" ActiveStack above the list that duplicated the rendering
-   charts -- it was confusing because ticking the checkbox added the
+   charts - it was confusing because ticking the checkbox added the
    chart to the quick bar but didn't make it render, so the yellow
    box stayed empty until a second tap on the map chip. Merging into
    one row per chart removes the two-tap surprise and keeps the
@@ -23,7 +23,7 @@
         show / hide the chart. Rendering charts get up/down arrows to
         order the draw stack (top of the stack = in front).
     </div>
-    @* Row shape is the same for every chart -- reorder arrows always
+    @* Row shape is the same for every chart - reorder arrows always
        present so the affordance is stable and the row doesn't
        jump width when rendering flips. Disabled state on an arrow
        when the chart isn't in the draw stack (or is already at an
@@ -88,7 +88,7 @@
        / brightness. Helms running raster Navionics PNGs find them
        washed out at noon and unreadable in glare; small contrast +
        saturation boosts make a real difference. Brightness range is
-       tighter (50-150) -- past 150 the chart blooms out and contour
+       tighter (50-150) - past 150 the chart blooms out and contour
        lines fade. Reset button lands every channel back at the
        identity default. *@
     <div class="chart-filter-group" @onclick:stopPropagation>
@@ -187,12 +187,12 @@
     /// three under one OnSettingsChanged broadcast.</summary>
     [Parameter] public EventCallback OnFilterReset { get; set; }
 
-    // Collapsed by default -- the Layers panel opens compact, the user
+    // Collapsed by default - the Layers panel opens compact, the user
     // expands only the sections they need. See agents.md "UX principles".
     private bool expanded = false;
 
     // Enablement reads directly from the iteration order above; do not
-    // re-introduce a separate "active stack" projection -- having both
+    // re-introduce a separate "active stack" projection - having both
     // the z-stack and the visible-list as separate state lets them drift
     // and breaks the reorder arrows.
 

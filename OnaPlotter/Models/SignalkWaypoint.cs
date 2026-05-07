@@ -20,7 +20,7 @@ public sealed class SignalkWaypoint
     /// so the popup-Edit flow can pre-fill the description field with
     /// the previously-saved value rather than emptying it on rename.
     /// Marked JsonIgnore so the C# field doesn't accidentally
-    /// re-emit a top-level <c>description</c> on Create/Update -- the
+    /// re-emit a top-level <c>description</c> on Create/Update - the
     /// wire side stays in <c>feature.properties.description</c>.</summary>
     [JsonIgnore]
     public string? Description { get; set; }
@@ -30,7 +30,7 @@ public sealed class SignalkWaypoint
     /// the SK Waypoint schema doesn't include this; we ride along on
     /// the resource body and rely on resources-fs preserving the
     /// field on round-trip. Waypoints created by other clients
-    /// (Freeboard, KIP) won't carry it -- the popup renders a dash
+    /// (Freeboard, KIP) won't carry it - the popup renders a dash
     /// for those rather than a fake "now".</summary>
     [JsonPropertyName("createdAt")]
     public DateTime? CreatedAt { get; set; }

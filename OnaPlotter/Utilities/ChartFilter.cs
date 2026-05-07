@@ -10,7 +10,7 @@ namespace OnaPlotter.Utilities;
 /// JS converts to the CSS <c>contrast(...) saturate(...) brightness(...)</c>
 /// shorthand applied to each chart tile-layer container.
 ///
-/// <para>Pure functions only -- no JS interop, no IO. Pinned by
+/// <para>Pure functions only - no JS interop, no IO. Pinned by
 /// ChartFilterTests so the chart tile pipeline can rely on the clamp
 /// + identity-shortcut behaviour without re-deriving it.</para>
 /// </summary>
@@ -18,7 +18,7 @@ public static class ChartFilter
 {
     /// <summary>Lower bound for every channel. Below 50 the chart
     /// reads as a smear and the helm can't tell apart chart features
-    /// from background noise -- worse than the default washout.</summary>
+    /// from background noise - worse than the default washout.</summary>
     public const int MinPercent = 50;
 
     /// <summary>Upper bound for contrast + saturation. Past 200 the
@@ -27,7 +27,7 @@ public static class ChartFilter
     public const int MaxContrastSaturation = 200;
 
     /// <summary>Upper bound for brightness. Past 150 the chart blooms
-    /// out and the depth contours fade -- the opposite of helpful in
+    /// out and the depth contours fade - the opposite of helpful in
     /// daylight.</summary>
     public const int MaxBrightness = 150;
 
@@ -64,7 +64,7 @@ public static class ChartFilter
 
     /// <summary>
     /// Format the CSS filter string for the given percentages.
-    /// Returns the empty string when every channel is at identity --
+    /// Returns the empty string when every channel is at identity -
     /// the JS side reads that as "clear the inline style.filter".
     /// <para>
     /// Inputs are clamped here as well as at the setters, so a JS-
@@ -82,7 +82,7 @@ public static class ChartFilter
         int b = ClampBrightness(brightnessPct);
         if (IsIdentity(c, s, b)) return "";
         // Invariant culture so a German-locale boot ("," decimal sep)
-        // doesn't emit "contrast(1,30)" -- CSS parsers reject the
+        // doesn't emit "contrast(1,30)" - CSS parsers reject the
         // comma form and the entire filter falls off.
         var ic = System.Globalization.CultureInfo.InvariantCulture;
         return $"contrast({(c / 100.0).ToString("0.00", ic)}) "

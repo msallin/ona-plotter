@@ -4,7 +4,7 @@ namespace OnaPlotter.Services.Alarms;
 /// Read-side view of the set of <c>notifications.*</c> paths this
 /// plotter's <see cref="AlarmPublisher"/> has raised on the SignalK
 /// server. Consulted by <see cref="ServerNotificationsAlarmRule"/> so
-/// it can skip echoes of our own publications -- otherwise a single
+/// it can skip echoes of our own publications - otherwise a single
 /// CPA alarm would render twice in our banner stack: once from the
 /// originating client-side rule, once from the bridge rule reading
 /// our own publish back through the WebSocket feed.

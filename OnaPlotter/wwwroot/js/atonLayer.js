@@ -2,7 +2,7 @@
 // lighthouses, racons. Render as L.divIcon so we don't have to ship
 // 16 SVG files; the icon-builder draws inline SVG sized to the marker
 // and tinted by symbol kind. Virtual AtoNs (no physical mark in the
-// water -- e.g. wreck warnings) get a dashed outline so the helm
+// water - e.g. wreck warnings) get a dashed outline so the helm
 // doesn't go looking for an actual buoy.
 //
 // AtoNs are static enough that the C# side pushes the full set on
@@ -130,7 +130,7 @@ function buildAtonPopupHtml(a) {
 
 /**
  * Replace the rendered AtoN set. Adds new ids, updates moved entries
- * (rare -- AtoNs don't usually move), removes ids missing from the
+ * (rare - AtoNs don't usually move), removes ids missing from the
  * payload. Caller (Map.razor) pushes the whole snapshot from
  * AtonStore on each OnAtonsUpdated event; the layer is small enough
  * (typical harbour 10-50 entries, big port maybe 200) that a full
@@ -159,7 +159,7 @@ export function setAtons(atons) {
         } else {
             // Honour the visibility flag on creation. Without this
             // guard a setAtons that runs while atonsVisible=false
-            // would silently add fresh markers to the map -- the user
+            // would silently add fresh markers to the map - the user
             // hides the layer, a reconnect repopulates the store, and
             // the buoys reappear despite the toggle being off.
             const m = L.marker([a.lat, a.lon], { icon })
@@ -176,7 +176,7 @@ export function setAtons(atons) {
 
 /** Visibility toggle. Hides without losing the marker layer state so
  *  a re-show doesn't have to re-fetch. The layer remains registered
- *  with Leaflet -- we just remove from / add to the map. */
+ *  with Leaflet - we just remove from / add to the map. */
 export function setAtonsVisible(visible) {
     if (!mapRef) return;
     if (atonsVisible === !!visible) return;

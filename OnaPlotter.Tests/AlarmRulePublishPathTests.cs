@@ -28,7 +28,7 @@ public class AlarmRulePublishPathTests
     public async Task CpaAlarmRule_PerTargetPath_SanitisesUrnSeparators()
     {
         // SK MMSI URN format: vessels.urn:mrn:imo:mmsi:261006533. The
-        // ':' separators must NOT survive in the path -- replace with
+        // ':' separators must NOT survive in the path - replace with
         // '_' so the resulting suffix tokenises cleanly on the server.
         var rule = new CpaAlarmRule(new MooredVesselTracker());
         var info = new AlarmInfo("CPA", "MV Aurora: CPA 0.20nm in 4min",
@@ -55,7 +55,7 @@ public class AlarmRulePublishPathTests
         // we add as a separator stays.
         await Assert.That(path).StartsWith(
             "notifications.security.collision.urn_mrn_imo_mmsi_9999_environment_depth_belowSurface");
-        // No '.' should appear in the suffix portion -- only the
+        // No '.' should appear in the suffix portion - only the
         // single '.' that separates "collision" from the suffix.
         var suffix = path!["notifications.security.collision.".Length..];
         await Assert.That(suffix.Contains('.')).IsFalse();

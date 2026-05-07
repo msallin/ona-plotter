@@ -1,6 +1,6 @@
 // Tests for popupHelpers.js. Specifically pins esc() against the
 // quote-injection class of bug: vessel names from the SK delta land in
-// data-* attributes on popup links (data-mmsi, data-nm, data-ctx --
+// data-* attributes on popup links (data-mmsi, data-nm, data-ctx -
 // see buddyAttrs / snoozeAttrs in aisLayer.js). A name carrying a `"`
 // would close the attribute and inject the rest as new attributes; the
 // AIS spec's 6-bit ASCII alphabet allows the quote, so this is reachable
@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 // JSDOM-free shim. The helpers module touches `document.createElement`,
 // which Node doesn't ship. We install a minimal polyfill that mimics the
 // browser's textContent -> innerHTML serialization just well enough for
-// esc() to exercise the spec it relies on (escape &, <, > -- nothing else).
+// esc() to exercise the spec it relies on (escape &, <, > - nothing else).
 // Keeping it here in the test rather than pulling in JSDOM keeps the JS
 // test suite a `node --test` one-liner with zero npm install.
 if (typeof globalThis.document === 'undefined') {

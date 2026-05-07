@@ -56,7 +56,7 @@ public sealed class WaypointApi : IWaypointApi
         // spec-friendly "no description" value, not a missing key).
         // CreatedAt is stamped on first PUT so the popup can show
         // "when was this pinned" without a sidecar resource. Same
-        // approach as SignalkNote -- relies on resources-fs round-
+        // approach as SignalkNote - relies on resources-fs round-
         // tripping arbitrary top-level body fields.
         var body = GeoJsonBuilder.FeatureBody(
             name, GeoJsonBuilder.Point(lat, lon), description, createdAt: DateTime.UtcNow);

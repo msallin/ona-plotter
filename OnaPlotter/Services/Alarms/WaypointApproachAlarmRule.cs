@@ -22,21 +22,21 @@ public sealed class WaypointApproachAlarmRule : IAlarmRule
     public bool AutoClear => false;
 
     // The (lat, lon) of the waypoint we've already alarmed for on the
-    // current entry into the radius. (null, null) means "not armed" --
+    // current entry into the radius. (null, null) means "not armed" -
     // we'll fire on the next crossing.
     private (double? Lat, double? Lon) _alarmedFor;
 
     // Epsilon for waypoint-identity comparison. JSON round-trip + per-
     // plugin recomputation can drift a few µ-deg between deltas for the
     // *same* waypoint; exact double equality would see drift as a fresh
-    // waypoint and re-fire mid-dwell. 1e-6 deg ≈ 11 cm -- well under any
+    // waypoint and re-fire mid-dwell. 1e-6 deg ≈ 11 cm - well under any
     // realistic arrival radius and well above round-trip jitter.
     private const double WaypointIdentityEpsilon = 1e-6;
 
     public AlarmInfo? Check(AlarmEvaluationContext ctx)
     {
         // Gate: when the helm has opted into server-side approach
-        // alarms (default), this client rule mutes itself --
+        // alarms (default), this client rule mutes itself -
         // ServerNotificationsAlarmRule surfaces the SK course-provider
         // plugin's `notifications.navigation.arrivalCircleEntered` /
         // `perpendicularPassed` / `routeComplete` deltas with title

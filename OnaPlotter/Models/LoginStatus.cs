@@ -15,7 +15,7 @@ namespace OnaPlotter.Models;
 public sealed class LoginStatus
 {
     /// <summary>"loggedIn" or "notLoggedIn". Anything else is also
-    /// treated as "not logged in" by the helm-side classifier --
+    /// treated as "not logged in" by the helm-side classifier -
     /// servers under development have shipped other strings here.</summary>
     [JsonPropertyName("status")]
     public string? Status { get; set; }
@@ -28,13 +28,13 @@ public sealed class LoginStatus
 
     /// <summary>True when SK has security enabled. False on a
     /// no-auth dev / homelab server, in which case the banner
-    /// stays hidden -- there's nothing to log into.</summary>
+    /// stays hidden - there's nothing to log into.</summary>
     [JsonPropertyName("authenticationRequired")]
     public bool AuthenticationRequired { get; set; }
 
     /// <summary>Server-config flag, NOT a per-user authority.
     /// signalk-server returns this true when the server's default
-    /// is "sessions are read-only unless explicitly granted" --
+    /// is "sessions are read-only unless explicitly granted" -
     /// even for a logged-in admin. Treating it as the gate (the
     /// original implementation did) made the chip light up for an
     /// admin helm who was, in fact, fully logged in. Kept as a
@@ -50,7 +50,7 @@ public sealed class LoginStatus
     /// the current session is NOT logged in. Field-tested against
     /// signalk-server: when the helm IS logged in (status =
     /// "loggedIn", username present), the response can still carry
-    /// <c>readOnlyAccess: true</c> -- that flag is a server-config
+    /// <c>readOnlyAccess: true</c> - that flag is a server-config
     /// signal ("by default sessions are read-only"), not a
     /// per-user authority. The corrected rule trusts
     /// <c>status == "loggedIn"</c> as the single source of truth

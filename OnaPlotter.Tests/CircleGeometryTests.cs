@@ -28,7 +28,7 @@ public class CircleGeometryTests
     {
         // The pole-safety floor (1 m/deg-lon) is documented in the
         // class comment but un-tested. Confirm a ring at 90° N is
-        // finite end-to-end -- a NaN coordinate would slip past
+        // finite end-to-end - a NaN coordinate would slip past
         // GeoJSON validators and crash the renderer downstream.
         var ring = CircleGeometry.BuildRing(90.0, 0.0, 500, 32);
 
@@ -115,7 +115,7 @@ public class CircleGeometryTests
     public async Task TwoVertices_Throws()
     {
         // 1 and 2 vertices produce degenerate "circles" no consumer
-        // wants -- the same throw protects all sub-3 inputs.
+        // wants - the same throw protects all sub-3 inputs.
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
             async () => { CircleGeometry.BuildRing(47.4, 8.5, 500, 2); await Task.CompletedTask; });
     }

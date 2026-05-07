@@ -36,7 +36,7 @@ describe('MarkerLayer API surface', () => {
         assert.equal(typeof ml.entries, 'function');
         assert.equal(typeof ml.setMap, 'function');
 
-        // `.size` is a getter (not a method) -- equivalent to Map.prototype.size
+        // `.size` is a getter (not a method) - equivalent to Map.prototype.size
         // and what the originally-buggy `chartLayers.map.size` code wanted.
         assert.equal(typeof ml.size, 'number');
 

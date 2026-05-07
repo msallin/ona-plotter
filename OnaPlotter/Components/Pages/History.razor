@@ -87,7 +87,7 @@
                        @onchange="OnCustomToChanged" />
             }
             @* Sampling resolution. Wider range than the Stats page
-               because History is also the playback view -- a helm
+               because History is also the playback view - a helm
                investigating "what happened in that 90-second tack
                at 14:32" needs 1 s, while a helm reviewing a
                trans-Atlantic at 90 d is fine with 1 h. The chunker
@@ -134,7 +134,7 @@
                centroid so a 7-day window of swing-at-anchor doesn't
                drown the moving passages in dashed grey. OFF brings
                back the full polyline. Reuses the cached points +
-               segments -- no refetch on flip, just a JS re-render.
+               segments - no refetch on flip, just a JS re-render.
                Lives in the top toolbar alongside resolution because
                both knobs control "what the helm sees for this data
                window", not "what data we fetch". *@
@@ -276,7 +276,7 @@
     </div>
 
     @* Bottom strip: playback + locate-boat + charts. ONLY rendered
-       when viewMode == "map" -- on the table the playback isn't
+       when viewMode == "map" - on the table the playback isn't
        meaningful (no marker on screen) and the chart toggle
        reorganises the underlying map which the helm can't see
        anyway. The empty-state message + the "Pick a timespan" hint
@@ -296,7 +296,7 @@
                    the helm in irrelevant chart entries on a passage
                    review (a 10-NM Solent zoom doesn't need to list
                    the helm's Med-coast offline tiles).
-                   No quick-bar, no drag-reorder, no persistence --
+                   No quick-bar, no drag-reorder, no persistence -
                    chart selection is per-session here so opening
                    History to review a passage doesn't clobber the
                    helm's chart preferences on the live Map page. *@
@@ -354,7 +354,7 @@
                             disabled="@(playbackIndex >= points.Length - 1)">&gt;</button>
                     <button class="map-btn" @onclick="() => StepBy(10)"
                             disabled="@(playbackIndex >= points.Length - 1)">&gt;&gt;</button>
-                    @* Playback speed -- 1x default; multipliers map
+                    @* Playback speed - 1x default; multipliers map
                        through OnSpeedChanged into the timer interval. *@
                     <label class="d-inline-flex align-items-center gap-1 ms-2 history-muted-xs">
                         Speed
@@ -372,7 +372,7 @@
             }
             else if (loadAttempted && !SignalkClient.IsConnected)
             {
-                @* Offline at result time -- the fetch failed because the
+                @* Offline at result time - the fetch failed because the
                    SK server wasn't reachable, not because the time window
                    has no data. Distinguishing this matters: a helm seeing
                    "no track data" who actually has plenty would otherwise
@@ -446,25 +446,25 @@
     // windows: at 30 s a 7-day load chunks into ~42 sub-requests
     // (the History API caps each response at 500 rows), which on a
     // sat-link feels slow. 5 m gives 7 d × 12 buckets/h = ~2 016
-    // rows -- one round-trip, sub-second on LAN -- and the helm
+    // rows - one round-trip, sub-second on LAN - and the helm
     // who actually wants finer (down to 1 s for sub-second tack
     // analysis) or coarser (up to 4 h for season review) detail
     // can still pick it from the dropdown. The default is paired
     // with the "Today (24 h)" timespan default so a fresh visit
-    // shows 24 h × 12 buckets/h = 288 rows -- one round-trip,
+    // shows 24 h × 12 buckets/h = 288 rows - one round-trip,
     // smooth playback.
     private string resolution = "5m";
     // View mode toggle. "map" is the default playback view; "table"
     // hides the map behind a list of segments (filtered to moving by
     // default; toggle to include stationary). Click a row to flip
     // back to map and fly to that segment's bounds. Map stays mounted
-    // throughout so Leaflet's tile cache survives the swap -- no
+    // throughout so Leaflet's tile cache survives the swap - no
     // re-fetching basemap tiles on every flip.
     private string viewMode = "map";
     private bool tableShowStationary;
     /// <summary>Map-side stationary render mode. <c>true</c> (default)
     /// collapses each stationary segment to a single circleMarker at
-    /// its centroid -- visually quiet, the eye walks moving-trip
+    /// its centroid - visually quiet, the eye walks moving-trip
     /// passages without getting tangled in dwell jitter. <c>false</c>
     /// brings back the full dashed-grey polyline so the helm can see
     /// where the boat actually swung at anchor. Independent of
@@ -525,7 +525,7 @@
 
     /// <summary>Snapshot the current input state into the page-state
     /// cache so the next visit restores the same window + view
-    /// pick. Loaded geometry is NOT cached -- LoadTrack on the next
+    /// pick. Loaded geometry is NOT cached - LoadTrack on the next
     /// mount refetches with the same inputs, surfacing fresh
     /// numbers.</summary>
     private void SaveToState()
@@ -563,7 +563,7 @@
             // listeners) keeps the wire-up race-free.
             //
             // Was previously eval("window._historyDotNet = arguments[0]",
-            // ref). That threw "arguments is not defined" -- eval
+            // ref). That threw "arguments is not defined" - eval
             // runs in the surrounding strict-module context where
             // `arguments` isn't bound, and Blazor's eval interop
             // doesn't pass extra args to the eval'd code anyway.
@@ -605,7 +605,7 @@
             // chart toggle is per-session (no persisted enabled set)
             // so we can fetch and cache here without worrying about
             // re-syncing across page mounts. A 404 / 5xx returns an
-            // empty list -- the Charts button just doesn't render.
+            // empty list - the Charts button just doesn't render.
             try
             {
                 availableCharts = await ChartApi.GetAllAsync();
@@ -780,7 +780,7 @@
         {
             // Refresh the cached viewport bounds when the panel opens
             // so a freshly-rendered list reflects the current map
-            // view -- otherwise the helm sees stale entries from the
+            // view - otherwise the helm sees stale entries from the
             // last moveend until the next pan.
             await RefreshViewportBoundsAsync();
         }
@@ -863,7 +863,7 @@
     /// <c>segments</c> array (NOT the filtered one) so the JS can
     /// look up the matching polyline by position in
     /// <c>window._historySegments</c>. The flip + fly happens in two
-    /// frames -- viewMode change re-renders, then a one-shot timer
+    /// frames - viewMode change re-renders, then a one-shot timer
     /// gives the map a chance to catch up before we call fitBounds.</summary>
     /// <summary>Promote a moving segment to a saved SignalK route.
     /// Helm wants this when an unplanned passage turned out useful
@@ -906,7 +906,7 @@
         }
         if (coords.Count < 2)
         {
-            Toasts.Error("Trip has fewer than 2 points -- can't save as a route.");
+            Toasts.Error("Trip has fewer than 2 points - can't save as a route.");
             return;
         }
 
@@ -960,7 +960,7 @@
     /// at <paramref name="segmentIndex"/>. The detail view shows
     /// rich stats (avg / max / min SOG, TWS, dwell breakdown,
     /// heading distribution) and the same per-trip action buttons
-    /// the table row carries -- so the helm can drive everything
+    /// the table row carries - so the helm can drive everything
     /// from the detail panel without going back to the table.</summary>
     private void OpenTripDetail(int segmentIndex)
     {
@@ -1000,7 +1000,7 @@
         var pts = SegmentPoints(s);
         if (pts.Count < 2)
         {
-            Toasts.Error("Trip has fewer than 2 points -- nothing to export.");
+            Toasts.Error("Trip has fewer than 2 points - nothing to export.");
             return;
         }
 
@@ -1017,7 +1017,7 @@
             : ResourceExporter.TripGeoJson(suggested, s, pts);
         if (content is null)
         {
-            Toasts.Error("Couldn't build export -- trip has no usable geometry.");
+            Toasts.Error("Couldn't build export - trip has no usable geometry.");
             return;
         }
 
@@ -1048,7 +1048,7 @@
         var pts = SegmentPoints(s);
         if (pts.Count < 2)
         {
-            Toasts.Error("Trip has fewer than 2 points -- nothing to share.");
+            Toasts.Error("Trip has fewer than 2 points - nothing to share.");
             return;
         }
         string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
@@ -1097,7 +1097,7 @@
     /// page has its own map instance under <c>_historyMap</c>. The
     /// helper below is a minimal version: bounds-clipped tile layer
     /// with the standard 0.85 opacity. No multi-chart opacity ramp,
-    /// no z-index reordering -- the helm rarely stacks charts on
+    /// no z-index reordering - the helm rarely stacks charts on
     /// History (one passage = one chart series), so the simpler
     /// behaviour is enough.</summary>
     private async Task AddHistoryChartLayerAsync(
@@ -1106,7 +1106,7 @@
         // Resolve relative tile URLs against the SK server. This
         // matches what the Map page's interop does for the same
         // chart resource. The SK base URL is whatever the running
-        // page was served from -- the same origin the WebSocket
+        // page was served from - the same origin the WebSocket
         // connects to. ISignalKBaseUrl resolves config-override or
         // falls back to the page origin.
         var resolved = tileUrl.StartsWith("http://") || tileUrl.StartsWith("https://")
@@ -1189,7 +1189,7 @@
         loadAttempted = true;
         loading = true;
         _userInitiatedCancel = false;
-        // New CTS per fetch -- one-shot CTS objects are simpler than
+        // New CTS per fetch - one-shot CTS objects are simpler than
         // resetting state on a reused instance, and cheap (no
         // unmanaged handles in the cancel path here). The 30 s
         // CancelAfter is a server-stalled-out backstop: a healthy
@@ -1215,7 +1215,7 @@
             // flag is false, the CancelAfter expired and we owe the
             // helm a toast explaining why the fetch dropped without
             // their tap. Either way, leave the previous map / segments
-            // on screen -- a half-applied fetch result wouldn't have
+            // on screen - a half-applied fetch result wouldn't have
             // made it past the throwing await.
             if (!_userInitiatedCancel)
             {
@@ -1236,7 +1236,7 @@
     private async Task LoadTrackInner(CancellationToken ct)
     {
         // Resolve the time window from the current mode. Custom mode
-        // sends absolute (from, to) UTC instants -- helm-locale
+        // sends absolute (from, to) UTC instants - helm-locale
         // wall-clock at this layer becomes UTC at the API boundary.
         // Preset mode sends a relative duration (timespan).
         DateTimeOffset? fromUtc = null, toUtc = null;
@@ -1495,7 +1495,7 @@
     /// per second). Faster multipliers shorten the period; slower
     /// ones lengthen it. Clamped to [20, 1000] ms so an arbitrary
     /// dropdown value can't starve the renderer (20 ms = 50 fps,
-    /// 1000 ms = 1 fps -- below that the helm thinks the playback
+    /// 1000 ms = 1 fps - below that the helm thinks the playback
     /// has stuck).</summary>
     private void OnSpeedChanged(ChangeEventArgs e)
     {
@@ -1555,7 +1555,7 @@
         var pt = points[playbackIndex];
         try
         {
-            // Use invariant culture on the coordinate doubles -- the
+            // Use invariant culture on the coordinate doubles - the
             // helm's locale (e.g. de-CH) would otherwise render the
             // decimal as a comma and Leaflet would parse 47,4 as
             // [47, 4] silently. Matches the JSON-serialised format
@@ -1584,7 +1584,7 @@
     {
         await RefreshViewportBoundsAsync();
         // Only fire StateHasChanged when the chart panel is actually
-        // visible -- otherwise every pan would re-render the page
+        // visible - otherwise every pan would re-render the page
         // for no UX win.
         if (chartsPanelOpen) StateHasChanged();
     }
@@ -1594,7 +1594,7 @@
         // Persist the helm's last-seen inputs so the next visit
         // restores the same window + view. Catches a helm who
         // tweaked the range and navigated away without tapping
-        // Load -- the new range survives.
+        // Load - the new range survives.
         SaveToState();
         playing = false;
         // Abort any in-flight LoadTrack so the API call doesn't

@@ -42,7 +42,7 @@ public class TrackBboxTests
     {
         // Zero-area box (south == north and west == east): padding
         // does nothing because the axis spans are zero. Not flagged
-        // as an error -- a single-point "bbox" is a legitimate
+        // as an error - a single-point "bbox" is a legitimate
         // degenerate case (e.g. a freshly-mounted History page with
         // no track loaded yet, viewport bounds collapsed to the
         // marker).

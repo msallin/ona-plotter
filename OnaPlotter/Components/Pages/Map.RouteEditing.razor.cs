@@ -32,7 +32,7 @@ public partial class Map
     // Save should PUT in place rather than POST a new resource.
     private string? routeEditId;
     // Name the route had at edit-start. SaveAsCopy uses this to decide
-    // whether to auto-append " (copy)" to the new route's name -- if
+    // whether to auto-append " (copy)" to the new route's name - if
     // the helm has already typed a different name, leave it alone;
     // only append when the field still shows the source route's name.
     private string? routeEditOriginalName;
@@ -41,7 +41,7 @@ public partial class Map
 
     private async Task StartRouteEdit()
     {
-        // Close the Add flyout when the user picks Route -- the menu
+        // Close the Add flyout when the user picks Route - the menu
         // stayed open on entry to edit mode and then floated on top of
         // the edit panel. Matches the FabCreate* callbacks which all
         // set fabMenuOpen=false first.
@@ -72,7 +72,7 @@ public partial class Map
         // Discarding significant work should require intent. 2+ waypoints
         // is the threshold where the helm has genuinely built something
         // (single point is just a tap, two points is a line they'd rather
-        // not lose). Uses the native confirm() dialog -- same pattern as
+        // not lose). Uses the native confirm() dialog - same pattern as
         // the "Remove polar?" prompt in Settings. Empty / single-point
         // edits skip the prompt so Esc-to-bail still feels immediate.
         int wpCount = routeEditCoords?.Length ?? 0;
@@ -108,7 +108,7 @@ public partial class Map
         RemoveEditNavGuard();
         // Clear the persisted draft: the helm explicitly threw the
         // edit away, so the restore prompt should NOT show on next
-        // load. Best-effort -- a failure here just means the prompt
+        // load. Best-effort - a failure here just means the prompt
         // appears once and the helm taps Discard to clean it up.
         try { await RouteDraftStore.ClearAsync(); }
         catch (Exception) { }
@@ -140,7 +140,7 @@ public partial class Map
     // the marker-drag-to-reposition gestures cover the same UX, so the
     // Undo button was redundant chrome. The JS-side
     // undoLastEditWaypoint export stays for now in case a future
-    // gesture (e.g. swipe-back) wants to call it -- it's a few lines
+    // gesture (e.g. swipe-back) wants to call it - it's a few lines
     // and removing it now would force a follow-up commit if the
     // gesture lands later.
 
@@ -152,7 +152,7 @@ public partial class Map
     /// would reach via Add Route or the Layers-panel Edit button;
     /// Discard clears the draft and the prompt won't show again.
     /// Cancel (Esc / backdrop click) keeps the draft for next
-    /// time -- the helm hasn't decided yet.</summary>
+    /// time - the helm hasn't decided yet.</summary>
     private async Task MaybeShowRouteDraftRestoreAsync()
     {
         RouteDraft? draft;
@@ -162,7 +162,7 @@ public partial class Map
 
         // Format "from N min ago" so the helm has a sense of how
         // stale the work is. Falls back to a raw timestamp if the
-        // saved-at parse fails -- malformed but non-empty drafts
+        // saved-at parse fails - malformed but non-empty drafts
         // are still better than nothing.
         string when = "your last session";
         if (DateTime.TryParse(draft.SavedAtIso,
@@ -209,13 +209,13 @@ public partial class Map
     {
         if (_editJs is null)
         {
-            Toasts.Error("Can't restore -- map isn't ready yet.");
+            Toasts.Error("Can't restore - map isn't ready yet.");
             return;
         }
         // If the draft references a server-side route, verify it
         // still exists. A deleted-on-another-plotter source means
         // we treat the draft as a "create new" with the saved
-        // coords -- losing the in-place link is the lesser evil
+        // coords - losing the in-place link is the lesser evil
         // vs. crashing the save flow against a non-existent id.
         string? routeId = draft.RouteId;
         if (!string.IsNullOrEmpty(routeId)
@@ -291,7 +291,7 @@ public partial class Map
         // overlay (the leg polyline + next-waypoint marker) during the
         // edit so it doesn't overlap the edit-mode polyline in a
         // different colour and confuse the helm. The server-side
-        // course state stays active throughout -- this is a purely
+        // course state stays active throughout - this is a purely
         // visual suppression.
         //
         // CRITICAL: do NOT reset lastActiveRouteHref here. The href on
@@ -300,7 +300,7 @@ public partial class Map
         // (`currentHref == lastActiveRouteHref`) keeps the sync silent
         // and the active overlay stays cleared. Resetting it would
         // make the gate fire as "route changed" and immediately
-        // redraw the overlay we just hid -- the bug fix this comment
+        // redraw the overlay we just hid - the bug fix this comment
         // protects against. CancelRouteEdit + SaveRouteCoreInner
         // restore via SyncActiveRouteAsync(force: true) which bypasses
         // the gate and re-fetches the (possibly edited) coordinates.
@@ -329,7 +329,7 @@ public partial class Map
         if (_editJs is null) return;
         // Fetch the live edit coords; derive stats (count + total NM)
         // here in C#. Earlier code called a sibling JS getEditRouteStats
-        // that ran the same haversine sum -- that round-trip is gone
+        // that ran the same haversine sum - that round-trip is gone
         // and the math now lives in one place per the project rule.
         var coords = await _editJs.GetEditRouteCoordsAsync();
         bool dirty = false;
@@ -387,7 +387,7 @@ public partial class Map
     // so the Layers-panel detour isn't needed for the single most
     // common follow-up step. SaveRouteAsCopy clears routeEditId before
     // hitting SaveRouteCore so the save path takes the POST (create)
-    // branch instead of the PUT (update-in-place) branch -- the
+    // branch instead of the PUT (update-in-place) branch - the
     // current geometry lands as a NEW route on the server, leaving
     // the original untouched.
     private Task SaveRoute() => SaveRouteCore(activate: false);
@@ -398,7 +398,7 @@ public partial class Map
         // Clearing routeEditId here is intentional: SaveRouteCoreInner
         // reads it as "edit-in-place vs create-fresh". A copy is a
         // create. The "(copy)" suffix only appends when the helm
-        // hasn't customised the name -- if they typed "Better Plan"
+        // hasn't customised the name - if they typed "Better Plan"
         // we keep it as-is; if the field still shows the source
         // route's name, we auto-disambiguate so the Layers list
         // doesn't end up with two entries called "Approach via X".
@@ -472,7 +472,7 @@ public partial class Map
             // sortable in the routes list, which matters more than time-of-day
             // (most users create a few routes per day; "Route 14:30" starts
             // to look identical after a week). The Suggest helper appends a
-            // " (N)" suffix if a route with that name already exists -- self
+            // " (N)" suffix if a route with that name already exists - self
             // is excluded by id so an in-place edit isn't disambiguated
             // against its own pre-edit name.
             string name = string.IsNullOrWhiteSpace(routeEditName)
@@ -501,7 +501,7 @@ public partial class Map
             // (no network, not logged in, server 5xx) leaves the
             // helm's work on disk for the next-page-load restore
             // prompt. Cleared on success below; intentionally NOT
-            // cleared on failure -- the whole point of the draft is
+            // cleared on failure - the whole point of the draft is
             // that it survives the failure path. Best-effort: a
             // localStorage write failure (full disk, quota) is
             // non-fatal; the helm just doesn't get the restore prompt
@@ -547,7 +547,7 @@ public partial class Map
                 Toasts.Success($"Saved route '{name}' ({coords.Length} waypoints)");
                 // Drop the persisted draft: the work is now safely
                 // on the server, so the restore prompt should NOT
-                // show on next load. Best-effort -- a failure here
+                // show on next load. Best-effort - a failure here
                 // just means the prompt appears once and the helm
                 // taps Discard.
                 try { await RouteDraftStore.ClearAsync(); }
@@ -568,7 +568,7 @@ public partial class Map
                 {
                     // Edit-in-place redraw: wipe the old polyline
                     // so the geometry change takes effect. JSException
-                    // is benign here -- the next addRoute replaces it.
+                    // is benign here - the next addRoute replaces it.
                     try { await _routeJs.RemoveRouteAsync(existingId); }
                     catch (JSException) { /* next addRoute replaces it */ }
                     if (enabledRoutes.Contains(existingId))
@@ -582,7 +582,7 @@ public partial class Map
                     // marker to refetch from the new geometry. The href
                     // didn't change (same id), so the default href-diff
                     // sync would skip the refetch and the active overlay
-                    // would still render the OLD coordinates -- which is
+                    // would still render the OLD coordinates - which is
                     // exactly what the helmsman sees on Save+Go after
                     // editing the route they're already navigating.
                     if (Data.ActiveRouteHref is string href
@@ -634,7 +634,7 @@ public partial class Map
             // If we entered edit mode while a course was active,
             // EditRoute hid the active-route overlay so it didn't
             // double-draw with the edit polyline. Clear the JS
-            // suppression flag FIRST -- the subsequent setActiveRoute
+            // suppression flag FIRST - the subsequent setActiveRoute
             // call from SyncActiveRouteAsync would otherwise be
             // gated to a no-op. The in-place edit branch above
             // already force-syncs when the saved route IS the active

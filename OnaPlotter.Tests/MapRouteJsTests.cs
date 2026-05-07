@@ -25,7 +25,7 @@ public class MapRouteJsTests
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("r1");
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo("Plan A");
         await Assert.That(fake.Calls[0].args[2]).IsSameReferenceAs(coords);
-        // totalNm now travels alongside coords -- the JS popup uses
+        // totalNm now travels alongside coords - the JS popup uses
         // it directly instead of recomputing the haversine sum.
         await Assert.That(fake.Calls[0].args[3]).IsEqualTo(6.4);
     }

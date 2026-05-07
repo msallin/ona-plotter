@@ -2,7 +2,7 @@
 //
 // Lets the helm zoom past a chart's native max by GPU-upscaling
 // tiles at the native cap. The decorator is a higher-order function
-// that returns a new options bag for L.tileLayer(url, opts) -- no
+// that returns a new options bag for L.tileLayer(url, opts) - no
 // Leaflet subclass, no runtime probe.
 //
 // Removable in one go: drop this file + the addChartLayer call site
@@ -29,7 +29,7 @@
  * Leaflet upscales the last fetched tile rather than fetching
  * non-existent ones at higher zooms. `maxNativeZoom` itself is left
  * alone, which caps the actual fetch budget at the chart's real
- * tile pyramid -- a regression that drops the cap and triggers
+ * tile pyramid - a regression that drops the cap and triggers
  * 16x more requests is exactly what we don't want, so the wrap
  * preserves the budget explicitly.
  *

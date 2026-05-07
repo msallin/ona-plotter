@@ -79,7 +79,7 @@ public interface IAlarmThresholds
     /// source of truth: whatever radius the autopilot is steering
     /// against, the helm sees the alarm against. When false the
     /// client rule fires on
-    /// <see cref="WaypointArrivalRadiusMeters"/> -- helm-only fallback
+    /// <see cref="WaypointArrivalRadiusMeters"/> - helm-only fallback
     /// for SK installs without a course-provider plugin or for helms
     /// who want a different arrival radius from the autopilot's.
     /// </summary>

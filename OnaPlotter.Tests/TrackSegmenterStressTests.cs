@@ -34,7 +34,7 @@ public class TrackSegmenterStressTests
         sw.Stop();
 
         // 1-second budget. Local dev runs in ~150-200 ms; this is 5x
-        // slack -- still tight enough to catch a 5-10x regression on
+        // slack - still tight enough to catch a 5-10x regression on
         // a slow CI runner without flaking on noise.
         await Assert.That(sw.Elapsed.TotalSeconds)
             .IsLessThan(1.0)

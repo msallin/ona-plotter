@@ -23,7 +23,7 @@ public static class SpeedColor
     public const string DefaultRgb = "#3b82f6";
 
     /// <summary>Per-bucket lower bound in m/s. Index into this table
-    /// is the bucket id used by <see cref="Bucket"/> -- 0 = stopped,
+    /// is the bucket id used by <see cref="Bucket"/> - 0 = stopped,
     /// 5 = fast. Matches the JS SPEED_BUCKETS constant.</summary>
     public static readonly double[] Buckets = [0, 1, 2, 3, 5, 8];
 

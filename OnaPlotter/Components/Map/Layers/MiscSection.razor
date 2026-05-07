@@ -1,5 +1,5 @@
 @* Combined "Misc" section for the small toggles that don't merit
-   their own section -- currently Weather radar + AIS Aids to
+   their own section - currently Weather radar + AIS Aids to
    Navigation. Was previously two consecutive single-checkbox
    sections in the Layers panel; the helm flagged that as wasted
    vertical space ("two headers, two checkboxes, same shape"). One
@@ -27,7 +27,7 @@
             <div class="chart-desc">RainViewer nowcast (precipitation, not wind)</div>
         </div>
     </label>
-    @* Opacity slider only when the radar is on -- a slider for an
+    @* Opacity slider only when the radar is on - a slider for an
        overlay that isn't drawing reads as broken, and the row of
        chrome adds noise to the panel for no value. Range 5%-95% so
        the helm can never accidentally land on "fully transparent"
@@ -84,7 +84,7 @@
     [Parameter] public EventCallback<bool> OnToggleWeather { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtons { get; set; }
     /// <summary>Fires per slider tick during a drag. Drives the
-    /// live preview only -- helm wants instant feedback on the
+    /// live preview only - helm wants instant feedback on the
     /// chart, not 20 localStorage writes per drag.</summary>
     [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
     /// <summary>Fires once on slider release. Persists the final

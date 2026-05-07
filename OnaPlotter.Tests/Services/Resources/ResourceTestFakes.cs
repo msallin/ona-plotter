@@ -70,7 +70,10 @@ internal sealed class FakeRegionApi : IRegionApi
         => Task.FromResult(ApiResult<string>.Ok(""));
     public Task<ApiResult<string>> CreatePolygonAsync(string name, string description, double[][] vertices, bool isHazard = false, CancellationToken ct = default)
         => Task.FromResult(ApiResult<string>.Ok(""));
-    public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description, double[][] vertices, bool isHazard = false, CancellationToken ct = default)
+    public Task<ApiResult> UpdatePolygonAsync(string id, string name, string description, double[][] vertices,
+        bool isHazard = false, DateTime? createdAt = null,
+        double? centerLat = null, double? centerLon = null, double? radiusMeters = null,
+        CancellationToken ct = default)
         => Task.FromResult(ApiResult.Ok);
     public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default)
         => Task.FromResult(ApiResult.Ok);

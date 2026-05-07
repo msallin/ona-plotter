@@ -12,7 +12,7 @@ public static class RouteProgress
     /// Picks the active leg index (= index of the next waypoint we're
     /// heading to) for the route renderer. The server's
     /// <c>navigation.course.activeRoute.pointIndex</c> is authoritative
-    /// when present -- it's what the SK course engine has been
+    /// when present - it's what the SK course engine has been
     /// tracking through every leg advance, so on page reload it
     /// correctly reflects the "already driven" portion of the route.
     /// Falls back to a lat/lon -> closest-waypoint lookup only when
@@ -46,7 +46,7 @@ public static class RouteProgress
     /// <remarks>
     /// Coordinates are passed as <c>[lat, lon]</c> pairs to match the JS
     /// wire format. Distance is computed via an equirectangular projection
-    /// centred at <paramref name="lat"/> -- accurate to a fraction of a
+    /// centred at <paramref name="lat"/> - accurate to a fraction of a
     /// percent for the typical 1-50 NM scale of a sailing route, and 30x
     /// faster than haversine. We only need a winning index, not a
     /// metre-accurate distance, so the projection error is irrelevant.
@@ -97,7 +97,7 @@ public static class RouteProgress
     }
 
     /// <summary>Great-circle distance in metres between two lat/lon
-    /// points. Mean Earth radius 6,371,000 m -- accurate to ~0.5%
+    /// points. Mean Earth radius 6,371,000 m - accurate to ~0.5%
     /// across the typical sailing scale.</summary>
     public static double HaversineMeters(double lat1, double lon1, double lat2, double lon2)
     {

@@ -16,7 +16,7 @@ namespace OnaPlotter.Models;
 /// <para>Geometry is collapsed to a single point: <c>out center</c>
 /// in the Overpass query gives ways/relations a synthetic centre, and
 /// nodes are points to begin with. Helms care "is the marina near me",
-/// not the polygon outline -- a marker on the centre is good enough
+/// not the polygon outline - a marker on the centre is good enough
 /// for a chartplotter overlay.</para>
 /// </summary>
 /// <param name="Id">"n{osmId}", "w{osmId}", "r{osmId}". Stable across

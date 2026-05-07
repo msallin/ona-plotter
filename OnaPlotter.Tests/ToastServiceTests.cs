@@ -90,7 +90,7 @@ public class ToastServiceTests
 
         await Assert.That(svc.Active.Count).IsEqualTo(2);
         // Both toasts must retain their action character + carry
-        // distinct Ids -- a regression that broke ShowAction to
+        // distinct Ids - a regression that broke ShowAction to
         // always strip the ActionLabel would still produce Count == 2
         // if the timing landed right; this assertion catches it.
         await Assert.That(svc.Active[0].ActionLabel).IsEqualTo("Undo");
@@ -136,7 +136,7 @@ public class ToastServiceTests
     {
         // The contract: ex.Message must never reach the helm-facing
         // toast text. Devs see the trace in the browser console;
-        // helms see "{action} failed -- check the browser console".
+        // helms see "{action} failed - check the browser console".
         var svc = new ToastService();
         var ex = new InvalidOperationException("internal-server-only details");
 

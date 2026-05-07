@@ -57,7 +57,7 @@ public class OverpassResponseParserTests
     {
         // A road petrol station should never make it through. The
         // query already filters but the parser's own re-check is
-        // defence-in-depth -- a future tag-mapping change must not
+        // defence-in-depth - a future tag-mapping change must not
         // accidentally surface road fuel.
         var poi = OverpassResponseParser.TryMapElement(
             Node(1, 40, -74, ("amenity", "fuel")), Now);
@@ -98,7 +98,7 @@ public class OverpassResponseParserTests
     [Test]
     public async Task MarinaOnPier_PrefersMarina()
     {
-        // A marina built on a pier -- man_made=pier + leisure=marina.
+        // A marina built on a pier - man_made=pier + leisure=marina.
         // Parser priority order pins Marina ahead of Pier.
         var poi = OverpassResponseParser.TryMapElement(
             Node(10, 43.0, 5.0,

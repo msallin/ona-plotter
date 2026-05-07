@@ -79,7 +79,7 @@ public class AlarmPublisherTests
         public event Action<AlarmInfo?>? OnAlarmChanged;
         public event Action? OnAlarmsChanged;
 
-        /// <summary>Override the rule pairing -- e.g. to return null
+        /// <summary>Override the rule pairing - e.g. to return null
         /// from GetPublishPath for some alarms.</summary>
         public void RuleFor(Func<AlarmInfo, IAlarmRule> selector)
         {
@@ -236,7 +236,7 @@ public class AlarmPublisherTests
         await Assert.That(api.Raised.Count).IsEqualTo(1);
         var raisedId = "id-1";
 
-        // Local rule stops firing -- alarm leaves active set.
+        // Local rule stops firing - alarm leaves active set.
         mgr.Set();
         await Task.Yield();
 
@@ -250,7 +250,7 @@ public class AlarmPublisherTests
         // Same alarm staying active across multiple Evaluate ticks
         // generates multiple OnAlarmsChanged events (e.g. message
         // updates as the depth fluctuates). The publisher must NOT
-        // re-fire a raise -- the SK server is idempotent on path+
+        // re-fire a raise - the SK server is idempotent on path+
         // $source overlay, but the network call is wasted work and
         // creates extra wire traffic on a flaky link.
         var mgr = new StubAlarmManager();
@@ -272,7 +272,7 @@ public class AlarmPublisherTests
     public async Task ServerEmittedAlarm_NotRepublished()
     {
         // ServerNotificationsAlarmRule emits AlarmInfo with an
-        // Acknowledger set. Republishing would loop -- we'd POST
+        // Acknowledger set. Republishing would loop - we'd POST
         // /notifications, server emits delta, our store applies,
         // bridge rule emits, we'd POST again. The publisher must
         // recognise these as "already from the server" via the
@@ -283,7 +283,7 @@ public class AlarmPublisherTests
         await using var pub = new AlarmPublisher(mgr, api, tracker);
 
         // Synthetic acknowledger marks the alarm as server-sourced;
-        // the actual ack call is irrelevant here -- we're testing
+        // the actual ack call is irrelevant here - we're testing
         // the publisher's skip logic.
         var serverAck = new StubAcknowledger(canAcknowledge: true);
         var serverAlarm = new AlarmInfo("ANCHOR", "dragging",
@@ -300,7 +300,7 @@ public class AlarmPublisherTests
     public async Task UnsupportedTitle_DoesNotRaise()
     {
         // SART, APPROACH, and unknown titles return false from
-        // TryMapToPath -- the publisher must not POST anything.
+        // TryMapToPath - the publisher must not POST anything.
         var mgr = new StubAlarmManager();
         var api = new FakeApi();
         var tracker = new PublishedAlarmTracker();
@@ -350,7 +350,7 @@ public class AlarmPublisherTests
     [Test]
     public async Task CpaPerTarget_RaisesOneNotificationPerVessel()
     {
-        // Three vessels triggering CPA simultaneously -- three
+        // Three vessels triggering CPA simultaneously - three
         // distinct paths, three raises. Independent ack semantics:
         // dismissing target A on plotter B doesn't silence B's
         // banner for target B (each path has its own server id).
@@ -483,7 +483,7 @@ public class AlarmPublisherTests
 
         mgr.Set(new AlarmInfo("SHALLOW", "x", AlarmSeverity.Danger));
         // The raise's await is suspended on the TCS; the publisher
-        // has reserved the slot in _raised. Now the alarm clears --
+        // has reserved the slot in _raised. Now the alarm clears -
         // HandleAlarmsChanged removes the slot and the late-completion
         // path inside TryRaiseAsync should fire the clear when the
         // TCS resolves.

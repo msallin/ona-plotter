@@ -118,7 +118,7 @@ public class ActiveRouteSyncTests
     /// calls. ActiveRouteSync uses it to toggle the bottom-centre
     /// range-scale chip when a route activates / deactivates; the
     /// recording lets the test pin that the calls fire at the right
-    /// transitions. Other IMapControlsJs methods stay as no-ops --
+    /// transitions. Other IMapControlsJs methods stay as no-ops -
     /// the sync only touches this one.
     /// </summary>
     private sealed class FakeControlsJs : IMapControlsJs
@@ -439,7 +439,7 @@ public class ActiveRouteSyncTests
         data.ApplyCourseNextPointPosition(54.5, 11.2);
         data.Apply("navigation.course.activeRoute.pointIndex", 0);
 
-        // Must complete without throwing -- the catch-and-log inside
+        // Must complete without throwing - the catch-and-log inside
         // SyncAsync swallows the timeout. A future regression that
         // removes the try/catch would surface here as TUnit reporting
         // an unhandled task exception.

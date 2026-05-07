@@ -43,7 +43,7 @@ public sealed class RouteDraftStore : IRouteDraftStore
             //
             // Each coord is [lat, lon], lat in [-90, 90], lon in
             // [-180, 180], both finite. A single bad coord taints the
-            // whole draft -- partial restore is worse than "no draft"
+            // whole draft - partial restore is worse than "no draft"
             // because the helm gets a recovery prompt that loads
             // garbage.
             foreach (var c in draft.Coords)
@@ -60,7 +60,7 @@ public sealed class RouteDraftStore : IRouteDraftStore
         {
             // localStorage tampering, browser-extension corruption,
             // or a future schema change that bumps the model shape.
-            // Treat as "no draft" -- the next save will overwrite
+            // Treat as "no draft" - the next save will overwrite
             // the malformed entry.
             return null;
         }

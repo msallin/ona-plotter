@@ -168,7 +168,7 @@ public sealed class AisStore
     }
 
     /// <summary>
-    /// Removes a context from the store -- used once SignalkClient learns
+    /// Removes a context from the store - used once SignalkClient learns
     /// the self-URN AFTER own-boat deltas were already routed to AIS
     /// (hello message arrives late, or server doesn't send "vessels.self"
     /// at all and only uses the URN form). Also registers the context in

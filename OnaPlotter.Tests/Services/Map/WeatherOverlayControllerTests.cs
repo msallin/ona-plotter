@@ -77,7 +77,7 @@ public class WeatherOverlayControllerTests
     [Test]
     public async Task Preview_When_Hidden_Is_A_No_Op()
     {
-        // Slider preview should never push when the overlay is off --
+        // Slider preview should never push when the overlay is off -
         // there's no Leaflet layer to update.
         var js = new FakeOverlaysJs();
         var ctrl = new WeatherOverlayController(js, new FakeSettings());

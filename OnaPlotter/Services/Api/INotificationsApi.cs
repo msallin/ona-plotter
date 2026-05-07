@@ -11,7 +11,7 @@ namespace OnaPlotter.Services.Api;
 /// <list type="number">
 ///   <item>
 ///     <term>Acknowledge</term>
-///     <description>Mark a notification "I've seen this" -- server
+///     <description>Mark a notification "I've seen this" - server
 ///     re-emits the delta with <c>status.acknowledged = true</c>, every
 ///     connected plotter drops its banner. Cross-plotter alarm sync
 ///     hangs off this verb.</description>
@@ -25,7 +25,7 @@ namespace OnaPlotter.Services.Api;
 ///     <term>Raise / Clear (Phase B)</term>
 ///     <description>Publish a client-computed alarm (CPA, wind shift,
 ///     shallow) into the server's notification space so other plotters
-///     see it. Not yet wired -- declared on the interface so Phase B
+///     see it. Not yet wired - declared on the interface so Phase B
 ///     doesn't need a breaking-change PR.</description>
 ///   </item>
 /// </list>
@@ -124,7 +124,7 @@ public sealed record NotificationPositionDto(
 /// <summary>
 /// JSON shape for <see cref="INotificationsApi.RaiseAsync"/>. Mirrors
 /// the SignalK v2 wire payload so we don't need a separate DTO layer
-/// -- camelCase serialisation is the default for Blazor JsonOptions.
+/// - camelCase serialisation is the default for Blazor JsonOptions.
 /// </summary>
 /// <param name="State">SignalK state vocab: <c>emergency</c> /
 /// <c>alarm</c> / <c>warn</c> / <c>alert</c>. Lowercase. The server

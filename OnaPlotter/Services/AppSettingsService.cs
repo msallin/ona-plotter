@@ -60,7 +60,7 @@ public sealed class AppSettingsService : IAppSettings
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
-    /// <summary>Chart-display CSS filter percentages -- helm boosts /
+    /// <summary>Chart-display CSS filter percentages - helm boosts /
     /// dampens contrast / saturation / brightness from the Layers panel
     /// to read washed-out raster charts. Defaults are identity (100 =
     /// no filter); see <see cref="OnaPlotter.Utilities.ChartFilter"/>
@@ -71,12 +71,12 @@ public sealed class AppSettingsService : IAppSettings
     // Defaults ON so a fresh helm gets readable tiles past a chart's
     // native max out of the box. Without this, a chart that declares
     // (or quietly downshifts to) maxzoom 16 leaves the helm staring at
-    // grey tiles at z17/z18 with no 404 in the network panel -- Leaflet
+    // grey tiles at z17/z18 with no 404 in the network panel - Leaflet
     // simply doesn't fire requests above the layer's maxZoom. The
     // helm's escape hatch (Settings -> Display -> Chart upscale) still
     // works either direction. OSM + OpenSeaMap opt out via AllowUpscale
     // = false so the basemap doesn't compete with a GPU-upscaled SK
-    // chart on top -- field-tested as visual flicker.
+    // chart on top - field-tested as visual flicker.
     //
     // Asymmetry vs the default-on flip: LoadBool below treats any
     // stored value other than the literal "true" as false (it doesn't
@@ -89,7 +89,7 @@ public sealed class AppSettingsService : IAppSettings
     // by toggling the master flag in Settings.
     public bool ChartUpscaleEnabled { get; private set; } = true;
     public int ChartUpscaleLevels { get; private set; } = OnaPlotter.Utilities.ChartUpscale.DefaultLevels;
-    /// <summary>In-memory only -- never persisted, never restored.
+    /// <summary>In-memory only - never persisted, never restored.
     /// See IAppSettings.HarborMode for the rationale (a forgotten
     /// Harbor mode silently riding into open water is the worst-case
     /// scenario, so every fresh visit starts with collision alarms
@@ -361,7 +361,7 @@ public sealed class AppSettingsService : IAppSettings
         // Cluster suppression: store the env.sun cluster (day / night)
         // at toggle time so CheckAutoNightAsync can suppress until
         // the next sun-state transition. null when env.sun is unknown
-        // -- in that case auto-night isn't running anyway and the
+        // - in that case auto-night isn't running anyway and the
         // override has nothing to fight.
         LastManualNightOverrideSunCluster = NormalizeSunCluster(sunCluster);
         await Save("lastManualNightOverrideSunCluster.v1",
@@ -370,7 +370,7 @@ public sealed class AppSettingsService : IAppSettings
 
     /// <summary>Clear the manual-override cluster. Called when
     /// CheckAutoNightAsync sees env.sun transition out of the
-    /// override cluster -- the override has done its job and
+    /// override cluster - the override has done its job and
     /// auto-night can resume.</summary>
     public async Task ClearManualNightOverrideAsync()
     {
@@ -615,7 +615,7 @@ public sealed class AppSettingsService : IAppSettings
     public Task SetHarborModeAsync(bool value)
     {
         // No persistence: Harbor mode is in-memory only. See
-        // IAppSettings.HarborMode docstring -- a forgotten Harbor
+        // IAppSettings.HarborMode docstring - a forgotten Harbor
         // mode silently riding into open water is the worst-case
         // scenario, so every fresh visit starts with collision
         // alarms armed.
@@ -637,7 +637,7 @@ public sealed class AppSettingsService : IAppSettings
     {
         // Already-set sidebar wins (user toggled it intentionally on a
         // previous visit, or the mobile-default ran on an earlier mount
-        // -- either way no overwrite). Desktop viewport doesn't change
+        // - either way no overwrite). Desktop viewport doesn't change
         // anything; the historical default is "expanded" which is
         // already correct.
         if (_sidebarCollapsedExplicit) return;
@@ -693,7 +693,7 @@ public sealed class AppSettingsService : IAppSettings
     public async Task SetWindShiftMinTrueWindSpeedAsync(double value)
     {
         // Clamp at 0 (negative TWS is meaningless and would re-introduce
-        // the noise the gate was added to prevent). No upper clamp -- a
+        // the noise the gate was added to prevent). No upper clamp - a
         // user who sets 50 kn has effectively disabled the alarm, which
         // is a legitimate choice.
         WindShiftMinTrueWindSpeed = Math.Max(0, value);
@@ -912,7 +912,7 @@ public sealed class AppSettingsService : IAppSettings
 
     public async Task SetSnoozeDurationMinutesAsync(int value)
     {
-        // Clamp 1 min minimum (zero would snooze forever -- that's dismiss).
+        // Clamp 1 min minimum (zero would snooze forever - that's dismiss).
         // Upper bound 120 to keep a runaway value from locking an alarm
         // quiet for days after a power cycle.
         SnoozeDurationMinutes = System.Math.Clamp(value, 1, 120);
@@ -955,7 +955,7 @@ public sealed class AppSettingsService : IAppSettings
 
     public async Task SetEnabledChartsAsync(IEnumerable<string> ids)
     {
-        // Materialise first -- see SetChartOrderAsync for the aliasing
+        // Materialise first - see SetChartOrderAsync for the aliasing
         // footgun this defends against.
         var copy = ids.ToList();
         _enabledChartIds.Clear();
@@ -973,7 +973,7 @@ public sealed class AppSettingsService : IAppSettings
 
     public async Task SetQuickBarChartsAsync(IEnumerable<string> ids)
     {
-        // Same materialise-first guard as SetChartOrderAsync -- a caller
+        // Same materialise-first guard as SetChartOrderAsync - a caller
         // can hand us a LINQ view over _quickBarChartIds and the Clear()
         // would pull the rug out mid-iteration.
         var copy = ids.ToList();
@@ -985,7 +985,7 @@ public sealed class AppSettingsService : IAppSettings
 
     public async Task SetChartOrderAsync(IEnumerable<string> ids)
     {
-        // Materialise BEFORE clearing _chartOrder -- otherwise a caller
+        // Materialise BEFORE clearing _chartOrder - otherwise a caller
         // passing `Settings.ChartOrder.Append(x)` (a LINQ enumerable
         // referencing _chartOrder) iterates an empty list and loses
         // every previously-ordered chart.
@@ -1036,7 +1036,7 @@ public sealed class AppSettingsService : IAppSettings
         var v = await LoadString(key);
         if (string.IsNullOrWhiteSpace(v)) return null;
         // RoundtripKind cannot be combined with AssumeUniversal /
-        // AssumeLocal / AdjustToUniversal -- the runtime throws
+        // AssumeLocal / AdjustToUniversal - the runtime throws
         // ArgumentException("ConflictingDateTimeRoundtripStyles").
         // Parse with RoundtripKind alone to preserve whatever kind
         // the stored string declares (the "o" format we write always
@@ -1053,7 +1053,7 @@ public sealed class AppSettingsService : IAppSettings
             var utc = dt.ToUniversalTime();
             // Reject degenerate values (year 0001, MaxValue, or
             // anything pre-2020) so callers doing TimeSpan arithmetic
-            // -- e.g. the night-mode 12-hour manual-override window --
+            // - e.g. the night-mode 12-hour manual-override window -
             // don't see a 700,000-hour interval and silently treat it
             // as "recent enough". Settings are device-local and we
             // know we never wrote a timestamp outside this range.

@@ -70,7 +70,7 @@ public class AtonPushServiceTests
     public async Task Payload_Includes_Symbol_And_Side_Resolution()
     {
         // C# resolves the catalog lookup so JS stays a dumb renderer.
-        // Spot-check the shape -- a renamed field would silently break
+        // Spot-check the shape - a renamed field would silently break
         // the JS marker layer.
         var store = new AtonStore();
         store.Apply("atons.urn:mrn:imo:mmsi:111", "navigation.position",

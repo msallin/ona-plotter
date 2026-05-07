@@ -7,7 +7,7 @@ namespace OnaPlotter.Tests;
 /// that decides whether the welcome card should be force-shown despite
 /// the dismissed KV flag. Earlier code used Contains("welcome=1")
 /// substring matching, which would over-match on URIs like
-/// /map?other=welcome=1abc -- this test class is the safety net for
+/// /map?other=welcome=1abc - this test class is the safety net for
 /// any future regression to the substring approach.
 /// </summary>
 public class MapWelcomeQueryTests

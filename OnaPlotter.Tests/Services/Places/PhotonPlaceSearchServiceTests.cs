@@ -5,7 +5,7 @@ namespace OnaPlotter.Tests.Services.Places;
 
 /// <summary>
 /// Pins the Photon-feature -> PlaceResult mapping. The HTTP path is
-/// not exercised here (would need a fake HttpClient) -- those are
+/// not exercised here (would need a fake HttpClient) - those are
 /// covered by the contract tests on the IPlaceSearchService interface
 /// when we add a fake-server harness later. The interesting logic
 /// today is in the static helpers, which are the tightest contract
@@ -90,7 +90,7 @@ public class PhotonPlaceSearchServiceTests
             CountryCode: "BS",
             Type: "island");
         await Assert.That(PhotonPlaceSearchService.BuildDisplayLabel("Fowl Cay", props))
-            .IsEqualTo("Fowl Cay -- Exuma, Bahamas");
+            .IsEqualTo("Fowl Cay - Exuma, Bahamas");
     }
 
     [Test]
@@ -104,7 +104,7 @@ public class PhotonPlaceSearchServiceTests
             CountryCode: "DE",
             Type: "city");
         await Assert.That(PhotonPlaceSearchService.BuildDisplayLabel("Berlin", props))
-            .IsEqualTo("Berlin -- Berlin, Germany");
+            .IsEqualTo("Berlin - Berlin, Germany");
     }
 
     [Test]
@@ -118,7 +118,7 @@ public class PhotonPlaceSearchServiceTests
             CountryCode: null,
             Type: "sea");
         await Assert.That(PhotonPlaceSearchService.BuildDisplayLabel("Greenland Sea", props))
-            .IsEqualTo("Greenland Sea -- International");
+            .IsEqualTo("Greenland Sea - International");
     }
 
     [Test]
@@ -164,7 +164,7 @@ public class PhotonPlaceSearchServiceTests
     public async Task SearchAsync_Skips_LatLon_When_Position_Null()
     {
         // Before the first SK position fix lands the thunk returns
-        // null -- skip the bias params (Photon uses global ranking).
+        // null - skip the bias params (Photon uses global ranking).
         var handler = new RecordingHandler();
         var http = new HttpClient(handler);
         var svc = new PhotonPlaceSearchService(
@@ -183,7 +183,7 @@ public class PhotonPlaceSearchServiceTests
     public async Task SearchAsync_Skips_LatLon_When_Position_Provider_Null()
     {
         // No provider injected at all (e.g., from a test rig that
-        // doesn't care about geo bias) -- still works, just without
+        // doesn't care about geo bias) - still works, just without
         // the lat/lon params.
         var handler = new RecordingHandler();
         var http = new HttpClient(handler);

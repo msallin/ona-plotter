@@ -18,7 +18,7 @@ namespace OnaPlotter.Services;
 /// Map.razor mirroring on local CRUD), but a future cleanup can drop
 /// the manual mirror entirely. The subscription means
 /// <see cref="OnaPlotter.Services.Alarms.HazardousRegionAlarmRule"/>
-/// sees the latest regions even when Map.razor is unmounted -- the
+/// sees the latest regions even when Map.razor is unmounted - the
 /// previous shape (mirror only from Map.razor) silently broke the
 /// alarm pipeline whenever the helm was on Settings / Wind / etc.
 /// during a remote region edit.</para>

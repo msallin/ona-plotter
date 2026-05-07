@@ -2,7 +2,7 @@ namespace OnaPlotter.Services.Settings;
 
 /// <summary>
 /// Narrow surface for the "remember where the helm was looking"
-/// persistence. All three values are nullable -- on a fresh device
+/// persistence. All three values are nullable - on a fresh device
 /// or after a parse failure the loader logs a warning and the map
 /// falls back to live-position centre.
 ///

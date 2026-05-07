@@ -51,7 +51,7 @@ public static class StatsAggregator
                     maxTripDist = s.DistanceMetres;
                 }
             }
-            // Peak SOG considers all segments -- a momentary surge
+            // Peak SOG considers all segments - a momentary surge
             // recorded inside a stationary "ferry-wash bobbing"
             // segment is still a real observed speed, useful for the
             // "max boat speed this season" line.
@@ -69,13 +69,13 @@ public static class StatsAggregator
         if (totalSec < 0) totalSec = 0;
 
         // Avg underway speed = total moving distance / total moving
-        // time. Null when there's no underway time -- avg-of-zero is
+        // time. Null when there's no underway time - avg-of-zero is
         // undefined, not 0; rendering "0.0 kn" would mislead the
         // helm into thinking they crawled along at zero knots.
         double? avgSogMs = movingSec > 0 ? totalDist / movingSec : (double?)null;
 
         // Best rolling 24-hour run. Sliding window over the moving
-        // segments sorted by start time -- segments arrive in
+        // segments sorted by start time - segments arrive in
         // chronological order from TrackSegmenter, so no resort.
         double? best24h = ComputeBest24hMetres(segments);
 
@@ -101,7 +101,7 @@ public static class StatsAggregator
     /// split (uniform-speed clipping would be needed and most
     /// segments don't cross). Returned list is sorted by date
     /// DESCENDING so the most recent day shows first in the UI.
-    /// Empty days are excluded -- a 365-day window with sailing
+    /// Empty days are excluded - a 365-day window with sailing
     /// only on weekends returns ~104 rows, not 365.</summary>
     public static IReadOnlyList<DailyStats> AggregateDaily(
         IReadOnlyList<TrackSegment> segments, TimeZoneInfo? tz = null)
@@ -171,7 +171,7 @@ public static class StatsAggregator
     /// <para>
     /// A segment is counted in full when its start falls inside the
     /// window. A segment longer than 24 h would over-count (its full
-    /// distance attributed to a 24 h window) but those are rare --
+    /// distance attributed to a 24 h window) but those are rare -
     /// even a Pacific crossing rarely produces a single un-split
     /// 24 h+ moving segment because the segmenter splits on dwell
     /// gaps every few hours. Adding clip-by-window logic would need

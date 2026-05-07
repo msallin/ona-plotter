@@ -46,7 +46,7 @@ public static class Colregs
     /// <c>IAppSettings.OwnVesselType</c> for own, from the target's
     /// <c>design.aisShipType</c> via <see cref="VesselType.FromAisShipType"/>
     /// for AIS targets). Unknown collapses to Power so the existing
-    /// Rule 13-15 geometry classification still applies -- never
+    /// Rule 13-15 geometry classification still applies - never
     /// silently downgrade a give-way to stand-on just because a type
     /// field was empty.</summary>
     public enum VesselType
@@ -112,7 +112,7 @@ public static class Colregs
         // own-boat labelled "Stand-on" by being-overtaken logic misleads the
         // helmsman into thinking they're holding course when they're actually
         // adrift; a stationary target labelled "Give-way" implies motion the
-        // target doesn't have. Indeterminate is the honest answer -- the
+        // target doesn't have. Indeterminate is the honest answer - the
         // crossing / head-on math still runs once both have steerage.
         if (ownSogMs < StationaryMs || tgtSogMs < StationaryMs)
             return new Result(Category.Indeterminate, Role.None);

@@ -6,7 +6,7 @@ import { collectErrors, waitForMapReady } from './helpers.js';
 
 // Relative paths so they compose with BASE_URL's subpath
 // (e.g. https://openplotter.local/signalk-onaplotter/). Mirrors every
-// @page in OnaPlotter/Components/Pages -- when a page is added or
+// @page in OnaPlotter/Components/Pages - when a page is added or
 // renamed, this list updates so the smoke test exercises it.
 const ROUTES = ['', 'map', 'sailsteer', 'wind', 'history', 'resources', 'paths', 'raw', 'settings'];
 
@@ -16,7 +16,7 @@ test('every top-level page renders without crashing', async ({ page }) => {
     // Blazor's <NotFound> template (App.razor) renders this exact phrase
     // inside a [role=alert] paragraph for any path with no @page binding.
     // It's a SPA, so a typo in ROUTES would otherwise navigate cleanly
-    // (status 200 from index.html) and the test would pass silently --
+    // (status 200 from index.html) and the test would pass silently -
     // exactly how 'gauges' slipped past for several CI runs. Guard
     // against that by asserting the NotFound paragraph never renders.
     const notFound = page.locator('p[role="alert"]:has-text("nothing at this address")');

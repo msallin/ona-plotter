@@ -1,7 +1,7 @@
 // Active-route navigate-back guard.
 //
 // User report: "I have a route active and an anchor down. I navigate
-// to Dashboard and back to /map -- the route is silently deactivated
+// to Dashboard and back to /map - the route is silently deactivated
 // on the SignalK server (other plotters lose it too)."
 //
 // Root cause: Map.razor.SyncServerAnchorAsync used a per-Map-instance

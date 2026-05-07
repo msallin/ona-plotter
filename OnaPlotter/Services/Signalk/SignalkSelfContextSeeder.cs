@@ -45,7 +45,7 @@ public sealed class SignalkSelfContextSeeder
     /// <remarks>
     /// Response shape: a bare JSON string, e.g.
     /// <code>"vessels.urn:mrn:imo:mmsi:261006533"</code>
-    /// or just <code>"urn:mrn:imo:mmsi:261006533"</code> -- the
+    /// or just <code>"urn:mrn:imo:mmsi:261006533"</code> - the
     /// surrounding quotes are part of the JSON encoding and get
     /// stripped before the callback runs.
     /// </remarks>

@@ -13,7 +13,7 @@ namespace OnaPlotter.Utilities;
 /// fields are inter-tick:
 ///   <list type="bullet">
 ///     <item><c>PrevLat</c> / <c>PrevLon</c> feed the track-segment
-///           shape -- each emitted segment is from last-tick to this-
+///           shape - each emitted segment is from last-tick to this-
 ///           tick position.</item>
 ///     <item><c>CourseLineDrawn</c> latches so a route teardown emits
 ///           a single clear-course frame rather than spamming them.</item>
@@ -255,7 +255,7 @@ public readonly record struct FrameCourseLine(
     /// <summary>Helm-configured waypoint arrival radius in metres. Drives
     /// the visible circle around the destination so the helm sees what
     /// distance counts as "arrived" without checking Settings. 0 (or
-    /// negative) suppresses the ring -- the route HUD also shows an
+    /// negative) suppresses the ring - the route HUD also shows an
     /// "APPROACH alarm off (radius 0 m)" banner in that case so the
     /// helm knows the alarm is disabled.</summary>
     double ArrivalRadiusMeters);

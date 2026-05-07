@@ -7,13 +7,13 @@ namespace OnaPlotter.Services.Alarms;
 /// <c>navigation.anchor.currentRadius</c> from live position against the
 /// drop point; this rule raises the client-side alarm when current &gt;
 /// max. Audible Danger-tier alarm so a helmsman asleep below decks
-/// hears it -- the anchor HUD's red pill alone isn't enough.
+/// hears it - the anchor HUD's red pill alone isn't enough.
 ///
 /// <para>Hysteresis: to avoid chattering when a gust momentarily nudges
 /// the boat onto the ring, the current radius must exceed max by at
 /// least <see cref="HysteresisMeters"/> to trip. The alarm clears
 /// (auto-clear) once the boat is safely back inside max minus the
-/// same band. Both thresholds are tunable constants, not settings --
+/// same band. Both thresholds are tunable constants, not settings -
 /// the max radius is already a user input on the plugin side; this
 /// just adds a dead-band around it.</para>
 ///
@@ -28,10 +28,10 @@ public sealed class AnchorDragAlarmRule : IAlarmRule
 {
     public string Title => "ANCHOR DRAG";
 
-    /// <summary>Highest priority after grounding / shallow / tide -- a
+    /// <summary>Highest priority after grounding / shallow / tide - a
     /// dragging anchor at night is the same severity class as running
     /// aground.</summary>
-    public int Priority => 140;    // between SHALLOW (100) / ANCHOR TIDE (150) -- both danger-class
+    public int Priority => 140;    // between SHALLOW (100) / ANCHOR TIDE (150) - both danger-class
 
     public bool AutoClear => true;
 

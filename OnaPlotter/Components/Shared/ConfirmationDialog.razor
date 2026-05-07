@@ -32,7 +32,7 @@
         @if (Confirm.IsTextPrompt)
         {
             @* autofocus on the input (not on Cancel) so the user can
-               start typing immediately -- matches window.prompt. *@
+               start typing immediately - matches window.prompt. *@
             <input type="text"
                    class="confirm-input"
                    @ref="_inputRef"
@@ -83,7 +83,7 @@
 @code {
     // Input element ref so we can .FocusAsync() it after the dialog
     // renders. Blazor's `autofocus` attribute isn't reliable inside
-    // a conditionally-rendered modal -- the attribute only has an
+    // a conditionally-rendered modal - the attribute only has an
     // effect at document load, not on subsequent DOM insertions.
     private ElementReference _inputRef;
     private bool _needsFocus;
@@ -126,7 +126,7 @@
         // Esc cancels in every mode. Enter commits OK on confirm /
         // prompt; for chooser there's no "default" option to commit
         // (that's why the chooser exists), so Enter is a no-op there
-        // -- the helm clicks / taps the button they want.
+        // - the helm clicks / taps the button they want.
         if (e.Key == "Escape") OnCancel();
         else if (e.Key == "Enter" && !Confirm.IsChoice) OnOk();
     }

@@ -117,7 +117,7 @@ public class MarinePoiCacheTests
         // Cache is the offline lifeline. A fresh instance reading the
         // same KV store must recover the prior fetch's POIs. Persist
         // is debounced, so the test forces a flush before "reloading"
-        // -- production gets the same flush from DisposeAsync on tab
+        // - production gets the same flush from DisposeAsync on tab
         // close (best-effort) or on the next merge after the debounce
         // window elapses.
         var kv = new InMemoryKv();
@@ -180,7 +180,7 @@ public class MarinePoiCacheTests
     [Test]
     public async Task MergeAsync_Debounces_LocalStorageWrite()
     {
-        // Persist is debounced -- merging shouldn't punch through to
+        // Persist is debounced - merging shouldn't punch through to
         // localStorage on every call. Memory must be up-to-date
         // immediately (queries hit memory, not disk), but the KV
         // write only lands when the helm asks for it via
@@ -196,7 +196,7 @@ public class MarinePoiCacheTests
         var snap = await cache.SnapshotAsync();
         await Assert.That(snap.Count).IsEqualTo(3);
 
-        // Disk hasn't been touched yet -- debounce is still pending.
+        // Disk hasn't been touched yet - debounce is still pending.
         await Assert.That(kv.SetCalls).IsEqualTo(0);
 
         // Forced flush coalesces all three merges into one write.
@@ -275,7 +275,7 @@ public class MarinePoiCacheTests
         // L.marker(NaN, NaN) and break Leaflet rendering).
         var kv = new InMemoryKv();
         // Inject a doctored payload directly: one good, one with NaN
-        // lat (which JSON serialises as the literal "NaN" -- which
+        // lat (which JSON serialises as the literal "NaN" - which
         // System.Text.Json refuses to parse, so we use null instead
         // and rely on the deserialiser dropping the row before our
         // sanitiser ever sees it). Simulate the "out-of-range lat"

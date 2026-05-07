@@ -23,7 +23,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// fragmented WebSocket frames. Above this we drop the buffer +
     /// force a reconnect rather than let a misbehaving server / debug
     /// endpoint exhaust the WASM heap. 4 MB is well above any plausible
-    /// SignalK delta -- even a 200-vessel bulk AIS push is single-digit KB.</summary>
+    /// SignalK delta - even a 200-vessel bulk AIS push is single-digit KB.</summary>
     private const int MaxMessageBufferBytes = 4 * 1024 * 1024;
     private const int StaleDataThresholdSec = 5;
 
@@ -105,11 +105,11 @@ public sealed class SignalkClient : IAsyncDisposable
     //
     // Each list lives next to the tier that subscribes it so the wire-
     // format intent is local. Adding a new path is one entry in the
-    // matching list -- no enum to extend, no set algebra to maintain.
+    // matching list - no enum to extend, no set algebra to maintain.
 
     /// <summary>vessels.self @ 1 Hz. Self-only fields (wind, depth,
     /// course-next-point, autopilot, tidal current). The shared nav
-    /// fields (position / SOG / COG / heading) are NOT here -- they
+    /// fields (position / SOG / COG / heading) are NOT here - they
     /// live in the AIS tier and reach self via the vessels.* wildcard,
     /// avoiding duplicate delivery.</summary>
     private static readonly string[] SelfFastTierPaths =
@@ -183,7 +183,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// policy=instant matters: these are edge-triggered state
     /// transitions (normal -> alert -> null) that the default "ideal"
     /// policy can coalesce away when surrounded by a high-frequency
-    /// delta burst -- swallowing the exact transition that drives
+    /// delta burst - swallowing the exact transition that drives
     /// auto-advance.</summary>
     private static readonly string[] SelfFastNotificationsTierPaths =
     [
@@ -201,12 +201,12 @@ public sealed class SignalkClient : IAsyncDisposable
         Utilities.SkPaths.Navigation.Anchor.Position,
         Utilities.SkPaths.Navigation.Anchor.MaxRadius,
         Utilities.SkPaths.Navigation.Anchor.CurrentRadius,
-        // v2.0.0+ paths -- silently absent on older plugin / no-plugin
+        // v2.0.0+ paths - silently absent on older plugin / no-plugin
         // self-host installs (subscription is harmless when no
         // publisher exists). Plumbing them through now means the HUD
         // adopts the plugin's authoritative readouts (rode counter,
         // bow-corrected distance + bearing) the moment a helm
-        // upgrades the plugin -- no client redeploy required. The
+        // upgrades the plugin - no client redeploy required. The
         // client-side GeoBearing fallback in the HUD card stays put
         // for the JS-only manual flow.
         Utilities.SkPaths.Navigation.Anchor.BearingTrue,
@@ -244,7 +244,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>vessels.* (which matches self too) @ 1 Hz. Shared nav
     /// fields + AIS-only static data (name, MMSI, callsign, ship type,
     /// buddy). Going via the wildcard means self gets these once AND
-    /// every AIS vessel gets them once -- no duplication on self.</summary>
+    /// every AIS vessel gets them once - no duplication on self.</summary>
     private static readonly string[] AisTierPaths =
     [
         Utilities.SkPaths.Navigation.Position,
@@ -260,7 +260,7 @@ public sealed class SignalkClient : IAsyncDisposable
         // AIS Type 5 / Type 24 static carries vessel dimensions
         // (length-overall = dim A + dim B, beam = dim C + dim D).
         // signalk-ais-* plugins publish these under design.length /
-        // design.beam. Optional -- many recreational targets never
+        // design.beam. Optional - many recreational targets never
         // broadcast static (Type 24 isn't mandatory for class B), so
         // these stay null for that majority. Popup hides the row
         // when null rather than showing "--".
@@ -274,14 +274,14 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>vessels.self @ 1 Hz. The notifications.* wildcard catches
     /// every server-side notification (signalk-anchoralarm-plugin,
     /// signalk-mob-notifier, depth alarms, custom plugin alerts) so they
-    /// can be surfaced in our alarm banner. Self-context only -- expand
+    /// can be surfaced in our alarm banner. Self-context only - expand
     /// to AIS-context notifications (server alerts about a specific
     /// vessel) when a real plugin produces them.
     /// <para>
     /// The two course-provider notification flags
     /// (perpendicularPassed / arrivalCircleEntered) are ALSO handled
     /// by SelfFastNotificationsTierPaths above at 100 ms / instant
-    /// for auto-advance edge detection -- we'll see them via both
+    /// for auto-advance edge detection - we'll see them via both
     /// subscriptions; the handlers are idempotent.
     /// </para></summary>
     private static readonly string[] ServerNotificationsTierPaths =
@@ -291,7 +291,7 @@ public sealed class SignalkClient : IAsyncDisposable
 
     /// <summary>atons.* @ 60 s. AIS Type 21 broadcasts AtoN positions
     /// every ~3 min and the data is mostly static (a buoy doesn't
-    /// move much) -- 1 Hz would burn bandwidth + WASM main-thread
+    /// move much) - 1 Hz would burn bandwidth + WASM main-thread
     /// time for nothing. 60 s lands well inside the 3-min refresh
     /// window. Anything under the path tree (name, position,
     /// atonType, virtual, communication) lands in
@@ -454,7 +454,7 @@ public sealed class SignalkClient : IAsyncDisposable
     // TrackBuffer capacity is 1000. Adding a point every delta (typical
     // 1 Hz with the course-provider feeding 1-2 paths per tick, but
     // bursty up to 3-5 Hz under heavy wind/depth traffic) burned the
-    // buffer in ~15-30 minutes of sailing -- the on-map trail kept
+    // buffer in ~15-30 minutes of sailing - the on-map trail kept
     // losing the first half-hour of the leg. 0.2 Hz sampling (one
     // point every 5 s) stretches the same buffer to ~83 min of
     // history, which is enough to visually follow a typical day-sail.
@@ -604,7 +604,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 // change; static AIS data (names, MMSI) received BEFORE we
                 // connected is never replayed over the stream. Seed those
                 // from the REST snapshot so vessels show their name instead
-                // of a bare MMSI on first paint. Best-effort -- any failure
+                // of a bare MMSI on first paint. Best-effort - any failure
                 // just leaves names to trickle in via live deltas.
                 // Fire-and-forget the seed calls: WASM is single-threaded
                 // so Task.Run is pointless (just hides continuations from
@@ -639,7 +639,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 // JsonSerializer.Deserialize<T>(ReadOnlySpan<byte>)
                 // directly; the string allocation only happens when
                 // an OnRawMessage subscriber needs the text (mostly
-                // unsubscribed -- the RawStream page is rarely open).
+                // unsubscribed - the RawStream page is rarely open).
                 // ArrayBufferWriter handles the grow-on-demand without
                 // the LOH thrash a single contiguous reallocation
                 // would cause for the pathological 4 MB cap case.
@@ -661,7 +661,7 @@ public sealed class SignalkClient : IAsyncDisposable
                     // endpoint) would otherwise grow the buffer
                     // until the WASM heap is exhausted and the tab
                     // dies, with no recovery short of a reload. 4 MB
-                    // is well above any plausible delta payload --
+                    // is well above any plausible delta payload -
                     // even a ~200-vessel AIS bulk update is single-
                     // digit KB. Note: the cap counts bytes here; the
                     // earlier StringBuilder version counted UTF-16
@@ -673,12 +673,12 @@ public sealed class SignalkClient : IAsyncDisposable
                     // ASCII BMP code points are 1 UTF-16 char but
                     // 2-3 UTF-8 bytes, so a 4 MB byte cap is
                     // strictly tighter than the old char cap on
-                    // those payloads -- still well above plausible
+                    // those payloads - still well above plausible
                     // SK content.
                     if (messageBuffer.WrittenCount > MaxMessageBufferBytes)
                     {
                         _logger.LogWarning(
-                            "Message buffer exceeded {Limit} bytes (got {Got}) -- dropping and forcing reconnect",
+                            "Message buffer exceeded {Limit} bytes (got {Got}) - dropping and forcing reconnect",
                             MaxMessageBufferBytes, messageBuffer.WrittenCount);
                         messageBuffer.ResetWrittenCount();
                         break;
@@ -747,7 +747,7 @@ public sealed class SignalkClient : IAsyncDisposable
             }
             catch (OperationCanceledException)
             {
-                // User tapped Reconnect now -- break out of the delay and
+                // User tapped Reconnect now - break out of the delay and
                 // retry immediately. Reset the backoff so the next drop
                 // doesn't inherit a fast-retry cadence.
                 backoffMs = InitialBackoffMs;
@@ -770,7 +770,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <c>_lastMessageTicks</c> with the current UTC ticks. Without
     /// the seed, the field defaults to 0 (Unix epoch) and
     /// <see cref="IsDataStale"/> reports true the moment IsConnected
-    /// becomes true -- before any deltas have arrived. The connection
+    /// becomes true - before any deltas have arrived. The connection
     /// chip then renders "Stale" on first paint, and the
     /// MainLayout-side change tracker (wasStale flips on
     /// IsDataStale-state transitions) misses the false-to-false
@@ -788,7 +788,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>Mirror of <see cref="MarkConnectionOpened"/> for the
     /// disconnect side. Sets <see cref="IsConnected"/> to false
     /// without touching the WS pump (production code's two
-    /// disconnect paths -- WS exception and clean close -- handle
+    /// disconnect paths - WS exception and clean close - handle
     /// the actual socket teardown). Tests use this paired with
     /// <see cref="RaiseConnectionChanged"/> to drive
     /// reconnect-reconcile flows deterministically.</summary>
@@ -896,7 +896,7 @@ public sealed class SignalkClient : IAsyncDisposable
             }
 
             // Resource deltas (resources.<type>.<id>) come independent of
-            // vessel context -- the server emits them with a default
+            // vessel context - the server emits them with a default
             // context (typically vessels.self) but the path itself is
             // self-describing. Dispatch first so the existing self/ais/aton
             // routing doesn't have to know anything about resource shapes;
@@ -995,7 +995,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// the delta's vessel context: resource changes come with whatever
     /// default context the server picks (typically vessels.self) but the
     /// path itself uniquely identifies them, so we filter on path prefix.
-    /// <para>The id segment is everything after the second dot -- supports
+    /// <para>The id segment is everything after the second dot - supports
     /// urn-form ids (e.g. <c>resources.routes.urn:mrn:signalk:uuid:foo</c>)
     /// where colons inside the id would otherwise confuse a naive
     /// <c>Split('.')</c>.</para>
@@ -1022,7 +1022,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (string.IsNullOrEmpty(val.Path)) continue;
                 if (!val.Path.StartsWith("resources.", StringComparison.Ordinal)) continue;
 
-                // Path = "resources.<type>.<id>" -- find the second dot.
+                // Path = "resources.<type>.<id>" - find the second dot.
                 // Slice past "resources." then split on the next '.'.
                 var rest = val.Path.AsSpan("resources.".Length);
                 var dotIdx = rest.IndexOf('.');
@@ -1092,7 +1092,7 @@ public sealed class SignalkClient : IAsyncDisposable
                     continue;
                 }
 
-                // VHF callsign for self -- captured for the ownship
+                // VHF callsign for self - captured for the ownship
                 // chart popup. Keeping it on SignalkClient (rather
                 // than NavigationData) because it's identity, not
                 // navigation; the AIS pipeline already stores per-
@@ -1129,7 +1129,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 //   1. { lat, lon } object   -> drop/update anchor
                 //   2. explicit JSON null    -> anchor weighed on another
                 //      plotter ("Weigh Anchor" button in the plugin UI)
-                //   3. value = null (not a JsonElement at all) -- same
+                //   3. value = null (not a JsonElement at all) - same
                 //      as case 2 but surfaced by some SK server versions
                 //      as a property-missing rather than JSON null.
                 // User-reported bug: anchor stayed on ONA after being
@@ -1184,7 +1184,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 // activation delta (ApplyString only handles strings,
                 // Apply only handles doubles, neither accepts objects)
                 // so a route activated externally (freeboard, a second
-                // plotter, a REST call) never showed up on OnA -- and
+                // plotter, a REST call) never showed up on OnA - and
                 // even ONA's own activate-then-draw path broke because
                 // SyncActiveRouteAsync reads Data.ActiveRouteHref,
                 // which stayed null. See the symmetric null-branch
@@ -1335,7 +1335,7 @@ public sealed class SignalkClient : IAsyncDisposable
                         }
                         else
                         {
-                            // Object present but no `state` -- treat as armed.
+                            // Object present but no `state` - treat as armed.
                             armed = true;
                         }
                     }
@@ -1394,11 +1394,11 @@ public sealed class SignalkClient : IAsyncDisposable
                 // on version, and the client has to cope with BOTH:
                 //
                 //   (a) navigation.course.activeRoute.href = null
-                //       -- older course-provider-plugin; the specific
+                //       - older course-provider-plugin; the specific
                 //       leaf path flips to null.
                 //   (b) navigation.course.activeRoute = null
                 //       OR navigation.course.nextPoint = null
-                //       -- signalk-server 2.x's built-in course API
+                //       - signalk-server 2.x's built-in course API
                 //       nulls the PARENT object in one delta instead
                 //       of enumerating every leaf. We must treat a null
                 //       parent the same as nulling every child, otherwise
@@ -1502,7 +1502,7 @@ public sealed class SignalkClient : IAsyncDisposable
     ///     Handled by dispatching each recognised field.</item>
     /// </list>
     ///
-    /// Malformed / unknown shapes drop silently -- the receive loop
+    /// Malformed / unknown shapes drop silently - the receive loop
     /// must stay alive no matter what the server emits.
     /// </summary>
     private void RouteRadarDelta(string path, object? value)
@@ -1611,7 +1611,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <summary>
     /// Every path the client is currently subscribed to: the core self
     /// tier, the AIS tier, plus any <see cref="SubscribeExtraPathAsync"/>
-    /// additions. Used by RawStream to populate its chip list -- the
+    /// additions. Used by RawStream to populate its chip list - the
     /// page previously showed the server's full discoverable paths,
     /// which was noise when the plotter only ingests a narrow slice.
     ///
@@ -1685,7 +1685,7 @@ public sealed class SignalkClient : IAsyncDisposable
     /// <item>Object: <c>{ "state": "alarm"|"warn"|..., "method": [...], "message": "..." }</c> (armed)</item>
     /// <item>JSON null OR object with state="normal" (cleared)</item>
     /// </list>
-    /// Unknown shapes (bare booleans, strings) fail safe to a clear --
+    /// Unknown shapes (bare booleans, strings) fail safe to a clear -
     /// no point flapping the alarm stack on a malformed message.
     /// Returns true when the store changed (caller fires OnDataChanged
     /// so AlarmManager re-evaluates promptly).
@@ -1796,7 +1796,7 @@ public sealed class SignalkClient : IAsyncDisposable
     }
 
     /// <summary>Parses a SignalK v2 notification <c>status</c> object.
-    /// Every field defaults to false on a missing / non-bool entry --
+    /// Every field defaults to false on a missing / non-bool entry -
     /// fail-safe semantics ("if I can't tell, assume the action is
     /// unsupported"). The block is optional in the wire shape; the
     /// caller only invokes us when an Object kind is actually present.</summary>
@@ -1821,7 +1821,7 @@ public sealed class SignalkClient : IAsyncDisposable
         }
     }
 
-    // True if the value in a SignalK delta represents "no data here" --
+    // True if the value in a SignalK delta represents "no data here" -
     // either a literal JSON null, or a C# null deserialized as such.
     // Used by anchor / course deactivation handlers to treat both wire
     // shapes uniformly.

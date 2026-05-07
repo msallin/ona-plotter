@@ -6,10 +6,10 @@ namespace OnaPlotter.Utilities;
 /// it's a beacon whose appearance on the net is itself the alarm.
 ///
 /// <list type="bullet">
-///   <item><c>970xxxxxx</c> -- AIS SART (Search And Rescue Transmitter,
+///   <item><c>970xxxxxx</c> - AIS SART (Search And Rescue Transmitter,
 ///     typically in a life raft)</item>
-///   <item><c>972xxxxxx</c> -- AIS MOB (Man Overboard beacon)</item>
-///   <item><c>974xxxxxx</c> -- AIS EPIRB (Emergency Position Indicating
+///   <item><c>972xxxxxx</c> - AIS MOB (Man Overboard beacon)</item>
+///   <item><c>974xxxxxx</c> - AIS EPIRB (Emergency Position Indicating
 ///     Radio Beacon)</item>
 /// </list>
 ///

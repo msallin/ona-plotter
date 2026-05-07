@@ -125,7 +125,7 @@ public class MooredVesselTrackerTests
         // The hot-path optimisation: when nothing is tracked, the
         // overload must short-circuit BEFORE enumerating the vessels
         // collection. We pin this with a deliberately throwing IEnumerable
-        // -- if Cleanup tries to iterate it, the test fails with a
+        // - if Cleanup tries to iterate it, the test fails with a
         // surfaced exception. Steady-state open-water tick (no dwellers)
         // hits this path on every CpaAlarmRule.Check call.
         var t = new MooredVesselTracker();
@@ -157,7 +157,7 @@ public class MooredVesselTrackerTests
     public async Task NavState_Anchored_MooredImmediately_RegardlessOfSpeed()
     {
         // SK navigation.state = "anchored" (and friends) is authoritative
-        // even when SOG is high (anchor-drag scenarios) -- the AIS
+        // even when SOG is high (anchor-drag scenarios) - the AIS
         // broadcast is the ground truth.
         var t = new MooredVesselTracker();
         var v = Vessel("ctx1", sogMs: 5.0);          // would be "moving" by heuristic

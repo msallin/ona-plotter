@@ -2,7 +2,7 @@
    relative shorthand), the page fetches the same rich
    TrackPoint stream the History page uses, runs it through the
    shared TrackSegmenter, and feeds the segments to StatsAggregator
-   for the totals grid. No map, no playback -- just the numbers the
+   for the totals grid. No map, no playback - just the numbers the
    helm wants for "how was the season / week / day?".
 
    Why this lives next to History rather than inside it: the helm-
@@ -59,7 +59,7 @@
                     @* 1h + 6h presets added so daysailers / racing
                        crews can see "this afternoon" totals without
                        a trip-of-zero on a 24-hour window full of
-                       slip time. Long-haul presets cap at 365d --
+                       slip time. Long-haul presets cap at 365d -
                        beyond that the aggregator + History API
                        round-trip costs add up faster than the
                        data is interesting. *@
@@ -145,7 +145,7 @@
             @* Share: opens the system share sheet on iOS / Android /
                Win10+ (WhatsApp, iMessage, Mail, ...) and falls back
                to clipboard copy on Firefox / desktop Safari. Always
-               available, even with zero trips -- a "0 trips this week"
+               available, even with zero trips - a "0 trips this week"
                summary is itself a useful thing to share with crew. *@
             <button class="btn btn-outline-secondary btn-sm"
                     @onclick="() => ShareSummary(t)"
@@ -167,7 +167,7 @@
            "voyage" totals (trips, distance, peak speed) and the
            "time" totals (underway / anchored / window). Cards rather
            than a flat list because each metric is a self-contained
-           answer to a different question -- visual separation helps
+           answer to a different question - visual separation helps
            the helm scan to the one they wanted. *@
         @* Reusing the project-wide .page-section-header (small
            uppercase eyebrow) + .metric-lg (1.6rem big number with
@@ -288,9 +288,9 @@
         @* Coverage hint. The helm asked for X hours, the segments
            covered Y. The gap is unaccounted-for time (no fix, server
            gap, plotter offline). Surfacing the coverage % keeps the
-           helm honest about totals -- "12 nm in 7 days at 30 % coverage"
+           helm honest about totals - "12 nm in 7 days at 30 % coverage"
            reads very differently from "12 nm at 95 % coverage". *@
-        @* Three-bucket breakdown -- moving + stationary + unknown.
+        @* Three-bucket breakdown - moving + stationary + unknown.
            The previous "X of Y had position fixes" lumped underway
            and dwell time together against an opaque gap; ocean-
            voyager personas asked "but what was the GAP?". Splitting
@@ -318,7 +318,7 @@
         {
             <div class="alert alert-info mt-2 py-2" style="font-size:0.85rem;">
                 Zero trips with @CoveragePct(t).ToString("F0", CultureInfo.InvariantCulture) % coverage:
-                the segmenter classified every fix as stationary -- SOG below the
+                the segmenter classified every fix as stationary - SOG below the
                 <code>~1 kn</code> moving threshold for the whole window.
                 Common causes: a day in port, a slow drift at anchor, or a SOG feed
                 that wasn't reporting (every fix has zero speed, so the segmenter
@@ -326,12 +326,12 @@
             </div>
         }
 
-        @* Per-day breakdown. Hidden by default -- the totals answer
+        @* Per-day breakdown. Hidden by default - the totals answer
            the common question; the daily table is for liveaboards /
            ocean voyagers who want the log entry per day. Toggle keeps
            the page from looking dense on a quick "last 7 days" check.
            Sorted descending (most recent first) by AggregateDaily.
-           --
+           -
            Helm-feedback: the toggle was a near-invisible link-style
            button. Helms missed the daily view entirely. Now an
            outline-secondary card-spanning button so it reads as a
@@ -496,7 +496,7 @@
     /// <summary>Coverage = (moving + stationary) / total window. Pulled
     /// out of markup because Razor doesn't allow <c>@{ }</c> blocks
     /// inside an already-open code-then-markup region without going
-    /// back into code mode -- a helper keeps the markup linear.</summary>
+    /// back into code mode - a helper keeps the markup linear.</summary>
     private static double CoveragePct(StatsTotals t) =>
         t.TotalDurationSeconds > 0
             ? 100.0 * (t.MovingDurationSeconds + t.StationaryDurationSeconds) / t.TotalDurationSeconds
@@ -513,7 +513,7 @@
     /// from/to window and table view pre-selected. UTC ISO-8601 in
     /// the URL (DateTimeKind.Utc with "o" format) so the History
     /// page parses unambiguously regardless of helm timezone. View
-    /// = table because the helm clicked "view trips" -- they want
+    /// = table because the helm clicked "view trips" - they want
     /// the list, not the playback map.</summary>
     private string DrillDownHref(StatsTotals t)
     {
@@ -531,7 +531,7 @@
         double h = seconds / 3600.0;
         // Switch to days for windows >= 48 h. "Today" / "yesterday"
         // still read in hours; a 3+ day cruise reads as "5.3 d"
-        // rather than "127.2 h" -- closer to how the helm thinks
+        // rather than "127.2 h" - closer to how the helm thinks
         // about voyage length.
         if (h >= 48)
             return $"{(h / 24.0).ToString("F1", CultureInfo.InvariantCulture)} d";
@@ -555,7 +555,7 @@
         try
         {
             // Resolve window. Custom mode swaps inverted ranges
-            // silently -- helms occasionally edit the inputs in
+            // silently - helms occasionally edit the inputs in
             // the wrong order; a swap is friendlier than an error.
             DateTimeOffset? fromUtc = null, toUtc = null;
             string? span = selectedTimespan;
@@ -637,7 +637,7 @@
             {
                 case "shared":      Toasts.Success("Shared"); break;
                 case "copied":      Toasts.Success("Summary copied to clipboard"); break;
-                case "cancelled":   /* helm dismissed the sheet -- no toast */ break;
+                case "cancelled":   /* helm dismissed the sheet - no toast */ break;
                 default:            Toasts.Error("Couldn't share or copy on this browser"); break;
             }
         }
@@ -687,7 +687,7 @@
         // Persist the helm's last-seen state so the next visit
         // restores the same view. Catches the case where they
         // navigated away without tapping Compute (eg. tweaked the
-        // range then jumped to /map) -- the new range survives.
+        // range then jumped to /map) - the new range survives.
         SaveToState();
         if (_fileTransfer is not null)
         {

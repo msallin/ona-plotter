@@ -25,7 +25,7 @@ let anchorRadiusLine = null;
 // "Incomplete" state: helm dropped the pin (server has the position)
 // but hasn't set the alarm radius yet. Tracked here so setBoatPosition
 // keeps the pin pulsing and doesn't flip the circle to the green
-// "inside the alarm circle" colour the moment the radius arrives -- the
+// "inside the alarm circle" colour the moment the radius arrives - the
 // helm needs to see ON THE CHART that step 2 is still pending.
 let anchorIncomplete = false;
 // Swing-arc history: own-boat positions sampled while the anchor is
@@ -51,7 +51,7 @@ export function setBoatPosition(lat, lon) {
     selfLat = lat;
     selfLon = lon;
     // Skip the inside/outside circle recolour while the anchor is in
-    // the incomplete state -- the alarm circle isn't really armed
+    // the incomplete state - the alarm circle isn't really armed
     // yet and the green/red colour would mislead. setAnchorIncomplete
     // owns the styling in that state.
     if (anchorMarker && anchorCircle && !anchorIncomplete) {
@@ -105,7 +105,7 @@ export function clearAnchor() {
 // switches the circle to a heavier dash + binds a "RADIUS NOT SET"
 // tooltip so the helm SEES on the chart that step 2 is pending.
 // Without this, the chart looks identical to a fully-armed anchor and
-// the helm walks away thinking they're done -- the field-study
+// the helm walks away thinking they're done - the field-study
 // finding from Margaret + Jordan.
 //
 // Idempotent: safe to call with the same value, safe to call when no

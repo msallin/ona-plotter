@@ -15,7 +15,7 @@ namespace OnaPlotter.Services.Map;
 /// from <c>HandleDataChanged</c>; raised manually via
 /// <see cref="MarkRaisePending"/> when the helm taps the Anchor
 /// button so the watchdog window opens at the same moment as the
-/// REST round-trip. Disposal is implicit -- the wrapped
+/// REST round-trip. Disposal is implicit - the wrapped
 /// <see cref="IMapAnchorJs"/> is marked disposed by the page, after
 /// which interop calls become silent no-ops.
 ///
@@ -43,7 +43,7 @@ public sealed class ServerAnchorSync
     /// <summary>Tracks the last-pushed "incomplete" state (pin set
     /// but radius not yet armed). Diffed against the live state on
     /// each tick so we only push the JS toggle when it actually
-    /// changes -- the JS-side `setAnchorIncomplete` is idempotent
+    /// changes - the JS-side `setAnchorIncomplete` is idempotent
     /// but free is free.</summary>
     private bool _incompletePushed;
 
@@ -107,7 +107,7 @@ public sealed class ServerAnchorSync
             double radius = data.AnchorMaxRadius ?? 30;
             if (!_serverAnchorDrawn)
             {
-                // Server anchor just appeared -- draw it on the map.
+                // Server anchor just appeared - draw it on the map.
                 await _anchorJs.SetAnchorAsync(
                     data.AnchorLatitude ?? 0,
                     data.AnchorLongitude ?? 0,
@@ -117,7 +117,7 @@ public sealed class ServerAnchorSync
             }
             else if (Math.Abs(radius - _lastPushedRadius) > 0.1)
             {
-                // Only update JS if radius actually changed -- the JS
+                // Only update JS if radius actually changed - the JS
                 // layer recomputes the watch ring on every update and
                 // we don't want to thrash that on every tick.
                 await _anchorJs.UpdateAnchorRadiusAsync(radius);
@@ -138,7 +138,7 @@ public sealed class ServerAnchorSync
             // un-dim the marker so the helm investigates rather than
             // staring at a dimmed-indefinitely anchor.
             //
-            // Suppressed while the WebSocket is disconnected -- the
+            // Suppressed while the WebSocket is disconnected - the
             // delta might have been published server-side but the
             // client isn't subscribed to receive it. Re-arm the timer
             // on every disconnected pass so the helm gets a fresh 5 s
@@ -154,14 +154,14 @@ public sealed class ServerAnchorSync
                 else if ((_utcNow() - t).TotalSeconds > RaiseTimeoutSec)
                 {
                     _raisePendingUtc = null;
-                    _raiseTimeoutWarning("Anchor raise not confirmed by server -- still anchored");
+                    _raiseTimeoutWarning("Anchor raise not confirmed by server - still anchored");
                     await _anchorJs.SetAnchorRaisingAsync(false);
                 }
             }
         }
         else if (_serverAnchorDrawn)
         {
-            // Server anchor was raised -- clear from the map. Also clear
+            // Server anchor was raised - clear from the map. Also clear
             // any "raising in progress" pending flag (the marker is
             // going away anyway, but the flag should follow truth).
             await _anchorJs.ClearAnchorAsync();

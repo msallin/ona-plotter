@@ -36,7 +36,7 @@ public class ResourceStoreTests
     /// ResourceStore consumes: <see cref="SignalkClient.OnResourceDelta"/>
     /// and <see cref="SignalkClient.OnConnectionChanged"/>. The real
     /// SignalkClient ctor has many dependencies but does NOT spin the
-    /// WS pump until StartAsync is called -- a fully-wired no-op
+    /// WS pump until StartAsync is called - a fully-wired no-op
     /// instance is enough for tests that only drive event invocations
     /// via the type's public surface (or through direct
     /// HandleResourceDelta calls in this test fixture).</summary>
@@ -279,14 +279,14 @@ public class ResourceStoreTests
         var second = store.Routes;
         await Assert.That(ReferenceEquals(first, second)).IsTrue();
 
-        // Add another route -- next Routes read must be a fresh list.
+        // Add another route - next Routes read must be a fresh list.
         store.HandleResourceDelta("routes", "r2", JsonDocument.Parse(doc).RootElement);
         var third = store.Routes;
         await Assert.That(ReferenceEquals(first, third)).IsFalse();
         await Assert.That(third.Count).IsEqualTo(2);
 
         // The previously-handed-out 'first' reference is still safe to
-        // iterate -- it's the snapshot at its time of read, with the
+        // iterate - it's the snapshot at its time of read, with the
         // single 'r1' entry. (Validates the contract that cached
         // snapshots are immutable from the consumer's POV.)
         await Assert.That(first.Count).IsEqualTo(1);

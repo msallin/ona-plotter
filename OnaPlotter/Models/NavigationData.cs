@@ -125,7 +125,7 @@ public sealed class NavigationData
     /// "we drifted to X m at peak; the alarm threshold is Y m" without
     /// having to remember the highest value they saw scrolling. Reset
     /// to null on <see cref="ClearAnchor"/>; only updated on the
-    /// server-driven (plugin) path -- manual anchors don't publish a
+    /// server-driven (plugin) path - manual anchors don't publish a
     /// currentRadius.</summary>
     public double? AnchorPeakRadius { get; private set; }
 
@@ -137,7 +137,7 @@ public sealed class NavigationData
     /// computes a substitute via Utilities.GeoBearing.</summary>
     public double? AnchorBearingTrue { get; private set; }
 
-    /// <summary>Apparent bearing -- bearing back to anchor in
+    /// <summary>Apparent bearing - bearing back to anchor in
     /// vessel-relative frame (i.e. accounting for current heading).
     /// Useful for swing-on-rode reasoning. Same provenance as
     /// <see cref="AnchorBearingTrue"/>.</summary>
@@ -233,7 +233,7 @@ public sealed class NavigationData
 
     // Tide height + next high/low (published by plugins like mxtide /
     // signalk-tides-api). Heights are metres above chart datum; times
-    // are UTC. All optional -- silent if no plugin is installed.
+    // are UTC. All optional - silent if no plugin is installed.
     public double? TideHeightNow { get; private set; }
     public double? TideHeightHigh { get; private set; }
     public double? TideHeightLow { get; private set; }
@@ -243,7 +243,7 @@ public sealed class NavigationData
 
     /// <summary>Solar state from SignalK's <c>environment.sun</c> string
     /// path. Typical values from signalk-solar / sun plugins: "day",
-    /// "dawn", "dusk", "night". Drives auto-night mode directly -- the
+    /// "dawn", "dusk", "night". Drives auto-night mode directly - the
     /// plugin knows about civil / nautical / astronomical twilight so
     /// we don't reimplement those cutoffs here.</summary>
     public string? SunState { get; private set; }
@@ -444,7 +444,7 @@ public sealed class NavigationData
 
     /// <summary>Marks the moment we just received any SignalK delta.
     /// Used by the dashboard to show "last update" in local time. The
-    /// server's own timestamp on the delta is intentionally ignored --
+    /// server's own timestamp on the delta is intentionally ignored -
     /// in practice it can be hours out of sync (boats with bad GPS,
     /// clients on a different timezone) and the helm cares about
     /// connection health, not the wire-format timestamp.</summary>
@@ -491,7 +491,7 @@ public sealed class NavigationData
             AnchorLongitude = null;
             AnchorMaxRadius = null;
             AnchorCurrentRadius = null;
-            // Peak resets so the next anchor drop starts from zero --
+            // Peak resets so the next anchor drop starts from zero -
             // helm doesn't want yesterday's peak greeting them on
             // tonight's arrival.
             AnchorPeakRadius = null;
@@ -508,7 +508,7 @@ public sealed class NavigationData
             // Clear the freshness stamp too. Without this, a raise
             // followed by a fresh drop reports Live freshness the
             // moment the new position lands but BEFORE any radius
-            // delta arrives -- the HUD's staleness badge would
+            // delta arrives - the HUD's staleness badge would
             // therefore show a Live anchor with null max/current
             // radius, masking the "Missing" state. The next radius
             // delta will set this stamp; until then it should be

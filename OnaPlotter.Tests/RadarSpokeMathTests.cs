@@ -99,7 +99,7 @@ public class RadarSpokeMathTests
     {
         // Doppler / history / target-border markers ALWAYS render
         // regardless of colour or index. Otherwise an MARPA target's
-        // border could vanish behind the noise filter -- bad.
+        // border could vanish behind the noise filter - bad.
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("doppler", "#0000FF", 1, 4)).IsFalse();
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("history", "#0000FF", 1, 4)).IsFalse();
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("targetBorder", "#0000FF", 1, 4)).IsFalse();
@@ -110,7 +110,7 @@ public class RadarSpokeMathTests
     public async Task ShouldSuppressLowReturn_NormalBelowMediumReturn_Suppressed()
     {
         // Index 1 < mediumReturn 4: legend itself flags as sea clutter.
-        // Colour irrelevant here -- metadata wins.
+        // Colour irrelevant here - metadata wins.
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#FF0000", 1, 4)).IsTrue();
         await Assert.That(RadarSpokeMath.ShouldSuppressLowReturn("normal", "#FF0000", 3, 4)).IsTrue();
     }
@@ -183,7 +183,7 @@ public class RadarSpokeMathTests
     {
         // The Transparent constant is Rgba(0,0,0,0), but a valid
         // 8-digit parse with zero alpha should NOT collapse to
-        // Transparent if RGB differ -- that's the difference
+        // Transparent if RGB differ - that's the difference
         // between "parsed and intentionally transparent" and
         // "parser failed and returned the sentinel". Pin the
         // distinction so a future refactor of the parser's failure

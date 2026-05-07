@@ -5,7 +5,7 @@ namespace OnaPlotter.Utilities;
 /// <see cref="MaxRetention"/>; queries (mean / stats) operate on a
 /// caller-chosen sub-window of that retention. One buffer per
 /// channel (TWS, AWS, SOG, VMG, depth, ...) is enough to serve every
-/// consumer that wants a different window over the same source --
+/// consumer that wants a different window over the same source -
 /// the HUD's fixed 30s SOG mean and a future "stats over a helm-
 /// picked 1/2/10 min window" page draw from the same data.
 ///
@@ -43,7 +43,7 @@ public sealed class RollingScalarSeries
     public TimeSpan MaxRetention { get; }
 
     /// <param name="maxRetention">Longest window any consumer
-    /// queries -- e.g. 60 min for wind (covers WindRose's helm-picked
+    /// queries - e.g. 60 min for wind (covers WindRose's helm-picked
     /// 60 min chip) or 30 s for SOG (HUD's fixed window).</param>
     /// <param name="time">Time provider; tests inject FakeTimeProvider.</param>
     public RollingScalarSeries(TimeSpan maxRetention, TimeProvider? time = null)
@@ -55,7 +55,7 @@ public sealed class RollingScalarSeries
     }
 
     /// <summary>Append a sample stamped at "now". Non-finite values
-    /// (NaN, infinity) are silently dropped -- a corrupt sensor read
+    /// (NaN, infinity) are silently dropped - a corrupt sensor read
     /// shouldn't poison the rolling stats.</summary>
     public void Add(double value)
     {
@@ -203,13 +203,13 @@ public sealed class RollingScalarSeries
 
     private void EvictOlderThan(DateTime cutoff)
     {
-        // Advance head past dead samples -- O(k) per call where k is
+        // Advance head past dead samples - O(k) per call where k is
         // the number falling off the front (usually 0 or 1).
         while (_head < _samples.Count && _samples[_head].ts < cutoff)
         {
             _head++;
         }
-        // Compact when the dead prefix reaches half the list size --
+        // Compact when the dead prefix reaches half the list size -
         // amortises the O(N) shift to O(1) per eviction.
         if (_head > 0 && _head >= _samples.Count / 2)
         {

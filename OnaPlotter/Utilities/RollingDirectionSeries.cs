@@ -2,7 +2,7 @@ namespace OnaPlotter.Utilities;
 
 /// <summary>
 /// Rolling buffer of (timestamp, angle) samples for a compass
-/// direction (COG, TWD, heading -- in radians). Mirrors
+/// direction (COG, TWD, heading - in radians). Mirrors
 /// <see cref="RollingScalarSeries"/> but does its math on the unit
 /// vector form (sin/cos) so the 350°/10° wrap doesn't poison the
 /// mean.
@@ -15,16 +15,16 @@ namespace OnaPlotter.Utilities;
 ///
 /// <para>Two query shapes:
 /// <list type="bullet">
-///   <item><see cref="Mean"/> -- circular mean over a sub-window
+///   <item><see cref="Mean"/> - circular mean over a sub-window
 ///   (radians, range [-π, +π]).</item>
-///   <item><see cref="ShiftRateDegPerMin"/> -- linear regression
+///   <item><see cref="ShiftRateDegPerMin"/> - linear regression
 ///   slope of the unwrapped angle series. Positive = veering
 ///   (clockwise); negative = backing. Used by tactical readouts:
 ///   "TWD veered 5°/5 min -> tack now".</item>
 /// </list></para>
 ///
 /// <para>Per-sample weights let callers ignore samples without
-/// a clean call shape -- e.g. COG should be skipped when SOG is
+/// a clean call shape - e.g. COG should be skipped when SOG is
 /// near zero (direction has no meaning when stationary). Pass
 /// <c>weight: 0</c> or simply don't call <see cref="Add"/>.</para>
 /// </summary>
@@ -136,7 +136,7 @@ public sealed class RollingDirectionSeries
     /// negative = backing. Computed by unwrapping the sample series
     /// (so 359° -&gt; 1° reads as +2°, not -358°) and fitting a
     /// linear regression slope. Null on fewer than 5 samples or
-    /// warmup not satisfied -- a 2-sample slope is too noisy to
+    /// warmup not satisfied - a 2-sample slope is too noisy to
     /// publish.
     /// </summary>
     public double? ShiftRateDegPerMin(TimeSpan window, double warmupRatio = RollingScalarSeries.DefaultWarmupRatio)
@@ -144,7 +144,7 @@ public sealed class RollingDirectionSeries
         if (!TryPrepareQuery(window, warmupRatio, out var cutoff)) return null;
         // First pass (newest -> oldest with break): find the in-window
         // range. Then unwrap forward (oldest -> newest) and fit the
-        // regression -- two passes total, both bounded by the in-window
+        // regression - two passes total, both bounded by the in-window
         // count, not the full retention.
         int firstIdx = _samples.Count;
         for (int i = _samples.Count - 1; i >= _head; i--)

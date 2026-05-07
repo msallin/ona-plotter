@@ -11,7 +11,7 @@
 //   * One canvas per radar, sized (2 * maxSpokeLen) square, attached
 //     directly to Leaflet's overlay pane via a custom L.Layer (see
 //     CanvasGeoLayer at the bottom of this file). The canvas IS the
-//     displayed pixels -- no toDataURL / blob / imageOverlay dance,
+//     displayed pixels - no toDataURL / blob / imageOverlay dance,
 //     which the first cut of this file did and which cost 10-50 ms
 //     per reposition on the main thread.
 //   * Spoke painting uses a precomputed polar -> pixel LUT (once per
@@ -27,7 +27,7 @@
 //
 // Scope for MVP:
 //   * No Web Worker. If perf requires, switching to a worker with
-//     OffscreenCanvas is a local refactor -- the public surface
+//     OffscreenCanvas is a local refactor - the public surface
 //     (enableRadar / disableRadar / setBoatState / setRadarRange)
 //     stays the same.
 //   * Doppler / history / target borders all paint at the legend's
@@ -86,7 +86,7 @@ let ringsCount = 4;
  */
 export function setRangeRingsConfig(enabled, count) {
     ringsEnabled = !!enabled;
-    // Clamp to a sane range -- below 1 there's nothing to draw, above
+    // Clamp to a sane range - below 1 there's nothing to draw, above
     // 8 the chart turns into a bullseye. The Settings UI offers 1-6
     // anyway.
     const n = Number(count);
@@ -163,7 +163,7 @@ export function getActiveRadarCount() { return activeRadars.size; }
  * Lat/lon `metres` due true-north of (`lat`, `lon`). Used to anchor
  * each range-ring's label at the top of the ring. Spherical-Earth
  * approximation (111_320 m per degree of latitude); accurate enough
- * for label placement at typical radar ranges (< 32 nm) -- a label
+ * for label placement at typical radar ranges (< 32 nm) - a label
  * a metre off the ring isn't visible at any plausible zoom.
  */
 function offsetNorthMetres(lat, lon, metres) {
@@ -294,7 +294,7 @@ class RadarOverlay {
                 console.warn('[radar] legend has', legend.pixels.length,
                              'pixels; truncating to 256');
             }
-            // Spec's pixels[] is aligned to byte value -- index N
+            // Spec's pixels[] is aligned to byte value - index N
             // corresponds to byte value N.
             for (let i = 0; i < legend.pixels.length && i < 256; i++) {
                 const p = legend.pixels[i];
@@ -317,7 +317,7 @@ class RadarOverlay {
     connect() {
         this._openWebsocket();
         // Range rings appear immediately if the boat fix is already
-        // known (helm pre-zoomed in before enabling the overlay) --
+        // known (helm pre-zoomed in before enabling the overlay) -
         // otherwise the next boat-state push triggers a refresh via
         // onBoatStateChanged. No-op when ringsEnabled is false.
         this.refreshRangeRings();
@@ -394,7 +394,7 @@ class RadarOverlay {
         // spoke says "no echo"), so each cell is touched at most
         // once per batch instead of twice. Tracks the dirty rect
         // across the batch so the upload at the end touches only
-        // the pixels we actually changed -- vs. uploading the full
+        // the pixels we actually changed - vs. uploading the full
         // 16 MB ImageData at 17 fps under the previous code.
         const dirty = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
         for (const spoke of spokes) {
@@ -414,7 +414,7 @@ class RadarOverlay {
         }
         // On first-ever frame, make sure the canvas is actually in
         // the overlay pane. If no boat fix yet, the layer stays
-        // detached and the canvas is invisible -- correct.
+        // detached and the canvas is invisible - correct.
         if (!this.layer) this._scheduleReposition();
     }
 
@@ -432,7 +432,7 @@ class RadarOverlay {
      * accumulator. Folds the previous "clear stale, then paint" two-
      * pass into one: when the new spoke's byte is transparent we
      * zero the prior alpha (so a moving target leaves no trail), but
-     * skip the write entirely if the cell was already transparent --
+     * skip the write entirely if the cell was already transparent -
      * dominant case in open water, saves both the write and a dirty-
      * rect entry.
      *
@@ -566,7 +566,7 @@ class RadarOverlay {
             // Distance label, anchored at the top of each ring (due
             // true-north from boat). One label per ring; the active
             // one's font is heavier to match the ring stroke.
-            // Class is `radar-ring-label` (NOT `radar-range-label` --
+            // Class is `radar-ring-label` (NOT `radar-range-label` -
             // the latter exists for the HUD-side range chip).
             const labelLatLng = offsetNorthMetres(lat, lon, ringRange);
             const className = 'radar-ring-label'
@@ -600,7 +600,7 @@ class RadarOverlay {
         if (lat == null || lon == null) return;
         for (const c of this._rangeRingCircles) c.setLatLng([lat, lon]);
         // Label markers track the ring radius, so recompute their
-        // lat/lon as the boat moves. Same labels reused -- the text
+        // lat/lon as the boat moves. Same labels reused - the text
         // doesn't change, only the position.
         if (this._rangeRingLabels) {
             for (const l of this._rangeRingLabels) {
@@ -654,7 +654,7 @@ class RadarOverlay {
             this._rangeRingCircles = null;
             this._rangeRingLabels = null;
         }
-        // Release the LUT memory aggressively -- these can be
+        // Release the LUT memory aggressively - these can be
         // 4-8 MB per radar.
         this.xLut = null;
         this.yLut = null;
@@ -732,7 +732,7 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
  *       per the legend's own classification (covers ramps where the
  *       provider doesn't pick blue but still flags noise).
  *    2. Colour: anything where blue is the dominant channel
- *       (B > R AND B > G) -- catches the cyan / pure-blue / blue-green
+ *       (B > R AND B > G) - catches the cyan / pure-blue / blue-green
  *       ramp that on HALO extends past the metadata cutoff (bytes
  *       5-7 are still blue-dominant by RGB even though they're
  *       above mediumReturn).
@@ -767,7 +767,7 @@ export const _internal = {
 //
 // vs. L.ImageOverlay: ImageOverlay needs a URL and encodes the canvas
 // on every `setUrl`. For a 4096x4096 canvas toDataURL costs 10-50 ms
-// on the main thread -- unacceptable at radar frame rates. This
+// on the main thread - unacceptable at radar frame rates. This
 // layer avoids that entirely.
 // ---------------------------------------------------------------------
 
@@ -782,7 +782,7 @@ const CanvasGeoLayer = L.Layer.extend({
         canvasEl.style.pointerEvents = 'none';
         // Disable the browser's anti-alias smoothing when the canvas
         // is CSS-scaled to a different display size than its native
-        // pixel size -- we'd rather have crisp spoke pixels than a
+        // pixel size - we'd rather have crisp spoke pixels than a
         // blurry upsample.
         canvasEl.style.imageRendering = 'pixelated';
     },
@@ -812,7 +812,7 @@ const CanvasGeoLayer = L.Layer.extend({
     },
 
     /** Update the geographic anchor point and/or radar range. Cheap
-     *  -- just a DOM transform on the canvas element; no repaint
+     *  - just a DOM transform on the canvas element; no repaint
      *  cost because the canvas pixels are already written. */
     updateAnchor(lat, lon, rangeMeters) {
         this._anchorLat = lat;

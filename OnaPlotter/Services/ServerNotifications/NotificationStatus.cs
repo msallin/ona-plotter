@@ -7,7 +7,7 @@ namespace OnaPlotter.Services.ServerNotifications;
 /// these from each delta's <c>value.status</c> when present.
 /// <para>
 /// All five fields are server-controlled. <c>Acknowledged</c> means
-/// "some plotter (or the server) marked this seen", and is global --
+/// "some plotter (or the server) marked this seen", and is global -
 /// every connected client sees the same value, which is the v2
 /// behaviour OnaPlotter relies on for cross-plotter alarm sync.
 /// </para>

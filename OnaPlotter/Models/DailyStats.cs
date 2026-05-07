@@ -25,7 +25,7 @@ namespace OnaPlotter.Models;
 /// <param name="StationaryDurationSeconds">Sum of stationary-segment
 /// durations attributed to this day.</param>
 /// <param name="DistanceMetres">Sum of moving-segment distances on
-/// this day. Stationary distance excluded -- same discipline as
+/// this day. Stationary distance excluded - same discipline as
 /// <see cref="StatsTotals.TotalDistanceMetres"/>.</param>
 /// <param name="MaxSogMs">Peak SOG observed on this day. Considers
 /// all segments (a momentary surge inside a stationary "ferry-wash"

@@ -9,7 +9,7 @@ namespace OnaPlotter.Tests.Components;
 /// <summary>
 /// bUnit tests for the topbar place-search component. The interesting
 /// surface is the dropdown lifecycle (open / close, highlight,
-/// keyboard nav, pick callback) and the debounce gate -- not the
+/// keyboard nav, pick callback) and the debounce gate - not the
 /// IPlaceSearchService implementation itself, which is unit-tested
 /// elsewhere. We pass DebounceMs=0 in every test so the input
 /// handler resolves synchronously without waiting on a timer.
@@ -53,7 +53,7 @@ public class SearchBoxTests
     }
 
     private static PlaceResult Pl(string name, double lat = 47.0, double lon = 8.0) =>
-        new(name, $"{name} -- locality, country", lat, lon, "photon");
+        new(name, $"{name} - locality, country", lat, lon, "photon");
 
     [Test]
     public async Task Empty_Input_Renders_Just_The_Field()
@@ -336,7 +336,7 @@ public class SearchBoxTests
     // OperationCanceledException would normally live here, but a
     // bUnit InputAsync against a stub that throws synchronously
     // hangs the runtime in the current TUnit + bUnit + Blazor WASM
-    // combination -- the test framework can't observe that the
+    // combination - the test framework can't observe that the
     // exception was caught vs the entire dispatch was aborted, and
     // the test runner pegs on the first cold dispatch. The fix is
     // verified by manual helm-test (fast typing no longer leaves

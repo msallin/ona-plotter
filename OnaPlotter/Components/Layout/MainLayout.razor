@@ -35,7 +35,7 @@
             </span>
             @* When offline, surface a Retry button right next to the
                chip. Cancels the current reconnect backoff so the next
-               attempt is immediate -- no waiting out the 30s cap.
+               attempt is immediate - no waiting out the 30s cap.
                Hidden when connected. *@
             @if (!SignalkClient.IsConnected)
             {
@@ -84,7 +84,7 @@
                running. Reload uses NavigationManager.forceLoad so the
                browser re-fetches index.html + _framework/* with the
                cache-bypass headers the SK webapp host sets on those
-               paths -- helm gets the new bundle in one tap. Sticky
+               paths - helm gets the new bundle in one tap. Sticky
                latch: even if a later poll happens to match (rolling
                deploy / CDN race), the helm has already SEEN the
                prompt so we don't take it back. *@
@@ -166,7 +166,7 @@
                and Night sits flush with the rest. *@
             <button class="btn btn-sm btn-outline-secondary topbar-icon-btn @(IsMapRoute ? "" : "ms-auto")"
                     @onclick="CycleNightMode"
-                    title="@(Settings.NightMode ? $"Night ({Settings.NightModePreset}) -- tap to advance" : "Night mode")"
+                    title="@(Settings.NightMode ? $"Night ({Settings.NightModePreset}) - tap to advance" : "Night mode")"
                     aria-label="@(Settings.NightMode ? "Advance night-mode preset" : "Switch to night mode")">
                 @if (Settings.NightMode)
                 {
@@ -179,13 +179,13 @@
             </button>
 
             @* Fullscreen button. Only rendered when the browser can
-               actually fullscreen a non-video element -- iPad Safari
+               actually fullscreen a non-video element - iPad Safari
                (tab mode) cannot, so we simply hide the button there;
                the user installs the app via Share -> Add to Home
                Screen to get a true fullscreen launcher. See wwwroot/js/platform/fullscreen.js
                ::isSupported(). Standalone PWAs also hide the button
                because they're already fullscreen at launch.
-               NO Blazor @onclick -- fullscreen.js wires a native
+               NO Blazor @onclick - fullscreen.js wires a native
                click listener via attachTrigger() below. Requesting
                fullscreen on Safari / iOS must happen synchronously
                from a user gesture; a Blazor @onclick round-trips
@@ -245,7 +245,7 @@
                                autopilot engage pattern. *@
                             <div class="alarm-body alarm-body-hold @(HoldingAlarmKey == AlarmKeyOf(a) ? "alarm-holding" : "")"
                                  role="button" tabindex="0"
-                                 aria-label="@($"{a.Title} alarm -- hold to dismiss")"
+                                 aria-label="@($"{a.Title} alarm - hold to dismiss")"
                                  @onpointerdown="() => StartAlarmHold(a)"
                                  @onpointerup="EndAlarmHold"
                                  @onpointerleave="EndAlarmHold"
@@ -455,7 +455,7 @@
     private bool firstRunOfflineToastShown;
     /// <summary>Cached login-status snapshot. Probed once at app
     /// start via IAuthApi.GetLoginStatusAsync and refreshed every
-    /// 5 minutes thereafter -- short enough that the helm sees the
+    /// 5 minutes thereafter - short enough that the helm sees the
     /// chip clear within a few minutes after they sign in via the
     /// SK admin tab, long enough that the probe doesn't add
     /// measurable network noise. Null means "haven't probed yet"
@@ -466,7 +466,7 @@
     /// <summary>Coalesces overlapping probes. At the warning-shown
     /// 2s cadence, a network stall can leave a previous probe in
     /// flight when the next tick fires (AuthApi caps each probe at
-    /// 8s). Interlocked guard skips the duplicate -- queuing them
+    /// 8s). Interlocked guard skips the duplicate - queuing them
     /// up would build a backlog of stale 401 round-trips with no
     /// UX benefit.</summary>
     private int _authProbeInFlight;
@@ -509,7 +509,7 @@
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
         SignalkClient.OnDataChanged += HandleDataChanged;
         // Wake the alarm pipeline whenever a server notification
-        // mutates -- including local synthetics produced by
+        // mutates - including local synthetics produced by
         // MobService. Subscribing directly to the store keeps the
         // dependency direction honest (the alarm pipeline depends
         // on the store, not the WS client) and avoids back-door
@@ -521,7 +521,7 @@
         Alarms.OnAlarmsChanged += HandleAlarmsChanged;
         // UpdateChecker fires when the server's bundle hash diverges
         // from ours. The chip in the topbar above gates on
-        // Updates.IsUpdateAvailable -- this re-render unhides it.
+        // Updates.IsUpdateAvailable - this re-render unhides it.
         Updates.OnChanged += HandleUpdatesChanged;
         // Re-render when the route changes so the topbar zoom
         // buttons appear/disappear based on IsMapRoute.
@@ -534,7 +534,7 @@
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
 
         // Capture the SK admin link target once. NavigationManager.BaseUri
-        // is the page origin (e.g. https://openplotter.local/) -- the SK
+        // is the page origin (e.g. https://openplotter.local/) - the SK
         // admin lives at /admin/#/login on the same origin in the typical
         // signalk-server install.
         _baseUri = Nav.BaseUri.TrimEnd('/');
@@ -547,7 +547,7 @@
         //   - 1 min once logged in or on a no-security server (cheap
         //     keep-alive so a session expiry surfaces quickly).
         // The probe degrades to null (chip hidden) on 404 / transport
-        // failure -- third-party SK servers without /skServer/loginStatus
+        // failure - third-party SK servers without /skServer/loginStatus
         // see no chip rather than a "broken auth" warning.
         _ = RefreshLoginStatusAsync();
         authPollTimer = new System.Threading.Timer(
@@ -588,7 +588,7 @@
             // Re-apply the theme + night-mode classes to <html> on
             // every settings change so preset swaps + auto-night flips
             // + theme picks propagate globally. Both helpers are
-            // idempotent -- safe to call with identical args.
+            // idempotent - safe to call with identical args.
             if (themeModule is not null)
             {
                 try
@@ -687,7 +687,7 @@
     }
 
     /// <summary>Same env.sun cluster mapping as Map.SunClusterFromState
-    /// -- duplicated rather than shared because IThemeSettings
+    /// - duplicated rather than shared because IThemeSettings
     /// shouldn't have to know about NavigationData and a tiny
     /// helper isn't worth a dedicated utility class.</summary>
     private static string? SunClusterFromState(string? sunState) => sunState switch
@@ -708,7 +708,7 @@
     /// wwwroot/js/visibility.js. We use it to re-probe
     /// /skServer/loginStatus immediately so the helm who fixed the
     /// underlying auth problem in the SK admin tab sees the chip
-    /// clear on return -- the 5-min poll alone makes the chip feel
+    /// clear on return - the 5-min poll alone makes the chip feel
     /// stuck. Fire-and-forget: the probe handles its own errors.</summary>
     [JSInvokable]
     public void OnTabVisible()
@@ -728,7 +728,7 @@
         // toggle in the rail (the sidebar couldn't be re-expanded
         // while fullscreen was on). Now we mirror the state into
         // Settings.SidebarCollapsed so the manual toggle stays
-        // authoritative -- enter fullscreen collapses, exit expands,
+        // authoritative - enter fullscreen collapses, exit expands,
         // and a tap on the rail chevron after either direction wins.
         // Skip the write if the setting already matches to avoid
         // firing OnSettingsChanged on every fullscreenchange.
@@ -740,7 +740,7 @@
     }
 
     // True when the current URL is the Map page. Drives visibility
-    // of the topbar zoom buttons -- there's no map to zoom anywhere
+    // of the topbar zoom buttons - there's no map to zoom anywhere
     // else. Cached + refreshed only when the location actually
     // changes (HandleLocationChanged) so the MainLayout render path
     // doesn't allocate a new Uri per call (this layout re-renders
@@ -804,7 +804,7 @@
             // zero-size map; a stale shell deployment where the new
             // wasm calls flyToSearchResult against an old bundle that
             // doesn't export it). Log enough context that the support
-            // grep loop can trace which pick failed -- without this
+            // grep loop can trace which pick failed - without this
             // the error relay catches "unhandled exception in
             // component" with no breadcrumb naming the place result.
             Logger.LogWarning(ex,
@@ -883,7 +883,7 @@
     /// Escape closes. Tab / Shift-Tab cycles focus inside the panel
     /// via a JS focus-trap helper so an external keyboard on iPad
     /// can't tab into the chart underneath while the dialog is open
-    /// (the aria-modal attribute alone doesn't enforce this --
+    /// (the aria-modal attribute alone doesn't enforce this -
     /// browsers don't trap focus, only assistive tech reads it).</summary>
     private async Task OnAlarmLogKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
@@ -972,7 +972,7 @@
             // Hook tab-visibilitychange so the not-logged-in chip
             // re-probes the server the moment the helm returns from
             // signing in via the SK admin tab. The same fsSelfRef
-            // doubles as the JSInvokable target -- one DotNetObjectReference
+            // doubles as the JSInvokable target - one DotNetObjectReference
             // serves both fullscreen-state and tab-visible callbacks.
             // Best-effort: a missing module file or a JSDisconnected at
             // boot leaves us on the 5-min poll fallback rather than
@@ -1075,7 +1075,7 @@
     /// the active set. Reuses HandleDataChanged's evaluate path so the
     /// notification-driven re-evaluation behaves identically to the
     /// WS-frame-driven one (no separate code path for ServerNotifications-
-    /// only changes). Path argument is unused -- the rule pipeline reads
+    /// only changes). Path argument is unused - the rule pipeline reads
     /// the entire store on every Evaluate.</summary>
     private void HandleNotificationPathChanged(string _) => HandleDataChanged();
 
@@ -1085,7 +1085,7 @@
     // perpendicularPassed / arrivalCircleEntered as booleans on every
     // active leg. When either flips to true we POST to
     // navigation/course/activeRoute/nextPoint so the boat flows through
-    // the route without requiring a tap per waypoint -- matches the
+    // the route without requiring a tap per waypoint - matches the
     // default behaviour of commercial chartplotters.
     //
     // Edge-triggered (_prevPerp / _prevArr): we only fire on the
@@ -1154,13 +1154,13 @@
         // (/activeRoute/nextPoint with {value:1}) is NOT idempotent:
         // two racing PUTs both increment the server's pointIndex
         // and silently skip a waypoint. The absolute form
-        // (PUT /activeRoute/pointIndex {value: N}) IS idempotent --
+        // (PUT /activeRoute/pointIndex {value: N}) IS idempotent -
         // the second PUT lands on a value that's already set and is
         // a no-op.
         //
         // Last-leg exception: SetPointIndexAsync clamps out-of-range
         // values, so PUT pointIndex=total does NOT clear the active
-        // course. Fall back to the relative call there -- the race
+        // course. Fall back to the relative call there - the race
         // is inert on the final leg (nothing to skip to), and the
         // relative call is what triggers the server's clear-on-arrive
         // so the "Arrived at final waypoint" toast still fires.
@@ -1224,8 +1224,8 @@
     //
     // End-of-route signal: some servers clear the active course on the
     // last leg's arrival, others hold the final waypoint and refuse
-    // "nextPoint". We listen for either signal -- SignalkClient fires
-    // NavigationData.HasActiveCourse -> false on route clear -- and
+    // "nextPoint". We listen for either signal - SignalkClient fires
+    // NavigationData.HasActiveCourse -> false on route clear - and
     // show an explicit "arrived at final WP" toast so the helm isn't
     // left wondering whether the tap worked.
     private async Task NextWaypoint(AlarmInfo alarm)
@@ -1261,7 +1261,7 @@
     // Empty handler just so the @oncontextmenu:preventDefault directive
     // has something to attach to. Blazor registers the preventDefault
     // only if the event has a listener, so without this the long-press
-    // menu still pops. No business logic -- the alarm banner should
+    // menu still pops. No business logic - the alarm banner should
     // react to tap / hold, not right-click.
     private void NoOpContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs _) { }
 
@@ -1356,23 +1356,23 @@
     /// <summary>Probe the login-status endpoint and stash for the
     /// not-logged-in chip. Called once on init, on tab visibility
     /// changes, and on a dynamic timer cadence (2 s while the chip
-    /// is up; 1 min otherwise -- see <see cref="AuthPollIntervalWarningShown"/>).
+    /// is up; 1 min otherwise - see <see cref="AuthPollIntervalWarningShown"/>).
     /// Failure / 404 (third-party SK server without
     /// /skServer/loginStatus) leaves the cached value null and the
-    /// chip stays hidden -- "we can't tell" is a more honest UX
+    /// chip stays hidden - "we can't tell" is a more honest UX
     /// than a chip that lies.</summary>
     private async Task RefreshLoginStatusAsync()
     {
         // Skip if a previous probe is still running. Without this,
         // an 8 s network stall under the 2 s warning-shown cadence
         // would queue up to 4 concurrent probes against the same
-        // endpoint -- noise without signal.
+        // endpoint - noise without signal.
         if (System.Threading.Interlocked.CompareExchange(
                 ref _authProbeInFlight, 1, 0) != 0) return;
         try
         {
             var status = await AuthApi.GetLoginStatusAsync();
-            // Only re-render when the warning state changed -- avoids
+            // Only re-render when the warning state changed - avoids
             // a free StateHasChanged on every poll for the common
             // "still logged in" path. Toggle vs the current
             // _loginStatus's effective banner state.
@@ -1386,7 +1386,7 @@
             // Re-tune the poll cadence to match the new state: fast
             // while the chip is up so the next sign-in is detected
             // promptly, slow otherwise. Safe to call on every probe
-            // -- Timer.Change is idempotent for a same-period reset.
+            // - Timer.Change is idempotent for a same-period reset.
             var nextInterval = nowShowing
                 ? AuthPollIntervalWarningShown
                 : AuthPollIntervalWarningHidden;
@@ -1434,7 +1434,7 @@
     /// (e.g. depth flapping on every tide tick) would otherwise push
     /// many identical entries to the top of the log and drown out
     /// other alarms; grouping keeps one row per run while preserving
-    /// the run length. Only consecutive same-key entries collapse --
+    /// the run length. Only consecutive same-key entries collapse -
     /// a CPA alarm between two depth clears keeps both depth runs
     /// as distinct rows so the chronological context survives.</summary>
     private static IEnumerable<DismissedAlarmGroup> CoalesceDismissedHistory(
@@ -1557,7 +1557,7 @@
         }
         if (wakeLockModule is not null)
         {
-            // Release the lock before dropping the module reference --
+            // Release the lock before dropping the module reference -
             // some browsers won't garbage-collect a held WakeLockSentinel
             // when the JS module reference goes away, leaving the screen
             // pinned awake until the tab is closed.

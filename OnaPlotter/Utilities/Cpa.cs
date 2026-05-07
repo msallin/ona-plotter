@@ -36,7 +36,7 @@ public static class Cpa
     /// Returns the precomputed own-ship state used by the per-target
     /// <see cref="Compute(in OwnSnapshot, double, double, double?, double?)"/>
     /// overload. Returns null when own-ship inputs are missing or
-    /// non-finite -- the caller should skip the per-target loop
+    /// non-finite - the caller should skip the per-target loop
     /// entirely in that case.
     /// </summary>
     public static OwnSnapshot? PrecomputeOwn(
@@ -124,7 +124,7 @@ public static class Cpa
     /// <para>Single-call site convenience wrapper around
     /// <see cref="PrecomputeOwn"/> + the OwnSnapshot overload.
     /// Per-tick loops with N targets should call PrecomputeOwn ONCE
-    /// outside the loop and the OwnSnapshot overload N times -- this
+    /// outside the loop and the OwnSnapshot overload N times - this
     /// wrapper does the trig per call.</para>
     /// </summary>
     public static Result? Compute(
@@ -147,7 +147,7 @@ public static class Cpa
     /// snapshot path (AisPushService), and the ring rendering
     /// (Map.razor.PushGuardZoneAsync) all settle on one number. A
     /// previous bug had the rings narrow but the chips keep using
-    /// the underway threshold -- helm saw amber chips floating
+    /// the underway threshold - helm saw amber chips floating
     /// outside the visible rings, called it broken.</para>
     /// </summary>
     /// <param name="underwayNm">Helm-configured CPA radius
@@ -170,7 +170,7 @@ public static class Cpa
         // Storage corruption / schema-migration mishap can land
         // underwayNm as NaN / Infinity / non-positive. Without the
         // guard, Math.Min(NaN, anchorNm) = NaN and ClassifyThreat
-        // then sees `cpaNm < NaN` = false on every vessel -- the CPA
+        // then sees `cpaNm < NaN` = false on every vessel - the CPA
         // alarm + threat ring go DARK with no helm-visible signal.
         // Recover to the spec default rather than fail-silent.
         double safeUnderway = (double.IsFinite(underwayNm) && underwayNm > 0)

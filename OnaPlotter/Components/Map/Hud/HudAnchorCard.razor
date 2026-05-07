@@ -13,7 +13,7 @@
        card becomes a click target that re-opens the SetRadius panel.
        Card visibility is gated by Snapshot.Visible (= AnchorActive
        AND MaxRadius set on the parent), so the dropped-but-not-armed
-       intermediate state never shows the card -- the chart marker's
+       intermediate state never shows the card - the chart marker's
        amber-pulse + "RADIUS NOT SET" tooltip carry that state. *@
     var canAdjust = OnAdjust.HasDelegate;
     <div class="hud-panel hud-card anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "") @(canAdjust ? "anchor-panel-tappable" : "")"
@@ -101,7 +101,7 @@
 
     /// <summary>Normalise a bearing in radians to whole degrees on
     /// [0, 360). Returns null when the input is null, NaN, or
-    /// infinite -- a malformed delta would otherwise produce a
+    /// infinite - a malformed delta would otherwise produce a
     /// non-finite degree value that the previous while-loop
     /// implementation looped on for millions of iterations per
     /// render. Single modulo idiom is bounded constant-time.</summary>
@@ -134,6 +134,6 @@
         // (MapHud.BuildAnchorSnapshot) from anchor + own-ship lat/lon
         // so it works on both the plugin and the JS-only manual flow.
         // Null when either endpoint is missing (no GPS, no anchor)
-        // -- the card uses that as the hide signal.
+        // - the card uses that as the hide signal.
         double? BearingTrue = null);
 }

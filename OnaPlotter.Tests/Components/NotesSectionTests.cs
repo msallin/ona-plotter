@@ -133,7 +133,7 @@ public class NotesSectionTests
     {
         // The Go button feeds the Map page's NavigateToNote, which
         // PUTs the note's lat/lon as the SignalK course destination.
-        // Tested in isolation here -- the section just bubbles the
+        // Tested in isolation here - the section just bubbles the
         // SignalkNote up. End-to-end coverage of the destination
         // PUT lives in the (future) NavigateToNote tests on the
         // page.

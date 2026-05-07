@@ -18,7 +18,10 @@ public class MapResourceControllerTests
         public List<string> NoteRemoves { get; } = [];
         public int NoteClears { get; private set; }
         public List<string> NoteOpens { get; } = [];
-        public List<(string id, IReadOnlyList<double[][]> rings, string? title, string? desc)> Regions { get; } = [];
+        public List<(string id, IReadOnlyList<double[][]> rings, string? title, string? desc,
+                     bool isHazard, double areaSqM,
+                     double? centerLat, double? centerLon, double? radiusMeters,
+                     string? createdAtIso)> Regions { get; } = [];
         public List<string> RegionRemoves { get; } = [];
         public int RegionClears { get; private set; }
         public List<(string id, double[][] ring)> RegionFocus { get; } = [];
@@ -52,9 +55,14 @@ public class MapResourceControllerTests
         public Task ClearNotesAsync() { NoteClears++; return Task.CompletedTask; }
         public Task OpenNotePopupAsync(string id) { NoteOpens.Add(id); return Task.CompletedTask; }
 
-        public Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings, string? title, string? description)
+        public Task AddRegionAsync(string id, IReadOnlyList<double[][]> rings,
+            string? title, string? description, bool isHazard,
+            double areaSqM,
+            double? centerLat, double? centerLon, double? radiusMeters,
+            string? createdAtIso)
         {
-            Regions.Add((id, rings, title, description));
+            Regions.Add((id, rings, title, description, isHazard, areaSqM,
+                         centerLat, centerLon, radiusMeters, createdAtIso));
             return Task.CompletedTask;
         }
 

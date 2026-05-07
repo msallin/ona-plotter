@@ -47,7 +47,7 @@ public class LocalStorageKeyValueStoreTests
     {
         // Capture the invocation via the setup's matcher so we can assert
         // the args the wrapper forwarded. SetVoidResult() completes the
-        // handler -- without it the InvokeVoidAsync task stays pending
+        // handler - without it the InvokeVoidAsync task stays pending
         // and await hangs forever (bUnit 1.x semantics: a Setup with no
         // SetResult / SetVoidResult / SetException never fires).
         using var ctx = new Bunit.TestContext();

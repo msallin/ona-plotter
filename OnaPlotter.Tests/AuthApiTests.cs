@@ -37,7 +37,7 @@ public class AuthApiTests
     public async Task NotLoggedIn_Body_Parses_AndFlagsTriggerBanner()
     {
         // The exact response openplotter.local returned during
-        // implementation -- pin so a future SK-server tweak that
+        // implementation - pin so a future SK-server tweak that
         // renames a field surfaces as a parser break.
         string body = """
         {"status":"notLoggedIn","readOnlyAccess":true,"authenticationRequired":true,"allowNewUserRegistration":false,"allowDeviceAccessRequests":true,"securityWasEnabled":false}
@@ -72,7 +72,7 @@ public class AuthApiTests
         // Field-captured response from openplotter.local for a logged-in
         // admin: status=loggedIn, BUT readOnlyAccess=true. The original
         // rule treated readOnlyAccess as a per-user authority and lit
-        // the chip on a fully-logged-in admin -- helm reported "I am
+        // the chip on a fully-logged-in admin - helm reported "I am
         // logged in but the chip says I'm not". The fix: trust
         // status=="loggedIn" alone; readOnlyAccess is a server-config
         // signal ("by default sessions are read-only") that even a
@@ -113,7 +113,7 @@ public class AuthApiTests
     public async Task EndpointMissing_404_Returns_Null()
     {
         // Third-party SK server that doesn't ship /skServer/loginStatus
-        // returns 404. The chip stays hidden -- "we can't tell" is
+        // returns 404. The chip stays hidden - "we can't tell" is
         // the honest UX. Pinning here so a future change to
         // ResourceHttp's error handling can't accidentally start
         // throwing on 404 (which would crash the page).
@@ -138,7 +138,7 @@ public class AuthApiTests
         // The 5-min auth poll passes a CT; if the page is torn down
         // mid-probe (helm navigates away), the linked CT cancels and
         // the awaiter sees TaskCanceledException. AuthApi swallows
-        // that and returns null rather than propagating -- the page-
+        // that and returns null rather than propagating - the page-
         // teardown path doesn't want to handle a phantom auth
         // exception. Simulates the same cancellation that an 8-s
         // ProbeTimeout would produce, without sleeping the test 8 s.
@@ -151,7 +151,7 @@ public class AuthApiTests
     }
 
     /// <summary>Handler that respects the request CT so a pre-cancelled
-    /// token surfaces as TaskCanceledException -- the same surface as
+    /// token surfaces as TaskCanceledException - the same surface as
     /// AuthApi's internal 8-s timeout firing.</summary>
     private sealed class CancelRespectingHandler : HttpMessageHandler
     {
@@ -182,7 +182,7 @@ public class AuthApiTests
         // Future SK-server build ships a third status string ("guest",
         // "locked", whatever). Helm-side classifier treats anything
         // that isn't exactly "loggedIn" (case-insensitive) as not
-        // logged in -- belt-and-braces against a server-side rename
+        // logged in - belt-and-braces against a server-side rename
         // that would otherwise default-to-allow.
         string body = """
         {"status":"guest","readOnlyAccess":true,"authenticationRequired":true}

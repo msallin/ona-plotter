@@ -5,8 +5,8 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Pins the segmenter's stationary/moving classification + stats
-/// math. Drives the algorithm directly with crafted point arrays --
-/// no API, no clock, no IO -- so failures are pinpoint.
+/// math. Drives the algorithm directly with crafted point arrays -
+/// no API, no clock, no IO - so failures are pinpoint.
 /// </summary>
 public class TrackSegmenterTests
 {
@@ -43,7 +43,7 @@ public class TrackSegmenterTests
     [Test]
     public async Task SinglePoint_ReturnsEmpty()
     {
-        // Can't define a segment from one fix -- no edges, no
+        // Can't define a segment from one fix - no edges, no
         // classification possible.
         var segs = TrackSegmenter.Segment([
             Pt(T0, TimeSpan.Zero, 47.4, 8.5, sog: 3.0)
@@ -284,14 +284,14 @@ public class TrackSegmenterTests
         // (4 SOG-elevated samples), then back to stationary for 30
         // more minutes. The middle blip survives the 3-min debounce
         // (because the candidate flips back too fast for the segmenter
-        // to NOT commit it -- actually it gets committed once the run
+        // to NOT commit it - actually it gets committed once the run
         // accumulates DebounceWindow's worth, so a single blip never
         // gets that far). The merge pass is what saves us: the
         // resulting "moving" segment is sub-MinSegmentDuration (2 min)
         // so it gets absorbed.
         //
         // Pinned because the previous implementation only checked
-        // "fewer than 2 points" and let multi-point blips survive --
+        // "fewer than 2 points" and let multi-point blips survive -
         // exactly the "14-second moving trip the helm caused by
         // stepping on the throttle" case the constant comment warns
         // about.
@@ -313,7 +313,7 @@ public class TrackSegmenterTests
 
         // The blip should NOT survive as its own segment. Either we
         // see one merged stationary segment, or two stationary
-        // segments separated by the (absorbed) blip -- both outcomes
+        // segments separated by the (absorbed) blip - both outcomes
         // mean no spurious "moving" trip.
         await Assert.That(segs.All(s => s.IsStationary)).IsTrue();
     }
@@ -428,7 +428,7 @@ public class TrackSegmenterTests
     {
         // GPS-noise-only stationary: position oscillates by a few
         // metres. Distance should accumulate the noise (positive,
-        // small) -- not zero (we sum every step) and never negative.
+        // small) - not zero (we sum every step) and never negative.
         var pts = new List<TrackPoint>();
         var rng = new Random(42);
         for (int i = 0; i <= 30; i++)

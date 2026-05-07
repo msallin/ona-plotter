@@ -119,7 +119,7 @@ public class SignalkClientByteParseTests
         // The byte path's whole point: skip the UTF-16 string
         // allocation when nobody is listening. We can't observe
         // "did we allocate a string?" directly, but we CAN observe
-        // "was the subscriber called?" -- if a future refactor flips
+        // "was the subscriber called?" - if a future refactor flips
         // the gate to "always invoke", subscribed-after counts go up
         // when they shouldn't. This test pins the contract: an
         // unsubscribed delta increments no listener; subscribing
