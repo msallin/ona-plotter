@@ -421,7 +421,24 @@
 //             eyebrow is now computed live (was a static string set
 //             at panel-open) so it follows the boat as the swing
 //             peak grows and tide ticks.
-const CACHE_NAME = 'ona-plotter-v52';
+// v52 -> v53: Marine services master "Show" toggle + Layers panel
+//             reorder + Resources Import/Refresh grouping.
+//             - MarineServicesSection grows a header "Show" chip
+//               that flips MarinePoiOverlayVisible (new persisted
+//               setting, defaults true). When off, the controller
+//               drops every marker AND skips Overpass fetches; per-
+//               category picks survive a hide/show round-trip.
+//               IMarinePoiSettings + AppSettingsService extended;
+//               existing fakes updated.
+//             - Misc section moved to the bottom of the Layers
+//               panel (was above Marine services). Helm: chart-
+//               related sections cluster at the top, the grab-bag
+//               sits last.
+//             - Resources page Import + Refresh wrapped in a single
+//               flex group so they sit adjacent on the right;
+//               previously space-between pushed Import to the
+//               middle and Refresh to the far right.
+const CACHE_NAME = 'ona-plotter-v53';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

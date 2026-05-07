@@ -539,6 +539,8 @@
                      OnWeatherOpacityPreview="@(p => _weather?.PreviewOpacityAsync(p) ?? Task.CompletedTask)"
                      OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
                      OnToggleAtonsVisible="ToggleAtonsVisible"
+                     MarinePoiOverlayVisible="Settings.MarinePoiOverlayVisible"
+                     OnToggleMarinePoiOverlay="@(v => Settings.SetMarinePoiOverlayVisibleAsync(v))"
                      MarinePoiFuelEnabled="Settings.MarinePoiFuelEnabled"
                      MarinePoiMarinaEnabled="Settings.MarinePoiMarinaEnabled"
                      MarinePoiHarbourEnabled="Settings.MarinePoiHarbourEnabled"

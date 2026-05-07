@@ -47,60 +47,69 @@
                 Layers panel is full or when a past plotter left orphans behind.
             </p>
         </div>
-        @* Page-level Import. Auto-detects GPX (XML) or GeoJSON (JSON)
-           on the way in and routes each feature to its matching API:
-           LineString -> route, Point + title -> note, Point + name ->
-           waypoint, Polygon / MultiPolygon -> region, GPX rte ->
-           route, GPX wpt -> waypoint. Per-row Export already lives
-           on every row above; the matching Import rounds the data-
-           management flow into one place. Replaces the Settings
-           Backup section (focus-group field report 2026-04). *@
-        <label class="btn btn-outline-primary @(importing ? "disabled" : "")"
-               style="white-space:nowrap;"
-               title="Drop in a GPX or GeoJSON file - format auto-detected">
+        @* Action cluster: Import + (Cancel during import) + Refresh
+           wrapped in a single flex group so they read as one
+           "data-management toolbar" instead of the title floating
+           between them. Helm-flagged: the previous layout used
+           justify-content: space-between on three siblings, which
+           pushed Import to the centre and Refresh to the far right
+           with a wide gap between them. *@
+        <div class="d-flex align-items-start gap-2 flex-wrap">
+            @* Page-level Import. Auto-detects GPX (XML) or GeoJSON (JSON)
+               on the way in and routes each feature to its matching API:
+               LineString -> route, Point + title -> note, Point + name ->
+               waypoint, Polygon / MultiPolygon -> region, GPX rte ->
+               route, GPX wpt -> waypoint. Per-row Export already lives
+               on every row above; the matching Import rounds the data-
+               management flow into one place. Replaces the Settings
+               Backup section (focus-group field report 2026-04). *@
+            <label class="btn btn-outline-primary @(importing ? "disabled" : "")"
+                   style="white-space:nowrap;"
+                   title="Drop in a GPX or GeoJSON file - format auto-detected">
+                @if (importing)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <span>@(_importProgressTotal > 0 ? $"Importing {_importProgressDone}/{_importProgressTotal}..." : "Importing...")</span>
+                }
+                else
+                {
+                    <span>Import...</span>
+                }
+                <InputFile OnChange="HandleImport" Accept=".gpx,.geojson,.json,.xml"
+                           style="display:none;" disabled="@importing" />
+            </label>
             @if (importing)
             {
-                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                <span>@(_importProgressTotal > 0 ? $"Importing {_importProgressDone}/{_importProgressTotal}..." : "Importing...")</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        @onclick="CancelImport"
+                        title="Stop the import after the current item; already-saved items are kept on the server">
+                    Cancel
+                </button>
             }
-            else
-            {
-                <span>Import...</span>
-            }
-            <InputFile OnChange="HandleImport" Accept=".gpx,.geojson,.json,.xml"
-                       style="display:none;" disabled="@importing" />
-        </label>
-        @if (importing)
-        {
-            <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
-                    @onclick="CancelImport"
-                    title="Stop the import after the current item; already-saved items are kept on the server">
-                Cancel
+            @* Manual refresh: drop the cache + REST-fetch every resource
+               type. Live deltas usually keep the page current automatically,
+               but the helm sometimes wants a hard "is this REALLY what's
+               on the server" check (e.g. after a server-side restore from
+               backup, after toggling the SK plugin, or just for peace of
+               mind). RefreshAllAsync wipes the in-memory cache and replaces
+               it with the REST snapshot, firing per-type Removed events
+               for any id that disappeared. *@
+            <button type="button" class="btn btn-outline-secondary"
+                    @onclick="HandleManualRefresh"
+                    disabled="@loading"
+                    title="Drop the local cache and re-fetch every resource type from the server."
+                    style="white-space:nowrap;">
+                @if (loading)
+                {
+                    <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    <span>Refreshing...</span>
+                }
+                else
+                {
+                    <span>Refresh</span>
+                }
             </button>
-        }
-        @* Manual refresh: drop the cache + REST-fetch every resource
-           type. Live deltas usually keep the page current automatically,
-           but the helm sometimes wants a hard "is this REALLY what's
-           on the server" check (e.g. after a server-side restore from
-           backup, after toggling the SK plugin, or just for peace of
-           mind). RefreshAllAsync wipes the in-memory cache and replaces
-           it with the REST snapshot, firing per-type Removed events
-           for any id that disappeared. *@
-        <button type="button" class="btn btn-outline-secondary"
-                @onclick="HandleManualRefresh"
-                disabled="@loading"
-                title="Drop the local cache and re-fetch every resource type from the server."
-                style="white-space:nowrap;">
-            @if (loading)
-            {
-                <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                <span>Refreshing...</span>
-            }
-            else
-            {
-                <span>Refresh</span>
-            }
-        </button>
+        </div>
     </header>
 
     @* Active-route pin. Sits ABOVE the tabs so it's visible regardless

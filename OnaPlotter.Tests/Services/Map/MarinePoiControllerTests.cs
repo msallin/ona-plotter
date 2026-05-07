@@ -190,6 +190,7 @@ public class MarinePoiControllerTests
 
     private sealed class MutableSettings : IMarinePoiSettings
     {
+        public bool MarinePoiOverlayVisible { get; set; } = true;
         public bool MarinePoiFuelEnabled { get; set; }
         public bool MarinePoiMarinaEnabled { get; set; }
         public bool MarinePoiHarbourEnabled { get; set; }
@@ -199,6 +200,7 @@ public class MarinePoiControllerTests
         public bool MarinePoiChandleryEnabled { get; set; }
         public bool MarinePoiDrinkingWaterEnabled { get; set; }
         public bool MarinePoiPumpOutEnabled { get; set; }
+        public Task SetMarinePoiOverlayVisibleAsync(bool v) { MarinePoiOverlayVisible = v; return Task.CompletedTask; }
         public Task SetMarinePoiFuelEnabledAsync(bool v) { MarinePoiFuelEnabled = v; return Task.CompletedTask; }
         public Task SetMarinePoiMarinaEnabledAsync(bool v) { MarinePoiMarinaEnabled = v; return Task.CompletedTask; }
         public Task SetMarinePoiHarbourEnabledAsync(bool v) { MarinePoiHarbourEnabled = v; return Task.CompletedTask; }

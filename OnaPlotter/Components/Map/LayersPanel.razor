@@ -134,21 +134,13 @@
                  OnToggleBigType="OnToggleBigType"
                  OnToggleExpandAllHud="OnToggleExpandAllHud" />
 
-    @* Single "Misc" section bundles Weather + AtoNs. Was two adjacent
-       single-checkbox sections; consolidating them removes a header
-       row of dead chrome without losing either toggle. *@
-    <MiscSection WeatherVisible="WeatherOverlayVisible"
-                 WeatherOpacityPercent="WeatherOverlayOpacityPercent"
-                 AtonsVisible="AtonsVisible"
-                 OnToggleWeather="OnToggleWeatherOverlay"
-                 OnWeatherOpacityPreview="OnWeatherOpacityPreview"
-                 OnWeatherOpacityCommit="OnWeatherOpacityCommit"
-                 OnToggleAtons="OnToggleAtonsVisible" />
-
     @* OSM marine services overlay (Layers > Marine services). Off
        by default; helm opts in per-category. Cached responses keep
-       markers visible offline. *@
-    <MarineServicesSection FuelEnabled="MarinePoiFuelEnabled"
+       markers visible offline. The master "Show" toggle on the
+       header hides every marker without dropping the per-category
+       picks. *@
+    <MarineServicesSection OverlayVisible="MarinePoiOverlayVisible"
+                           FuelEnabled="MarinePoiFuelEnabled"
                            MarinaEnabled="MarinePoiMarinaEnabled"
                            HarbourEnabled="MarinePoiHarbourEnabled"
                            MooringEnabled="MarinePoiMooringEnabled"
@@ -157,6 +149,7 @@
                            ChandleryEnabled="MarinePoiChandleryEnabled"
                            DrinkingWaterEnabled="MarinePoiDrinkingWaterEnabled"
                            PumpOutEnabled="MarinePoiPumpOutEnabled"
+                           OnToggleOverlay="OnToggleMarinePoiOverlay"
                            OnToggleFuel="OnToggleMarinePoiFuel"
                            OnToggleMarina="OnToggleMarinePoiMarina"
                            OnToggleHarbour="OnToggleMarinePoiHarbour"
@@ -166,6 +159,21 @@
                            OnToggleChandlery="OnToggleMarinePoiChandlery"
                            OnToggleDrinkingWater="OnToggleMarinePoiDrinkingWater"
                            OnTogglePumpOut="OnToggleMarinePoiPumpOut" />
+
+    @* Single "Misc" section bundles Weather + AtoNs. Was two adjacent
+       single-checkbox sections; consolidating them removes a header
+       row of dead chrome without losing either toggle. Lives at the
+       bottom of the panel so the chart-related sections (charts,
+       routes, regions, services) cluster together at the top -
+       helm-flagged: Misc was a grab-bag and reading it before Marine
+       services felt out of order. *@
+    <MiscSection WeatherVisible="WeatherOverlayVisible"
+                 WeatherOpacityPercent="WeatherOverlayOpacityPercent"
+                 AtonsVisible="AtonsVisible"
+                 OnToggleWeather="OnToggleWeatherOverlay"
+                 OnWeatherOpacityPreview="OnWeatherOpacityPreview"
+                 OnWeatherOpacityCommit="OnWeatherOpacityCommit"
+                 OnToggleAtons="OnToggleAtonsVisible" />
 
     @* Import / Export GPX moved to the Settings page (Backup section).
        The map's Layers panel is for "what shows on the chart"; data
@@ -268,6 +276,11 @@
     // MarineServicesSection. Each callback tells Map.razor.cs to flip
     // the persisted setting; the controller picks it up via the
     // OnSettingsChanged fan-out and re-renders / refetches.
+    // The master overlay flag rides at the top of the section as a
+    // "Show" chip; flipping it off clears every marker without
+    // touching individual category state.
+    [Parameter] public bool MarinePoiOverlayVisible { get; set; } = true;
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiOverlay { get; set; }
     [Parameter] public bool MarinePoiFuelEnabled { get; set; }
     [Parameter] public bool MarinePoiMarinaEnabled { get; set; }
     [Parameter] public bool MarinePoiHarbourEnabled { get; set; }

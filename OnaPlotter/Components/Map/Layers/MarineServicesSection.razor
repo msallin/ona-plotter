@@ -9,12 +9,32 @@
 
 <SectionHeader Title="Marine services"
                Expanded="@expanded"
-               OnToggle="() => expanded = !expanded" />
+               OnToggle="() => expanded = !expanded">
+    @* Master "Show" toggle. Hides every marker (across all
+       categories) without dropping the helm's per-category picks,
+       so a single tap re-shows whatever the helm had ticked
+       before. Stop-propagation so flipping the checkbox doesn't
+       collapse the section. *@
+    <label class="notes-visible-toggle"
+           title="@(OverlayVisible ? "Hide all marine services on the map" : "Show marine services on the map")"
+           @onclick:stopPropagation>
+        <input type="checkbox" checked="@OverlayVisible"
+               @onchange="e => OnToggleOverlay.InvokeAsync((bool)(e.Value ?? false))" />
+        <span>Show</span>
+    </label>
+</SectionHeader>
 @if (expanded)
 {
     <div class="chart-section-hint">
         Open data from OpenStreetMap. Zoom in to a region (around z9+)
         to load services; cached entries stay visible offline.
+        @if (!OverlayVisible)
+        {
+            <span class="chart-section-hint-warn">
+                Layer hidden - flip the Show toggle to render the
+                ticked categories.
+            </span>
+        }
     </div>
 
     <label class="chart-item">
@@ -100,6 +120,8 @@
 }
 
 @code {
+    [Parameter] public bool OverlayVisible { get; set; } = true;
+    [Parameter] public EventCallback<bool> OnToggleOverlay { get; set; }
     [Parameter] public bool FuelEnabled { get; set; }
     [Parameter] public bool MarinaEnabled { get; set; }
     [Parameter] public bool HarbourEnabled { get; set; }

@@ -162,6 +162,10 @@ public sealed class AppSettingsService : IAppSettings
     // OSM marine-POI overlay categories. All default false so a fresh
     // helm doesn't trigger Overpass round-trips on first chart load;
     // each is opt-in from Layers > Marine services.
+    // The master visibility flag is the helm's "hide everything"
+    // shortcut; it gates the controller above the per-category mask
+    // so the helm's selections survive a hide/show round-trip.
+    public bool MarinePoiOverlayVisible { get; private set; } = true;
     public bool MarinePoiFuelEnabled { get; private set; } = false;
     public bool MarinePoiMarinaEnabled { get; private set; } = false;
     public bool MarinePoiHarbourEnabled { get; private set; } = false;
@@ -308,6 +312,7 @@ public sealed class AppSettingsService : IAppSettings
             // Marine POI categories. Each defaults to false (opt-in); a
             // bool stored as "true" / "false" via the same Save / LoadBool
             // helpers as every other map-display toggle.
+            MarinePoiOverlayVisible = await LoadBool("marinePoi.overlayVisible.v1", true);
             MarinePoiFuelEnabled = await LoadBool("marinePoi.fuel.v1", false);
             MarinePoiMarinaEnabled = await LoadBool("marinePoi.marina.v1", false);
             MarinePoiHarbourEnabled = await LoadBool("marinePoi.harbour.v1", false);
@@ -834,6 +839,15 @@ public sealed class AppSettingsService : IAppSettings
     // Marine POI category toggles. Same shape across all nine: write
     // the bool, persist under the canonical "marinePoi.<cat>.v1" key,
     // fan out OnSettingsChanged so MarinePoiController can re-render.
+    // The master overlay flag follows the same pattern - the helm
+    // taps the section-header "Show" toggle and the controller drops
+    // every marker without touching individual category state.
+    public async Task SetMarinePoiOverlayVisibleAsync(bool value)
+    {
+        MarinePoiOverlayVisible = value;
+        await Save("marinePoi.overlayVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
     public async Task SetMarinePoiFuelEnabledAsync(bool value)
     {
         MarinePoiFuelEnabled = value;
