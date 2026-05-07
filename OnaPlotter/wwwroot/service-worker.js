@@ -268,7 +268,17 @@
 //               instead of clipping off the right edge on FF
 //               Android. Also shrunk topbar-icon-btn 1.75 -> 1.5
 //               rem and the SearchBox cap 180 -> 160 px.
-const CACHE_NAME = 'ona-plotter-v40';
+// v40 -> v41: .hud-value gets `white-space: nowrap` so the unit
+//             suffix span never wraps onto its own line. Helm
+//             reported a depth of "38.2 m" rendering as "38.2"
+//             on one line, "m" on the next on a narrow BL card;
+//             the inline-box boundary between the digit text
+//             node and the .hud-unit <span> was a wrap
+//             opportunity. The TR wind card already had its own
+//             nowrap rule; lifting it onto the base class covers
+//             depth, route metrics, and any other corner value
+//             with the same shape.
+const CACHE_NAME = 'ona-plotter-v41';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

@@ -1626,12 +1626,19 @@ html:fullscreen .hud-stack-br {
 /* Three type sizes only -- label, value, primary -- driven by tokens
    so a single density change cascades to every card. Locked-grid digits
    (tabular-nums slashed-zero) so the layout doesn't twitch when 9.8
-   becomes 10.1. */
+   becomes 10.1.
+   white-space: nowrap so the unit suffix never wraps onto its own
+   line. The .hud-unit <span> is its own inline box, which by default
+   allows a line break BEFORE it -- a depth of "38.2" + "m" was
+   wrapping to two lines on a narrow BL card ("38.2" / "m"). The TR
+   wind card already had its own nowrap rule below; lifting it onto
+   the base class covers the rest (depth, route DTW / BRG, ...). */
 .hud-value {
     font-size: var(--hud-font-value);
     font-weight: 500; /* reads better in sunlight on the helm */
     font-variant-numeric: var(--hud-tnum);
     line-height: 1.1;
+    white-space: nowrap;
 }
 
 /* SOG, depth, primary wind speed -- the hero number on its card. */
