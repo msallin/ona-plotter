@@ -570,6 +570,146 @@ public class ResourceLifecycleTests
         await Assert.That(store.GetRoute("r1")?.Name).IsEqualTo("Berlin");
     }
 
+    // --- 10. Waypoint / Note / Region delta -> store cache --------------
+
+    [Test]
+    public async Task RemoteWaypointEdit_DeltaUpdatesCachedPosition()
+    {
+        // Helm scenario: another plotter drags a waypoint to a new lat/
+        // lon. Server emits resources.waypoints.<id> with the new Point.
+        // ResourceStore parses the GeoJSON Feature shape and hoists the
+        // top-level Latitude / Longitude on the DTO, mirroring
+        // WaypointApi.GetAllAsync. Map.razor's HandleWaypointChangedFromStore
+        // then redraws the marker (not exercised here -- requires the
+        // leaflet JS module).
+        var (client, store, _, waypoints, _, _) = BuildHarness();
+        waypoints.Waypoints.Add(new SignalkWaypoint
+        {
+            Id = "w1",
+            Name = "Anchorage",
+            Latitude = 24.7,
+            Longitude = -81.1,
+        });
+        await store.RefreshAllAsync();
+        await Assert.That(store.GetWaypoint("w1")?.Latitude).IsEqualTo(24.7);
+
+        // Remote edit: same id, new position. Wire shape mirrors the
+        // SK server's resources.waypoints.<id> delta (full GeoJSON
+        // Feature with Point coordinates [lon, lat]).
+        var json = @"{
+            ""context"":""vessels.self"",
+            ""updates"":[{
+                ""values"":[
+                    {""path"":""resources.waypoints.w1"",""value"":{
+                        ""name"":""Anchorage"",
+                        ""feature"":{
+                            ""type"":""Feature"",
+                            ""geometry"":{""type"":""Point"",""coordinates"":[-81.05,24.75]},
+                            ""properties"":{""description"":""Quiet bay""}
+                        }
+                    }}
+                ]
+            }]
+        }";
+        client.ProcessMessage(json);
+
+        var moved = store.GetWaypoint("w1");
+        await Assert.That(moved).IsNotNull();
+        await Assert.That(moved!.Latitude).IsEqualTo(24.75);
+        await Assert.That(moved.Longitude).IsEqualTo(-81.05);
+        await Assert.That(moved.Description).IsEqualTo("Quiet bay");
+    }
+
+    [Test]
+    public async Task RemoteWaypointDelete_DeltaRemovesAndFiresEvent()
+    {
+        var (client, store, _, waypoints, _, _) = BuildHarness();
+        waypoints.Waypoints.Add(new SignalkWaypoint
+        {
+            Id = "w1", Name = "Anchorage", Latitude = 24.7, Longitude = -81.1,
+        });
+        await store.RefreshAllAsync();
+
+        var removed = new List<string>();
+        store.OnWaypointRemoved += removed.Add;
+        client.ProcessMessage(@"{
+            ""context"":""vessels.self"",
+            ""updates"":[{""values"":[{""path"":""resources.waypoints.w1"",""value"":null}]}]
+        }");
+
+        await Assert.That(store.GetWaypoint("w1")).IsNull();
+        await Assert.That(removed).Contains("w1");
+    }
+
+    [Test]
+    public async Task RemoteRegionEdit_DeltaPopulatesOuterRingsForLeafletRender()
+    {
+        // The Map.razor region layer renders OuterRings (Leaflet-ordered
+        // [lat, lon]) -- not the wire-shape feature.geometry.coordinates
+        // ([lon, lat]). RegionApi.GetAllAsync hoists the rings on REST
+        // results; ResourceStore's HandleRegionDelta must do the same on
+        // delta-fed entries so a remote-edit lands a region the chart
+        // can actually draw.
+        var (client, store, _, _, _, _) = BuildHarness();
+
+        // Polygon delta (4 vertices + closing). Wire format is GeoJSON
+        // [lon, lat]; OuterRings should be [lat, lon] after the hoist.
+        var json = @"{
+            ""context"":""vessels.self"",
+            ""updates"":[{
+                ""values"":[
+                    {""path"":""resources.regions.g1"",""value"":{
+                        ""name"":""TestArea"",
+                        ""feature"":{
+                            ""type"":""Feature"",
+                            ""geometry"":{
+                                ""type"":""Polygon"",
+                                ""coordinates"":[[
+                                    [10.0, 50.0], [11.0, 50.0],
+                                    [11.0, 51.0], [10.0, 51.0],
+                                    [10.0, 50.0]
+                                ]]
+                            }
+                        }
+                    }}
+                ]
+            }]
+        }";
+        client.ProcessMessage(json);
+
+        var region = store.GetRegion("g1");
+        await Assert.That(region).IsNotNull();
+        await Assert.That(region!.Name).IsEqualTo("TestArea");
+        // OuterRings populated from the wire coords. First vertex of
+        // first ring should be in Leaflet [lat, lon] order.
+        await Assert.That(region.OuterRings.Count).IsEqualTo(1);
+        var firstVertex = region.OuterRings[0][0];
+        await Assert.That(firstVertex[0]).IsEqualTo(50.0);  // lat
+        await Assert.That(firstVertex[1]).IsEqualTo(10.0);  // lon
+    }
+
+    [Test]
+    public async Task RemoteNoteEdit_WithoutPosition_IsFiltered()
+    {
+        // SK note resources without a position aren't renderable on the
+        // chart. ResourceStore.HandleNoteDelta must filter them, mirroring
+        // NoteApi.GetAllAsync's filter -- otherwise a position-less
+        // remote-edit would land in the cache and trip a Map.razor
+        // marker draw with null lat/lon.
+        var (client, store, _, _, _, _) = BuildHarness();
+
+        client.ProcessMessage(@"{
+            ""context"":""vessels.self"",
+            ""updates"":[{
+                ""values"":[
+                    {""path"":""resources.notes.n1"",""value"":{""title"":""Float""}}
+                ]
+            }]
+        }");
+
+        await Assert.That(store.GetNote("n1")).IsNull();
+    }
+
     // --- Helpers -----------------------------------------------------
 
     /// <summary>Robust waypoint-count getter for tests. Returns -1 on

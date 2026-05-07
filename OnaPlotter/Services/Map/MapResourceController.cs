@@ -76,6 +76,63 @@ public sealed class MapResourceController
         }
     }
 
+    // --- Per-resource redraw (delta-driven path) ---------------------
+    //
+    // Map.razor's HandleXxxChangedFromStore handlers call these when
+    // a SignalK delta or REST reconcile lands a new / updated entry.
+    // The pattern is remove-then-add: cheaper than the route-side
+    // setLatLngs because waypoints / notes are single-point markers
+    // (no geometry-update micro-flicker concern), and regions rebuild
+    // their ring polygon either way. Add silently no-ops if the marker
+    // already exists for a duplicate-add path; remove is idempotent.
+
+    /// <summary>Re-render a waypoint marker after a store delta. No-op
+    /// when the waypoint has no position (delta-fed waypoints with
+    /// missing geometry already get filtered upstream by
+    /// ResourceStore, but the guard is cheap and matches the batch
+    /// path's defensive null-check).</summary>
+    public async Task RedrawWaypointAsync(SignalkWaypoint wp)
+    {
+        if (wp.Latitude is not double lat || wp.Longitude is not double lon) return;
+        await _resourceJs.RemoveWaypointMarkerAsync(wp.Id);
+        await _resourceJs.AddWaypointMarkerAsync(
+            wp.Id, lat, lon, wp.Name,
+            wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>Re-render a note marker after a store delta. Skipped
+    /// while the notes layer is hidden -- the helm hid them on
+    /// purpose; a remote edit shouldn't pop them back into view.</summary>
+    public async Task RedrawNoteAsync(SignalkNote note)
+    {
+        if (!_notesVisible) return;
+        if (note.Position is null) return;
+        await _resourceJs.RemoveNoteMarkerAsync(note.Id);
+        await _resourceJs.AddNoteMarkerAsync(
+            note.Id, note.Position.Latitude, note.Position.Longitude,
+            note.Title, note.Description,
+            note.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>Re-render a region polygon after a store delta. Same
+    /// hidden-layer guard as notes.</summary>
+    public async Task RedrawRegionAsync(SignalkRegion region)
+    {
+        if (!_regionsVisible) return;
+        if (region.OuterRings.Count == 0) return;
+        await _resourceJs.RemoveRegionAsync(region.Id);
+        await _resourceJs.AddRegionAsync(region.Id, region.OuterRings, region.Name, region.Description);
+    }
+
+    /// <summary>Drop a waypoint marker after a store-side delete.</summary>
+    public Task DropWaypointAsync(string id) => _resourceJs.RemoveWaypointMarkerAsync(id);
+
+    /// <summary>Drop a note marker after a store-side delete.</summary>
+    public Task DropNoteAsync(string id) => _resourceJs.RemoveNoteMarkerAsync(id);
+
+    /// <summary>Drop a region polygon after a store-side delete.</summary>
+    public Task DropRegionAsync(string id) => _resourceJs.RemoveRegionAsync(id);
+
     /// <summary>
     /// Show / hide the notes layer. Hide tears down every marker via
     /// <c>clearNotes</c>; show re-pushes the supplied collection (the
