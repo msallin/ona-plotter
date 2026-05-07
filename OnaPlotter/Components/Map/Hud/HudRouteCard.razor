@@ -169,11 +169,17 @@
                     }
                     @if (Snapshot.RouteTimeToGo is not null)
                     {
-                        @* "TTG" prefix added so the helm reads the
-                           formatted duration as 'time to go' rather
-                           than parsing it as the ETA's first half;
-                           the ETA next to it carries its own label. *@
-                        <span class="route-total-value">TTG @Format.TimeToGo(Snapshot.RouteTimeToGo)</span>
+                        @* ETA only on the route-total row. TTG dropped
+                           per helm feedback: TTG is the variable-width
+                           value that sometimes pushes the row to wrap
+                           on a 390-wide phone viewport; ETA is a
+                           fixed-width "HH:MM" form that always fits
+                           alongside the passed/total nm pair. The
+                           per-leg TTG (above) covers the
+                           "how long until I turn" answer; the
+                           route-total ETA covers the "when do I
+                           arrive" answer -- which is the only one
+                           the helm asked to keep here. *@
                         <span class="route-total-value">ETA @Format.Eta(Snapshot.RouteTimeToGo)</span>
                     }
                 </div>

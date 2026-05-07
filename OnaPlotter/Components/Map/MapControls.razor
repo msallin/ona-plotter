@@ -42,7 +42,17 @@
                    on the desktop layout finds the same items in the
                    same logical groups (navigation -> safety -> view ->
                    create -> layers). *@
-                <button class="ctrl-more-item ctrl-more-overflow @(Follow ? "ctrl-more-active" : "")"
+                @* Follow / Free was previously in the phone-overflow
+                   group (.ctrl-more-overflow) so phone bar showed only
+                   [More, Layers]. Helm flagged the Follow toggle as a
+                   one-tap-recovery affordance ("snap chart back to
+                   the boat") that doesn't deserve a menu indirection
+                   on a phone. Now in the always-visible bar; the
+                   .ctrl-more-mobile-hide class suppresses this
+                   menu row on phones so the bar version isn't
+                   duplicated. Desktop / iPad still show this row in
+                   the menu via the desktop overflow path. *@
+                <button class="ctrl-more-item ctrl-more-overflow ctrl-more-mobile-hide @(Follow ? "ctrl-more-active" : "")"
                         @onclick="() => Select(OnToggleFollow)"
                         title="Follow boat (F)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Follow)</span>
@@ -198,7 +208,13 @@
 
     <div class="ctrl-sep"></div>
 
-    <button class="ctrl-btn ctrl-btn-overflow @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
+    @* Follow / Free stays in the bar on every viewport (no
+       .ctrl-btn-overflow). Helm-feedback: on a phone, the helm wants
+       a one-tap "snap back to the boat" affordance without diving
+       into the More menu first. Mobile bar therefore renders
+       [More, Free/Follow, Layers] -- the three controls that earn
+       a permanent slot. *@
+    <button class="ctrl-btn @(Follow ? "active" : "")" @onclick="OnToggleFollow" title="Follow boat (F)">
         <span class="ctrl-ico">@((MarkupString)Icons.Follow)</span>
         <span class="ctrl-lbl">@(Follow ? "Follow" : "Free")</span>
     </button>
