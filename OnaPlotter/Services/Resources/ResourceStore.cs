@@ -55,6 +55,15 @@ public sealed class ResourceStore : IAsyncDisposable
     private readonly Dictionary<string, SignalkNote> _noteById = new();
     private readonly Dictionary<string, SignalkRegion> _regionById = new();
 
+    /// <summary>Coalesces concurrent <see cref="RefreshAllAsync"/>
+    /// calls. Two callers (manual Refresh button + reconnect-edge
+    /// reconcile) can land at the same moment on a flaky link; without
+    /// the gate, two passes interleave their <c>ReplaceXxx</c>
+    /// mutations and fire 2x the per-row Changed events. With it, the
+    /// second caller awaits the first instead of re-issuing four
+    /// REST round-trips.</summary>
+    private Task? _inFlightRefresh;
+
     /// <summary>True once <see cref="RefreshAllAsync"/> has completed
     /// at least one full pass. Components consult this to decide
     /// whether to render "loading" placeholders or the cached values.
@@ -187,8 +196,24 @@ public sealed class ResourceStore : IAsyncDisposable
     /// failures (one API down) degrade gracefully: that type keeps its
     /// previous cache; other types refresh normally.</para>
     /// </summary>
-    public async Task RefreshAllAsync(CancellationToken ct = default)
+    public Task RefreshAllAsync(CancellationToken ct = default)
     {
+        // Coalesce concurrent callers. Two paths can call this at the
+        // same moment on a flaky link: the manual Refresh button and
+        // the reconnect-edge reconcile. Returning the in-flight Task
+        // means the second caller awaits the first's REST round-trip
+        // (and observes the same per-type events) instead of issuing
+        // 4 more parallel GETs and racing the cache mutations.
+        if (_inFlightRefresh is { IsCompleted: false } running) return running;
+        _inFlightRefresh = RefreshAllCoreAsync(ct);
+        return _inFlightRefresh;
+    }
+
+    private async Task RefreshAllCoreAsync(CancellationToken ct)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _logger.LogInformation("[resources] reconcile started");
+
         var routesTask = SafeFetch(() => _routes.GetAllAsync(ct), "routes");
         var waypointsTask = SafeFetch(() => _waypoints.GetAllAsync(ct), "waypoints");
         var notesTask = SafeFetch(() => _notes.GetAllAsync(ct), "notes");
@@ -206,6 +231,11 @@ public sealed class ResourceStore : IAsyncDisposable
         {
             _logger.LogWarning(ex, "[resources] OnReloaded subscriber threw");
         }
+
+        _logger.LogInformation(
+            "[resources] reconcile complete in {ElapsedMs}ms routes={RouteCount} waypoints={WpCount} notes={NoteCount} regions={RegionCount}",
+            sw.ElapsedMilliseconds,
+            _routeById.Count, _waypointById.Count, _noteById.Count, _regionById.Count);
     }
 
     private async Task<List<T>?> SafeFetch<T>(Func<Task<List<T>>> fetch, string label)
@@ -351,7 +381,14 @@ public sealed class ResourceStore : IAsyncDisposable
             try { OnRouteChanged?.Invoke(id); }
             catch (Exception ex) { _logger.LogWarning(ex, "[resources] route changed handler threw"); }
         }
-        catch (JsonException ex)
+        // Catch broadly: JsonException is the typed-deserialise failure,
+        // but a malformed coordinates array can also surface as
+        // InvalidOperationException / FormatException via downstream
+        // GetDouble() in ParseRouteCoords (Map.razor consumes the
+        // JsonElement). Without the broad catch, those propagate up
+        // through DispatchResourceUpdates' own catch with no per-id
+        // log, and the cache stays stale silently.
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             _logger.LogWarning(ex, "[resources] route delta parse failed for id '{Id}'", id);
         }
@@ -463,7 +500,14 @@ public sealed class ResourceStore : IAsyncDisposable
             try { OnRegionChanged?.Invoke(id); }
             catch (Exception ex) { _logger.LogWarning(ex, "[resources] region changed handler threw"); }
         }
-        catch (JsonException ex)
+        // Catch broadly: ExtractOuterRings -> ParseRing calls
+        // coord[0].GetDouble() without first checking JsonValueKind.
+        // Number, so a malformed coord (`[null, 50.0]`) throws
+        // InvalidOperationException, not JsonException. A narrow catch
+        // here would let that propagate up to DispatchResourceUpdates'
+        // generic catch with no per-id log; the helm sees a silently
+        // stale cache.
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             _logger.LogWarning(ex, "[resources] region delta parse failed for id '{Id}'", id);
         }
@@ -517,10 +561,26 @@ public sealed class ResourceStore : IAsyncDisposable
         }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         _signalk.OnResourceDelta -= HandleResourceDelta;
         _signalk.OnConnectionChanged -= HandleConnectionChange;
-        return ValueTask.CompletedTask;
+
+        // Drain in-flight reconcile + refresh tasks so a page-unmount
+        // (or app shutdown) doesn't leave async work mutating cache
+        // dictionaries we've stopped notifying on. Both tasks have
+        // their own internal try/catch; awaiting cannot throw at us
+        // unless something genuinely escaped that net.
+        var pending = new List<Task>(2);
+        if (LastReconcileTask is { IsCompleted: false } reconcile) pending.Add(reconcile);
+        if (_inFlightRefresh is { IsCompleted: false } refresh) pending.Add(refresh);
+        if (pending.Count > 0)
+        {
+            try { await Task.WhenAll(pending); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[resources] in-flight task threw on dispose");
+            }
+        }
     }
 }
