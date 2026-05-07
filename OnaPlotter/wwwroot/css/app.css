@@ -9528,3 +9528,31 @@ html[data-slow-client="1"] * {
     }
 }
 
+/* OSM marine-POI popup: title + category subtitle + a stack of
+   labelled rows (Operator / Hours / VHF / etc.) and an OSM source
+   link at the bottom. Same compact-row shape as the AIS popup. */
+.marine-poi-popup {
+    font-size: 12px;
+    line-height: 1.4;
+    min-width: 140px;
+    max-width: 240px;
+}
+.marine-poi-popup-sub {
+    font-size: 11px;
+    color: var(--panel-text-muted);
+    margin-bottom: 4px;
+}
+.marine-poi-popup-row {
+    margin-top: 2px;
+    word-wrap: break-word;
+}
+.marine-poi-popup-label {
+    font-weight: 600;
+    color: var(--panel-text-muted);
+}
+.marine-poi-popup-source {
+    margin-top: 6px;
+    font-size: 11px;
+    opacity: 0.75;
+}
+

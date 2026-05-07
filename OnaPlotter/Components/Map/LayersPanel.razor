@@ -145,6 +145,28 @@
                  OnWeatherOpacityCommit="OnWeatherOpacityCommit"
                  OnToggleAtons="OnToggleAtonsVisible" />
 
+    @* OSM marine services overlay (Layers > Marine services). Off
+       by default; helm opts in per-category. Cached responses keep
+       markers visible offline. *@
+    <MarineServicesSection FuelEnabled="MarinePoiFuelEnabled"
+                           MarinaEnabled="MarinePoiMarinaEnabled"
+                           HarbourEnabled="MarinePoiHarbourEnabled"
+                           MooringEnabled="MarinePoiMooringEnabled"
+                           SlipwayEnabled="MarinePoiSlipwayEnabled"
+                           PierEnabled="MarinePoiPierEnabled"
+                           ChandleryEnabled="MarinePoiChandleryEnabled"
+                           DrinkingWaterEnabled="MarinePoiDrinkingWaterEnabled"
+                           PumpOutEnabled="MarinePoiPumpOutEnabled"
+                           OnToggleFuel="OnToggleMarinePoiFuel"
+                           OnToggleMarina="OnToggleMarinePoiMarina"
+                           OnToggleHarbour="OnToggleMarinePoiHarbour"
+                           OnToggleMooring="OnToggleMarinePoiMooring"
+                           OnToggleSlipway="OnToggleMarinePoiSlipway"
+                           OnTogglePier="OnToggleMarinePoiPier"
+                           OnToggleChandlery="OnToggleMarinePoiChandlery"
+                           OnToggleDrinkingWater="OnToggleMarinePoiDrinkingWater"
+                           OnTogglePumpOut="OnToggleMarinePoiPumpOut" />
+
     @* Import / Export GPX moved to the Settings page (Backup section).
        The map's Layers panel is for "what shows on the chart"; data
        in / data out is a tooling concern that fits better on Settings
@@ -241,6 +263,30 @@
     [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
     [Parameter] public EventCallback<int> OnWeatherOpacityCommit { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtonsVisible { get; set; }
+
+    // Marine-services category flags + callbacks. Threaded through to
+    // MarineServicesSection. Each callback tells Map.razor.cs to flip
+    // the persisted setting; the controller picks it up via the
+    // OnSettingsChanged fan-out and re-renders / refetches.
+    [Parameter] public bool MarinePoiFuelEnabled { get; set; }
+    [Parameter] public bool MarinePoiMarinaEnabled { get; set; }
+    [Parameter] public bool MarinePoiHarbourEnabled { get; set; }
+    [Parameter] public bool MarinePoiMooringEnabled { get; set; }
+    [Parameter] public bool MarinePoiSlipwayEnabled { get; set; }
+    [Parameter] public bool MarinePoiPierEnabled { get; set; }
+    [Parameter] public bool MarinePoiChandleryEnabled { get; set; }
+    [Parameter] public bool MarinePoiDrinkingWaterEnabled { get; set; }
+    [Parameter] public bool MarinePoiPumpOutEnabled { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiFuel { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiMarina { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiHarbour { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiMooring { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiSlipway { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiPier { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiChandlery { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiDrinkingWater { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarinePoiPumpOut { get; set; }
+
     [Parameter] public EventCallback<bool> OnToggleGuardZoneVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleShowDefaultHud { get; set; }
     [Parameter] public EventCallback<bool> OnToggleShowAutopilotHud { get; set; }

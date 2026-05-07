@@ -83,6 +83,15 @@ internal sealed class FakeSettings : IAppSettings
     public bool PreferMagneticHeading { get; set; } = false;
     public bool PreferMagneticCourse { get; set; } = false;
     public bool AutoAdvanceWaypoints { get; set; } = true;
+    public bool MarinePoiFuelEnabled { get; set; } = false;
+    public bool MarinePoiMarinaEnabled { get; set; } = false;
+    public bool MarinePoiHarbourEnabled { get; set; } = false;
+    public bool MarinePoiMooringEnabled { get; set; } = false;
+    public bool MarinePoiSlipwayEnabled { get; set; } = false;
+    public bool MarinePoiPierEnabled { get; set; } = false;
+    public bool MarinePoiChandleryEnabled { get; set; } = false;
+    public bool MarinePoiDrinkingWaterEnabled { get; set; } = false;
+    public bool MarinePoiPumpOutEnabled { get; set; } = false;
     public IReadOnlySet<string> EnabledChartIds => new HashSet<string>();
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
     public IReadOnlySet<string> QuickBarChartIds => new HashSet<string>();
@@ -173,6 +182,15 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
     public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
     public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }
+    public Task SetMarinePoiFuelEnabledAsync(bool v) { MarinePoiFuelEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiMarinaEnabledAsync(bool v) { MarinePoiMarinaEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiHarbourEnabledAsync(bool v) { MarinePoiHarbourEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiMooringEnabledAsync(bool v) { MarinePoiMooringEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiSlipwayEnabledAsync(bool v) { MarinePoiSlipwayEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiPierEnabledAsync(bool v) { MarinePoiPierEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiChandleryEnabledAsync(bool v) { MarinePoiChandleryEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiDrinkingWaterEnabledAsync(bool v) { MarinePoiDrinkingWaterEnabled = v; return Task.CompletedTask; }
+    public Task SetMarinePoiPumpOutEnabledAsync(bool v) { MarinePoiPumpOutEnabled = v; return Task.CompletedTask; }
     public Task SetMapViewAsync(double lat, double lon, int zoom)
     {
         MapViewLat = lat; MapViewLon = lon; MapViewZoom = zoom;

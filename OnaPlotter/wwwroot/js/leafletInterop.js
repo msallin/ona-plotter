@@ -14,6 +14,7 @@ import * as anchorLayerMod from './anchorLayer.js';
 import * as mobLayerMod from './mobLayer.js';
 import * as laylineLayerMod from './laylineLayer.js';
 import * as atonLayerMod from './atonLayer.js';
+import * as marinePoiLayerMod from './marinePoiLayer.js';
 import * as measureLayerMod from './measureLayer.js';
 import * as aisLayerMod from './aisLayer.js';
 import { withOverzoom } from './overzoomLayer.js';
@@ -559,6 +560,7 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     mobLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef });
     laylineLayerMod.init(map, { colors: MapColors });
     atonLayerMod.init(map);
+    marinePoiLayerMod.init(map);
     measureLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     routeEditLayerMod.init(map, { colors: MapColors, pointToSegmentPixels });
     polygonEditLayerMod.init(map);
@@ -2463,6 +2465,12 @@ function applyMapRotation(deg) {
 export const setAtons = (atons) => atonLayerMod.setAtons(atons);
 export const setAtonsVisible = (visible) => atonLayerMod.setAtonsVisible(visible);
 
+// --- OSM Marine POIs (fuel, marina, harbour, mooring, ...) ---
+// Implementation in marinePoiLayer.js; mux re-exports for the C#
+// MapMarinePoiJs wrapper.
+export const setMarinePois = (pois) => marinePoiLayerMod.setMarinePois(pois);
+export const setMarinePoisVisible = (visible) => marinePoiLayerMod.setMarinePoisVisible(visible);
+
 export function zoomToTrack() {
     if (!trackLayer || !map) return;
     if (typeof trackLayer.getBounds !== 'function') return; // older map instance
@@ -2519,6 +2527,7 @@ export function dispose() {
     noteLayerMod.dispose();
     regionLayerMod.dispose();
     atonLayerMod.dispose();
+    marinePoiLayerMod.dispose();
     // AIS state cleanup happens in aisLayerMod.dispose() above.
     // dotNetRef is now nulled at the TOP of dispose() so map.remove()'s
     // synchronous unload handlers can't race into a half-disposed ref.

@@ -45,6 +45,9 @@
 @inject OnaPlotter.Services.Radar.RadarOverlayManager RadarOverlay
 @inject OnaPlotter.Services.Radar.JsRadarOverlayHost RadarOverlayHost
 @inject OnaPlotter.Services.Resources.ResourceStore ResourceStore
+@inject OnaPlotter.Services.Pois.IMarinePoiService MarinePois
+@inject OnaPlotter.Services.Pois.MarinePoiCache MarinePoiCache
+@inject ILogger<OnaPlotter.Services.Map.MarinePoiController> MarinePoiLogger
 
 <PageTitle>Map</PageTitle>
 
@@ -524,6 +527,24 @@
                      OnWeatherOpacityPreview="@(p => _weather?.PreviewOpacityAsync(p) ?? Task.CompletedTask)"
                      OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
                      OnToggleAtonsVisible="ToggleAtonsVisible"
+                     MarinePoiFuelEnabled="Settings.MarinePoiFuelEnabled"
+                     MarinePoiMarinaEnabled="Settings.MarinePoiMarinaEnabled"
+                     MarinePoiHarbourEnabled="Settings.MarinePoiHarbourEnabled"
+                     MarinePoiMooringEnabled="Settings.MarinePoiMooringEnabled"
+                     MarinePoiSlipwayEnabled="Settings.MarinePoiSlipwayEnabled"
+                     MarinePoiPierEnabled="Settings.MarinePoiPierEnabled"
+                     MarinePoiChandleryEnabled="Settings.MarinePoiChandleryEnabled"
+                     MarinePoiDrinkingWaterEnabled="Settings.MarinePoiDrinkingWaterEnabled"
+                     MarinePoiPumpOutEnabled="Settings.MarinePoiPumpOutEnabled"
+                     OnToggleMarinePoiFuel="@(v => Settings.SetMarinePoiFuelEnabledAsync(v))"
+                     OnToggleMarinePoiMarina="@(v => Settings.SetMarinePoiMarinaEnabledAsync(v))"
+                     OnToggleMarinePoiHarbour="@(v => Settings.SetMarinePoiHarbourEnabledAsync(v))"
+                     OnToggleMarinePoiMooring="@(v => Settings.SetMarinePoiMooringEnabledAsync(v))"
+                     OnToggleMarinePoiSlipway="@(v => Settings.SetMarinePoiSlipwayEnabledAsync(v))"
+                     OnToggleMarinePoiPier="@(v => Settings.SetMarinePoiPierEnabledAsync(v))"
+                     OnToggleMarinePoiChandlery="@(v => Settings.SetMarinePoiChandleryEnabledAsync(v))"
+                     OnToggleMarinePoiDrinkingWater="@(v => Settings.SetMarinePoiDrinkingWaterEnabledAsync(v))"
+                     OnToggleMarinePoiPumpOut="@(v => Settings.SetMarinePoiPumpOutEnabledAsync(v))"
                      OnToggleGuardZoneVisible="ToggleGuardZoneVisible"
                      OnToggleShowDefaultHud="@(v => Settings.SetShowDefaultHudAsync(v))"
                      OnToggleShowAutopilotHud="@(v => Settings.SetShowAutopilotHudAsync(v))"
@@ -597,6 +618,12 @@
     private OnaPlotter.Services.Map.WeatherOverlayController? _weather;
     private OnaPlotter.Services.Map.ServerTrackController? _serverTrack;
     private OnaPlotter.Services.Map.ChartLayerController? _charts;
+
+    // OSM marine-POI overlay (Layers > Marine services). JS bridge +
+    // controller; the controller owns the cache-first render loop and
+    // the debounced Overpass fetch on viewport change.
+    private OnaPlotter.Services.Js.MapMarinePoiJs? _marinePoiJs;
+    private OnaPlotter.Services.Map.MarinePoiController? _marinePoi;
 
     // Marker-rendering facade for the user-placed resources
     // (waypoints / notes / regions). The CRUD flows live on
@@ -1425,6 +1452,9 @@
         _aisPush = new OnaPlotter.Services.Map.AisPushService(
             _aisJs, AisStore, MooredVessels, Settings, Time);
         _atonPush = new OnaPlotter.Services.Map.AtonPushService(_aisJs, Atons);
+        _marinePoiJs = new OnaPlotter.Services.Js.MapMarinePoiJs(module);
+        _marinePoi = new OnaPlotter.Services.Map.MarinePoiController(
+            MarinePois, MarinePoiCache, _marinePoiJs, Settings, MarinePoiLogger);
         _overlaysJs = new OnaPlotter.Services.Js.MapOverlaysJs(module);
         _weather = new OnaPlotter.Services.Map.WeatherOverlayController(_overlaysJs, Settings);
         // Seed from persisted settings so a helm's last picked window /
@@ -1719,6 +1749,15 @@
         await _aisJs.SetGuardZoneVisibleAsync(Settings.GuardZoneVisible);
         await _aisJs.SetGuardZoneWarningRingVisibleAsync(Settings.GuardZoneWarningRingVisible);
         _ = _atonPush!.PushAsync();
+
+        // Marine-POI overlay: push initial visibility (= "any category
+        // enabled?") so the JS master gate matches the helm's
+        // persisted choice. The first OnMapBoundsChanged below will
+        // fire the cache-render / fetch path when the map settles.
+        if (_marinePoi is not null)
+        {
+            await _marinePoi.InitAsync();
+        }
         // Resource re-sync: waypoints / routes / notes / regions added
         // from another plotter are otherwise invisible until the user
         // toggles the Layers panel. 60 s poll keeps the list in sync
@@ -1895,6 +1934,12 @@
         // chart-layer map and assigns the same string to every
         // container's style.filter, which the browser elides.
         _ = PushChartFilterAsync();
+
+        // Marine-POI controller: a category checkbox flip lands in
+        // OnSettingsChanged. Tell the controller to refresh; it'll
+        // re-render the cache through the new mask + schedule a
+        // fetch for any newly-enabled category.
+        _ = _marinePoi?.OnSettingsChangedAsync();
     }
 
     /// <summary>Push the persisted chart-display CSS filter to the JS
@@ -2003,6 +2048,12 @@
         // and we only care about the settled zoom.
         int zoomInt = (int)Math.Round(zoom);
         _ = Settings.SetMapViewAsync(centerLat, centerLon, zoomInt);
+
+        // OSM marine POIs: cache-render the new viewport immediately +
+        // schedule a debounced Overpass fetch (skipped above zoom gate
+        // / when no category is enabled). Fire-and-forget per the
+        // controller's contract.
+        _ = _marinePoi?.OnBoundsChangedAsync(west, south, east, north, zoom);
     }
 
     // Charts without bounds are always shown. Otherwise AABB intersection test.
@@ -3801,6 +3852,7 @@
         _anchorJs?.MarkDisposed();
         _routeJs?.MarkDisposed();
         _aisJs?.MarkDisposed();
+        _marinePoiJs?.MarkDisposed();
         _overlaysJs?.MarkDisposed();
         _resourceJs?.MarkDisposed();
         _controlsJs?.MarkDisposed();
@@ -3816,6 +3868,10 @@
         MobChartRenderer.DetachJs();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         if (resourcePollTimer is not null) await resourcePollTimer.DisposeAsync();
+        // Cancel any in-flight Overpass debounce / fetch so a
+        // straggler doesn't try to push markers into a torn-down
+        // JS module.
+        if (_marinePoi is not null) await _marinePoi.DisposeAsync();
         if (raceTimer is not null) await raceTimer.DisposeAsync();
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();
         if (polygonStatsTimer is not null) await polygonStatsTimer.DisposeAsync();

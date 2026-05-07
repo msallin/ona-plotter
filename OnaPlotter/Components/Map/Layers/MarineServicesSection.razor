@@ -1,0 +1,124 @@
+@* OSM marine-services overlay. Each row is a category checkbox;
+   ticking it kicks the controller (in Map.razor.cs) to refetch the
+   current viewport and merge into the persistent cache. Cached
+   markers stay visible offline.
+
+   Categories pulled from MarinePoiCategory enum in C#. Adding a new
+   category needs the same five-place edit as documented on the enum
+   itself (file path comments above each category there). *@
+
+<SectionHeader Title="Marine services"
+               Expanded="@expanded"
+               OnToggle="() => expanded = !expanded" />
+@if (expanded)
+{
+    <div class="chart-section-hint">
+        Open data from OpenStreetMap. Zoom in to a region (around z9+)
+        to load services; cached entries stay visible offline.
+    </div>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@FuelEnabled"
+               @onchange="(e) => OnToggleFuel.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Fuel</div>
+            <div class="chart-desc">Marine fuel docks (boat=yes).</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@MarinaEnabled"
+               @onchange="(e) => OnToggleMarina.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Marina</div>
+            <div class="chart-desc">Berths, services, often gated.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@HarbourEnabled"
+               @onchange="(e) => OnToggleHarbour.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Harbour</div>
+            <div class="chart-desc">General + commercial harbours.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@MooringEnabled"
+               @onchange="(e) => OnToggleMooring.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Mooring</div>
+            <div class="chart-desc">Mooring buoys + mooring fields.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@SlipwayEnabled"
+               @onchange="(e) => OnToggleSlipway.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Slipway</div>
+            <div class="chart-desc">Boat ramps and haul-out slips.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@PierEnabled"
+               @onchange="(e) => OnTogglePier.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Pier / jetty</div>
+            <div class="chart-desc">Commercial, fishing, tourist piers.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@ChandleryEnabled"
+               @onchange="(e) => OnToggleChandlery.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Chandlery</div>
+            <div class="chart-desc">Boat / chandlery / ship-chandler shops.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@DrinkingWaterEnabled"
+               @onchange="(e) => OnToggleDrinkingWater.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Drinking water</div>
+            <div class="chart-desc">Public water taps. May include inland park taps.</div>
+        </div>
+    </label>
+
+    <label class="chart-item">
+        <input type="checkbox" checked="@PumpOutEnabled"
+               @onchange="(e) => OnTogglePumpOut.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">Pump-out</div>
+            <div class="chart-desc">Black-water pump-out stations.</div>
+        </div>
+    </label>
+}
+
+@code {
+    [Parameter] public bool FuelEnabled { get; set; }
+    [Parameter] public bool MarinaEnabled { get; set; }
+    [Parameter] public bool HarbourEnabled { get; set; }
+    [Parameter] public bool MooringEnabled { get; set; }
+    [Parameter] public bool SlipwayEnabled { get; set; }
+    [Parameter] public bool PierEnabled { get; set; }
+    [Parameter] public bool ChandleryEnabled { get; set; }
+    [Parameter] public bool DrinkingWaterEnabled { get; set; }
+    [Parameter] public bool PumpOutEnabled { get; set; }
+
+    [Parameter] public EventCallback<bool> OnToggleFuel { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMarina { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleHarbour { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleMooring { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleSlipway { get; set; }
+    [Parameter] public EventCallback<bool> OnTogglePier { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleChandlery { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleDrinkingWater { get; set; }
+    [Parameter] public EventCallback<bool> OnTogglePumpOut { get; set; }
+
+    private bool expanded = false;
+}

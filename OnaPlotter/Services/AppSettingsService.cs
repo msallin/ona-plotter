@@ -159,6 +159,19 @@ public sealed class AppSettingsService : IAppSettings
     public bool PreferMagneticCourse { get; private set; } = false;
     public bool AutoAdvanceWaypoints { get; private set; } = true;
 
+    // OSM marine-POI overlay categories. All default false so a fresh
+    // helm doesn't trigger Overpass round-trips on first chart load;
+    // each is opt-in from Layers > Marine services.
+    public bool MarinePoiFuelEnabled { get; private set; } = false;
+    public bool MarinePoiMarinaEnabled { get; private set; } = false;
+    public bool MarinePoiHarbourEnabled { get; private set; } = false;
+    public bool MarinePoiMooringEnabled { get; private set; } = false;
+    public bool MarinePoiSlipwayEnabled { get; private set; } = false;
+    public bool MarinePoiPierEnabled { get; private set; } = false;
+    public bool MarinePoiChandleryEnabled { get; private set; } = false;
+    public bool MarinePoiDrinkingWaterEnabled { get; private set; } = false;
+    public bool MarinePoiPumpOutEnabled { get; private set; } = false;
+
     private readonly HashSet<string> _enabledChartIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _quickBarChartIds = new(StringComparer.Ordinal);
@@ -292,6 +305,18 @@ public sealed class AppSettingsService : IAppSettings
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
             AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
+            // Marine POI categories. Each defaults to false (opt-in); a
+            // bool stored as "true" / "false" via the same Save / LoadBool
+            // helpers as every other map-display toggle.
+            MarinePoiFuelEnabled = await LoadBool("marinePoi.fuel.v1", false);
+            MarinePoiMarinaEnabled = await LoadBool("marinePoi.marina.v1", false);
+            MarinePoiHarbourEnabled = await LoadBool("marinePoi.harbour.v1", false);
+            MarinePoiMooringEnabled = await LoadBool("marinePoi.mooring.v1", false);
+            MarinePoiSlipwayEnabled = await LoadBool("marinePoi.slipway.v1", false);
+            MarinePoiPierEnabled = await LoadBool("marinePoi.pier.v1", false);
+            MarinePoiChandleryEnabled = await LoadBool("marinePoi.chandlery.v1", false);
+            MarinePoiDrinkingWaterEnabled = await LoadBool("marinePoi.drinkingWater.v1", false);
+            MarinePoiPumpOutEnabled = await LoadBool("marinePoi.pumpOut.v1", false);
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
@@ -803,6 +828,64 @@ public sealed class AppSettingsService : IAppSettings
     {
         AutoAdvanceWaypoints = value;
         await Save("autoAdvanceWaypoints.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    // Marine POI category toggles. Same shape across all nine: write
+    // the bool, persist under the canonical "marinePoi.<cat>.v1" key,
+    // fan out OnSettingsChanged so MarinePoiController can re-render.
+    public async Task SetMarinePoiFuelEnabledAsync(bool value)
+    {
+        MarinePoiFuelEnabled = value;
+        await Save("marinePoi.fuel.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiMarinaEnabledAsync(bool value)
+    {
+        MarinePoiMarinaEnabled = value;
+        await Save("marinePoi.marina.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiHarbourEnabledAsync(bool value)
+    {
+        MarinePoiHarbourEnabled = value;
+        await Save("marinePoi.harbour.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiMooringEnabledAsync(bool value)
+    {
+        MarinePoiMooringEnabled = value;
+        await Save("marinePoi.mooring.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiSlipwayEnabledAsync(bool value)
+    {
+        MarinePoiSlipwayEnabled = value;
+        await Save("marinePoi.slipway.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiPierEnabledAsync(bool value)
+    {
+        MarinePoiPierEnabled = value;
+        await Save("marinePoi.pier.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiChandleryEnabledAsync(bool value)
+    {
+        MarinePoiChandleryEnabled = value;
+        await Save("marinePoi.chandlery.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiDrinkingWaterEnabledAsync(bool value)
+    {
+        MarinePoiDrinkingWaterEnabled = value;
+        await Save("marinePoi.drinkingWater.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+    public async Task SetMarinePoiPumpOutEnabledAsync(bool value)
+    {
+        MarinePoiPumpOutEnabled = value;
+        await Save("marinePoi.pumpOut.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

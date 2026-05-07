@@ -278,7 +278,18 @@
 //             nowrap rule; lifting it onto the base class covers
 //             depth, route metrics, and any other corner value
 //             with the same shape.
-const CACHE_NAME = 'ona-plotter-v41';
+// v41 -> v42: New Layers > Marine services section +
+//             marinePoiLayer.js module (OSM Overpass overlay for
+//             fuel docks, marinas, harbours, moorings, slipways,
+//             piers, chandleries, drinking water, pump-outs).
+//             LayersPanel gained ~9 toggle parameters + a new
+//             child component; cached v41 WASM passing the old
+//             shape into the v42 panel component would render
+//             without the new section AND error on unknown
+//             parameters during diff. Bump invalidates the
+//             precache so the helm pulls the new framework on
+//             next launch.
+const CACHE_NAME = 'ona-plotter-v42';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

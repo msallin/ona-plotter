@@ -80,6 +80,11 @@ namespace OnaPlotter.Services.Json;
 [JsonSerializable(typeof(OnaPlotter.Services.Places.PhotonResponse))]
 [JsonSerializable(typeof(OnaPlotter.Services.Places.NominatimResult[]))]
 [JsonSerializable(typeof(OnaPlotter.Services.Places.CachedQuery[]))]
+// Marine-POI wire shapes. OverpassResponse is the Overpass API client's
+// deserialise target; MarinePoi[] is the localStorage round-trip for
+// MarinePoiCache.
+[JsonSerializable(typeof(OnaPlotter.Services.Pois.OverpassResponse))]
+[JsonSerializable(typeof(OnaPlotter.Models.MarinePoi[]))]
 internal partial class OnaJsonContext : JsonSerializerContext
 {
 }

@@ -44,6 +44,8 @@ builder.Services.AddSingleton<OnaPlotter.Services.Settings.IPersistedView>(
     sp => sp.GetRequiredService<IAppSettings>());
 builder.Services.AddSingleton<OnaPlotter.Services.Settings.IWindPageSettings>(
     sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IMarinePoiSettings>(
+    sp => sp.GetRequiredService<IAppSettings>());
 // In-progress route-edit snapshots survive a page reload via
 // localStorage. The store is consulted on app start so a save that
 // failed mid-edit (no network, not logged in, accidental refresh)
@@ -272,6 +274,19 @@ builder.Services.AddSingleton<OnaPlotter.Services.Places.IPlaceSearchService>(sp
         sp.GetRequiredService<OnaPlotter.Services.Places.OwnPlacesIndex>(),
         caching);
 });
+
+// OSM marine-POI overlay (Layers > Marine services). Three pieces:
+//   * OverpassPoiService: HTTP client for the public Overpass API.
+//   * MarinePoiCache: localStorage-backed id-keyed cache with FIFO
+//     eviction; survives offline so visited regions render their
+//     services without a fresh fetch.
+//   * MarinePoiController is constructed by Map.razor when the JS
+//     module ref lands -- not registered here because it carries the
+//     module-bound MapMarinePoiJs wrapper.
+builder.Services.AddSingleton<OnaPlotter.Services.Pois.OverpassPoiService>();
+builder.Services.AddSingleton<OnaPlotter.Services.Pois.IMarinePoiService>(
+    sp => sp.GetRequiredService<OnaPlotter.Services.Pois.OverpassPoiService>());
+builder.Services.AddSingleton<OnaPlotter.Services.Pois.MarinePoiCache>();
 
 var host = builder.Build();
 

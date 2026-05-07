@@ -374,6 +374,76 @@ public class AppSettingsServiceTests
         await Assert.That(kv.GetCount("nightMode")).IsEqualTo(1);
     }
 
+    // === Marine POI categories ===
+    // Each category is a bool persisted at "marinePoi.{cat}.v1". Defaults
+    // to false so a fresh helm doesn't trigger Overpass round-trips on
+    // first chart load. Pinned: load -> default false; set -> persist
+    // canonical "true"/"false" string; load post-set -> read back the
+    // helm's choice.
+
+    [Test]
+    public async Task MarinePoi_Defaults_AllFalse()
+    {
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        await Assert.That(svc.MarinePoiFuelEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiMarinaEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiHarbourEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiMooringEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiSlipwayEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiPierEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiChandleryEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiDrinkingWaterEnabled).IsFalse();
+        await Assert.That(svc.MarinePoiPumpOutEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task MarinePoi_Set_PersistsCanonicalString()
+    {
+        var kv = new InMemoryKv();
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await svc.SetMarinePoiFuelEnabledAsync(true);
+        await svc.SetMarinePoiMarinaEnabledAsync(true);
+
+        await Assert.That(await kv.GetAsync("marinePoi.fuel.v1")).IsEqualTo("true");
+        await Assert.That(await kv.GetAsync("marinePoi.marina.v1")).IsEqualTo("true");
+    }
+
+    [Test]
+    public async Task MarinePoi_RoundTrip_RestoresEnabledSet()
+    {
+        // Helm enables Fuel + Pump-out; reload the service -> the
+        // settings come back as set. Mirrors the "load persisted
+        // values" pattern at the top of this file.
+        var kv = new InMemoryKv();
+        await kv.SetAsync("marinePoi.fuel.v1", "true");
+        await kv.SetAsync("marinePoi.pumpOut.v1", "true");
+
+        var svc = new AppSettingsService(kv);
+        await svc.InitializeAsync();
+
+        await Assert.That(svc.MarinePoiFuelEnabled).IsTrue();
+        await Assert.That(svc.MarinePoiPumpOutEnabled).IsTrue();
+        // Untouched categories stay at default-false.
+        await Assert.That(svc.MarinePoiMarinaEnabled).IsFalse();
+    }
+
+    [Test]
+    public async Task MarinePoi_Set_FiresOnSettingsChanged()
+    {
+        // Controller listens via OnSettingsChanged; if the setter
+        // skipped the broadcast, a category checkbox flip wouldn't
+        // re-render or refetch.
+        var svc = new AppSettingsService(new InMemoryKv());
+        await svc.InitializeAsync();
+        int fires = 0;
+        svc.OnSettingsChanged += () => fires++;
+        await svc.SetMarinePoiFuelEnabledAsync(true);
+        await Assert.That(fires).IsEqualTo(1);
+    }
+
     private sealed class InMemoryKv : IKeyValueStore
     {
         private readonly Dictionary<string, string> _d = [];
