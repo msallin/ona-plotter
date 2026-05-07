@@ -341,7 +341,17 @@
 //             routes deleted server-side". Connection-edge
 //             transitions log explicitly so the journal shows when
 //             deltas paused / resumed.
-const CACHE_NAME = 'ona-plotter-v47';
+// v47 -> v48: ResourceStore extracted to a typed cache primitive
+//             (ResourceTypeCache<T>). Per-type duplication --
+//             dictionary, snapshot list, Changed/Removed events,
+//             subscriber-throw guard, Replace logic -- all collapse
+//             onto one generic class; ResourceStore composes four
+//             instances (one per resource type). The public API
+//             (Routes / Waypoints / OnRouteChanged / ...) is
+//             unchanged via custom event accessors that forward to
+//             the inner cache; existing subscribers keep working
+//             without any code change on their side.
+const CACHE_NAME = 'ona-plotter-v48';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

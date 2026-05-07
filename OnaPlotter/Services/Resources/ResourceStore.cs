@@ -34,49 +34,39 @@ namespace OnaPlotter.Services.Resources;
 /// <see cref="SignalkClient.OnResourceDelta"/>; this store branches
 /// on type and parses value into the same DTO that the REST API
 /// returns.</para>
+///
+/// <para><b>Architecture</b>: per-type cache + change-event behaviour
+/// lives on <see cref="ResourceTypeCache{T}"/> -- this class is the
+/// composition layer that owns four instances (one per resource type),
+/// dispatches WS deltas to the right cache, and orchestrates REST
+/// reconcile across all four in parallel.</para>
 /// </summary>
 public sealed class ResourceStore : IAsyncDisposable
 {
-    private readonly IRouteApi _routes;
-    private readonly IWaypointApi _waypoints;
-    private readonly INoteApi _notes;
-    private readonly IRegionApi _regions;
+    private readonly IRouteApi _routesApi;
+    private readonly IWaypointApi _waypointsApi;
+    private readonly INoteApi _notesApi;
+    private readonly IRegionApi _regionsApi;
     private readonly SignalkClient _signalk;
     private readonly ILogger<ResourceStore> _logger;
 
-    // Per-type caches keyed by resource id (the segment after
-    // resources.<type>. on the wire, also the URL slug for REST
-    // GET /resources/<type>/<id>). Dictionary<,> isn't thread-safe,
-    // but Blazor WASM is single-threaded so the lock-free read +
-    // mutate-on-event pattern is fine. The Routes / Waypoints / ...
-    // properties hand out cached snapshots that get invalidated to
-    // null on every dictionary mutation; the next read rebuilds the
-    // list. This avoids a fresh allocation on every event-handler
-    // tick (Map.razor's HUD reads Routes / Waypoints repeatedly per
-    // pan / state-changed cycle).
-    private readonly Dictionary<string, SignalkRoute> _routeById = new();
-    private readonly Dictionary<string, SignalkWaypoint> _waypointById = new();
-    private readonly Dictionary<string, SignalkNote> _noteById = new();
-    private readonly Dictionary<string, SignalkRegion> _regionById = new();
-
-    // Snapshot caches. null means "rebuild on next read". Set back to
-    // null in every code path that mutates the matching dictionary --
-    // search for the InvalidateXxx calls below to verify coverage.
-    // Old callers that captured a list reference keep iterating against
-    // their snapshot safely; the next caller after a mutation sees the
-    // freshly-rebuilt list.
-    private List<SignalkRoute>? _routesSnapshot;
-    private List<SignalkWaypoint>? _waypointsSnapshot;
-    private List<SignalkNote>? _notesSnapshot;
-    private List<SignalkRegion>? _regionsSnapshot;
+    // Per-type caches. Each owns its own dictionary, snapshot list,
+    // Changed/Removed events, and the "log subscriber-throw" guard.
+    // Blazor WASM is single-threaded so these don't need locks.
+    // Shared HashSet for Replace-side membership scratch -- one
+    // allocation amortised across every reconcile pass.
+    private readonly ResourceTypeCache<SignalkRoute> _routeCache;
+    private readonly ResourceTypeCache<SignalkWaypoint> _waypointCache;
+    private readonly ResourceTypeCache<SignalkNote> _noteCache;
+    private readonly ResourceTypeCache<SignalkRegion> _regionCache;
+    private readonly HashSet<string> _reconcileIdScratch = new();
 
     /// <summary>Coalesces concurrent <see cref="RefreshAllAsync"/>
     /// calls. Two callers (manual Refresh button + reconnect-edge
     /// reconcile) can land at the same moment on a flaky link; without
-    /// the gate, two passes interleave their <c>ReplaceXxx</c>
-    /// mutations and fire 2x the per-row Changed events. With it, the
-    /// second caller awaits the first instead of re-issuing four
-    /// REST round-trips.</summary>
+    /// the gate, two passes interleave their cache mutations and fire
+    /// 2x the per-row Changed events. With it, the second caller
+    /// awaits the first instead of re-issuing four REST round-trips.</summary>
     private Task? _inFlightRefresh;
 
     /// <summary>True once <see cref="RefreshAllAsync"/> has completed
@@ -95,12 +85,17 @@ public sealed class ResourceStore : IAsyncDisposable
         SignalkClient signalk,
         ILogger<ResourceStore> logger)
     {
-        _routes = routes;
-        _waypoints = waypoints;
-        _notes = notes;
-        _regions = regions;
+        _routesApi = routes;
+        _waypointsApi = waypoints;
+        _notesApi = notes;
+        _regionsApi = regions;
         _signalk = signalk;
         _logger = logger;
+
+        _routeCache = new ResourceTypeCache<SignalkRoute>("route", logger);
+        _waypointCache = new ResourceTypeCache<SignalkWaypoint>("waypoint", logger);
+        _noteCache = new ResourceTypeCache<SignalkNote>("note", logger);
+        _regionCache = new ResourceTypeCache<SignalkRegion>("region", logger);
 
         _signalk.OnResourceDelta += HandleResourceDelta;
         _signalk.OnConnectionChanged += HandleConnectionChange;
@@ -116,113 +111,90 @@ public sealed class ResourceStore : IAsyncDisposable
     /// dictionary-iteration order (effectively insertion order on
     /// .NET; not guaranteed but stable enough for helm-facing
     /// lists).</summary>
-    public IReadOnlyList<SignalkRoute> Routes
-    {
-        get
-        {
-            if (_routesSnapshot is { } cached) return cached;
-            var snapshot = new List<SignalkRoute>(_routeById.Count);
-            snapshot.AddRange(_routeById.Values);
-            _routesSnapshot = snapshot;
-            return snapshot;
-        }
-    }
+    public IReadOnlyList<SignalkRoute> Routes => _routeCache.Snapshot;
 
-    public IReadOnlyList<SignalkWaypoint> Waypoints
-    {
-        get
-        {
-            if (_waypointsSnapshot is { } cached) return cached;
-            var snapshot = new List<SignalkWaypoint>(_waypointById.Count);
-            snapshot.AddRange(_waypointById.Values);
-            _waypointsSnapshot = snapshot;
-            return snapshot;
-        }
-    }
+    public IReadOnlyList<SignalkWaypoint> Waypoints => _waypointCache.Snapshot;
 
-    public IReadOnlyList<SignalkNote> Notes
-    {
-        get
-        {
-            if (_notesSnapshot is { } cached) return cached;
-            var snapshot = new List<SignalkNote>(_noteById.Count);
-            snapshot.AddRange(_noteById.Values);
-            _notesSnapshot = snapshot;
-            return snapshot;
-        }
-    }
+    public IReadOnlyList<SignalkNote> Notes => _noteCache.Snapshot;
 
-    public IReadOnlyList<SignalkRegion> Regions
-    {
-        get
-        {
-            if (_regionsSnapshot is { } cached) return cached;
-            var snapshot = new List<SignalkRegion>(_regionById.Count);
-            snapshot.AddRange(_regionById.Values);
-            _regionsSnapshot = snapshot;
-            return snapshot;
-        }
-    }
+    public IReadOnlyList<SignalkRegion> Regions => _regionCache.Snapshot;
 
-    public SignalkRoute? GetRoute(string id) =>
-        _routeById.TryGetValue(id, out var r) ? r : null;
+    public SignalkRoute? GetRoute(string id) => _routeCache.Get(id);
 
-    public SignalkWaypoint? GetWaypoint(string id) =>
-        _waypointById.TryGetValue(id, out var w) ? w : null;
+    public SignalkWaypoint? GetWaypoint(string id) => _waypointCache.Get(id);
 
-    public SignalkNote? GetNote(string id) =>
-        _noteById.TryGetValue(id, out var n) ? n : null;
+    public SignalkNote? GetNote(string id) => _noteCache.Get(id);
 
-    public SignalkRegion? GetRegion(string id) =>
-        _regionById.TryGetValue(id, out var r) ? r : null;
+    public SignalkRegion? GetRegion(string id) => _regionCache.Get(id);
 
     // --- Change events (per type) ------------------------------------
     //
     // Subscribers must handle thread-affinity themselves (Blazor
     // components: InvokeAsync(StateHasChanged) wrap). Removed events
     // fire AFTER the entry is dropped from the cache, so a handler
-    // that re-checks via GetRoute(id) gets null.
+    // that re-checks via GetRoute(id) gets null. Custom event
+    // accessors forward to the inner cache so the public surface
+    // stays Action<string>?-shaped (existing subscribers don't need
+    // to change).
 
     /// <summary>Fires when a route is created or updated. Argument is
     /// the resource id; the new document is in the cache when this
     /// fires (look it up via <see cref="GetRoute"/>).</summary>
-    public event Action<string>? OnRouteChanged;
+    public event Action<string>? OnRouteChanged
+    {
+        add { _routeCache.Changed += value; }
+        remove { _routeCache.Changed -= value; }
+    }
 
     /// <summary>Fires when a route is deleted (delta value=null OR a
     /// REST reconcile finds the id is no longer in the server's
     /// list). Cache entry is already gone when this fires.</summary>
-    public event Action<string>? OnRouteRemoved;
+    public event Action<string>? OnRouteRemoved
+    {
+        add { _routeCache.Removed += value; }
+        remove { _routeCache.Removed -= value; }
+    }
 
-    public event Action<string>? OnWaypointChanged;
-    public event Action<string>? OnWaypointRemoved;
+    public event Action<string>? OnWaypointChanged
+    {
+        add { _waypointCache.Changed += value; }
+        remove { _waypointCache.Changed -= value; }
+    }
 
-    public event Action<string>? OnNoteChanged;
-    public event Action<string>? OnNoteRemoved;
+    public event Action<string>? OnWaypointRemoved
+    {
+        add { _waypointCache.Removed += value; }
+        remove { _waypointCache.Removed -= value; }
+    }
 
-    public event Action<string>? OnRegionChanged;
-    public event Action<string>? OnRegionRemoved;
+    public event Action<string>? OnNoteChanged
+    {
+        add { _noteCache.Changed += value; }
+        remove { _noteCache.Changed -= value; }
+    }
+
+    public event Action<string>? OnNoteRemoved
+    {
+        add { _noteCache.Removed += value; }
+        remove { _noteCache.Removed -= value; }
+    }
+
+    public event Action<string>? OnRegionChanged
+    {
+        add { _regionCache.Changed += value; }
+        remove { _regionCache.Changed -= value; }
+    }
+
+    public event Action<string>? OnRegionRemoved
+    {
+        add { _regionCache.Removed += value; }
+        remove { _regionCache.Removed -= value; }
+    }
 
     /// <summary>One coalesced event for "a refresh just landed". Useful
     /// for components that want to re-render their full list after the
     /// REST reconcile rather than wiring four typed handlers.</summary>
     public event Action? OnReloaded;
-
-    /// <summary>Invoke a typed event with the standard
-    /// "log + swallow" guard. Pulled out of the per-event sites so a
-    /// subscriber-threw branch is one method instead of ~30 inline
-    /// try/catch blocks. Multicast invocations: if subscriber A
-    /// throws and subscriber B follows, B doesn't run -- mirrors the
-    /// behaviour of the previous inline pattern (no foreach over
-    /// GetInvocationList).</summary>
-    private void SafeInvoke<T>(Action<T>? handler, T arg, string label)
-    {
-        if (handler is null) return;
-        try { handler.Invoke(arg); }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[resources] {Label} subscriber threw", label);
-        }
-    }
 
     // --- REST reconcile ----------------------------------------------
 
@@ -262,30 +234,31 @@ public sealed class ResourceStore : IAsyncDisposable
         return _inFlightRefresh;
     }
 
-    /// <summary>Per-type reconcile breakdown so the
-    /// reconcile-complete log can show added / updated / removed
-    /// counts. "added" = id wasn't in the cache before the reconcile;
-    /// "updated" = id was already there (reference replaced);
-    /// "removed" = id was in the cache but not in the fresh list.</summary>
-    private readonly record struct ReplaceCounts(int Added, int Updated, int Removed);
-
-    private static readonly ReplaceCounts ReplaceCountsZero = new(0, 0, 0);
+    private static readonly ResourceTypeCache<SignalkRoute>.ReplaceCounts ZeroCounts = default;
 
     private async Task RefreshAllCoreAsync(string cause, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         _logger.LogInformation("[resources] reconcile started cause={Cause}", cause);
 
-        var routesTask = SafeFetch(() => _routes.GetAllAsync(ct), "routes");
-        var waypointsTask = SafeFetch(() => _waypoints.GetAllAsync(ct), "waypoints");
-        var notesTask = SafeFetch(() => _notes.GetAllAsync(ct), "notes");
-        var regionsTask = SafeFetch(() => _regions.GetAllAsync(ct), "regions");
+        var routesTask = SafeFetch(() => _routesApi.GetAllAsync(ct), "routes");
+        var waypointsTask = SafeFetch(() => _waypointsApi.GetAllAsync(ct), "waypoints");
+        var notesTask = SafeFetch(() => _notesApi.GetAllAsync(ct), "notes");
+        var regionsTask = SafeFetch(() => _regionsApi.GetAllAsync(ct), "regions");
         await Task.WhenAll(routesTask, waypointsTask, notesTask, regionsTask);
 
-        var routeCounts = routesTask.Result is { } routes ? ReplaceRoutes(routes) : ReplaceCountsZero;
-        var waypointCounts = waypointsTask.Result is { } waypoints ? ReplaceWaypoints(waypoints) : ReplaceCountsZero;
-        var noteCounts = notesTask.Result is { } notes ? ReplaceNotes(notes) : ReplaceCountsZero;
-        var regionCounts = regionsTask.Result is { } regions ? ReplaceRegions(regions) : ReplaceCountsZero;
+        var routeCounts = routesTask.Result is { } routes
+            ? _routeCache.Replace(routes, r => r.Id, _reconcileIdScratch)
+            : ZeroCounts;
+        var waypointCounts = waypointsTask.Result is { } waypoints
+            ? _waypointCache.Replace(waypoints, w => w.Id, _reconcileIdScratch)
+            : default;
+        var noteCounts = notesTask.Result is { } notes
+            ? _noteCache.Replace(notes, n => n.Id, _reconcileIdScratch)
+            : default;
+        var regionCounts = regionsTask.Result is { } regions
+            ? _regionCache.Replace(regions, r => r.Id, _reconcileIdScratch)
+            : default;
 
         bool firstLoad = !IsLoaded;
         IsLoaded = true;
@@ -305,10 +278,10 @@ public sealed class ResourceStore : IAsyncDisposable
             "notes(total={NoteCount} +{NoteAdded}/~{NoteUpdated}/-{NoteRemoved}) " +
             "regions(total={RegionCount} +{RegionAdded}/~{RegionUpdated}/-{RegionRemoved})",
             cause, sw.ElapsedMilliseconds, firstLoad,
-            _routeById.Count, routeCounts.Added, routeCounts.Updated, routeCounts.Removed,
-            _waypointById.Count, waypointCounts.Added, waypointCounts.Updated, waypointCounts.Removed,
-            _noteById.Count, noteCounts.Added, noteCounts.Updated, noteCounts.Removed,
-            _regionById.Count, regionCounts.Added, regionCounts.Updated, regionCounts.Removed);
+            _routeCache.Count, routeCounts.Added, routeCounts.Updated, routeCounts.Removed,
+            _waypointCache.Count, waypointCounts.Added, waypointCounts.Updated, waypointCounts.Removed,
+            _noteCache.Count, noteCounts.Added, noteCounts.Updated, noteCounts.Removed,
+            _regionCache.Count, regionCounts.Added, regionCounts.Updated, regionCounts.Removed);
     }
 
     private async Task<List<T>?> SafeFetch<T>(Func<Task<List<T>>> fetch, string label)
@@ -319,162 +292,6 @@ public sealed class ResourceStore : IAsyncDisposable
             _logger.LogWarning(ex, "[resources] {Label} REST fetch failed", label);
             return null;
         }
-    }
-
-    // --- Replace-cache helpers (REST reconcile path) ------------------
-    //
-    // Reconcile flow per type: walk the fresh list, upsert into the
-    // dictionary, fire Changed for each row. Then walk the dictionary
-    // to find ids the server no longer has, remove them, fire Removed.
-    // The shared HashSet field (_reconcileIdScratch) is the
-    // upsert-side membership lookup; it's cleared rather than allocated
-    // per call so a busy reconnect doesn't churn HashSet bucket arrays.
-    // The stale-id list is allocated lazily -- on the common
-    // no-stale-entries path we skip the List<> allocation entirely.
-
-    private readonly HashSet<string> _reconcileIdScratch = new();
-
-    private ReplaceCounts ReplaceRoutes(List<SignalkRoute> fresh)
-    {
-        var newIds = _reconcileIdScratch;
-        newIds.Clear();
-        int added = 0, updated = 0;
-        bool mutated = false;
-        foreach (var r in fresh)
-        {
-            if (string.IsNullOrEmpty(r.Id)) continue;
-            newIds.Add(r.Id);
-            if (_routeById.ContainsKey(r.Id)) updated++; else added++;
-            _routeById[r.Id] = r;
-            mutated = true;
-            SafeInvoke(OnRouteChanged, r.Id, "route changed");
-        }
-        // Remove any cached entries no longer in the server's list.
-        // Lazy-allocate the stale list so the no-stale common case
-        // costs nothing beyond the keys foreach.
-        List<string>? stale = null;
-        foreach (var k in _routeById.Keys)
-        {
-            if (!newIds.Contains(k)) (stale ??= []).Add(k);
-        }
-        int removed = 0;
-        if (stale is not null)
-        {
-            foreach (var id in stale)
-            {
-                _routeById.Remove(id);
-                SafeInvoke(OnRouteRemoved, id, "route removed");
-            }
-            removed = stale.Count;
-            mutated = true;
-        }
-        if (mutated) _routesSnapshot = null;
-        return new ReplaceCounts(added, updated, removed);
-    }
-
-    private ReplaceCounts ReplaceWaypoints(List<SignalkWaypoint> fresh)
-    {
-        var newIds = _reconcileIdScratch;
-        newIds.Clear();
-        int added = 0, updated = 0;
-        bool mutated = false;
-        foreach (var w in fresh)
-        {
-            if (string.IsNullOrEmpty(w.Id)) continue;
-            newIds.Add(w.Id);
-            if (_waypointById.ContainsKey(w.Id)) updated++; else added++;
-            _waypointById[w.Id] = w;
-            mutated = true;
-            SafeInvoke(OnWaypointChanged, w.Id, "waypoint changed");
-        }
-        List<string>? stale = null;
-        foreach (var k in _waypointById.Keys)
-        {
-            if (!newIds.Contains(k)) (stale ??= []).Add(k);
-        }
-        int removed = 0;
-        if (stale is not null)
-        {
-            foreach (var id in stale)
-            {
-                _waypointById.Remove(id);
-                SafeInvoke(OnWaypointRemoved, id, "waypoint removed");
-            }
-            removed = stale.Count;
-            mutated = true;
-        }
-        if (mutated) _waypointsSnapshot = null;
-        return new ReplaceCounts(added, updated, removed);
-    }
-
-    private ReplaceCounts ReplaceNotes(List<SignalkNote> fresh)
-    {
-        var newIds = _reconcileIdScratch;
-        newIds.Clear();
-        int added = 0, updated = 0;
-        bool mutated = false;
-        foreach (var n in fresh)
-        {
-            if (string.IsNullOrEmpty(n.Id)) continue;
-            newIds.Add(n.Id);
-            if (_noteById.ContainsKey(n.Id)) updated++; else added++;
-            _noteById[n.Id] = n;
-            mutated = true;
-            SafeInvoke(OnNoteChanged, n.Id, "note changed");
-        }
-        List<string>? stale = null;
-        foreach (var k in _noteById.Keys)
-        {
-            if (!newIds.Contains(k)) (stale ??= []).Add(k);
-        }
-        int removed = 0;
-        if (stale is not null)
-        {
-            foreach (var id in stale)
-            {
-                _noteById.Remove(id);
-                SafeInvoke(OnNoteRemoved, id, "note removed");
-            }
-            removed = stale.Count;
-            mutated = true;
-        }
-        if (mutated) _notesSnapshot = null;
-        return new ReplaceCounts(added, updated, removed);
-    }
-
-    private ReplaceCounts ReplaceRegions(List<SignalkRegion> fresh)
-    {
-        var newIds = _reconcileIdScratch;
-        newIds.Clear();
-        int added = 0, updated = 0;
-        bool mutated = false;
-        foreach (var r in fresh)
-        {
-            if (string.IsNullOrEmpty(r.Id)) continue;
-            newIds.Add(r.Id);
-            if (_regionById.ContainsKey(r.Id)) updated++; else added++;
-            _regionById[r.Id] = r;
-            mutated = true;
-            SafeInvoke(OnRegionChanged, r.Id, "region changed");
-        }
-        List<string>? stale = null;
-        foreach (var k in _regionById.Keys)
-        {
-            if (!newIds.Contains(k)) (stale ??= []).Add(k);
-        }
-        int removed = 0;
-        if (stale is not null)
-        {
-            foreach (var id in stale)
-            {
-                _regionById.Remove(id);
-                SafeInvoke(OnRegionRemoved, id, "region removed");
-            }
-            removed = stale.Count;
-            mutated = true;
-        }
-        if (mutated) _regionsSnapshot = null;
-        return new ReplaceCounts(added, updated, removed);
     }
 
     // --- Delta apply (WS push path) -----------------------------------
@@ -507,11 +324,7 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
-            if (_routeById.Remove(id))
-            {
-                _routesSnapshot = null;
-                SafeInvoke(OnRouteRemoved, id, "route removed");
-            }
+            _routeCache.Remove(id);
             return;
         }
         try
@@ -523,9 +336,7 @@ public sealed class ResourceStore : IAsyncDisposable
             // than LineString; the helm-facing surface only renders
             // LineStrings (matches RouteApi.GetAllAsync's filter).
             if (route.Feature?.Geometry?.Type is not "LineString") return;
-            _routeById[id] = route;
-            _routesSnapshot = null;
-            SafeInvoke(OnRouteChanged, id, "route changed");
+            _routeCache.Apply(id, route);
         }
         // Catch broadly: JsonException is the typed-deserialise failure,
         // but a malformed coordinates array can also surface as
@@ -544,11 +355,7 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
-            if (_waypointById.Remove(id))
-            {
-                _waypointsSnapshot = null;
-                SafeInvoke(OnWaypointRemoved, id, "waypoint removed");
-            }
+            _waypointCache.Remove(id);
             return;
         }
         try
@@ -571,9 +378,7 @@ public sealed class ResourceStore : IAsyncDisposable
             }
             var desc = wp.Feature?.Properties?.Description;
             wp.Description = string.IsNullOrEmpty(desc) ? null : desc;
-            _waypointById[id] = wp;
-            _waypointsSnapshot = null;
-            SafeInvoke(OnWaypointChanged, id, "waypoint changed");
+            _waypointCache.Apply(id, wp);
         }
         catch (JsonException ex)
         {
@@ -585,11 +390,7 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
-            if (_noteById.Remove(id))
-            {
-                _notesSnapshot = null;
-                SafeInvoke(OnNoteRemoved, id, "note removed");
-            }
+            _noteCache.Remove(id);
             return;
         }
         try
@@ -601,9 +402,7 @@ public sealed class ResourceStore : IAsyncDisposable
             // confuse marker code that assumes lat/lon.
             if (note.Position is null) return;
             note.Id = id;
-            _noteById[id] = note;
-            _notesSnapshot = null;
-            SafeInvoke(OnNoteChanged, id, "note changed");
+            _noteCache.Apply(id, note);
         }
         catch (JsonException ex)
         {
@@ -615,11 +414,7 @@ public sealed class ResourceStore : IAsyncDisposable
     {
         if (value.ValueKind == JsonValueKind.Null)
         {
-            if (_regionById.Remove(id))
-            {
-                _regionsSnapshot = null;
-                SafeInvoke(OnRegionRemoved, id, "region removed");
-            }
+            _regionCache.Remove(id);
             return;
         }
         try
@@ -642,9 +437,7 @@ public sealed class ResourceStore : IAsyncDisposable
                     .ExtractOuterRings(coords.Value, type);
             }
             if (region.OuterRings.Count == 0) return;
-            _regionById[id] = region;
-            _regionsSnapshot = null;
-            SafeInvoke(OnRegionChanged, id, "region changed");
+            _regionCache.Apply(id, region);
         }
         // Catch broadly: ExtractOuterRings -> ParseRing calls
         // coord[0].GetDouble() without first checking JsonValueKind.
