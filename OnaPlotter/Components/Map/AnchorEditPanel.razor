@@ -147,6 +147,15 @@
     /// in that state when Auto is the pick.</summary>
     [Parameter] public int? AutoPreviewRadius { get; set; }
 
+    /// <summary>Parent-supplied helm-readable breakdown of the
+    /// <see cref="AutoPreviewRadius"/> components, e.g.
+    /// "swing 38 m + tide drop 4 m + 5 m margin". Surfaced as the
+    /// Auto chip's tooltip so a long-press / hover reads the same
+    /// summands the eyebrow shows (via the parent's SuggestionLabel
+    /// fallback). Null = no breakdown available; chip falls back to
+    /// a generic explanation in <see cref="AutoTooltip"/>.</summary>
+    [Parameter] public string? AutoBreakdown { get; set; }
+
     /// <summary>True while the parent's drop / set callback is in
     /// flight (REST round-trip). Disables every button so a double-
     /// tap can't fire two PUTs.</summary>
@@ -226,13 +235,19 @@
     private string AriaLabel => TitleLabel;
 
     /// <summary>Tooltip for the Auto chip. Surfaces the previewed
-    /// number when present so the helm gets the same information
-    /// in the long-press tooltip as on the chip face. Field-study:
-    /// the chip's title text is the helm's first hover-or-long-
-    /// press touchpoint when they ask "what is this?".</summary>
-    private string AutoTooltip => AutoPreviewRadius is int r
-        ? $"Plugin-computed radius: {r} m (current distance to anchor + safety margin)"
-        : "Plugin computes the radius from current distance to the anchor";
+    /// number AND the parent-supplied breakdown so the helm reads
+    /// "Auto: 47 m = swing 38 m + tide drop 4 m + 5 m margin" on
+    /// long-press / hover. Field-study: the chip's title text is the
+    /// helm's first hover-or-long-press touchpoint when they ask
+    /// "what is this?". Falls back to a numbers-free explanation
+    /// when no breakdown / no preview lands yet.</summary>
+    private string AutoTooltip => (AutoPreviewRadius, AutoBreakdown) switch
+    {
+        (int r, string b) when !string.IsNullOrEmpty(b) => $"Auto: {r} m = {b}",
+        (int r, _)                                       => $"Auto: {r} m",
+        (null, string b) when !string.IsNullOrEmpty(b)  => b,
+        _ => "Auto = swing + tide drop + 5 m margin (waiting for anchor pin / GPS)",
+    };
 
     /// <summary>The radius that will actually ship if the helm taps
     /// Set right now. Numeric pick wins over Auto; Auto means

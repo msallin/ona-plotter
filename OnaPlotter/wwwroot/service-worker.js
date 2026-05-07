@@ -402,7 +402,26 @@
 //             revisions) stays hidden. CSS + JS only; bump
 //             invalidates the precache so the helm picks up the new
 //             .ona-range-scale-zoom rule on next launch.
-const CACHE_NAME = 'ona-plotter-v51';
+// v51 -> v52: Anchor Auto formula now factors swing + tide drop.
+//             AutoRadiusPreview was "current distance + 5 m" (or
+//             "armed-max + 5 m"). New shape is
+//             swing + tide-drop + 5 m margin, where:
+//               - swing = AnchorPeakRadius (worst-case observed
+//                 since drop) -> AnchorCurrentRadius -> haversine,
+//                 in priority order.
+//               - tide-drop = max(0, TideHeightNow - TideHeightLow)
+//                 from environment.tide.* deltas; reflects the
+//                 extra effective scope the boat will swing on
+//                 between now and the next predicted low water.
+//               - 5 m margin: blanket safety pad.
+//             AnchorEditPanel gains an AutoBreakdown parameter so
+//             the chip's tooltip and the panel's eyebrow both read
+//             the same helm-readable summary
+//             ("swing 38 m + tide drop 4 m + 5 m margin"); the
+//             eyebrow is now computed live (was a static string set
+//             at panel-open) so it follows the boat as the swing
+//             peak grows and tide ticks.
+const CACHE_NAME = 'ona-plotter-v52';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
