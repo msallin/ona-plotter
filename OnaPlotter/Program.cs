@@ -102,7 +102,15 @@ builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.CpaAlarmRul
 // the snapshot per tick. Threaded as a separate dependency rather than
 // added to AlarmEvaluationContext so the context shape stays minimal
 // for every other rule that doesn't care about regions.
-builder.Services.AddSingleton<OnaPlotter.Services.IRegionStore, OnaPlotter.Services.RegionStore>();
+// RegionStore subscribes to ResourceStore region events on construction
+// so HazardousRegionAlarmRule sees fresh regions even when Map.razor
+// is unmounted. Concrete first (ctor takes ResourceStore), then
+// register the IRegionStore facade as a forwarder to the same instance.
+builder.Services.AddSingleton<OnaPlotter.Services.RegionStore>(sp =>
+    new OnaPlotter.Services.RegionStore(
+        sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>()));
+builder.Services.AddSingleton<OnaPlotter.Services.IRegionStore>(
+    sp => sp.GetRequiredService<OnaPlotter.Services.RegionStore>());
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.HazardousRegionAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WindShiftAlarmRule>();
 builder.Services.AddSingleton<IAlarmRule, OnaPlotter.Services.Alarms.WaypointApproachAlarmRule>();
@@ -290,15 +298,21 @@ builder.Services.AddSingleton<OnaPlotter.Services.Pois.MarinePoiCache>();
 
 var host = builder.Build();
 
+// Resolve ResourceStore FIRST so its ctor wires the OnResourceDelta +
+// OnConnectionChanged subscriptions on SignalkClient before any WS
+// frames flow. Resolving RegionStore here too forces the subscription
+// to ResourceStore.OnRegion* events so HazardousRegionAlarmRule sees
+// regions whether or not Map.razor is mounted. Order matters here
+// (don't move below StartAsync without thinking through the race).
+var resourceStore = host.Services.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>();
+_ = host.Services.GetRequiredService<OnaPlotter.Services.RegionStore>();
+
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).
 var signalkClient = host.Services.GetRequiredService<SignalkClient>();
 _ = signalkClient.StartAsync();
 
-// Resolve ResourceStore at startup so its OnResourceDelta + OnConnectionChanged
-// subscriptions are attached to SignalkClient BEFORE the WS pump starts
-// delivering frames. Kick off the initial REST reconcile in the background;
-// pages that need data poll IsLoaded or subscribe to OnReloaded.
-var resourceStore = host.Services.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>();
+// Initial REST reconcile fires in the background; pages poll
+// IsLoaded or subscribe to OnReloaded.
 _ = resourceStore.RefreshAllAsync();
 
 // Activate the cross-plotter alarm publisher. Resolving the singleton

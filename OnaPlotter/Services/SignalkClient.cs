@@ -1000,6 +1000,14 @@ public sealed class SignalkClient : IAsyncDisposable
     /// where colons inside the id would otherwise confuse a naive
     /// <c>Split('.')</c>.</para>
     /// </summary>
+    /// <summary>Reusable Null-kind JsonElement for the resource-delta
+    /// delete branch. Sourced from a never-disposed JsonDocument; this
+    /// pattern is used inside System.Text.Json itself for sentinel
+    /// elements. Avoids a Parse + Clone per delete on the hot WS-receive
+    /// path.</summary>
+    private static readonly System.Text.Json.JsonElement NullJsonElement
+        = System.Text.Json.JsonDocument.Parse("null").RootElement;
+
     private void DispatchResourceUpdates(SignalkDelta delta)
     {
         var handler = OnResourceDelta;
@@ -1015,8 +1023,7 @@ public sealed class SignalkClient : IAsyncDisposable
                 if (!val.Path.StartsWith("resources.", StringComparison.Ordinal)) continue;
 
                 // Path = "resources.<type>.<id>" -- find the second dot.
-                // Substring after the first '.' (length 10) is "<type>.<id>";
-                // the next '.' splits the two.
+                // Slice past "resources." then split on the next '.'.
                 var rest = val.Path.AsSpan("resources.".Length);
                 var dotIdx = rest.IndexOf('.');
                 if (dotIdx <= 0 || dotIdx >= rest.Length - 1) continue;
@@ -1035,11 +1042,11 @@ public sealed class SignalkClient : IAsyncDisposable
                 }
                 else if (val.Value is null)
                 {
-                    // value: null on delete. Materialise an explicit
+                    // value: null on delete. Reuse a single static
                     // JsonValueKind.Null element so the downstream
-                    // handler can branch cleanly on .ValueKind.
-                    using var nullDoc = System.Text.Json.JsonDocument.Parse("null");
-                    payload = nullDoc.RootElement.Clone();
+                    // handler can branch cleanly on .ValueKind without
+                    // a per-delete JsonDocument.Parse + Clone allocation.
+                    payload = NullJsonElement;
                 }
                 else
                 {

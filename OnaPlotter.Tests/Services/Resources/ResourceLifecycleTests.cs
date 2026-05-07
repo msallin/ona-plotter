@@ -689,6 +689,78 @@ public class ResourceLifecycleTests
     }
 
     [Test]
+    public async Task DisposeAsync_Unsubscribes_From_SignalkClient_Events()
+    {
+        // After dispose, a delta on the SignalkClient must NOT mutate
+        // the store's cache. Pins the unsubscribe contract: a future
+        // refactor that drops the -= calls would silently leak event
+        // subscriptions in single-page-app navigation cycles.
+        var (client, store, _, _, _, _) = BuildHarness();
+        var route = MakeRoute("r1", "Berlin", (13.4, 52.5), (13.5, 52.6));
+        client.ProcessMessage(RouteDeltaJson("r1", route));
+        await Assert.That(store.GetRoute("r1")).IsNotNull();
+
+        await store.DisposeAsync();
+
+        // Post-dispose delta should be ignored (the store's
+        // OnResourceDelta subscription is gone).
+        var route2 = MakeRoute("r2", "PostDispose", (1.0, 1.0), (2.0, 2.0));
+        client.ProcessMessage(RouteDeltaJson("r2", route2));
+        await Assert.That(store.GetRoute("r2")).IsNull();
+    }
+
+    [Test]
+    public async Task RemoteRegionEdit_WithUnrenderableGeometry_IsFiltered()
+    {
+        // RegionApi.GetAllAsync drops regions whose Feature.Geometry
+        // produces an empty OuterRings list (Point geometry, empty
+        // Polygon coords, etc.). HandleRegionDelta must mirror that
+        // filter -- otherwise the chart-side region layer hits a null
+        // ring on render. Pin the contract so a regression that adds
+        // empty-rings regions to the cache surfaces.
+        var (client, store, _, _, _, _) = BuildHarness();
+
+        // Point geometry on a region (server-side malformation; SK spec
+        // says regions are Polygon/MultiPolygon).
+        client.ProcessMessage(@"{
+            ""context"":""vessels.self"",
+            ""updates"":[{
+                ""values"":[
+                    {""path"":""resources.regions.g1"",""value"":{
+                        ""name"":""BadShape"",
+                        ""feature"":{
+                            ""type"":""Feature"",
+                            ""geometry"":{""type"":""Point"",""coordinates"":[10.0,50.0]}
+                        }
+                    }}
+                ]
+            }]
+        }");
+
+        await Assert.That(store.GetRegion("g1")).IsNull();
+    }
+
+    [Test]
+    public async Task RouteDelta_WithUrnFormId_IsCachedUnderFullUrn()
+    {
+        // signalk-server emits resource ids as urn-form
+        // ("urn:mrn:signalk:uuid:<UUID>"). The path-prefix scan in
+        // SignalkClient.DispatchResourceUpdates manually splits on the
+        // SECOND dot rather than naive Split('.') so colons inside the
+        // id segment survive intact. A regression that swaps to
+        // Split('.') would shred the urn into pieces; this test pins
+        // the contract.
+        var (client, store, _, _, _, _) = BuildHarness();
+
+        const string urnId = "urn:mrn:signalk:uuid:7c6a1b00-1234-5678-9abc-deadbeefcafe";
+        var route = MakeRoute(urnId, "UrnRoute", (13.4, 52.5), (13.5, 52.6));
+        client.ProcessMessage(RouteDeltaJson(urnId, route));
+
+        await Assert.That(store.GetRoute(urnId)).IsNotNull();
+        await Assert.That(store.GetRoute(urnId)?.Name).IsEqualTo("UrnRoute");
+    }
+
+    [Test]
     public async Task RemoteNoteEdit_WithoutPosition_IsFiltered()
     {
         // SK note resources without a position aren't renderable on the
