@@ -672,7 +672,12 @@
 //               and .night-mode-red CSS variants. Helms wanting a
 //               non-red dark intermediate use Theme = "dark"
 //               instead.
-const CACHE_NAME = 'ona-plotter-v68';
+// v68 -> v69: Settings > Anchor: "Auto anchor radius" card narrows
+//             from col-12 to col-sm-6 so it pairs with the Tide
+//             Alarm setup card on the same row. <pre> formula
+//             gets pre-wrap + word-break so half-width on tablet
+//             doesn't horizontal-scroll.
+const CACHE_NAME = 'ona-plotter-v69';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

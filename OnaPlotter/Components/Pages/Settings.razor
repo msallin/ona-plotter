@@ -859,8 +859,12 @@
         </div>
     </div>
 
-    @* Auto anchor radius: formula + tunable safety margin *@
-    <div class="col-12">
+    @* Auto anchor radius: formula + tunable safety margin. Sits at
+       col-sm-6 so it pairs with the Tide Alarm setup card on the
+       same row at >= sm. The formula <pre> block uses pre-wrap so
+       it line-breaks gracefully when the card is half-width on
+       tablets / phones; on desktop it stays on one line. *@
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-label">Auto anchor radius</label>
@@ -868,7 +872,7 @@
                     Tap <strong>Auto</strong> on the anchor Set panel and the
                     plotter computes the alarm radius as:
                 </p>
-                <pre style="background:rgba(255,255,255,0.04); padding:8px 10px; border-radius:4px; font-size:0.8rem; margin:0 0 10px 0;">swing + tide drop + safety margin   (round up to 5 m, floor 20 m)</pre>
+                <pre style="background:rgba(255,255,255,0.04); padding:8px 10px; border-radius:4px; font-size:0.8rem; margin:0 0 10px 0; white-space:pre-wrap; word-break:break-word;">swing + tide drop + safety margin (round up to 5 m, floor 20 m)</pre>
                 <ul class="list-unstyled mb-2" style="font-size:0.8rem;">
                     <li><strong>swing</strong> = furthest the boat reached from the pin since drop (peak), or live distance if no peak yet.</li>
                     <li><strong>tide drop</strong> = <code>heightNow &minus; heightLow</code> at the next predicted low water (0 if rising / no tide).</li>
