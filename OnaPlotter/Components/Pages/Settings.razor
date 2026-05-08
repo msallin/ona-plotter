@@ -539,20 +539,12 @@
                 <small class="text-muted d-block mb-2">
                     Default ON. Plotter shows the SK course-provider plugin's
                     <code>arrivalCircleEntered</code> / <code>perpendicularPassed</code>
-                    notifications, agreeing with the autopilot. Turn off for installs
-                    without a course-provider plugin to use the radius below.
+                    notifications, agreeing with the autopilot. Off lets the
+                    client <code>WaypointApproach</code> rule fire instead, on the
+                    server-published <code>navigation.course.arrivalCircle</code>.
+                    No client-side fallback radius - if the server doesn't publish
+                    the path, no APPROACH banner fires.
                 </small>
-
-                <label class="form-label">Waypoint Arrival Radius</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="5" min="0" max="1000"
-                           aria-label="Waypoint arrival radius in meters"
-                           value="@AppSettings.WaypointArrivalRadiusMeters"
-                           disabled="@AppSettings.ServerSideApproachAlarms"
-                           @onchange="(e) => OnWaypointArrivalChanged(e)" />
-                    <span class="input-group-text">m</span>
-                </div>
-                <small class="text-muted">Client-side fallback when server-side is off. 0 disables. Typical inshore 30-50 m.</small>
 
                 <div class="form-check form-switch mt-2">
                     <input class="form-check-input" type="checkbox"
@@ -1239,19 +1231,6 @@
     {
         bool on = e.Value is bool b && b;
         await AppSettings.SetAutoAdvanceWaypointsAsync(on);
-    }
-
-    private async Task OnWaypointArrivalChanged(ChangeEventArgs e)
-    {
-        // 0 disables - the rule returns null when the configured radius
-        // is <= 0. Clamp rather than silently drop so a user who types
-        // 5000 gets a useful 1000 m instead of wondering why nothing
-        // changed. Toast if the clamp kicked in.
-        if (!double.TryParse(e.Value?.ToString(), out double raw)) return;
-        double clamped = System.Math.Clamp(raw, 0, 1000);
-        if (System.Math.Abs(clamped - raw) > 0.001)
-            Toasts.Show($"Clamped to {clamped:F0} m (range 0–1000)");
-        await AppSettings.SetWaypointArrivalRadiusMetersAsync(clamped);
     }
 
     private async Task OnServerSideApproachAlarmsChanged(ChangeEventArgs e)

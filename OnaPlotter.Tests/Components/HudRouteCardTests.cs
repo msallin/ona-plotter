@@ -97,21 +97,25 @@ public class HudRouteCardTests
     }
 
     [Test]
-    public async Task ApproachOffHint_ShownWhenRadiusIsZero()
+    public async Task NoArrivalCircleHint_ShownWhenRadiusIsZero()
     {
+        // Radius=0 means the SK server has not published
+        // navigation.course.arrivalCircle for this leg. Hint
+        // surfaces the missing-data state so the helm doesn't
+        // wonder why the chart has no ring.
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(radius: 0)));
-        await Assert.That(cut.Markup).Contains("APPROACH alarm off");
+        await Assert.That(cut.Markup).Contains("No arrival circle published");
     }
 
     [Test]
-    public async Task ApproachOffHint_HiddenWhenRadiusPositive()
+    public async Task NoArrivalCircleHint_HiddenWhenRadiusPositive()
     {
         using var ctx = new Bunit.TestContext();
         var cut = ctx.RenderComponent<HudRouteCard>(p => p
             .Add(x => x.Snapshot, Snap(radius: 50)));
-        await Assert.That(cut.Markup).DoesNotContain("APPROACH alarm off");
+        await Assert.That(cut.Markup).DoesNotContain("No arrival circle published");
     }
 
     [Test]

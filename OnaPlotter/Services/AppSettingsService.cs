@@ -136,15 +136,14 @@ public sealed class AppSettingsService : IAppSettings
     /// enum so persistence + the Settings select bind directly.</summary>
     public string OwnVesselType { get; private set; } = "power";
     public bool KeepScreenAwake { get; private set; } = true;
-    public double WaypointArrivalRadiusMeters { get; private set; } = 50.0;
     /// <summary>Default true: prefer server-side
     /// <c>notifications.navigation.*</c> from signalk-course-data
     /// over the client-side WaypointApproach alarm. Helms with a
     /// course-provider plugin get one consistent arrival cue (the
-    /// banner agrees with the autopilot's arrival logic). Helms
-    /// running an SK install without a course-provider plugin can
-    /// flip this off to fall back to the client rule using
-    /// <see cref="WaypointArrivalRadiusMeters"/>.</summary>
+    /// banner agrees with the autopilot's arrival logic). When false
+    /// the client <c>WaypointApproachAlarmRule</c> takes over, also
+    /// using the server's <c>navigation.course.arrivalCircle</c> as
+    /// the threshold so client and server agree on the boundary.</summary>
     public bool ServerSideApproachAlarms { get; private set; } = true;
     public bool ShowKeyboardHints { get; private set; } = false;
     public bool ShowAutopilotHud { get; private set; } = false;
@@ -321,7 +320,12 @@ public sealed class AppSettingsService : IAppSettings
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             OwnVesselType = NormalizeOwnVesselType(await LoadString("ownVesselType.v1"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
-            WaypointArrivalRadiusMeters = await LoadDouble("waypointArrivalRadiusMeters.v1", 50.0);
+            // waypointArrivalRadiusMeters.v1 was the helm-configured
+            // arrival radius for the chart ring + client APPROACH
+            // alarm. Replaced by navigation.course.arrivalCircle from
+            // the SK v2 Course API; the local key is intentionally
+            // not migrated - servers without the v2 path now show no
+            // ring rather than a misleading helm-set value.
             ServerSideApproachAlarms = await LoadBool("serverSideApproachAlarms.v1", true);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
@@ -787,13 +791,6 @@ public sealed class AppSettingsService : IAppSettings
     {
         KeepScreenAwake = value;
         await Save("keepScreenAwake.v1", value ? "true" : "false");
-        OnSettingsChanged?.Invoke();
-    }
-
-    public async Task SetWaypointArrivalRadiusMetersAsync(double value)
-    {
-        WaypointArrivalRadiusMeters = value;
-        await Save("waypointArrivalRadiusMeters.v1", value.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

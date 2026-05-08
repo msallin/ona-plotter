@@ -1152,21 +1152,6 @@ public class AppSettingsServiceTests
         await Assert.That(svc2.DeadmanNightMinutes).IsEqualTo(20);
     }
 
-    [Test]
-    public async Task SetWaypointArrivalRadius_RoundTrips()
-    {
-        // The arrival-radius drives the APPROACH alarm; persistence
-        // must round-trip so a single helm-tweaked value stays put.
-        var kv = new InMemoryKv();
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await svc.SetWaypointArrivalRadiusMetersAsync(75);
-
-        var svc2 = new AppSettingsService(kv);
-        await svc2.InitializeAsync();
-        await Assert.That(svc2.WaypointArrivalRadiusMeters).IsEqualTo(75);
-    }
-
     // --- ServerSideApproachAlarms (PR #225) ---------------------------
     //
     // Default ON; the SK course-provider plugin is the single source of

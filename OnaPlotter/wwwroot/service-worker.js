@@ -636,7 +636,17 @@
 //             place while the SK course-provider considered them
 //             outside the circle. Local setting becomes a fallback
 //             for minimal SK installs that don't publish the path.
-const CACHE_NAME = 'ona-plotter-v65';
+// v65 -> v66: Drop the local Settings.WaypointArrivalRadiusMeters
+//             fallback. navigation.course.arrivalCircle is now the
+//             ONLY source for the chart arrival ring + the client
+//             APPROACH alarm threshold. Server silent = ring hidden,
+//             client rule dormant. Eliminates the drift class where
+//             the helm-set fallback could disagree with what the
+//             course-provider plugin used to fire arrivalCircleEntered.
+//             AppSettingsService loses the property + storage key
+//             ("waypointArrivalRadiusMeters.v1" is intentionally not
+//             migrated); IAlarmThresholds + Settings page input gone.
+const CACHE_NAME = 'ona-plotter-v66';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

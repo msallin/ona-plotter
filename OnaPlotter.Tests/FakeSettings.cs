@@ -63,7 +63,6 @@ internal sealed class FakeSettings : IAppSettings
     public string SailingMode { get; set; } = "cruise";
     public string OwnVesselType { get; set; } = "power";
     public bool KeepScreenAwake { get; set; } = true;
-    public double WaypointArrivalRadiusMeters { get; set; } = 50.0;
     // Mirror the production AppSettingsService default (true: server-
     // side course-provider notifications preferred over the client
     // rule). Defaulting to true here means a NEW test that doesn't
@@ -179,7 +178,6 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetSailingModeAsync(string v) => Task.CompletedTask;
     public Task SetOwnVesselTypeAsync(string v) { OwnVesselType = v; return Task.CompletedTask; }
     public Task SetKeepScreenAwakeAsync(bool v) => Task.CompletedTask;
-    public Task SetWaypointArrivalRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetServerSideApproachAlarmsAsync(bool v) => Task.CompletedTask;
     public Task SetShowKeyboardHintsAsync(bool v) { ShowKeyboardHints = v; return Task.CompletedTask; }
     public Task SetShowAutopilotHudAsync(bool v) { ShowAutopilotHud = v; return Task.CompletedTask; }

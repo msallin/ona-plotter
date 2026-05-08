@@ -250,7 +250,7 @@
                     "<code>course-provider-plugin</code>",
                     GetValue: d => Metres(d.ActiveRouteDistanceRemaining, "F0")),
                 new("navigation.course.arrivalCircle", "Chart arrival ring + APPROACH alarm threshold",
-                    "SK v2 Course API (<code>signalk-server</code> &gt;= 2.x); falls back to the helm's <code>WaypointArrivalRadiusMeters</code> setting when absent",
+                    "SK v2 Course API (<code>signalk-server</code> &gt;= 2.x). Required - no client-side fallback radius (chart ring + APPROACH alarm both stay dormant when absent)",
                     GetValue: d => Metres(d.CourseArrivalCircleMeters, "F0")),
             ]),
             new PathGroup("Autopilot",

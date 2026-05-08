@@ -13,15 +13,20 @@ namespace OnaPlotter.Tests;
 /// </summary>
 public class WaypointApproachAlarmRuleTests
 {
-    // Builds a NavigationData with an active course at (wpLat, wpLon) and
-    // the given distance-to-go. The actual lat/lon matters for identity
-    // (new waypoint = new identity, re-arms); the distance is what the
-    // rule compares against the arrival radius.
-    private static NavigationData BuildNav(double wpLat, double wpLon, double distMeters)
+    // Builds a NavigationData with an active course at (wpLat, wpLon),
+    // the given distance-to-go, AND a server-published arrival circle
+    // radius. The actual lat/lon matters for identity (new waypoint =
+    // new identity, re-arms); distance is what the rule compares against
+    // the radius. Radius defaults to 50 m so most tests stay terse; the
+    // radius-specific tests pass an explicit value.
+    private static NavigationData BuildNav(double wpLat, double wpLon,
+        double distMeters, double radiusMeters = 50)
     {
         var nav = new NavigationData();
         nav.ApplyCourseNextPointPosition(wpLat, wpLon);
         nav.Apply("navigation.course.calcValues.distance", distMeters);
+        if (radiusMeters > 0)
+            nav.Apply("navigation.course.arrivalCircle", radiusMeters);
         return nav;
     }
 
@@ -34,10 +39,9 @@ public class WaypointApproachAlarmRuleTests
     // pin the gate's true-branch (ServerSideApproachAlarms_Mutes_Client_Rule
     // and Toggling_ServerSide_Off_ResetsLatch_So_FreshFire) build their
     // own contexts inline rather than going through this helper.
-    private static AlarmEvaluationContext Ctx(NavigationData nav, double radius)
+    private static AlarmEvaluationContext Ctx(NavigationData nav)
         => new(nav, [], new FakeSettings
             {
-                WaypointArrivalRadiusMeters = radius,
                 ServerSideApproachAlarms = false,
             },
             DateTime.UtcNow, _ => false);
@@ -47,7 +51,7 @@ public class WaypointApproachAlarmRuleTests
     {
         var rule = new WaypointApproachAlarmRule();
         var nav = new NavigationData();
-        await Assert.That(rule.Check(Ctx(nav, 50))).IsNull();
+        await Assert.That(rule.Check(Ctx(nav))).IsNull();
     }
 
     [Test]
@@ -55,58 +59,41 @@ public class WaypointApproachAlarmRuleTests
     {
         var rule = new WaypointApproachAlarmRule();
         var nav = BuildNav(47.4, 8.5, distMeters: 200);
-        await Assert.That(rule.Check(Ctx(nav, 50))).IsNull();
+        await Assert.That(rule.Check(Ctx(nav))).IsNull();
     }
 
     [Test]
-    public async Task Zero_Radius_Disables_Rule()
+    public async Task Server_Arrival_Circle_Drives_Threshold()
     {
-        // Settings value of 0 is the user-facing "off" switch.
+        // Server publishes 100m arrival circle. Boat is 75m out -
+        // inside the circle. Rule fires.
         var rule = new WaypointApproachAlarmRule();
-        var nav = BuildNav(47.4, 8.5, distMeters: 5);
-        await Assert.That(rule.Check(Ctx(nav, 0))).IsNull();
+        var nav = BuildNav(47.4, 8.5, distMeters: 75, radiusMeters: 100);
+        await Assert.That(rule.Check(Ctx(nav))).IsNotNull();
     }
 
     [Test]
-    public async Task Server_Arrival_Circle_Wins_Over_Local_Setting()
+    public async Task Outside_Server_Arrival_Circle_No_Alarm()
     {
-        // When the server publishes navigation.course.arrivalCircle the
-        // rule must use it as the threshold (so the client-side alarm
-        // boundary matches the server's arrivalCircleEntered boundary).
-        // Local Settings.WaypointArrivalRadiusMeters becomes a fallback.
-        //
-        // Setup: helm has 50m configured locally, server says 100m.
-        // Boat is 75m out - INSIDE the server's circle but OUTSIDE the
-        // local one. Rule must fire (using the server's 100m).
+        // Same boat, smaller server circle (40m): boat is now OUTSIDE,
+        // alarm does not fire. The threshold tracks the server's value
+        // exactly - no client cap, no client floor.
         var rule = new WaypointApproachAlarmRule();
-        var nav = BuildNav(47.4, 8.5, distMeters: 75);
-        nav.Apply("navigation.course.arrivalCircle",
-            System.Text.Json.JsonSerializer.SerializeToElement(100.0));
-        await Assert.That(rule.Check(Ctx(nav, 50))).IsNotNull();
+        var nav = BuildNav(47.4, 8.5, distMeters: 75, radiusMeters: 40);
+        await Assert.That(rule.Check(Ctx(nav))).IsNull();
     }
 
     [Test]
-    public async Task Falls_Back_To_Local_Setting_When_Server_Silent()
+    public async Task Server_Silent_Rule_Dormant()
     {
-        // No navigation.course.arrivalCircle published (minimal SK
-        // server without the v2 Course API). Rule uses local setting.
+        // Server doesn't publish navigation.course.arrivalCircle (minimal
+        // SK install). Rule is dormant - no client fallback radius is
+        // consulted, by design. The chart ring is also hidden in this
+        // case, so client and server stay in lock-step.
         var rule = new WaypointApproachAlarmRule();
-        var nav = BuildNav(47.4, 8.5, distMeters: 30);
-        // CourseArrivalCircleMeters stays null (not applied).
+        var nav = BuildNav(47.4, 8.5, distMeters: 5, radiusMeters: 0);
         await Assert.That(nav.CourseArrivalCircleMeters).IsNull();
-        await Assert.That(rule.Check(Ctx(nav, 50))).IsNotNull();
-    }
-
-    [Test]
-    public async Task Local_Setting_Of_Zero_Still_Disables_When_Server_Silent()
-    {
-        // Pin the gate: when the server is silent AND the helm set 0
-        // locally, the rule disables. The fallback chain must NOT
-        // promote a server-null to a non-zero default.
-        var rule = new WaypointApproachAlarmRule();
-        var nav = BuildNav(47.4, 8.5, distMeters: 5);
-        await Assert.That(nav.CourseArrivalCircleMeters).IsNull();
-        await Assert.That(rule.Check(Ctx(nav, 0))).IsNull();
+        await Assert.That(rule.Check(Ctx(nav))).IsNull();
     }
 
     [Test]
@@ -116,8 +103,8 @@ public class WaypointApproachAlarmRuleTests
         var far = BuildNav(47.4, 8.5, distMeters: 200);
         var near = BuildNav(47.4, 8.5, distMeters: 30);
 
-        await Assert.That(rule.Check(Ctx(far, 50))).IsNull();
-        var fire = rule.Check(Ctx(near, 50));
+        await Assert.That(rule.Check(Ctx(far))).IsNull();
+        var fire = rule.Check(Ctx(near));
         await Assert.That(fire).IsNotNull();
         await Assert.That(fire!.Title).IsEqualTo("APPROACH");
         await Assert.That(fire.Severity).IsEqualTo(AlarmSeverity.Warn);
@@ -133,12 +120,12 @@ public class WaypointApproachAlarmRuleTests
         var rule = new WaypointApproachAlarmRule();
         var near = BuildNav(47.4, 8.5, distMeters: 30);
 
-        var first = rule.Check(Ctx(near, 50));
+        var first = rule.Check(Ctx(near));
         await Assert.That(first).IsNotNull();
 
         // Same waypoint, still inside: silent.
         for (int i = 0; i < 5; i++)
-            await Assert.That(rule.Check(Ctx(near, 50))).IsNull();
+            await Assert.That(rule.Check(Ctx(near))).IsNull();
     }
 
     [Test]
@@ -149,11 +136,11 @@ public class WaypointApproachAlarmRuleTests
         var far = BuildNav(47.4, 8.5, distMeters: 200);
 
         // First entry fires.
-        await Assert.That(rule.Check(Ctx(near, 50))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(near))).IsNotNull();
         // Leave the radius - re-arm.
-        await Assert.That(rule.Check(Ctx(far, 50))).IsNull();
+        await Assert.That(rule.Check(Ctx(far))).IsNull();
         // Re-enter: should fire again for the same waypoint.
-        await Assert.That(rule.Check(Ctx(near, 50))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(near))).IsNotNull();
     }
 
     [Test]
@@ -166,9 +153,9 @@ public class WaypointApproachAlarmRuleTests
         var wpA = BuildNav(47.4, 8.5, distMeters: 30);
         var wpB = BuildNav(47.5, 8.6, distMeters: 30);
 
-        await Assert.That(rule.Check(Ctx(wpA, 50))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(wpA))).IsNotNull();
         // Same settings, different waypoint identity: re-armed.
-        await Assert.That(rule.Check(Ctx(wpB, 50))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(wpB))).IsNotNull();
     }
 
     [Test]
@@ -190,8 +177,8 @@ public class WaypointApproachAlarmRuleTests
         var nearA = BuildNav(47.4, 8.5, distMeters: 30);
         var nearB = BuildNav(47.5, 8.6, distMeters: 30);
 
-        var a = rule.Check(Ctx(nearA, 50));
-        var b = rule.Check(Ctx(nearB, 50));
+        var a = rule.Check(Ctx(nearA));
+        var b = rule.Check(Ctx(nearB));
         await Assert.That(a!.TargetKey).IsNotNull();
         await Assert.That(b!.TargetKey).IsNotNull();
         await Assert.That(a.TargetKey).IsNotEqualTo(b.TargetKey);
@@ -208,9 +195,9 @@ public class WaypointApproachAlarmRuleTests
         var first  = BuildNav(47.4,        8.5,        distMeters: 30);
         var jitter = BuildNav(47.4 + 1e-7, 8.5 + 1e-7, distMeters: 30);
 
-        await Assert.That(rule.Check(Ctx(first,  50))).IsNotNull();
+        await Assert.That(rule.Check(Ctx(first))).IsNotNull();
         // Same waypoint within epsilon - must stay silent.
-        await Assert.That(rule.Check(Ctx(jitter, 50))).IsNull();
+        await Assert.That(rule.Check(Ctx(jitter))).IsNull();
     }
 
     [Test]
@@ -225,8 +212,7 @@ public class WaypointApproachAlarmRuleTests
         var rule = new WaypointApproachAlarmRule();
         var nav = BuildNav(47.4, 8.5, distMeters: 30);     // well inside any radius
         var ctx = new AlarmEvaluationContext(nav, [],
-            new FakeSettings { WaypointArrivalRadiusMeters = 50,
-                               ServerSideApproachAlarms = true },
+            new FakeSettings { ServerSideApproachAlarms = true },
             DateTime.UtcNow, _ => false);
 
         await Assert.That(rule.Check(ctx)).IsNull();
@@ -255,8 +241,7 @@ public class WaypointApproachAlarmRuleTests
         // 1. Server-side OFF: client fires once, latches on the
         //    waypoint identity.
         var clientCtx = new AlarmEvaluationContext(nav, [],
-            new FakeSettings { WaypointArrivalRadiusMeters = 50,
-                               ServerSideApproachAlarms = false },
+            new FakeSettings { ServerSideApproachAlarms = false },
             DateTime.UtcNow, _ => false);
         await Assert.That(rule.Check(clientCtx)).IsNotNull();
         // 2. Confirm the latch is set: a follow-up tick on the same
@@ -269,8 +254,7 @@ public class WaypointApproachAlarmRuleTests
         //    clear _alarmedFor so step 4 isn't blocked by the stale
         //    latch from step 1.
         var serverOnCtx = new AlarmEvaluationContext(nav, [],
-            new FakeSettings { WaypointArrivalRadiusMeters = 50,
-                               ServerSideApproachAlarms = true },
+            new FakeSettings { ServerSideApproachAlarms = true },
             DateTime.UtcNow, _ => false);
         await Assert.That(rule.Check(serverOnCtx)).IsNull();
 

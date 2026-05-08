@@ -78,7 +78,7 @@
             BigType="Settings.BigType"
             TideVisible="Settings.TideVisible"
             Polar="Polar"
-            WaypointArrivalRadiusMeters="@(Data.CourseArrivalCircleMeters ?? Settings.WaypointArrivalRadiusMeters)"
+            WaypointArrivalRadiusMeters="@(Data.CourseArrivalCircleMeters ?? 0.0)"
             CourseStopping="@(_activeRouteSync?.CourseStopPending ?? false)"
             ActiveRouteDistanceTotal="@(_activeRouteSync?.ActiveRouteDistanceTotal)"
             OnPrevWaypoint="PrevWaypoint"
@@ -2269,13 +2269,13 @@
             _frameBuilder.LaylinesVisible = Settings.LaylinesVisible;
             // Push the arrival-circle radius each tick so the JS
             // course-line layer can draw the ring at the active WP.
-            // Server value wins when present (navigation.course.arrivalCircle
-            // from the v2 Course API); the helm's local setting is the
-            // fallback so a minimal SK install without the v2 API still
-            // gets a sensible ring. Per-tick rather than at-init because
-            // either source can change while the page is open.
+            // Single source of truth: navigation.course.arrivalCircle
+            // from the SK v2 Course API. Null (server doesn't publish)
+            // becomes 0, which the JS layer treats as "hide the ring"
+            // - matches the server's actual state rather than guessing
+            // a local default the autopilot would not agree with.
             _frameBuilder.ArrivalRadiusMeters =
-                Data.CourseArrivalCircleMeters ?? Settings.WaypointArrivalRadiusMeters;
+                Data.CourseArrivalCircleMeters ?? 0.0;
             // Smoothed values for the boat icon + COG vector: helm
             // picks the orientation source (HDG vs COG, true vs mag)
             // via Settings; we resolve it through the chain so a

@@ -81,8 +81,8 @@
             @if (Snapshot.ArrivalRadiusMeters <= 0)
             {
                 <div class="rule-dormant-hint" role="status" aria-live="polite"
-                     title="Set a waypoint-arrival radius in Settings to enable the APPROACH alarm">
-                    &#9888; APPROACH alarm off (radius 0 m)
+                     title="The SK server has not published navigation.course.arrivalCircle for this leg. Install the course-provider plugin or use a route whose author set an arrival radius.">
+                    &#9888; No arrival circle published
                 </div>
             }
             <div class="route-info-row">
