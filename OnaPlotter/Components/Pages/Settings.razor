@@ -771,6 +771,18 @@
                 <hr class="my-2" />
                 @foreach (var title in Alarms.RegisteredRuleTitles)
                 {
+                    @* Skip rules with no title. Today this only filters
+                       out the ServerNotificationsAlarmRule, which is a
+                       multi-output bridge that emits each plugin's own
+                       title (SHALLOW, MOB, etc.) per notification - the
+                       rule itself has no static title to display, and
+                       silencing the entire bridge with one toggle would
+                       suppress every plugin's notification (MOB included)
+                       which is a footgun the helm shouldn't reach with
+                       a single tap. The description text above documents
+                       this carve-out -- server-side notifications are
+                       intentionally not affected by these toggles. *@
+                    if (string.IsNullOrEmpty(title)) continue;
                     var t = title;
                     bool disabled = AppSettings.DisabledAlarmRules.Contains(t);
                     <div class="form-check form-switch">
