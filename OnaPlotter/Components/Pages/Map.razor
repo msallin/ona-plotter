@@ -3779,7 +3779,7 @@
     {
         var p = AutoRadiusParts();
         if (p is null) return null;
-        double total = p.Value.SwingMeters + p.Value.TideDropMeters + AutoRadiusMarginMeters;
+        double total = p.Value.SwingMeters + p.Value.TideDropMeters + Settings.AnchorAutoRadiusSafetyMargin;
         int rounded = (int)Math.Ceiling(total / 5.0) * 5;
         return Math.Max(rounded, AutoRadiusFloorMeters);
     }
@@ -3798,9 +3798,10 @@
         int swing = (int)Math.Round(p.Value.SwingMeters);
         int tide = (int)Math.Round(p.Value.TideDropMeters);
         string swingLabel = p.Value.SwingFromPeak ? "swing" : "current";
+        double margin = Settings.AnchorAutoRadiusSafetyMargin;
         return tide > 0
-            ? $"{swingLabel} {swing} m + tide drop {tide} m + {AutoRadiusMarginMeters:F0} m margin"
-            : $"{swingLabel} {swing} m + {AutoRadiusMarginMeters:F0} m margin";
+            ? $"{swingLabel} {swing} m + tide drop {tide} m + {margin:F0} m margin"
+            : $"{swingLabel} {swing} m + {margin:F0} m margin";
     }
 
     /// <summary>Compute the unrounded components that feed
@@ -3860,11 +3861,6 @@
         double SwingMeters,
         double TideDropMeters,
         bool SwingFromPeak);
-
-    /// <summary>Blanket safety pad on top of swing + tide drop. 5 m
-    /// matches the field-tested cushion the helm uses on the numeric
-    /// chips ("just slightly above where the boat got to").</summary>
-    private const double AutoRadiusMarginMeters = 5.0;
 
     /// <summary>Smallest radius the Auto picker will ever ship.
     /// Stops a stale GPS that puts the boat right on top of the pin

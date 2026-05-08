@@ -53,6 +53,7 @@ internal sealed class FakeSettings : IAppSettings
     public double WindShiftLookbackMinutes { get; set; } = 5.0;
     public double WindShiftMinTrueWindSpeed { get; set; } = 3.0;
     public double AnchorTideSafetyMargin { get; set; } = 1.0;
+    public double AnchorAutoRadiusSafetyMargin { get; set; } = 5.0;
     public double ManualAnchorRadiusMeters { get; set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; set; } = 0.0;
     public double DeadmanNightMinutes { get; set; } = 15.0;
@@ -168,6 +169,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftMinTrueWindSpeedAsync(double v) { WindShiftMinTrueWindSpeed = v; return Task.CompletedTask; }
     public Task SetAnchorTideSafetyMarginAsync(double v) => Task.CompletedTask;
+    public Task SetAnchorAutoRadiusSafetyMarginAsync(double v) { AnchorAutoRadiusSafetyMargin = v; return Task.CompletedTask; }
     public Task SetManualAnchorRadiusMetersAsync(double v) => Task.CompletedTask;
     public Task SetDeadmanTimeoutMinutesAsync(double v) { DeadmanTimeoutMinutes = v; return Task.CompletedTask; }
     public Task SetDeadmanNightMinutesAsync(double v) { DeadmanNightMinutes = v; return Task.CompletedTask; }

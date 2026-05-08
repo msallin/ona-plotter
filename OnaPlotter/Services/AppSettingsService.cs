@@ -120,6 +120,10 @@ public sealed class AppSettingsService : IAppSettings
     // Boat draft is read from SignalK (design.draft.current / .maximum)
     // via NavigationData.DraftFromSignalK; no manual override here.
     public double AnchorTideSafetyMargin { get; private set; } = 0.5;
+    /// <summary>Pad added on top of swing + tide-drop in the
+    /// auto-anchor-radius preview. 5 m is the helm-tested cushion;
+    /// raise for soft-mud anchorages.</summary>
+    public double AnchorAutoRadiusSafetyMargin { get; private set; } = 5.0;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
     public double DeadmanNightMinutes { get; private set; } = 15.0;
@@ -307,6 +311,7 @@ public sealed class AppSettingsService : IAppSettings
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 10.0);
             WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 5.0);
             AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 0.5);
+            AnchorAutoRadiusSafetyMargin = await LoadDouble("anchorAutoRadiusSafetyMargin.v1", 5.0);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
             DeadmanNightMinutes = await LoadDouble("deadmanNightMinutes.v1", 15.0);
@@ -737,6 +742,18 @@ public sealed class AppSettingsService : IAppSettings
     {
         AnchorTideSafetyMargin = value;
         await Save("anchorTideSafetyMargin", value.ToString("F2", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAnchorAutoRadiusSafetyMarginAsync(double value)
+    {
+        // Clamp at 0; negative would let the auto preview round
+        // BELOW the swing + tide-drop sum, which defeats the
+        // purpose of the pad. Helm input box should already cap
+        // at sensible ranges; this is the model-level guard.
+        AnchorAutoRadiusSafetyMargin = Math.Max(0, value);
+        await Save("anchorAutoRadiusSafetyMargin.v1",
+            AnchorAutoRadiusSafetyMargin.ToString("F1", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

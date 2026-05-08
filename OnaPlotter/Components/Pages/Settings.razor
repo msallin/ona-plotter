@@ -104,13 +104,18 @@
                            title="Sailing vessel under way">Sail</label>
                 </div>
                 <small class="text-muted d-block mt-1">
-                    Drives COLREGS Rule 18 priority on the AIS popup + CPA banner. Set to "sail" when
-                    you're under sail (engine off); leave at "power" when motoring or motor-sailing.
-                    A sail-vs-power encounter resolves as power-gives-way regardless of crossing
-                    geometry; same-type encounters use the standard Rule 13-15 classifier.
+                    Drives COLREGS Rule 18 priority. Set "sail" when under sail (engine off); "power" when motoring or motor-sailing. A sail-vs-power encounter resolves as power-gives-way; same-type encounters use Rule 13-15.
                 </small>
             </div>
         </div>
+    </div>
+
+    @* === HUD & input ===
+       Toggles that change which HUDs render or how the helm
+       interacts with the page. Previously co-housed with Mode;
+       split out so Mode stays a tight "what kind of boat" header. *@
+    <div class="col-12 mt-3">
+        <h5 class="page-section-header">HUD &amp; input</h5>
     </div>
 
     <div class="col-12">
@@ -367,241 +372,13 @@
         </div>
     </div>
 
-    <div class="col-12">
-        <h5 class="page-section-header">Alarms</h5>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Depth Alarm</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="0.5" min="0" max="50"
-                           aria-label="Depth alarm threshold in meters"
-                           value="@AppSettings.DepthAlarmThreshold"
-                           @onchange="(e) => OnDepthChanged(e)" />
-                    <span class="input-group-text">m</span>
-                </div>
-                <small class="text-muted">Alert when depth is below this value.</small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Guard Zone (CPA)</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="0.1" min="0" max="5"
-                           aria-label="CPA guard zone radius in nautical miles"
-                           value="@AppSettings.CpaAlarmThreshold"
-                           @onchange="(e) => OnCpaChanged(e)" />
-                    <span class="input-group-text">nm</span>
-                </div>
-                <small class="text-muted">Alert when a vessel's projected closest approach is inside this radius.</small>
-                @* Outer warning-band ring toggle. The CPA classifier
-                   raises Warning when CPA is between the inner radius
-                   and radius * factor (default factor 2). Drawing the
-                   advisory ring at radius * factor lets the helm see
-                   why amber chips appear in the band - helm-flagged
-                   the chips as "outside my guard ring" before the
-                   ring was drawn. The toggle is here so a helm
-                   running a busy chart can opt out for a cleaner
-                   single-ring look. *@
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           id="guard-zone-warning-ring-switch"
-                           checked="@AppSettings.GuardZoneWarningRingVisible"
-                           @onchange="(e) => OnGuardZoneWarningRingChanged(e)" />
-                    <label class="form-check-label" for="guard-zone-warning-ring-switch">
-                        Show outer warning ring
-                    </label>
-                </div>
-                <small class="text-muted d-block">
-                    Dashed ring at <code>radius × warning factor</code>
-                    (default 2×). Targets between the two rings raise
-                    an advisory CPA chip but no audible alarm; the
-                    audible alarm fires only inside the inner ring.
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                @* Server-side approach alarms toggle (default ON).
-                   When ON, the bridged SK course-provider plugin's
-                   notifications drive APPROACH; the radius input
-                   below is dimmed because the SK plugin's own
-                   arrival circle wins. When OFF, the client-side
-                   WaypointApproach rule fires on the helm-set
-                   radius - helm-only fallback for SK installs
-                   without a course-provider plugin. *@
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" role="switch"
-                           id="server-approach-switch"
-                           checked="@AppSettings.ServerSideApproachAlarms"
-                           @onchange="OnServerSideApproachAlarmsChanged" />
-                    <label class="form-check-label" for="server-approach-switch">
-                        Use server-side approach alarms
-                    </label>
-                </div>
-                <small class="text-muted d-block mb-3">
-                    Default. The SK course-provider plugin's
-                    <code>arrivalCircleEntered</code> /
-                    <code>perpendicularPassed</code> /
-                    <code>routeComplete</code> notifications drive
-                    the APPROACH banner; the chartplotter agrees
-                    with the autopilot's arrival logic. Turn off
-                    for SK installs without a course-provider
-                    plugin - the client-side rule below takes
-                    over.
-                </small>
-
-                <label class="form-label">Waypoint Arrival Radius</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="5" min="0" max="1000"
-                           aria-label="Waypoint arrival radius in meters"
-                           value="@AppSettings.WaypointArrivalRadiusMeters"
-                           disabled="@AppSettings.ServerSideApproachAlarms"
-                           @onchange="(e) => OnWaypointArrivalChanged(e)" />
-                    <span class="input-group-text">m</span>
-                </div>
-                <small class="text-muted">
-                    Client-side fallback radius. Only consulted when
-                    "Use server-side approach alarms" is OFF. Set to
-                    0 to disable the client rule entirely. Typical
-                    inshore: 30-50 m.
-                </small>
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           id="auto-advance-switch"
-                           checked="@AppSettings.AutoAdvanceWaypoints"
-                           @onchange="(e) => OnAutoAdvanceChanged(e)" />
-                    <label class="form-check-label" for="auto-advance-switch">
-                        Auto-advance to next waypoint
-                    </label>
-                </div>
-                <small class="text-muted d-block">
-                    Jump to the next leg automatically when the course-provider
-                    plugin reports <code>perpendicularPassed</code> or
-                    <code>arrivalCircleEntered</code>. Off means the helm has
-                    to hit "Next WP" on the alarm banner.
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Deadman Watch Timer</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="1" min="0" max="120"
-                           aria-label="Deadman watch timer in minutes, 0 disables"
-                           value="@AppSettings.DeadmanTimeoutMinutes"
-                           @onchange="(e) => OnDeadmanTimeoutChanged(e)" />
-                    <span class="input-group-text">min</span>
-                </div>
-                <small class="text-muted">
-                    Fires a DEADMAN alarm if the Map page sees no interaction for this
-                    many minutes. Safety net for solo watches. Set to 0 to disable.
-                    Any tap / key / pointer event resets the timer. Escalates to
-                    Danger severity past 2x this window.
-                </small>
-                <label class="form-label mt-2">Night-mode deadman</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="1" min="0" max="120"
-                           aria-label="Night-mode deadman timer in minutes, 0 uses day value"
-                           value="@AppSettings.DeadmanNightMinutes"
-                           @onchange="(e) => OnDeadmanNightChanged(e)" />
-                    <span class="input-group-text">min</span>
-                </div>
-                <small class="text-muted">
-                    Used instead of the day value while Night Mode is on. Default 15 min
-                    - a sleep-rotation guard for solo watches. 0 falls back to the day
-                    value (no night override).
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Guard Zone Lookahead</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="1" min="1" max="60"
-                           aria-label="Guard zone lookahead in minutes"
-                           value="@AppSettings.GuardZoneLookaheadMinutes"
-                           @onchange="(e) => OnLookaheadChanged(e)" />
-                    <span class="input-group-text">min</span>
-                </div>
-                <small class="text-muted">Only vessels whose CPA occurs within this window raise the alarm.</small>
-                <label class="form-label mt-2">Snooze duration</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="1" min="1" max="120"
-                           aria-label="Snooze duration in minutes"
-                           value="@AppSettings.SnoozeDurationMinutes"
-                           @onchange="(e) => OnSnoozeDurationChanged(e)" />
-                    <span class="input-group-text">min</span>
-                </div>
-                <small class="text-muted">
-                    How long the "Snooze" button silences a specific alarm target.
-                    Short (5 min) for busy harbours; long (30-60 min) for a distant
-                    freighter that will stay in range for hours.
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Wind Shift Alarm</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="5" min="5" max="90"
-                           aria-label="Wind shift alarm threshold in degrees"
-                           value="@AppSettings.WindShiftAlarmThreshold"
-                           @onchange="(e) => OnWindShiftChanged(e)" />
-                    <span class="input-group-text">deg</span>
-                </div>
-                <small class="text-muted">Alert when TWD shifts more than this angle over the lookback window.</small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Wind Shift Lookback</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="1" min="1" max="30"
-                           aria-label="Wind shift lookback window in minutes"
-                           value="@AppSettings.WindShiftLookbackMinutes"
-                           @onchange="(e) => OnWindShiftLookbackChanged(e)" />
-                    <span class="input-group-text">min</span>
-                </div>
-                <small class="text-muted">Shorter = responsive (racing); longer = smoothed (cruising).</small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Wind Shift Min TWS</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" step="0.5" min="0" max="20"
-                           aria-label="Wind shift minimum true wind speed in knots"
-                           value="@AppSettings.WindShiftMinTrueWindSpeed"
-                           @onchange="(e) => OnWindShiftMinTwsChanged(e)" />
-                    <span class="input-group-text">kn</span>
-                </div>
-                <small class="text-muted">Suppress the alarm below this TWS - in light air the derived TWD is dominated by sensor noise. 0 disables the gate.</small>
-            </div>
-        </div>
+    @* === Map elements ===
+       Visual overlays on the chart that aren't HUD cards.
+       Previously co-housed with the alarm thresholds; the helm
+       flagged the mix as confusing - vector lengths and radar
+       rings aren't alarms, just chart annotations. *@
+    <div class="col-12 mt-3">
+        <h5 class="page-section-header">Map elements</h5>
     </div>
 
     <div class="col-sm-6">
@@ -615,7 +392,7 @@
                            @onchange="(e) => OnOwnCogVectorChanged(e)" />
                     <span class="input-group-text">min</span>
                 </div>
-                <small class="text-muted">How far ahead the dashed predictor line + endpoint label project from your boat. 5 for harbour entry, 20-30 for passage planning.</small>
+                <small class="text-muted">Length of your boat's predictor line. 5 for harbour, 20-30 for passages.</small>
             </div>
         </div>
     </div>
@@ -631,7 +408,7 @@
                            @onchange="(e) => OnAisCogVectorChanged(e)" />
                     <span class="input-group-text">min</span>
                 </div>
-                <small class="text-muted">How far ahead AIS-target predictors project. Shorten in busy harbours to declutter; lengthen offshore for collision-avoidance reach.</small>
+                <small class="text-muted">Length of AIS-target predictor lines. Shorten in busy harbours; lengthen offshore.</small>
             </div>
         </div>
     </div>
@@ -646,7 +423,7 @@
                            checked="@AppSettings.RadarRangeRingsEnabled"
                            @onchange="OnRadarRangeRingsEnabledChanged" />
                     <label class="form-check-label" for="radar-range-rings-enabled">
-                        Show concentric rings on the chart while a radar overlay is active
+                        Show concentric rings while a radar overlay is active
                     </label>
                 </div>
                 <div class="input-group">
@@ -657,20 +434,315 @@
                            disabled="@(!AppSettings.RadarRangeRingsEnabled)"
                            @onchange="(e) => OnRadarRangeRingsCountChanged(e)" />
                 </div>
-                <small class="text-muted">Each ring sits at an evenly-spaced fraction of the radar's current range. Default 4 = quarter / half / three-quarter / full. 1-8 supported.</small>
+                <small class="text-muted">Default 4 = quarter / half / three-quarter / full radar range.</small>
             </div>
         </div>
     </div>
 
-    @* Boat Draft card removed - the same information is surfaced on
-       the Paths page (`design.draft.current` / `.maximum` with live
-       values) and is also called out in the Anchor Tide Alarm setup
-       card below, so a third card here was redundant. *@
+    @* === Course ===
+       Waypoint approach + auto-advance live here, not in Alarms.
+       The APPROACH alarm itself has its own per-rule disable in
+       the Alarms section below; these settings shape how the
+       arrival event fires. *@
+    <div class="col-12 mt-3">
+        <h5 class="page-section-header">Course</h5>
+    </div>
 
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="server-approach-switch"
+                           checked="@AppSettings.ServerSideApproachAlarms"
+                           @onchange="OnServerSideApproachAlarmsChanged" />
+                    <label class="form-check-label" for="server-approach-switch">
+                        Use server-side approach alarms
+                    </label>
+                </div>
+                <small class="text-muted d-block mb-2">
+                    Default ON. Plotter shows the SK course-provider plugin's
+                    <code>arrivalCircleEntered</code> / <code>perpendicularPassed</code>
+                    notifications, agreeing with the autopilot. Turn off for installs
+                    without a course-provider plugin to use the radius below.
+                </small>
+
+                <label class="form-label">Waypoint Arrival Radius</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="5" min="0" max="1000"
+                           aria-label="Waypoint arrival radius in meters"
+                           value="@AppSettings.WaypointArrivalRadiusMeters"
+                           disabled="@AppSettings.ServerSideApproachAlarms"
+                           @onchange="(e) => OnWaypointArrivalChanged(e)" />
+                    <span class="input-group-text">m</span>
+                </div>
+                <small class="text-muted">Client-side fallback when server-side is off. 0 disables. Typical inshore 30-50 m.</small>
+
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           id="auto-advance-switch"
+                           checked="@AppSettings.AutoAdvanceWaypoints"
+                           @onchange="(e) => OnAutoAdvanceChanged(e)" />
+                    <label class="form-check-label" for="auto-advance-switch">
+                        Auto-advance to next waypoint
+                    </label>
+                </div>
+                <small class="text-muted d-block">
+                    Jump to the next leg automatically when arrival fires. Off means tap "Next WP" on the alarm banner.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* === Alarms ===
+       Per-rule cards; each carries its own enable toggle inline
+       so the helm can tune threshold + arm together without
+       jumping to a separate disable list. Master "All on/off"
+       at the top covers the panic-tap case. Server-side
+       notifications (SignalK plugins like depth, anchor, MOB)
+       are NOT affected by these toggles - those still surface
+       via the SERVER pass-through bridge. *@
+    <div class="col-12 mt-3">
+        <h5 class="page-section-header">Alarms</h5>
+    </div>
+
+    @* Master switch + carve-out note. Per-rule disables on each
+       card below; this is the panic-tap. *@
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="alarms-master-switch"
+                           checked="@AllAlarmsEnabled"
+                           @onchange="OnAllAlarmsToggleChanged" />
+                    <label class="form-check-label fw-bold" for="alarms-master-switch">
+                        @(AllAlarmsEnabled ? "All client alarms on" : "All client alarms off")
+                    </label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Server-side SignalK notifications (depth plugin, MOB, anchor plugin, ...) keep firing regardless of this toggle.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* Per-alarm card pattern: each alarm-related card grows an
+       inline "Enabled" switch at the top so threshold + arm sit
+       together. Cards without a threshold (HAZARD, SART) just
+       carry the switch + a one-liner. *@
+
+    @* SHALLOW *@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <label class="form-label">Anchor Tide Safety Margin</label>
+                <AlarmRuleEnableToggle Title="SHALLOW" />
+                <label class="form-label">Depth Alarm</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.5" min="0" max="50"
+                           aria-label="Depth alarm threshold in meters"
+                           value="@AppSettings.DepthAlarmThreshold"
+                           @onchange="(e) => OnDepthChanged(e)" />
+                    <span class="input-group-text">m</span>
+                </div>
+                <small class="text-muted">Alert when depth drops below this value.</small>
+            </div>
+        </div>
+    </div>
+
+    @* CPA *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="CPA" />
+                <label class="form-label">Guard zone radius</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.1" min="0" max="5"
+                           aria-label="CPA guard zone radius in nautical miles"
+                           value="@AppSettings.CpaAlarmThreshold"
+                           @onchange="(e) => OnCpaChanged(e)" />
+                    <span class="input-group-text">nm</span>
+                </div>
+                <small class="text-muted">Alert when a vessel's projected closest approach is inside this radius.</small>
+
+                <label class="form-label mt-2">Lookahead</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="60"
+                           aria-label="Guard zone lookahead in minutes"
+                           value="@AppSettings.GuardZoneLookaheadMinutes"
+                           @onchange="(e) => OnLookaheadChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Only vessels whose CPA occurs within this window raise the alarm.</small>
+
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           id="guard-zone-warning-ring-switch"
+                           checked="@AppSettings.GuardZoneWarningRingVisible"
+                           @onchange="(e) => OnGuardZoneWarningRingChanged(e)" />
+                    <label class="form-check-label" for="guard-zone-warning-ring-switch">
+                        Show outer warning ring
+                    </label>
+                </div>
+                <small class="text-muted d-block">Dashed ring at <code>radius × 2</code>. Targets between the rings raise an advisory chip but no audible alarm.</small>
+            </div>
+        </div>
+    </div>
+
+    @* APPROACH (settings live in Course above; just an enable + reminder here) *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="APPROACH" />
+                <small class="text-muted d-block mt-1">
+                    Fires on waypoint arrival. Radius + auto-advance live in the
+                    <strong>Course</strong> section above.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* DEADMAN *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="DEADMAN" />
+                <label class="form-label">Day timeout</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="0" max="120"
+                           aria-label="Deadman watch timer in minutes, 0 disables"
+                           value="@AppSettings.DeadmanTimeoutMinutes"
+                           @onchange="(e) => OnDeadmanTimeoutChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Alarm if no map interaction for this long. 0 = day-disabled. Escalates past 2x.</small>
+
+                <label class="form-label mt-2">Night timeout</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="0" max="120"
+                           aria-label="Night-mode deadman timer in minutes, 0 uses day value"
+                           value="@AppSettings.DeadmanNightMinutes"
+                           @onchange="(e) => OnDeadmanNightChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Used while Night Mode is on. 0 falls back to the day value.</small>
+            </div>
+        </div>
+    </div>
+
+    @* WIND SHIFT *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="WIND SHIFT" />
+                <label class="form-label">Threshold</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="5" min="5" max="90"
+                           aria-label="Wind shift alarm threshold in degrees"
+                           value="@AppSettings.WindShiftAlarmThreshold"
+                           @onchange="(e) => OnWindShiftChanged(e)" />
+                    <span class="input-group-text">deg</span>
+                </div>
+                <small class="text-muted">Alert when TWD shifts more than this over the lookback window.</small>
+
+                <label class="form-label mt-2">Lookback</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="30"
+                           aria-label="Wind shift lookback window in minutes"
+                           value="@AppSettings.WindShiftLookbackMinutes"
+                           @onchange="(e) => OnWindShiftLookbackChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">Shorter = responsive (racing); longer = smoothed (cruising).</small>
+
+                <label class="form-label mt-2">Min true wind speed</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="0.5" min="0" max="20"
+                           aria-label="Wind shift minimum true wind speed in knots"
+                           value="@AppSettings.WindShiftMinTrueWindSpeed"
+                           @onchange="(e) => OnWindShiftMinTwsChanged(e)" />
+                    <span class="input-group-text">kn</span>
+                </div>
+                <small class="text-muted">Suppress in light air where TWD is mostly sensor noise. 0 disables the gate.</small>
+            </div>
+        </div>
+    </div>
+
+    @* SART (just enable; no helm-tunable threshold) *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="SART" />
+                <small class="text-muted d-block mt-1">
+                    Fires when a SART / MOB / EPIRB MMSI appears on AIS. No threshold to tune.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* HAZARD (just enable; trip is by point-in-polygon) *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="HAZARD" />
+                <small class="text-muted d-block mt-1">
+                    Fires when own ship is inside a region marked as a hazard. Manage hazard regions in Resources.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* General: snooze duration applies to every alarm with a target *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Snooze duration</label>
+                <div class="input-group">
+                    <input type="number" class="form-control" step="1" min="1" max="120"
+                           aria-label="Snooze duration in minutes"
+                           value="@AppSettings.SnoozeDurationMinutes"
+                           @onchange="(e) => OnSnoozeDurationChanged(e)" />
+                    <span class="input-group-text">min</span>
+                </div>
+                <small class="text-muted">
+                    How long the "Snooze" button silences a target. Short (5 min) for harbours; long (30-60 min) for a distant freighter staying in range for hours.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* === Anchor ===
+       Two cards: the auto-radius formula (for the Drop / Set
+       panel's Auto chip) + the tide-aware alarm setup. The
+       ANCHOR DRAG and ANCHOR TIDE per-rule disable toggles
+       live ON these cards so the helm can arm / disarm next to
+       the related thresholds. *@
+    <div class="col-12 mt-3">
+        <h5 class="page-section-header">Anchor</h5>
+    </div>
+
+    @* ANCHOR DRAG: just an enable; the radius itself comes from
+       the plugin or the Drop/Set panel. *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="ANCHOR DRAG" />
+                <small class="text-muted d-block mt-1">
+                    Fires when the boat drifts past the alarm radius set on the
+                    Drop / Set panel. Adjust the radius from the panel; the
+                    formula behind the <strong>Auto</strong> chip lives in
+                    "Auto anchor radius" below.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* ANCHOR TIDE: per-rule enable + safety margin + checklist *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <AlarmRuleEnableToggle Title="ANCHOR TIDE" />
+                <label class="form-label">Safety margin</label>
                 <div class="input-group">
                     <input type="number" class="form-control" step="0.1" min="0" max="5"
                            aria-label="Anchor tide safety margin in meters"
@@ -678,15 +750,15 @@
                            @onchange="(e) => OnAnchorTideMarginChanged(e)" />
                     <span class="input-group-text">m</span>
                 </div>
-                <small class="text-muted">Warn when predicted LW clearance is below this margin. Add more for soft mud / tender hulls.</small>
+                <small class="text-muted">Warn when predicted LW clearance drops below this margin. Add more for soft mud / tender hulls.</small>
             </div>
         </div>
     </div>
 
-    @* Checklist card: the tide-aware anchor alarm needs four separate
-       prerequisites (draft, margin, live depth, tide plugin). Walking
-       users through the chain in one place beats a dormancy hint that
-       flags one missing piece at a time on the HUD. *@
+    @* Anchor Tide setup checklist + auto-radius formula card.
+       Helm asked the formula to live here so the maths behind
+       the Auto chip on the Drop / Set panel is one tap from
+       the rest of the anchor settings. *@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
@@ -697,7 +769,7 @@
                             var skDraftOk = SignalkClient.Data.DraftFromSignalK is > 0;
                         }
                         <span class="@(skDraftOk ? "check-ok" : "check-bad")">
-                            @(skDraftOk ? "\u2713" : "\u2717")
+                            @(skDraftOk ? "✓" : "✗")
                         </span>
                         Boat draft from SignalK
                         @if (skDraftOk)
@@ -707,13 +779,13 @@
                     </li>
                     <li>
                         <span class="@(AppSettings.AnchorTideSafetyMargin > 0 ? "check-ok" : "check-bad")">
-                            @(AppSettings.AnchorTideSafetyMargin > 0 ? "\u2713" : "\u2717")
+                            @(AppSettings.AnchorTideSafetyMargin > 0 ? "✓" : "✗")
                         </span>
                         Safety margin &gt; 0 (currently @AppSettings.AnchorTideSafetyMargin.ToString("F1") m)
                     </li>
                     <li>
                         <span class="@(SignalkClient.Data.Depth is not null ? "check-ok" : "check-bad")">
-                            @(SignalkClient.Data.Depth is not null ? "\u2713" : "\u2717")
+                            @(SignalkClient.Data.Depth is not null ? "✓" : "✗")
                         </span>
                         Live depth from SignalK
                         @if (SignalkClient.Data.Depth is not null) { <span>(@SignalkClient.Data.Depth.Value.ToString("F1") m)</span> }
@@ -721,7 +793,7 @@
                     </li>
                     <li>
                         <span class="@(SignalkClient.Data.TideHeightNow is not null ? "check-ok" : "check-bad")">
-                            @(SignalkClient.Data.TideHeightNow is not null ? "\u2713" : "\u2717")
+                            @(SignalkClient.Data.TideHeightNow is not null ? "✓" : "✗")
                         </span>
                         Tide data
                         @if (SignalkClient.Data.TideHeightNow is not null)
@@ -729,72 +801,41 @@
                         else { <span class="text-muted">&mdash; install a SignalK tide plugin (e.g. signalk-tides)</span> }
                     </li>
                 </ul>
-                <small class="text-muted" style="display:block; margin-top:6px;">
-                    All four need to be green for the tide-aware anchor alarm to fire. The
-                    plain manual anchor-drag alarm works without any of this &mdash; it only
-                    needs a GPS fix.
+                <small class="text-muted d-block mt-1">
+                    All four green to arm the tide-aware alarm. The plain
+                    manual anchor-drag alarm only needs a GPS fix.
                 </small>
             </div>
         </div>
     </div>
 
-    @* Per-rule kill-switch panel. The helm flips a toggle here to
-       disable a single client-side alarm rule (or the master to
-       disable them all in one tap). Disabled rules are skipped
-       during evaluation AND any of their already-active banners
-       are dropped at the next tick - see AlarmManager.Evaluate's
-       disabled-rule sweep. Rule titles come from
-       IAlarmManager.RegisteredRuleTitles so a new rule registered
-       in DI shows up here automatically. *@
+    @* Auto anchor radius: formula + tunable safety margin *@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <label class="form-label d-block mb-2">Enable client-side alarms</label>
-                <small class="text-muted d-block mb-3">
-                    Each switch turns one client-side alarm rule
-                    on or off. Disabled rules don't fire and any
-                    of their banners on screen disappear within a
-                    second. Server-side notifications (SignalK
-                    plugins like depth, anchor, MOB) are NOT
-                    affected by these toggles - those still
-                    surface via the SERVER pass-through bridge.
-                </small>
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" role="switch"
-                           id="alarms-master-switch"
-                           checked="@AllAlarmsEnabled"
-                           @onchange="OnAllAlarmsToggleChanged" />
-                    <label class="form-check-label fw-bold" for="alarms-master-switch">
-                        @(AllAlarmsEnabled ? "All on" : "All off") (master)
-                    </label>
+                <label class="form-label">Auto anchor radius</label>
+                <p class="mb-2" style="font-size:0.85rem;">
+                    Tap <strong>Auto</strong> on the anchor Set panel and the
+                    plotter computes the alarm radius as:
+                </p>
+                <pre style="background:rgba(255,255,255,0.04); padding:8px 10px; border-radius:4px; font-size:0.8rem; margin:0 0 10px 0;">swing + tide drop + safety margin   (round up to 5 m, floor 20 m)</pre>
+                <ul class="list-unstyled mb-2" style="font-size:0.8rem;">
+                    <li><strong>swing</strong> = furthest the boat reached from the pin since drop (peak), or live distance if no peak yet.</li>
+                    <li><strong>tide drop</strong> = <code>heightNow &minus; heightLow</code> at the next predicted low water (0 if rising / no tide).</li>
+                    <li><strong>safety margin</strong> = the value below.</li>
+                </ul>
+                <label class="form-label" for="anchor-auto-margin">Safety margin</label>
+                <div class="input-group">
+                    <input type="number" id="anchor-auto-margin"
+                           class="form-control" step="0.5" min="0" max="20"
+                           aria-label="Anchor auto radius safety margin in meters"
+                           value="@AppSettings.AnchorAutoRadiusSafetyMargin"
+                           @onchange="(e) => OnAnchorAutoRadiusMarginChanged(e)" />
+                    <span class="input-group-text">m</span>
                 </div>
-                <hr class="my-2" />
-                @foreach (var title in Alarms.RegisteredRuleTitles)
-                {
-                    @* Skip rules with no title. Today this only filters
-                       out the ServerNotificationsAlarmRule, which is a
-                       multi-output bridge that emits each plugin's own
-                       title (SHALLOW, MOB, etc.) per notification - the
-                       rule itself has no static title to display, and
-                       silencing the entire bridge with one toggle would
-                       suppress every plugin's notification (MOB included)
-                       which is a footgun the helm shouldn't reach with
-                       a single tap. The description text above documents
-                       this carve-out -- server-side notifications are
-                       intentionally not affected by these toggles. *@
-                    if (string.IsNullOrEmpty(title)) continue;
-                    var t = title;
-                    bool disabled = AppSettings.DisabledAlarmRules.Contains(t);
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" role="switch"
-                               id="@($"alarm-rule-{t}")"
-                               checked="@(!disabled)"
-                               @onchange="(e) => OnRuleToggleChanged(t, e)" />
-                        <label class="form-check-label" for="@($"alarm-rule-{t}")">
-                            @t
-                        </label>
-                    </div>
-                }
+                <small class="text-muted">
+                    Default 5 m. Raise for soft mud or windy anchorages where the boat sails more than projected; lower if 5 m is wider than your typical swing arc.
+                </small>
             </div>
         </div>
     </div>
@@ -992,105 +1033,108 @@
        between Settings and Resources. *@
 
     @* === Advanced / developer tools ========================
-       Data (raw delta stream) + Paths (which SK paths the plotter
-       consumes) are techie features - useful when debugging why
-       a gauge is empty or a plugin isn't wired right, but out of
-       the helmsman's daily flow. Surfacing them here so the top
-       nav stays focused on sailing workflows. The /raw and
-       /paths routes themselves are unchanged. *@
+       Out of the helm's daily flow; collapsed by default so the
+       page reads as the user-facing settings list, with the
+       diagnostic affordances one tap away when needed. State
+       lives in advancedOpen (instance field, in-memory only -
+       a fresh page load returns to collapsed which is the right
+       default for "I'm only here to tune one thing"). *@
     <div class="col-12 mt-3">
-        <h5 class="page-section-header">Advanced</h5>
+        <button type="button"
+                class="btn btn-link text-decoration-none p-0 d-flex align-items-center"
+                style="gap:6px;"
+                aria-expanded="@advancedOpen"
+                @onclick="() => advancedOpen = !advancedOpen">
+            <span style="font-size:0.8rem;" aria-hidden="true">@(advancedOpen ? "▼" : "▶")</span>
+            <h5 class="page-section-header mb-0">Advanced</h5>
+        </button>
     </div>
 
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <a href="raw" class="stretched-link text-decoration-none">
-                    <strong class="d-block">Data stream</strong>
-                </a>
-                <small class="text-muted">
-                    Live SignalK delta viewer. Shows every path the plotter
-                    subscribes to as raw JSON, with a search box and path filter.
-                    Useful for debugging "why is this reading missing?"
-                </small>
+    @if (advancedOpen)
+    {
+        <div class="col-sm-6">
+            <div class="card">
+                <div class="card-body">
+                    <a href="raw" class="stretched-link text-decoration-none">
+                        <strong class="d-block">Data stream</strong>
+                    </a>
+                    <small class="text-muted">
+                        Live SignalK delta viewer. Useful for debugging
+                        "why is this reading missing?"
+                    </small>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <a href="paths" class="stretched-link text-decoration-none">
-                    <strong class="d-block">Paths</strong>
-                </a>
-                <small class="text-muted">
-                    Reference: which SignalK path powers each HUD / chart /
-                    alarm rule. Handy when a field reads "--" and you want to
-                    know which server-side provider or plugin to install.
-                </small>
+        <div class="col-sm-6">
+            <div class="card">
+                <div class="card-body">
+                    <a href="paths" class="stretched-link text-decoration-none">
+                        <strong class="d-block">Paths</strong>
+                    </a>
+                    <small class="text-muted">
+                        Which SignalK path powers each HUD / alarm. Handy when a field reads "--".
+                    </small>
+                </div>
             </div>
         </div>
-    </div>
 
-    @* Error-relay self-test. Sends a synthetic "client-error" POST
-       through ClientErrorRelay to the SignalK plugin's /log endpoint
-       and tells the user where to look for it (server log, tailed
-       over SSH). Useful when diagnosing "is the hook even plumbed?"
-       after deploying a new build to the Pi. *@
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <strong class="d-block">Send test log entry</strong>
-                <small class="text-muted d-block mb-2">
-                    Posts a sample payload to the SignalK plugin's
-                    <code>/log</code> endpoint so you can verify the
-                    relay is wired. Grep <code>[onaplotter]</code> in the
-                    SignalK server log (e.g. <code>journalctl -u signalk</code>)
-                    or the Admin UI logs tab.
-                </small>
-                <button class="btn btn-sm btn-outline-secondary"
-                        disabled="@testLogInFlight"
-                        @onclick="SendTestLog">
-                    @(testLogInFlight ? "Sending..." : "Send test log")
-                </button>
+        @* Error-relay self-test. Sends a synthetic "client-error"
+           POST through ClientErrorRelay to the SignalK plugin's
+           /log endpoint. Diagnostic for "is the hook plumbed?". *@
+        <div class="col-sm-6">
+            <div class="card">
+                <div class="card-body">
+                    <strong class="d-block">Send test log entry</strong>
+                    <small class="text-muted d-block mb-2">
+                        Posts a sample payload to the SK plugin's
+                        <code>/log</code>. Grep <code>[onaplotter]</code> in
+                        the server log to verify.
+                    </small>
+                    <button class="btn btn-sm btn-outline-secondary"
+                            disabled="@testLogInFlight"
+                            @onclick="SendTestLog">
+                        @(testLogInFlight ? "Sending..." : "Send test log")
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
 
-    @* Notification self-test. Raises a synthetic alarm via the SK v2
-       Notifications API on a dedicated test path. The server emits
-       a notifications delta, every connected plotter (including this
-       one) sees it in their banner, and the Acknowledge button
-       round-trips through the SK v2 ack flow. Useful for verifying
-       the publish + cross-plotter sync after a deploy. *@
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <strong class="d-block">Send test notification</strong>
-                <small class="text-muted d-block mb-2">
-                    Raises a synthetic <em>warn</em>-level alarm at
-                    <code>notifications.onaplotter.test</code>. Watch the
-                    banner appear here AND on every other plotter
-                    connected to the same SignalK server; tap
-                    Acknowledge on either side and the chip clears
-                    everywhere. Re-press to re-raise; the path
-                    auto-clears 60 s after the last raise (server-side
-                    GC) if you forget.
-                </small>
-                <button class="btn btn-sm btn-outline-secondary"
-                        disabled="@testNotificationInFlight"
-                        @onclick="SendTestNotification">
-                    @(testNotificationInFlight ? "Sending..." : "Send test notification")
-                </button>
+        @* Notification self-test. Raises a synthetic alarm via SK
+           v2 Notifications. Useful for verifying publish + cross-
+           plotter sync after a deploy. *@
+        <div class="col-sm-6">
+            <div class="card">
+                <div class="card-body">
+                    <strong class="d-block">Send test notification</strong>
+                    <small class="text-muted d-block mb-2">
+                        Raises a synthetic <em>warn</em> at
+                        <code>notifications.onaplotter.test</code>. Watch
+                        every plotter banner; Acknowledge clears
+                        everywhere. Auto-clears 60 s after last raise.
+                    </small>
+                    <button class="btn btn-sm btn-outline-secondary"
+                            disabled="@testNotificationInFlight"
+                            @onclick="SendTestNotification">
+                        @(testNotificationInFlight ? "Sending..." : "Send test notification")
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
+    }
 </div>
 
 </div> @* /.app-page *@
 
 @code {
     private string settingsFilter = "";
+
+    // Advanced section starts collapsed: the four cards inside it
+    // (Data stream, Paths, test-log, test-notification) are
+    // diagnostic affordances most helms never need. Field stays
+    // in-memory only; a page reload re-collapses, which matches
+    // "I tweaked one setting and want a clean page next time".
+    private bool advancedOpen = false;
 
     // Track the polar-help <details> open state ourselves so a parent
     // re-render (SignalkClient data change, polar upload complete, etc.)
@@ -1364,6 +1408,12 @@
     {
         if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
             await AppSettings.SetAnchorTideSafetyMarginAsync(val);
+    }
+
+    private async Task OnAnchorAutoRadiusMarginChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), out double val) && val >= 0)
+            await AppSettings.SetAnchorAutoRadiusSafetyMarginAsync(val);
     }
 
     private async Task OnOwnVesselTypeChanged(string value)
