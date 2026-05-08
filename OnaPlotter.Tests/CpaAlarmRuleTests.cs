@@ -390,4 +390,33 @@ public class CpaAlarmRuleTests
         var alarm = rule.Check(Ctx(nav, [passing], new FakeSettings { CpaAlarmThreshold = 0.5 }));
         await Assert.That(alarm).IsNull();
     }
+
+    [Test]
+    public async Task Banner_DoesNotEnd_With_Trailing_Comma_When_Colregs_Indeterminate()
+    {
+        // Helm reported a CPA banner ending with " - ,". Root cause:
+        // Colregs.ShortLabel / RoleLabel previously returned "" for the
+        // Indeterminate / None cases, and the rule's `is not null`
+        // check let the empty string through, rendering "{name}: ... - , "
+        // when category was indeterminate and role had still resolved.
+        // The helpers now return null for those cases; this test pins
+        // that the message has no dangling separators when the
+        // classifier doesn't produce a useful label.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var nav = OwnShipUnderway();
+        var threat = ThreatNorthOf(200, speedMs: 5, name: "MV Close");
+        var alarm = rule.Check(Ctx(nav, [threat], new FakeSettings()));
+
+        await Assert.That(alarm).IsNotNull();
+        // The exact suffix depends on the geometry, but the message
+        // must NEVER end with a trailing punctuation character that
+        // would result from interpolating an empty label.
+        await Assert.That(alarm!.Message).DoesNotEndWith(", ");
+        await Assert.That(alarm.Message).DoesNotEndWith(",");
+        await Assert.That(alarm.Message).DoesNotEndWith(" - ");
+        await Assert.That(alarm.Message).DoesNotEndWith("- ,");
+        await Assert.That(alarm.Message).DoesNotContain(" - , ");
+        // Defensive: also rule out the single-empty-label case.
+        await Assert.That(alarm.Message).DoesNotContain("- ,");
+    }
 }

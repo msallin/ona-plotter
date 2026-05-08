@@ -188,22 +188,32 @@ public static class Colregs
     /// because the helm-feedback round on the AIS popup found "(port)"
     /// / "(stbd)" eating popup width and pushing the role chip onto a
     /// second line. (P) / (S) reads the same after one glance and
-    /// shaves ~50 % off the row width.</summary>
-    public static string ShortLabel(Category c) => c switch
+    /// shaves ~50 % off the row width.
+    /// <para>Returns <c>null</c> for <see cref="Category.Indeterminate"/>:
+    /// helm-feedback round - the CPA banner used to read
+    /// <c>"vessel: CPA 0.42nm T -5' - , Give way"</c> when the geometry
+    /// hadn't resolved yet (empty short label, non-empty role). Null
+    /// makes the "no useful label" semantics type-explicit so callers
+    /// can't paste an empty string into a comma-separated render.</para></summary>
+    public static string? ShortLabel(Category c) => c switch
     {
         Category.HeadOn => "Head-on",
         Category.Overtaking => "Overtaking",
         Category.BeingOvertaken => "Being overtaken",
         Category.CrossingFromPort => "Crossing (P)",
         Category.CrossingFromStarboard => "Crossing (S)",
-        _ => ""
+        _ => null
     };
 
-    public static string RoleLabel(Role r) => r switch
+    /// <summary>Human-readable role label. Returns <c>null</c> for
+    /// <see cref="Role.None"/> for the same reason as
+    /// <see cref="ShortLabel"/> - empty-string return invited a
+    /// "{label}, " trailing-comma render in CPA banners.</summary>
+    public static string? RoleLabel(Role r) => r switch
     {
         Role.GiveWay => "Give way",
         Role.StandOn => "Stand on",
-        _ => ""
+        _ => null
     };
 
     private static double BearingDeg(double lat1, double lon1, double lat2, double lon2)

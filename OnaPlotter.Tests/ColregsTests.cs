@@ -116,8 +116,26 @@ public class ColregsTests
     public async Task Labels_AreNonEmptyForResolvedCases()
     {
         await Assert.That(Colregs.ShortLabel(Colregs.Category.HeadOn)).IsEqualTo("Head-on");
-        await Assert.That(Colregs.ShortLabel(Colregs.Category.Indeterminate)).IsEqualTo("");
         await Assert.That(Colregs.RoleLabel(Colregs.Role.GiveWay)).IsEqualTo("Give way");
+    }
+
+    [Test]
+    public async Task ShortLabel_Returns_Null_For_Indeterminate()
+    {
+        // Pin the null sentinel: callers (CpaAlarmRule) gate the comma-
+        // separated banner suffix on `is not null`. An earlier empty-
+        // string return rendered "vessel: CPA 0.42nm T -5' - , Give way"
+        // when geometry was indeterminate but Rule 18 still resolved a
+        // role. Helm reported the trailing "- ," as obviously broken.
+        await Assert.That(Colregs.ShortLabel(Colregs.Category.Indeterminate)).IsNull();
+    }
+
+    [Test]
+    public async Task RoleLabel_Returns_Null_For_None()
+    {
+        // Same reason as ShortLabel: the "no useful label" sentinel is
+        // null, not empty string.
+        await Assert.That(Colregs.RoleLabel(Colregs.Role.None)).IsNull();
     }
 
     [Test]

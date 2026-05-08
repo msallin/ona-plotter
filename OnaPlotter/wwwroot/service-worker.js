@@ -646,7 +646,13 @@
 //             AppSettingsService loses the property + storage key
 //             ("waypointArrivalRadiusMeters.v1" is intentionally not
 //             migrated); IAlarmThresholds + Settings page input gone.
-const CACHE_NAME = 'ona-plotter-v66';
+// v66 -> v67: Fix CPA banner trailing "- ," when COLREGS classifier
+//             returns Indeterminate / None. Colregs.ShortLabel and
+//             RoleLabel now return string? (null) for those cases
+//             instead of empty string; CpaAlarmRule's existing
+//             `is not null` check now correctly suppresses the
+//             comma-separated suffix when there's no useful label.
+const CACHE_NAME = 'ona-plotter-v67';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
