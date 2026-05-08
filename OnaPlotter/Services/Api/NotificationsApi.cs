@@ -42,9 +42,16 @@ public sealed class NotificationsApi : INotificationsApi
         // application/json so the server's content-type check passes.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CallTimeout);
-        return await ResourceHttp.PostAsync(_http,
-            _baseUrl.Combine(SignalKUrls.NotificationAcknowledge(notificationId)),
-            new { }, cts.Token).ConfigureAwait(false);
+        try
+        {
+            return await ResourceHttp.PostAsync(_http,
+                _baseUrl.Combine(SignalKUrls.NotificationAcknowledge(notificationId)),
+                new { }, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return TimedOutResult();
+        }
     }
 
     /// <inheritdoc/>
@@ -52,9 +59,16 @@ public sealed class NotificationsApi : INotificationsApi
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CallTimeout);
-        return await ResourceHttp.PostAsync(_http,
-            _baseUrl.Combine(SignalKUrls.NotificationSilence(notificationId)),
-            new { }, cts.Token).ConfigureAwait(false);
+        try
+        {
+            return await ResourceHttp.PostAsync(_http,
+                _baseUrl.Combine(SignalKUrls.NotificationSilence(notificationId)),
+                new { }, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return TimedOutResult();
+        }
     }
 
     /// <inheritdoc/>
@@ -70,9 +84,16 @@ public sealed class NotificationsApi : INotificationsApi
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CallTimeout);
         var envelope = new { path, value = body };
-        return await ResourceHttp.PostCreateAsync(_http,
-            _baseUrl.Combine(SignalKUrls.NotificationsPath),
-            envelope, cts.Token).ConfigureAwait(false);
+        try
+        {
+            return await ResourceHttp.PostCreateAsync(_http,
+                _baseUrl.Combine(SignalKUrls.NotificationsPath),
+                envelope, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return TimedOutValueResult<string>();
+        }
     }
 
     /// <inheritdoc/>
@@ -80,9 +101,16 @@ public sealed class NotificationsApi : INotificationsApi
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CallTimeout);
-        return await ResourceHttp.DeleteAsync(_http,
-            _baseUrl.Combine(SignalKUrls.NotificationById(notificationId)),
-            cts.Token).ConfigureAwait(false);
+        try
+        {
+            return await ResourceHttp.DeleteAsync(_http,
+                _baseUrl.Combine(SignalKUrls.NotificationById(notificationId)),
+                cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return TimedOutResult();
+        }
     }
 
     /// <inheritdoc/>
@@ -94,10 +122,33 @@ public sealed class NotificationsApi : INotificationsApi
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(CallTimeout);
         object body = message is null ? new { } : new { message };
-        return await ResourceHttp.PostCreateAsync(_http,
-            _baseUrl.Combine(SignalKUrls.NotificationMobRaise),
-            body, cts.Token).ConfigureAwait(false);
+        try
+        {
+            return await ResourceHttp.PostCreateAsync(_http,
+                _baseUrl.Combine(SignalKUrls.NotificationMobRaise),
+                body, cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return TimedOutValueResult<string>();
+        }
     }
+
+    // The per-call linked CTS makes ResourceHttp's own
+    // `when (!ct.IsCancellationRequested)` filter blind to the timeout
+    // case: the linked token IS cancelled when CallTimeout fires, so
+    // ResourceHttp's catch is skipped and the OperationCanceledException
+    // propagates instead of returning ApiResult.Fail. The wrapper here
+    // catches it again with the OUTER ct as the discriminator: if the
+    // caller didn't ask to cancel, this is the per-call timeout and we
+    // surface it as a structured Fail (so MOB retry loops, alarm
+    // publish flows, and Dismiss-All paths see a clean result instead
+    // of a faulted Task).
+    private static ApiResult TimedOutResult() =>
+        ApiResult.Fail($"request timed out after {(int)CallTimeout.TotalSeconds}s");
+
+    private static ApiResult<T> TimedOutValueResult<T>() =>
+        ApiResult<T>.Fail($"request timed out after {(int)CallTimeout.TotalSeconds}s");
 
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<string, ServerNotificationEnvelope>?> ListActiveAsync(CancellationToken ct = default)

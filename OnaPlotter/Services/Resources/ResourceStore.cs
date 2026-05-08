@@ -92,10 +92,21 @@ public sealed class ResourceStore : IAsyncDisposable
         _signalk = signalk;
         _logger = logger;
 
-        _routeCache = new ResourceTypeCache<SignalkRoute>("route", logger);
-        _waypointCache = new ResourceTypeCache<SignalkWaypoint>("waypoint", logger);
-        _noteCache = new ResourceTypeCache<SignalkNote>("note", logger);
-        _regionCache = new ResourceTypeCache<SignalkRegion>("region", logger);
+        // Per-cache content-equality functions enable source-side
+        // dedup: a reconnect-edge reconcile that finds the server's
+        // copy is byte-identical to the cache no longer fires Changed,
+        // so the page-side handlers don't launch one fire-and-forget
+        // task per cached entry. See ResourceContentEquality for the
+        // comparison contract + future-proofing notes when adding new
+        // DTO fields.
+        _routeCache = new ResourceTypeCache<SignalkRoute>(
+            "route", logger, ResourceContentEquality.RouteEquals);
+        _waypointCache = new ResourceTypeCache<SignalkWaypoint>(
+            "waypoint", logger, ResourceContentEquality.WaypointEquals);
+        _noteCache = new ResourceTypeCache<SignalkNote>(
+            "note", logger, ResourceContentEquality.NoteEquals);
+        _regionCache = new ResourceTypeCache<SignalkRegion>(
+            "region", logger, ResourceContentEquality.RegionEquals);
 
         _signalk.OnResourceDelta += HandleResourceDelta;
         _signalk.OnConnectionChanged += HandleConnectionChange;

@@ -26,15 +26,32 @@ internal sealed class ResourceTypeCache<T> where T : class
     private List<T>? _snapshot;
     private readonly ILogger _logger;
     private readonly string _typeLabel;
+    private readonly Func<T, T, bool>? _contentEquals;
 
     /// <param name="typeLabel">Singular form ("route", "waypoint",
     /// "note", "region") used as the prefix in subscriber-throw
     /// log messages - "[resources] route changed subscriber threw".
     /// Keep it lowercase to match the surrounding log style.</param>
-    public ResourceTypeCache(string typeLabel, ILogger logger)
+    /// <param name="contentEquals">Optional equality function. When
+    /// provided, <see cref="Apply"/> and <see cref="Replace"/> skip the
+    /// <see cref="Changed"/> fire if the incoming entry is content-
+    /// equal to the cached one. Source-side dedup that suppresses the
+    /// reconnect-edge "fire Changed for every cached entry" storm
+    /// (otherwise a 90-route boat launches 90 fire-and-forget redraw
+    /// tasks per reconnect, blowing the WASM 5 MB stack with "memory
+    /// access out of bounds"). Pair with the per-handler coalesce-and-
+    /// drain pattern in Map.razor for defence-in-depth.
+    /// <para>When null, behaviour matches the pre-dedup contract:
+    /// every upsert fires <c>Changed</c>. Tests that don't care about
+    /// dedup can omit this argument.</para></param>
+    public ResourceTypeCache(
+        string typeLabel,
+        ILogger logger,
+        Func<T, T, bool>? contentEquals = null)
     {
         _typeLabel = typeLabel;
         _logger = logger;
+        _contentEquals = contentEquals;
     }
 
     /// <summary>Cached snapshot of all entries currently in the cache.
@@ -66,12 +83,21 @@ internal sealed class ResourceTypeCache<T> where T : class
     public event Action<string>? Removed;
 
     /// <summary>Upsert <paramref name="entry"/> under <paramref name="id"/>.
-    /// Always invalidates the snapshot and fires Changed; callers that
-    /// need an "is this actually new vs an update" distinction should
-    /// look at <see cref="Replace"/> which tracks added / updated /
-    /// removed counts.</summary>
+    /// When a content-equality function is configured and the entry is
+    /// equal to the cached one, the call is a no-op (no snapshot
+    /// invalidation, no <see cref="Changed"/> fire) - servers that
+    /// re-broadcast the same delta on reconnect don't trigger a UI
+    /// repaint. Callers that need an "is this actually new vs an
+    /// update" distinction should look at <see cref="Replace"/> which
+    /// tracks added / updated / removed counts.</summary>
     public void Apply(string id, T entry)
     {
+        if (_contentEquals is not null
+            && _byId.TryGetValue(id, out var existing)
+            && _contentEquals(existing, entry))
+        {
+            return;
+        }
         _byId[id] = entry;
         _snapshot = null;
         Fire(Changed, id, "changed");
@@ -109,7 +135,30 @@ internal sealed class ResourceTypeCache<T> where T : class
             var id = idSelector(entry);
             if (string.IsNullOrEmpty(id)) continue;
             scratch.Add(id);
-            if (_byId.ContainsKey(id)) updated++; else added++;
+            bool exists = _byId.TryGetValue(id, out var existingEntry);
+            if (exists)
+            {
+                updated++;
+                // Content-equality dedup: when the configured comparer
+                // says the incoming entry is byte-equal to the cached
+                // one, replace the reference (so the cache doesn't pin
+                // stale GC roots) but skip the Changed fire. On a
+                // steady-cruise reconnect this drops Changed events
+                // from "one per cached entry" to "one per genuine
+                // diff", which is normally zero.
+                if (_contentEquals is not null
+                    && existingEntry is not null
+                    && _contentEquals(existingEntry, entry))
+                {
+                    _byId[id] = entry;
+                    mutated = true;
+                    continue;
+                }
+            }
+            else
+            {
+                added++;
+            }
             _byId[id] = entry;
             mutated = true;
             Fire(Changed, id, "changed");

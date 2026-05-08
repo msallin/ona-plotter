@@ -148,4 +148,131 @@ public class ResourceTypeCacheTests
 
         await Assert.That(cache.Get("a")?.Name).IsEqualTo("Alpha");
     }
+
+    // --- Content-equality dedup --------------------------------------
+    //
+    // These tests pin the "skip Changed when the incoming entry is
+    // byte-identical to the cached one" behaviour that the route-storm
+    // crash fix relies on. A regression here would let the per-handler
+    // drains in Map.razor still receive N events on reconnect even
+    // though the content didn't change.
+
+    [Test]
+    public async Task Apply_Skips_Changed_When_Content_Equal()
+    {
+        var cache = new ResourceTypeCache<Entry>(
+            "test",
+            NullLogger<ResourceTypeCache<Entry>>.Instance,
+            (a, b) => a.Name == b.Name);
+        cache.Apply("a", new Entry("a", "Alpha"));
+
+        var changed = new List<string>();
+        cache.Changed += changed.Add;
+
+        // Same Name -> equality function returns true -> no Changed.
+        cache.Apply("a", new Entry("a", "Alpha"));
+
+        await Assert.That(changed).IsEmpty();
+        await Assert.That(cache.Get("a")?.Name).IsEqualTo("Alpha");
+    }
+
+    [Test]
+    public async Task Apply_Fires_Changed_When_Content_Differs()
+    {
+        var cache = new ResourceTypeCache<Entry>(
+            "test",
+            NullLogger<ResourceTypeCache<Entry>>.Instance,
+            (a, b) => a.Name == b.Name);
+        cache.Apply("a", new Entry("a", "Alpha"));
+
+        var changed = new List<string>();
+        cache.Changed += changed.Add;
+
+        cache.Apply("a", new Entry("a", "Alpha-prime"));
+
+        await Assert.That(changed).Contains("a");
+        await Assert.That(cache.Get("a")?.Name).IsEqualTo("Alpha-prime");
+    }
+
+    [Test]
+    public async Task Replace_Skips_Changed_For_Unchanged_Entries()
+    {
+        // The reconnect-edge use case: server returns the SAME entries
+        // it already had cached. With dedup, Replace should not fire
+        // Changed for any of them - the page-side drain receives no
+        // events, so no fire-and-forget redraw tasks launch.
+        var cache = new ResourceTypeCache<Entry>(
+            "test",
+            NullLogger<ResourceTypeCache<Entry>>.Instance,
+            (a, b) => a.Name == b.Name);
+        cache.Apply("a", new Entry("a", "Alpha"));
+        cache.Apply("b", new Entry("b", "Bravo"));
+        cache.Apply("c", new Entry("c", "Charlie"));
+
+        var changed = new List<string>();
+        cache.Changed += changed.Add;
+
+        var fresh = new List<Entry>
+        {
+            new("a", "Alpha"),
+            new("b", "Bravo"),
+            new("c", "Charlie"),
+        };
+        var counts = cache.Replace(fresh, e => e.Id, new HashSet<string>());
+
+        await Assert.That(changed).IsEmpty();
+        // All three are tracked as updated (they ARE in the fresh
+        // snapshot) so the reconcile log still reports the right
+        // total.
+        await Assert.That(counts.Updated).IsEqualTo(3);
+        await Assert.That(counts.Added).IsEqualTo(0);
+        await Assert.That(counts.Removed).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Replace_Fires_Changed_Only_For_Genuine_Diffs()
+    {
+        // Mixed batch: some entries are unchanged, one mutated, one
+        // is new. Changed should fire only for the mutated id and the
+        // new id.
+        var cache = new ResourceTypeCache<Entry>(
+            "test",
+            NullLogger<ResourceTypeCache<Entry>>.Instance,
+            (a, b) => a.Name == b.Name);
+        cache.Apply("a", new Entry("a", "Alpha"));
+        cache.Apply("b", new Entry("b", "Bravo"));
+
+        var changed = new List<string>();
+        cache.Changed += changed.Add;
+
+        var fresh = new List<Entry>
+        {
+            new("a", "Alpha"),         // unchanged - no Changed
+            new("b", "Bravo-prime"),   // mutated - fires Changed
+            new("c", "Charlie"),       // new - fires Changed
+        };
+        cache.Replace(fresh, e => e.Id, new HashSet<string>());
+
+        await Assert.That(changed).Contains("b");
+        await Assert.That(changed).Contains("c");
+        await Assert.That(changed).DoesNotContain("a");
+        await Assert.That(changed.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Apply_Without_Equality_Comparer_Always_Fires_Changed()
+    {
+        // Backward-compat: callers that don't pass a comparer (the old
+        // signature) get the original "fire Changed on every upsert"
+        // behaviour. Tests + non-resource consumers should still work.
+        var cache = NewCache();
+        cache.Apply("a", new Entry("a", "Alpha"));
+
+        var changed = new List<string>();
+        cache.Changed += changed.Add;
+
+        cache.Apply("a", new Entry("a", "Alpha"));
+
+        await Assert.That(changed).Contains("a");
+    }
 }

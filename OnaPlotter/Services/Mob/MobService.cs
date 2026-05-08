@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.ServerNotifications;
 
@@ -63,6 +64,7 @@ public sealed class MobService : IMobService, IDisposable
     private readonly IKeyValueStore _kv;
     private readonly ResolvedPositionStore _resolvedPositions;
     private readonly TimeProvider _time;
+    private readonly ILogger<MobService> _logger;
 
     /// <summary>Live pending raises keyed by localId. One entry per
     /// in-flight MOB; bundles the persistable state, the cancel
@@ -81,13 +83,18 @@ public sealed class MobService : IMobService, IDisposable
         ServerNotificationStore store,
         IKeyValueStore kv,
         ResolvedPositionStore resolvedPositions,
-        TimeProvider time)
+        TimeProvider time,
+        ILogger<MobService>? logger = null)
     {
         _api = api ?? throw new ArgumentNullException(nameof(api));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _kv = kv ?? throw new ArgumentNullException(nameof(kv));
         _resolvedPositions = resolvedPositions ?? throw new ArgumentNullException(nameof(resolvedPositions));
         _time = time ?? TimeProvider.System;
+        // Logger is optional so the existing test ctor (no DI host)
+        // still works - the retry-loop crash logs route through this
+        // logger in production but a NullLogger keeps unit tests green.
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MobService>.Instance;
 
         // Reconciliation: when any notifications.mob.* path mutates in
         // the store - WS echo from the server, our own synthetic, or
@@ -383,6 +390,31 @@ public sealed class MobService : IMobService, IDisposable
 
     private async Task RunRaiseLoopAsync(PendingRaise pending, CancellationToken ct)
     {
+        // Top-level guard: any unexpected throw out of the body would
+        // otherwise fault the Task.Run-launched loop, kill the retry
+        // for a life-safety alarm, and surface only as
+        // UnobservedTaskException at the AppDomain level. Belt-and-
+        // braces - the inner per-attempt catches handle the well-known
+        // failure types; this catches the unknowns so the loop is
+        // never silently dead.
+        try
+        {
+            await RunRaiseLoopCoreAsync(pending, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Normal disposal / clear path - loop was asked to stop.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "[mob] retry loop crashed for localId={LocalId} attempt={Attempt}; MOB stays as local synthetic until helm clears",
+                pending.LocalId, pending.AttemptCount);
+        }
+    }
+
+    private async Task RunRaiseLoopCoreAsync(PendingRaise pending, CancellationToken ct)
+    {
         int attempt = pending.AttemptCount;
         while (!ct.IsCancellationRequested)
         {
@@ -397,7 +429,29 @@ public sealed class MobService : IMobService, IDisposable
                 catch (OperationCanceledException) { return; }
             }
 
-            var result = await _api.RaiseMobAsync(pending.Message, ct).ConfigureAwait(false);
+            ApiResult<string> result;
+            try
+            {
+                result = await _api.RaiseMobAsync(pending.Message, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Per-call timeout SHOULD now surface as ApiResult.Fail
+                // (NotificationsApi catches OperationCanceledException
+                // when it's a per-call timeout), but a future regression
+                // or a transport-level surprise (HttpClient disposed,
+                // server abruptly closed the socket) could still throw.
+                // Log + retry rather than killing the loop.
+                _logger.LogWarning(ex,
+                    "[mob] RaiseMobAsync threw on attempt={Attempt}; will retry",
+                    attempt);
+                attempt++;
+                continue;
+            }
             attempt++;
             if (result.Success && !string.IsNullOrEmpty(result.Value))
             {

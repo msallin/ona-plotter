@@ -596,7 +596,36 @@
 //             - Dialog title "Alarms" -> "Notifications". Empty-
 //               state strings + the +N-more banner overflow
 //               tooltip retitled to match.
-const CACHE_NAME = 'ona-plotter-v63';
+// v63 -> v64: Two-layer hardening for the route-storm crash family.
+//             (1) Source-side dedup in ResourceTypeCache.Replace:
+//                 a content-equality function per resource type
+//                 suppresses Changed for entries that didn't
+//                 actually mutate during the disconnect window
+//                 (steady cruise = zero diffs = zero events).
+//             (2) Per-handler coalesce-and-drain extended to
+//                 waypoints / notes / regions, mirroring the v58
+//                 route fix; the region drain hoists the
+//                 RegionStore.SetRegions call out of the per-id
+//                 loop so HazardousRegionAlarmRule re-evaluates
+//                 once against the final state, not N times.
+//             Plus operator-fitness fixes:
+//             - NotificationsApi catches per-call OperationCancel-
+//               edException so MOB raise / alarm publish / ack /
+//               clear surface stalls as ApiResult.Fail instead of
+//               faulting the fire-and-forget Task. Was the silent-
+//               death cause for the MOB retry loop.
+//             - MobService.RunRaiseLoopAsync gets a top-level
+//               try/catch + per-attempt retry catch so any
+//               unexpected throw logs and continues rather than
+//               killing the most life-critical retry path.
+//             - AlarmPublisher republishes stable alarms after WS
+//               reconnect; previously a SHALLOW that survived a
+//               disconnect was invisible to other plotters until
+//               something local mutated.
+//             - SignalKNotificationAcknowledger logs ack failures
+//               via Console.Error (relay -> SK server log) so
+//               cross-plotter ack stalls are debuggable.
+const CACHE_NAME = 'ona-plotter-v64';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

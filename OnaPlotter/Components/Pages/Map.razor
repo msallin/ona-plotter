@@ -3318,7 +3318,50 @@
     // marker to the leaflet layer via MapResourceController's per-
     // resource Redraw / Drop methods.
 
-    private void HandleWaypointChangedFromStore(string id) => _ = ApplyWaypointChangedFromStoreAsync(id);
+    // Coalesce waypoint Changed events the same way the route handler
+    // does (DrainPendingRouteChangesAsync above). On a reconnect-edge
+    // reconcile ResourceTypeCache fires Changed for every cached entry
+    // it carries forward; without this drain a 200-waypoint boat
+    // launches 200 fire-and-forget redraw tasks racing through the
+    // same JS-interop bridge that crashed the renderer with "memory
+    // access out of bounds" on the route-storm path. ResourceContent-
+    // Equality.WaypointEquals further suppresses Changed at source for
+    // unchanged entries, so this drain handles only the genuine diffs.
+    private readonly HashSet<string> _pendingWaypointChanges = new(StringComparer.Ordinal);
+    private bool _waypointFlushScheduled;
+
+    private void HandleWaypointChangedFromStore(string id)
+    {
+        _pendingWaypointChanges.Add(id);
+        if (_waypointFlushScheduled) return;
+        _waypointFlushScheduled = true;
+        _ = DrainPendingWaypointChangesAsync();
+    }
+
+    private async Task DrainPendingWaypointChangesAsync()
+    {
+        try
+        {
+            await Task.Yield();
+            while (_pendingWaypointChanges.Count > 0)
+            {
+                var batch = _pendingWaypointChanges.ToArray();
+                _pendingWaypointChanges.Clear();
+                foreach (var id in batch)
+                {
+                    try { await ApplyWaypointChangedFromStoreAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Apply waypoint change {id}");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _waypointFlushScheduled = false;
+        }
+    }
 
     private async Task ApplyWaypointChangedFromStoreAsync(string id)
     {
@@ -3357,7 +3400,42 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleNoteChangedFromStore(string id) => _ = ApplyNoteChangedFromStoreAsync(id);
+    // Same coalesce-and-drain shape as the waypoint handler above.
+    private readonly HashSet<string> _pendingNoteChanges = new(StringComparer.Ordinal);
+    private bool _noteFlushScheduled;
+
+    private void HandleNoteChangedFromStore(string id)
+    {
+        _pendingNoteChanges.Add(id);
+        if (_noteFlushScheduled) return;
+        _noteFlushScheduled = true;
+        _ = DrainPendingNoteChangesAsync();
+    }
+
+    private async Task DrainPendingNoteChangesAsync()
+    {
+        try
+        {
+            await Task.Yield();
+            while (_pendingNoteChanges.Count > 0)
+            {
+                var batch = _pendingNoteChanges.ToArray();
+                _pendingNoteChanges.Clear();
+                foreach (var id in batch)
+                {
+                    try { await ApplyNoteChangedFromStoreAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Apply note change {id}");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _noteFlushScheduled = false;
+        }
+    }
 
     private async Task ApplyNoteChangedFromStoreAsync(string id)
     {
@@ -3394,24 +3472,71 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleRegionChangedFromStore(string id) => _ = ApplyRegionChangedFromStoreAsync(id);
+    // Coalesce region Changed events. Hoists RegionStore.SetRegions
+    // out of the per-id loop body and calls it ONCE at the end of the
+    // drain - the alarm rule only needs the final state, not N
+    // intermediate snapshots, and the per-id call was the most
+    // expensive part of the storm (full-list copy + alarm-rule
+    // re-evaluation per region).
+    private readonly HashSet<string> _pendingRegionChanges = new(StringComparer.Ordinal);
+    private bool _regionFlushScheduled;
 
-    private async Task ApplyRegionChangedFromStoreAsync(string id)
+    private void HandleRegionChangedFromStore(string id)
     {
-        if (!mapInitialized || _resources is null) return;
+        _pendingRegionChanges.Add(id);
+        if (_regionFlushScheduled) return;
+        _regionFlushScheduled = true;
+        _ = DrainPendingRegionChangesAsync();
+    }
+
+    private async Task DrainPendingRegionChangesAsync()
+    {
+        try
+        {
+            await Task.Yield();
+            bool anyApplied = false;
+            while (_pendingRegionChanges.Count > 0)
+            {
+                var batch = _pendingRegionChanges.ToArray();
+                _pendingRegionChanges.Clear();
+                foreach (var id in batch)
+                {
+                    try
+                    {
+                        if (await ApplyRegionChangedFromStoreAsync(id))
+                            anyApplied = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Apply region change {id}");
+                    }
+                }
+            }
+            // Single SetRegions push at the end of the drain so
+            // HazardousRegionAlarmRule re-evaluates against the final
+            // state once, not once per id.
+            if (anyApplied)
+            {
+                RegionStore.SetRegions(loadedRegions);
+            }
+        }
+        finally
+        {
+            _regionFlushScheduled = false;
+        }
+    }
+
+    private async Task<bool> ApplyRegionChangedFromStoreAsync(string id)
+    {
+        if (!mapInitialized || _resources is null) return false;
         var region = ResourceStore.GetRegion(id);
-        if (region is null) return;
+        if (region is null) return false;
         var idx = loadedRegions.FindIndex(r => r.Id == id);
         if (idx >= 0) loadedRegions[idx] = region;
         else loadedRegions.Add(region);
-        // Mirror into RegionStore so HazardousRegionAlarmRule sees the
-        // new geometry on its next tick. RegionStore subscribes to
-        // ResourceStore directly too (closes the alarm-evaluation
-        // safety hole when the Map page is unmounted), so this call
-        // is belt-and-braces for the Map-mounted path.
-        RegionStore.SetRegions(loadedRegions);
         await _resources.RedrawRegionAsync(region);
         await InvokeAsync(StateHasChanged);
+        return true;
     }
 
     private void HandleRegionRemovedFromStore(string id) => _ = ApplyRegionRemovedFromStoreAsync(id);

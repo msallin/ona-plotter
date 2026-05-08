@@ -163,19 +163,32 @@ public sealed class AlarmPublisher : IAsyncDisposable
     private void HandleConnectionChanged()
     {
         if (_disposed) return;
-        // Only act on disconnect; reconnect lets the next OnAlarmsChanged
-        // tick re-establish state from scratch via the same Pass 1 logic.
-        if (_signalk is null || _signalk.IsConnected) return;
-        if (_raised.Count == 0) return;
+        if (_signalk is null) return;
+        if (_signalk.IsConnected)
+        {
+            // Reconnect edge: walk the current local-active set and
+            // POST anything that's missing from _raised. A stable
+            // alarm (e.g. SHALLOW that's been on for 30 min) does NOT
+            // change between disconnect and reconnect, so the
+            // OnAlarmsChanged event never fires - without this nudge,
+            // _raised stays empty after the disconnect-reset and the
+            // alarm is invisible to other plotters until something
+            // local mutates. Re-using HandleAlarmsChanged keeps one
+            // diff path and the same idempotency story.
+            HandleAlarmsChanged();
+            return;
+        }
 
-        // Snapshot the paths we currently own + drop the local _raised
-        // map (it tracks in-flight raises - their continuations will
-        // see _disposed/!IsConnected and bail).  Keep the TRACKER paths
-        // alive for the server-side GC window (~60s) so the bridge rule
-        // continues to filter own-echoes when the server replays our
-        // pre-disconnect notifications post-reconnect. Otherwise every
-        // brief LTE blip would stack 2-3 banners for the same alarm
-        // until the server's GC sweeps it.
+        // Disconnect path. Snapshot the paths we currently own + drop
+        // the local _raised map (it tracks in-flight raises - their
+        // continuations will see _disposed/!IsConnected and bail).
+        // Keep the TRACKER paths alive for the server-side GC window
+        // (~60s) so the bridge rule continues to filter own-echoes
+        // when the server replays our pre-disconnect notifications
+        // post-reconnect. Otherwise every brief LTE blip would stack
+        // 2-3 banners for the same alarm until the server's GC sweeps
+        // it.
+        if (_raised.Count == 0) return;
         var ownedPaths = _raised.Values.Select(v => v.Path).ToArray();
         _raised.Clear();
         _ = LogInfoAsync("alarm.publisher reset on WS disconnect (tracker grace " +

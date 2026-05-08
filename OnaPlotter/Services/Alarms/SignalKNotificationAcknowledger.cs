@@ -42,13 +42,34 @@ public sealed record SignalKNotificationAcknowledger : IAlarmAcknowledger
 
     public async Task AcknowledgeAsync()
     {
-        // Fire-and-forget at the manager call-site; we still await
-        // here so any logging future-wired into the API surface (or
-        // an Operator-style relay) sees the actual completion. The
-        // result is intentionally discarded - per the contract
-        // comment on IAlarmAcknowledger, transport failures must not
-        // roll back the local dismiss.
-        await _api.AcknowledgeAsync(_id);
+        // Fire-and-forget at the manager call-site (AlarmManager.
+        // FireAcknowledge issues `_ = ack.AcknowledgeAsync()` for each
+        // entry). Per the IAlarmAcknowledger contract, transport
+        // failures must not roll back the local dismiss - the helm's
+        // tap took effect on this plotter, the cross-plotter sync is
+        // best-effort. But silently swallowing failures hid recurring
+        // server stalls from the helm log; explicit catches surface
+        // each failure mode through Console.Error which errorRelayBoot
+        // forwards to the SK server log for SSH debugging at 3 am.
+        try
+        {
+            var r = await _api.AcknowledgeAsync(_id);
+            if (!r.Success)
+            {
+                Console.Error.WriteLine(
+                    $"[ack] notification {_id} non-success: {r.Error ?? "(no body)"}");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Includes per-call timeout (returned as ApiResult.Fail by
+            // NotificationsApi after the filter-inversion fix) AND any
+            // future regression that lets a real exception propagate.
+            // The fire-and-forget caller-site otherwise routes this to
+            // UnobservedTaskException with no observability.
+            Console.Error.WriteLine(
+                $"[ack] notification {_id} threw {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     // Equality on (api-instance + id + canAcknowledge) means two
