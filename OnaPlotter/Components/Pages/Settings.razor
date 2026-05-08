@@ -57,10 +57,139 @@
 
 <div class="row g-4" style="max-width: 1200px;">
 
+    @* === Display ===
+       Theme + Night Mode + Big screen + screen-power / keyboard
+       hints. First section so the helm can pick the global
+       look-and-feel before anything else. *@
     <div class="col-12">
+        <h5 class="page-section-header">Display</h5>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label">Theme</label>
+                <div class="btn-group w-100" role="group" aria-label="Theme">
+                    @foreach (var (val, label) in new[] { ("system", "System"), ("light", "Light"), ("dark", "Dark"), ("high-contrast", "High contrast") })
+                    {
+                        <input type="radio" class="btn-check" id="@($"theme-{val}")" name="theme"
+                               checked="@(AppSettings.Theme == val)"
+                               @onchange="() => OnThemeChanged(val)" />
+                        <label class="btn btn-outline-secondary btn-sm" for="@($"theme-{val}")">@label</label>
+                    }
+                </div>
+                <small class="text-muted d-block mt-1">System follows your device's dark/light preference.</small>
+            </div>
+        </div>
+    </div>
+
+    @* Night mode: presets + auto-flip live with the master toggle
+       since they're inert when Night Mode is off. Big screen mode
+       split into its own card per helm request - it's an
+       independent zoom of the whole HUD, not part of the night-
+       vision palette. *@
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" checked="@AppSettings.NightMode"
+                           @onchange="(e) => OnNightModeChanged(e)" />
+                    <label class="form-check-label">Night Mode</label>
+                </div>
+                <small class="text-muted">Red-shifted display for night vision. Overlays on any theme.</small>
+                @if (AppSettings.NightMode)
+                {
+                    <div class="btn-group mt-2" role="group" aria-label="Night mode preset">
+                        @foreach (var (val, label, tip) in NightPresets)
+                        {
+                            <input type="radio" class="btn-check" name="night-preset"
+                                   id="@($"night-{val}")" autocomplete="off"
+                                   checked="@(AppSettings.NightModePreset == val)"
+                                   @onchange="() => OnNightPresetChanged(val)" />
+                            <label class="btn btn-outline-secondary btn-sm" for="@($"night-{val}")"
+                                   title="@tip">@label</label>
+                        }
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        Dusk: dim + desaturated, no red-shift. Soft / Amber / Red: progressively redder presets that preserve dark-adapted vision.
+                    </small>
+                }
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox"
+                           checked="@AppSettings.NightModeAuto"
+                           @onchange="OnNightAutoChanged" />
+                    <label class="form-check-label">Auto flip at dusk</label>
+                </div>
+                <small class="text-muted d-block mt-1">
+                    Reads <code>environment.sun</code> from a solar-position plugin (see Paths). A manual Night tap suppresses auto-flip until the next day / night transition.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.BigType"
+                           @onchange="OnBigTypeChanged" />
+                    <span class="form-check-label">Big screen mode</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Scales corner HUDs, AIS icons + labels, CPA chips, alarm banners up to read from 1-2 m away. For 21"+ helm screens; phones already fit the standard size.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.KeepScreenAwake"
+                           @onchange="OnKeepScreenAwakeChanged" />
+                    <span class="form-check-label">Keep screen awake</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Holds a Screen Wake Lock so the tablet doesn't doze mid-watch. Turn off on battery without shore power. Quiet no-op on browsers without Wake Lock.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.ShowKeyboardHints"
+                           @onchange="OnShowKeyboardHintsChanged" />
+                    <span class="form-check-label">Show keyboard shortcut hints</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Adds "(L)" / "(D)" letters to map controls and enables <kbd>?</kbd> to open the shortcuts card. Touch users can leave off; useful with a keyboard.
+                </small>
+                @* Re-open the welcome card via map?welcome=1; the Map
+                   page consumes the query and strips it on apply. *@
+                <button type="button" class="btn btn-link p-0 mt-2"
+                        style="font-size:0.85rem;"
+                        @onclick="@(() => Nav.NavigateTo("map?welcome=1"))">
+                    Show welcome card again on the Map page
+                </button>
+            </div>
+        </div>
+    </div>
+
+    @* === Mode ===
+       Boat-class essentials. Just the two radio toggles - keep this
+       header tight so helms scanning the page can find them. *@
+    <div class="col-12 mt-3">
         <h5 class="page-section-header">Mode</h5>
     </div>
-    <div class="col-12">
+
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-label">Sailing Mode</label>
@@ -76,15 +205,13 @@
                     }
                 </div>
                 <small class="text-muted d-block mt-1">
-                    Cruise: navigation emphasis (depth, anchor, route). Race: performance emphasis
-                    (laylines, optimal TWA, target speed). Individual toggles still work in either mode;
-                    the mode just picks sensible defaults and surfaces mode-specific overlays.
+                    Cruise: depth / anchor / route emphasis. Race: laylines, optimal TWA, target speed. Mode picks defaults; individual toggles still work in either.
                 </small>
             </div>
         </div>
     </div>
 
-    <div class="col-12">
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-label">Own vessel type</label>
@@ -104,77 +231,22 @@
                            title="Sailing vessel under way">Sail</label>
                 </div>
                 <small class="text-muted d-block mt-1">
-                    Drives COLREGS Rule 18 priority. Set "sail" when under sail (engine off); "power" when motoring or motor-sailing. A sail-vs-power encounter resolves as power-gives-way; same-type encounters use Rule 13-15.
+                    Drives COLREGS Rule 18 priority. Sail vs power resolves as power-gives-way; same-type encounters use Rule 13-15.
                 </small>
             </div>
         </div>
     </div>
 
-    @* === HUD & input ===
-       Toggles that change which HUDs render or how the helm
-       interacts with the page. Previously co-housed with Mode;
-       split out so Mode stays a tight "what kind of boat" header. *@
+    @* === HUD ===
+       Toggles that change which HUDs render on the Map page +
+       chart-detail level. Previously called "HUD & input" - the
+       input bits (keep-screen-awake, keyboard hints) moved to
+       Display alongside the rest of the look-and-feel knobs. *@
     <div class="col-12 mt-3">
-        <h5 class="page-section-header">HUD &amp; input</h5>
+        <h5 class="page-section-header">HUD</h5>
     </div>
 
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-check form-switch" style="margin:0;">
-                    <input class="form-check-input" type="checkbox" role="switch"
-                           checked="@AppSettings.KeepScreenAwake"
-                           @onchange="OnKeepScreenAwakeChanged" />
-                    <span class="form-check-label">Keep screen awake</span>
-                </label>
-                <small class="text-muted d-block mt-1">
-                    Holds a Screen Wake Lock across the whole app so the tablet
-                    doesn't doze mid-watch. Covers Chart, SailSteer, Wind,
-                    History - not just the Map page. Turn off if running on
-                    battery without shore power. Quiet no-op on browsers without
-                    Wake Lock support.
-                </small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-check form-switch" style="margin:0;">
-                    <input class="form-check-input" type="checkbox" role="switch"
-                           checked="@AppSettings.ShowKeyboardHints"
-                           @onchange="OnShowKeyboardHintsChanged" />
-                    <span class="form-check-label">Show keyboard shortcut hints</span>
-                </label>
-                <small class="text-muted d-block mt-1">
-                    Adds the "(L)" / "(D)" letters to map control labels and
-                    enables the <kbd>?</kbd> key to open the shortcuts card.
-                    Off by default: on a touch device the letters are just
-                    clutter. Turn on if you run OnaPlotter on a desktop with
-                    a keyboard.
-                </small>
-                @* Re-open the welcome card. The card is normally one-shot
-                   per device; helms who want to re-read the onboarding
-                   click here. The page navigates to map?welcome=1 (NO
-                   leading slash - absolute /map jumps off-mount under
-                   the SignalK plugin path, e.g. /signalk-onaplotter/.
-                   Same convention Resources.razor uses for its View /
-                   Edit links). The Map page picks up the welcome=1
-                   query in OnInitializedAsync, surfaces the card
-                   regardless of the dismissed flag, and strips the
-                   query in ApplyMapDeepLinkAsync after consume so a
-                   reload doesn't loop. *@
-                <button type="button" class="btn btn-link p-0 mt-2"
-                        style="font-size:0.85rem;"
-                        @onclick="@(() => Nav.NavigateTo("map?welcome=1"))">
-                    Show welcome card again on the Map page
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12">
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-check form-switch" style="margin:0;">
@@ -184,19 +256,13 @@
                     <span class="form-check-label">Show autopilot control HUD</span>
                 </label>
                 <small class="text-muted d-block mt-1">
-                    Shows the dedicated Autopilot card on the map with
-                    Stby / Auto / Wind / Route engage modes and
-                    -10 / -1 / +1 / +10 heading nudges. Off by default
-                    because the engage buttons are easy to tap by accident
-                    on a touch device. The extended HDG HUD still shows
-                    the pilot's state, target, rudder angle, and heading
-                    error when this is off.
+                    Adds the Autopilot card with Stby / Auto / Wind / Route + heading nudges. Off by default - the engage buttons are easy to tap by accident on touch.
                 </small>
             </div>
         </div>
     </div>
 
-    <div class="col-12">
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-check form-switch" style="margin:0;">
@@ -206,23 +272,47 @@
                     <span class="form-check-label">Show radar control HUD</span>
                 </label>
                 <small class="text-muted d-block mt-1">
-                    Shows the dedicated Radar card on the map: status,
-                    range stepper, and Standby / Transmit toggle. Transmit
-                    requires a 600 ms hold to avoid an accidental tap
-                    radiating with crew on the bow. When more than one
-                    radar is detected the card has a picker to switch
-                    between them. Hidden automatically when the SignalK
-                    server has no radar plugin (Mayara, navico-sk, etc.).
+                    Adds the Radar card: status, range stepper, Standby / Transmit (600 ms hold). Auto-hidden when no radar plugin is detected.
                 </small>
             </div>
         </div>
     </div>
 
-    @* Chart upscale (overzoom). Off by default; helms who want extra
-       detail past a chart's native max zoom turn it on. Levels stepper
-       sits beside the master flag so the helm sees both controls
-       together; only the level value matters when the flag is on. *@
-    <div class="col-12">
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.TideVisible"
+                           @onchange="OnTideVisibleChanged" />
+                    <span class="form-check-label">Show tide</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Tide row on the depth HUD + Tide section on the Dashboard. Hide on non-tidal waters or when the SK server has no tide plugin.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-check form-switch" style="margin:0;">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@AppSettings.ExpandAllHud"
+                           @onchange="OnExpandAllHudChanged" />
+                    <span class="form-check-label">Expand all HUD panels</span>
+                </label>
+                <small class="text-muted d-block mt-1">
+                    Keep every corner HUD expanded (DMS / wind extras / drift / leeway) instead of tap-to-expand. Best on wide helm screens. Combine with Big screen mode for a maximum-information read.
+                </small>
+            </div>
+        </div>
+    </div>
+
+    @* Chart upscale (overzoom). Lives in HUD because it changes
+       what the chart layer renders, not the global look. *@
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-check form-switch" style="margin:0;">
@@ -232,15 +322,7 @@
                     <span class="form-check-label">Chart upscale (overzoom)</span>
                 </label>
                 <small class="text-muted d-block mt-1">
-                    Lets the helm zoom past a chart's native maximum.
-                    Tiles at the native cap get GPU-upscaled to fill
-                    higher zoom levels - pixelated but readable for
-                    close-quarters work (reefs, harbour entries, dock
-                    approaches). Above the cap + level limit, chart
-                    tiles go blank and the OpenStreetMap fallback
-                    shows through, which is the honest signal that
-                    you've zoomed past real data. Removable in one
-                    click if it doesn't behave on your charts.
+                    Zoom past a chart's native max. Tiles get GPU-upscaled - pixelated but readable for close-quarters work. Above the cap, OSM fallback shows through (honest signal you've zoomed past real data).
                 </small>
                 <div class="mt-2 d-flex align-items-center gap-2"
                      style="@(AppSettings.ChartUpscaleEnabled ? "" : "opacity:0.5;")">
@@ -255,12 +337,6 @@
                            value="@AppSettings.ChartUpscaleLevels"
                            @onchange="OnChartUpscaleLevelsChanged" />
                     <small class="text-muted">
-                        @* Each level doubles the upscale. 2 = 4x
-                           (default), past 3 the chart is visibly
-                           pixelated; past 4 you're really just
-                           bilinear-interpolating. Helms doing
-                           harbour pilotage sometimes ask for 4-5
-                           anyway. *@
                         @(AppSettings.ChartUpscaleLevels switch
                         {
                             0 => "0 = no upscale (decorator off)",
@@ -448,7 +524,7 @@
         <h5 class="page-section-header">Course</h5>
     </div>
 
-    <div class="col-12">
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <div class="form-check form-switch">
@@ -508,7 +584,7 @@
 
     @* Master switch + carve-out note. Per-rule disables on each
        card below; this is the panic-tap. *@
-    <div class="col-12">
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <div class="form-check form-switch">
@@ -759,7 +835,7 @@
        Helm asked the formula to live here so the maths behind
        the Auto chip on the Drop / Set panel is one tap from
        the rest of the anchor settings. *@
-    <div class="col-12">
+    <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
                 <label class="form-label">Anchor Tide Alarm setup</label>
@@ -918,110 +994,10 @@
         </div>
     </div>
 
-    <div class="col-12 mt-3">
-        <h5 class="page-section-header">Display</h5>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <label class="form-label">Theme</label>
-                <div class="btn-group w-100" role="group" aria-label="Theme">
-                    @foreach (var (val, label) in new[] { ("system", "System"), ("light", "Light"), ("dark", "Dark"), ("high-contrast", "High contrast") })
-                    {
-                        <input type="radio" class="btn-check" id="@($"theme-{val}")" name="theme"
-                               checked="@(AppSettings.Theme == val)"
-                               @onchange="() => OnThemeChanged(val)" />
-                        <label class="btn btn-outline-secondary btn-sm" for="@($"theme-{val}")">@label</label>
-                    }
-                </div>
-                <small class="text-muted d-block mt-1">System follows your device's dark/light preference.</small>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-sm-6">
-        <div class="card">
-            <div class="card-body">
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" checked="@AppSettings.NightMode"
-                           @onchange="(e) => OnNightModeChanged(e)" />
-                    <label class="form-check-label">Night Mode</label>
-                </div>
-                <small class="text-muted">Red-shifted display for night vision. Overlays on any theme.</small>
-                @if (AppSettings.NightMode)
-                {
-                    <div class="btn-group mt-2" role="group" aria-label="Night mode preset">
-                        @foreach (var (val, label, tip) in NightPresets)
-                        {
-                            <input type="radio" class="btn-check" name="night-preset"
-                                   id="@($"night-{val}")" autocomplete="off"
-                                   checked="@(AppSettings.NightModePreset == val)"
-                                   @onchange="() => OnNightPresetChanged(val)" />
-                            <label class="btn btn-outline-secondary btn-sm" for="@($"night-{val}")"
-                                   title="@tip">@label</label>
-                        }
-                    </div>
-                    <small class="text-muted d-block mt-1">
-                        Dusk: dim + desaturated, no red-shift - for the sun-just-set window.
-                        Soft / Amber / Red: progressively-redder presets that preserve dark-adapted
-                        vision.
-                    </small>
-                }
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           checked="@AppSettings.NightModeAuto"
-                           @onchange="OnNightAutoChanged" />
-                    <label class="form-check-label">Auto flip at dusk</label>
-                </div>
-                <small class="text-muted d-block mt-1">
-                    Reads <code>environment.sun</code> (string: day / dawn / dusk / night).
-                    Needs a solar-position plugin on the SignalK server (see the Paths page).
-                    A manual Night tap suppresses the auto-flip until env.sun next crosses
-                    a day / night transition, so the app doesn't fight your choice.
-                </small>
-
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           checked="@AppSettings.TideVisible"
-                           @onchange="OnTideVisibleChanged" />
-                    <label class="form-check-label">Show tide</label>
-                </div>
-                <small class="text-muted d-block mt-1">
-                    Tide row on the depth HUD card + the Tide section on the Dashboard.
-                    Hide on non-tidal waters (lakes, inland canals) or when the SignalK
-                    server has no tide plugin.
-                </small>
-
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           checked="@AppSettings.BigType"
-                           @onchange="OnBigTypeChanged" />
-                    <label class="form-check-label">Big screen mode</label>
-                </div>
-                <small class="text-muted d-block mt-1">
-                    Scales corner HUD numbers, AIS ship icons + labels, CPA chips, toast
-                    + alarm banners up to read well from 1-2 m away. Designed for the
-                    21&quot;+ helm screen the crew watches from a couch or nav station;
-                    on a phone the standard size already fits the viewport.
-                </small>
-
-                <div class="form-check form-switch mt-2">
-                    <input class="form-check-input" type="checkbox"
-                           checked="@AppSettings.ExpandAllHud"
-                           @onchange="OnExpandAllHudChanged" />
-                    <label class="form-check-label">Expand all HUD panels</label>
-                </div>
-                <small class="text-muted d-block mt-1">
-                    Keep every corner HUD in its expanded state (DMS / wind extras /
-                    drift / leeway rows) instead of hiding them behind a tap. Best on
-                    wide helm screens where the extra rows fit without covering chart.
-                    Independent of Big screen mode; combine them for a maximum-
-                    information read on a 21&quot;+ display.
-                </small>
-            </div>
-        </div>
-    </div>
+    @* The "Display" section moved to the top of the page (Theme,
+       Night Mode + presets + Auto flip, Big screen mode, Keep
+       screen awake, Show keyboard hints). Show tide and Expand
+       all HUD panels live under HUD. *@
 
     @* Backup / GPX import + export moved to /resources where the
        per-tab lists already live (focus-group field report 2026-04).

@@ -566,7 +566,28 @@
 //               button are still glanceable while reviewing the
 //               list. The grab-handle pill is gone -- the X on
 //               the right is the single close affordance.
-const CACHE_NAME = 'ona-plotter-v61';
+// v61 -> v62: Settings page tighter layout.
+//             - Section reorder: Display first, Mode second, HUD
+//               third (was Mode -> HUD & input -> ... -> Display
+//               at the bottom). Helm asked the look-and-feel
+//               picker to be the first thing the page shows.
+//             - "HUD & input" renamed to "HUD". The input bits
+//               (keep-screen-awake, show keyboard hints) moved
+//               into Display alongside Theme + Night Mode + Big
+//               screen mode; they're all global look-and-feel
+//               knobs.
+//             - The big Night Mode card split: Night Mode +
+//               presets + Auto-flip in one card; Big screen
+//               mode in its own card.
+//             - Show tide + Expand all HUD panels moved out of
+//               the night-mode card into the HUD section as
+//               separate cards.
+//             - Most col-12 content cards converted to col-sm-6
+//               so two cards fit per row on >= sm breakpoints.
+//               Auto anchor radius and Boat polars stay col-12
+//               (the formula + the polar plot really need the
+//               full width).
+const CACHE_NAME = 'ona-plotter-v62';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
