@@ -587,7 +587,16 @@
 //               Auto anchor radius and Boat polars stay col-12
 //               (the formula + the polar plot really need the
 //               full width).
-const CACHE_NAME = 'ona-plotter-v62';
+// v62 -> v63: Topbar button + dialog rename.
+//             - "Alarm History" / "Active N" topbar label unified
+//               as "Notifications N" (matches SK v2 vocabulary +
+//               how helms talk about the banner stack). Icon +
+//               badge already convey active vs history; the label
+//               doesn't need to flick between two strings.
+//             - Dialog title "Alarms" -> "Notifications". Empty-
+//               state strings + the +N-more banner overflow
+//               tooltip retitled to match.
+const CACHE_NAME = 'ona-plotter-v63';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
