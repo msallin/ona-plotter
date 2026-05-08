@@ -97,6 +97,11 @@ internal sealed class FakeSettings : IAppSettings
     public IReadOnlySet<string> EnabledRouteIds => new HashSet<string>();
     public IReadOnlySet<string> QuickBarChartIds => new HashSet<string>();
     public IReadOnlyList<string> ChartOrder => [];
+    // Mutable backing so tests can pre-seed disabled rules; kept as
+    // a HashSet because IReadOnlySet contains is what the production
+    // AlarmManager.Evaluate path calls.
+    public HashSet<string> DisabledAlarmRulesSet { get; } = new(StringComparer.Ordinal);
+    public IReadOnlySet<string> DisabledAlarmRules => DisabledAlarmRulesSet;
     public double? MapViewLat { get; set; }
     public double? MapViewLon { get; set; }
     public int? MapViewZoom { get; set; }
@@ -193,6 +198,14 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetMarinePoiChandleryEnabledAsync(bool v) { MarinePoiChandleryEnabled = v; return Task.CompletedTask; }
     public Task SetMarinePoiDrinkingWaterEnabledAsync(bool v) { MarinePoiDrinkingWaterEnabled = v; return Task.CompletedTask; }
     public Task SetMarinePoiPumpOutEnabledAsync(bool v) { MarinePoiPumpOutEnabled = v; return Task.CompletedTask; }
+    public Task SetAlarmRuleDisabledAsync(string title, bool disabled)
+    {
+        var key = (title ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(key)) return Task.CompletedTask;
+        if (disabled) DisabledAlarmRulesSet.Add(key);
+        else DisabledAlarmRulesSet.Remove(key);
+        return Task.CompletedTask;
+    }
     public Task SetMapViewAsync(double lat, double lon, int zoom)
     {
         MapViewLat = lat; MapViewLon = lon; MapViewZoom = zoom;

@@ -113,6 +113,14 @@ public interface IAlarmManager
     /// <summary>Default snooze duration. Exposed so the UI can show "Snooze 10 m".</summary>
     int SnoozeDurationMinutes { get; }
 
+    /// <summary>Titles of every registered rule, in the manager's
+    /// evaluation order (priority asc). Settings -> Alarms uses this
+    /// to render one toggle per rule without hardcoding the list, so
+    /// a new rule registered in DI shows up in the UI automatically.
+    /// The titles also serve as the membership keys for
+    /// <see cref="IAlarmThresholds.DisabledAlarmRules"/>.</summary>
+    IReadOnlyList<string> RegisteredRuleTitles { get; }
+
     /// <summary>Loads persisted snooze state from
     /// <see cref="IKeyValueStore"/>. Called once at app startup; safe
     /// to call again (no-op after the first). Failures (no storage,

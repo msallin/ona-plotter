@@ -1206,6 +1206,24 @@
                 return;
             }
             Toasts.Info($"Next waypoint ({reason})");
+            // Self-clear the latched APPROACH banner: the manual
+            // "Next WP" tap on the alarm dismisses the alarm as part
+            // of the same gesture (see NextWaypoint below); when the
+            // system auto-advances on the helm's behalf the banner
+            // should disappear too. Without this dismiss the helm
+            // sees a stale APPROACH for the just-passed waypoint
+            // until they exit the radius (and even then it stays
+            // because the rule is AutoClear=false). The rule's
+            // existing latch reset on coord change re-arms the
+            // detector for the new waypoint; this dismiss is just
+            // about clearing the on-screen banner.
+            foreach (var alarm in Alarms.AllActiveAlarms)
+            {
+                if (string.Equals(alarm.Title, "APPROACH", StringComparison.Ordinal))
+                {
+                    await Alarms.DismissAsync(alarm);
+                }
+            }
             await Task.Delay(400);
             if (hadCourseBefore && !SignalkClient.Data.HasActiveCourse)
                 Toasts.Success("Arrived at final waypoint");

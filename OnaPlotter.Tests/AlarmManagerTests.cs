@@ -80,6 +80,73 @@ public class AlarmManagerTests
         await Assert.That(mgr.ActiveAlarm).IsNull();
     }
 
+    // --- per-rule disable -----------------------------------------------
+
+    [Test]
+    public async Task DisabledRule_SkippedEntirely_NeverFires()
+    {
+        // Helm flipped the SHALLOW toggle off in Settings -> Alarms.
+        // Even with depth well below threshold, the rule's Check is
+        // never invoked and no alarm appears.
+        var (mgr, _, settings, _) = NewMgr();
+        settings.DisabledAlarmRulesSet.Add("SHALLOW");
+
+        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+    }
+
+    [Test]
+    public async Task DisablingActiveRule_DropsItsBannerOnNextTick()
+    {
+        // SHALLOW is firing; helm flips its toggle off; on the next
+        // Evaluate the banner disappears even though depth is still
+        // below threshold and the rule is AutoClear=true (the
+        // disabled-rule sweep handles latching rules the same way).
+        var (mgr, clock, settings, _) = NewMgr();
+        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        await Assert.That(mgr.ActiveAlarm?.Title).IsEqualTo("SHALLOW");
+
+        settings.DisabledAlarmRulesSet.Add("SHALLOW");
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+    }
+
+    [Test]
+    public async Task ReEnablingRule_RaisesBannerWhenConditionStillMet()
+    {
+        // Inverse of the previous test: rule is disabled while depth
+        // sits below threshold; helm flips it back on; the next
+        // Evaluate fires the alarm fresh.
+        var (mgr, clock, settings, _) = NewMgr();
+        settings.DisabledAlarmRulesSet.Add("SHALLOW");
+        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+        await Assert.That(mgr.ActiveAlarm).IsNull();
+
+        settings.DisabledAlarmRulesSet.Remove("SHALLOW");
+        clock.Now = clock.Now.AddSeconds(2);
+        mgr.Evaluate(Nav(depth: 1.0), [], settings);
+
+        await Assert.That(mgr.ActiveAlarm?.Title).IsEqualTo("SHALLOW");
+    }
+
+    [Test]
+    public async Task RegisteredRuleTitles_ReturnsEveryWiredRule()
+    {
+        // Settings -> Alarms reads this to render the per-rule
+        // toggles. Pin the contract: every rule the manager owns
+        // must show up here, in priority order, so a new rule
+        // registered in DI surfaces in the UI without hardcoding.
+        var (mgr, _, _, _) = NewMgr();
+        var titles = mgr.RegisteredRuleTitles;
+
+        await Assert.That(titles).Contains("SHALLOW");
+        await Assert.That(titles).Contains("CPA");
+        await Assert.That(titles).Contains("WIND SHIFT");
+    }
+
     // --- CPA ------------------------------------------------------------
 
     [Test]

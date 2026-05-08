@@ -75,6 +75,7 @@ public class AlarmPublisherTests
         public IReadOnlyList<SnoozedTarget> SnoozedTargets => [];
         public IReadOnlyList<DismissedAlarm> DismissedHistory => [];
         public int SnoozeDurationMinutes => 10;
+        public IReadOnlyList<string> RegisteredRuleTitles => [];
         public IReadOnlyList<AlarmRearmInfo> RearmStatuses(DateTime now) => [];
         public event Action<AlarmInfo?>? OnAlarmChanged;
         public event Action? OnAlarmsChanged;

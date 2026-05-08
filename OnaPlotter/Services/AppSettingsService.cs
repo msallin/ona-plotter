@@ -96,16 +96,30 @@ public sealed class AppSettingsService : IAppSettings
     /// armed).</summary>
     public bool HarborMode { get; private set; }
     public bool SidebarCollapsed { get; private set; }
-    public double DepthAlarmThreshold { get; private set; } = 3.0;
+    // Defaults reviewed 2026-05 after helm field-feedback that the
+    // first-install thresholds tripped too easily. Each retuned to
+    // be less sensitive while staying conservative for the use case:
+    //   SHALLOW         3.0 -> 2.0 m: 3 m tripped on every chop in
+    //                                 typical 4-5 m anchorages.
+    //   ANCHOR TIDE     1.0 -> 0.5 m: 1 m clearance fired hours
+    //                                 before any real risk.
+    //   WIND SHIFT     15   -> 30 deg: 15 deg is normal sailing
+    //                                  oscillation; 30 deg matches
+    //                                  the helm-noticeable threshold.
+    //   WIND lookback   5   -> 10 min: longer averaging window cuts
+    //                                  short-gust false positives.
+    //   WIND min TWS    3   -> 5 kn:   suppress more wobble in
+    //                                  light air where TWD is noisy.
+    public double DepthAlarmThreshold { get; private set; } = 2.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
     public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
     public double GuardZoneWarningFactor { get; private set; } = 2.0;
-    public double WindShiftAlarmThreshold { get; private set; } = 15.0;
-    public double WindShiftLookbackMinutes { get; private set; } = 5.0;
-    public double WindShiftMinTrueWindSpeed { get; private set; } = 3.0;
+    public double WindShiftAlarmThreshold { get; private set; } = 30.0;
+    public double WindShiftLookbackMinutes { get; private set; } = 10.0;
+    public double WindShiftMinTrueWindSpeed { get; private set; } = 5.0;
     // Boat draft is read from SignalK (design.draft.current / .maximum)
     // via NavigationData.DraftFromSignalK; no manual override here.
-    public double AnchorTideSafetyMargin { get; private set; } = 1.0;
+    public double AnchorTideSafetyMargin { get; private set; } = 0.5;
     public double ManualAnchorRadiusMeters { get; private set; } = 30.0;
     public double DeadmanTimeoutMinutes { get; private set; } = 0.0;
     public double DeadmanNightMinutes { get; private set; } = 15.0;
@@ -180,10 +194,18 @@ public sealed class AppSettingsService : IAppSettings
     private readonly HashSet<string> _enabledRouteIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _quickBarChartIds = new(StringComparer.Ordinal);
     private readonly List<string> _chartOrder = [];
+    // Disabled alarm rules: per-Title kill-switch the helm flips from
+    // Settings -> Alarms. Persisted as a newline-separated list. Empty
+    // means every registered rule is armed (the default for fresh
+    // installs). The set membership matches IAlarmRule.Title exactly
+    // (uppercase, no whitespace) so AlarmManager.Evaluate can do a
+    // single Contains check per rule.
+    private readonly HashSet<string> _disabledAlarmRules = new(StringComparer.Ordinal);
     public IReadOnlySet<string> EnabledChartIds => _enabledChartIds;
     public IReadOnlySet<string> EnabledRouteIds => _enabledRouteIds;
     public IReadOnlySet<string> QuickBarChartIds => _quickBarChartIds;
     public IReadOnlyList<string> ChartOrder => _chartOrder;
+    public IReadOnlySet<string> DisabledAlarmRules => _disabledAlarmRules;
 
     public double? MapViewLat { get; private set; }
     public double? MapViewLon { get; private set; }
@@ -274,14 +296,17 @@ public sealed class AppSettingsService : IAppSettings
             var sidebarRaw = await LoadString("sidebarCollapsed.v1");
             _sidebarCollapsedExplicit = sidebarRaw is not null;
             SidebarCollapsed = sidebarRaw == "true";
-            DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 3.0);
+            // Defaults retuned 2026-05 (see field declarations above
+            // for rationale). Existing helms keep their stored values;
+            // these defaults only apply on first install.
+            DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 2.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
             GuardZoneWarningFactor = await LoadDouble("guardZoneWarningFactor", 2.0);
-            WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 15.0);
-            WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 5.0);
-            WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 3.0);
-            AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 1.0);
+            WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 30.0);
+            WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 10.0);
+            WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 5.0);
+            AnchorTideSafetyMargin = await LoadDouble("anchorTideSafetyMargin", 0.5);
             ManualAnchorRadiusMeters = await LoadDouble("manualAnchorRadiusMeters.v1", 30.0);
             DeadmanTimeoutMinutes = await LoadDouble("deadmanTimeoutMinutes.v1", 0.0);
             DeadmanNightMinutes = await LoadDouble("deadmanNightMinutes.v1", 15.0);
@@ -325,6 +350,7 @@ public sealed class AppSettingsService : IAppSettings
             LoadIdsInto(await LoadString("enabledChartIds"), _enabledChartIds);
             LoadIdsInto(await LoadString("enabledRouteIds"), _enabledRouteIds);
             LoadIdsInto(await LoadString("chartOrder.v1"), _chartOrder);
+            LoadIdsInto(await LoadString("disabledAlarmRules.v1"), _disabledAlarmRules);
             LoadMapView(await LoadString("mapView.v1"));
 
             // Quick-bar chart membership. If this key doesn't exist yet
@@ -711,6 +737,25 @@ public sealed class AppSettingsService : IAppSettings
     {
         AnchorTideSafetyMargin = value;
         await Save("anchorTideSafetyMargin", value.ToString("F2", CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAlarmRuleDisabledAsync(string title, bool disabled)
+    {
+        // Trim + uppercase normalisation: a UI binding's stray
+        // whitespace or a future rename to mixed-case can't desync
+        // the persisted set from IAlarmRule.Title (which is uppercase
+        // by interface contract). Empty title is a no-op so a binding
+        // that fires on its initial empty render doesn't poison the
+        // set with "".
+        var key = (title ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(key)) return;
+        bool changed = disabled
+            ? _disabledAlarmRules.Add(key)
+            : _disabledAlarmRules.Remove(key);
+        if (!changed) return;
+        await Save("disabledAlarmRules.v1",
+            string.Join('\n', _disabledAlarmRules));
         OnSettingsChanged?.Invoke();
     }
 
