@@ -68,6 +68,48 @@ public class WaypointApproachAlarmRuleTests
     }
 
     [Test]
+    public async Task Server_Arrival_Circle_Wins_Over_Local_Setting()
+    {
+        // When the server publishes navigation.course.arrivalCircle the
+        // rule must use it as the threshold (so the client-side alarm
+        // boundary matches the server's arrivalCircleEntered boundary).
+        // Local Settings.WaypointArrivalRadiusMeters becomes a fallback.
+        //
+        // Setup: helm has 50m configured locally, server says 100m.
+        // Boat is 75m out - INSIDE the server's circle but OUTSIDE the
+        // local one. Rule must fire (using the server's 100m).
+        var rule = new WaypointApproachAlarmRule();
+        var nav = BuildNav(47.4, 8.5, distMeters: 75);
+        nav.Apply("navigation.course.arrivalCircle",
+            System.Text.Json.JsonSerializer.SerializeToElement(100.0));
+        await Assert.That(rule.Check(Ctx(nav, 50))).IsNotNull();
+    }
+
+    [Test]
+    public async Task Falls_Back_To_Local_Setting_When_Server_Silent()
+    {
+        // No navigation.course.arrivalCircle published (minimal SK
+        // server without the v2 Course API). Rule uses local setting.
+        var rule = new WaypointApproachAlarmRule();
+        var nav = BuildNav(47.4, 8.5, distMeters: 30);
+        // CourseArrivalCircleMeters stays null (not applied).
+        await Assert.That(nav.CourseArrivalCircleMeters).IsNull();
+        await Assert.That(rule.Check(Ctx(nav, 50))).IsNotNull();
+    }
+
+    [Test]
+    public async Task Local_Setting_Of_Zero_Still_Disables_When_Server_Silent()
+    {
+        // Pin the gate: when the server is silent AND the helm set 0
+        // locally, the rule disables. The fallback chain must NOT
+        // promote a server-null to a non-zero default.
+        var rule = new WaypointApproachAlarmRule();
+        var nav = BuildNav(47.4, 8.5, distMeters: 5);
+        await Assert.That(nav.CourseArrivalCircleMeters).IsNull();
+        await Assert.That(rule.Check(Ctx(nav, 0))).IsNull();
+    }
+
+    [Test]
     public async Task Crosses_Into_Radius_Fires_Once()
     {
         var rule = new WaypointApproachAlarmRule();

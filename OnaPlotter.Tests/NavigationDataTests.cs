@@ -327,6 +327,34 @@ public class NavigationDataTests
     }
 
     [Test]
+    public async Task Apply_ArrivalCircle_SetsProperty()
+    {
+        // navigation.course.arrivalCircle (server-published per-leg
+        // arrival radius in metres). Drives the chart ring + APPROACH
+        // alarm threshold so they agree with arrivalCircleEntered.
+        var nav = new NavigationData();
+        var je = JsonSerializer.SerializeToElement(75.0);
+        await Assert.That(nav.Apply("navigation.course.arrivalCircle", je)).IsTrue();
+        await Assert.That(nav.CourseArrivalCircleMeters).IsEqualTo(75.0);
+    }
+
+    [Test]
+    public async Task ClearCourse_NullsArrivalCircle()
+    {
+        // Route-clear must drop the cached radius so a later route
+        // activation that doesn't carry arrivalCircle (minimal SK
+        // server) doesn't inherit the old leg's value.
+        var nav = new NavigationData();
+        nav.Apply("navigation.course.arrivalCircle",
+            JsonSerializer.SerializeToElement(75.0));
+        await Assert.That(nav.CourseArrivalCircleMeters).IsEqualTo(75.0);
+
+        nav.ClearCourse();
+
+        await Assert.That(nav.CourseArrivalCircleMeters).IsNull();
+    }
+
+    [Test]
     public async Task Apply_CourseBearing_SetsProperty()
     {
         var nav = new NavigationData();

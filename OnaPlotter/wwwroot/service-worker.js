@@ -625,7 +625,18 @@
 //             - SignalKNotificationAcknowledger logs ack failures
 //               via Console.Error (relay -> SK server log) so
 //               cross-plotter ack stalls are debuggable.
-const CACHE_NAME = 'ona-plotter-v64';
+// v64 -> v65: Wire navigation.course.arrivalCircle (SK v2 Course
+//             API) so the chart's arrival ring + the client APPROACH
+//             alarm threshold + the route HUD all use the SAME
+//             radius the server uses to fire arrivalCircleEntered.
+//             Previously each leg's "you've arrived" boundary
+//             differed between client (Settings.WaypointArrivalRadiusMeters,
+//             default 50m) and server (per-route author's value), so
+//             the helm could see APPROACH banner + chart ring in one
+//             place while the SK course-provider considered them
+//             outside the circle. Local setting becomes a fallback
+//             for minimal SK installs that don't publish the path.
+const CACHE_NAME = 'ona-plotter-v65';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

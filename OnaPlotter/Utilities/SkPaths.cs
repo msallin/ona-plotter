@@ -54,6 +54,13 @@ public static class SkPaths
             public const string NextPoint = "navigation.course.nextPoint";
             public const string NextPointPosition = "navigation.course.nextPoint.position";
             public const string PreviousPointPosition = "navigation.course.previousPoint.position";
+            // Server-published arrival-circle radius in metres. The
+            // course-provider plugin uses this same value to fire
+            // arrivalCircleEntered, so reading it here lets the local
+            // chart ring + APPROACH alarm threshold agree with the
+            // server's "you've arrived" boundary instead of the helm-
+            // configured fallback drifting from it.
+            public const string ArrivalCircle = "navigation.course.arrivalCircle";
 
             public static class CalcValues
             {

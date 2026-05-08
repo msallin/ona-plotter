@@ -187,6 +187,17 @@ public sealed class NavigationData
     /// radius is set per-waypoint by the route author.</summary>
     public bool? ArrivalCircleEntered { get; private set; }
 
+    /// <summary>Server-published arrival-circle radius (metres) for the
+    /// CURRENT leg. Sourced from <c>navigation.course.arrivalCircle</c>
+    /// (SK v2 Course API). Used by the chart's arrival-ring overlay,
+    /// the route HUD, and the client-side APPROACH alarm so all three
+    /// agree with the radius the server uses to flip
+    /// <see cref="ArrivalCircleEntered"/>. Null when the server doesn't
+    /// publish the path; consumers fall back to the helm's local
+    /// <c>WaypointArrivalRadiusMeters</c> setting in that case so a
+    /// minimal SK install still gets a sensible arrival ring.</summary>
+    public double? CourseArrivalCircleMeters { get; private set; }
+
     /// <summary>Distance remaining on the ENTIRE active route (metres).
     /// SignalK v2 path <c>navigation.course.calcValues.route.distance</c>.
     /// Null when there's no active route or when the SK server's
@@ -363,6 +374,13 @@ public sealed class NavigationData
                     break;
                 case OnaPlotter.Utilities.SkPaths.Navigation.Course.CalcValues.CrossTrackError:
                     CrossTrackError = value;
+                    break;
+                case OnaPlotter.Utilities.SkPaths.Navigation.Course.ArrivalCircle:
+                    // Server's per-leg arrival-circle radius in metres.
+                    // Drives the chart ring + APPROACH alarm threshold
+                    // so they agree with the server's own arrivalCircleEntered
+                    // boundary.
+                    CourseArrivalCircleMeters = value;
                     break;
                 case "steering.autopilot.target.headingTrue":
                     AutopilotTargetHeading = value;
@@ -559,6 +577,7 @@ public sealed class NavigationData
             ActiveRoutePointTotal = null;
             PerpendicularPassed = null;
             ArrivalCircleEntered = null;
+            CourseArrivalCircleMeters = null;
         }
     }
 

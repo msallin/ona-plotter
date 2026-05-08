@@ -144,6 +144,11 @@ public sealed class SignalkClient : IAsyncDisposable
         Utilities.SkPaths.Navigation.Course.NextPoint,
         Utilities.SkPaths.Navigation.Course.NextPointPosition,
         Utilities.SkPaths.Navigation.Course.PreviousPointPosition,
+        // Server's per-leg arrival-circle radius (metres). Drives the
+        // chart ring + APPROACH alarm threshold so they agree with the
+        // server's arrivalCircleEntered boundary instead of drifting
+        // from the helm-configured fallback.
+        Utilities.SkPaths.Navigation.Course.ArrivalCircle,
         Utilities.SkPaths.Navigation.Course.CalcValues.Distance,
         Utilities.SkPaths.Navigation.Course.CalcValues.BearingTrue,
         Utilities.SkPaths.Navigation.Course.CalcValues.TimeToGo,

@@ -129,6 +129,18 @@ public sealed class SignalkCourseSeeder
                 seeded = true;
             }
 
+            // arrivalCircle: per-leg radius in metres set by the route
+            // author / course-provider. Seeding it lets the chart's
+            // arrival ring + the client APPROACH alarm threshold use
+            // the server's value on the very first frame after connect,
+            // rather than waiting for the next delta to land.
+            if (doc.RootElement.TryGetProperty("arrivalCircle", out var ac)
+                && ac.ValueKind == JsonValueKind.Number)
+            {
+                seeded |= _data.Apply(
+                    OnaPlotter.Utilities.SkPaths.Navigation.Course.ArrivalCircle, ac);
+            }
+
             if (seeded)
             {
                 _onDataChanged.Invoke();

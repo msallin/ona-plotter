@@ -57,7 +57,16 @@ public sealed class WaypointApproachAlarmRule : IAlarmRule
         var dist = ctx.Data.CourseNextPointDistance;
         if (wpLat is null || wpLon is null || dist is null) return null;
 
-        double radius = ctx.Settings.WaypointArrivalRadiusMeters;
+        // Prefer the server-published arrival-circle radius
+        // (navigation.course.arrivalCircle from the v2 Course API):
+        // the course-provider plugin uses the SAME value to flip
+        // arrivalCircleEntered, so client-side alarm boundary and
+        // server-side notification land at the same distance. Fall
+        // back to the helm's local setting on minimal SK installs
+        // without the v2 API or course-provider plugin so the alarm
+        // still works with no server help.
+        double radius = ctx.Data.CourseArrivalCircleMeters
+            ?? ctx.Settings.WaypointArrivalRadiusMeters;
         if (radius <= 0) return null;
 
         if (dist > radius)
