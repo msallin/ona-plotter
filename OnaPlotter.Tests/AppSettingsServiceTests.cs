@@ -14,9 +14,14 @@ public class AppSettingsServiceTests
         await Assert.That(svc.MapOrientation).IsEqualTo("north");
         await Assert.That(svc.FollowBoat).IsTrue();
         await Assert.That(svc.LaylinesVisible).IsFalse();
-        await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(3.0);
+        // Defaults retuned 2026-05 to fewer false-positives shapes
+        // (3 -> 2 m depth, 15 -> 30 deg wind shift). Tests pin the
+        // current contract so an accidental mismatch between the
+        // declared field default and the InitializeAsync fallback
+        // surfaces here.
+        await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(2.0);
         await Assert.That(svc.CpaAlarmThreshold).IsEqualTo(0.5);
-        await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(15.0);
+        await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(30.0);
     }
 
     [Test]
@@ -162,7 +167,7 @@ public class AppSettingsServiceTests
         // Comma-formatted value rejected -> default applied
         await Assert.That(svc.GuardZoneLookaheadMinutes).IsEqualTo(10.0);
         // Garbage rejected -> default applied
-        await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(15.0);
+        await Assert.That(svc.WindShiftAlarmThreshold).IsEqualTo(30.0);
     }
 
     [Test]
@@ -1358,7 +1363,7 @@ public class AppSettingsServiceTests
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();   // must not throw
         await Assert.That(svc.NightMode).IsFalse();
-        await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(3.0);
+        await Assert.That(svc.DepthAlarmThreshold).IsEqualTo(2.0);
     }
 
     [Test]

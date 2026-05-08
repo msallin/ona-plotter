@@ -97,6 +97,15 @@ public interface IAlarmThresholds
     /// in minutes. Manager clamps to 1+.</summary>
     int SnoozeDurationMinutes { get; }
 
+    /// <summary>Set of alarm-rule titles the helm has switched off.
+    /// AlarmManager skips evaluation entirely for any title in this
+    /// set and drops any of its already-active alarms at the next
+    /// tick. Membership is by rule Title (uppercase, e.g. "SHALLOW",
+    /// "CPA"); titles are unique per IAlarmRule contract. Empty
+    /// set = every rule armed (the default). Persisted as a
+    /// newline-separated list under "disabledAlarmRules.v1".</summary>
+    IReadOnlySet<string> DisabledAlarmRules { get; }
+
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetGuardZoneLookaheadMinutesAsync(double value);
@@ -111,4 +120,10 @@ public interface IAlarmThresholds
     Task SetDeadmanTimeoutMinutesAsync(double value);
     Task SetDeadmanNightMinutesAsync(double value);
     Task SetSnoozeDurationMinutesAsync(int value);
+
+    /// <summary>Toggle a single rule. Trims and uppercases the title
+    /// before lookup so a UI binding's whitespace can't desync the
+    /// store from the rule's own Title constant. No-op when the
+    /// title is empty.</summary>
+    Task SetAlarmRuleDisabledAsync(string title, bool disabled);
 }

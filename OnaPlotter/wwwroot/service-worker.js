@@ -465,7 +465,21 @@
 //               taller than the default and noticeably bigger than
 //               the touch (pointer:coarse) override on the helm
 //               console where big-type lives.
-const CACHE_NAME = 'ona-plotter-v55';
+// v55 -> v56: Alarms helm round.
+//             - Per-rule disable: Settings -> Alarms now lists
+//               every registered rule with a switch + a master
+//               on/off; AlarmManager.Evaluate skips disabled rules
+//               and drops their already-active banners.
+//             - Default thresholds retuned for fewer false
+//               positives: SHALLOW 3->2 m, ANCHOR TIDE 1->0.5 m,
+//               WIND SHIFT 15->30 deg, lookback 5->10 min, min TWS
+//               3->5 kn. Existing helms keep their stored values.
+//             - APPROACH self-clears on auto-advance: the system's
+//               auto-advance now dismisses the latched banner the
+//               same way the manual Next-WP tap on the alarm does,
+//               so the helm doesn't see a stale APPROACH for a
+//               waypoint they just sailed past.
+const CACHE_NAME = 'ona-plotter-v56';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

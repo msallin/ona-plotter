@@ -243,6 +243,13 @@ public sealed class AlarmManager : IAlarmManager
         // race). Clamp at 1 min minimum - zero would snooze forever.
         (_settings?.SnoozeDurationMinutes is int m && m > 0) ? m : SnoozeMinutes;
 
+    private IReadOnlyList<string>? _ruleTitlesCache;
+    public IReadOnlyList<string> RegisteredRuleTitles =>
+        // _rules is set once in the ctor (sorted by Priority) and
+        // never mutated, so cache the title projection on first read.
+        // Settings -> Alarms reads this on every render of the panel.
+        _ruleTitlesCache ??= _rules.Select(r => r.Title).ToArray();
+
     public event Action<AlarmInfo?>? OnAlarmChanged;
     public event Action? OnAlarmsChanged;
 
@@ -346,6 +353,7 @@ public sealed class AlarmManager : IAlarmManager
         SweepExpiredDismissCooldowns(now);
 
         var ctx = new AlarmEvaluationContext(data, vessels, settings, now, IsSnoozed);
+        var disabledRules = settings.DisabledAlarmRules;
 
         // Every rule gets a chance to produce an alarm. Unlike the earlier
         // first-wins model, we collect all hits and stack them so a depth
@@ -355,6 +363,15 @@ public sealed class AlarmManager : IAlarmManager
         var thisTick = new Dictionary<AlarmKey, (AlarmInfo info, IAlarmRule rule)>();
         foreach (var rule in _rules)
         {
+            // Per-rule kill-switch from Settings -> Alarms. Skipping
+            // CheckMany entirely also means a rule that maintains
+            // internal state (latch, anchor, ...) will see that state
+            // freeze while disabled, which is what the helm wants:
+            // re-enabling should pick up the current world without
+            // having to remember a paused-mid-anchor sample. The
+            // already-active drop loop below removes any alarms the
+            // rule had raised before the helm flipped its toggle.
+            if (disabledRules.Contains(rule.Title)) continue;
             // CheckMany wraps Check by default (single rule -> one alarm),
             // so existing rules don't need to change. The
             // ServerNotificationsAlarmRule overrides it to surface every
@@ -375,10 +392,19 @@ public sealed class AlarmManager : IAlarmManager
         // multi-Hz under bursty SK feeds), even when no alarms were
         // up. Defer the list allocation to the case where something
         // actually needs dropping.
+        // Disabled-rule sweep: if the helm just flipped a rule to
+        // disabled, any alarms it had raised stay in _active because
+        // the rule is no longer being evaluated (so the auto-clear
+        // path can't see "missing this tick"). Drop them here too,
+        // regardless of AutoClear, so a SHALLOW (or even latching
+        // WIND SHIFT) banner disappears the moment the helm
+        // un-arms its rule.
         List<AlarmKey>? toDrop = null;
         foreach (var kv in _active)
         {
-            if (!thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear)
+            bool ruleDisabled = disabledRules.Contains(kv.Value.Rule.Title);
+            bool autoClearMissing = !thisTick.ContainsKey(kv.Key) && kv.Value.Rule.AutoClear;
+            if (ruleDisabled || autoClearMissing)
             {
                 toDrop ??= new List<AlarmKey>(2);
                 toDrop.Add(kv.Key);

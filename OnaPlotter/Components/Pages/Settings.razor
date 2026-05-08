@@ -13,6 +13,7 @@
 @inject ClientErrorRelay ErrorRelay
 @inject INotificationsApi NotificationsApi
 @inject NavigationManager Nav
+@inject IAlarmManager Alarms
 
 <PageTitle>Settings</PageTitle>
 
@@ -737,6 +738,55 @@
         </div>
     </div>
 
+    @* Per-rule kill-switch panel. The helm flips a toggle here to
+       disable a single client-side alarm rule (or the master to
+       disable them all in one tap). Disabled rules are skipped
+       during evaluation AND any of their already-active banners
+       are dropped at the next tick - see AlarmManager.Evaluate's
+       disabled-rule sweep. Rule titles come from
+       IAlarmManager.RegisteredRuleTitles so a new rule registered
+       in DI shows up here automatically. *@
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label d-block mb-2">Enable client-side alarms</label>
+                <small class="text-muted d-block mb-3">
+                    Each switch turns one client-side alarm rule
+                    on or off. Disabled rules don't fire and any
+                    of their banners on screen disappear within a
+                    second. Server-side notifications (SignalK
+                    plugins like depth, anchor, MOB) are NOT
+                    affected by these toggles - those still
+                    surface via the SERVER pass-through bridge.
+                </small>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           id="alarms-master-switch"
+                           checked="@AllAlarmsEnabled"
+                           @onchange="OnAllAlarmsToggleChanged" />
+                    <label class="form-check-label fw-bold" for="alarms-master-switch">
+                        @(AllAlarmsEnabled ? "All on" : "All off") (master)
+                    </label>
+                </div>
+                <hr class="my-2" />
+                @foreach (var title in Alarms.RegisteredRuleTitles)
+                {
+                    var t = title;
+                    bool disabled = AppSettings.DisabledAlarmRules.Contains(t);
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                               id="@($"alarm-rule-{t}")"
+                               checked="@(!disabled)"
+                               @onchange="(e) => OnRuleToggleChanged(t, e)" />
+                        <label class="form-check-label" for="@($"alarm-rule-{t}")">
+                            @t
+                        </label>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
     <div class="col-12 mt-3">
         <h5 class="page-section-header">Performance</h5>
     </div>
@@ -1176,6 +1226,39 @@
     {
         bool val = e.Value is bool b && b;
         await AppSettings.SetServerSideApproachAlarmsAsync(val);
+    }
+
+    /// <summary>True when no rule is in <c>DisabledAlarmRules</c>;
+    /// drives the master "All on" / "All off" switch label and
+    /// checkbox state. Computed each render so a per-rule toggle
+    /// keeps the master in sync without a manual sync step.</summary>
+    private bool AllAlarmsEnabled => AppSettings.DisabledAlarmRules.Count == 0;
+
+    private async Task OnAllAlarmsToggleChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        // ON = enable every rule (clear the disabled set);
+        // OFF = disable every registered rule (add each title).
+        if (on)
+        {
+            // Snapshot to avoid mutate-while-iterate when each
+            // setter writes back to the persisted set.
+            var titles = AppSettings.DisabledAlarmRules.ToArray();
+            foreach (var t in titles)
+                await AppSettings.SetAlarmRuleDisabledAsync(t, disabled: false);
+        }
+        else
+        {
+            foreach (var t in Alarms.RegisteredRuleTitles)
+                await AppSettings.SetAlarmRuleDisabledAsync(t, disabled: true);
+        }
+    }
+
+    private async Task OnRuleToggleChanged(string title, ChangeEventArgs e)
+    {
+        // Checkbox semantics: checked = rule is ON (NOT disabled).
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetAlarmRuleDisabledAsync(title, disabled: !on);
     }
 
     private async Task OnDeadmanTimeoutChanged(ChangeEventArgs e)
