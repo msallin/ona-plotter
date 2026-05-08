@@ -515,7 +515,17 @@
 //             demonstrated culprit (~93); waypoints / notes /
 //             regions stay on the per-id path until they show
 //             the same symptom.
-const CACHE_NAME = 'ona-plotter-v58';
+// v58 -> v59: Settings -> Alarms hides the empty-title row.
+//             ServerNotificationsAlarmRule's Title is "" by
+//             design (it's a multi-output bridge that emits
+//             per-notification titles), which previously rendered
+//             a label-less toggle in the per-rule list. The UI
+//             loop now skips empty-title rules so the visible
+//             list matches the description above it (server-side
+//             notifications stay independently armed). All-off
+//             master already short-circuited via the setter's
+//             empty-key guard, so its behaviour is unchanged.
+const CACHE_NAME = 'ona-plotter-v59';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
