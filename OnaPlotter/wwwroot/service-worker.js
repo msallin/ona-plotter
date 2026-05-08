@@ -549,7 +549,24 @@
 //               under "anchorAutoRadiusSafetyMargin.v1").
 //             - Advanced section collapsed by default
 //               (advancedOpen field, in-memory only).
-const CACHE_NAME = 'ona-plotter-v60';
+// v60 -> v61: Topbar + alarm overlay polish.
+//             - .topbar-icon-btn + .alarm-log-btn drop their
+//               fixed heights and pick up align-self: stretch so
+//               every topbar button fills the full 3 rem row;
+//               helm flagged the previous 2 rem-ish buttons as
+//               under-using the band + awkward to tap.
+//             - Alarm-log button icon switches by state: warning
+//               triangle (Icons.Small.Warning, new) when active
+//               alarms are firing, clipboard / note-block (the
+//               existing History) when only the dismissed-history
+//               is non-empty.
+//             - Mobile overlay starts at top:3rem (below the
+//               topbar) instead of top:0; topbar stays visible so
+//               the connection chip + the now-blinking alarm
+//               button are still glanceable while reviewing the
+//               list. The grab-handle pill is gone -- the X on
+//               the right is the single close affordance.
+const CACHE_NAME = 'ona-plotter-v61';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

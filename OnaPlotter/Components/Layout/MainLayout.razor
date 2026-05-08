@@ -87,7 +87,21 @@
                             ? $"Active {activeCount}"
                             : $"Alarm History {historyCount}")
                     </span>
-                    <span class="alarm-log-icon" aria-hidden="true">@((MarkupString)OnaPlotter.Utilities.Icons.Small.History)</span>
+                    @* Icon switches by state: warning triangle when an
+                       alarm is firing right now (the helm needs to act),
+                       clipboard / note-block when only the history is
+                       non-empty (the helm is reviewing past events).
+                       Same span so CSS sizing rules don't have to fork. *@
+                    <span class="alarm-log-icon" aria-hidden="true">
+                        @if (activeCount > 0)
+                        {
+                            @((MarkupString)OnaPlotter.Utilities.Icons.Small.Warning)
+                        }
+                        else
+                        {
+                            @((MarkupString)OnaPlotter.Utilities.Icons.Small.History)
+                        }
+                    </span>
                     @{
                         var badgeCount = activeCount > 0 ? activeCount : historyCount;
                     }
@@ -352,12 +366,13 @@
                  @ref="_alarmLogPanelRef"
                  @onclick:stopPropagation
                  @onkeydown="OnAlarmLogKeyDown">
-                @* Tappable on mobile: the grab-handle affordance
-                   telegraphs "dismiss me", so it had better actually
-                   dismiss. Real <button> so keyboard Space/Enter work
-                   without a separate key handler. *@
-                <button type="button" class="alarm-log-handle" aria-label="Close alarm log"
-                        @onclick="ToggleAlarmLog"></button>
+                @* Earlier mobile variant carried a grab-handle pill at
+                   the top of the bottom-sheet; with the overlay now
+                   starting below the topbar AND the explicit X on the
+                   right, the handle was redundant + helm-flagged as
+                   confusing (it looked like a separate widget and
+                   visually balanced the X poorly). Removed - the X is
+                   the single close affordance. *@
                 <div class="alarm-log-header">
                     <strong id="alarm-log-title">Alarms</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>

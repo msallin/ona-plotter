@@ -3650,16 +3650,25 @@ main:has(.alarm-banner-stack) .snooze-chips {
    theme. Tokens drive both palettes now: --sk-text-muted for the label,
    --sk-border for the outline, transparent fill so the chip blends
    with whichever topbar bg the theme picks. */
+/* Topbar history / active-alarm button. Stretches to the top-row's
+   full 3 rem height regardless of viewport (helm asked for "no
+   height restriction; same as the zoom buttons"). align-self does
+   the work; explicit padding stays small so the icon + label sit
+   centred without the button pretending to be a HUD card. */
 .alarm-log-btn {
     background: transparent;
     border: 1px solid var(--sk-border);
     color: var(--sk-text-muted);
-    padding: 2px 10px;
+    padding: 0 12px;
     font-size: 0.72rem;
     border-radius: 4px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     margin-left: 12px;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 .alarm-log-btn:hover {
     background: rgba(var(--sk-accent-rgb), 0.10);
@@ -3667,7 +3676,10 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border-color: var(--sk-accent);
 }
 @media (pointer: coarse) {
-    .alarm-log-btn { min-height: 44px; padding: 10px 14px; font-size: 0.78rem; }
+    /* Touch: bump the typography but let align-self: stretch own
+       the height. The earlier explicit min-height clipped the
+       button below the topbar's 3 rem on some viewports. */
+    .alarm-log-btn { padding: 0 14px; font-size: 0.78rem; }
 }
 
 /* Update-available chip. Sits in the topbar between the alarm log
@@ -4048,26 +4060,24 @@ main:has(.alarm-banner-stack) .snooze-chips {
    doesn't get the desktop drawer with mobile snooze-chip placement
    (the earlier mismatch dropped chips to the left while the drawer
    stayed side-anchored, splitting alarm UI across two layouts).
-   Mobile: full-screen overlay (helm asked for this so the active
-   alarms section is glanceable + the dismissed history isn't
-   limited to the bottom-sheet's 75vh). The 16-16-0-0 radius from
-   the older bottom-sheet variant goes flat - the panel covers the
-   whole viewport so rounded corners would just clip into the
-   topbar / chart underneath. Slide-up keyframe stays so the open
-   gesture still reads as "panel comes up from below". */
+   Mobile: full-height overlay STARTING BELOW the topbar so the
+   helm can still see the connection chip / blinking button while
+   reviewing alarms. The earlier top:0 covered the topbar entirely,
+   making the X button feel like the only escape; with the overlay
+   starting at 3 rem the topbar stays visible and the helm can also
+   tap the (now-blinking) alarm button to dismiss. */
 @media (max-width: 640px) {
     .alarm-log-panel {
-        top: 0;
+        top: 3rem;
         right: 0;
         left: 0;
         bottom: 0;
         width: 100%;
-        height: 100dvh;
-        max-height: 100dvh;
+        height: calc(100dvh - 3rem);
+        max-height: calc(100dvh - 3rem);
         border-radius: 0;
         border: none;
         padding-bottom: env(safe-area-inset-bottom);
-        padding-top: env(safe-area-inset-top);
         animation: alarm-log-slide-up 0.22s ease-out;
     }
 }
@@ -4080,32 +4090,11 @@ main:has(.alarm-banner-stack) .snooze-chips {
     to   { transform: translateY(0); }
 }
 
-/* Grab-handle bar visible only on the bottom-sheet variant, purely
-   visual - the panel isn't actually draggable, but the handle is a
-   universally-understood "this is a sheet, tap outside or the X to
-   close" signal. */
-.alarm-log-handle { display: none; }
-@media (max-width: 600px) {
-    .alarm-log-handle {
-        display: block;
-        width: 100%;
-        padding: 6px 0 4px;
-        cursor: pointer;
-        -webkit-tap-highlight-color: transparent;
-    }
-    /* The visible grab pill lives as a centered pseudo-element so the
-       hit-target is the full panel width, not just the 36px pill. */
-    .alarm-log-handle::before {
-        content: "";
-        display: block;
-        width: 36px;
-        height: 4px;
-        border-radius: 2px;
-        background: rgba(255, 255, 255, 0.25);
-        margin: 0 auto;
-    }
-    .alarm-log-handle:hover::before { background: rgba(255, 255, 255, 0.4); }
-}
+/* The earlier mobile bottom-sheet had a grab-handle pill above the
+   header; that variant is gone (the overlay now sits below the
+   topbar at full height with an X on the right). The .alarm-log-handle
+   selector was retired alongside the markup; rules removed to keep
+   the stylesheet honest about what's still rendered. */
 
 /* Lock page scroll behind the alarm-log bottom-sheet on mobile so the
    map doesn't slide around when the user swipes in the sheet. Scoped
@@ -4658,18 +4647,23 @@ html.night-mode-global body {
         height: 7px !important;
     }
     /* Phone alarm-log button: drop the text label entirely and show
-       the clipboard / note-block icon with a small count badge in
-       the corner. Helm reported the previous "History 12" text +
-       padding still crowded the topbar; an icon reads at a glance,
-       the badge keeps the count visible at a smaller footprint. */
+       the warning triangle / clipboard icon with a small count badge
+       in the corner. Helm asked for the button to fill the full
+       top-row height (3 rem) instead of the previous 30-ish px form
+       - more tappable, no awkward dead band above / below. align-
+       self: stretch matches the topbar-icon-btn pattern; remove the
+       earlier min-height so the stretch wins on touch viewports too. */
     .alarm-log-label-full { display: none; }
     .alarm-log-icon { display: inline-flex; align-items: center; }
     .alarm-log-btn {
         position: relative;
-        padding: 4px 6px;
+        padding: 0 10px;
         line-height: 1;
         background: transparent;
         border-color: rgba(255, 255, 255, 0.18);
+        align-self: stretch;
+        min-height: 0;
+        margin-left: 8px;
     }
     .alarm-log-badge {
         position: absolute;
