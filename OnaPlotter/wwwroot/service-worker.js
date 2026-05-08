@@ -479,7 +479,27 @@
 //               same way the manual Next-WP tap on the alarm does,
 //               so the helm doesn't see a stale APPROACH for a
 //               waypoint they just sailed past.
-const CACHE_NAME = 'ona-plotter-v56';
+// v56 -> v57: Mobile alarm overlay round.
+//             - Phone (<=600px): the floating alarm-banner stack
+//               is hidden. Active alarms surface in the alarm-log
+//               overlay (see next bullet) and the topbar history
+//               button blinks a danger-tinted pulse so the helm's
+//               eye still catches a fire.
+//             - Alarm-log overlay grows an "Active" section above
+//               the existing "Recent" history list - on every
+//               layout, not just mobile. Each row carries the same
+//               Snooze / Next-WP / Hold-to-dismiss affordances the
+//               banner offered, so the overlay is now a complete
+//               actionable view instead of read-only history.
+//             - Phone overlay goes full-screen (top:0 + 100dvh)
+//               instead of the previous 75vh bottom-sheet so the
+//               Active rows + the Recent list both fit without a
+//               separate scroll container.
+//             - Topbar button visibility broadens to include
+//               "active alarms exist" -- previously gated on
+//               history / snoozed only, which left phones with no
+//               affordance for live alarms.
+const CACHE_NAME = 'ona-plotter-v57';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
