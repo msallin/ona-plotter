@@ -499,7 +499,23 @@
 //               "active alarms exist" -- previously gated on
 //               history / snoozed only, which left phones with no
 //               affordance for live alarms.
-const CACHE_NAME = 'ona-plotter-v57';
+// v57 -> v58: Coalesce ResourceStore.OnRouteChanged storms during
+//             reconnect-edge reconcile. The cache fires Changed
+//             for every upserted entry on the reconnect-edge
+//             reconcile pass; on a 93-route boat that's 93
+//             fire-and-forget tasks racing through the same JS-
+//             interop path simultaneously, which on the Pi WASM
+//             host blew the 5 MB stack ("RuntimeError: memory
+//             access out of bounds" in the renderer trace) every
+//             time the WS dropped + reconnected. Map.razor's
+//             HandleRouteChangedFromStore now queues the id and
+//             schedules a single drain via Task.Yield; subsequent
+//             events fold into the pending set, the drain
+//             serialises the per-id work. Routes were the
+//             demonstrated culprit (~93); waypoints / notes /
+//             regions stay on the per-id path until they show
+//             the same symptom.
+const CACHE_NAME = 'ona-plotter-v58';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

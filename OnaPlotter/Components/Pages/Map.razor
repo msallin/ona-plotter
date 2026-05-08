@@ -3146,14 +3146,62 @@
     /// <summary>
     /// ResourceStore -> Map.razor adapter for delta-driven route updates.
     /// Fires when the SK server publishes a <c>resources.routes.&lt;id&gt;</c>
-    /// delta (PUT / POST from any plotter on the network). Sync-side
-    /// signature; defers all I/O to a fire-and-forget async helper so
-    /// the event subscriber doesn't return a Task that ResourceStore
-    /// would have to await.
+    /// delta (PUT / POST from any plotter on the network), AND once per
+    /// route during a reconnect-edge reconcile (the cache fires Changed
+    /// for every upserted entry regardless of whether it actually
+    /// differs). On a 90-route boat that's 90 fire-and-forget
+    /// ApplyRouteChangedFromStoreAsync tasks racing through the same
+    /// JS-interop path simultaneously, which on a Pi WASM host blew the
+    /// 5 MB stack ("RuntimeError: memory access out of bounds" in the
+    /// renderer trace) every time the WS dropped + reconnected.
+    /// <para>Coalesce: queue the id and schedule ONE drain pass via
+    /// Task.Yield. Subsequent events within the same dispatcher tick
+    /// fold into the existing pending set; the drain serialises the
+    /// per-id work so only one redraw is in flight at a time. Single
+    /// drain also keeps the JS interop count proportional to the number
+    /// of distinct routes touched, not to the event count.</para>
     /// </summary>
+    private readonly HashSet<string> _pendingRouteChanges = new(StringComparer.Ordinal);
+    private bool _routeFlushScheduled;
+
     private void HandleRouteChangedFromStore(string id)
     {
-        _ = ApplyRouteChangedFromStoreAsync(id);
+        _pendingRouteChanges.Add(id);
+        if (_routeFlushScheduled) return;
+        _routeFlushScheduled = true;
+        _ = DrainPendingRouteChangesAsync();
+    }
+
+    private async Task DrainPendingRouteChangesAsync()
+    {
+        try
+        {
+            // Yield once so any synchronous events queued in the same
+            // dispatcher tick (the reconnect-edge replay fires all 90+
+            // ids back-to-back) batch into a single drain instead of
+            // each one launching its own fire-and-forget.
+            await Task.Yield();
+            while (_pendingRouteChanges.Count > 0)
+            {
+                // Snapshot + clear before iterating so an event that
+                // arrives during the per-id awaits queues onto the
+                // next drain pass instead of mutating mid-iteration.
+                var batch = _pendingRouteChanges.ToArray();
+                _pendingRouteChanges.Clear();
+                foreach (var id in batch)
+                {
+                    try { await ApplyRouteChangedFromStoreAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Apply route change {id}");
+                    }
+                }
+            }
+        }
+        finally
+        {
+            _routeFlushScheduled = false;
+        }
     }
 
     private async Task ApplyRouteChangedFromStoreAsync(string id)
