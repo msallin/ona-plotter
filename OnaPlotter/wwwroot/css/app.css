@@ -3155,10 +3155,28 @@ html, body {
 }
 /* On phones, stack Snooze + Next WP under the alarm message instead of
    squeezing them in a row. Keeps both buttons full-width so they hit
-   the WCAG target size without fighting for horizontal space. */
+   the WCAG target size without fighting for horizontal space.
+   Note: at the time of writing, the .alarm-banner-stack itself is
+   hidden on phones below (the helm sees active alarms via the
+   blinking topbar button + the alarm-log overlay instead) so this
+   rule only applies if the banner is brought back for a phone-
+   bottom-of-screen variant. Kept as defence-in-depth. */
 @media (max-width: 600px) {
     .alarm-banner .alarm-snooze,
     .alarm-banner .alarm-action { flex: 1 1 auto; min-width: 140px; }
+}
+
+/* Phone: suppress the banner stack entirely. Helm flagged the
+   floating banner as crowding the chart on a 390-wide viewport
+   while not being noticeably more visible than a blinking topbar
+   button. Active alarms move into the alarm-log overlay (with the
+   same Snooze / Next-WP / Hold-to-dismiss affordances) and the
+   topbar button blinks to draw the eye -- one tap opens the full
+   list, one more dismisses. Desktop / iPad still show the banner
+   because horizontal real estate is plentiful and the banner is
+   the more glanceable form there. */
+@media (max-width: 600px) {
+    .alarm-banner-stack { display: none !important; }
 }
 /* Within the stack, only the top alarm pulses. Lower entries stay
    steady so the viewport isn't a disco. */
@@ -4029,20 +4047,27 @@ main:has(.alarm-banner-stack) .snooze-chips {
 /* 640 / 641 matches the snooze-chips breakpoint so a 620 px tablet
    doesn't get the desktop drawer with mobile snooze-chip placement
    (the earlier mismatch dropped chips to the left while the drawer
-   stayed side-anchored, splitting alarm UI across two layouts). */
+   stayed side-anchored, splitting alarm UI across two layouts).
+   Mobile: full-screen overlay (helm asked for this so the active
+   alarms section is glanceable + the dismissed history isn't
+   limited to the bottom-sheet's 75vh). The 16-16-0-0 radius from
+   the older bottom-sheet variant goes flat - the panel covers the
+   whole viewport so rounded corners would just clip into the
+   topbar / chart underneath. Slide-up keyframe stays so the open
+   gesture still reads as "panel comes up from below". */
 @media (max-width: 640px) {
     .alarm-log-panel {
-        top: auto;
+        top: 0;
         right: 0;
         left: 0;
         bottom: 0;
         width: 100%;
-        max-height: 75vh;
-        border-radius: 16px 16px 0 0;
-        border-left: none;
-        border-right: none;
-        border-bottom: none;
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+        border: none;
         padding-bottom: env(safe-area-inset-bottom);
+        padding-top: env(safe-area-inset-top);
         animation: alarm-log-slide-up 0.22s ease-out;
     }
 }
@@ -4177,6 +4202,86 @@ main:has(.alarm-banner-stack) .snooze-chips {
 .alarm-log-userdismissed .alarm-log-title { color: var(--sev-danger); }
 .alarm-log-usersnoozed .alarm-log-title { color: var(--sev-warn); }
 .alarm-log-autocleared .alarm-log-title { color: var(--sev-ok); }
+
+/* ===== Alarm log: Active section ====================================
+   Section header above the active-alarms list inside the alarm-log
+   overlay. Kept compact so the actionable rows below stay above the
+   fold on a phone viewport. */
+.alarm-log-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--panel-text-muted);
+    padding: 10px 14px 4px;
+}
+/* Active rows render as severity-tinted cards, not the muted text
+   rows the dismissed history uses. Helm scanning the overlay sees
+   "live, urgent" before "past, gone". The grid puts title + message
+   on one row and the action cluster on the next so wide buttons
+   (Hold to dismiss, Snooze 10m) keep their tap target without
+   shoving the message off-screen on a 390-wide phone. */
+.alarm-log-active-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+        "title    msg"
+        "actions  actions";
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: 12px 14px;
+    border-left: 4px solid transparent;
+}
+.alarm-log-active-item.alarm-danger {
+    background: rgba(var(--sev-danger-rgb), 0.18);
+    border-left-color: var(--sev-danger);
+}
+.alarm-log-active-item.alarm-warn {
+    background: rgba(var(--sev-warn-rgb), 0.18);
+    border-left-color: var(--sev-warn);
+}
+.alarm-log-active-item .alarm-log-title { grid-area: title; font-size: 0.95rem; }
+.alarm-log-active-item .alarm-log-msg { grid-area: msg; color: var(--panel-text); }
+.alarm-log-active-item .alarm-log-active-actions {
+    grid-area: actions;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+.alarm-log-active-item .alarm-log-active-actions > button {
+    flex: 1 1 auto;
+    min-width: 130px;
+    /* Reuse the existing .alarm-action / .alarm-snooze button look
+       (defined alongside the banner) so the helm reads the actions
+       as the same controls they'd see on the banner. */
+}
+
+/* Mobile-only blink on the topbar button when active alarms exist.
+   Banner stack is hidden on mobile (see the .alarm-banner-stack
+   display:none rule above), so the blinking button is the helm's
+   only visual cue that something is firing. Animation is a 1.2 s
+   pulse on background + box-shadow so the button reads as urgent
+   without being seizure-inducing; reduced-motion users get a
+   steady accent fill instead (see the prefers-reduced-motion
+   block at the bottom of the file -- .alarm-log-btn-active is
+   listed there). Desktop / iPad don't blink because they still
+   render the banner. */
+@media (max-width: 600px) {
+    .alarm-log-btn-active {
+        animation: alarm-log-btn-blink 1.2s ease-in-out infinite;
+    }
+}
+@keyframes alarm-log-btn-blink {
+    0%, 100% {
+        background: rgba(var(--sev-danger-rgb), 0.25);
+        box-shadow: 0 0 0 0 rgba(var(--sev-danger-rgb), 0.4);
+    }
+    50% {
+        background: rgba(var(--sev-danger-rgb), 0.55);
+        box-shadow: 0 0 0 6px rgba(var(--sev-danger-rgb), 0.0);
+    }
+}
 
 /* ===== Global Night Mode ===== */
 /* Red-shifted dark mode for all pages (preserves night vision). The base
@@ -9752,8 +9857,15 @@ html[data-slow-client="1"] * {
     .cpa-pulse,
     .depth-danger,
     .hud-card-progress-alarm,
-    .ctrl-btn-confirming {
+    .ctrl-btn-confirming,
+    .alarm-log-btn-active {
         animation: none !important;
+    }
+    /* Steady accent fill stand-in for the dropped blink animation -
+       the helm with reduce-motion enabled still needs a clear cue
+       that the topbar button is the urgent one. */
+    .alarm-log-btn-active {
+        background: rgba(var(--sev-danger-rgb), 0.4);
     }
 
     /* Also cut scroll/transform smoothing that some users find

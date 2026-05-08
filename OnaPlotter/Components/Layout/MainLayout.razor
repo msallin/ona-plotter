@@ -47,19 +47,28 @@
 
             @{
                 var historyCount = Alarms.DismissedHistory.Count;
+                var activeCount = Alarms.ActiveAlarms.Count;
             }
-            @if (historyCount > 0 || Alarms.SnoozedTargets.Count > 0)
+            @* Show the button whenever any of the three buckets is
+               non-empty: active alarms (the blinking case), past
+               dismissals, or current snoozes. On mobile the banner
+               stack is suppressed and this button is the helm's only
+               affordance for active alarms; the alarm-log-btn-active
+               class drives a per-mobile blink animation so a stray
+               eye sees the cue. *@
+            @if (activeCount > 0 || historyCount > 0 || Alarms.SnoozedTargets.Count > 0)
             {
-                @* "History N" reads as 'past alarms' rather than the
-                   ambiguous "Log N" (which a helm could read as 'logs
-                   to send to support', 'active alarms hidden', or just
-                   a developer artefact). Tooltip carries the same
-                   meaning + the snooze count when it's non-zero so a
-                   helm hovering on desktop sees both bits of state. *@
-                <button class="alarm-log-btn" @onclick="ToggleAlarmLog"
-                        title="@($"Alarm history ({historyCount} recent" +
-                                  (Alarms.SnoozedTargets.Count > 0
-                                    ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
+                @* Tooltip mentions active first when there is one,
+                   then the historical context. Helm hovering on
+                   desktop reads both the live and the recent state
+                   from the same chip. *@
+                <button class="alarm-log-btn @(activeCount > 0 ? "alarm-log-btn-active" : "")"
+                        @onclick="ToggleAlarmLog"
+                        title="@(activeCount > 0
+                                  ? $"{activeCount} active alarm{(activeCount == 1 ? "" : "s")} - tap to view"
+                                  : $"Alarm history ({historyCount} recent" +
+                                    (Alarms.SnoozedTargets.Count > 0
+                                      ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
                     @* Three forms:
                          - desktop: full text "Alarm History 12"
                          - phone:   icon (clipboard / note-block) +
@@ -68,12 +77,23 @@
                        added because the abbreviated "History 12" text
                        still wrapped + cluttered the phone topbar; an
                        icon reads at a glance, the badge keeps the
-                       count visible without the text. *@
-                    <span class="alarm-log-label-full">Alarm History @historyCount</span>
+                       count visible without the text. When there's an
+                       active alarm the desktop label switches to
+                       "Active N" so the count badge isn't ambiguous
+                       (which one is being shown -- active or
+                       history?). *@
+                    <span class="alarm-log-label-full">
+                        @(activeCount > 0
+                            ? $"Active {activeCount}"
+                            : $"Alarm History {historyCount}")
+                    </span>
                     <span class="alarm-log-icon" aria-hidden="true">@((MarkupString)OnaPlotter.Utilities.Icons.Small.History)</span>
-                    @if (historyCount > 0)
+                    @{
+                        var badgeCount = activeCount > 0 ? activeCount : historyCount;
+                    }
+                    @if (badgeCount > 0)
                     {
-                        <span class="alarm-log-badge">@historyCount</span>
+                        <span class="alarm-log-badge">@badgeCount</span>
                     }
                 </button>
             }
@@ -339,14 +359,92 @@
                 <button type="button" class="alarm-log-handle" aria-label="Close alarm log"
                         @onclick="ToggleAlarmLog"></button>
                 <div class="alarm-log-header">
-                    <strong id="alarm-log-title">Alarm history</strong>
+                    <strong id="alarm-log-title">Alarms</strong>
                     <button class="alarm-log-close" @onclick="ToggleAlarmLog" aria-label="Close">x</button>
                 </div>
-                @if (Alarms.DismissedHistory.Count == 0)
-                {
-                    <div class="alarm-log-empty">No recent alarms.</div>
+                @* Active alarms section. Shown above the dismissed history
+                   on every layout - the helm asked for this both as the
+                   single source of truth on mobile (where the banner stack
+                   is suppressed) and as a one-place "what's currently
+                   firing + what fired recently" view on desktop / tablet.
+                   Each row uses the same severity-tinted styling family as
+                   the banner; tap-target affordances are the SAME actions
+                   the banner offered (Next WP for APPROACH, Snooze for
+                   targeted alarms, Dismiss for everything). Danger alarms
+                   keep the hold-to-dismiss safety so a stray tap on a
+                   rolling cockpit can't silence a depth alarm. *@
+                @{
+                    var activeForOverlay = Alarms.ActiveAlarms;
                 }
-                else
+                @if (activeForOverlay.Count > 0)
+                {
+                    <div class="alarm-log-section alarm-log-active">
+                        <div class="alarm-log-section-title">Active</div>
+                        <ul class="alarm-log-list">
+                            @foreach (var a in activeForOverlay)
+                            {
+                                <li class="alarm-log-item alarm-log-active-item @(a.Severity == AlarmSeverity.Danger ? "alarm-danger" : "alarm-warn")"
+                                    @key="(a.Title, a.TargetKey)">
+                                    <span class="alarm-log-title">@a.Title</span>
+                                    <span class="alarm-log-msg">@a.Message</span>
+                                    <div class="alarm-log-active-actions">
+                                        @if (a.Title == "APPROACH")
+                                        {
+                                            <button class="alarm-action" @onclick="() => NextWaypoint(a)" @onclick:stopPropagation
+                                                    title="Advance the active route to the next waypoint">
+                                                Next WP
+                                            </button>
+                                        }
+                                        @if (a.TargetKey is not null && a.Snoozeable)
+                                        {
+                                            <button class="alarm-snooze" @onclick="() => SnoozeOne(a)" @onclick:stopPropagation
+                                                    title="Silence this target for @Alarms.SnoozeDurationMinutes minutes">
+                                                Snooze @Alarms.SnoozeDurationMinutes m
+                                            </button>
+                                        }
+                                        @if (a.Severity == AlarmSeverity.Danger)
+                                        {
+                                            @* Same hold-to-dismiss the banner enforces -
+                                               a stray tap here on a rolling cockpit
+                                               shouldn't silence a depth alarm. The
+                                               existing StartAlarmHold / EndAlarmHold
+                                               / OnAlarmKeyDown / OnAlarmKeyUp pipeline
+                                               drives the visual fill on the banner side
+                                               via the .alarm-holding class; we reuse it
+                                               here so the gesture is identical. *@
+                                            <button class="alarm-action alarm-action-danger @(HoldingAlarmKey == AlarmKeyOf(a) ? "alarm-holding" : "")"
+                                                    @onpointerdown="() => StartAlarmHold(a)"
+                                                    @onpointerup="EndAlarmHold"
+                                                    @onpointerleave="EndAlarmHold"
+                                                    @onpointercancel="EndAlarmHold"
+                                                    @onkeydown="(e) => OnAlarmKeyDown(e, a)"
+                                                    @onkeyup="OnAlarmKeyUp"
+                                                    title="Hold to dismiss">
+                                                Hold to dismiss
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="alarm-action" @onclick="() => DismissOne(a)" @onclick:stopPropagation
+                                                    title="Dismiss this alarm">
+                                                Dismiss
+                                            </button>
+                                        }
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+                @if (Alarms.DismissedHistory.Count == 0 && activeForOverlay.Count == 0)
+                {
+                    <div class="alarm-log-empty">No active or recent alarms.</div>
+                }
+                else if (Alarms.DismissedHistory.Count == 0)
+                {
+                    <div class="alarm-log-empty alarm-log-empty-recent">No recent alarms.</div>
+                }
+                else if (Alarms.DismissedHistory.Count > 0)
                 {
                     @* Coalesce consecutive entries that share the same
                        (Title, Reason, TargetKey) so a noisy sensor
@@ -356,22 +454,28 @@
                        on-tap is a
                        future affordance, the count alone is enough to
                        not lose information. *@
-                    <ul class="alarm-log-list">
-                        @foreach (var g in CoalesceDismissedHistory(Alarms.DismissedHistory))
+                    <div class="alarm-log-section alarm-log-recent">
+                        @if (activeForOverlay.Count > 0)
                         {
-                            <li class="alarm-log-item alarm-log-@g.Latest.Reason.ToString().ToLowerInvariant()"
-                                @key="(g.Latest.Alarm.Title, g.Latest.Alarm.TargetKey, g.Latest.Reason, g.Latest.At)">
-                                <span class="alarm-log-time">@g.Latest.At.ToLocalTime().ToString("HH:mm:ss")</span>
-                                <span class="alarm-log-title">@g.Latest.Alarm.Title</span>
-                                @if (g.Count > 1)
-                                {
-                                    <span class="alarm-log-count" title="@($"{g.Count} consecutive occurrences")">x@(g.Count)</span>
-                                }
-                                <span class="alarm-log-reason">@FormatReason(g.Latest.Reason)</span>
-                                <span class="alarm-log-msg">@g.Latest.Alarm.Message</span>
-                            </li>
+                            <div class="alarm-log-section-title">Recent</div>
                         }
-                    </ul>
+                        <ul class="alarm-log-list">
+                            @foreach (var g in CoalesceDismissedHistory(Alarms.DismissedHistory))
+                            {
+                                <li class="alarm-log-item alarm-log-@g.Latest.Reason.ToString().ToLowerInvariant()"
+                                    @key="(g.Latest.Alarm.Title, g.Latest.Alarm.TargetKey, g.Latest.Reason, g.Latest.At)">
+                                    <span class="alarm-log-time">@g.Latest.At.ToLocalTime().ToString("HH:mm:ss")</span>
+                                    <span class="alarm-log-title">@g.Latest.Alarm.Title</span>
+                                    @if (g.Count > 1)
+                                    {
+                                        <span class="alarm-log-count" title="@($"{g.Count} consecutive occurrences")">x@(g.Count)</span>
+                                    }
+                                    <span class="alarm-log-reason">@FormatReason(g.Latest.Reason)</span>
+                                    <span class="alarm-log-msg">@g.Latest.Alarm.Message</span>
+                                </li>
+                            }
+                        </ul>
+                    </div>
                 }
             </div>
         }
