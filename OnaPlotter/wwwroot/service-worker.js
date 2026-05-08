@@ -525,7 +525,31 @@
 //             notifications stay independently armed). All-off
 //             master already short-circuited via the setter's
 //             empty-key guard, so its behaviour is unchanged.
-const CACHE_NAME = 'ona-plotter-v59';
+// v59 -> v60: Settings page restructured.
+//             - Mode -> "HUD & input" header break so the chart
+//               upscale / autopilot HUD / radar HUD / keep-screen
+//               toggles read as a group instead of squatting
+//               under the boat-class header.
+//             - Alarms section: per-alarm cards each carry their
+//               own Enabled toggle (new AlarmRuleEnableToggle
+//               component); standalone "Enable client-side
+//               alarms" card removed; master "All on/off" stays
+//               at the top.
+//             - Map elements (Own/AIS COG vector, radar range
+//               rings) and Course (server-side approach,
+//               waypoint arrival radius, auto-advance) split
+//               out from Alarms into their own headers.
+//             - Anchor section: ANCHOR DRAG + ANCHOR TIDE per-
+//               rule cards plus the existing tide-alarm setup
+//               checklist plus a NEW "Auto anchor radius" card
+//               showing the swing+tide+margin formula and a
+//               tunable safety-margin field (replaces the 5 m
+//               const in Map.razor; new
+//               AnchorAutoRadiusSafetyMargin setting persisted
+//               under "anchorAutoRadiusSafetyMargin.v1").
+//             - Advanced section collapsed by default
+//               (advancedOpen field, in-memory only).
+const CACHE_NAME = 'ona-plotter-v60';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

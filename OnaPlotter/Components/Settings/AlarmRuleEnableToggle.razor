@@ -1,0 +1,51 @@
+@* Inline enable / disable switch for one alarm rule. Used by the
+   per-alarm cards on the Settings page so the threshold + arm
+   state sit in the same card. Reads from
+   IAppSettings.DisabledAlarmRules and writes through
+   SetAlarmRuleDisabledAsync.
+
+   The component is intentionally small (one switch + a one-line
+   semantic). No prose; the surrounding card carries the
+   description so this stays a tight, repeatable affordance.
+
+   id is derived from the title so each switch + label pair is
+   uniquely associated even when many of these render on the same
+   page. The title double-uppercase normalisation matches what the
+   setter does on the way down so a stray-cased Title parameter
+   round-trips cleanly. *@
+
+@inject IAppSettings AppSettings
+
+<div class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" role="switch"
+           id="@_id"
+           checked="@(!_disabled)"
+           @onchange="OnChanged" />
+    <label class="form-check-label fw-bold" for="@_id">@_label</label>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    private string _label = "";
+    private string _id = "";
+    private bool _disabled;
+
+    protected override void OnParametersSet()
+    {
+        // Compute once per parameter set: cheap, but keeps the
+        // template render path branch-free.
+        _label = (Title ?? string.Empty).Trim().ToUpperInvariant();
+        _id = $"alarm-rule-toggle-{_label}";
+        _disabled = AppSettings.DisabledAlarmRules.Contains(_label);
+    }
+
+    private async Task OnChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        // Setter does its own trim/uppercase so we pass the raw
+        // Title; staying close to the input avoids two separate
+        // normalisation paths drifting apart.
+        await AppSettings.SetAlarmRuleDisabledAsync(Title, disabled: !on);
+    }
+}

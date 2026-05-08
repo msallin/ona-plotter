@@ -59,6 +59,15 @@ public interface IAlarmThresholds
     /// is less than <c>draft + margin</c>.</summary>
     double AnchorTideSafetyMargin { get; }
 
+    /// <summary>Pad added on top of swing + tide-drop in the
+    /// "Auto" anchor-radius preview shown on the Drop / Set panel
+    /// (metres). Default 5; raise for soft-mud anchorages where
+    /// the boat's actual swing exceeds the chain-catenary
+    /// projection, or for a wider buffer against single-step swing
+    /// noise. Display string in the panel + Settings reads
+    /// "swing N + tide drop M + X m margin" with this value as X.</summary>
+    double AnchorAutoRadiusSafetyMargin { get; }
+
     /// <summary>Radius (metres) used when the user drops a manual
     /// anchor from the Map page.</summary>
     double ManualAnchorRadiusMeters { get; }
@@ -114,6 +123,7 @@ public interface IAlarmThresholds
     Task SetWindShiftLookbackMinutesAsync(double value);
     Task SetWindShiftMinTrueWindSpeedAsync(double value);
     Task SetAnchorTideSafetyMarginAsync(double value);
+    Task SetAnchorAutoRadiusSafetyMarginAsync(double value);
     Task SetManualAnchorRadiusMetersAsync(double value);
     Task SetWaypointArrivalRadiusMetersAsync(double value);
     Task SetServerSideApproachAlarmsAsync(bool value);
