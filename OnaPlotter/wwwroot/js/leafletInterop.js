@@ -1253,6 +1253,8 @@ export const setGuardZoneVisible = (visible) =>
 export const setGuardZoneWarningRingVisible = (visible) =>
     aisLayerMod.setGuardZoneWarningRingVisible(visible);
 export const setHarborMode = (enabled) => aisLayerMod.setHarborMode(enabled);
+export const setAisLabelsVisible = (enabled) =>
+    aisLayerMod.setAisLabelsVisible(enabled);
 
 // --- Persistent measurement tool ---
 // Implementation in measureLayer.js; mux re-exports the C# entries.

@@ -102,8 +102,7 @@
                  ShowKeyboardHints="@Settings.ShowKeyboardHints"
                  OnToggleFollow="ToggleFollow"
                  OnCycleOrientation="CycleMapOrientation"
-                 OnCycleNight="CycleNightMode"
-                 NightModePreset="@Settings.NightModePreset"
+                 OnToggleNight="ToggleNightMode"
                  OnToggleAnchor="ToggleAnchor"
                  OnToggleMob="ToggleMob"
                  OnZoomToTrack="ZoomToTrack"
@@ -509,6 +508,7 @@
                      WeatherOverlayVisible="@(_weather?.Visible ?? false)"
                      WeatherOverlayOpacityPercent="@((int)Math.Round(Settings.WeatherOverlayOpacity * 100))"
                      AtonsVisible="Settings.AtonsVisible"
+                     AisLabelsVisible="Settings.AisLabelsVisible"
                      GuardZoneVisible="Settings.GuardZoneVisible"
                      ShowDefaultHud="Settings.ShowDefaultHud"
                      ShowAutopilotHud="Settings.ShowAutopilotHud"
@@ -538,6 +538,7 @@
                      OnWeatherOpacityPreview="@(p => _weather?.PreviewOpacityAsync(p) ?? Task.CompletedTask)"
                      OnWeatherOpacityCommit="@(p => _weather?.CommitOpacityAsync(p) ?? Task.CompletedTask)"
                      OnToggleAtonsVisible="ToggleAtonsVisible"
+                     OnToggleAisLabelsVisible="ToggleAisLabelsVisible"
                      MarinePoiOverlayVisible="Settings.MarinePoiOverlayVisible"
                      OnToggleMarinePoiOverlay="@(v => Settings.SetMarinePoiOverlayVisibleAsync(v))"
                      MarinePoiFuelEnabled="Settings.MarinePoiFuelEnabled"
@@ -1708,6 +1709,7 @@
         // setting is honoured by setAtonsVisible JS-side.
         Atons.OnAtonsUpdated += HandleAtonsUpdated;
         await _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
+        await _aisJs.SetAisLabelsVisibleAsync(Settings.AisLabelsVisible);
         await _aisJs.SetGuardZoneVisibleAsync(Settings.GuardZoneVisible);
         await _aisJs.SetGuardZoneWarningRingVisibleAsync(Settings.GuardZoneWarningRingVisible);
         _ = _atonPush!.PushAsync();
@@ -1845,19 +1847,54 @@
             Settings.GuardZoneWarningFactor);
     }
 
-    // Fire-and-forget on the settings-changed event. PushGuardZoneAsync swallows
-    // expected disposal races so nothing escapes as an unobserved task exception.
+    // Per-push diff-caches. OnSettingsChanged fires for ANY setting
+    // (font size, night mode preset, harbor mode, ...); the previous
+    // handler unconditionally fired 6+ JS interop calls per fire,
+    // turning a single helm toggle into a fan-out of redundant pushes.
+    // Each push now gates on its own snapshot of the inputs it consumes.
+    private (double Cpa, double LookaheadMin, double WarningFactor,
+        bool AnchorActive, double? AnchorMaxRadius) _cachedGuardZone;
+    private (double OwnCog, double AisCog) _cachedCogVector;
+    private (bool Enabled, int Count) _cachedRadarRangeRings;
+    private bool _cachedAtonsVisible;
+    private bool _cachedAisLabelsVisible;
+    private bool _cachedGuardZoneWarningRingVisible;
+    private (int Contrast, int Saturation, int Brightness) _cachedChartFilter;
+
+    // Fire-and-forget on the settings-changed event. Each push compares
+    // its inputs against the last-seen snapshot and skips the JS interop
+    // when nothing relevant changed. PushGuardZoneAsync swallows
+    // expected disposal races so nothing escapes as an unobserved task
+    // exception.
     private void HandleSettingsChanged()
     {
-        _ = PushGuardZoneAsync();
+        var guardZoneNow = (
+            Settings.CpaAlarmThreshold,
+            Settings.GuardZoneLookaheadMinutes,
+            Settings.GuardZoneWarningFactor,
+            SignalkClient.Data.AnchorActive,
+            SignalkClient.Data.AnchorMaxRadius);
+        if (!guardZoneNow.Equals(_cachedGuardZone))
+        {
+            _cachedGuardZone = guardZoneNow;
+            _ = PushGuardZoneAsync();
+        }
+
         if (_controlsJs is not null)
         {
-            _ = _controlsJs.SetCogVectorMinutesAsync(
-                Settings.OwnCogVectorMinutes,
-                Settings.AisCogVectorMinutes);
-            _ = _controlsJs.SetRadarRangeRingsAsync(
-                Settings.RadarRangeRingsEnabled,
-                Settings.RadarRangeRingsCount);
+            var cogNow = (Settings.OwnCogVectorMinutes, Settings.AisCogVectorMinutes);
+            if (!cogNow.Equals(_cachedCogVector))
+            {
+                _cachedCogVector = cogNow;
+                _ = _controlsJs.SetCogVectorMinutesAsync(cogNow.OwnCogVectorMinutes, cogNow.AisCogVectorMinutes);
+            }
+
+            var rrNow = (Settings.RadarRangeRingsEnabled, Settings.RadarRangeRingsCount);
+            if (!rrNow.Equals(_cachedRadarRangeRings))
+            {
+                _cachedRadarRangeRings = rrNow;
+                _ = _controlsJs.SetRadarRangeRingsAsync(rrNow.RadarRangeRingsEnabled, rrNow.RadarRangeRingsCount);
+            }
         }
         // Wake-lock toggles are handled by MainLayout's OnSettingsChanged
         // handler; the Map page no longer needs to relay them.
@@ -1878,26 +1915,48 @@
         // hide/show cycle so flipping back doesn't have to re-fetch.
         if (_aisJs is not null)
         {
-            _ = _aisJs.SetAtonsVisibleAsync(Settings.AtonsVisible);
+            if (Settings.AtonsVisible != _cachedAtonsVisible)
+            {
+                _cachedAtonsVisible = Settings.AtonsVisible;
+                _ = _aisJs.SetAtonsVisibleAsync(_cachedAtonsVisible);
+            }
+            // AIS vessel name labels: independent of harbor mode (which
+            // also suppresses labels). The JS gate ANDs both.
+            if (Settings.AisLabelsVisible != _cachedAisLabelsVisible)
+            {
+                _cachedAisLabelsVisible = Settings.AisLabelsVisible;
+                _ = _aisJs.SetAisLabelsVisibleAsync(_cachedAisLabelsVisible);
+            }
             // Outer guard-zone warning ring: tracked here too so a
             // Settings-page toggle reaches the JS layer without the
             // helm having to refresh the Map page.
-            _ = _aisJs.SetGuardZoneWarningRingVisibleAsync(
-                Settings.GuardZoneWarningRingVisible);
+            if (Settings.GuardZoneWarningRingVisible != _cachedGuardZoneWarningRingVisible)
+            {
+                _cachedGuardZoneWarningRingVisible = Settings.GuardZoneWarningRingVisible;
+                _ = _aisJs.SetGuardZoneWarningRingVisibleAsync(_cachedGuardZoneWarningRingVisible);
+            }
         }
 
-        // Chart-display CSS filter: re-push on any settings broadcast
-        // so a slider commit (or a Settings-page edit) reaches the JS
-        // layer without the helm having to flip the chart. Idempotent
-        // when the filter hasn't changed - setChartFilter walks the
-        // chart-layer map and assigns the same string to every
-        // container's style.filter, which the browser elides.
-        _ = PushChartFilterAsync();
+        // Chart-display CSS filter: only re-push when a slider commit
+        // (or a Settings-page edit) actually moved one of the three
+        // channels. Without the gate every helm tweak (e.g. flipping
+        // BigType) was re-walking the chart-layer map and reassigning
+        // the same filter string, which the browser elides but the
+        // C#-JS interop still costs.
+        var chartFilterNow = (
+            Settings.ChartContrastPercent,
+            Settings.ChartSaturationPercent,
+            Settings.ChartBrightnessPercent);
+        if (!chartFilterNow.Equals(_cachedChartFilter))
+        {
+            _cachedChartFilter = chartFilterNow;
+            _ = PushChartFilterAsync();
+        }
 
-        // Marine-POI controller: a category checkbox flip lands in
-        // OnSettingsChanged. Tell the controller to refresh; it'll
-        // re-render the cache through the new mask + schedule a
-        // fetch for any newly-enabled category.
+        // Marine-POI controller has its own internal diff-cache (see
+        // OnSettingsChangedAsync); calling unconditionally here is
+        // cheap because the controller skips the re-render+fetch when
+        // none of its consumed flags changed.
         _ = _marinePoi?.OnSettingsChangedAsync();
     }
 
@@ -1952,7 +2011,7 @@
         switch (key)
         {
             case "m": await ToggleMob(); break;
-            case "n": await CycleNightMode(); break;
+            case "n": await ToggleNightMode(); break;
             case "f": await ToggleFollow(); break;
             case "a": await ToggleAnchor(); break;
             case "t": await ZoomToTrack(); break;
@@ -3026,6 +3085,16 @@
         await Settings.SetAtonsVisibleAsync(enabled);
     }
 
+    private async Task ToggleAisLabelsVisible(bool enabled)
+    {
+        // Persist via Settings; HandleSettingsChanged pushes the new
+        // value to setAisLabelsVisible JS-side. The JS gate ANDs
+        // aisLabelsVisible with !harborMode so harbor mode still
+        // suppresses labels while it's on, and toggling harbor mode
+        // off doesn't resurrect labels the helm hid here.
+        await Settings.SetAisLabelsVisibleAsync(enabled);
+    }
+
     private async Task ToggleGuardZoneVisible(bool enabled)
     {
         // Persist + push to JS in lockstep. The setting fires
@@ -3556,50 +3625,22 @@
     // ServerTrackController owns the server-track state + interop;
     // wired in OnAfterRenderAsync.
 
-    /// <summary>Advance the night-mode state through the preset
-    /// cycle: off -> dusk -> soft -> amber -> red -> off. Dusk is
-    /// the non-red-shifted "sun-just-set" intermediate (desaturated
-    /// dark theme, no hue rotation); soft / amber / red are the
-    /// progressively-redder presets for actual dark-adaptation.
-    /// The Night button in the More menu and the keyboard "n"
-    /// shortcut both call this.
+    /// <summary>Toggle night mode on/off. Helm-feedback: the previous
+    /// four-step cycle (dusk -> soft -> amber -> red) was confusing;
+    /// one tap on, one tap off is the binary mental model. Helms who
+    /// want a non-red-shifted dark intermediate use Theme = "dark"
+    /// instead. The Night button in the More menu and the keyboard
+    /// "n" shortcut both call this.
     ///
     /// MarkManualNightToggleAsync records the env.sun cluster at
     /// toggle time so CheckAutoNightAsync suppresses until the next
-    /// day/night transition - a deliberate cycle counts as a
+    /// day/night transition - a deliberate toggle counts as a
     /// manual override.</summary>
-    private async Task CycleNightMode()
+    private async Task ToggleNightMode()
     {
         await Settings.MarkManualNightToggleAsync(SunClusterFromState(Data.SunState));
-        if (!nightMode)
-        {
-            // Off -> dusk. Always start at the gentlest non-red
-            // step so a helm who tapped expecting a small change
-            // doesn't get red as the first hit.
-            nightMode = true;
-            await Settings.SetNightModeAsync(true);
-            await Settings.SetNightModePresetAsync("dusk");
-        }
-        else
-        {
-            // Advance preset; falling off the end turns night off.
-            string? next = Settings.NightModePreset switch
-            {
-                "dusk" => "soft",
-                "soft" => "amber",
-                "amber" => "red",
-                _ => null,
-            };
-            if (next is null)
-            {
-                nightMode = false;
-                await Settings.SetNightModeAsync(false);
-            }
-            else
-            {
-                await Settings.SetNightModePresetAsync(next);
-            }
-        }
+        nightMode = !nightMode;
+        await Settings.SetNightModeAsync(nightMode);
         if (_controlsJs is not null)
             await _controlsJs.SetNightModeAsync(nightMode);
     }

@@ -67,6 +67,18 @@
             <div class="chart-desc">Buoys, beacons, lighthouses, racons. Virtual AtoNs render dashed.</div>
         </div>
     </label>
+    @* AIS vessel name labels. Independent of harbor mode (harbor mode
+       also hides labels while it's on); turning this off keeps labels
+       hidden across harbor-mode toggles for the helm who prefers a
+       cleaner chart. *@
+    <label class="chart-item">
+        <input type="checkbox" checked="@AisLabelsVisible"
+               @onchange="(e) => OnToggleAisLabels.InvokeAsync((bool)(e.Value ?? false))" />
+        <div class="chart-item-body">
+            <div class="chart-name">AIS labels</div>
+            <div class="chart-desc">Vessel names next to each AIS marker. Off declutters dense areas.</div>
+        </div>
+    </label>
     @* Guard zone ring used to live here too; it moved to the Own
        ship section since the ring is centred on own boat and reads
        as an own-ship indicator alongside the COG vector + tidal
@@ -76,6 +88,7 @@
 @code {
     [Parameter] public bool WeatherVisible { get; set; }
     [Parameter] public bool AtonsVisible { get; set; }
+    [Parameter] public bool AisLabelsVisible { get; set; } = true;
     /// <summary>0-100 integer matching the slider input value. The
     /// underlying setting / leaflet API uses 0.0-1.0; conversion
     /// happens in OnOpacityInput so the slider stays in pleasant
@@ -83,6 +96,7 @@
     [Parameter] public int WeatherOpacityPercent { get; set; } = 50;
     [Parameter] public EventCallback<bool> OnToggleWeather { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtons { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleAisLabels { get; set; }
     /// <summary>Fires per slider tick during a drag. Drives the
     /// live preview only - helm wants instant feedback on the
     /// chart, not 20 localStorage writes per drag.</summary>

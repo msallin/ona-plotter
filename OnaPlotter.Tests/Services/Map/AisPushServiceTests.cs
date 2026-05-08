@@ -27,6 +27,7 @@ public class AisPushServiceTests
 
         public Task SetAtonsAsync(object[] atons) => Task.CompletedTask;
         public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
         public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
         public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
         public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;

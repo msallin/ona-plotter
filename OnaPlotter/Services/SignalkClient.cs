@@ -538,11 +538,36 @@ public sealed class SignalkClient : IAsyncDisposable
         // waiting for the next delta (the getter reads the cached
         // raw values, so the next render picks up immediately).
         ApplyHeadingPreferenceFromSettings();
+        // Seed the diff-cache to the current values so the first
+        // OnSettingsChanged tick after wiring doesn't false-trigger
+        // an OnDataChanged on an unrelated setting flip.
+        _cachedPreferMagneticHeading = settings.PreferMagneticHeading;
+        _cachedPreferMagneticCourse = settings.PreferMagneticCourse;
         settings.OnSettingsChanged += OnSettingsChangedSync;
     }
 
+    // Cached snapshot of the heading-preference settings this client
+    // actually consumes. OnSettingsChanged fires for ANY setting (font
+    // size, harbor mode, night mode...); the previous handler unconditionally
+    // re-broadcast OnDataChanged to every subscriber, triggering a full
+    // alarm-eval + HUD re-render cascade for tweaks that didn't touch
+    // any path this client cares about. Snapshot+compare here gates the
+    // rebroadcast on a real change to one of these two flags.
+    private bool _cachedPreferMagneticHeading;
+    private bool _cachedPreferMagneticCourse;
+
     private void OnSettingsChangedSync()
     {
+        bool magHeading = _settings.PreferMagneticHeading;
+        bool magCourse = _settings.PreferMagneticCourse;
+        if (magHeading == _cachedPreferMagneticHeading
+            && magCourse == _cachedPreferMagneticCourse)
+        {
+            // No relevant change - skip the OnDataChanged cascade.
+            return;
+        }
+        _cachedPreferMagneticHeading = magHeading;
+        _cachedPreferMagneticCourse = magCourse;
         ApplyHeadingPreferenceFromSettings();
         // HUDs re-derive Heading / CourseOverGround on next render; a
         // nudge wakes any component that isn't also listening to

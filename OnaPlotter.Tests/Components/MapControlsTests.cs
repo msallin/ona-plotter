@@ -153,7 +153,7 @@ public class MapControlsTests
         using var ctx = new Bunit.TestContext();
         int fired = 0;
         var cut = RenderWithMoreController(ctx, out _, p => p
-            .Add(x => x.OnCycleNight, EventCallback.Factory.Create(this, () => fired++)));
+            .Add(x => x.OnToggleNight, EventCallback.Factory.Create(this, () => fired++)));
 
         cut.Find(".ctrl-more-wrap > button").Click();
         // Menu open, pick Night (any menu item works for the

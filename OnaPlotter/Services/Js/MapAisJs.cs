@@ -38,6 +38,9 @@ public sealed class MapAisJs : IMapAisJs
     public Task SetAtonsVisibleAsync(bool visible)
         => InvokeSafe("setAtonsVisible", visible);
 
+    public Task SetAisLabelsVisibleAsync(bool visible)
+        => InvokeSafe("setAisLabelsVisible", visible);
+
     public Task SetOwnMmsiAsync(string mmsi)
         => InvokeSafe("setOwnMmsi", mmsi);
 

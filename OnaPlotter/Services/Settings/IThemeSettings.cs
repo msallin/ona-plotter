@@ -10,7 +10,11 @@ namespace OnaPlotter.Services.Settings;
 /// </summary>
 public interface IThemeSettings
 {
-    /// <summary>Red-shift overlay applied on top of the base theme.</summary>
+    /// <summary>Red-shift overlay applied on top of the base theme.
+    /// One binary toggle - the previous four-step cycle (dusk / soft
+    /// / amber / red) was helm-flagged as confusing; helms wanting a
+    /// "dark intermediate without red shift" can use
+    /// <see cref="Theme"/> = "dark" instead.</summary>
     bool NightMode { get; }
 
     /// <summary>When true, Night mode auto-engages based on
@@ -20,9 +24,6 @@ public interface IThemeSettings
     /// <see cref="LastManualNightToggleUtc"/> is kept as a redundancy
     /// timestamp.</summary>
     bool NightModeAuto { get; }
-
-    /// <summary>Night-mode flavour: "dusk" / "soft" / "amber" / "red".</summary>
-    string NightModePreset { get; }
 
     /// <summary>UTC timestamp of the most recent manual Night toggle.
     /// Persisted so the auto-suppress window survives reload.</summary>
@@ -55,7 +56,6 @@ public interface IThemeSettings
 
     Task SetNightModeAsync(bool value);
     Task SetNightModeAutoAsync(bool value);
-    Task SetNightModePresetAsync(string value);
     /// <summary>Record a manual Night-mode toggle. <paramref name="sunCluster"/>
     /// should be "day" or "night" (the cluster of the current
     /// <c>environment.sun</c> value at toggle time), or null when

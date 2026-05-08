@@ -17,7 +17,6 @@ internal sealed class FakeSettings : IAppSettings
     public DateTime? LastManualNightToggleUtc { get; set; }
     public string? LastManualNightOverrideSunCluster { get; set; }
     public bool ChartsSeeded { get; set; }
-    public string NightModePreset { get; set; } = "soft";
     public string Theme { get; set; } = "dark";
     public string WindHeroMode { get; set; } = "apparent";
     public bool WindPageCompact { get; set; }
@@ -35,6 +34,7 @@ internal sealed class FakeSettings : IAppSettings
     public int RadarRangeRingsCount { get; set; } = 4;
     public bool TideVisible { get; set; } = true;
     public bool AtonsVisible { get; set; } = true;
+    public bool AisLabelsVisible { get; set; } = true;
     public bool GuardZoneVisible { get; set; } = true;
     public bool GuardZoneWarningRingVisible { get; set; } = true;
     public bool ChartUpscaleEnabled { get; set; }
@@ -127,7 +127,6 @@ internal sealed class FakeSettings : IAppSettings
     }
     public Task MarkChartsSeededAsync() { ChartsSeeded = true; return Task.CompletedTask; }
     public Task SetNightModeAutoAsync(bool v) => Task.CompletedTask;
-    public Task SetNightModePresetAsync(string v) => Task.CompletedTask;
     public Task SetThemeAsync(string v) => Task.CompletedTask;
     public Task SetWindHeroModeAsync(string v) { WindHeroMode = v; return Task.CompletedTask; }
     public Task SetWindPageCompactAsync(bool v) { WindPageCompact = v; return Task.CompletedTask; }
@@ -146,6 +145,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetTideVisibleAsync(bool v) { TideVisible = v; return Task.CompletedTask; }
     public Task SetSidebarCollapsedAsync(bool v) { SidebarCollapsed = v; return Task.CompletedTask; }
     public Task SetAtonsVisibleAsync(bool v) { AtonsVisible = v; return Task.CompletedTask; }
+    public Task SetAisLabelsVisibleAsync(bool v) { AisLabelsVisible = v; return Task.CompletedTask; }
     public Task SetGuardZoneVisibleAsync(bool v) { GuardZoneVisible = v; return Task.CompletedTask; }
     public Task SetGuardZoneWarningRingVisibleAsync(bool v) { GuardZoneWarningRingVisible = v; return Task.CompletedTask; }
     public Task SetChartUpscaleEnabledAsync(bool v) { ChartUpscaleEnabled = v; return Task.CompletedTask; }

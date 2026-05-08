@@ -18,7 +18,7 @@
 @implements IAsyncDisposable
 
 <a href="#main-content" class="skip-link">Skip to content</a>
-<div class="page theme-@Settings.Theme @(Settings.NightMode ? $"night-mode-global night-mode-{Settings.NightModePreset}" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "")">
+<div class="page theme-@Settings.Theme @(Settings.NightMode ? "night-mode-global" : "") @(Settings.SidebarCollapsed ? "sidebar-collapsed" : "")">
     <div class="sidebar">
         <NavMenu />
     </div>
@@ -193,9 +193,9 @@
                the map page the zoom-in button carries the auto-margin
                and Night sits flush with the rest. *@
             <button class="btn btn-sm btn-outline-secondary topbar-icon-btn @(IsMapRoute ? "" : "ms-auto")"
-                    @onclick="CycleNightMode"
-                    title="@(Settings.NightMode ? $"Night ({Settings.NightModePreset}) - tap to advance" : "Night mode")"
-                    aria-label="@(Settings.NightMode ? "Advance night-mode preset" : "Switch to night mode")">
+                    @onclick="ToggleNightMode"
+                    title="@(Settings.NightMode ? "Night mode on - tap to disable" : "Night mode")"
+                    aria-label="@(Settings.NightMode ? "Disable night mode" : "Enable night mode")">
                 @if (Settings.NightMode)
                 {
                     @((MarkupString)OnaPlotter.Utilities.Icons.Small.Sun)
@@ -709,7 +709,7 @@
                     await themeModule.InvokeVoidAsync("setTheme",
                         Settings.Theme);
                     await themeModule.InvokeVoidAsync("setNightMode",
-                        Settings.NightMode, Settings.NightModePreset);
+                        Settings.NightMode);
                 }
                 catch (JSDisconnectedException) { }
             }
@@ -762,40 +762,15 @@
         catch (ObjectDisposedException) { }
     }
 
-    /// <summary>Advance the night-mode state through the preset
-    /// cycle: off -> dusk -> soft -> amber -> red -> off. Mirrors
-    /// the Map page's More-menu Night button so a helm picking the
-    /// topbar shortcut sees the same behaviour. Dusk is the
-    /// non-red-shifted intermediate; soft / amber / red are the
-    /// progressively-redder presets. Records the env.sun cluster at
-    /// toggle time so auto-night suppresses until the next day/night
-    /// transition (matches the Map button's override logic).</summary>
-    private async Task CycleNightMode()
+    /// <summary>Toggle night mode on/off. Helm-feedback: the previous
+    /// four-step cycle (dusk -> soft -> amber -> red) was confusing;
+    /// one click on, one click off matches the binary mental model.
+    /// Records the env.sun cluster at toggle time so auto-night
+    /// suppresses until the next day/night transition.</summary>
+    private async Task ToggleNightMode()
     {
         await Settings.MarkManualNightToggleAsync(SunClusterFromState(SignalkClient.Data.SunState));
-        if (!Settings.NightMode)
-        {
-            await Settings.SetNightModeAsync(true);
-            await Settings.SetNightModePresetAsync("dusk");
-        }
-        else
-        {
-            string? next = Settings.NightModePreset switch
-            {
-                "dusk" => "soft",
-                "soft" => "amber",
-                "amber" => "red",
-                _ => null,
-            };
-            if (next is null)
-            {
-                await Settings.SetNightModeAsync(false);
-            }
-            else
-            {
-                await Settings.SetNightModePresetAsync(next);
-            }
-        }
+        await Settings.SetNightModeAsync(!Settings.NightMode);
         StateHasChanged();
     }
 
@@ -1076,7 +1051,7 @@
             {
                 await themeModule.InvokeVoidAsync("setTheme", Settings.Theme);
                 await themeModule.InvokeVoidAsync("setNightMode",
-                    Settings.NightMode, Settings.NightModePreset);
+                    Settings.NightMode);
             }
             catch (JSDisconnectedException) { }
             fsSelfRef = DotNetObjectReference.Create(this);

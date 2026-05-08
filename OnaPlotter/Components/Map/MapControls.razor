@@ -153,18 +153,14 @@
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Legend)</span>
                     <span>Legend</span>
                 </button>
-                @* Night mode cycle. Each tap advances:
-                       off -> dusk -> soft -> amber -> red -> off
-                   Cycling through the night-mode presets is muscle-
-                   memory: tap until you see what you like, tap once
-                   more to exit. The current preset is shown after the
-                   label so the helm knows where they are in the cycle
-                   without dropping into Settings. *@
+                @* Night mode toggle. One click on, one click off -
+                   the previous preset cycle (dusk / soft / amber /
+                   red) was helm-flagged as confusing. *@
                 <button class="ctrl-more-item @(NightMode ? "ctrl-more-active" : "")"
-                        @onclick="() => Select(OnCycleNight)"
-                        title="Night mode (N) - tap to cycle off / dusk / soft / amber / red">
+                        @onclick="() => Select(OnToggleNight)"
+                        title="Night mode (N)">
                     <span class="ctrl-more-ico">@((MarkupString)Icons.Moon)</span>
-                    <span>Night @(NightMode ? "(" + NightModePreset + ")" : "")@(ShowKeyboardHints ? " (N)" : "")</span>
+                    <span>Night@(ShowKeyboardHints ? " (N)" : "")</span>
                 </button>
                 @* Harbor mode: a single switch that bundles AIS / collision
                    suppressions for entering a busy port - moored vessels
@@ -376,10 +372,6 @@
     [Parameter] public bool Follow { get; set; }
     [Parameter] public string OrientationLabel { get; set; } = "N\u2191";
     [Parameter] public bool NightMode { get; set; }
-    /// <summary>Current night-mode preset ("dusk" / "soft" / "amber" /
-    /// "red"). Shown next to the Night menu label so the helm knows
-    /// where in the cycle they are.</summary>
-    [Parameter] public string NightModePreset { get; set; } = "soft";
     [Parameter] public bool AnchorActive { get; set; }
     [Parameter] public bool MobActive { get; set; }
 
@@ -401,10 +393,10 @@
 
     [Parameter] public EventCallback OnToggleFollow { get; set; }
     [Parameter] public EventCallback OnCycleOrientation { get; set; }
-    /// <summary>Each click advances the night-mode cycle:
-    /// off -> soft -> amber -> red -> off. Replaces the old
-    /// tap-for-soft / hold-for-Dark-Ops dual gesture.</summary>
-    [Parameter] public EventCallback OnCycleNight { get; set; }
+    /// <summary>One click on / one click off. Replaces the previous
+    /// dusk / soft / amber / red cycle that was helm-flagged as
+    /// confusing.</summary>
+    [Parameter] public EventCallback OnToggleNight { get; set; }
     [Parameter] public EventCallback OnToggleAnchor { get; set; }
     [Parameter] public EventCallback OnToggleMob { get; set; }
     [Parameter] public EventCallback OnStopNavigation { get; set; }

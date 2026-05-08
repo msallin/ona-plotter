@@ -25,6 +25,14 @@ public interface IMapAisJs
     /// the marker state, so flipping back doesn't have to refetch.</summary>
     Task SetAtonsVisibleAsync(bool visible);
 
+    /// <summary>Toggle AIS vessel name labels (per-target tooltips).
+    /// Disabling tears down all existing labels + suppresses creation
+    /// on subsequent ticks. Harbor mode independently suppresses
+    /// labels; the JS layer treats this flag as the persistent helm
+    /// preference and harbor mode as the transient declutter, taking
+    /// the AND of both.</summary>
+    Task SetAisLabelsVisibleAsync(bool visible);
+
     /// <summary>Seed the JS side with own-vessel MMSI once the SignalK
     /// hello resolves it. Used by the self-popup HTML to fetch the
     /// country flag from the same endpoint AIS markers do.</summary>

@@ -168,6 +168,13 @@ let guardZoneWarningRingVisible = true;
 // and moored vessels are filtered upstream in C#.
 let harborMode = false;
 
+// Persistent helm preference for AIS vessel name labels (independent
+// of harbor mode). Default true matches existing behaviour. The label-
+// render gate ANDs this with !harborMode so harbor mode still hides
+// labels while it's on, and turning harbor mode off doesn't resurrect
+// labels the helm hid via Settings.
+let aisLabelsVisible = true;
+
 // AIS-target COG-vector look-ahead in minutes. Default matches
 // IAppSettings.AisCogVectorMinutes (10). leafletInterop's
 // setCogVectorMinutes calls setAisCogMinutes below to update.
@@ -793,7 +800,7 @@ export function updateAisTargets(vessels) {
         // surface share one fallback chain. Suppressed in harbor mode
         // to keep the chart legible when entering a busy port.
         const displayName = v.displayName || null;
-        if (displayName && !harborMode) {
+        if (displayName && !harborMode && aisLabelsVisible) {
             if (!aisLabels[v.context]) {
                 aisLabels[v.context] = L.tooltip({
                     permanent: true, direction: 'right', offset: [12, 0],
@@ -1262,6 +1269,25 @@ export function setGuardZoneWarningRingVisible(visible) {
 function safeRemoveLayer(layer) {
     if (!layer || !mapRef) return;
     try { mapRef.removeLayer(layer); } catch (_) { /* already gone */ }
+}
+
+// Toggle the persistent AIS-name-label preference. When disabled,
+// tears down every existing label so the helm sees the change
+// immediately (next updateAisTargets tick won't re-create them
+// because the create-gate ANDs aisLabelsVisible). When re-enabled,
+// the next tick rebuilds labels from v.displayName as usual.
+export function setAisLabelsVisible(enabled) {
+    aisLabelsVisible = !!enabled;
+    if (!mapRef) return;
+    if (!aisLabelsVisible) {
+        for (const ctx of Object.keys(aisLabels)) {
+            try { aisMarkers[ctx]?.unbindTooltip(); } catch (_) { /* marker gone */ }
+            delete aisLabels[ctx];
+        }
+    }
+    // Re-enable does nothing on its own: the next AIS push tick sees
+    // aisLabelsVisible=true + !harborMode and re-creates each label
+    // from v.displayName via the gate at line ~796.
 }
 
 export function setHarborMode(enabled) {

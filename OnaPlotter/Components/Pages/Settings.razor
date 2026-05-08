@@ -83,11 +83,10 @@
         </div>
     </div>
 
-    @* Night mode: presets + auto-flip live with the master toggle
-       since they're inert when Night Mode is off. Big screen mode
-       split into its own card per helm request - it's an
-       independent zoom of the whole HUD, not part of the night-
-       vision palette. *@
+    @* Night mode: a single binary toggle. Helms wanting a non-red
+       dark intermediate use Theme = "dark" instead of the previous
+       "dusk" preset. Big screen mode is in its own card - it's an
+       independent zoom of the whole HUD, not a night-vision knob. *@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
@@ -97,23 +96,6 @@
                     <label class="form-check-label">Night Mode</label>
                 </div>
                 <small class="text-muted">Red-shifted display for night vision. Overlays on any theme.</small>
-                @if (AppSettings.NightMode)
-                {
-                    <div class="btn-group mt-2" role="group" aria-label="Night mode preset">
-                        @foreach (var (val, label, tip) in NightPresets)
-                        {
-                            <input type="radio" class="btn-check" name="night-preset"
-                                   id="@($"night-{val}")" autocomplete="off"
-                                   checked="@(AppSettings.NightModePreset == val)"
-                                   @onchange="() => OnNightPresetChanged(val)" />
-                            <label class="btn btn-outline-secondary btn-sm" for="@($"night-{val}")"
-                                   title="@tip">@label</label>
-                        }
-                    </div>
-                    <small class="text-muted d-block mt-1">
-                        Dusk: dim + desaturated, no red-shift. Soft / Amber / Red: progressively redder presets that preserve dark-adapted vision.
-                    </small>
-                }
                 <div class="form-check form-switch mt-2">
                     <input class="form-check-input" type="checkbox"
                            checked="@AppSettings.NightModeAuto"
@@ -1437,9 +1419,6 @@
         await AppSettings.SetNightModeAsync(val);
     }
 
-    private async Task OnNightPresetChanged(string value)
-        => await AppSettings.SetNightModePresetAsync(value);
-
     private async Task OnNightAutoChanged(ChangeEventArgs e)
     {
         bool val = e.Value is bool b && b;
@@ -1465,14 +1444,6 @@
     }
 
     private async Task OnThemeChanged(string value) => await AppSettings.SetThemeAsync(value);
-
-    private static readonly (string val, string label, string tip)[] NightPresets =
-    [
-        ("dusk",  "Dusk",  "Desaturated dark, no red-shift; for the sun-just-set window."),
-        ("soft",  "Soft",  "Warm low-contrast red shift."),
-        ("amber", "Amber", "Brighter amber for fading daylight."),
-        ("red",   "Red",   "Pure red, preserves dark-adapted vision."),
-    ];
 
     private string? polarError;
 

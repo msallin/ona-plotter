@@ -652,7 +652,27 @@
 //             instead of empty string; CpaAlarmRule's existing
 //             `is not null` check now correctly suppresses the
 //             comma-separated suffix when there's no useful label.
-const CACHE_NAME = 'ona-plotter-v67';
+// v67 -> v68: Three small adjustments.
+//             - AisLabelsVisible setting (default ON): toggle vessel
+//               name labels independent of harbor mode. Layers panel
+//               gets a checkbox under Misc; the JS gate ANDs the
+//               flag with !harborMode so harbor mode still hides
+//               labels while it's on.
+//             - Stop fanning out cache invalidation on every settings
+//               change. SignalkClient, MarinePoiController, and
+//               Map.HandleSettingsChanged now snapshot the inputs
+//               they actually consume and skip the JS interop /
+//               OnDataChanged broadcast / fetch reschedule when
+//               nothing relevant changed. Previously a font-size
+//               toggle re-pushed every JS state and re-scheduled
+//               the marine-POI Overpass fetch.
+//             - Night mode collapsed to a single binary toggle.
+//               Dropped NightModePreset (dusk / soft / amber / red)
+//               + the four-step cycle button + the .night-mode-amber
+//               and .night-mode-red CSS variants. Helms wanting a
+//               non-red dark intermediate use Theme = "dark"
+//               instead.
+const CACHE_NAME = 'ona-plotter-v68';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

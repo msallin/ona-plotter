@@ -29,7 +29,6 @@ public sealed class AppSettingsService : IAppSettings
     public DateTime? LastManualNightToggleUtc { get; private set; }
     public string? LastManualNightOverrideSunCluster { get; private set; }
     public bool ChartsSeeded { get; private set; }
-    public string NightModePreset { get; private set; } = "soft";
     public string Theme { get; private set; } = "system";
     public string WindHeroMode { get; private set; } = "apparent";
     public bool WindPageCompact { get; private set; }
@@ -57,6 +56,14 @@ public sealed class AppSettingsService : IAppSettings
     /// (re-clipped on pan/zoom without a re-fetch). Default true.</summary>
     public bool ServerTrackWithinBounds { get; private set; } = true;
     public bool AtonsVisible { get; private set; } = true;
+    /// <summary>AIS vessel name labels (per-target tooltips on the chart).
+    /// Default true. Independent of <see cref="HarborMode"/>: harbor mode
+    /// also suppresses labels for as long as it's on, but the helm-set
+    /// AisLabelsVisible flag is the persistent preference. Effective
+    /// rule: labels render only when <c>AisLabelsVisible AND
+    /// !HarborMode</c>. Toggling harbor mode off does NOT silently
+    /// resurrect labels the helm previously hid via this setting.</summary>
+    public bool AisLabelsVisible { get; private set; } = true;
     public bool GuardZoneVisible { get; private set; } = true;
     public bool GuardZoneWarningRingVisible { get; private set; } = true;
     public double WeatherOverlayOpacity { get; private set; } = OnaPlotter.Utilities.WeatherOpacity.DefaultFraction;
@@ -242,7 +249,10 @@ public sealed class AppSettingsService : IAppSettings
             LastManualNightOverrideSunCluster = NormalizeSunCluster(
                 await LoadString("lastManualNightOverrideSunCluster.v1"));
             ChartsSeeded = await LoadBool("chartsSeeded.v1", false);
-            NightModePreset = NormalizeNightPreset(await LoadString("nightModePreset"));
+            // nightModePreset key intentionally not migrated. The previous
+            // dusk / soft / amber / red cycle collapsed to a single
+            // soft red-shift on/off; helms wanting a non-red dark
+            // intermediate use Theme = "dark" instead.
             Theme = NormalizeTheme(await LoadString("theme"));
             WindHeroMode = NormalizeWindHeroMode(await LoadString("windHeroMode.v1"));
             WindPageCompact = await LoadBool("windPageCompact.v1", false);
@@ -264,6 +274,7 @@ public sealed class AppSettingsService : IAppSettings
                 await LoadString("serverTrackResolution.v1"));
             ServerTrackWithinBounds = await LoadBool("serverTrackWithinBounds.v1", true);
             AtonsVisible = await LoadBool("atonsVisible.v1", true);
+            AisLabelsVisible = await LoadBool("aisLabelsVisible.v1", true);
             GuardZoneVisible = await LoadBool("guardZoneVisible.v1", true);
             GuardZoneWarningRingVisible = await LoadBool("guardZoneWarningRingVisible.v1", true);
             WeatherOverlayOpacity = await LoadDouble("weatherOverlayOpacity.v1",
@@ -443,13 +454,6 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
-    public async Task SetNightModePresetAsync(string value)
-    {
-        NightModePreset = NormalizeNightPreset(value);
-        await Save("nightModePreset", NightModePreset);
-        OnSettingsChanged?.Invoke();
-    }
-
     public async Task SetThemeAsync(string value)
     {
         Theme = NormalizeTheme(value);
@@ -482,12 +486,6 @@ public sealed class AppSettingsService : IAppSettings
         await Save("windPageCompact.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
-
-    private static string NormalizeNightPreset(string? raw) => raw switch
-    {
-        "dusk" or "soft" or "amber" or "red" => raw,
-        _ => "soft",
-    };
 
     public async Task SetMapOrientationAsync(string value)
     {
@@ -576,6 +574,13 @@ public sealed class AppSettingsService : IAppSettings
     {
         AtonsVisible = value;
         await Save("atonsVisible.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetAisLabelsVisibleAsync(bool value)
+    {
+        AisLabelsVisible = value;
+        await Save("aisLabelsVisible.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

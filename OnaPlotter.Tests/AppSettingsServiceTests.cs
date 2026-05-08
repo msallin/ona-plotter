@@ -958,31 +958,6 @@ public class AppSettingsServiceTests
         await Assert.That(svc2.WindPageCompact).IsTrue();
     }
 
-    [Test]
-    [Arguments("soft")]
-    [Arguments("amber")]
-    [Arguments("red")]
-    public async Task NightModePreset_RoundTripsKnownValues(string preset)
-    {
-        var kv = new InMemoryKv();
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await svc.SetNightModePresetAsync(preset);
-
-        var svc2 = new AppSettingsService(kv);
-        await svc2.InitializeAsync();
-        await Assert.That(svc2.NightModePreset).IsEqualTo(preset);
-    }
-
-    [Test]
-    public async Task NightModePreset_RejectsUnknownAndFallsBackToSoft()
-    {
-        var kv = new InMemoryKv();
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await svc.SetNightModePresetAsync("neon");
-        await Assert.That(svc.NightModePreset).IsEqualTo("soft");
-    }
 
     [Test]
     public async Task SetMapOrientation_RoundTrips_AndFires()

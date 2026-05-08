@@ -86,6 +86,13 @@ public interface IMapDisplaySettings
     /// <summary>AIS Aids to Navigation visible on the map.</summary>
     bool AtonsVisible { get; }
 
+    /// <summary>AIS vessel name labels (per-target tooltips) visible on
+    /// the map. Default true. <see cref="HarborMode"/> also suppresses
+    /// labels while it's on; this flag is the persistent helm choice.
+    /// Effective: labels render only when both are favourable
+    /// (<c>AisLabelsVisible AND !HarborMode</c>).</summary>
+    bool AisLabelsVisible { get; }
+
     /// <summary>Guard-zone amber ring visible on the map. Independent
     /// of the CPA alarm pipeline - helms can declutter the chart
     /// without disabling the alarm. Defaults to true so existing
@@ -225,6 +232,7 @@ public interface IMapDisplaySettings
     Task SetServerTrackResolutionAsync(string value);
     Task SetServerTrackWithinBoundsAsync(bool value);
     Task SetAtonsVisibleAsync(bool value);
+    Task SetAisLabelsVisibleAsync(bool value);
     Task SetGuardZoneVisibleAsync(bool value);
     Task SetGuardZoneWarningRingVisibleAsync(bool value);
     Task SetWeatherOverlayOpacityAsync(double value);

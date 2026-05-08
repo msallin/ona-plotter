@@ -157,14 +157,42 @@ public sealed class MarinePoiController : IAsyncDisposable
         return true;
     }
 
+    // Cached snapshot of the marine-POI flags this controller actually
+    // consumes. OnSettingsChanged fires for ANY setting (font size,
+    // night mode, ...); the previous handler re-rendered + cancelled
+    // the in-flight fetch + re-scheduled on every fire, even when none
+    // of the marine-POI flags had changed. Snapshot+compare gates the
+    // expensive work on a real change.
+    private (bool Master, bool Fuel, bool Marina, bool Harbour, bool Mooring,
+        bool Slipway, bool Pier, bool Chandlery, bool DrinkingWater, bool PumpOut)
+        _cachedFlags;
+
+    private (bool Master, bool Fuel, bool Marina, bool Harbour, bool Mooring,
+        bool Slipway, bool Pier, bool Chandlery, bool DrinkingWater, bool PumpOut)
+        SnapshotFlags() => (
+            _settings.MarinePoiOverlayVisible,
+            _settings.MarinePoiFuelEnabled,
+            _settings.MarinePoiMarinaEnabled,
+            _settings.MarinePoiHarbourEnabled,
+            _settings.MarinePoiMooringEnabled,
+            _settings.MarinePoiSlipwayEnabled,
+            _settings.MarinePoiPierEnabled,
+            _settings.MarinePoiChandleryEnabled,
+            _settings.MarinePoiDrinkingWaterEnabled,
+            _settings.MarinePoiPumpOutEnabled);
+
     /// <summary>
-    /// Settings changed (helm toggled a category). Re-render the
-    /// cache through the new mask, and fetch any newly-enabled
-    /// categories. Called from <see cref="IAppSettings.OnSettingsChanged"/>.
+    /// Settings changed. Re-render the cache + schedule fetch ONLY
+    /// when one of the marine-POI flags actually changed; an unrelated
+    /// setting flip (font size, harbor mode, night mode, ...) is a
+    /// no-op here. Called from <see cref="IAppSettings.OnSettingsChanged"/>.
     /// </summary>
     public async Task OnSettingsChangedAsync()
     {
         if (!_hasViewport) return;
+        var current = SnapshotFlags();
+        if (current.Equals(_cachedFlags)) return;
+        _cachedFlags = current;
         await _js.SetMarinePoisVisibleAsync(AnyCategoryEnabled);
         await RenderFromCacheAsync();
         ScheduleFetch();
@@ -172,9 +200,16 @@ public sealed class MarinePoiController : IAsyncDisposable
 
     /// <summary>
     /// Once-on-init: push the persisted visibility flag so the JS
-    /// layer's master gate is in sync from first paint.
+    /// layer's master gate is in sync from first paint, and seed the
+    /// settings-change diff-cache so the first OnSettingsChanged tick
+    /// after init doesn't false-trigger a re-render on a non-marine-POI
+    /// flag change.
     /// </summary>
-    public Task InitAsync() => _js.SetMarinePoisVisibleAsync(AnyCategoryEnabled);
+    public Task InitAsync()
+    {
+        _cachedFlags = SnapshotFlags();
+        return _js.SetMarinePoisVisibleAsync(AnyCategoryEnabled);
+    }
 
     /// <summary>Cancel any in-flight debounce / HTTP and tear down.</summary>
     public ValueTask DisposeAsync()

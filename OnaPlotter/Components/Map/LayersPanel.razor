@@ -170,10 +170,12 @@
     <MiscSection WeatherVisible="WeatherOverlayVisible"
                  WeatherOpacityPercent="WeatherOverlayOpacityPercent"
                  AtonsVisible="AtonsVisible"
+                 AisLabelsVisible="AisLabelsVisible"
                  OnToggleWeather="OnToggleWeatherOverlay"
                  OnWeatherOpacityPreview="OnWeatherOpacityPreview"
                  OnWeatherOpacityCommit="OnWeatherOpacityCommit"
-                 OnToggleAtons="OnToggleAtonsVisible" />
+                 OnToggleAtons="OnToggleAtonsVisible"
+                 OnToggleAisLabels="OnToggleAisLabelsVisible" />
 
     @* Import / Export GPX moved to the Settings page (Backup section).
        The map's Layers panel is for "what shows on the chart"; data
@@ -219,6 +221,7 @@
     [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;
     [Parameter] public bool RegionsVisible { get; set; } = true;
     [Parameter] public bool AtonsVisible { get; set; } = true;
+    [Parameter] public bool AisLabelsVisible { get; set; } = true;
     [Parameter] public bool GuardZoneVisible { get; set; } = true;
     [Parameter] public bool ShowDefaultHud { get; set; } = true;
     [Parameter] public bool ShowAutopilotHud { get; set; }
@@ -271,6 +274,7 @@
     [Parameter] public EventCallback<int> OnWeatherOpacityPreview { get; set; }
     [Parameter] public EventCallback<int> OnWeatherOpacityCommit { get; set; }
     [Parameter] public EventCallback<bool> OnToggleAtonsVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnToggleAisLabelsVisible { get; set; }
 
     // Marine-services category flags + callbacks. Threaded through to
     // MarineServicesSection. Each callback tells Map.razor.cs to flip
