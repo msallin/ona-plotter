@@ -103,15 +103,20 @@ article {
     padding-right: 1rem !important;
 }
 
-/* Shared shape for topbar glyph buttons (Night / Fullscreen).
-   Fixed square so they line up as a row of identical icons, not
-   a row of differently-sized text / icon toggles. */
+/* Shared shape for topbar glyph buttons (Night / Fullscreen / zoom).
+   Stretch to the full top-row height (3 rem) instead of the earlier
+   2 rem - helm flagged the small buttons as awkward to tap on a
+   touch screen and visually under-using the band the topbar already
+   reserves. Width stays compact so the row of identical glyphs reads
+   as a unit; only the height grows. align-self: stretch is the
+   flex-default but spelled out here so the rule survives a future
+   parent flex change. */
 .topbar-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
-    height: 2rem;
+    align-self: stretch;
     padding: 0;
     line-height: 1;
 }

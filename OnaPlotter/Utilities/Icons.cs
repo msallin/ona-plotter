@@ -57,6 +57,13 @@ public static class Icons
     // "History" text labels eat too much topbar real estate.
     private const string PathHistory = "<rect x=\"6\" y=\"3\" width=\"12\" height=\"18\" rx=\"2\"/><line x1=\"9\" y1=\"3\" x2=\"15\" y2=\"3\"/><line x1=\"9\" y1=\"9\" x2=\"15\" y2=\"9\"/><line x1=\"9\" y1=\"13\" x2=\"15\" y2=\"13\"/><line x1=\"9\" y1=\"17\" x2=\"13\" y2=\"17\"/>";
 
+    // Warning triangle with exclamation. Swapped onto the alarm-log
+    // button when active alarms are firing (clipboard switches to
+    // history-only state). Triangle stops at top y=3 so it visually
+    // balances the History rect's same y=3 baseline; exclamation
+    // sized to read at 14 px without losing the dot.
+    private const string PathWarning = "<path d=\"M12 3 L22 20 L2 20 Z\"/><line x1=\"12\" y1=\"10\" x2=\"12\" y2=\"15\"/><circle cx=\"12\" cy=\"17.5\" r=\"0.7\" fill=\"currentColor\" stroke=\"none\"/>";
+
     /// <summary>
     /// Build the full <c>&lt;svg&gt;</c> wrapper at an arbitrary
     /// pixel size around the given inner path. Use sparingly; prefer
@@ -123,5 +130,6 @@ public static class Icons
         public static readonly string FullscreenEnter = Render(PathFullscreenEnter, 14);
         public static readonly string FullscreenExit = Render(PathFullscreenExit, 14);
         public static readonly string History = Render(PathHistory, 14);
+        public static readonly string Warning = Render(PathWarning, 14);
     }
 }
