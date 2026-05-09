@@ -43,20 +43,24 @@ public static class AisPalette
 
     /// <summary>Maps a SignalK <c>design.aisShipType</c> string to the
     /// closest palette entry by substring match. Returns the Default
-    /// cream for unrecognised or null types.</summary>
+    /// cream for unrecognised or null types.
+    /// <para>Per-vessel hot path on every AIS push (200+ vessels at
+    /// ~3 Hz). Uses <see cref="StringComparison.OrdinalIgnoreCase"/>
+    /// instead of allocating a lowercased copy + Contains chain so
+    /// the loop's per-vessel string allocations drop from ~3 to 0.</para></summary>
     public static string ShipTypeColor(string? shipType)
     {
         if (string.IsNullOrWhiteSpace(shipType)) return Default;
-        var t = shipType.ToLowerInvariant();
-        if (t.Contains("cargo"))     return Cargo;
-        if (t.Contains("tanker"))    return Tanker;
-        if (t.Contains("passenger")) return Passenger;
-        if (t.Contains("fishing"))   return Fishing;
-        if (t.Contains("sailing"))   return Sailing;
-        if (t.Contains("pleasure"))  return Pleasure;
-        if (t.Contains("tug"))       return Tug;
-        if (t.Contains("military"))  return Military;
-        if (t.Contains("sar"))       return Sar;
+        const StringComparison Cmp = StringComparison.OrdinalIgnoreCase;
+        if (shipType.Contains("cargo", Cmp))     return Cargo;
+        if (shipType.Contains("tanker", Cmp))    return Tanker;
+        if (shipType.Contains("passenger", Cmp)) return Passenger;
+        if (shipType.Contains("fishing", Cmp))   return Fishing;
+        if (shipType.Contains("sailing", Cmp))   return Sailing;
+        if (shipType.Contains("pleasure", Cmp))  return Pleasure;
+        if (shipType.Contains("tug", Cmp))       return Tug;
+        if (shipType.Contains("military", Cmp))  return Military;
+        if (shipType.Contains("sar", Cmp))       return Sar;
         return Default;
     }
 
@@ -64,20 +68,22 @@ public static class AisPalette
     /// Coarse shape-glyph category used on the AIS chevron for colour-
     /// blind accessibility. Four buckets (sail / fish / commercial /
     /// service); unknown returns null so the chevron renders plain.
+    /// Same allocation-free OrdinalIgnoreCase contract as
+    /// <see cref="ShipTypeColor"/>.
     /// </summary>
     public static string? ShipTypeCategory(string? shipType)
     {
         if (string.IsNullOrWhiteSpace(shipType)) return null;
-        var t = shipType.ToLowerInvariant();
-        if (t.Contains("sail"))     return "sail";
-        if (t.Contains("pleasure")) return "sail";
-        if (t.Contains("fish"))     return "fish";
-        if (t.Contains("cargo"))    return "commercial";
-        if (t.Contains("tanker"))   return "commercial";
-        if (t.Contains("passenger"))return "commercial";
-        if (t.Contains("tug"))      return "commercial";
-        if (t.Contains("military")) return "service";
-        if (t.Contains("sar"))      return "service";
+        const StringComparison Cmp = StringComparison.OrdinalIgnoreCase;
+        if (shipType.Contains("sail", Cmp))     return "sail";
+        if (shipType.Contains("pleasure", Cmp)) return "sail";
+        if (shipType.Contains("fish", Cmp))     return "fish";
+        if (shipType.Contains("cargo", Cmp))    return "commercial";
+        if (shipType.Contains("tanker", Cmp))   return "commercial";
+        if (shipType.Contains("passenger", Cmp))return "commercial";
+        if (shipType.Contains("tug", Cmp))      return "commercial";
+        if (shipType.Contains("military", Cmp)) return "service";
+        if (shipType.Contains("sar", Cmp))      return "service";
         return null;
     }
 }

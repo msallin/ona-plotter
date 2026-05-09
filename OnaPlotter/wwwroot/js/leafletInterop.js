@@ -467,10 +467,28 @@ let selfIcon = null;
 
 function rotateMarker(marker, rad) {
     if (rad == null) return;
-    const el = marker.getElement();
-    if (!el) return;
-    const svg = el.querySelector('svg');
-    if (svg) svg.style.transform = `rotate(${rad * DEG}deg)`;
+    // Cache the inner <svg> + last-applied degree on the marker to avoid
+    // a per-tick querySelector + style write. The selector walk costs
+    // a layout-aware DOM scan; the style write triggers a paint even
+    // when the value hasn't changed. Both compound on a 200-vessel
+    // harbour at ~3 Hz. The cached _rotSvg is invalidated when Leaflet
+    // re-attaches the marker DOM (setIcon detaches the old element);
+    // we re-resolve via getElement() / querySelector when the cached
+    // ref's ownerDocument no longer matches the live element.
+    const deg = rad * DEG;
+    if (marker._rotDeg === deg && marker._rotSvg && marker._rotSvg.isConnected) {
+        return;
+    }
+    let svg = marker._rotSvg;
+    if (!svg || !svg.isConnected) {
+        const el = marker.getElement();
+        if (!el) return;
+        svg = el.querySelector('svg');
+        if (!svg) return;
+        marker._rotSvg = svg;
+    }
+    svg.style.transform = `rotate(${deg}deg)`;
+    marker._rotDeg = deg;
 }
 
 // ========== EXPORTED FUNCTIONS ==========

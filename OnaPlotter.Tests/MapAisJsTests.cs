@@ -16,7 +16,11 @@ public class MapAisJsTests
     {
         var fake = new RecordingJsRef();
         var sut = new MapAisJs(fake);
-        var vessels = new object[] { new { id = "abc" }, new { id = "def" } };
+        var vessels = new OnaPlotter.Services.Map.AisVesselPayload[]
+        {
+            new() { Context = "abc", Lat = 0, Lon = 0 },
+            new() { Context = "def", Lat = 1, Lon = 1 },
+        };
 
         await sut.UpdateAisTargetsAsync(vessels);
 
@@ -85,7 +89,7 @@ public class MapAisJsTests
         var sut = new MapAisJs(fake);
 
         sut.MarkDisposed();
-        await sut.UpdateAisTargetsAsync(new object[] { });
+        await sut.UpdateAisTargetsAsync(System.Array.Empty<OnaPlotter.Services.Map.AisVesselPayload>());
         await sut.SetAtonsAsync(new object[] { });
         await sut.SetAtonsVisibleAsync(true);
         await sut.SetOwnMmsiAsync("x");

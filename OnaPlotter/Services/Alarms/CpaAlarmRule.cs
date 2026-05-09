@@ -134,6 +134,14 @@ public sealed class CpaAlarmRule : IAlarmRule
             if (cpa.Value.CpaNm >= cpaLimit) continue;
             if (cpa.Value.TcpaMin > tcpaLimit) continue;
 
+            // CPA threshold tripped. Now (and only now) compute the
+            // COLREGS classification for the alarm banner suffix.
+            // Previously this trig + bearing math ran for EVERY
+            // vessel in the loop and the result was discarded for
+            // every vessel that didn't trip the threshold. On a
+            // 200-vessel harbour at 1 Hz that was 200 wasted
+            // Classify calls/sec; the helm typically has 1-3
+            // simultaneous CPA hits at most.
             string name = v.Name ?? v.Mmsi ?? "vessel";
             // Compact countdown format matching the on-chart CPA
             // chip: "0.42nm T -5′" - prime glyph for minutes,

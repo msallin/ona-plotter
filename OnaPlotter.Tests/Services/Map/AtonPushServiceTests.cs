@@ -16,7 +16,7 @@ public class AtonPushServiceTests
     {
         public List<object[]> AtonPushes { get; } = [];
 
-        public Task UpdateAisTargetsAsync(object[] vessels) => Task.CompletedTask;
+        public Task UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisVesselPayload[] vessels) => Task.CompletedTask;
 
         public Task SetAtonsAsync(object[] atons)
         {

@@ -708,7 +708,27 @@
 //             (3) Hoisted lut/xLut/yLut + spoke.data refs to locals
 //                 inside _paintSpoke so the JIT doesn't re-read
 //                 them per iteration.
-const CACHE_NAME = 'ona-plotter-v75';
+// v75 -> v76: General performance sweep. Three packages:
+//             A) AIS push pipeline. AisPushService.BuildSnapshot
+//                pools AisVesselPayload instances and writes fields
+//                in place; the per-tick allocation drops from 200
+//                anonymous-type objects to one array. JS aisLayer
+//                reuses a [lat,lon] scratch tuple, skips setLatLng
+//                when the position is unchanged, hoists getElement()
+//                once per vessel, and rotateMarker caches the inner
+//                <svg> + last-applied degree.
+//             B) Boot path. Vendored Leaflet 1.9.4 (no longer
+//                blocks first paint on cross-origin unpkg fetch;
+//                works PWA-offline). atonLayer + marinePoiLayer
+//                cache divIcons by category and skip setIcon when
+//                the cached ref hasn't changed.
+//             C) Per-vessel CPU. AisPalette.ShipTypeColor +
+//                ShipTypeCategory + Colregs.FromAisShipType use
+//                StringComparison.OrdinalIgnoreCase instead of
+//                allocating a lowercased copy. AisSart.CategoryFromAny
+//                fast-paths on "no mmsi:9 in context" before the
+//                substring extract.
+const CACHE_NAME = 'ona-plotter-v76';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
@@ -742,7 +762,21 @@ const APP_SHELL = [
     // and PWA splash; precache so the install flow works offline.
     new URL('apple-touch-icon-180.png', SCOPE).toString(),
     new URL('icon-192.png', SCOPE).toString(),
-    new URL('icon-512.png', SCOPE).toString()
+    new URL('icon-512.png', SCOPE).toString(),
+    // Vendored Leaflet 1.9.4 (was loaded from unpkg.com synchronously
+    // in index.html, blocking WASM start on slow links AND breaking
+    // PWA offline mode). Precaching the JS + CSS + per-CSS image
+    // refs means cold-start fetches one fewer cross-origin asset and
+    // the helm can boot the chartplotter offline once the bundle's
+    // installed. Bump CACHE_NAME to invalidate stale copies on
+    // future Leaflet upgrades.
+    new URL('lib/leaflet/dist/leaflet.js', SCOPE).toString(),
+    new URL('lib/leaflet/dist/leaflet.css', SCOPE).toString(),
+    new URL('lib/leaflet/dist/images/layers.png', SCOPE).toString(),
+    new URL('lib/leaflet/dist/images/layers-2x.png', SCOPE).toString(),
+    new URL('lib/leaflet/dist/images/marker-icon.png', SCOPE).toString(),
+    new URL('lib/leaflet/dist/images/marker-icon-2x.png', SCOPE).toString(),
+    new URL('lib/leaflet/dist/images/marker-shadow.png', SCOPE).toString()
 ];
 
 self.addEventListener('install', (event) => {

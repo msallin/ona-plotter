@@ -9,12 +9,19 @@ namespace OnaPlotter.Services.Js;
 /// </summary>
 public interface IMapAisJs
 {
-    /// <summary>Push the current AIS-target snapshot to the map. Each
-    /// element is the anonymous-object shape leafletInterop.js's
-    /// <c>updateAisTargets</c> expects (context, lat, lon, COG, SOG,
-    /// heading, label, palette key, etc.); the JS side diffs by id and
-    /// adds / moves / removes markers accordingly.</summary>
-    Task UpdateAisTargetsAsync(object[] vessels);
+    /// <summary>Push the current AIS-target snapshot to the map. The
+    /// payload is a typed array of <see cref="OnaPlotter.Services.Map.AisVesselPayload"/>
+    /// instances pooled by <c>AisPushService</c>; each carries the
+    /// pre-resolved shape leafletInterop.js's <c>updateAisTargets</c>
+    /// expects (context, lat, lon, COG, SOG, heading, label, palette
+    /// key, etc.). The typed shape replaces the previous
+    /// <c>object[]</c> of anonymous types so the per-tick allocation
+    /// drops from 200 heap objects to one array, and Blazor's interop
+    /// serializer can pin the converter once instead of polymorphic-
+    /// resolving each element. JS-side reader is unchanged - the wire
+    /// keys still serialise camelCase via the explicit
+    /// <c>[JsonPropertyName]</c> annotations on the payload.</summary>
+    Task UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisVesselPayload[] vessels);
 
     /// <summary>Push the current AtoN snapshot. The JS side renders
     /// each entry as a static buoy / beacon symbol; static enough not

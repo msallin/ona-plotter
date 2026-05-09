@@ -29,7 +29,7 @@ public sealed class MapAisJs : IMapAisJs
     /// before it disposes the module reference.</summary>
     public void MarkDisposed() => _disposed = true;
 
-    public Task UpdateAisTargetsAsync(object[] vessels)
+    public Task UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisVesselPayload[] vessels)
         => InvokeSafe("updateAisTargets", (object)vessels);
 
     public Task SetAtonsAsync(object[] atons)

@@ -17,10 +17,18 @@ public class AisPushServiceTests
 {
     private sealed class FakeAisJs : IMapAisJs
     {
-        public List<object[]> Pushes { get; } = [];
+        public List<OnaPlotter.Services.Map.AisVesselPayload[]> Pushes { get; } = [];
 
-        public Task UpdateAisTargetsAsync(object[] vessels)
+        public Task UpdateAisTargetsAsync(OnaPlotter.Services.Map.AisVesselPayload[] vessels)
         {
+            // Snapshot the array refs at push time. Element instances
+            // are pool-shared - subsequent pushes mutate the same
+            // payload objects in place. Tests in this file inspect
+            // Pushes[N] immediately after the Nth PushAsync, before
+            // the next push runs, so the pool aliasing is invisible.
+            // If a future test does multiple pushes and reads earlier
+            // entries afterward, it MUST clone the field values into
+            // locals before the next push fires.
             Pushes.Add(vessels);
             return Task.CompletedTask;
         }
@@ -134,17 +142,25 @@ public class AisPushServiceTests
 
         await svc.PushAsync(new NavigationData());
 
-        var entry = js.Pushes[0][0];
-        var t = entry.GetType();
         // Spot-check a representative subset of the fields the JS side
-        // expects. Renaming any of them silently breaks marker rendering.
-        await Assert.That(t.GetProperty("context")).IsNotNull();
-        await Assert.That(t.GetProperty("lat")).IsNotNull();
-        await Assert.That(t.GetProperty("lon")).IsNotNull();
-        await Assert.That(t.GetProperty("displayName")).IsNotNull();
-        await Assert.That(t.GetProperty("source")).IsNotNull();
-        await Assert.That(t.GetProperty("cpaThreat")).IsNotNull();
-        await Assert.That(t.GetProperty("ageSec")).IsNotNull();
+        // expects. With the typed AisVesselPayload these become direct
+        // property reads instead of reflection probes; the property
+        // existence is enforced at compile time. The wire-key contract
+        // (camelCase) is enforced separately by the [JsonPropertyName]
+        // annotations on the type itself.
+        var entry = js.Pushes[0][0];
+        await Assert.That(entry.Context).IsEqualTo("vessels.urn:mrn:imo:mmsi:111");
+        await Assert.That(entry.Lat).IsEqualTo(47.0);
+        await Assert.That(entry.Lon).IsEqualTo(8.0);
+        await Assert.That(entry.DisplayName).IsEqualTo("Test Boat");
+        await Assert.That(entry.Source).IsEqualTo("ais");
+        await Assert.That(entry.CpaThreat).IsEqualTo("none");
+        // AgeSec is computed from (testTime - vessel.LastSeen). The
+        // FakeTime is fixed at 2026-01-01 while AisStore.Apply stamps
+        // LastSeen via DateTime.UtcNow on the real clock, so the sign
+        // is environment-dependent. Just probe the property exists -
+        // the field-presence contract is what this test enforces.
+        _ = entry.AgeSec;
     }
 
     [Test]
@@ -189,12 +205,11 @@ public class AisPushServiceTests
         await svc.PushAsync(nav);
 
         var entry = js.Pushes[0][0];
-        var threat = (string?)entry.GetType().GetProperty("cpaThreat")?.GetValue(entry);
         // 0.09 nm CPA is OUTSIDE the anchor-narrowed warning band
         // (~0.032 nm) - the chip should be classified None. Without
         // the AisPushService fix this returns "warning" because the
         // 0.5 nm underway threshold's warning band reaches to 1.0 nm.
-        await Assert.That(threat)
+        await Assert.That(entry.CpaThreat)
             .IsEqualTo("none")
             .Because("anchored chip classifier must use the narrowed " +
                      "anchor radius so chips don't appear outside the " +
@@ -214,8 +229,7 @@ public class AisPushServiceTests
         await svc.PushAsync(new NavigationData());
 
         var entry = js.Pushes[0][0];
-        var name = (string?)entry.GetType().GetProperty("displayName")?.GetValue(entry);
-        await Assert.That(name).IsEqualTo("★ Friend");
+        await Assert.That(entry.DisplayName).IsEqualTo("★ Friend");
     }
 
     // --- LOA / Beam payload shape (PR #221) ---------------------------
@@ -241,9 +255,12 @@ public class AisPushServiceTests
 
         await svc.PushAsync(new NavigationData());
 
-        var t = js.Pushes[0][0].GetType();
-        await Assert.That(t.GetProperty("loaM")).IsNotNull();
-        await Assert.That(t.GetProperty("beamM")).IsNotNull();
+        // Direct property access on the typed payload - if either
+        // field is renamed the compile fails here, which is the
+        // contract this test exists to enforce.
+        var entry = js.Pushes[0][0];
+        _ = entry.LoaM;
+        _ = entry.BeamM;
     }
 
     [Test]
@@ -268,21 +285,13 @@ public class AisPushServiceTests
 
         // Payload order is store-determined; locate by context.
         var entries = js.Pushes[0];
-        var dims = entries.First(e =>
-            (string)e.GetType().GetProperty("context")!.GetValue(e)!
-                == "vessels.urn:mrn:imo:mmsi:111");
-        var bare = entries.First(e =>
-            (string)e.GetType().GetProperty("context")!.GetValue(e)!
-                == "vessels.urn:mrn:imo:mmsi:222");
+        var dims = entries.First(e => e.Context == "vessels.urn:mrn:imo:mmsi:111");
+        var bare = entries.First(e => e.Context == "vessels.urn:mrn:imo:mmsi:222");
 
-        var dimsLoa = dims.GetType().GetProperty("loaM")!.GetValue(dims);
-        var dimsBeam = dims.GetType().GetProperty("beamM")!.GetValue(dims);
-        await Assert.That(dimsLoa).IsEqualTo(32.5);
-        await Assert.That(dimsBeam).IsEqualTo(6.2);
+        await Assert.That(dims.LoaM).IsEqualTo(32.5);
+        await Assert.That(dims.BeamM).IsEqualTo(6.2);
 
-        var bareLoa = bare.GetType().GetProperty("loaM")!.GetValue(bare);
-        var bareBeam = bare.GetType().GetProperty("beamM")!.GetValue(bare);
-        await Assert.That(bareLoa).IsNull();
-        await Assert.That(bareBeam).IsNull();
+        await Assert.That(bare.LoaM).IsNull();
+        await Assert.That(bare.BeamM).IsNull();
     }
 }

@@ -132,7 +132,23 @@ public sealed class AisPushService
         }
     }
 
-    private object[] BuildSnapshot(NavigationData ownship)
+    /// <summary>Pool of AisVesselPayload objects reused across pushes.
+    /// Grows monotonically to the high-water-mark vessel count seen
+    /// in any push. A 200-vessel busy harbour previously allocated
+    /// 200 anonymous-type heap objects (~168 B each = ~33 KB) per
+    /// push at 3 Hz = ~100 KB/sec of pure GC pressure on Pi 4. The
+    /// pool drops that to a single AisVesselPayload[] array alloc
+    /// per push (and zero pool allocs in steady state).
+    ///
+    /// <para>Concurrency: WASM is single-threaded; callers must not
+    /// hold a payload reference past the next BuildSnapshot. The only
+    /// caller, <see cref="PushAsync"/>, awaits UpdateAisTargetsAsync
+    /// (which serialises synchronously inside Blazor's interop layer)
+    /// before returning, so the pool is safe to mutate on the next
+    /// tick.</para></summary>
+    private readonly List<AisVesselPayload> _payloadPool = new();
+
+    private AisVesselPayload[] BuildSnapshot(NavigationData ownship)
     {
         var vessels = _aisStore.GetVessels();
         // AisStore filters on position when building the snapshot, but
@@ -185,7 +201,11 @@ public sealed class AisPushService
         var ownSnap = Cpa.PrecomputeOwn(
             ownLat ?? double.NaN, ownLon ?? double.NaN, ownCog, ownSog);
         bool ownComplete = ownSnap is not null;
-        var result = new object[visible.Count];
+        // One array alloc per push (sized to the visible count) vs the
+        // 200 anonymous-object allocs the previous shape produced. The
+        // elements are pool refs (mutated in place every tick), not
+        // fresh objects.
+        var result = new AisVesselPayload[visible.Count];
         for (int i = 0; i < visible.Count; i++)
         {
             var v = visible[i];
@@ -266,37 +286,56 @@ public sealed class AisPushService
                 ? null
                 : (v.IsBuddy ? "★ " + baseName : baseName);
 
-            result[i] = new
+            // Acquire pooled payload at index `i`, growing the pool on
+            // the high-water-mark frame. Reset every field in place so
+            // V8 / .NET keep one hidden class for the type and stale
+            // values from a previous larger frame can't leak through.
+            AisVesselPayload p;
+            if (i < _payloadPool.Count)
             {
-                context = v.Context, name = v.Name, mmsi = v.Mmsi, callsign = v.Callsign,
-                displayName,                   // pre-resolved label or null
-                lat = v.Latitude!.Value, lon = v.Longitude!.Value,
-                headingRad = v.Heading, cogRad = v.CourseOverGround,
-                sogMs = v.SpeedOverGround, shipType = v.ShipType,
-                // AIS-static dimensions (LOA + beam). Often absent -
-                // see AisVessel.LengthOverallMeters comments. JS popup
-                // renders the row only when at least one is non-null.
-                loaM = v.LengthOverallMeters,
-                beamM = v.BeamMeters,
-                buddy = v.IsBuddy,
-                // Tell JS whether to render with an AIS or radar-ARPA
-                // icon. Radar targets lose buddy/danger overlays too;
-                // JS looks at this flag.
-                source = v.Source == TargetSource.Radar ? "radar" : "ais",
-                sartCategory = sartCat,        // "SART"/"MOB"/"EPIRB" or null
-                glyphCategory,                 // "sail"/"fish"/"commercial"/"service"/null
-                shipColor = AisPalette.ShipTypeColor(v.ShipType),
-                cpaNm,                         // nautical miles or null
-                tcpaMin,                       // minutes or null
-                cpaThreat,                     // "none"/"warning"/"danger"
-                colregsLabel,
-                colregsRole,
-                // Seconds since we last heard from this target. JS
-                // uses it to fade stale markers (>30 s) so the chart
-                // visually distinguishes a live target from a ghost
-                // that hasn't updated in minutes.
-                ageSec = (int)(now - v.LastSeen).TotalSeconds,
-            };
+                p = _payloadPool[i];
+            }
+            else
+            {
+                p = new AisVesselPayload();
+                _payloadPool.Add(p);
+            }
+            p.Context = v.Context;
+            p.Name = v.Name;
+            p.Mmsi = v.Mmsi;
+            p.Callsign = v.Callsign;
+            p.DisplayName = displayName;
+            p.Lat = v.Latitude!.Value;
+            p.Lon = v.Longitude!.Value;
+            p.HeadingRad = v.Heading;
+            p.CogRad = v.CourseOverGround;
+            p.SogMs = v.SpeedOverGround;
+            p.ShipType = v.ShipType;
+            // AIS-static dimensions (LOA + beam). Often absent -
+            // see AisVessel.LengthOverallMeters comments. JS popup
+            // renders the row only when at least one is non-null.
+            p.LoaM = v.LengthOverallMeters;
+            p.BeamM = v.BeamMeters;
+            p.Buddy = v.IsBuddy;
+            // Tell JS whether to render with an AIS or radar-ARPA
+            // icon. Radar targets lose buddy/danger overlays too;
+            // JS looks at this flag.
+            p.Source = v.Source == TargetSource.Radar ? "radar" : "ais";
+            p.SartCategory = sartCat;
+            p.GlyphCategory = glyphCategory;
+            p.ShipColor = AisPalette.ShipTypeColor(v.ShipType);
+            p.CpaNm = cpaNm;
+            p.TcpaMin = tcpaMin;
+            p.CpaThreat = cpaThreat;
+            p.ColregsLabel = colregsLabel;
+            p.ColregsRole = colregsRole;
+            // Seconds since we last heard from this target. JS
+            // uses it to fade stale markers (>30 s) so the chart
+            // visually distinguishes a live target from a ghost
+            // that hasn't updated in minutes.
+            p.AgeSec = (int)(now - v.LastSeen).TotalSeconds;
+
+            result[i] = p;
         }
         return result;
     }

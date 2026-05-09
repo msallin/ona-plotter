@@ -101,13 +101,27 @@ function buildMarinePoiSvg(category) {
     }
 }
 
+// Cache divIcons by category. Categories are a small fixed set
+// (fuel, marina, harbour, mooring, slipway, pier, chandlery,
+// drinkingWater, pumpOut, ...), so the cache caps at ~10 entries.
+// Without this, every setMarinePois push allocated a fresh divIcon
+// per POI even though most shared the same category - on a 200-POI
+// busy harbour render that's ~190 redundant SVG constructions per
+// push. Identity-stable returns pair with the setIcon-skip-on-same
+// guard below.
+const _marinePoiIconCache = new Map();
+
 function makeMarinePoiIcon(category) {
-    return L.divIcon({
+    let icon = _marinePoiIconCache.get(category);
+    if (icon !== undefined) return icon;
+    icon = L.divIcon({
         className: 'marine-poi-marker',
         html: buildMarinePoiSvg(category),
         iconSize: [28, 28],
         iconAnchor: [14, 14],
     });
+    _marinePoiIconCache.set(category, icon);
+    return icon;
 }
 
 function escapeHtml(s) {
@@ -200,11 +214,19 @@ export function setMarinePois(pois) {
         const existing = poiMarkers.get(p.id);
         if (existing) {
             existing.setLatLng([p.lat, p.lon]);
-            existing.setIcon(icon);
+            // Identity check: cache returns the same divIcon for the
+            // same category, so a setIcon is only needed when the POI
+            // actually changed category (rare). Skipping the no-op
+            // setIcon avoids a DOM detach + re-attach per POI per push.
+            if (existing._lastIcon !== icon) {
+                existing.setIcon(icon);
+                existing._lastIcon = icon;
+            }
             existing.setPopupContent(buildMarinePoiPopupHtml(p));
         } else {
             const m = L.marker([p.lat, p.lon], { icon })
                 .bindPopup(buildMarinePoiPopupHtml(p), { autoPan: false });
+            m._lastIcon = icon;
             if (visible) m.addTo(mapRef);
             poiMarkers.set(p.id, m);
         }

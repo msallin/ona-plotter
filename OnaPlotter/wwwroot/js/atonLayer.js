@@ -104,13 +104,29 @@ function buildAtonSvg(symbol, side, isVirtual) {
     </svg>`;
 }
 
+// Cache divIcons by (symbol|side|virtual) tuple so repeated AtoN
+// pushes don't rebuild the same SVG over and over. Each AtoN type
+// has at most a handful of distinct visuals (cardinal × 4 quadrants
+// × {real, virtual}, lateral × {port, stbd} × {real, virtual}, ...
+// realistic upper bound ~30 entries). Without the cache, a 200-entry
+// harbour push allocated 200 fresh divIcon instances even though
+// most shared the same key. Identity-stable returns also let the
+// caller (setAtons) skip setIcon when the same marker would get the
+// same divIcon a second time.
+const _atonIconCache = new Map();
+
 function makeAtonIcon(symbol, side, isVirtual) {
-    return L.divIcon({
+    const key = symbol + '|' + side + '|' + (isVirtual ? '1' : '0');
+    let icon = _atonIconCache.get(key);
+    if (icon !== undefined) return icon;
+    icon = L.divIcon({
         className: 'aton-marker',  // CSS hook for global styling
         html: buildAtonSvg(symbol, side, isVirtual),
         iconSize: [28, 28],
         iconAnchor: [14, 14],
     });
+    _atonIconCache.set(key, icon);
+    return icon;
 }
 
 function buildAtonPopupHtml(a) {
@@ -154,7 +170,16 @@ export function setAtons(atons) {
         const existing = atonMarkers.get(a.context);
         if (existing) {
             existing.setLatLng([a.lat, a.lon]);
-            existing.setIcon(icon);
+            // Identity check against the cached divIcon. setIcon does a
+            // DOM detach + re-attach; on a 200-buoy harbour push at
+            // every WS reconnect-replay that's measurable layout work
+            // for visuals that didn't change. The cache returns the
+            // same ref for the same (symbol, side, virtual) tuple, so
+            // strict-equality is the right test.
+            if (existing._lastIcon !== icon) {
+                existing.setIcon(icon);
+                existing._lastIcon = icon;
+            }
             existing.setPopupContent(buildAtonPopupHtml(a));
         } else {
             // Honour the visibility flag on creation. Without this
@@ -164,6 +189,9 @@ export function setAtons(atons) {
             // the buoys reappear despite the toggle being off.
             const m = L.marker([a.lat, a.lon], { icon })
                 .bindPopup(buildAtonPopupHtml(a), { autoPan: false });
+            // Stash the icon ref so the per-tick path's identity check
+            // (above) skips redundant setIcon calls.
+            m._lastIcon = icon;
             if (atonsVisible) m.addTo(mapRef);
             atonMarkers.set(a.context, m);
         }

@@ -175,6 +175,12 @@ let harborMode = false;
 // labels the helm hid via Settings.
 let aisLabelsVisible = true;
 
+// Reusable [lat, lon] scratch passed to L.marker() / marker.setLatLng()
+// per vessel per tick. Leaflet copies the values into its own LatLng
+// internally so a single shared array is safe; eliminates ~200 fresh
+// 2-element allocations per push on a busy-harbour AIS update.
+const _scratchLatLng = [0, 0];
+
 // AIS-target COG-vector look-ahead in minutes. Default matches
 // IAppSettings.AisCogVectorMinutes (10). leafletInterop's
 // setCogVectorMinutes calls setAisCogMinutes below to update.
@@ -700,8 +706,15 @@ export function updateAisTargets(vessels) {
             : (isRadar ? getRadarIcon(color) : getAisIcon(color, category));
 
         let marker = aisMarkers[v.context];
+        // Scratch tuple reused across vessels for setLatLng. L.marker's
+        // ctor copies the values into its own LatLng so passing the
+        // same array each call is safe; setLatLng accepts the array
+        // form without holding the ref. Eliminates ~200 fresh
+        // [lat, lon] allocations per push on a busy harbour.
+        _scratchLatLng[0] = v.lat;
+        _scratchLatLng[1] = v.lon;
         if (!marker) {
-            marker = L.marker([v.lat, v.lon], { icon }).addTo(mapRef);
+            marker = L.marker(_scratchLatLng, { icon }).addTo(mapRef);
             // Stash the icon ref on the marker so the per-tick path
             // below can skip setIcon when nothing changed - the icon
             // caches return the SAME divIcon reference for the same
@@ -740,7 +753,18 @@ export function updateAisTargets(vessels) {
                 }
             });
         } else {
-            marker.setLatLng([v.lat, v.lon]);
+            // Skip setLatLng when the position is unchanged. Leaflet's
+            // setLatLng triggers a project + DOM transform write even
+            // when the LatLng values match; on a 200-vessel harbour at
+            // 3 Hz that's hundreds of redundant transform writes per
+            // second. The pos-equality cache lives on the marker so a
+            // setIcon (which rebuilds the DOM but not the LatLng) keeps
+            // the cache valid.
+            if (marker._lastLat !== v.lat || marker._lastLon !== v.lon) {
+                marker.setLatLng(_scratchLatLng);
+                marker._lastLat = v.lat;
+                marker._lastLon = v.lon;
+            }
             // Identity check against the cached ref: the icon caches
             // (aisIconCache / radarIconCache / sartIconCache) return
             // the same divIcon for the same input tuple, so a strict-
@@ -756,15 +780,21 @@ export function updateAisTargets(vessels) {
         }
         if (!isSart) rotateMarker(marker, v.cogRad ?? v.headingRad);
 
+        // Hoist getElement() once: the cpa-pulse + staleness-opacity
+        // blocks below both need the marker DOM element. The previous
+        // shape called getElement() twice per vessel per tick; on a
+        // 200-vessel harbour at 3 Hz that's 1200 redundant lookups/s
+        // (Leaflet's getElement walks the layer's renderer to fish
+        // out the icon's <div>; cheap individually, expensive in a
+        // tight loop).
+        const el = marker.getElement();
+
         // Pulse an expanding red ring around any AIS / radar target
         // whose CPA is in the "danger" band (matches the colors.danger
         // tint on the chevron). Adds a .cpa-pulse class to the marker
         // element, which the CSS drives via ::after. SART gets its own
         // pulse so we skip it here to avoid double-pulsing.
-        if (!isSart) {
-            const el = marker.getElement();
-            if (el) el.classList.toggle('cpa-pulse', isDangerEff);
-        }
+        if (!isSart && el) el.classList.toggle('cpa-pulse', isDangerEff);
 
         // Vessel staleness. Anything not heard from in >30 s is
         // geometrically stale - its rendered position is a guess,
@@ -775,22 +805,19 @@ export function updateAisTargets(vessels) {
         // workflow tolerates lateness. When a previously-faded target
         // flips to SART/buddy status mid-session we MUST clear the
         // opacity style we wrote earlier, otherwise it stays dim.
-        {
-            const el = marker.getElement();
-            if (el) {
-                if (isSart || v.buddy) {
-                    if (el.style.opacity !== '') el.style.opacity = '';
-                } else {
-                    // The fade ramp lives in C# (StalenessOpacity.Compute);
-                    // format.js mirrors it. Null means "fresh, clear inline
-                    // opacity so the CSS default applies".
-                    const ageSec = v.ageSec ?? 0;
-                    const op = stalenessOpacity(ageSec) ?? '';
-                    // Only write when the bucket actually changes; 200+
-                    // vessels in a harbour re-writing style every tick
-                    // invalidates layout for nothing.
-                    if (el.style.opacity !== op) el.style.opacity = op;
-                }
+        if (el) {
+            if (isSart || v.buddy) {
+                if (el.style.opacity !== '') el.style.opacity = '';
+            } else {
+                // The fade ramp lives in C# (StalenessOpacity.Compute);
+                // format.js mirrors it. Null means "fresh, clear inline
+                // opacity so the CSS default applies".
+                const ageSec = v.ageSec ?? 0;
+                const op = stalenessOpacity(ageSec) ?? '';
+                // Only write when the bucket actually changes; 200+
+                // vessels in a harbour re-writing style every tick
+                // invalidates layout for nothing.
+                if (el.style.opacity !== op) el.style.opacity = op;
             }
         }
 

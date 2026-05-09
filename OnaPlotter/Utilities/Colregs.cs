@@ -69,11 +69,17 @@ public static class Colregs
     public static VesselType FromAisShipType(string? shipType)
     {
         if (string.IsNullOrEmpty(shipType)) return VesselType.Power;
-        var t = shipType.ToLowerInvariant();
+        // OrdinalIgnoreCase comparisons avoid the per-call ToLowerInvariant
+        // allocation. Per-vessel hot path on the AIS push (200+ vessels
+        // at ~3 Hz); the previous shape allocated one lowercased copy
+        // per vessel per push.
+        const StringComparison Cmp = StringComparison.OrdinalIgnoreCase;
         // SignalK / AIS type 36 ("Sailing"). Match also "sailing
-        // vessel" + the lowercase substring "sail" only when it's a
-        // standalone word (avoid matching "passenger", "fishing").
-        if (t == "sailing" || t.Contains("sailing vessel") || t.StartsWith("sail "))
+        // vessel" + the substring "sail " only when it's a standalone
+        // word (avoid matching "passenger", "fishing").
+        if (shipType.Equals("sailing", Cmp)
+            || shipType.Contains("sailing vessel", Cmp)
+            || shipType.StartsWith("sail ", Cmp))
             return VesselType.Sail;
         return VesselType.Power;
     }
