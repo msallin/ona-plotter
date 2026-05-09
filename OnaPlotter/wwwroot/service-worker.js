@@ -677,7 +677,7 @@
 //             Alarm setup card on the same row. <pre> formula
 //             gets pre-wrap + word-break so half-width on tablet
 //             doesn't horizontal-scroll.
-const CACHE_NAME = 'ona-plotter-v70';
+const CACHE_NAME = 'ona-plotter-v71';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
