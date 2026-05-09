@@ -728,7 +728,10 @@
 //                allocating a lowercased copy. AisSart.CategoryFromAny
 //                fast-paths on "no mmsi:9 in context" before the
 //                substring extract.
-const CACHE_NAME = 'ona-plotter-v76';
+// v76 -> v77: Doubled the auth-status poll cadence: 2s -> 4s while
+//             the not-logged-in chip is up, 1min -> 2min when it's
+//             not. Halves the auth-probe HTTP traffic at no UX cost.
+const CACHE_NAME = 'ona-plotter-v77';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

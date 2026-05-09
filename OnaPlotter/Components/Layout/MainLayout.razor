@@ -585,22 +585,27 @@
     private LoginStatus? _loginStatus;
     private System.Threading.Timer? authPollTimer;
     /// <summary>Coalesces overlapping probes. At the warning-shown
-    /// 2s cadence, a network stall can leave a previous probe in
+    /// 4s cadence, a network stall can leave a previous probe in
     /// flight when the next tick fires (AuthApi caps each probe at
     /// 8s). Interlocked guard skips the duplicate - queuing them
     /// up would build a backlog of stale 401 round-trips with no
     /// UX benefit.</summary>
     private int _authProbeInFlight;
-    /// <summary>Login-state polling cadence. Fast 2s while the
+    /// <summary>Login-state polling cadence. Moderate 4s while the
     /// not-logged-in chip is up so the helm signing in via the SK
-    /// admin tab sees the chip clear within a tick or two; slow
-    /// 1-min cadence once logged in (or on a no-security server)
+    /// admin tab sees the chip clear within a few seconds; slow
+    /// 2-min cadence once logged in (or on a no-security server)
     /// just to catch a session expiry without a manual reload.
-    /// Cadence is re-evaluated after every probe.</summary>
+    /// Cadence is re-evaluated after every probe. Doubled from
+    /// the original 2s / 1min after a helm-feedback round; the
+    /// faster cadence delivered no measurable UX benefit (the
+    /// tradeoff between "chip clears in 2s" vs "chip clears in
+    /// 4s" is invisible at helm pace) but doubled the auth-probe
+    /// HTTP traffic.</summary>
     private static readonly TimeSpan AuthPollIntervalWarningShown =
-        TimeSpan.FromSeconds(2);
+        TimeSpan.FromSeconds(4);
     private static readonly TimeSpan AuthPollIntervalWarningHidden =
-        TimeSpan.FromMinutes(1);
+        TimeSpan.FromMinutes(2);
     /// <summary>Browser origin used to build the
     /// <c>/skServer/login</c> link in the not-logged-in chip.
     /// Captured once at OnInitialized; the chip's href is built
@@ -1488,8 +1493,8 @@
 
     /// <summary>Probe the login-status endpoint and stash for the
     /// not-logged-in chip. Called once on init, on tab visibility
-    /// changes, and on a dynamic timer cadence (2 s while the chip
-    /// is up; 1 min otherwise - see <see cref="AuthPollIntervalWarningShown"/>).
+    /// changes, and on a dynamic timer cadence (4 s while the chip
+    /// is up; 2 min otherwise - see <see cref="AuthPollIntervalWarningShown"/>).
     /// Failure / 404 (third-party SK server without
     /// /skServer/loginStatus) leaves the cached value null and the
     /// chip stays hidden - "we can't tell" is a more honest UX
