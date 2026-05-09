@@ -104,19 +104,19 @@ article {
 }
 
 /* Shared shape for topbar glyph buttons (Night / Fullscreen / zoom).
-   Stretch to the full top-row height (3 rem) instead of the earlier
-   2 rem - helm flagged the small buttons as awkward to tap on a
-   touch screen and visually under-using the band the topbar already
-   reserves. Width stays compact so the row of identical glyphs reads
-   as a unit; only the height grows. align-self: stretch is the
-   flex-default but spelled out here so the rule survives a future
-   parent flex change. */
+   Fixed 2 rem square so they line up with the search input next to
+   them (.topbar-search-input is 31 px tall). The earlier
+   align-self: stretch experiment made the buttons fill the full
+   3 rem row, which left them looking taller than the search box +
+   clipped the bottom border against the topbar's own border.
+   Compact width keeps the row of identical glyphs reading as a
+   unit. */
 .topbar-icon-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
-    align-self: stretch;
+    height: 2rem;
     padding: 0;
     line-height: 1;
 }

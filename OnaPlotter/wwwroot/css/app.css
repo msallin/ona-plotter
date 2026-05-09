@@ -3653,13 +3653,13 @@ main:has(.alarm-banner-stack) .snooze-chips {
     background: transparent;
     border: 1px solid var(--sk-border);
     color: var(--sk-text-muted);
-    padding: 0 12px;
+    padding: 0 10px;
+    height: 2rem;
     font-size: 0.72rem;
     border-radius: 4px;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     margin-left: 12px;
-    align-self: stretch;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -3670,10 +3670,11 @@ main:has(.alarm-banner-stack) .snooze-chips {
     border-color: var(--sk-accent);
 }
 @media (pointer: coarse) {
-    /* Touch: bump the typography but let align-self: stretch own
-       the height. The earlier explicit min-height clipped the
-       button below the topbar's 3 rem on some viewports. */
-    .alarm-log-btn { padding: 0 14px; font-size: 0.78rem; }
+    /* Touch: tighten typography for the icon-only mobile form;
+       height stays at 2 rem so the bottom border isn't clipped
+       by the topbar's own bottom-stroke and the button still
+       lines up with the search input next to it. */
+    .alarm-log-btn { padding: 0 8px; font-size: 0.78rem; }
 }
 
 /* Update-available chip. Sits in the topbar between the alarm log
@@ -4580,29 +4581,39 @@ html.night-mode-global body {
         background: transparent !important;
         border: none !important;
         font-size: 0 !important;       /* kill any line-height padding from text node */
+        /* Restore a normal cursor: long-press / hover on the dot
+           pulls up the title="..." (state + signed-in user) from
+           MainLayout.razor. The default text cursor on a span looked
+           like the dot was a selectable text node. */
+        cursor: help !important;
     }
     .connection-dot {
         margin-right: 0 !important;
-        width: 7px !important;
-        height: 7px !important;
+        /* 6 px dot (down from 7) - the prior size left the chip
+           visually larger than the rebadged Notifications button +
+           search input, which threw off the topbar's left-to-right
+           rhythm on a 390 px iPhone. 6 px still hits the
+           pre-attentive threshold for a peripheral colour cue
+           (helm catches a red flick from the corner of the eye)
+           while shaving 4 px off the chip's width including its
+           own border-radius rounding. */
+        width: 6px !important;
+        height: 6px !important;
     }
     /* Phone alarm-log button: drop the text label entirely and show
        the warning triangle / clipboard icon with a small count badge
-       in the corner. Helm asked for the button to fill the full
-       top-row height (3 rem) instead of the previous 30-ish px form
-       - more tappable, no awkward dead band above / below. align-
-       self: stretch matches the topbar-icon-btn pattern; remove the
-       earlier min-height so the stretch wins on touch viewports too. */
+       in the corner. Height stays at 2 rem (matching topbar-icon-btn
+       + search input) so the row reads as one consistent band - the
+       earlier full-row stretch clipped the bottom border against
+       the topbar's own bottom-stroke. */
     .alarm-log-label-full { display: none; }
     .alarm-log-icon { display: inline-flex; align-items: center; }
     .alarm-log-btn {
         position: relative;
-        padding: 0 10px;
+        padding: 0 8px;
         line-height: 1;
         background: transparent;
         border-color: rgba(255, 255, 255, 0.18);
-        align-self: stretch;
-        min-height: 0;
         margin-left: 8px;
     }
     .alarm-log-badge {
