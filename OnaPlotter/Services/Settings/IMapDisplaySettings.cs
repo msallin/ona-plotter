@@ -121,8 +121,8 @@ public interface IMapDisplaySettings
 
     /// <summary>Chart-display CSS contrast percentage, 50..200.
     /// Default 100 (identity, no filter). Helm boosts this when
-    /// Navionics PNGs read washed-out at noon or on a sunlit screen.
-    /// Limits + format string live on
+    /// raster chart PNGs read washed-out at noon or on a sunlit
+    /// screen. Limits + format string live on
     /// <see cref="OnaPlotter.Utilities.ChartFilter"/>.</summary>
     int ChartContrastPercent { get; }
 

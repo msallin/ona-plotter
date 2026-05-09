@@ -43,10 +43,10 @@
 
     @if (Radars.Count > 1)
     {
-        @* Picker only renders with multiple radars. A boat with one
-           HALO + one Garmin xHD is the realistic case; a single
-           radar shows just the name on the row above so the picker
-           dropdown doesn't waste a row. *@
+        @* Picker only renders with multiple radars. A boat with two
+           radar units (different ranges, fwd / aft mounts) is the
+           realistic case; a single radar shows just the name on the
+           row above so the picker dropdown doesn't waste a row. *@
         <select class="map-btn radar-hud-picker"
                 value="@radar.Id"
                 @onchange="OnRadarPicked"

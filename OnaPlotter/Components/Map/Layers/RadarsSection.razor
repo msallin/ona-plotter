@@ -98,9 +98,9 @@
 
     /// <summary>Per-radar range-dropdown options. Pecking order:
     /// (1) the range control's <c>validValues</c> (the actual PUT
-    ///     whitelist; on Navico HALO this excludes the metric-only
-    ///     entries from <c>supportedRanges</c> that the server then
-    ///     rejects with "value not legal");
+    ///     whitelist; on typical recreational radars this excludes
+    ///     the metric-only entries from <c>supportedRanges</c> that
+    ///     the server then rejects with "value not legal");
     /// (2) <c>supportedRanges</c> at the capabilities root, when the
     ///     control schema doesn't ship a validValues list;
     /// (3) a generic ladder only while capabilities are still

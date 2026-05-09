@@ -7,8 +7,8 @@ namespace OnaPlotter.Models;
 /// on the chart. Unlike routes and waypoints, notes don't use a GeoJSON
 /// Feature wrapper - the SignalK spec uses a bare <c>position</c> object.
 /// See https://github.com/panaaj/sk-types/blob/master/src/resources/index.ts
-/// for the authoritative Note shape used by Freeboard-SK and the default
-/// resources-fs provider.
+/// for the authoritative Note shape used by the default resources-fs
+/// provider and other SignalK clients.
 /// </summary>
 public sealed class SignalkNote
 {
@@ -39,8 +39,8 @@ public sealed class SignalkNote
     /// arbitrary JSON fields on the resource body unchanged, so it's a
     /// reasonably-portable place to stash the timestamp without
     /// inventing a sidecar resource. Notes created by other clients
-    /// (Freeboard, kip, etc.) won't have this populated; the popup
-    /// renders a dash for those rather than a fake "now".</summary>
+    /// won't have this populated; the popup renders a dash for those
+    /// rather than a fake "now".</summary>
     [JsonPropertyName("createdAt")]
     public DateTime? CreatedAt { get; set; }
 }

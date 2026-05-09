@@ -6,7 +6,8 @@ namespace OnaPlotter.Services.Api;
 /// SignalK notes client. Unlike routes/waypoints, the note resource uses
 /// a bare <c>{title, description, position: {latitude, longitude}}</c>
 /// shape with no Feature/properties wrapper; see the upstream Note
-/// definition in sk-types. Freeboard-SK reads the same endpoint.
+/// definition in sk-types. Peer SignalK clients read the same
+/// endpoint.
 /// </summary>
 public sealed class NoteApi : INoteApi
 {
@@ -43,8 +44,8 @@ public sealed class NoteApi : INoteApi
         // "when did this appear" without standing up a sidecar
         // resource. ISO-8601 UTC ("o" format) round-trips through
         // System.Text.Json's DateTime parser unambiguously. Notes
-        // authored elsewhere (Freeboard, KIP) won't carry this and
-        // the UI renders a dash; that's the honest "we don't know".
+        // authored by peer SignalK clients won't carry this and the
+        // UI renders a dash; that's the honest "we don't know".
         var body = new
         {
             title,

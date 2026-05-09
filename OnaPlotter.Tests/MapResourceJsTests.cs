@@ -86,9 +86,9 @@ public class MapResourceJsTests
     [Test]
     public async Task AddNoteMarkerAsync_NullCreatedAt_ForwardsNull()
     {
-        // Notes from Freeboard / KIP / pre-feature OnaPlotter won't
-        // have a createdAt; the call must pass null through cleanly
-        // (the JS popup formatter renders a dash for null).
+        // Notes from peer SignalK clients or pre-feature OnaPlotter
+        // versions won't have a createdAt; the call must pass null
+        // through cleanly (the JS popup formatter renders a dash for null).
         var fake = new RecordingJsRef();
         var sut = new MapResourceJs(fake);
 

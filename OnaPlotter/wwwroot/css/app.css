@@ -376,8 +376,8 @@
      * Sidebar dropped from a slate-300 -> slate-400 gradient to a
        solid dark slate-800. Two reasons: (1) gradients band on the
        cheaper LCD panels iPads ship with under sun; (2) a high-
-       contrast dark anchor reads at-a-glance, mirroring how Garmin /
-       Raymarine / B&G ship their light-theme chrome.
+       contrast dark anchor reads at-a-glance, the convention dedicated
+       chartplotter hardware uses for its light-theme chrome.
      * Panels go fully opaque (was rgba 0.96) - 4 % see-through
        reads as "blurry" in sun and the panel content dragged below
        legible contrast against a busy chart underneath.
@@ -428,8 +428,7 @@
        slate-300 -> slate-400 gradient, which banded on iPad LCDs in
        sun and read as "almost-light" rather than a clear navigation
        anchor). Dark sidebar against light content also matches the
-       commercial chartplotter convention (Garmin / Raymarine / B&G)
-       so muscle memory transfers. */
+       dedicated-chartplotter convention so muscle memory transfers. */
     --sk-sidebar-bg: #1e293b;          /* slate-800 - solid, no banding */
     --sk-sidebar-border: #0f172a;      /* slate-900 - crisp right edge */
     --sk-sidebar-text: rgba(255, 255, 255, 0.78);

@@ -1040,9 +1040,10 @@
     /// Chrome) with a clipboard fallback when the API isn't
     /// available. Shares the GeoJSON because that's the
     /// most-portable format that round-trips through every consumer
-    /// the helm is likely to send to (Freeboard-SK, QGIS, browser
-    /// previews); GPX would be more interop-friendly with Garmin
-    /// chartplotters but doesn't preview as nicely in chat apps.</summary>
+    /// the helm is likely to send to (peer SignalK clients, QGIS,
+    /// browser previews); GPX would be more interop-friendly with
+    /// dedicated chartplotter hardware but doesn't preview as
+    /// nicely in chat apps.</summary>
     private async Task ShareSegmentAsync(TrackSegment s)
     {
         var pts = SegmentPoints(s);

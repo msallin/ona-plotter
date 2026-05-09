@@ -6,11 +6,11 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Pins the exact wire shape ResourceExporter emits per resource
-/// type / format pair. These are interop contracts: a downstream
-/// tool (OpenCPN, Freeboard, Garmin) that successfully imports
-/// today must keep importing tomorrow. A future tweak that would
-/// drop a tag or rename a property breaks the shape and these
-/// tests fail loud.
+/// type / format pair. These are interop contracts: any downstream
+/// tool that successfully imports the GPX / GeoJSON output today
+/// must keep importing tomorrow. A future tweak that would drop a
+/// tag or rename a property breaks the shape and these tests fail
+/// loud.
 /// </summary>
 public class ResourceExporterTests
 {
@@ -117,8 +117,8 @@ public class ResourceExporterTests
     public async Task NoteGpx_RoundTripsTitleAndDescription()
     {
         // Notes have no native GPX shape so they degrade to <wpt>
-        // with title in <name> and description in <desc>. OpenCPN
-        // and Garmin tools preserve both fields on round-trip;
+        // with title in <name> and description in <desc>. Common
+        // GPX-aware tools preserve both fields on round-trip;
         // pinning the tag mapping here so a future "use <cmt>
         // instead of <desc>" PR doesn't break that quietly.
         var n = new SignalkNote
@@ -221,8 +221,8 @@ public class ResourceExporterTests
     public async Task TripGpx_EmitsTrkSegmentWithTimestampedPoints()
     {
         // Two-point synthetic trip. GPX must wrap as <trk><trkseg>
-        // with <trkpt><time> per fix; consumers re-importing this
-        // (OpenCPN, Garmin BaseCamp) treat it as a track, not a route.
+        // with <trkpt><time> per fix; standard GPX-aware tools treat
+        // it as a track, not a route.
         var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
         var pts = new[]
         {

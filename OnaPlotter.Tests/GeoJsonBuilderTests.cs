@@ -5,7 +5,7 @@ namespace OnaPlotter.Tests;
 
 /// <summary>
 /// Wire-shape pinning for GeoJsonBuilder. Output lands in HTTP
-/// request bodies that Signal K servers (+ Freeboard-SK) parse
+/// request bodies that Signal K servers + peer SignalK clients parse
 /// directly, so a shape change - a missing "properties" block, a
 /// flipped coord order - silently breaks resource creation. Round-
 /// tripping each builder through JsonSerializer lets us assert the
@@ -31,8 +31,9 @@ public class GeoJsonBuilderTests
         // Point geometry, coords in GeoJSON [lon, lat] order.
         await Assert.That(json).Contains("\"type\":\"Point\"");
         await Assert.That(json).Contains("\"coordinates\":[8.5,47.4]");
-        // Properties block is required by Freeboard-SK; empty string
-        // description (not a missing key) is the spec-friendly default.
+        // Properties block is required for SignalK resource interop;
+        // empty string description (not a missing key) is the spec-
+        // friendly default.
         await Assert.That(json).Contains("\"properties\":");
         await Assert.That(json).Contains("\"description\":\"\"");
     }
@@ -89,8 +90,8 @@ public class GeoJsonBuilderTests
         // Routes saved by OnaPlotter used to drop the top-level
         // distance field, so SignalkRoute.Distance round-tripped as
         // null and the Layers panel + Resources page rendered "-"
-        // for any OnaPlotter-saved route. Freeboard always sends
-        // distance; this test pins the parity.
+        // for any OnaPlotter-saved route. Other SignalK clients
+        // always send distance; this test pins the parity.
         var body = GeoJsonBuilder.RouteFeatureBody(
             "With distance",
             GeoJsonBuilder.LineString(new[] { new[] { 0.0, 0.0 }, new[] { 0.5, 0.5 } }),
@@ -105,7 +106,7 @@ public class GeoJsonBuilderTests
     public async Task RegionFeatureBody_CarriesDescriptionAtBothLevels()
     {
         // Regions are the odd one out - description at top level AND
-        // in properties because different Freeboard builds read
+        // in properties because different SignalK clients read
         // different copies. The isHazard flag rides along the same
         // way (top + nested) for the same compatibility reason.
         var ring = new[]
@@ -187,8 +188,8 @@ public class GeoJsonBuilderTests
 
         // All four fields ride at the TOP level; the inner GeoJSON
         // properties block stays the minimum compatible shape so a
-        // peer client (Freeboard, KIP) sees the standard region
-        // structure even when our extras are unknown.
+        // peer SignalK client sees the standard region structure
+        // even when our extras are unknown.
         await Assert.That(json).Contains("\"createdAt\":\"2026-05-07T12:30:00Z\"");
         await Assert.That(json).Contains("\"centerLat\":47.4");
         await Assert.That(json).Contains("\"centerLon\":8.55");
@@ -241,8 +242,8 @@ public class GeoJsonBuilderTests
     [Test]
     public async Task Point_NullDescriptionRendersAsEmptyString()
     {
-        // A missing-key description silently breaks Freeboard's
-        // waypoint rendering; pin that null -> "" instead.
+        // A missing-key description silently breaks some peer
+        // clients' waypoint rendering; pin that null -> "" instead.
         var body = GeoJsonBuilder.FeatureBody(
             "WPT", GeoJsonBuilder.Point(0, 0), description: null);
         var json = Serialize(body);

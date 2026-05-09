@@ -8,8 +8,8 @@ namespace OnaPlotter.Services.Api;
 /// SignalK regions client. Regions use a GeoJSON Feature wrapper with
 /// Polygon or MultiPolygon geometry, same family as routes/waypoints.
 /// Circles are emitted as 32-vertex polygon approximations to stay
-/// wire-compatible with Freeboard-SK and any future consumer that only
-/// understands GeoJSON Polygons.
+/// wire-compatible with peer SignalK clients and any future consumer
+/// that only understands GeoJSON Polygons.
 /// </summary>
 public sealed class RegionApi : IRegionApi
 {

@@ -948,7 +948,7 @@
                         wind speed (TWS). Used by the race-mode optimal-TWA
                         overlay and the Dashboard performance %. Typical
                         sources: ORC / IRC certificate, builder-published polars,
-                        Expedition / Adrena exports, or your own log-crunch.
+                        race-software exports, or your own log-crunch.
                         <br />
                         <br />
                         Minimal 5 kn / 10 kn / 15 kn example (commas shown; tabs
@@ -1854,8 +1854,8 @@
     private async Task ClearPolar()
     {
         // Confirmation gate: polar uploads can take a while to prepare
-        // (ORC certificate, Expedition export, hand-tuned numbers) and
-        // a stray tap on a touchscreen shouldn't discard it.
+        // (ORC certificate, race-software export, hand-tuned numbers)
+        // and a stray tap on a touchscreen shouldn't discard it.
         bool ok = await Confirmations.ConfirmAsync(
             "Remove the loaded polar? You'll need to re-upload the CSV to get performance % back on the Dashboard and the race-mode optimal-TWA overlay.");
         if (!ok) return;

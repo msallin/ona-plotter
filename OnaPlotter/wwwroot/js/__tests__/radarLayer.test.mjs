@@ -16,15 +16,15 @@ const { _internal } = await import('../radarLayer.js');
 const { shouldSuppressLowReturn, parseHexRgba, parseLegendColor } = _internal;
 
 test('shouldSuppressLowReturn: normal pixel below mediumReturn is suppressed', () => {
-    // Navico HALO ships mediumReturn = 5; bytes 1..4 are the blue
-    // sea-clutter ramp the user wants gone (metadata path).
+    // A typical recreational radar ships mediumReturn = 5; bytes 1..4
+    // are the blue sea-clutter ramp the user wants gone (metadata path).
     const legend = { mediumReturn: 5 };
     assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#000033ff' }, 1, legend), true);
     assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#0000ccff' }, 4, legend), true);
 });
 
 test('shouldSuppressLowReturn: blue-dominant normal pixel above mediumReturn is also suppressed', () => {
-    // The HALO palette keeps painting blue-tinged normals above the
+    // Common radar palettes keep painting blue-tinged normals above the
     // mediumReturn metadata cutoff (bytes 5-7 are #0000ff / #0033cc /
     // #006699). The colour check is the user-facing fix: anything
     // that LOOKS blue gets dropped regardless of intensity class.
@@ -35,7 +35,7 @@ test('shouldSuppressLowReturn: blue-dominant normal pixel above mediumReturn is 
 });
 
 test('shouldSuppressLowReturn: green-dominant normal pixel above mediumReturn is kept', () => {
-    // Bytes 8+ on HALO transition to green-dominant
+    // Bytes 8+ on common palettes transition to green-dominant
     // (#009966, #00cc33, #00ff00, ...) - those are real targets
     // and must stay visible.
     const legend = { mediumReturn: 5 };
@@ -72,9 +72,9 @@ test('shouldSuppressLowReturn: doppler / history / target border kept regardless
 });
 
 test('shouldSuppressLowReturn: colour check still fires when legend lacks mediumReturn', () => {
-    // A non-Navico provider that doesn't ship mediumReturn but does
-    // paint sea clutter as blue still gets the noise cleaned up via
-    // the colour-only path.
+    // A provider that doesn't ship mediumReturn but does paint sea
+    // clutter as blue still gets the noise cleaned up via the colour-
+    // only path.
     assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#0000ffff' }, 5, {}), true);
     assert.equal(shouldSuppressLowReturn({ type: 'normal', color: '#00ff00ff' }, 5, {}), false);
 });

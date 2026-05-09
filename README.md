@@ -7,17 +7,19 @@ in a jacket pocket - same data, responsive layout, WCAG-sized tap targets.
 Built on Blazor WebAssembly + Leaflet + the SignalK stream. Deploys as a
 SignalK webapp on a Pi, or runs standalone from any browser.
 
-## Why this and not another plotter
+## Highlights
 
-- **Freeboard-SK interop.** Routes, waypoints, notes, and regions round-trip
-  through `/resources/*` with the exact shape Freeboard expects.
+- **Standard SignalK interop.** Routes, waypoints, notes, and regions
+  round-trip through `/resources/*` using the documented SignalK
+  resource shape so peer SignalK clients see them too.
 - **Real collision detection.** CPA / TCPA projection with COLREGS crossing
   classification, not a proximity beeper. Moored-vessel auto-mute,
   per-target snooze, pulsing danger ring, red/amber crossing lines.
   ([deep dive](docs/collision-detection.md))
 - **Plugin-aware, not plugin-locked.** Tide, buddy list, anchor alarm,
-  Mayara radar - each lights up its own UI when installed; missing
-  plugins surface a clear "plugin vX.Y+ required" toast.
+  radar - each lights up its own UI when the matching SignalK plugin
+  is installed; missing plugins surface a clear "plugin vX.Y+ required"
+  toast.
 - **Touch-first.** Long-press context menu, bottom-sheet panels on phones,
   44 px minimum tap targets, full keyboard parity, branded boot screen.
 
@@ -46,7 +48,7 @@ SignalK webapp on a Pi, or runs standalone from any browser.
   m² / ha / km²).
 - **Notes** as folded-page pins.
 - **Tide card** when `environment.tide.*` is published.
-- **Charts**: any tile source SignalK exposes (Navionics PNG, S-57
+- **Charts**: any tile source SignalK exposes (raster PNG, S-57
   raster, OpenSeaMap), plus OSM base, OpenSeaMap seamarks overlay,
   RainViewer rain radar. Chart overzoom keeps detail past native max
   zoom; quick-pick chips for the top stack.

@@ -21,8 +21,8 @@ namespace OnaPlotter.Tests.Components;
 public class HudRadarCardTests
 {
     private static RadarInfo Radar(string id, string status = "transmit",
-        int? range = 1852, string? name = "HALO") =>
-        new() { Id = id, Name = name, Brand = "Navico", Status = status, Range = range };
+        int? range = 1852, string? name = "R200") =>
+        new() { Id = id, Name = name, Brand = "AcmeRadar", Status = status, Range = range };
 
     private static IRenderedComponent<HudRadarCard> Render(
         Bunit.TestContext ctx,
@@ -55,7 +55,7 @@ public class HudRadarCardTests
         var cut = Render(ctx, [Radar("r1")]);
         await Assert.That(cut.FindAll(".radar-hud-picker").Count).IsEqualTo(0);
         await Assert.That(cut.FindAll(".radar-hud-name").Count).IsEqualTo(1);
-        await Assert.That(cut.Find(".radar-hud-name").TextContent.Trim()).IsEqualTo("HALO");
+        await Assert.That(cut.Find(".radar-hud-name").TextContent.Trim()).IsEqualTo("R200");
     }
 
     [Test]
@@ -65,7 +65,7 @@ public class HudRadarCardTests
         // pick which device the controls act on. Picker omits the
         // single-name fallback row.
         using var ctx = new Bunit.TestContext();
-        var cut = Render(ctx, [Radar("r1", name: "HALO 24"), Radar("r2", name: "Garmin xHD")]);
+        var cut = Render(ctx, [Radar("r1", name: "R200 24"), Radar("r2", name: "R150 xHD")]);
         await Assert.That(cut.FindAll(".radar-hud-picker").Count).IsEqualTo(1);
         await Assert.That(cut.FindAll(".radar-hud-name").Count).IsEqualTo(0);
         await Assert.That(cut.FindAll(".radar-hud-picker option").Count).IsEqualTo(2);

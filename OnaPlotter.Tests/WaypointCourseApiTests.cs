@@ -28,11 +28,12 @@ public class WaypointCourseApiTests
     [Test]
     public async Task WaypointApi_Create_EmitsFeatureProperties()
     {
-        // Pins the Freeboard-SK compatibility contract: every POSTed
-        // waypoint must carry Feature.properties (name + description) in
-        // addition to the top-level name and geometry. A missing
-        // properties block is exactly what made our waypoints invisible
-        // in freeboard until the route fix was cargo-culted over.
+        // Pins the SignalK resource-API compatibility contract: every
+        // POSTed waypoint must carry Feature.properties (name +
+        // description) in addition to the top-level name and geometry.
+        // A missing properties block is exactly what made our waypoints
+        // invisible in peer SignalK clients until the route fix was
+        // cargo-culted over.
         string? capturedBody = null;
         var http = ApiTestHelpers.MockClient(req =>
         {
@@ -55,7 +56,7 @@ public class WaypointCourseApiTests
         await Assert.That(capturedBody).Contains("\"type\":\"Feature\"");
         await Assert.That(capturedBody).Contains("\"type\":\"Point\"");
         await Assert.That(capturedBody).Contains("[8.5,47.4]");
-        // Properties block with name + description (Freeboard compat).
+        // Properties block with name + description (SignalK compat).
         await Assert.That(capturedBody).Contains("\"properties\"");
         await Assert.That(capturedBody).Contains("\"description\":\"\"");
     }
@@ -97,9 +98,9 @@ public class WaypointCourseApiTests
     }
 
     [Test]
-    public async Task CourseApi_SetActiveRoute_PutsFreeboardShape()
+    public async Task CourseApi_SetActiveRoute_PutsExpectedShape()
     {
-        // Freeboard-SK compat: href uses the v1 relative resource path,
+        // SignalK v2 compat: href uses the v1 relative resource path,
         // not the v2 full API path. pointIndex and reverse must be
         // serialised even at their defaults so the server sees the
         // expected shape. Without this, OnaPlotter can save a route

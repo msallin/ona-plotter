@@ -11,8 +11,8 @@ public class NoteApiTests
         // Pins the SignalK Note resource contract. Unlike routes and
         // waypoints, notes use a bare {title, description, position:
         // {latitude, longitude}} shape with NO Feature wrapper. This
-        // is the panaaj/sk-types / Freeboard-SK spec; adding a
-        // Feature object would make notes disappear in freeboard.
+        // is the panaaj/sk-types spec; adding a Feature object would
+        // make notes disappear in peer SignalK clients.
         string? capturedBody = null;
         string? capturedUrl = null;
         var http = ApiTestHelpers.MockClient(req =>

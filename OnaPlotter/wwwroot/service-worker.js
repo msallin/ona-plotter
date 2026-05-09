@@ -703,8 +703,8 @@
 //             (2) Spoke object pool in radarProtobuf - decodeSpoke
 //                 resets fields in place on a pooled object instead
 //                 of returning a fresh literal per spoke. Cuts
-//                 ~1k allocs/sec on HALO 31 + keeps V8's hidden
-//                 class monomorphic across frames.
+//                 ~1k allocs/sec on a typical recreational radar +
+//                 keeps V8's hidden class monomorphic across frames.
 //             (3) Hoisted lut/xLut/yLut + spoke.data refs to locals
 //                 inside _paintSpoke so the JIT doesn't re-read
 //                 them per iteration.
@@ -731,7 +731,7 @@
 // v76 -> v77: Doubled the auth-status poll cadence: 2s -> 4s while
 //             the not-logged-in chip is up, 1min -> 2min when it's
 //             not. Halves the auth-probe HTTP traffic at no UX cost.
-const CACHE_NAME = 'ona-plotter-v77';
+const CACHE_NAME = 'ona-plotter-v78';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

@@ -15,16 +15,16 @@ namespace OnaPlotter.Utilities;
 /// Format philosophy:
 /// </para>
 /// <list type="bullet">
-///   <item><description>GPX - universal interop with OpenCPN, Garmin
-///     plotters, Navionics. <c>rte</c> for routes, <c>wpt</c> for
-///     points. Notes degrade to <c>wpt</c> with the description in
-///     <c>desc</c>. Regions have no native shape in GPX 1.1, so
-///     <see cref="RegionGpx"/> is intentionally absent - the UI
-///     hides the GPX option on the regions tab.</description></item>
-///   <item><description>GeoJSON - Freeboard-SK + browsers + any
-///     QGIS-style tool. Lossless for everything we store: routes
-///     are LineString, waypoints / notes are Point, regions are
-///     Polygon (or MultiPolygon for the rare multi-ring shape).</description></item>
+///   <item><description>GPX - universal interop with the broad
+///     ecosystem of GPS tools and chart software. <c>rte</c> for
+///     routes, <c>wpt</c> for points. Notes degrade to <c>wpt</c>
+///     with the description in <c>desc</c>. Regions have no native
+///     shape in GPX 1.1, so <see cref="RegionGpx"/> is intentionally
+///     absent - the UI hides the GPX option on the regions tab.</description></item>
+///   <item><description>GeoJSON - browsers + QGIS-style tools + peer
+///     SignalK clients. Lossless for everything we store: routes are
+///     LineString, waypoints / notes are Point, regions are Polygon
+///     (or MultiPolygon for the rare multi-ring shape).</description></item>
 /// </list>
 /// <para>
 /// Bulk-export of routes + waypoints together still lives in
@@ -127,9 +127,8 @@ public static class ResourceExporter
 
     /// <summary>GPX export of a note. Notes have no native shape in
     /// GPX so they round-trip as <c>wpt</c> with title -> <c>name</c>
-    /// and description -> <c>desc</c>. OpenCPN and Garmin tools
-    /// understand this round-trip well enough that re-importing
-    /// preserves both fields.</summary>
+    /// and description -> <c>desc</c>. Common GPX-aware tools preserve
+    /// both fields on re-import.</summary>
     public static string? NoteGpx(SignalkNote n)
     {
         if (n.Position is null) return null;
@@ -158,10 +157,9 @@ public static class ResourceExporter
     /// <summary>GPX 1.1 export of a single track segment as a
     /// <c>&lt;trk&gt;</c> with one <c>&lt;trkseg&gt;</c>. Each point
     /// emits its lat / lon plus the captured timestamp inside
-    /// <c>&lt;time&gt;</c>; OpenCPN, Garmin BaseCamp, and Navionics
-    /// all read this back as a track and can replay it. Returns null
-    /// when the slice has fewer than two points (a single fix isn't
-    /// a track).
+    /// <c>&lt;time&gt;</c>; standard GPX-aware tools read this back as
+    /// a track and can replay it. Returns null when the slice has
+    /// fewer than two points (a single fix isn't a track).
     /// </summary>
     /// <param name="name">Track name. Caller passes "Trip yyyy-MM-dd"
     /// or whatever the helm typed.</param>

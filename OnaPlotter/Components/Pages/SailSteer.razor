@@ -1,12 +1,11 @@
 @* SailSteer: circular compass display combining wind, heading, COG, laylines, and waypoint bearing.
-   Inspired by B&G SailSteer / KIP. Compass face rotates opposite to heading so the boat always points
-   up; data readouts sit fixed at the corners. Empty state when no wind data, polar-driven target TWA
-   hints (second arrow at optimal upwind / downwind angle), VMG-vs-target perf bar on the right, plus
-   a no-go zone band around the wind direction (helm-feedback round 2: KIP shows red/green sectors
-   either side of the wind, and that pattern made the no-go zone read at a glance even on a tablet
-   in sun glare). All in-dial text labels (TWD / AWD / S / P / tgt) are pulled OUT of the rotating
-   compass group so they stay screen-upright at any heading - inside-the-rotation text was rotating
-   to 30°-or-more off vertical and reading as smudges. *@
+   Compass face rotates opposite to heading so the boat always points up; data readouts sit fixed at
+   the corners. Empty state when no wind data, polar-driven target TWA hints (second arrow at optimal
+   upwind / downwind angle), VMG-vs-target perf bar on the right, plus a no-go zone band around the
+   wind direction (helm-feedback round 2: red/green sectors either side of the wind made the no-go
+   zone read at a glance even on a tablet in sun glare). All in-dial text labels (TWD / AWD / S / P /
+   tgt) are pulled OUT of the rotating compass group so they stay screen-upright at any heading -
+   inside-the-rotation text was rotating to 30°-or-more off vertical and reading as smudges. *@
 
 @page "/sailsteer"
 @using OnaPlotter.Services
@@ -34,7 +33,7 @@
     <svg viewBox="0 0 500 500" style="max-width:500px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg">
 
         @* === Corner data readouts (fixed, do not rotate) ===
-           Layout (helm-feedback, post-KIP comparison):
+           Layout (helm-feedback):
              Top-left  : TWA over TWS (true wind, side-by-side cluster)
              Top-center: HDG (large pill, rendered LAST so it sits on
                          top of any compass label that would otherwise
@@ -50,7 +49,7 @@
 
         @* Top-left: TWA + TWS cluster. TWA shows port / stbd
            prefix so a quick glance disambiguates which side the
-           wind is on - KIP and B&G both use the convention. *@
+           wind is on. *@
         @Txt(70, 22, "TWA", "sailsteer-label")
         @Txt(70, 44, FormatWindAngle(Data.WindAngleTrue), Vcls(Data.WindAngleTrue))
         @Txt(70, 70, Format.Speed(Data.WindSpeedTrue), Vcls(Data.WindSpeedTrue))
@@ -543,8 +542,8 @@
     /// port / starboard prefix. SK convention: positive = wind on
     /// starboard side, negative = wind on port side. Display uses
     /// "S" / "P" prefix so the helm doesn't have to remember the
-    /// sign convention while juggling sail trim. KIP and B&G both
-    /// use this style; absolute value keeps the digit count steady.
+    /// sign convention while juggling sail trim; absolute value
+    /// keeps the digit count steady.
     /// </summary>
     private static string FormatWindAngle(double? rad)
     {

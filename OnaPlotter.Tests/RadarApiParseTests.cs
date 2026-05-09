@@ -20,17 +20,17 @@ public class RadarApiParseTests
         const string json = """
             {
               "nav1034A": {
-                "brand": "Navico",
-                "model": "HALO",
-                "name": "HALO 034A",
+                "brand": "AcmeRadar",
+                "model": "R200",
+                "name": "R200 A",
                 "radarIpAddress": "192.168.1.50",
                 "spokeDataUrl": "ws://host/signalk/v2/api/vessels/self/radars/nav1034A/spokes",
                 "streamUrl": "ws://host/signalk/v1/stream"
               },
               "nav1034B": {
-                "brand": "Navico",
-                "model": "HALO",
-                "name": "HALO 034B",
+                "brand": "AcmeRadar",
+                "model": "R200",
+                "name": "R200 B",
                 "radarIpAddress": "192.168.1.50",
                 "spokeDataUrl": "ws://host/signalk/v2/api/vessels/self/radars/nav1034B/spokes",
                 "streamUrl": "ws://host/signalk/v1/stream"
@@ -42,8 +42,8 @@ public class RadarApiParseTests
 
         await Assert.That(list.Count).IsEqualTo(2);
         await Assert.That(list[0].Id).IsEqualTo("nav1034A");
-        await Assert.That(list[0].Brand).IsEqualTo("Navico");
-        await Assert.That(list[0].Model).IsEqualTo("HALO");
+        await Assert.That(list[0].Brand).IsEqualTo("AcmeRadar");
+        await Assert.That(list[0].Model).IsEqualTo("R200");
         await Assert.That(list[0].SpokeDataUrl).Contains("nav1034A/spokes");
         await Assert.That(list[1].Id).IsEqualTo("nav1034B");
     }
@@ -59,8 +59,8 @@ public class RadarApiParseTests
             [
               {
                 "id": "nav0231A",
-                "name": "HALO 31 A",
-                "brand": "Navico",
+                "name": "R200 31 A",
+                "brand": "AcmeRadar",
                 "status": "standby",
                 "spokesPerRevolution": 2048,
                 "maxSpokeLen": 1024,
@@ -68,8 +68,8 @@ public class RadarApiParseTests
               },
               {
                 "id": "nav0231B",
-                "name": "HALO 31 B",
-                "brand": "Navico",
+                "name": "R200 31 B",
+                "brand": "AcmeRadar",
                 "status": "standby",
                 "spokesPerRevolution": 2048,
                 "maxSpokeLen": 1024,
@@ -98,8 +98,8 @@ public class RadarApiParseTests
             {
               "version": "3.1.0",
               "radars": {
-                "nav1": { "name": "HALO A", "brand": "Navico" },
-                "nav2": { "name": "HALO B", "brand": "Navico" }
+                "nav1": { "name": "R200 A", "brand": "AcmeRadar" },
+                "nav2": { "name": "R200 B", "brand": "AcmeRadar" }
               }
             }
             """;
@@ -118,7 +118,7 @@ public class RadarApiParseTests
             {
               "version": "3.1.0",
               "radars": [
-                { "id": "nav0231A", "name": "HALO A", "brand": "Navico" }
+                { "id": "nav0231A", "name": "R200 A", "brand": "AcmeRadar" }
               ]
             }
             """;
@@ -137,7 +137,7 @@ public class RadarApiParseTests
         const string json = """
             {
               "version": "3.1.0",
-              "nav1": { "name": "HALO A", "brand": "Navico" }
+              "nav1": { "name": "R200 A", "brand": "AcmeRadar" }
             }
             """;
         var list = RadarApi.ParseRadarList(JsonDocument.Parse(json).RootElement);
@@ -526,7 +526,7 @@ public class RadarApiParseTests
         // Assert on parsed property names rather than substring so a
         // future field whose name contains "NumericValue" / "StringValue"
         // (e.g. "NumericValueAuto") doesn't false-flag.
-        var body = new ControlValue { Value = JsonSerializer.SerializeToElement("HALO") };
+        var body = new ControlValue { Value = JsonSerializer.SerializeToElement("R200") };
         var defaults = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
         var wire = JsonSerializer.Serialize(body, defaults);
         using var doc = JsonDocument.Parse(wire);

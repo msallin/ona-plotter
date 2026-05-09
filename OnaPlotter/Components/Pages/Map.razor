@@ -812,9 +812,9 @@
     // Opening the Layers panel is a natural re-sync trigger: the user is
     // about to read the list, so pull fresh waypoints / routes / notes /
     // regions from the server. Otherwise a waypoint added from another
-    // plotter (freeboard, KIP, a phone app) stays invisible until the
-    // user reloads the page. Kicks off async; the panel renders the old
-    // list first and swaps in the new list on the next render tick.
+    // SignalK client (a phone app, a peer browser tab) stays invisible
+    // until the user reloads the page. Kicks off async; the panel renders
+    // the old list first and swaps in the new list on the next render tick.
     private async Task ToggleLayersPanel()
     {
         chartPanelOpen = !chartPanelOpen;
@@ -951,11 +951,12 @@
         // not the broad resource refresh (which fired 5+ unrelated
         // GETs for waypoints / routes / notes / regions / charts).
         await RefreshRadarsAsync();
-        // Schedule a follow-up: HALO transitions standby <-> transmit
-        // through an intermediate "off" / "preparing" status that
-        // Mayara reports for ~1s. The first refresh catches that
-        // transient; the follow-up catches the settled state without
-        // making the helm click a second time.
+        // Schedule a follow-up: typical recreational radars transition
+        // standby <-> transmit through an intermediate "off" /
+        // "preparing" status that the SignalK radar plugin reports for
+        // ~1s. The first refresh catches that transient; the follow-up
+        // catches the settled state without making the helm click a
+        // second time.
         ScheduleRadarRefreshAfter(TimeSpan.FromMilliseconds(1500));
     }
 

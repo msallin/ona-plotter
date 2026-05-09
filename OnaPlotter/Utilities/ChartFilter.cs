@@ -2,9 +2,9 @@ namespace OnaPlotter.Utilities;
 
 /// <summary>
 /// Pure helper for the chart-display CSS filter (contrast / saturation
-/// / brightness) the helm tunes from the layers panel. Navionics PNGs
-/// sometimes wash out at noon or look muddy on a sunlit screen; the
-/// helm boosts contrast + saturation to read them. The slider values
+/// / brightness) the helm tunes from the layers panel. Raster chart
+/// PNGs sometimes wash out at noon or look muddy on a sunlit screen;
+/// the helm boosts contrast + saturation to read them. The slider values
 /// are stored as integer percentages (default 100 = identity, range
 /// pinned by <see cref="MinPercent"/> / <see cref="MaxBrightness"/>);
 /// JS converts to the CSS <c>contrast(...) saturate(...) brightness(...)</c>
