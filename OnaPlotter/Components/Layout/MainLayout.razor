@@ -49,62 +49,70 @@
                 var historyCount = Alarms.DismissedHistory.Count;
                 var activeCount = Alarms.ActiveAlarms.Count;
             }
-            @* Show the button whenever any of the three buckets is
-               non-empty: active alarms (the blinking case), past
-               dismissals, or current snoozes. On mobile the banner
-               stack is suppressed and this button is the helm's only
-               affordance for active alarms; the alarm-log-btn-active
-               class drives a per-mobile blink animation so a stray
-               eye sees the cue. *@
-            @if (activeCount > 0 || historyCount > 0 || Alarms.SnoozedTargets.Count > 0)
-            {
-                @* Label is "Notifications" in both states - matches
-                   the SignalK v2 vocabulary (notifications.* paths)
-                   and how helms refer to the banner stack. The
-                   tooltip tightens the live count when something is
-                   firing; the icon swap (warning vs clipboard) and
-                   the count badge already convey "is this active
-                   right now?" without the label flicking between
-                   two strings. *@
-                <button class="alarm-log-btn @(activeCount > 0 ? "alarm-log-btn-active" : "")"
-                        @onclick="ToggleAlarmLog"
-                        title="@(activeCount > 0
-                                  ? $"{activeCount} active notification{(activeCount == 1 ? "" : "s")} - tap to view"
-                                  : $"Notifications ({historyCount} recent" +
-                                    (Alarms.SnoozedTargets.Count > 0
-                                      ? $", {Alarms.SnoozedTargets.Count} snoozed)" : ")"))">
-                    @* Two forms:
-                         - desktop: full text "Notifications 12"
-                         - phone:   icon (warning / clipboard) +
-                                    a small count badge in the corner
-                       CSS picks one form per breakpoint. *@
-                    <span class="alarm-log-label-full">
-                        Notifications @(activeCount > 0 ? activeCount : historyCount)
-                    </span>
-                    @* Icon switches by state: warning triangle when an
-                       alarm is firing right now (the helm needs to act),
-                       clipboard / note-block when only the history is
-                       non-empty (the helm is reviewing past events).
-                       Same span so CSS sizing rules don't have to fork. *@
-                    <span class="alarm-log-icon" aria-hidden="true">
-                        @if (activeCount > 0)
-                        {
-                            @((MarkupString)OnaPlotter.Utilities.Icons.Small.Warning)
-                        }
-                        else
-                        {
-                            @((MarkupString)OnaPlotter.Utilities.Icons.Small.History)
-                        }
-                    </span>
-                    @{
-                        var badgeCount = activeCount > 0 ? activeCount : historyCount;
-                    }
-                    @if (badgeCount > 0)
-                    {
-                        <span class="alarm-log-badge">@badgeCount</span>
-                    }
-                </button>
+            @* Always render the Notifications button. Earlier we
+               only rendered it when any of {active, history,
+               snoozed} was non-empty, but that hid the helm's entry
+               point to the log when the boat was quiet, which is
+               exactly when the helm is most likely to want to look
+               back. The icon swap (warning vs history) + badge
+               count already convey "is anything live?" without
+               needing to hide the chrome. On mobile the banner
+               stack is suppressed and this button is the helm's
+               only affordance for active alarms; the
+               alarm-log-btn-active class drives a per-mobile blink
+               animation so a stray eye sees the cue. *@
+            @{
+                var snoozedCount = Alarms.SnoozedTargets.Count;
+                var badgeCount = activeCount > 0 ? activeCount : historyCount;
+                string tipText;
+                if (activeCount > 0)
+                {
+                    tipText = $"{activeCount} active notification{(activeCount == 1 ? "" : "s")} - tap to view";
+                }
+                else if (historyCount > 0 || snoozedCount > 0)
+                {
+                    tipText = $"Notifications ({historyCount} recent" +
+                              (snoozedCount > 0 ? $", {snoozedCount} snoozed)" : ")");
+                }
+                else
+                {
+                    tipText = "Notifications - no recent events";
+                }
             }
+            @* Label is "Notifications" in every state - matches the
+               SignalK v2 vocabulary (notifications.* paths) and how
+               helms refer to the banner stack. *@
+            <button class="alarm-log-btn @(activeCount > 0 ? "alarm-log-btn-active" : "")"
+                    @onclick="ToggleAlarmLog"
+                    title="@tipText">
+                @* Two forms:
+                     - desktop: full text "Notifications 12"
+                     - phone:   icon (warning / history) + a small
+                                count badge in the corner
+                   CSS picks one form per breakpoint. *@
+                <span class="alarm-log-label-full">
+                    @(badgeCount > 0 ? $"Notifications {badgeCount}" : "Notifications")
+                </span>
+                @* Icon switches by state: warning triangle when an
+                   alarm is firing right now (the helm needs to act),
+                   history-clock otherwise (the helm is reviewing or
+                   the log is empty). Same span so CSS sizing rules
+                   don't have to fork. *@
+                <span class="alarm-log-icon" aria-hidden="true">
+                    @if (activeCount > 0)
+                    {
+                        @((MarkupString)OnaPlotter.Utilities.Icons.Small.Warning)
+                    }
+                    else
+                    {
+                        @((MarkupString)OnaPlotter.Utilities.Icons.Small.History)
+                    }
+                </span>
+                @if (badgeCount > 0)
+                {
+                    <span class="alarm-log-badge">@badgeCount</span>
+                }
+            </button>
 
             @* Update-available chip. The UpdateChecker singleton polls
                js/version.g.js every 5 min and flips a latch when the
@@ -613,9 +621,28 @@
         ? (SignalkClient.IsDataStale ? "Stale" : "Live")
         : "Offline";
 
-    private string ConnectionTooltip => SignalkClient.IsConnected
-        ? (SignalkClient.IsDataStale ? "Connected but no data received for 5+ seconds" : "Receiving data")
-        : "WebSocket connection lost";
+    @* When the server has security enabled and the session is logged
+       in, the loginStatus probe carries the user name. Surfacing it on
+       the Live chip's tooltip / long-press is the cheapest "who's
+       signed in?" check the helm has - no extra cookie JS interop, the
+       data is already on hand from the auth-warning-chip's polling
+       loop. Fallback string when not connected stays helpful in its
+       own right. *@
+    private string ConnectionTooltip
+    {
+        get
+        {
+            if (!SignalkClient.IsConnected)
+                return "WebSocket connection lost";
+            var who = _loginStatus?.Username;
+            var baseTip = SignalkClient.IsDataStale
+                ? "Connected but no data received for 5+ seconds"
+                : "Receiving data";
+            return string.IsNullOrWhiteSpace(who)
+                ? baseTip
+                : $"{baseTip} - signed in as {who}";
+        }
+    }
 
     protected override void OnInitialized()
     {

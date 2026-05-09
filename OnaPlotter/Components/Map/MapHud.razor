@@ -249,7 +249,12 @@
                 <span class="hud-stale-badge hud-dead-badge" title="Depth sensor silent for &gt;30s - do not rely on this reading">dead</span>
             }
         </div>
-        <div class="hud-value hud-primary @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsExpanded(CornerBottomLeft) && FormatDepthTrend() is string trendLabel)
+        @* Match HDG / COG sizing (plain .hud-value) instead of the
+           SOG-style hero treatment. The depth number is mission-
+           critical but it's already the visual focus of its card -
+           and helms reported the older hud-primary depth crowded out
+           the alarm-threshold subline below. *@
+        <div class="hud-value @Format.DepthClass(Data.Depth) @(depthFreshness == FieldFreshness.Dead ? "hud-value-dead" : "")">@Format.Depth(Data.Depth)<span class="hud-unit">m</span>@if (IsExpanded(CornerBottomLeft) && FormatDepthTrend() is string trendLabel)
             {
                 @* Trend arrow is only meaningful when the user has room
                    to parse it - compact card stays to just "depth &
