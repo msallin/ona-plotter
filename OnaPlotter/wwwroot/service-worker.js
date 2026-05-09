@@ -708,7 +708,7 @@
 //             (3) Hoisted lut/xLut/yLut + spoke.data refs to locals
 //                 inside _paintSpoke so the JIT doesn't re-read
 //                 them per iteration.
-const CACHE_NAME = 'ona-plotter-v74';
+const CACHE_NAME = 'ona-plotter-v75';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

@@ -50,4 +50,47 @@ public interface IServerSettings
     /// query / fragment, lower-cases the host) and persists. Empty
     /// string is allowed (clears the field).</summary>
     Task SetStandaloneServerUrlAsync(string value);
+
+    /// <summary>"Remember me" preference: persist the JWT returned by
+    /// <c>/signalk/v1/auth/login</c> so a tab reload reuses it until
+    /// expiry. Default true (so the helm doesn't have to re-type their
+    /// password every time the tab refreshes). Independent of
+    /// <see cref="RememberPassword"/>: a session-only persistence is
+    /// already a meaningful "remember me" - the helm only re-types
+    /// when the JWT expires (typically days, server-configurable).</summary>
+    bool RememberSession { get; }
+
+    /// <summary>OPT-IN: also persist the username + password in
+    /// localStorage so the auto-login flow can re-issue a fresh JWT
+    /// after one expires WITHOUT prompting the helm. Default false;
+    /// the Settings UI surfaces a clear "stored in plain text" warning
+    /// before turning this on. Storing the password is a real risk -
+    /// any script running on this origin (an XSS, a third-party
+    /// dependency) can read the value - so the flag stays off-by-
+    /// default and the session-only path is the recommended posture.</summary>
+    bool RememberPassword { get; }
+
+    /// <summary>Last-used username from the standalone-mode login
+    /// dialog. Persisted unconditionally (it's not a credential on its
+    /// own) so the helm doesn't re-type it on every visit. Cleared on
+    /// explicit logout.</summary>
+    string StoredUsername { get; }
+
+    /// <summary>Helm-supplied password used for the auto-login flow.
+    /// Persists IF AND ONLY IF <see cref="RememberPassword"/> is true.
+    /// Empty string when not stored. Caller (the login dialog) is
+    /// responsible for matching the persist-or-not flag to the
+    /// "Remember password" checkbox state.</summary>
+    string StoredPassword { get; }
+
+    Task SetRememberSessionAsync(bool value);
+    Task SetRememberPasswordAsync(bool value);
+    Task SetStoredUsernameAsync(string value);
+    /// <summary>Persist the helm's password. Caller MUST gate on
+    /// <see cref="RememberPassword"/>; passing a non-empty password
+    /// while the flag is off writes the value to storage. The setter
+    /// itself doesn't check the flag - it's the helm's choice via the
+    /// UI's "Remember password" checkbox. Pass an empty string to
+    /// clear (used on explicit logout / flag flipped off).</summary>
+    Task SetStoredPasswordAsync(string value);
 }

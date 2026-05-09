@@ -98,4 +98,87 @@ public sealed class AuthApi : IAuthApi
             }
         }
     }
+
+    public async Task<LoginResult?> LoginAsync(string username, string password,
+        CancellationToken ct = default)
+    {
+        var url = _baseUrl.Combine("/signalk/v1/auth/login");
+        // Hand-rolled JSON body so we don't have to add the request
+        // shape to OnaJsonContext (it's only used here, and only with
+        // two fields). System.Text.Json escapes the values for us.
+        var bodyJson = JsonSerializer.Serialize(new[]
+        {
+            new KeyValuePair<string, string>("username", username),
+            new KeyValuePair<string, string>("password", password),
+        }.ToDictionary(kv => kv.Key, kv => kv.Value));
+        using var content = new StringContent(bodyJson, System.Text.Encoding.UTF8, "application/json");
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(ProbeTimeout);
+
+        HttpResponseMessage response;
+        try { response = await _http.PostAsync(url, content, cts.Token); }
+        catch (HttpRequestException ex)
+        {
+            // Network / CORS / DNS - all surface as HttpRequestException
+            // in the browser HTTP stack. Most common in standalone mode
+            // is a CORS-block on the SK server (the helm hasn't added
+            // this origin to security.allowedCorsOrigins yet); the helm
+            // sees a "sign-in failed" toast and the next chip refresh
+            // confirms they're still signed out.
+            _logger.LogWarning("[auth] login failed: {Message}", ex.Message);
+            return null;
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogInformation("[auth] login timed out");
+            return null;
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("[auth] login HTTP {StatusCode}", (int)response.StatusCode);
+                return null;
+            }
+            var json = await response.Content.ReadAsStringAsync(cts.Token);
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try
+            {
+                return JsonSerializer.Deserialize(json, OnaJsonContext.Default.LoginResult);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning("[auth] login parse failed: {Message}", ex.Message);
+                return null;
+            }
+        }
+    }
+
+    public async Task LogoutAsync(CancellationToken ct = default)
+    {
+        var url = _baseUrl.Combine("/signalk/v1/auth/logout");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(ProbeTimeout);
+        try
+        {
+            using var response = await _http.PostAsync(url, content: null, cts.Token);
+            // Don't surface non-success - the caller has already cleared
+            // the local token; the server-side invalidation is best-
+            // effort, the JWT will time out within timeToLive anyway.
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("[auth] logout HTTP {StatusCode}", (int)response.StatusCode);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogInformation("[auth] logout transport failed: {Message}", ex.Message);
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogInformation("[auth] logout timed out");
+        }
+    }
 }

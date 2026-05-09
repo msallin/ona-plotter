@@ -1,6 +1,7 @@
 @* Settings: configurable alarm thresholds and preferences. *@
 
 @page "/settings"
+@implements IAsyncDisposable
 @using OnaPlotter.Services
 @using OnaPlotter.Services.Api
 @using Microsoft.AspNetCore.Components.Forms
@@ -15,6 +16,8 @@
 @inject NavigationManager Nav
 @inject IAlarmManager Alarms
 @inject ISignalKBaseUrl SignalKBaseUrl
+@inject OnaPlotter.Services.Auth.AuthSession AuthSession
+@inject OnaPlotter.Services.Auth.ITokenStore Tokens
 
 <PageTitle>Settings</PageTitle>
 
@@ -1080,6 +1083,112 @@
             </div>
         </div>
 
+        @* Sign-in card: username + password, paired with two persistence
+           checkboxes. Only visible when Standalone mode is on - the
+           bundled-webapp install uses the SK admin UI's cookie auth and
+           doesn't need an inline login. Three states:
+             1. Tokens.IsValid - "Signed in as ..." + Sign out button.
+             2. Tokens not valid + login in flight - the form fields
+                are disabled and the button shows a spinner.
+             3. Default - editable form with Sign in button.
+           Password is stored in plain text when the helm opts in;
+           the warning text spells that out so the trade-off is
+           visible at the click-site, not buried in docs. *@
+        @if (AppSettings.StandaloneMode)
+        {
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <strong class="d-block mb-2">SignalK sign-in</strong>
+                        @if (Tokens.IsValid)
+                        {
+                            <small class="text-muted d-block mb-2">
+                                Signed in as
+                                <code>@(string.IsNullOrEmpty(AppSettings.StoredUsername)
+                                          ? "(unknown)"
+                                          : AppSettings.StoredUsername)</code>.
+                                Token expires
+                                <code>@(AuthSession_DescribeExpiry())</code>.
+                            </small>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                    disabled="@authInFlight"
+                                    @onclick="OnSignOutClicked">
+                                @(authInFlight ? "Signing out..." : "Sign out")
+                            </button>
+                        }
+                        else
+                        {
+                            <div class="row g-2 align-items-end">
+                                <div class="col-sm-6">
+                                    <label class="form-label small mb-1" for="standaloneUsernameInput">
+                                        Username
+                                    </label>
+                                    <input id="standaloneUsernameInput"
+                                           class="form-control form-control-sm"
+                                           type="text" autocomplete="username"
+                                           value="@loginUsername"
+                                           disabled="@authInFlight"
+                                           @oninput="OnLoginUsernameInput"
+                                           @onkeydown="OnLoginKey" />
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label small mb-1" for="standalonePasswordInput">
+                                        Password
+                                    </label>
+                                    <input id="standalonePasswordInput"
+                                           class="form-control form-control-sm"
+                                           type="password" autocomplete="current-password"
+                                           value="@loginPassword"
+                                           disabled="@authInFlight"
+                                           @oninput="OnLoginPasswordInput"
+                                           @onkeydown="OnLoginKey" />
+                                </div>
+                            </div>
+                            @if (loginError is not null)
+                            {
+                                <div class="alert alert-warning py-1 px-2 mt-2 mb-0 small">
+                                    @loginError
+                                </div>
+                            }
+                            <div class="mt-2 d-flex flex-wrap align-items-center" style="gap:8px 16px;">
+                                <button class="btn btn-sm btn-primary"
+                                        disabled="@(authInFlight
+                                                   || string.IsNullOrEmpty(loginUsername)
+                                                   || string.IsNullOrEmpty(loginPassword))"
+                                        @onclick="OnSignInClicked">
+                                    @(authInFlight ? "Signing in..." : "Sign in")
+                                </button>
+                                <label class="form-check m-0">
+                                    <input class="form-check-input" type="checkbox"
+                                           checked="@AppSettings.RememberSession"
+                                           @onchange="OnRememberSessionChanged" />
+                                    <span class="form-check-label small">Remember session</span>
+                                </label>
+                                <label class="form-check m-0"
+                                       title="Stores the password in plain text in browser localStorage. Anyone with access to this device can read it.">
+                                    <input class="form-check-input" type="checkbox"
+                                           checked="@loginRememberPassword"
+                                           @onchange="OnLoginRememberPasswordChanged" />
+                                    <span class="form-check-label small">
+                                        Remember password
+                                        <span class="text-warning" aria-hidden="true">⚠</span>
+                                    </span>
+                                </label>
+                            </div>
+                            <small class="text-muted d-block mt-2">
+                                <strong>Remember session</strong> stores just the JWT, valid until the
+                                server-configured expiry (typically days). <strong>Remember password</strong>
+                                also stores the password in plain text so the next session re-logs-in
+                                automatically when the JWT expires - convenient at the helm but readable
+                                by any script on this origin. Leave unchecked unless you understand the
+                                trade-off.
+                            </small>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
         <div class="col-sm-6">
             <div class="card">
                 <div class="card-body">
@@ -1246,6 +1355,122 @@
     private async Task OnStandaloneServerUrlKey(KeyboardEventArgs e)
     {
         if (e.Key == "Enter") await OnStandaloneServerUrlCommit();
+    }
+
+    // === Standalone-mode sign-in form state ===
+    // Local-to-the-form fields. We DON'T bind directly to
+    // AppSettings.StoredUsername / StoredPassword while typing because
+    // (a) every keystroke would Save() to localStorage and (b) the
+    // password should only land in storage on Sign-in success when the
+    // helm has opted in. AuthSession.LoginAsync owns the persistence
+    // decision; the form just collects the inputs.
+    private string loginUsername = "";
+    private string loginPassword = "";
+    private bool loginRememberPassword;
+    private bool authInFlight;
+    private string? loginError;
+
+    private async Task OnSignInClicked()
+    {
+        if (authInFlight) return;
+        loginError = null;
+        authInFlight = true;
+        StateHasChanged();
+        try
+        {
+            var ok = await AuthSession.LoginAsync(loginUsername, loginPassword,
+                rememberPassword: loginRememberPassword);
+            if (ok)
+            {
+                // Clear the form on success - no point keeping the
+                // password sitting in a Razor field after the JWT
+                // has been stashed.
+                loginPassword = "";
+                loginError = null;
+                Toasts.Success("Signed in to SignalK");
+            }
+            else
+            {
+                loginError = "Sign-in failed. Check the username / password and that the SK server is reachable + CORS-enabled for this origin.";
+            }
+        }
+        catch (Exception ex)
+        {
+            loginError = $"Sign-in error: {ex.Message}";
+        }
+        finally
+        {
+            authInFlight = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSignOutClicked()
+    {
+        if (authInFlight) return;
+        authInFlight = true;
+        StateHasChanged();
+        try
+        {
+            await AuthSession.LogoutAsync();
+            // Reset the form so the helm can sign back in as a
+            // different user without seeing the previous values.
+            loginPassword = "";
+            loginRememberPassword = false;
+            Toasts.Info("Signed out of SignalK");
+        }
+        finally
+        {
+            authInFlight = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnLoginKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter"
+            && !string.IsNullOrEmpty(loginUsername)
+            && !string.IsNullOrEmpty(loginPassword))
+        {
+            await OnSignInClicked();
+        }
+    }
+
+    // Named handlers (vs. inline lambdas) so the markup stays clean
+    // and Razor's parser doesn't trip on string-literal escapes.
+    private void OnLoginUsernameInput(ChangeEventArgs e) =>
+        loginUsername = e.Value as string ?? "";
+
+    private void OnLoginPasswordInput(ChangeEventArgs e) =>
+        loginPassword = e.Value as string ?? "";
+
+    private void OnLoginRememberPasswordChanged(ChangeEventArgs e) =>
+        loginRememberPassword = e.Value is bool b && b;
+
+    private async Task OnRememberSessionChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetRememberSessionAsync(on);
+        // Note: we don't currently re-persist or wipe the existing
+        // token on flag-flip. The next login decides; this is intentional.
+    }
+
+    /// <summary>Helm-readable description of the JWT expiry: relative
+    /// when within the next hour ("in 47 min"), absolute UTC time
+    /// otherwise (so a multi-day session shows a date). Used in the
+    /// "Signed in as ..." status line.</summary>
+    private string AuthSession_DescribeExpiry()
+    {
+        var expiry = Tokens.ExpiresAtUtc;
+        if (expiry is null) return "unknown";
+        var remaining = expiry.Value - DateTime.UtcNow;
+        if (remaining < TimeSpan.Zero) return "expired";
+        if (remaining < TimeSpan.FromHours(1))
+        {
+            var mins = Math.Max(1, (int)remaining.TotalMinutes);
+            return $"in {mins} min";
+        }
+        return expiry.Value.ToString("yyyy-MM-dd HH:mm 'UTC'");
     }
 
     private async Task SendTestLog()
@@ -1802,6 +2027,32 @@
         // text field.
         standaloneUrlEdit = AppSettings.StandaloneServerUrl;
         standaloneUrlSeeded = true;
+
+        // Seed the sign-in form. Username always; password only when
+        // "Remember password" was opted in. The checkbox starts
+        // matching the persisted RememberPassword so the helm sees a
+        // consistent state on revisit.
+        loginUsername = AppSettings.StoredUsername;
+        if (AppSettings.RememberPassword)
+        {
+            loginPassword = AppSettings.StoredPassword;
+            loginRememberPassword = true;
+        }
+
+        // Re-render whenever the token state changes (login from
+        // another tab, auto-login completing, expiry timeout) so the
+        // "Signed in as" / form-fields swap doesn't wait for an
+        // unrelated render. Dispose unsubscribes in DisposeAsync.
+        Tokens.OnTokenChanged += HandleTokenChanged;
+    }
+
+    private void HandleTokenChanged() =>
+        InvokeAsync(StateHasChanged);
+
+    public ValueTask DisposeAsync()
+    {
+        Tokens.OnTokenChanged -= HandleTokenChanged;
+        return ValueTask.CompletedTask;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
