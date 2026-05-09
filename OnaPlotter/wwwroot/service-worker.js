@@ -677,7 +677,24 @@
 //             Alarm setup card on the same row. <pre> formula
 //             gets pre-wrap + word-break so half-width on tablet
 //             doesn't horizontal-scroll.
-const CACHE_NAME = 'ona-plotter-v71';
+// v71 -> v72: Fix "Cannot read properties of undefined (reading
+//             'appendChild')" Leaflet crash that emptied the chart
+//             after enabling Radar HUD. Three-layer fix:
+//             (1) leafletInterop.initMap calls a new
+//                 tearDownAllRadarOverlays before map.remove() so
+//                 stale radar records can't survive a navigate-away-
+//                 and-back pointing at a destroyed map's wiped panes.
+//             (2) radarLayer.setRangeRingsConfig defensively checks
+//                 each record's map.getPanes().overlayPane and skips
+//                 (with a one-shot destroy+log) any record whose map
+//                 is dead. Belt-and-braces if a future code path
+//                 leaks a record without going through initMap.
+//             (3) MapControlsJs.InvokeSafe now also catches
+//                 JSException, logs to Console.Error (relay -> SK
+//                 server log), and returns. A future JS regression
+//                 can no longer take Blazor's renderer down for the
+//                 rest of the session.
+const CACHE_NAME = 'ona-plotter-v72';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

@@ -8,7 +8,8 @@ import { MS_TO_KNOTS, etaWithTtg } from './format.js';
 import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState,
-         setRangeRingsConfig as setRadarRangeRingsConfig } from './radarLayer.js';
+         setRangeRingsConfig as setRadarRangeRingsConfig,
+         tearDownAllRadarOverlays } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
 import * as mobLayerMod from './mobLayer.js';
@@ -475,6 +476,16 @@ function rotateMarker(marker, rad) {
 // ========== EXPORTED FUNCTIONS ==========
 
 export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
+    // Tear down EVERY radar overlay BEFORE map.remove(). The radar
+    // module keeps a module-level Map of active overlays; without
+    // this each navigate-away-and-back leaves stale records pointing
+    // at the previous (about-to-be-destroyed) Leaflet map. A later
+    // setRangeRingsConfig() iterates them and tries to add a vector
+    // layer to a map whose panes have been wiped, crashing deep in
+    // Leaflet's getRenderer with
+    // "Cannot read properties of undefined (reading 'appendChild')"
+    // and taking the Blazor renderer down on the way out.
+    tearDownAllRadarOverlays();
     if (map) map.remove();
     dotNetRef = dotNetObjRef;
 

@@ -91,7 +91,25 @@ export function setRangeRingsConfig(enabled, count) {
     // anyway.
     const n = Number(count);
     ringsCount = Number.isFinite(n) ? Math.max(1, Math.min(8, Math.round(n))) : 4;
-    for (const rec of activeRadars.values()) rec.refreshRangeRings();
+    for (const rec of activeRadars.values()) {
+        // Defensive: skip records whose Leaflet map has been removed
+        // (e.g. tearDownAllRadarOverlays didn't run before initMap on a
+        // navigate-away-and-back). Adding a vector layer to a dead map
+        // crashes deep in Leaflet's getRenderer with
+        // "Cannot read properties of undefined (reading 'appendChild')"
+        // because _panes was wiped by map.remove().
+        if (!rec.map || typeof rec.map.getPanes !== 'function') continue;
+        const panes = rec.map.getPanes();
+        if (!panes || !panes.overlayPane) continue;
+        try { rec.refreshRangeRings(); }
+        catch (e) {
+            // Last-resort: a refresh that throws shouldn't break the
+            // helm's chart. Log + drop the dead record so subsequent
+            // iterations skip it.
+            console.warn('[radar] refreshRangeRings threw; dropping overlay', e);
+            try { rec.destroy(); } catch (_) { /* already gone */ }
+        }
+    }
 }
 
 /**
@@ -130,6 +148,28 @@ export function disableRadarOverlay(radarId) {
     if (!rec) return;
     rec.destroy();
     activeRadars.delete(radarId);
+}
+
+/**
+ * Tear down EVERY active radar overlay. Called from
+ * leafletInterop.initMap before it calls map.remove() so that
+ * stale records pointing at a destroyed Leaflet map don't survive
+ * a navigate-away-and-back. Without this, a follow-up
+ * setRangeRingsConfig() call iterates active records, calls
+ * rec.refreshRangeRings(), and tries to add a layer to the OLD
+ * (already-removed) map - whose _panes.overlayPane is now undefined,
+ * surfacing as "Cannot read properties of undefined (reading
+ * 'appendChild')" deep in Leaflet's getRenderer + crashing the
+ * Blazor renderer on the way out.
+ *
+ * destroy() is best-effort: each record's teardown is wrapped so
+ * one failed cleanup can't strand the rest.
+ */
+export function tearDownAllRadarOverlays() {
+    for (const rec of activeRadars.values()) {
+        try { rec.destroy(); } catch (_) { /* already gone */ }
+    }
+    activeRadars.clear();
 }
 
 /** Update the range value (metres) for a radar. Triggers a canvas

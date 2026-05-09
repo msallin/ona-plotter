@@ -98,5 +98,23 @@ public sealed class MapControlsJs : IMapControlsJs
         }
         catch (JSDisconnectedException) { /* page is unmounting */ }
         catch (ObjectDisposedException) { /* JS module disposed first */ }
+        catch (JSException ex)
+        {
+            // A real JS-side regression. Log via Console.Error
+            // (errorRelayBoot forwards to the SK server log) but DO
+            // NOT propagate - the wrapper is called from
+            // OnAfterRenderAsync + HandleSettingsChanged + per-tick
+            // frame dispatch, and a propagated exception trips
+            // Blazor's renderer error UI which empties the chart for
+            // the rest of the session. The recent helm report:
+            // "I enabled radar HUD ... I dont see infos on the chart
+            // anymore" - root cause was a stale radar-overlay record
+            // pointing at a removed Leaflet map; surfacing the JS
+            // crash through here let it cascade past every subsequent
+            // _controlsJs call. Log + swallow keeps the page alive
+            // while the JS-side fix lands.
+            Console.Error.WriteLine(
+                $"[mapControls] JS '{identifier}' threw {ex.GetType().Name}: {ex.Message}");
+        }
     }
 }

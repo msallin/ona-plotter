@@ -240,12 +240,24 @@ public class MapControlsJsTests
     }
 
     [Test]
-    public async Task JsException_Propagates()
+    public async Task JsException_Is_Swallowed_Not_Propagated()
     {
+        // A JS-side regression should NOT bubble out of the wrapper.
+        // The wrapper is called from OnAfterRenderAsync +
+        // HandleSettingsChanged + per-tick frame dispatch; a propagated
+        // exception trips Blazor's renderer error UI which empties the
+        // chart for the rest of the session. Helm-feedback: "I enabled
+        // radar HUD ... I dont see infos on the chart anymore" - root
+        // cause was a stale radar-overlay record pointing at a removed
+        // Leaflet map; surfacing the JS crash through here let it
+        // cascade past every subsequent _controlsJs call.
         var fake = new RecordingJsRef { ThrowJsExceptionNext = true };
         var sut = new MapControlsJs(fake);
 
-        await Assert.ThrowsAsync<JSException>(() => sut.PanToAsync(0, 0));
+        // Must complete without throwing. Console.Error captures the
+        // diagnostic for the SK server log.
+        await sut.PanToAsync(0, 0);
+        await Assert.That(fake.Calls.Count).IsEqualTo(1);
     }
 
     [Test]
