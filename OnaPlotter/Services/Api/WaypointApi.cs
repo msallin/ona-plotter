@@ -50,10 +50,11 @@ public sealed class WaypointApi : IWaypointApi
     public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon,
         string? description = null, CancellationToken ct = default)
     {
-        // Shared GeoJSON envelope builder: Freeboard-SK + SK core
-        // refuse feature documents without a `properties` block, so
-        // the helper always emits one (empty description is the
-        // spec-friendly "no description" value, not a missing key).
+        // Shared GeoJSON envelope builder: SignalK core + peer
+        // clients refuse feature documents without a `properties`
+        // block, so the helper always emits one (empty description
+        // is the spec-friendly "no description" value, not a missing
+        // key).
         // CreatedAt is stamped on first PUT so the popup can show
         // "when was this pinned" without a sidecar resource. Same
         // approach as SignalkNote - relies on resources-fs round-

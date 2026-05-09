@@ -10,8 +10,8 @@ namespace OnaPlotter.Tests;
 /// Cross-plotter sync coverage for SignalK v2 notifications. Models the
 /// real-world scenario where two (or more) plotters share a single
 /// SignalK server: helm at the chart table runs ona-plotter, helm at
-/// the cockpit runs Freeboard-SK, both subscribed to the same
-/// notifications.* feed. The contract under test:
+/// the cockpit runs another SignalK client, both subscribed to the
+/// same notifications.* feed. The contract under test:
 /// <list type="bullet">
 ///   <item>An ack from ANY plotter clears the banner on EVERY plotter.</item>
 ///   <item>A locally-only dismiss (no v2 id, or canAcknowledge=false)

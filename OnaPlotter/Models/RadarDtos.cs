@@ -127,9 +127,9 @@ public sealed class RadarCapabilities
     public bool HasDualRange { get; set; }
 
     /// <summary>True for radars that emit fewer spokes per revolution
-    /// than <see cref="SpokesPerRevolution"/> implies (Furuno). Clients
-    /// should wedge-paint from the received angle to the previously-
-    /// received angle rather than assume adjacency.</summary>
+    /// than <see cref="SpokesPerRevolution"/> implies. Clients should
+    /// wedge-paint from the received angle to the previously-received
+    /// angle rather than assume adjacency.</summary>
     [JsonPropertyName("hasSparseSpokes")]
     public bool HasSparseSpokes { get; set; }
 

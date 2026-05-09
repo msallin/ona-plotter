@@ -39,8 +39,9 @@ import { decodeRadarMessage } from './radarProtobuf.js';
 import { rangeRingLabel } from './format.js';
 
 // Fallback legend for servers that don't ship one in their
-// capabilities response. Matches the Navico palette. 0 transparent,
-// 1-4 blue, 5-9 green, 10-15 red (weak -> strong returns), 16 target
+// capabilities response. Matches a typical recreational radar
+// palette. 0 transparent, 1-4 blue, 5-9 green, 10-15 red (weak ->
+// strong returns), 16 target
 // outline (grey), 17 doppler approaching (yellow), 18 doppler
 // receding (pale blue), 19+ history trails (fading white -> grey).
 const DEFAULT_LEGEND_PIXELS = (() => {
@@ -270,7 +271,8 @@ class RadarOverlay {
         // Precompute polar -> pixel LUT: for each spoke angle + range
         // cell, store the integer (x, y) to paint. Two Int16Arrays;
         // 2 bytes * spokes * maxSpokeLen each.
-        //   HALO 31: 2048 * 1024 * 2 = 4 MB per array, 8 MB total.
+        //   typical 2048 x 1024: 2048 * 1024 * 2 = 4 MB per array,
+        //   8 MB total.
         this.xLut = new Int16Array(this.spokes * this.maxSpokeLen);
         this.yLut = new Int16Array(this.spokes * this.maxSpokeLen);
         this._computeLuts();
@@ -796,19 +798,19 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
 }
 
 /** Decide whether a legend entry should be rendered transparent.
- *  Drives the "drop sea-clutter" UX: Navico-style palettes paint
- *  low-intensity normal echoes (sea clutter, noise) as a blue ramp
- *  AND the medium-strength normals also lean blue / cyan / blue-green
- *  on HALO. The user's complaint is visual ("anything that looks
- *  blue draws too much attention regardless of intensity"), so we
- *  combine two checks for normal pixels:
+ *  Drives the "drop sea-clutter" UX: typical recreational radar
+ *  palettes paint low-intensity normal echoes (sea clutter, noise)
+ *  as a blue ramp AND the medium-strength normals also lean blue /
+ *  cyan / blue-green. The user's complaint is visual ("anything that
+ *  looks blue draws too much attention regardless of intensity"), so
+ *  we combine two checks for normal pixels:
  *    1. Metadata: byte indices 1..mediumReturn-1 are sea clutter
  *       per the legend's own classification (covers ramps where the
  *       provider doesn't pick blue but still flags noise).
  *    2. Colour: anything where blue is the dominant channel
  *       (B > R AND B > G) - catches the cyan / pure-blue / blue-green
- *       ramp that on HALO extends past the metadata cutoff (bytes
- *       5-7 are still blue-dominant by RGB even though they're
+ *       ramp that on common palettes extends past the metadata cutoff
+ *       (bytes 5-7 are still blue-dominant by RGB even though they're
  *       above mediumReturn).
  *  Doppler / history / target-border markers stay visible regardless
  *  of colour because the check is gated on type === 'normal'.

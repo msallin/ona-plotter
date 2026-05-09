@@ -8,7 +8,7 @@ SignalK setup.
 Safety-critical marine chartplotter. Blazor WASM, net10.0, no server-side
 Blazor. Runs on iPad / phone / 21" helm touchscreen. Any exception reaching
 Blazor's error UI is a user-visible failure on a boat with flaky wifi.
-Benchmark UX against B&G Vulcan / Raymarine Axiom, not Freeboard-SK.
+Benchmark UX against dedicated commercial chartplotter hardware.
 
 ## Architecture
 
@@ -260,8 +260,8 @@ changelog; add a one-line entry per bump.
 
 **Resource payload shape.**
 `{ name, feature: { type, geometry, properties: {...} } }`. `properties`
-is mandatory for Freeboard-SK interop, even when near-empty. Notes are
-the exception: bare `position: { latitude, longitude }`.
+is mandatory for SignalK resource-API interop, even when near-empty.
+Notes are the exception: bare `position: { latitude, longitude }`.
 
 **Razor string-parameter binding.** On a `string`-typed parameter,
 `Param="var"` is a literal, not an expression. Typed parameters

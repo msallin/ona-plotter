@@ -21,8 +21,8 @@ internal static class GeoJsonBuilder
     /// Standard body for waypoints + freshly-saved routes. Top-level
     /// <c>name</c> plus a <c>feature</c> with geometry and a
     /// <c>properties</c> block that mirrors the name and carries a
-    /// description (empty string when not provided, which SK + Freeboard
-    /// expect over a missing key).
+    /// description (empty string when not provided, which SK +
+    /// peer SignalK clients expect over a missing key).
     /// <para>Optional <paramref name="createdAt"/> rides as a top-level
     /// custom field (not part of the SK schema, but resources-fs
     /// round-trips arbitrary fields). When null the field is omitted
@@ -66,8 +66,8 @@ internal static class GeoJsonBuilder
     /// having to recompute the haversine sum on every render.
     /// Without the field the sk-resource record had no distance, the
     /// SignalkRoute DTO saw <c>null</c>, and the Routes layer showed
-    /// "-" while a Freeboard-saved route on the same server
-    /// (Freeboard sends distance) showed the correct value.
+    /// "-" while a route saved by a peer SignalK client on the same
+    /// server (peers send distance) showed the correct value.
     /// </summary>
     public static object RouteFeatureBody(string name, object geometry, int waypointCount, double? distanceMeters, string? description = null)
     {
@@ -94,7 +94,7 @@ internal static class GeoJsonBuilder
 
     /// <summary>
     /// Region variant: carries <c>description</c> at the TOP level
-    /// as well as inside <c>properties</c>. Some Freeboard builds
+    /// as well as inside <c>properties</c>. Some SignalK clients
     /// read the top-level copy, some read the inner one - shipping
     /// both is the compatible choice. The <paramref name="isHazard"/>
     /// flag rides along the same way: top level (where the C# DTO

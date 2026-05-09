@@ -152,7 +152,7 @@ let zoomBadge = null;
 // AND the pinch-zoom preview. Single source of truth so the bar in
 // the corner and the chip floating mid-gesture pick the same step -
 // previously this lived as a duplicated literal in both places. Same
-// ladder every commercial plotter uses (Garmin / B&G / Raymarine).
+// ladder dedicated chartplotter hardware uses for chart range scales.
 const RANGE_SCALE_NM_LADDER = [
     0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500
 ];
@@ -1600,8 +1600,8 @@ export function removeChartLayer(id) {
 // Graduated opacity for stacked charts. The bottom (primary) chart
 // always renders at full opacity so a single-chart helm sees the
 // chart's authored colours / contrast verbatim - the previous
-// flat-0.85 dim made Navionics MBTiles look noticeably less crisp
-// than they should. Each chart stacked ABOVE the primary then ramps
+// flat-0.85 dim made raster MBTiles look noticeably less crisp than
+// they should. Each chart stacked ABOVE the primary then ramps
 // down to 0.45 so the helm reads the stack as layers rather than the
 // topmost chart hiding what's underneath. The 0.45 floor keeps the
 // top layer visible on a 4+ chart stack.

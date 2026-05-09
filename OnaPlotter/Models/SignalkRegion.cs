@@ -23,20 +23,20 @@ public sealed class SignalkRegion
     /// <summary>When true, the region marks a hazardous area; the
     /// <c>HazardousRegionAlarmRule</c> raises a <c>Danger</c> alarm
     /// while own-ship is inside it. Stored both at the wire top level
-    /// and in <see cref="GeoJsonFeature.Properties"/> - some Freeboard
-    /// builds round-trip the inner copy, others read the outer; we
-    /// emit both for compatibility and read whichever the server
-    /// happens to send back. Defaults to false so existing decorative
-    /// regions don't suddenly start firing alarms.</summary>
+    /// and in <see cref="GeoJsonFeature.Properties"/> - some peer
+    /// SignalK clients round-trip the inner copy, others read the
+    /// outer; we emit both for compatibility and read whichever the
+    /// server happens to send back. Defaults to false so existing
+    /// decorative regions don't suddenly start firing alarms.</summary>
     [JsonPropertyName("isHazard")]
     public bool IsHazard { get; set; }
 
     /// <summary>ISO-8601 UTC timestamp of when this client created the
     /// region. Stored in the resource body so a re-fetch round-trips
     /// the value; the popup renders it as a "Created" line. Null for
-    /// regions imported from elsewhere (Freeboard, KIP, GPX import)
-    /// or created before this field was introduced; the popup shows
-    /// a dash for those rather than a synthetic "now".</summary>
+    /// regions imported from elsewhere (other SignalK clients, GPX
+    /// import) or created before this field was introduced; the popup
+    /// shows a dash for those rather than a synthetic "now".</summary>
     [JsonPropertyName("createdAt")]
     public DateTime? CreatedAt { get; set; }
 

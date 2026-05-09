@@ -22,9 +22,9 @@ namespace OnaPlotter.Services.Resources;
 /// re-fetch after the user's OWN save. The signalk-server emits
 /// resource changes as ordinary deltas (full document on PUT/POST,
 /// <c>null</c> on DELETE) - this store is the consumer that closes
-/// the loop. Same pattern as Freeboard-SK: WS delta is the
-/// invalidation signal + cache fill, REST reconcile on reconnect
-/// backfills any deltas missed during the disconnect window.</para>
+/// the loop. Standard SignalK pattern: WS delta is the invalidation
+/// signal + cache fill, REST reconcile on reconnect backfills any
+/// deltas missed during the disconnect window.</para>
 ///
 /// <para><b>Wire shape</b> per signalk-server's
 /// <c>buildDeltaMsg</c>: path = <c>resources.&lt;type&gt;.&lt;id&gt;</c>,

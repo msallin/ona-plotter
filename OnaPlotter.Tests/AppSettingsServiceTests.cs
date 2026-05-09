@@ -268,14 +268,14 @@ public class AppSettingsServiceTests
         var svc = new AppSettingsService(kv);
         await svc.InitializeAsync();
 
-        await svc.SetEnabledChartsAsync(["OSM", "OpenSeaMap", "navionics_x"]);
+        await svc.SetEnabledChartsAsync(["OSM", "OpenSeaMap", "chart_x"]);
 
         var svc2 = new AppSettingsService(kv);
         await svc2.InitializeAsync();
 
         await Assert.That(svc2.EnabledChartIds.Count).IsEqualTo(3);
         await Assert.That(svc2.EnabledChartIds.Contains("OpenSeaMap")).IsTrue();
-        await Assert.That(svc2.EnabledChartIds.Contains("navionics_x")).IsTrue();
+        await Assert.That(svc2.EnabledChartIds.Contains("chart_x")).IsTrue();
     }
 
     [Test]
@@ -841,7 +841,7 @@ public class AppSettingsServiceTests
         // A user who removed a chart from the quick bar but kept it
         // enabled overall must see that choice respected on next load.
         var kv = new InMemoryKv();
-        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap\nNavionics");
+        await kv.SetAsync("enabledChartIds", "OSM\nOpenSeaMap\nCustomChart");
         await kv.SetAsync("quickBarChartIds.v1", "OSM");
 
         var svc = new AppSettingsService(kv);

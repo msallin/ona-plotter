@@ -18,10 +18,10 @@ namespace OnaPlotter.Utilities;
 public static class RangeScale
 {
     /// <summary>
-    /// "Nice round" nautical-mile values. Same ladder Garmin / B&amp;G /
-    /// Raymarine all use on chart range scales. Below the smallest
-    /// entry the picker falls through to the floor; above the
-    /// largest, it sticks at the top.
+    /// "Nice round" nautical-mile values. The same ladder dedicated
+    /// chartplotter hardware uses on chart range scales. Below the
+    /// smallest entry the picker falls through to the floor; above
+    /// the largest, it sticks at the top.
     /// </summary>
     public static readonly double[] Ladder =
     [

@@ -38,8 +38,8 @@ let _scratchReader = null;
 const EMPTY_BYTES = new Uint8Array(0);
 
 // Spoke object pool. Decoded Spoke literals are hot-allocated -
-// HALO 31 emits ~1k spokes/sec, each previously a fresh
-// `{ angle, bearing, range, data, lat, lon }` literal at decode
+// a typical recreational radar emits ~1k spokes/sec, each previously
+// a fresh `{ angle, bearing, range, data, lat, lon }` literal at decode
 // time. The pool keeps a high-water-mark array of pre-shaped
 // objects and decodeSpokeInto resets fields in place so V8's
 // hidden class stays stable across frames + the GC has nothing
@@ -61,7 +61,7 @@ const _spokeResultArr = [];
  *
  * A module-level Reader is reused across calls so the DataView +
  * Reader instance allocation cost doesn't scale with the spoke-
- * frame rate (up to ~50 frames / sec on HALO).
+ * frame rate (up to ~50 frames / sec on a typical recreational radar).
  *
  * @param {Uint8Array} bytes
  * @returns {{ spokes: Array<Spoke> }}

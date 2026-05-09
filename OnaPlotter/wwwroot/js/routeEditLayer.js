@@ -143,9 +143,9 @@ function rebuildRouteEditMarkers() {
 // Attach drag handlers with a "ghost" visual: during drag we leave
 // the original position visible as a hollow ghost marker and draw a
 // dashed rubber-band line from it to the live cursor, with a tooltip
-// showing the delta distance. This matches what Axiom/Aqua Map do
-// when repositioning a waypoint - the sailor always sees "how far
-// from where it was".
+// showing the delta distance. The "ghost + delta" pattern is what
+// helms expect when repositioning a waypoint - the sailor always
+// sees "how far from where it was".
 function bindEditMarker(marker, idx) {
     let ghostLine = null;
     let ghostMarker = null;

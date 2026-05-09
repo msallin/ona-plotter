@@ -12,7 +12,7 @@ namespace OnaPlotter.Models;
 /// transport-neutral. Pre-Phase A AlarmInfo was a pure domain record;
 /// Phase A bolted on <c>NotificationId</c> + <c>CanAcknowledge</c> for
 /// SignalK v2. As soon as a second transport appears (NMEA-2000 PGN
-/// gateway, OpenCPN UDP, future SignalK v3) those fields would either
+/// gateway, peer UDP feed, future SignalK v3) those fields would either
 /// duplicate or have to encode through. An opaque handle pushes that
 /// complexity into the source-specific implementation, leaving the
 /// alarm record clean.

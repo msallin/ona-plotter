@@ -7,10 +7,10 @@ namespace OnaPlotter.Models;
 /// <c>maxSpokeLen</c> values and the JS layer would obediently try to
 /// allocate the resulting (2*maxLen)^2 ImageData; on a phone helm
 /// this either crashes the tab or drags the whole page down. The
-/// numbers here are well above the largest real-world radar
-/// (Navico HALO at 2048/1024) but bounded enough that worst-case
-/// allocation stays inside a single tab's recoverable budget
-/// (~256 MB ImageData, ~32 MB LUT).
+/// numbers here are well above the largest real-world radar (typical
+/// recreational unit ships at 2048/1024) but bounded enough that
+/// worst-case allocation stays inside a single tab's recoverable
+/// budget (~256 MB ImageData, ~32 MB LUT).
 /// </summary>
 public static class RadarOverlayLimits
 {
@@ -20,7 +20,8 @@ public static class RadarOverlayLimits
     public const int MaxSpokeLength = 4096;
 
     /// <summary>Default when neither capabilities nor the radar list
-    /// reports a value - matches Navico HALO native geometry.</summary>
+    /// reports a value - matches typical recreational radar
+    /// geometry.</summary>
     public const int DefaultSpokesPerRevolution = 2048;
     public const int DefaultSpokeLength = 1024;
 

@@ -46,7 +46,7 @@ public static class RadarSpokeMath
     /// north) into the spoke-index offset that aligns a bow-relative
     /// <c>angle</c> field onto the canvas's north-up grid.
     /// <paramref name="spokesPerRevolution"/> sets the discretisation
-    /// (typical Navico HALO: 2048 or 4096).
+    /// (typical recreational radar: 2048 or 4096).
     /// </summary>
     public static int HeadingToSpokeOffset(double headingRad, int spokesPerRevolution)
     {
@@ -95,9 +95,9 @@ public static class RadarSpokeMath
     /// 1..mediumReturn-1 are flagged as sea clutter by the legend
     /// itself, regardless of colour; (2) any normal pixel where blue
     /// dominates the other channels is treated as low-return because
-    /// HALO's blue-cyan-blue-green ramp visually reads as noise even
-    /// when the metadata stops flagging it. Doppler / history /
-    /// target-border markers are exempt (gated on type=normal).
+    /// the typical blue-cyan-blue-green palette ramp visually reads
+    /// as noise even when the metadata stops flagging it. Doppler /
+    /// history / target-border markers are exempt (gated on type=normal).
     /// </summary>
     /// <param name="pixelType">Legend pixel type: "normal" / "doppler"
     /// / "history" / "targetBorder" / null. Only "normal" is suppressed.</param>

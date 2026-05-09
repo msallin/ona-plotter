@@ -258,7 +258,8 @@ test('Spoke pool reuses the same object instance across calls', () => {
     // Pin the contract: identical-shape decodes return the same
     // pooled Spoke instance. Production caller relies on this for
     // GC pressure relief. A regression that switches back to fresh
-    // literals would re-introduce ~1k allocs/sec on HALO 31.
+    // literals would re-introduce ~1k allocs/sec on a typical
+    // recreational radar.
     const a = encodeMessage([{ angle: 1, range: 10, data: [1] }]);
     const ma = decodeRadarMessage(a);
     const firstRef = ma.spokes[0];

@@ -74,7 +74,7 @@ public sealed class RadarOverlayManager
         // dict / array in unspecified order (Mayara has been observed
         // shipping [B, A] then [A, B] across calls), and reordering
         // the rows under the helm's finger as they tap is bad UX.
-        // Ordinal sort matches the HALO id scheme (`nav0231A` /
+        // Ordinal sort matches the typical id scheme (`nav0231A` /
         // `nav0231B` / etc.) and any future provider's ids.
         _radars = [.. radars.OrderBy(r => r.Id ?? "", StringComparer.Ordinal)];
         await EnsureCapabilitiesAsync(ct);
@@ -131,7 +131,7 @@ public sealed class RadarOverlayManager
         // this just reads what's there. A null cached value means the
         // fetch failed earlier; in that case we fall back to whatever
         // the device-list response gave us for geometry and a null
-        // legend (the JS layer ships a Navico-default fallback palette).
+        // legend (the JS layer ships a generic fallback palette).
         if (!_capabilities.TryGetValue(radar.Id, out var caps))
         {
             caps = await _radarApi.GetCapabilitiesAsync(radar.Id, ct);

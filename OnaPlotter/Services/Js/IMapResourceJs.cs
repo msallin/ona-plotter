@@ -16,8 +16,8 @@ public interface IMapResourceJs
     /// coords mirror the call sites that pass <see cref="double?"/>
     /// straight through after a non-null gate. <paramref name="createdAtIso"/>
     /// renders in the popup as the "Created" line; null = dash
-    /// (Freeboard / KIP / pre-feature OnaPlotter waypoints don't
-    /// carry the field).</summary>
+    /// (waypoints from peer SignalK clients or pre-feature
+    /// OnaPlotter versions don't carry the field).</summary>
     Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name, string? createdAtIso);
 
     /// <summary>Remove a previously-drawn waypoint pin.</summary>
@@ -28,8 +28,8 @@ public interface IMapResourceJs
     /// <summary>Draw a note marker at the given lat/lon. Position type
     /// is non-nullable double on the model, matching the JS shape.
     /// <paramref name="createdAtIso"/> renders in the popup as the
-    /// "Created" line; null = dash (notes from Freeboard / KIP or
-    /// pre-feature OnaPlotter notes don't carry the field).</summary>
+    /// "Created" line; null = dash (notes from peer SignalK clients
+    /// or pre-feature OnaPlotter versions don't carry the field).</summary>
     Task AddNoteMarkerAsync(string id, double lat, double lon, string? title, string? description, string? createdAtIso);
 
     /// <summary>Remove a previously-drawn note marker.</summary>

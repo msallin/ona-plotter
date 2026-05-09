@@ -85,9 +85,9 @@ public class RouteProgressTests
     [Test]
     public async Task MalformedInnerArrays_AreSkipped()
     {
-        // Defensive: SignalK / Freeboard route fetches shouldn't return
-        // sparse arrays, but a single bad row must not crash the lookup
-        // on a boat with flaky wifi.
+        // Defensive: SignalK route fetches shouldn't return sparse
+        // arrays, but a single bad row must not crash the lookup on
+        // a boat with flaky wifi.
         double[][] coords =
         [
             [47.00, 8.00],

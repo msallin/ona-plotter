@@ -9,8 +9,8 @@ namespace OnaPlotter.Services.Api;
 /// maintain its own route-execution state. The server's course engine
 /// owns <c>activeRoute.pointIndex</c>, DTG, BTW, TTG, XTE; the client
 /// reads them back as deltas on <c>navigation.course*.nextPoint.*</c>.
-/// Freeboard-SK talks the same API against the same server, so both
-/// apps see a consistent course at all times.
+/// Peer SignalK clients hit the same API against the same server, so
+/// every connected client sees a consistent course at all times.
 /// </summary>
 public interface ICourseApi
 {
@@ -20,7 +20,8 @@ public interface ICourseApi
     /// <summary>Activates a saved route so SignalK will drive the
     /// active-course delta stream through it leg-by-leg. Sets the active
     /// waypoint to <paramref name="pointIndex"/> (0-based). Matches the
-    /// shape Freeboard-SK sends so both apps can start the same route.</summary>
+    /// shape peer SignalK clients send so every client can start the
+    /// same route.</summary>
     Task<ApiResult> SetActiveRouteAsync(string routeId, int pointIndex = 0,
         bool reverse = false, CancellationToken ct = default);
 

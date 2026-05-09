@@ -10,10 +10,10 @@ public class RegionApiTests
     [Test]
     public async Task CreateCircle_EmitsPolygonGeometryWithProperties()
     {
-        // Pins the wire shape so the region lands correctly in
-        // Freeboard-SK: GeoJSON Feature -> Polygon geometry with an
-        // outer ring of [lon, lat] pairs, plus a properties block that
-        // mirrors the top-level name/description (the route fix
+        // Pins the wire shape so the region lands correctly in peer
+        // SignalK clients: GeoJSON Feature -> Polygon geometry with
+        // an outer ring of [lon, lat] pairs, plus a properties block
+        // that mirrors the top-level name/description (the route fix
         // 1ca24fc pattern).
         string? capturedBody = null;
         var http = ApiTestHelpers.MockClient(req =>
@@ -162,7 +162,7 @@ public class RegionApiTests
     {
         // Freeform polygon: C# side sends [lat, lon] Leaflet order, API
         // has to emit GeoJSON [lon, lat] order and auto-close by repeating
-        // the first vertex. Freeboard-SK consumers assume a closed ring.
+        // the first vertex. Peer SignalK clients assume a closed ring.
         string? capturedBody = null;
         var http = ApiTestHelpers.MockClient(req =>
         {

@@ -23,7 +23,7 @@ namespace OnaPlotter.Tests.Components;
 public class RadarsSectionTests
 {
     private static RadarInfo Radar(string id, int? range = 1852) =>
-        new() { Id = id, Name = "HALO", Brand = "Navico", Status = "transmit", Range = range };
+        new() { Id = id, Name = "R200", Brand = "AcmeRadar", Status = "transmit", Range = range };
 
     private static IRenderedComponent<RadarsSection> RenderExpanded(
         Bunit.TestContext ctx,
@@ -52,11 +52,12 @@ public class RadarsSectionTests
     [Test]
     public async Task Range_Dropdown_Uses_ValidValues_Over_SupportedRanges()
     {
-        // Navico HALO ships supportedRanges with metric-rounded and
-        // nm-aligned entries (50, 100, 250, ..., 57, 115, 463, ...);
-        // but range.validValues is the nm-aligned subset only. PUTting
-        // anything outside validValues comes back 'value not legal'.
-        // The dropdown must therefore drive off validValues.
+        // Typical recreational radars ship supportedRanges with metric-
+        // rounded and nm-aligned entries (50, 100, 250, ..., 57, 115,
+        // 463, ...); but range.validValues is the nm-aligned subset
+        // only. PUTting anything outside validValues comes back
+        // 'value not legal'. The dropdown must therefore drive off
+        // validValues.
         using var ctx = new Bunit.TestContext();
         var caps = new Dictionary<string, RadarCapabilities?>
         {
@@ -77,7 +78,7 @@ public class RadarsSectionTests
     [Test]
     public async Task Range_Dropdown_Falls_Back_To_SupportedRanges_When_No_ValidValues()
     {
-        // Older / non-Navico providers may not ship validValues; in
+        // Older / minimal providers may not ship validValues; in
         // that case supportedRanges is the only signal of what the
         // server will accept and we use it as-is.
         using var ctx = new Bunit.TestContext();

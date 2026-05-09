@@ -1267,8 +1267,8 @@
     private async Task AutoAdvanceAsync(string reason)
     {
         // Multi-plotter idempotency: when more than one chartplotter
-        // is wired to the same SK server (this app + Freeboard-SK,
-        // or two ona-plotter tabs on a phone and the helm screen),
+        // is wired to the same SK server (multiple ona-plotter tabs,
+        // or peer SignalK clients on a phone and the helm screen),
         // every client sees the same arrival edge and fires
         // concurrently. The relative "advance by 1" PUT
         // (/activeRoute/nextPoint with {value:1}) is NOT idempotent:
