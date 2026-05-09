@@ -37,6 +37,23 @@
 let _scratchReader = null;
 const EMPTY_BYTES = new Uint8Array(0);
 
+// Spoke object pool. Decoded Spoke literals are hot-allocated -
+// HALO 31 emits ~1k spokes/sec, each previously a fresh
+// `{ angle, bearing, range, data, lat, lon }` literal at decode
+// time. The pool keeps a high-water-mark array of pre-shaped
+// objects and decodeSpokeInto resets fields in place so V8's
+// hidden class stays stable across frames + the GC has nothing
+// to sweep.
+//
+// Concurrency: JS event loop is single-threaded; the pool can
+// be shared across overlays. The decoded result array
+// (`_spokeResultArr`) must NOT be held past the `_onFrame` call
+// that produced it - the next decode reuses the slot. Today's
+// only caller (RadarOverlay._onFrame) consumes the array
+// synchronously inside the same function, so this is safe.
+const _spokePool = [];
+const _spokeResultArr = [];
+
 /**
  * Decodes a RadarMessage from a Uint8Array. Unknown fields are
  * skipped silently (forward-compat with server versions that add
@@ -51,7 +68,7 @@ const EMPTY_BYTES = new Uint8Array(0);
  */
 export function decodeRadarMessage(bytes) {
     const r = (_scratchReader ??= new Reader(new Uint8Array(1))).reset(bytes);
-    const spokes = [];
+    let count = 0;
     while (!r.atEnd()) {
         const tag = r.varint();
         const field = tag >>> 3;
@@ -60,12 +77,27 @@ export function decodeRadarMessage(bytes) {
             // Repeated Spoke: length-prefixed embedded message.
             const len = r.varint();
             const end = r.offset + len;
-            spokes.push(decodeSpoke(r, end));
+            // Acquire a pooled Spoke; grow the pool on first sight
+            // of a higher count. Reset-in-place keeps V8's hidden
+            // class stable across frames (vs. a fresh literal each
+            // time, which the GC then has to sweep).
+            let s = _spokePool[count];
+            if (s === undefined) {
+                s = { angle: 0, bearing: undefined, range: 0, data: EMPTY_BYTES, lat: undefined, lon: undefined };
+                _spokePool[count] = s;
+            }
+            decodeSpokeInto(r, end, s);
+            count++;
         } else {
             r.skip(wire);
         }
     }
-    return { spokes };
+    // Resize the result array (also reused) to exactly `count` and
+    // populate refs from the pool. Two array writes per spoke;
+    // negligible vs. the saved per-spoke literal alloc.
+    _spokeResultArr.length = count;
+    for (let i = 0; i < count; i++) _spokeResultArr[i] = _spokePool[i];
+    return { spokes: _spokeResultArr };
 }
 
 /**
@@ -78,34 +110,40 @@ export function decodeRadarMessage(bytes) {
  * @property {number} [lon]
  */
 
-/** @returns {Spoke} */
-function decodeSpoke(r, end) {
-    // Default fields: angle and range are required per schema; the
-    // "optional" kind is represented by absence below. data is always
-    // present but may be zero-length.
-    let angle = 0, range = 0;
-    let bearing, lat, lon;
-    /** @type {Uint8Array} */
-    let data = EMPTY_BYTES;
+/**
+ * Decode-into a pooled Spoke object. Resets every field first so
+ * the object's hidden class stays stable across frames (V8 keys
+ * its hidden class on the property-set order, not on the values;
+ * setting all six fields the same way every call keeps the shape
+ * monomorphic). EMPTY_BYTES + undefined are the documented
+ * absent-value sentinels.
+ *
+ * @param {Reader} r
+ * @param {number} end
+ * @param {Spoke} s
+ */
+function decodeSpokeInto(r, end, s) {
+    s.angle = 0;
+    s.bearing = undefined;
+    s.range = 0;
+    s.data = EMPTY_BYTES;
+    s.lat = undefined;
+    s.lon = undefined;
     while (r.offset < end) {
         const tag = r.varint();
         const field = tag >>> 3;
         const wire = tag & 7;
         switch (field) {
-            case 1: angle = r.varint(); break;           // wire 0
-            case 2: bearing = r.varint(); break;         // wire 0
-            case 3: range = r.varint(); break;           // wire 0
-            case 4: r.varint(); break;                   // time uint64 - skip; we don't use it
-            case 5: data = r.bytes(); break;             // wire 2
-            case 6: lat = r.double(); break;             // wire 1
-            case 7: lon = r.double(); break;             // wire 1
+            case 1: s.angle = r.varint(); break;           // wire 0
+            case 2: s.bearing = r.varint(); break;         // wire 0
+            case 3: s.range = r.varint(); break;           // wire 0
+            case 4: r.varint(); break;                     // time uint64 - skip; we don't use it
+            case 5: s.data = r.bytes(); break;             // wire 2
+            case 6: s.lat = r.double(); break;             // wire 1
+            case 7: s.lon = r.double(); break;             // wire 1
             default: r.skip(wire); break;
         }
     }
-    // Object literal is hot-path; avoid conditional property creation
-    // because V8 de-optimises polymorphic shapes. Undefined fields are
-    // cheap to read as undefined.
-    return { angle, bearing, range, data, lat, lon };
 }
 
 // Reader walks a Uint8Array returning one wire-typed value at a

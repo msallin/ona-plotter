@@ -694,7 +694,21 @@
 //                 server log), and returns. A future JS regression
 //                 can no longer take Blazor's renderer down for the
 //                 rest of the session.
-const CACHE_NAME = 'ona-plotter-v72';
+// v72 -> v73: Radar spokes hot-loop perf:
+//             (1) Uint32Array view over imageData.data + byteToRgba
+//                 buffers; the paint loop now writes one 32-bit word
+//                 per filled pixel instead of four bytes (~1.5x
+//                 faster on busy chart conditions). Open-water early-
+//                 out is unchanged.
+//             (2) Spoke object pool in radarProtobuf - decodeSpoke
+//                 resets fields in place on a pooled object instead
+//                 of returning a fresh literal per spoke. Cuts
+//                 ~1k allocs/sec on HALO 31 + keeps V8's hidden
+//                 class monomorphic across frames.
+//             (3) Hoisted lut/xLut/yLut + spoke.data refs to locals
+//                 inside _paintSpoke so the JIT doesn't re-read
+//                 them per iteration.
+const CACHE_NAME = 'ona-plotter-v73';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

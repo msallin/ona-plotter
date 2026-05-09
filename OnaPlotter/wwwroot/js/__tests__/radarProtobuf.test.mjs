@@ -227,15 +227,43 @@ test('truncated double field throws our error, not RangeError', () => {
 });
 
 test('repeat decode calls reuse the Reader without leaking state', () => {
-    // Perf: the module-level scratch Reader is reused across calls.
-    // Verify the second call doesn't carry state from the first.
+    // Perf: the module-level scratch Reader is reused across calls,
+    // and Spoke objects are now pooled too. Pin both:
+    //   - Reader: a second call decodes the second buffer correctly
+    //     (no leftover offset / view from the first).
+    //   - Spoke pool: each call's Spoke ref is the pool's slot, so
+    //     a holder of `ma.spokes[0]` past the next decodeRadarMessage
+    //     call observes the next call's values. Captures snapshot
+    //     fields IMMEDIATELY AFTER each decode, before the pool is
+    //     reused. Production callers (_onFrame) consume spokes
+    //     synchronously inside the same call, so this contract is
+    //     fine; the explicit snapshot here pins it.
     const a = encodeMessage([{ angle: 1, range: 10, data: [1] }]);
-    const b = encodeMessage([{ angle: 99, range: 1000, data: [9] }]);
     const ma = decodeRadarMessage(a);
+    const angle1 = ma.spokes[0].angle;
+    const data1 = [...ma.spokes[0].data];
+
+    const b = encodeMessage([{ angle: 99, range: 1000, data: [9] }]);
     const mb = decodeRadarMessage(b);
-    assert.equal(ma.spokes[0].angle, 1);
-    assert.equal(mb.spokes[0].angle, 99);
-    // Ensure the Uint8Array views remained valid across the swap.
-    assert.deepEqual([...ma.spokes[0].data], [1]);
-    assert.deepEqual([...mb.spokes[0].data], [9]);
+    const angle2 = mb.spokes[0].angle;
+    const data2 = [...mb.spokes[0].data];
+
+    assert.equal(angle1, 1);
+    assert.equal(angle2, 99);
+    assert.deepEqual(data1, [1]);
+    assert.deepEqual(data2, [9]);
+});
+
+test('Spoke pool reuses the same object instance across calls', () => {
+    // Pin the contract: identical-shape decodes return the same
+    // pooled Spoke instance. Production caller relies on this for
+    // GC pressure relief. A regression that switches back to fresh
+    // literals would re-introduce ~1k allocs/sec on HALO 31.
+    const a = encodeMessage([{ angle: 1, range: 10, data: [1] }]);
+    const ma = decodeRadarMessage(a);
+    const firstRef = ma.spokes[0];
+    const b = encodeMessage([{ angle: 2, range: 20, data: [2] }]);
+    const mb = decodeRadarMessage(b);
+    const secondRef = mb.spokes[0];
+    assert.equal(firstRef === secondRef, true);
 });
