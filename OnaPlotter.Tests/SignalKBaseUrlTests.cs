@@ -103,4 +103,89 @@ public class SignalKBaseUrlTests
         var subscribed = bu.StreamUri("self");
         await Assert.That(subscribed.Query).Contains("subscribe=self");
     }
+
+    [Test]
+    public async Task Standalone_Mode_Off_Uses_Fallback_Origin()
+    {
+        // StandaloneMode=false, even with a non-empty URL, leaves the
+        // bundled-webapp behaviour alone. The flag is the explicit gate.
+        var settings = new FakeSettings
+        {
+            StandaloneMode = false,
+            StandaloneServerUrl = "http://other.local:8080",
+        };
+        var bu = new SignalKBaseUrl(Config("http://boat.local:3000"),
+            new FakeNav("http://x/", "http://x/"), settings);
+        await Assert.That(bu.BaseUrl).IsEqualTo("http://boat.local:3000");
+    }
+
+    [Test]
+    public async Task Standalone_Mode_On_With_Empty_Url_Falls_Back_To_Origin()
+    {
+        // Empty URL while the flag is on must NOT brick the app. We
+        // fall through to the auto-detected origin (matches the
+        // SignalKBaseUrl resolver's documented contract).
+        var settings = new FakeSettings
+        {
+            StandaloneMode = true,
+            StandaloneServerUrl = "",
+        };
+        var bu = new SignalKBaseUrl(Config("http://boat.local:3000"),
+            new FakeNav("http://x/", "http://x/"), settings);
+        await Assert.That(bu.BaseUrl).IsEqualTo("http://boat.local:3000");
+    }
+
+    [Test]
+    public async Task Standalone_Mode_On_With_Valid_Url_Routes_Through_It()
+    {
+        var settings = new FakeSettings
+        {
+            StandaloneMode = true,
+            StandaloneServerUrl = "https://remote.example.com:8443",
+        };
+        var bu = new SignalKBaseUrl(Config("http://boat.local:3000"),
+            new FakeNav("http://x/", "http://x/"), settings);
+        await Assert.That(bu.BaseUrl).IsEqualTo("https://remote.example.com:8443");
+
+        // REST + WS both pick up the standalone URL (regression: before
+        // the resolver routed through settings, Combine and StreamUri
+        // captured the fallback at construction).
+        await Assert.That(bu.Combine("/signalk/v1/api/vessels"))
+            .IsEqualTo("https://remote.example.com:8443/signalk/v1/api/vessels");
+        var stream = bu.StreamUri();
+        await Assert.That(stream.Scheme).IsEqualTo("wss");
+        await Assert.That(stream.Host).IsEqualTo("remote.example.com");
+        await Assert.That(stream.Port).IsEqualTo(8443);
+    }
+
+    [Test]
+    public async Task BaseUrl_Changed_Event_Fires_On_Url_Flip()
+    {
+        var settings = new FakeSettings
+        {
+            StandaloneMode = false,
+            StandaloneServerUrl = "https://remote.example.com:8443",
+        };
+        var bu = new SignalKBaseUrl(Config("http://boat.local:3000"),
+            new FakeNav("http://x/", "http://x/"), settings);
+        int fired = 0;
+        bu.OnBaseUrlChanged += () => fired++;
+
+        // Flip the flag - the resolved origin should now change. The
+        // SignalKBaseUrl resolver listens to OnSettingsChanged on the
+        // settings instance; FakeSettings does not auto-fire from its
+        // mutable properties, so drive the wire by calling Set...Async
+        // (which DOES invoke OnSettingsChanged on the production
+        // service) - but our Fake doesn't fire either. Drive the
+        // event directly via the InvokeOnSettingsChanged hook.
+        settings.StandaloneMode = true;
+        settings.InvokeOnSettingsChanged();
+        await Assert.That(fired).IsEqualTo(1);
+        await Assert.That(bu.BaseUrl).IsEqualTo("https://remote.example.com:8443");
+
+        // Idempotent: a settings-changed fan-out that doesn't move the
+        // resolved URL must NOT re-fire the event.
+        settings.InvokeOnSettingsChanged();
+        await Assert.That(fired).IsEqualTo(1);
+    }
 }

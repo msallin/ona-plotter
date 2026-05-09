@@ -62,7 +62,6 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly AisStore _ais;
     private readonly AtonStore _atons;
     private readonly OnaPlotter.Services.ServerNotifications.ServerNotificationStore _serverNotifs;
-    private readonly Uri _wsUri;
     private readonly HttpClient _http;
     private readonly IAppSettings _settings;
     private readonly ISignalKBaseUrl _baseUrl;
@@ -503,7 +502,13 @@ public sealed class SignalkClient : IAsyncDisposable
         _atons = atons;
         _http = http;
         _baseUrl = baseUrl;
-        _wsUri = baseUrl.StreamUri();
+        // The WS URL is resolved per connect attempt against
+        // _baseUrl.StreamUri() so a runtime origin change (helm flips
+        // Standalone mode or edits the server URL) lands on the next
+        // reconnect without restarting the whole client. The URL-
+        // changed event aborts the current socket so the loop turns
+        // over immediately.
+        _baseUrl.OnBaseUrlChanged += HandleBaseUrlChanged;
         _selfContext = "";
         _settings = settings;
         _serverNotifs = serverNotifs;
@@ -598,10 +603,14 @@ public sealed class SignalkClient : IAsyncDisposable
         while (!ct.IsCancellationRequested)
         {
             using var ws = new ClientWebSocket();
+            // Resolve the current URL at attempt-time, not at ctor
+            // time, so a Standalone-mode toggle / URL edit picks up on
+            // the next loop turn without a restart.
+            var wsUri = _baseUrl.StreamUri();
             try
             {
-                _logger.LogInformation("Connecting to SignalK at {Uri}", _wsUri);
-                await ws.ConnectAsync(_wsUri, ct);
+                _logger.LogInformation("Connecting to SignalK at {Uri}", wsUri);
+                await ws.ConnectAsync(wsUri, ct);
                 _ws = ws;
                 _logger.LogInformation("Connected to SignalK");
                 MarkConnectionOpened();
@@ -793,6 +802,28 @@ public sealed class SignalkClient : IAsyncDisposable
     public void ReconnectNow()
     {
         if (IsConnected) return;
+        try { _backoffCts?.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Origin-changed handler. Called from the settings
+    /// fan-out (so on the UI thread, in WASM's single-threaded
+    /// runtime). Two paths:
+    ///   - Currently connected: abort the open WS so the receive
+    ///     loop's outer try sees the close, drops down to the backoff
+    ///     branch, then we cancel the backoff to retry immediately
+    ///     against the new URL.
+    ///   - Currently in backoff: cancel the backoff so the next
+    ///     attempt picks up the new URL.
+    /// Either way the next loop iteration reads <c>_baseUrl.StreamUri()</c>
+    /// fresh and connects to the new origin.</summary>
+    private void HandleBaseUrlChanged()
+    {
+        try { _ws?.Abort(); }
+        catch (ObjectDisposedException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("WS abort during URL change failed: {Message}", ex.Message);
+        }
         try { _backoffCts?.Cancel(); } catch (ObjectDisposedException) { }
     }
 

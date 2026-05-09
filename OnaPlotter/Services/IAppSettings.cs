@@ -28,7 +28,8 @@ public interface IAppSettings :
     IChartSettings,
     IPersistedView,
     IWindPageSettings,
-    IMarinePoiSettings
+    IMarinePoiSettings,
+    IServerSettings
 {
     /// <summary>Fires after any setter persists. Existing
     /// consumers do their own per-property diffing in handlers;

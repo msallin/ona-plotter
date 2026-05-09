@@ -32,6 +32,7 @@ public class ServerNotificationsAlarmRuleTests
     {
         public string BaseUrl => "http://test.local";
         public Uri StreamUri(string subscribe = "none") => new("ws://test.local");
+        public event Action? OnBaseUrlChanged { add { } remove { } }
         public string Combine(string path) => BaseUrl + path;
     }
     [Test]
