@@ -106,7 +106,14 @@ internal sealed class FakeSettings : IAppSettings
     public double? MapViewLon { get; set; }
     public int? MapViewZoom { get; set; }
 
-    public event Action? OnSettingsChanged { add { } remove { } }
+    // Real event so SignalKBaseUrl + other settings-watchers can be
+    // exercised in tests by calling InvokeOnSettingsChanged. The
+    // production AppSettingsService fires this from every Set*Async;
+    // FakeSettings doesn't auto-fire from its property setters (tests
+    // commonly mutate them inline before the SUT's first read), so
+    // drive the wire explicitly when a test needs to.
+    public event Action? OnSettingsChanged;
+    public void InvokeOnSettingsChanged() => OnSettingsChanged?.Invoke();
 
     public Task InitializeAsync() => Task.CompletedTask;
     public Task SetNightModeAsync(bool v) => Task.CompletedTask;
@@ -215,4 +222,8 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetEnabledRoutesAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetQuickBarChartsAsync(IEnumerable<string> ids) => Task.CompletedTask;
     public Task SetChartOrderAsync(IEnumerable<string> ids) => Task.CompletedTask;
+    public bool StandaloneMode { get; set; }
+    public string StandaloneServerUrl { get; set; } = "";
+    public Task SetStandaloneModeAsync(bool v) { StandaloneMode = v; return Task.CompletedTask; }
+    public Task SetStandaloneServerUrlAsync(string v) { StandaloneServerUrl = v; return Task.CompletedTask; }
 }

@@ -27,6 +27,10 @@ internal static class ApiTestHelpers
         // initialising state AND capturing the parameter for later use
         // (CS9124). Either-or; reading through the property is uniform.
         public string BaseUrl { get; } = baseUrl;
+        // Event required by ISignalKBaseUrl - never raised in test
+        // fakes (the fake URL is fixed at construction). Add/remove
+        // accessors are no-ops so subscribers don't pin GC roots.
+        public event Action? OnBaseUrlChanged { add { } remove { } }
         public Uri StreamUri(string subscribe = "none") => SignalKUrls.StreamWs(BaseUrl, subscribe);
         public string Combine(string path) => BaseUrl + path;
     }

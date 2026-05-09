@@ -99,6 +99,7 @@ internal sealed class ThrowingRouteApi : IRouteApi
 internal sealed class FakeBaseUrl : ISignalKBaseUrl
 {
     public string BaseUrl => "http://test/";
+    public event Action? OnBaseUrlChanged { add { } remove { } }
     public string Combine(string path) => "http://test" + path;
     public Uri StreamUri(string subscribe = "none") => new("ws://test/signalk/v1/stream");
 }

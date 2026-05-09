@@ -81,6 +81,7 @@ public class RadarOverlayManagerTests
     {
         public string BaseUrl => "https://test.local:443";
         public Uri StreamUri(string subscribe = "none") => new("wss://test.local:443/signalk/v1/stream");
+        public event Action? OnBaseUrlChanged { add { } remove { } }
         public string Combine(string path) => BaseUrl + path;
     }
 

@@ -14,6 +14,7 @@
 @inject INotificationsApi NotificationsApi
 @inject NavigationManager Nav
 @inject IAlarmManager Alarms
+@inject ISignalKBaseUrl SignalKBaseUrl
 
 <PageTitle>Settings</PageTitle>
 
@@ -1006,6 +1007,79 @@
 
     @if (advancedOpen)
     {
+        @* Standalone mode: lets OnaPlotter run from a different
+           origin than the SignalK server (any static host - GitHub
+           Pages, file://, a personal domain - rather than the
+           bundled webapp mount). The helm types the SK server's
+           origin once, OnaPlotter remembers it, and every REST +
+           WS call routes through that origin instead of
+           NavigationManager.BaseUri.
+
+           Two-card layout (col-sm-12) so the URL field has room to
+           breathe at any width and the helm sees the full origin
+           inline. CORS must be enabled on the SK server side -
+           the description spells it out so a "tried it, doesn't
+           work" lands on the right config knob.
+
+           The text field is bound to a local edit buffer
+           (standaloneUrlEdit) so a partial type doesn't fan out
+           OnSettingsChanged on every keystroke; commit on blur or
+           Enter via OnStandaloneServerUrlCommit. *@
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <label class="form-check form-switch" style="margin:0;">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                               checked="@AppSettings.StandaloneMode"
+                               @onchange="OnStandaloneModeChanged" />
+                        <span class="form-check-label">Standalone mode</span>
+                    </label>
+                    <small class="text-muted d-block mt-1 mb-2">
+                        Connect to a SignalK server on a different origin
+                        than this page (e.g. you opened OnaPlotter from a
+                        static-host URL or a tablet bookmark).
+                        <strong>Requires CORS on the SK server</strong> -
+                        add this page's origin
+                        (<code>@PageOriginForDisplay</code>) to
+                        <code>security.allowedCorsOrigins</code> in the
+                        SK server config or the login + WS handshake will
+                        fail. With Standalone mode off, OnaPlotter assumes
+                        same-origin (the bundled-webapp install).
+                    </small>
+                    @if (AppSettings.StandaloneMode)
+                    {
+                        <div class="mt-2">
+                            <label class="form-label small mb-1" for="standaloneUrlInput">
+                                SignalK server URL
+                            </label>
+                            <input id="standaloneUrlInput"
+                                   class="form-control form-control-sm @(StandaloneUrlInvalid ? "is-invalid" : "")"
+                                   type="url" inputmode="url" autocomplete="off"
+                                   placeholder="http://openplotter.local:3000"
+                                   value="@standaloneUrlEdit"
+                                   @oninput="OnStandaloneServerUrlInput"
+                                   @onblur="OnStandaloneServerUrlCommit"
+                                   @onkeydown="OnStandaloneServerUrlKey" />
+                            @if (StandaloneUrlInvalid)
+                            {
+                                <div class="invalid-feedback d-block">
+                                    Need an absolute http(s) URL with a host (path / query / fragment are stripped on save).
+                                </div>
+                            }
+                            else
+                            {
+                                <small class="text-muted d-block mt-1">
+                                    Currently connecting to:
+                                    <code>@SignalKBaseUrl.BaseUrl</code>.
+                                    Saving the URL forces the WebSocket to reconnect.
+                                </small>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
         <div class="col-sm-6">
             <div class="card">
                 <div class="card-body">
@@ -1100,6 +1174,79 @@
     // during a slow network round-trip doesn't queue a second POST.
     private bool testLogInFlight;
     private bool testNotificationInFlight;
+
+    // Edit buffer for the Standalone-mode SK server URL field. We
+    // don't fan out OnSettingsChanged on every keystroke (each fan-out
+    // re-resolves SignalKBaseUrl + abort-and-reconnects the WS); the
+    // buffer commits on blur or Enter via OnStandaloneServerUrlCommit.
+    // Seeded from the persisted value on first render so a fresh
+    // Settings visit shows the saved URL.
+    private string standaloneUrlEdit = "";
+    private bool standaloneUrlSeeded;
+    private bool StandaloneUrlInvalid =>
+        !string.IsNullOrWhiteSpace(standaloneUrlEdit)
+        && OnaPlotter.Services.AppSettingsService.NormalizeStandaloneUrl(standaloneUrlEdit) == "";
+
+    /// <summary>Page origin shown in the Standalone-mode card body so
+    /// the helm sees the exact string they need to add to the SK
+    /// server's <c>security.allowedCorsOrigins</c>. Falls back to a
+    /// readable placeholder if NavigationManager hasn't rendered the
+    /// page URL into a parseable Uri yet.</summary>
+    private string PageOriginForDisplay
+    {
+        get
+        {
+            try
+            {
+                var uri = new Uri(Nav.BaseUri);
+                return $"{uri.Scheme}://{uri.Host}{(uri.IsDefaultPort ? "" : $":{uri.Port}")}";
+            }
+            catch
+            {
+                return "this page's origin";
+            }
+        }
+    }
+
+    private async Task OnStandaloneModeChanged(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        await AppSettings.SetStandaloneModeAsync(on);
+        if (on && !standaloneUrlSeeded)
+        {
+            standaloneUrlEdit = AppSettings.StandaloneServerUrl;
+            standaloneUrlSeeded = true;
+        }
+    }
+
+    private void OnStandaloneServerUrlInput(ChangeEventArgs e)
+    {
+        standaloneUrlEdit = e.Value as string ?? "";
+        standaloneUrlSeeded = true;
+    }
+
+    private async Task OnStandaloneServerUrlCommit()
+    {
+        // Persist on blur. Empty string is allowed and clears the
+        // field; a malformed input that NormalizeStandaloneUrl can't
+        // parse is also persisted as "" (we surface the error inline
+        // via .is-invalid + invalid-feedback so the helm sees they
+        // need to fix it). This matches the resolver's "empty falls
+        // back to auto-detected origin" contract: a bad value can't
+        // brick the app.
+        var normalised = standaloneUrlEdit.Trim();
+        if (string.Equals(normalised, AppSettings.StandaloneServerUrl, StringComparison.Ordinal))
+            return;
+        await AppSettings.SetStandaloneServerUrlAsync(normalised);
+        // Re-bind the buffer to the canonical form so a "/path"
+        // suffix the helm typed gets stripped on blur.
+        standaloneUrlEdit = AppSettings.StandaloneServerUrl;
+    }
+
+    private async Task OnStandaloneServerUrlKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await OnStandaloneServerUrlCommit();
+    }
 
     private async Task SendTestLog()
     {
@@ -1649,6 +1796,12 @@
         // defaults and the input values only became correct after a
         // user interaction that caused another render pass.
         await AppSettings.InitializeAsync();
+
+        // Seed the standalone-URL edit buffer from the persisted value
+        // so a Settings page reload shows the saved URL inside the
+        // text field.
+        standaloneUrlEdit = AppSettings.StandaloneServerUrl;
+        standaloneUrlSeeded = true;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

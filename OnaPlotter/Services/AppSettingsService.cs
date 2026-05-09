@@ -221,6 +221,20 @@ public sealed class AppSettingsService : IAppSettings
     public double? MapViewLon { get; private set; }
     public int? MapViewZoom { get; private set; }
 
+    /// <summary>Standalone-mode flag - when on, the SignalK base URL
+    /// resolves to <see cref="StandaloneServerUrl"/> instead of the
+    /// page origin. See <see cref="IServerSettings"/>. Default off so
+    /// the bundled-webapp install path (the common case) keeps its
+    /// origin-matches-server behaviour without any helm action.</summary>
+    public bool StandaloneMode { get; private set; }
+
+    /// <summary>Origin of the SignalK server when standalone mode is
+    /// on. Empty until the helm fills the field on Settings >
+    /// Advanced > Standalone mode. Validated + normalised on
+    /// <see cref="SetStandaloneServerUrlAsync"/>: scheme + host + port
+    /// only, path/query/fragment stripped, host lower-cased.</summary>
+    public string StandaloneServerUrl { get; private set; } = "";
+
     public event Action? OnSettingsChanged;
 
     public AppSettingsService(IKeyValueStore store) => _store = store;
@@ -388,6 +402,14 @@ public sealed class AppSettingsService : IAppSettings
             {
                 LoadIdsInto(quickBarRaw, _quickBarChartIds);
             }
+            // Standalone-mode + custom SK URL. Default off; an empty
+            // URL is allowed in storage (the helm may have toggled the
+            // mode on without filling the field yet). Both fall back
+            // to the auto-detected page-origin behaviour via the
+            // SignalKBaseUrl resolver when not configured.
+            StandaloneMode = await LoadBool("standaloneMode.v1", false);
+            StandaloneServerUrl = NormalizeStandaloneUrl(
+                await LoadString("standaloneServerUrl.v1"));
             _initialized = true;
         }
         finally
@@ -1214,5 +1236,46 @@ public sealed class AppSettingsService : IAppSettings
         // No OnSettingsChanged fire here: the map view is purely
         // client-local and firing on every pan would cascade through
         // every settings subscriber for no gain.
+    }
+
+    public async Task SetStandaloneModeAsync(bool value)
+    {
+        StandaloneMode = value;
+        await Save("standaloneMode.v1", value ? "true" : "false");
+        // Fan-out: SignalKBaseUrl re-resolves its origin off the new
+        // flag; SignalkClient drops + reopens its WebSocket.
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetStandaloneServerUrlAsync(string value)
+    {
+        // Normalise unconditionally so a trailing-slash / mixed-case
+        // host / accidental copy-pasted path round-trips cleanly. An
+        // empty / unparseable value is allowed and persists as "" -
+        // SignalKBaseUrl falls back to the auto-detected origin in
+        // that case rather than throwing.
+        StandaloneServerUrl = NormalizeStandaloneUrl(value);
+        await Save("standaloneServerUrl.v1", StandaloneServerUrl);
+        OnSettingsChanged?.Invoke();
+    }
+
+    /// <summary>Normalise a helm-supplied SignalK server URL into
+    /// scheme + host + port (no path, no query, no fragment, host
+    /// lower-cased). Returns an empty string for null / whitespace /
+    /// unparseable input rather than throwing - the resolver falls
+    /// back to the auto-detected origin in that case.</summary>
+    internal static string NormalizeStandaloneUrl(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var trimmed = raw.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)) return "";
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return "";
+        // Uri.Port is -1 for the default-port case; substitute the
+        // scheme default so we always emit an explicit port. Keeps
+        // resolved BaseUrl strings comparable across reloads.
+        var port = uri.IsDefaultPort
+            ? (uri.Scheme == Uri.UriSchemeHttps ? 443 : 80)
+            : uri.Port;
+        return $"{uri.Scheme}://{uri.Host.ToLowerInvariant()}:{port}";
     }
 }
