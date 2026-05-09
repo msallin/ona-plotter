@@ -226,4 +226,21 @@ internal sealed class FakeSettings : IAppSettings
     public string StandaloneServerUrl { get; set; } = "";
     public Task SetStandaloneModeAsync(bool v) { StandaloneMode = v; return Task.CompletedTask; }
     public Task SetStandaloneServerUrlAsync(string v) { StandaloneServerUrl = v; return Task.CompletedTask; }
+    public bool RememberSession { get; set; } = true;
+    public bool RememberPassword { get; set; }
+    public string StoredUsername { get; set; } = "";
+    public string StoredPassword { get; set; } = "";
+    public Task SetRememberSessionAsync(bool v) { RememberSession = v; return Task.CompletedTask; }
+    public Task SetRememberPasswordAsync(bool v)
+    {
+        RememberPassword = v;
+        // Mirror production behaviour: opt-out wipes the persisted
+        // password too. Tests for AuthSession.LogoutAsync rely on
+        // this so the in-memory fake matches the real persistence
+        // contract.
+        if (!v) StoredPassword = "";
+        return Task.CompletedTask;
+    }
+    public Task SetStoredUsernameAsync(string v) { StoredUsername = v ?? ""; return Task.CompletedTask; }
+    public Task SetStoredPasswordAsync(string v) { StoredPassword = v ?? ""; return Task.CompletedTask; }
 }

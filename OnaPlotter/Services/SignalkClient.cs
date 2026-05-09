@@ -65,6 +65,7 @@ public sealed class SignalkClient : IAsyncDisposable
     private readonly HttpClient _http;
     private readonly IAppSettings _settings;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly OnaPlotter.Services.Auth.ITokenStore? _tokens;
     private string _selfContext;
     private readonly ILogger<SignalkClient> _logger;
     private readonly TimeProvider _time;
@@ -493,7 +494,8 @@ public sealed class SignalkClient : IAsyncDisposable
         TrackBuffer track, AisStore ais, HttpClient http, IAppSettings settings,
         OnaPlotter.Services.ServerNotifications.ServerNotificationStore serverNotifs,
         AtonStore atons,
-        TimeProvider time)
+        TimeProvider time,
+        OnaPlotter.Services.Auth.ITokenStore? tokens = null)
     {
         _logger = logger;
         _data = new NavigationData();
@@ -509,6 +511,15 @@ public sealed class SignalkClient : IAsyncDisposable
         // changed event aborts the current socket so the loop turns
         // over immediately.
         _baseUrl.OnBaseUrlChanged += HandleBaseUrlChanged;
+        // Token store is optional (some test fixtures don't wire it).
+        // When wired, a token-changed fan-out (login / logout / 401
+        // clear) drops the WS so the next reconnect carries the new
+        // ?token=... in the URL (or drops it cleanly on logout).
+        _tokens = tokens;
+        if (_tokens is not null)
+        {
+            _tokens.OnTokenChanged += HandleBaseUrlChanged;
+        }
         _selfContext = "";
         _settings = settings;
         _serverNotifs = serverNotifs;
@@ -605,11 +616,18 @@ public sealed class SignalkClient : IAsyncDisposable
             using var ws = new ClientWebSocket();
             // Resolve the current URL at attempt-time, not at ctor
             // time, so a Standalone-mode toggle / URL edit picks up on
-            // the next loop turn without a restart.
-            var wsUri = _baseUrl.StreamUri();
+            // the next loop turn without a restart. Token also
+            // resolved per attempt: if the helm signs in / out between
+            // reconnects, we pick up the new auth state without
+            // touching this code path.
+            var wsUri = AppendTokenIfPresent(_baseUrl.StreamUri());
             try
             {
-                _logger.LogInformation("Connecting to SignalK at {Uri}", wsUri);
+                // Log the URL with the token redacted - the token in
+                // logs would be a credential leak through any helm
+                // who runs a screen recording for support.
+                _logger.LogInformation("Connecting to SignalK at {Uri}",
+                    RedactTokenForLog(wsUri));
                 await ws.ConnectAsync(wsUri, ct);
                 _ws = ws;
                 _logger.LogInformation("Connected to SignalK");
@@ -825,6 +843,41 @@ public sealed class SignalkClient : IAsyncDisposable
             _logger.LogWarning("WS abort during URL change failed: {Message}", ex.Message);
         }
         try { _backoffCts?.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    /// <summary>Append <c>&amp;token=&lt;jwt&gt;</c> to the WS URL when
+    /// the token store holds a valid JWT. SignalK 1.7 spec routes WS
+    /// auth via the URL query (cookies don't cross origins; headers
+    /// aren't supported on browser WebSocket upgrades). No-op when
+    /// the store is empty / expired or wasn't injected at all (the
+    /// embedded-webapp deploy keeps cookie auth and doesn't need
+    /// this).</summary>
+    private Uri AppendTokenIfPresent(Uri baseStreamUri)
+    {
+        if (_tokens is null || !_tokens.IsValid) return baseStreamUri;
+        // _tokens.Token is non-null when IsValid is true.
+        var withToken = baseStreamUri.ToString()
+            + "&token=" + Uri.EscapeDataString(_tokens.Token!);
+        return new Uri(withToken);
+    }
+
+    /// <summary>Strip the <c>token</c> query parameter for log
+    /// emission so a screen recording / log share doesn't leak the
+    /// helm's session JWT. Keeps everything else - subscribe param,
+    /// any other future query - so logs still help diagnose connect
+    /// failures.</summary>
+    private static Uri RedactTokenForLog(Uri uri)
+    {
+        var query = uri.Query;
+        if (string.IsNullOrEmpty(query) || !query.Contains("token=", StringComparison.Ordinal))
+            return uri;
+        // Manual rewrite to avoid pulling in QueryHelpers + a
+        // dictionary alloc per connect log line.
+        var trimmed = query.TrimStart('?');
+        var parts = trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries);
+        var redacted = parts
+            .Select(p => p.StartsWith("token=", StringComparison.Ordinal) ? "token=***" : p);
+        return new Uri($"{uri.Scheme}://{uri.Host}:{uri.Port}{uri.AbsolutePath}?{string.Join('&', redacted)}");
     }
 
     /// <summary>Flips <see cref="IsConnected"/> to true and seeds

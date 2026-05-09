@@ -3,10 +3,18 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using OnaPlotter.Components;
 using OnaPlotter.Services;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Services.Auth;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
+
+// Token store: holds the JWT returned by /signalk/v1/auth/login plus
+// its expiry. Singleton so AuthHandler (HTTP) and SignalkClient (WS)
+// see the same value and a logout from one path drops it for both.
+// Registered BEFORE HttpClient because the AuthHandler factory pulls
+// it out of the service provider.
+builder.Services.AddSingleton<ITokenStore, TokenStore>();
 
 // Shared HttpClient used by every *Api. The 8-second timeout caps the
 // .NET default of 100s so a half-baked TLS handshake on flaky LTE / a
@@ -17,7 +25,21 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 // (NotificationsApi.CallTimeout) override this when they need a tighter
 // budget; longer flows (TrackApi history pages, GPX import) pass an
 // explicit CancellationToken with their own deadline.
-builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(8) });
+//
+// Wrapped in AuthHandler so every outgoing REST call automatically
+// attaches Authorization: Bearer when a token is set. The platform-
+// default HttpClientHandler routes through the browser fetch API in
+// WASM (no separate WebAssemblyHttpHandler hookup needed - the runtime
+// substitutes it under the hood when HttpClientHandler is constructed
+// in a WASM context).
+builder.Services.AddSingleton(sp =>
+{
+    var auth = new AuthHandler(sp.GetRequiredService<ITokenStore>())
+    {
+        InnerHandler = new HttpClientHandler(),
+    };
+    return new HttpClient(auth) { Timeout = TimeSpan.FromSeconds(8) };
+});
 
 // Storage + settings.
 builder.Services.AddSingleton<IKeyValueStore, LocalStorageKeyValueStore>();
@@ -45,6 +67,8 @@ builder.Services.AddSingleton<OnaPlotter.Services.Settings.IPersistedView>(
 builder.Services.AddSingleton<OnaPlotter.Services.Settings.IWindPageSettings>(
     sp => sp.GetRequiredService<IAppSettings>());
 builder.Services.AddSingleton<OnaPlotter.Services.Settings.IMarinePoiSettings>(
+    sp => sp.GetRequiredService<IAppSettings>());
+builder.Services.AddSingleton<OnaPlotter.Services.Settings.IServerSettings>(
     sp => sp.GetRequiredService<IAppSettings>());
 // In-progress route-edit snapshots survive a page reload via
 // localStorage. The store is consulted on app start so a save that
@@ -185,6 +209,10 @@ builder.Services.AddSingleton<IPathApi, PathApi>();
 // this session write?"; banner reads from it and hides when the
 // server has security disabled (open homelab / dev installs).
 builder.Services.AddSingleton<IAuthApi, AuthApi>();
+// Login orchestration on top of IAuthApi + ITokenStore + the
+// credential settings. Used by the standalone-mode login dialog and
+// the auto-login startup hook below.
+builder.Services.AddSingleton<OnaPlotter.Services.Auth.AuthSession>();
 builder.Services.AddSingleton<ITrackApi, TrackApi>();
 // Signal K Radar API v3.1. Optional; empty list when no provider plugin.
 builder.Services.AddSingleton<IRadarApi, RadarApi>();
@@ -306,6 +334,33 @@ var host = builder.Build();
 // (don't move below StartAsync without thinking through the race).
 var resourceStore = host.Services.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>();
 _ = host.Services.GetRequiredService<OnaPlotter.Services.RegionStore>();
+
+// Bootstrap settings + token store + try auto-login BEFORE the WS
+// connects so the very first connect carries the token in its URL.
+// Without this race protection, the WS connects anonymously, gets
+// rejected by an SK server with security on, and waits the full
+// backoff window before retrying with the freshly-issued token.
+//
+// Three steps:
+//   1. AppSettings.InitializeAsync - reads localStorage so
+//      Standalone-mode + creds are populated before TryAutoLoginAsync
+//      consults them.
+//   2. TokenStore.LoadAsync (called inside TryAutoLoginAsync) - reads
+//      any persisted JWT + expiry.
+//   3. TryAutoLoginAsync - returns the token if still valid; otherwise
+//      attempts a silent re-login if the helm has opted into
+//      "Remember password".
+//
+// Fire-and-forget on the auto-login itself: a slow / failed login on
+// startup MUST NOT block the rest of the host pipeline, otherwise an
+// offline boot sits at the loading screen. SignalkClient meanwhile
+// listens to ITokenStore.OnTokenChanged so when the auto-login
+// completes asynchronously it reconnects with the fresh token in
+// the URL.
+var startupSettings = host.Services.GetRequiredService<IAppSettings>();
+await startupSettings.InitializeAsync();
+_ = host.Services.GetRequiredService<OnaPlotter.Services.Auth.AuthSession>()
+    .TryAutoLoginAsync();
 
 // Kick off the WebSocket loop (no IHostedService in Blazor WASM).
 var signalkClient = host.Services.GetRequiredService<SignalkClient>();

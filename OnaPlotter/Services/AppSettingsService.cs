@@ -235,6 +235,23 @@ public sealed class AppSettingsService : IAppSettings
     /// only, path/query/fragment stripped, host lower-cased.</summary>
     public string StandaloneServerUrl { get; private set; } = "";
 
+    /// <summary>Persist the JWT across tab reloads. Default true: most
+    /// helms expect "remember me" semantics out of the box and the JWT
+    /// is rotated server-side at expiry anyway.</summary>
+    public bool RememberSession { get; private set; } = true;
+
+    /// <summary>OPT-IN to persist the password too. Off by default.
+    /// See <see cref="IServerSettings.RememberPassword"/> for the risk
+    /// trade-off.</summary>
+    public bool RememberPassword { get; private set; } = false;
+
+    /// <summary>Last-used standalone username. Persisted unconditionally.</summary>
+    public string StoredUsername { get; private set; } = "";
+
+    /// <summary>Helm password for auto-login. Empty when
+    /// <see cref="RememberPassword"/> is off.</summary>
+    public string StoredPassword { get; private set; } = "";
+
     public event Action? OnSettingsChanged;
 
     public AppSettingsService(IKeyValueStore store) => _store = store;
@@ -410,6 +427,17 @@ public sealed class AppSettingsService : IAppSettings
             StandaloneMode = await LoadBool("standaloneMode.v1", false);
             StandaloneServerUrl = NormalizeStandaloneUrl(
                 await LoadString("standaloneServerUrl.v1"));
+            // Standalone-auth credential persistence flags. Defaults
+            // mirror the IServerSettings contract: session-token
+            // remembered (true), password not (false). Username is
+            // safe to persist unconditionally - it's not a credential
+            // on its own. Password loads as the stored value or empty
+            // if RememberPassword is off (the load just reads what's
+            // there; the setters enforce the flag-gated write).
+            RememberSession = await LoadBool("rememberSession.v1", true);
+            RememberPassword = await LoadBool("rememberPassword.v1", false);
+            StoredUsername = await LoadString("standaloneUsername.v1") ?? "";
+            StoredPassword = await LoadString("standalonePassword.v1") ?? "";
             _initialized = true;
         }
         finally
@@ -1257,6 +1285,49 @@ public sealed class AppSettingsService : IAppSettings
         StandaloneServerUrl = NormalizeStandaloneUrl(value);
         await Save("standaloneServerUrl.v1", StandaloneServerUrl);
         OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetRememberSessionAsync(bool value)
+    {
+        RememberSession = value;
+        await Save("rememberSession.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetRememberPasswordAsync(bool value)
+    {
+        RememberPassword = value;
+        await Save("rememberPassword.v1", value ? "true" : "false");
+        // When the helm flips the flag OFF, also wipe any previously
+        // persisted password. Without this, an opt-out leaves the
+        // value sitting in localStorage where the next opt-in (or a
+        // bug, or an XSS) could pick it up. The in-memory copy is
+        // wiped too so the UI text field clears on the same render.
+        if (!value && !string.IsNullOrEmpty(StoredPassword))
+        {
+            StoredPassword = "";
+            await Save("standalonePassword.v1", "");
+        }
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetStoredUsernameAsync(string value)
+    {
+        StoredUsername = value ?? "";
+        await Save("standaloneUsername.v1", StoredUsername);
+        // Username is informational, not a credential - no event fan-
+        // out (avoid the WS reconnect cascade that OnSettingsChanged
+        // triggers for URL-touching changes; SignalKBaseUrl's diff
+        // filter would skip this anyway, but no point firing).
+    }
+
+    public async Task SetStoredPasswordAsync(string value)
+    {
+        StoredPassword = value ?? "";
+        await Save("standalonePassword.v1", StoredPassword);
+        // Same rationale as SetStoredUsernameAsync: storing the
+        // password isn't a server-state change. The auto-login flow
+        // re-issues a JWT on its own schedule.
     }
 
     /// <summary>Normalise a helm-supplied SignalK server URL into

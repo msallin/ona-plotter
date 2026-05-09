@@ -58,6 +58,7 @@ namespace OnaPlotter.Services.Json;
 [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(SignalkDelta))]
 [JsonSerializable(typeof(LoginStatus))]
+[JsonSerializable(typeof(LoginResult))]
 [JsonSerializable(typeof(RouteDraft))]
 [JsonSerializable(typeof(SnoozedTarget[]))]
 [JsonSerializable(typeof(OnaPlotter.Services.Mob.PendingRaise[]))]
