@@ -1897,12 +1897,26 @@ html:fullscreen .hud-stack-br {
    TR (wind) centres everything because its dial is also centred. With
    right-aligned text + a centred dial the eye reads the dial as
    off-centre relative to the right-anchored text; centring all three
-   (label, dial, value) keeps the visual rhythm consistent. */
+   (label, dial, value) keeps the visual rhythm consistent.
+   EXPANDED-state exception: when the helm taps to expand BR, the card
+   grows to fit the widest hud-extra row (AP / Drift / Rudder), and at
+   that wider width the dial - still centred via margin:auto - reads as
+   visibly off-centre against the right-anchored heading value. So in
+   the expanded state we centre BR's label + value to match the dial
+   (and to mirror TR's already-centred layout). The extra rows are
+   flex/space-between so they ignore text-align and still column-align
+   left-right keys vs. values. */
 .hud-stack-br .hud-card {
     text-align: right;
 }
 .hud-stack-br .hud-label {
     justify-content: flex-end;
+}
+.hud-stack-br .hud-card.hud-panel-expanded {
+    text-align: center;
+}
+.hud-stack-br .hud-card.hud-panel-expanded .hud-label {
+    justify-content: center;
 }
 .hud-stack-tr .hud-card {
     text-align: center;
