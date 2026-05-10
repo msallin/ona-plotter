@@ -56,9 +56,11 @@ public interface IMapControlsJs
 
     /// <summary>Configure the CPA guard zone ring around own boat.
     /// Radius is in nautical miles (the inner red ring), lookahead in
-    /// minutes. The amber outer ring is always 2× the inner radius
-    /// (see <c>Cpa.OuterRingMultiplier</c>).</summary>
-    Task SetGuardZoneAsync(double radiusNm, double lookaheadMin);
+    /// minutes, outerRingMultiplier is the band scale for the amber
+    /// outer ring (typically 2.0 - sourced from
+    /// <c>Cpa.OuterRingMultiplier</c> so the C# threat classifier and
+    /// the JS rendering can't drift on the constant).</summary>
+    Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double outerRingMultiplier);
 
     /// <summary>Configure how far ahead the COG vectors project, in
     /// minutes. Two distinct values so the helm can shorten target

@@ -106,6 +106,116 @@ public class CpaTests
     }
 
     [Test]
+    public async Task Compute_OwnSnapshot_NonFiniteFields_ReturnsNull()
+    {
+        // Defence-in-depth (n5): PrecomputeOwn already gates non-finite
+        // inputs at construction, but a caller could hand-build an
+        // OwnSnapshot in tests / via reflection / via a future bug.
+        // The struct is public so it's untrusted input - any of
+        // Lat/Lon/Vx/Vy/SogMs going non-finite must collapse to null
+        // rather than propagate poison numbers into the CPA result.
+        var bad = new[]
+        {
+            new Cpa.OwnSnapshot(double.NaN, 0, 0, 5, 5),
+            new Cpa.OwnSnapshot(0, double.NaN, 0, 5, 5),
+            new Cpa.OwnSnapshot(0, 0, double.NaN, 5, 5),
+            new Cpa.OwnSnapshot(0, 0, 0, double.PositiveInfinity, 5),
+            new Cpa.OwnSnapshot(0, 0, 0, 5, double.NaN),
+        };
+        foreach (var own in bad)
+        {
+            await Assert.That(Cpa.Compute(in own, 0.01, 0, Math.PI, 5)).IsNull();
+        }
+    }
+
+    // PrecomputeOwn pins (m6 from the PR-264 follow-up review) -
+    // the helper is the gate to the per-target loop and the null-
+    // on-non-finite contract is what callers rely on to skip the
+    // hot path entirely. Coverage was previously only via the all-
+    // args Compute wrapper.
+
+    [Test]
+    public async Task PrecomputeOwn_NullOnNullCogOrSog()
+    {
+        await Assert.That(Cpa.PrecomputeOwn(0, 0, null, 5)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(0, 0, 0, null)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(0, 0, null, null)).IsNull();
+    }
+
+    [Test]
+    public async Task PrecomputeOwn_NullOnEachNonFiniteField()
+    {
+        // Walk every numeric input independently set to NaN /
+        // Infinity. The contract is "skip the per-target loop entirely
+        // when own state is corrupt"; if any of these slip through,
+        // the per-target trig downstream poisons the result.
+        await Assert.That(Cpa.PrecomputeOwn(double.NaN, 0, 0, 5)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(0, double.NaN, 0, 5)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(0, 0, double.NaN, 5)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(0, 0, 0, double.NaN)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(double.PositiveInfinity, 0, 0, 5)).IsNull();
+        await Assert.That(Cpa.PrecomputeOwn(0, double.NegativeInfinity, 0, 5)).IsNull();
+    }
+
+    [Test]
+    public async Task PrecomputeOwn_PopulatesVxVyFromCogAndSog()
+    {
+        // North at 5 m/s -> Vx=0, Vy=5. East at 5 m/s -> Vx=5, Vy=0.
+        // Vx = sin(cog)*sog, Vy = cos(cog)*sog.
+        var north = Cpa.PrecomputeOwn(0, 0, 0, 5);
+        await Assert.That(north).IsNotNull();
+        await Assert.That(Math.Abs(north!.Value.Vx)).IsLessThan(1e-9);
+        await Assert.That(Math.Abs(north.Value.Vy - 5)).IsLessThan(1e-9);
+        await Assert.That(north.Value.SogMs).IsEqualTo(5);
+
+        var east = Cpa.PrecomputeOwn(0, 0, Math.PI / 2, 5);
+        await Assert.That(east).IsNotNull();
+        await Assert.That(Math.Abs(east!.Value.Vx - 5)).IsLessThan(1e-9);
+        await Assert.That(Math.Abs(east.Value.Vy)).IsLessThan(1e-9);
+    }
+
+    // CurrentDistanceNm pin (M1 from the PR-264 follow-up review):
+    // the field is consumed by both CpaAlarmRule and AisPushService
+    // as the threat-band gate input, so the value must agree with a
+    // haversine reference within projection tolerance (a few percent
+    // at sub-100 nm separations - the regime collision-avoidance
+    // cares about).
+
+    [Test]
+    public async Task Compute_CurrentDistanceNm_MatchesHaversineWithin1Percent()
+    {
+        // 1 nm north (1/60 deg lat) head-on closing pair.
+        double oneNmInLat = 1.0 / 60.0;
+        var r = Cpa.Compute(0, 0, 0, 5 * Knots, oneNmInLat, 0, Math.PI, 5 * Knots);
+
+        await Assert.That(r).IsNotNull();
+        // Reference: GeoMath.HaversineMeters between own and target.
+        double haversineNm = GeoMath.HaversineMeters(0, 0, oneNmInLat, 0) / 1852.0;
+        double rel = Math.Abs(r!.Value.CurrentDistanceNm - haversineNm) / haversineNm;
+        await Assert.That(rel).IsLessThan(0.01)
+            .Because("equirectangular projection vs haversine drift " +
+                     "must stay below 1% in the collision-avoidance regime");
+    }
+
+    [Test]
+    public async Task Compute_CurrentDistanceNm_HandlesAntimeridianWrap()
+    {
+        // Same antimeridian-straddling geometry as
+        // Antimeridian_VesselsAcrossDateLine_ComputesShortSeparation.
+        // The unwrap inside Compute makes the projection pick the
+        // short arc (~6 nm separation), so CurrentDistanceNm should
+        // also be small. Haversine across the dateline naturally
+        // takes the great-circle short-arc.
+        var r = Cpa.Compute(0, 179.95, Math.PI / 2, 5 * Knots,
+                            0, -179.95, 3 * Math.PI / 2, 5 * Knots);
+        await Assert.That(r).IsNotNull();
+        // 0.1 deg lon at the equator -> ~6 nm. Pin loosely at < 10 nm
+        // (anything above means the unwrap regressed and the test
+        // would fire the "~40 000 km" failure mode).
+        await Assert.That(r!.Value.CurrentDistanceNm).IsLessThan(10);
+    }
+
+    [Test]
     public async Task OneStationary_OneApproaching_StillComputes()
     {
         // Own at origin anchored (SOG=0), target 1 nm east coming west at 5 kn.

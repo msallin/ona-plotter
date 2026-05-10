@@ -841,6 +841,42 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
+// v90 -> v91: CPA call-graph architecture follow-ups from the
+//             post-PR-264 review. Closes the highest-impact non-
+//             blocker findings:
+//             * Cpa.Result now carries CurrentDistanceNm as a free
+//               byproduct of the equirectangular projection. The
+//               chip pipeline + alarm rule used to each run their
+//               own GeoMath.HaversineMeters call - ~1200 redundant
+//               trig/sec on a 200-vessel harbour at 3 Hz dropped to
+//               zero.
+//             * AisPushService.BuildSnapshot extracted into four
+//               helpers (TryGuardFiniteInputs / TryBuildOwnContext /
+//               ComputeVesselThreat / FillPayload) so each phase can
+//               be unit-tested directly.
+//             * COLREGS classification is now lazy - only computed
+//               when the threat band is Warning or Danger. ~600
+//               wasted Colregs.Classify calls/sec saved on a busy
+//               harbour, matching the eager-vs-lazy fix already in
+//               CpaAlarmRule.Check. A vessel currently outside the
+//               outer ring has no helm-actionable COLREGS rule
+//               anyway.
+//             * aisLayer.dispose() now calls safeRemoveLayer before
+//               clearing each per-context dict. The old shape only
+//               dropped the JS reference, leaving Leaflet's internal
+//               _layers map holding every marker / vector / CPA line
+//               / X-marker / label / trail polyline that was alive
+//               at dispose time. Route-edit -> re-init cycles
+//               leaked.
+//             * OuterRingMultiplier is now pushed from C# via
+//               setGuardZone(radius, lookahead, multiplier) instead
+//               of being hard-coded on both sides. Single source of
+//               truth in Cpa.OuterRingMultiplier.
+//             * Cpa.Compute(in OwnSnapshot, ...) defends against a
+//               hand-built OwnSnapshot with non-finite Vx/Vy/Lat/Lon.
+//             Only setGuardZone's wire shape changed (2 args -> 3);
+//             the JS coerces a missing third arg to the textbook
+//             2.0 default to keep upgrade ordering safe.
 // v89 -> v90: CPA blocker fixes from the post-PR-263 code review.
 //             Closes six gaps surfaced by the focused review:
 //             (1) CpaAlarmRule + chart-overlay now share a single
@@ -862,7 +898,7 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v90';
+const CACHE_NAME = 'ona-plotter-v91';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

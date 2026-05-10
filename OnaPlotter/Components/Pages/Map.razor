@@ -1839,7 +1839,11 @@
             SignalkClient.Data.AnchorMaxRadius);
         await _controlsJs.SetGuardZoneAsync(
             radiusNm,
-            Settings.GuardZoneLookaheadMinutes);
+            Settings.GuardZoneLookaheadMinutes,
+            // Single source of truth: C# owns the outer-ring scale
+            // factor (Cpa.OuterRingMultiplier) so the JS overlay
+            // can't drift from the threat classifier on it.
+            OnaPlotter.Utilities.Cpa.OuterRingMultiplier);
     }
 
     // Per-push diff-caches. OnSettingsChanged fires for ANY setting

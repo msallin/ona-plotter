@@ -146,12 +146,13 @@ public sealed class CpaAlarmRule : IAlarmRule
             //      threat ring had already classified it as None.
             // Helm-feedback equivalent: "the X is gone but the alarm
             // still rings" - now they agree by construction.
-            double currentDistNm = GeoMath.HaversineMeters(
-                data.Latitude.Value, data.Longitude.Value,
-                v.Latitude.Value, v.Longitude.Value) / 1852.0;
+            //
+            // CurrentDistanceNm is a free byproduct of the projection
+            // inside Cpa.Compute (see Cpa.Result XML doc); we used to
+            // re-run a haversine here per vessel.
             var threat = Cpa.ClassifyThreat(
                 cpa.Value.CpaNm, cpa.Value.TcpaMin,
-                currentDistNm,
+                cpa.Value.CurrentDistanceNm,
                 cpaLimit, tcpaLimit,
                 v.IsBuddy);
             if (threat == Cpa.Threat.None) continue;
