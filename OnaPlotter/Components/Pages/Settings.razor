@@ -548,6 +548,31 @@
         </div>
     </div>
 
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label for="arrival-circle-input" class="form-label mb-1">
+                    Arrival circle (m)
+                </label>
+                <input type="number" class="form-control" id="arrival-circle-input"
+                       min="5" max="1000" step="5"
+                       value="@AppSettings.ArrivalCircleMeters.ToString("0", System.Globalization.CultureInfo.InvariantCulture)"
+                       @onchange="OnArrivalCircleChanged" />
+                <small class="text-muted d-block mt-2">
+                    Sent to the SignalK Course API on every Set-Destination /
+                    Activate-Route request as the <code>arrivalCircle</code>
+                    field. Server adopts it as the effective
+                    <code>navigation.course.arrivalCircle</code> for the active
+                    course; HUD ring + APPROACH alarm + auto-advance read it
+                    back from the SK delta so a peer plotter changing it mid-
+                    passage propagates here too. Range 5-1000 m; 50 m is the
+                    default (within sight of a casualty / mooring without
+                    triggering APPROACH on every nearby buoy).
+                </small>
+            </div>
+        </div>
+    </div>
+
     @* === Alarms ===
        Per-rule cards; each carries its own enable toggle inline
        so the helm can tune threshold + arm together without
@@ -1597,6 +1622,20 @@
     {
         bool on = e.Value is bool b && b;
         await AppSettings.SetAutoAdvanceWaypointsAsync(on);
+    }
+
+    private async Task OnArrivalCircleChanged(ChangeEventArgs e)
+    {
+        // Service clamps to 5..1000 m so an out-of-range typed value
+        // doesn't drive a server request the spec might reject. Bad
+        // input (non-numeric) silently keeps the existing value
+        // rather than zeroing the circle.
+        if (double.TryParse(e.Value?.ToString(),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var meters))
+        {
+            await AppSettings.SetArrivalCircleMetersAsync(meters);
+        }
     }
 
     private async Task OnServerSideApproachAlarmsChanged(ChangeEventArgs e)

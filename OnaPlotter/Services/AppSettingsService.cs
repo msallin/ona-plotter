@@ -182,6 +182,17 @@ public sealed class AppSettingsService : IAppSettings
     public bool PreferMagneticHeading { get; private set; } = false;
     public bool PreferMagneticCourse { get; private set; } = false;
     public bool AutoAdvanceWaypoints { get; private set; } = true;
+    /// <summary>Helm-configured arrival-circle radius (metres) sent
+    /// to the SignalK v2 Course API on Set-Destination /
+    /// Set-Active-Route requests so the server adopts it as the
+    /// effective <c>navigation.course.arrivalCircle</c>. 50 m is the
+    /// helm-friendly default - within sight of the casualty / mooring
+    /// without triggering APPROACH on every nearby buoy. Read sites
+    /// for the EFFECTIVE circle (HUD ring, APPROACH alarm, auto-
+    /// advance) keep using NavigationData.CourseArrivalCircleMeters
+    /// (sourced from the SK delta) so a peer plotter changing it
+    /// mid-passage still propagates here.</summary>
+    public double ArrivalCircleMeters { get; private set; } = 50.0;
 
     // OSM marine-POI overlay categories. All default false so a fresh
     // helm doesn't trigger Overpass round-trips on first chart load;
@@ -362,12 +373,16 @@ public sealed class AppSettingsService : IAppSettings
             SailingMode = NormalizeSailingMode(await LoadString("sailingMode"));
             OwnVesselType = NormalizeOwnVesselType(await LoadString("ownVesselType.v1"));
             KeepScreenAwake = await LoadBool("keepScreenAwake.v1", true);
-            // waypointArrivalRadiusMeters.v1 was the helm-configured
-            // arrival radius for the chart ring + client APPROACH
-            // alarm. Replaced by navigation.course.arrivalCircle from
-            // the SK v2 Course API; the local key is intentionally
-            // not migrated - servers without the v2 path now show no
-            // ring rather than a misleading helm-set value.
+            // arrivalCircleMeters.v1 (loaded above) is the helm-
+            // configured arrival circle SENT to the SK v2 Course API
+            // on Set-Destination / Set-Active-Route requests. Read
+            // sites for the EFFECTIVE circle (HUD ring, APPROACH
+            // alarm, auto-advance) keep reading
+            // navigation.course.arrivalCircle from the SK delta so
+            // a peer plotter or server-side change still propagates.
+            // The legacy key waypointArrivalRadiusMeters.v1 (which
+            // drove the client-side ring directly) was retired in an
+            // earlier refactor and is intentionally not migrated.
             ServerSideApproachAlarms = await LoadBool("serverSideApproachAlarms.v1", true);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);
@@ -385,6 +400,15 @@ public sealed class AppSettingsService : IAppSettings
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
             AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
+            // Clamp the arrival circle to a sensible boating range:
+            // 5 m is too tight for GPS jitter to settle below; 1000 m
+            // is large enough to cover the broadest "approach a marina
+            // entry" scenario without making the chart ring useless.
+            // Out-of-range stored values (corrupted / pre-feature)
+            // fall back to the default rather than driving a server
+            // request the spec might reject.
+            ArrivalCircleMeters = Math.Clamp(
+                await LoadDouble("arrivalCircleMeters.v1", 50.0), 5.0, 1000.0);
             // Marine POI categories. Each defaults to false (opt-in); a
             // bool stored as "true" / "false" via the same Save / LoadBool
             // helpers as every other map-display toggle.
@@ -947,6 +971,14 @@ public sealed class AppSettingsService : IAppSettings
     {
         AutoAdvanceWaypoints = value;
         await Save("autoAdvanceWaypoints.v1", value ? "true" : "false");
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetArrivalCircleMetersAsync(double value)
+    {
+        ArrivalCircleMeters = Math.Clamp(value, 5.0, 1000.0);
+        await Save("arrivalCircleMeters.v1",
+            ArrivalCircleMeters.ToString(System.Globalization.CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

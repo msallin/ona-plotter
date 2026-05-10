@@ -788,7 +788,17 @@
 //             Trip (moving) segments show start + end lat/lon as
 //             DMS-with-hemisphere; stationary segments show one
 //             arithmetic-mean position over the segment's points.
-const CACHE_NAME = 'ona-plotter-v83';
+// v83 -> v84: Helm-configured arrivalCircle reintroduced (partial
+//             revert of the "server is sole source" refactor). The
+//             SK v2 Course API spec accepts an arrivalCircle field
+//             on Set-Destination / Set-Active-Route bodies; the
+//             server adopts it as the effective
+//             navigation.course.arrivalCircle. Settings page gains
+//             a numeric input (5-1000 m, default 50). Read sites
+//             (HUD ring, APPROACH alarm, auto-advance) keep using
+//             the SK delta so a peer plotter changing the value
+//             mid-passage still propagates.
+const CACHE_NAME = 'ona-plotter-v84';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

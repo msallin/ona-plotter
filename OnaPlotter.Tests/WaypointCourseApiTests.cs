@@ -1,10 +1,35 @@
 using System.Net;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Services.Settings;
 
 namespace OnaPlotter.Tests;
 
 public class WaypointCourseApiTests
 {
+    /// <summary>Stub INavPreferences for CourseApi tests. Returns a
+    /// fixed arrival-circle so a regression in body emission shows
+    /// up here (the live tests below don't assert the value
+    /// individually; the dedicated arrivalCircle test does).</summary>
+    private static INavPreferences NewNavPrefs(double arrivalCircleM = 50.0) =>
+        new StubNavPrefs(arrivalCircleM);
+
+    private sealed class StubNavPrefs : INavPreferences
+    {
+        public StubNavPrefs(double arrivalCircleM) { ArrivalCircleMeters = arrivalCircleM; }
+        public bool PreferMagneticHeading => false;
+        public bool PreferMagneticCourse => false;
+        public bool AutoAdvanceWaypoints => true;
+        public string SailingMode => "cruise";
+        public string OwnVesselType => "power";
+        public double ArrivalCircleMeters { get; }
+        public Task SetPreferMagneticHeadingAsync(bool value) => Task.CompletedTask;
+        public Task SetPreferMagneticCourseAsync(bool value) => Task.CompletedTask;
+        public Task SetAutoAdvanceWaypointsAsync(bool value) => Task.CompletedTask;
+        public Task SetSailingModeAsync(string value) => Task.CompletedTask;
+        public Task SetOwnVesselTypeAsync(string value) => Task.CompletedTask;
+        public Task SetArrivalCircleMetersAsync(double value) => Task.CompletedTask;
+    }
+
     [Test]
     public async Task WaypointApi_GetAll_ParsesLatLon()
     {
@@ -88,7 +113,7 @@ public class WaypointCourseApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         var r = await api.SetDestinationAsync("wpt-42");
 
@@ -115,7 +140,7 @@ public class WaypointCourseApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         var r = await api.SetActiveRouteAsync("rte-123", pointIndex: 2, reverse: true);
 
@@ -136,7 +161,7 @@ public class WaypointCourseApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         await api.SetActiveRouteAsync("my route/01");
 
@@ -163,7 +188,7 @@ public class WaypointCourseApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         var r = await api.AdvanceActiveRouteAsync();
 
@@ -180,7 +205,7 @@ public class WaypointCourseApiTests
         // "Next WP failed" toast fires instead of swallowing silently.
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.NotFound));
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
         await Assert.That((await api.AdvanceActiveRouteAsync()).Success).IsFalse();
     }
 
@@ -203,7 +228,7 @@ public class WaypointCourseApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         var r = await api.SetPointIndexAsync(3);
 
@@ -224,7 +249,7 @@ public class WaypointCourseApiTests
             capturedBody = req.Content?.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         await api.SetPointIndexAsync(0);
 
@@ -236,7 +261,7 @@ public class WaypointCourseApiTests
     {
         var http = ApiTestHelpers.MockClient(_ =>
             new HttpResponseMessage(HttpStatusCode.BadRequest));
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
         await Assert.That((await api.SetPointIndexAsync(2)).Success).IsFalse();
     }
 
@@ -251,13 +276,51 @@ public class WaypointCourseApiTests
             capturedMethod = req.Method;
             return new HttpResponseMessage(HttpStatusCode.NoContent);
         });
-        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl());
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(), NewNavPrefs());
 
         var r = await api.ClearAsync();
 
         await Assert.That(r.Success).IsTrue();
         await Assert.That(capturedMethod).IsEqualTo(HttpMethod.Delete);
         await Assert.That(capturedUrl).EndsWith("/signalk/v2/api/vessels/self/navigation/course");
+    }
+
+    [Test]
+    public async Task CourseApi_SetDestination_IncludesHelmConfiguredArrivalCircle()
+    {
+        // SignalK v2 Course API accepts an arrivalCircle field on the
+        // destination / activeRoute PUT bodies. The server adopts it
+        // as the effective navigation.course.arrivalCircle. This test
+        // pins that the value flows from INavPreferences through to
+        // the wire body for all three Set-* operations.
+        string? capturedDest = null;
+        string? capturedDestPos = null;
+        string? capturedActiveRoute = null;
+        var http = ApiTestHelpers.MockClient(req =>
+        {
+            var url = req.RequestUri?.AbsoluteUri ?? string.Empty;
+            var body = req.Content?.ReadAsStringAsync().Result;
+            if (url.EndsWith("/destination"))
+            {
+                if (capturedDest is null) capturedDest = body;
+                else capturedDestPos = body;
+            }
+            else if (url.EndsWith("/activeRoute"))
+            {
+                capturedActiveRoute = body;
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        var api = new CourseApi(http, ApiTestHelpers.FixedBaseUrl(),
+            NewNavPrefs(arrivalCircleM: 75.0));
+
+        await api.SetDestinationAsync("wpt-1");
+        await api.SetDestinationPositionAsync(47.4, 8.5);
+        await api.SetActiveRouteAsync("rte-1");
+
+        await Assert.That(capturedDest).Contains("\"arrivalCircle\":75");
+        await Assert.That(capturedDestPos).Contains("\"arrivalCircle\":75");
+        await Assert.That(capturedActiveRoute).Contains("\"arrivalCircle\":75");
     }
 
     [Test]

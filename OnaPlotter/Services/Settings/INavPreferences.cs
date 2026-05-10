@@ -23,6 +23,17 @@ public interface INavPreferences
     /// waypoint on perpendicularPassed / arrivalCircleEntered.</summary>
     bool AutoAdvanceWaypoints { get; }
 
+    /// <summary>Helm-configured arrival-circle radius (metres) sent to
+    /// the SignalK v2 Course API on every Set-Destination /
+    /// Set-Active-Route request. The server adopts it as the
+    /// effective <c>navigation.course.arrivalCircle</c> for the
+    /// active course; downstream consumers (HUD ring, APPROACH alarm,
+    /// auto-advance) keep reading the SK path so a peer plotter
+    /// changing the circle mid-passage propagates here too. The
+    /// local setting only seeds new courses started from this
+    /// plotter.</summary>
+    double ArrivalCircleMeters { get; }
+
     /// <summary>"cruise" (default) or "race". Discriminator for
     /// race-specific overlays (laylines, target speed) so the helm
     /// doesn't toggle a mode flag on every switch.</summary>
@@ -42,4 +53,5 @@ public interface INavPreferences
     Task SetAutoAdvanceWaypointsAsync(bool value);
     Task SetSailingModeAsync(string value);
     Task SetOwnVesselTypeAsync(string value);
+    Task SetArrivalCircleMetersAsync(double value);
 }

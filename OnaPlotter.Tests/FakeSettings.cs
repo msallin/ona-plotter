@@ -83,6 +83,7 @@ internal sealed class FakeSettings : IAppSettings
     public bool PreferMagneticHeading { get; set; } = false;
     public bool PreferMagneticCourse { get; set; } = false;
     public bool AutoAdvanceWaypoints { get; set; } = true;
+    public double ArrivalCircleMeters { get; set; } = 50.0;
     public bool MarinePoiOverlayVisible { get; set; } = true;
     public bool MarinePoiFuelEnabled { get; set; } = false;
     public bool MarinePoiMarinaEnabled { get; set; } = false;
@@ -195,6 +196,7 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
     public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
     public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }
+    public Task SetArrivalCircleMetersAsync(double v) { ArrivalCircleMeters = v; return Task.CompletedTask; }
     public Task SetMarinePoiOverlayVisibleAsync(bool v) { MarinePoiOverlayVisible = v; return Task.CompletedTask; }
     public Task SetMarinePoiFuelEnabledAsync(bool v) { MarinePoiFuelEnabled = v; return Task.CompletedTask; }
     public Task SetMarinePoiMarinaEnabledAsync(bool v) { MarinePoiMarinaEnabled = v; return Task.CompletedTask; }
