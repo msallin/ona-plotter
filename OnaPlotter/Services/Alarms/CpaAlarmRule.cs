@@ -131,8 +131,30 @@ public sealed class CpaAlarmRule : IAlarmRule
                 v.CourseOverGround, v.SpeedOverGround);
 
             if (cpa is null) continue;
-            if (cpa.Value.CpaNm >= cpaLimit) continue;
-            if (cpa.Value.TcpaMin > tcpaLimit) continue;
+
+            // Single source of truth with the chart-overlay classifier
+            // (AisPushService.BuildSnapshot). Previously this rule had
+            // its own gate (`cpa.CpaNm >= cpaLimit` continue, `cpa.TcpaMin
+            // > tcpaLimit` continue) which:
+            //   1. drifted at the boundary - alarm used '>=' on the cpa
+            //      side while ClassifyThreat uses strict '>', so a CPA
+            //      hit exactly at the threshold radius classified as a
+            //      threat on the chart but DIDN'T fire the audible alarm.
+            //   2. didn't apply the current-distance ring gate, so the
+            //      klaxon could fire for a vessel 5 nm away with a
+            //      marginal closing track even though the chart-overlay's
+            //      threat ring had already classified it as None.
+            // Helm-feedback equivalent: "the X is gone but the alarm
+            // still rings" - now they agree by construction.
+            double currentDistNm = GeoMath.HaversineMeters(
+                data.Latitude.Value, data.Longitude.Value,
+                v.Latitude.Value, v.Longitude.Value) / 1852.0;
+            var threat = Cpa.ClassifyThreat(
+                cpa.Value.CpaNm, cpa.Value.TcpaMin,
+                currentDistNm,
+                cpaLimit, tcpaLimit,
+                v.IsBuddy);
+            if (threat == Cpa.Threat.None) continue;
 
             // CPA threshold tripped. Now (and only now) compute the
             // COLREGS classification for the alarm banner suffix.

@@ -57,7 +57,7 @@ public class AisPushServiceTests
 
     private static AisPushService NewService(
         AisStore store,
-        FakeAisJs js,
+        IMapAisJs js,
         IAppSettings? settings = null,
         IMooredVesselTracker? tracker = null,
         TimeProvider? time = null) =>
@@ -260,6 +260,183 @@ public class AisPushServiceTests
         var entry = js.Pushes[0][0];
         _ = entry.LoaM;
         _ = entry.BeamM;
+    }
+
+    // --- BuildSnapshot resilience pins (PR #264) ----------------------
+    //
+    // Hardening against the failure modes the code-review flagged:
+    // a) NaN/Infinity slipping through AisStore poisoning JSInterop
+    // b) a single bad vessel record blowing up the whole tick
+    // c) the cache committing before the work succeeds, swallowing
+    //    failed pushes and freezing the map on stale data
+    // The failing JS-side push (rare but real - radar-overlay leak)
+    // emptied the chart for the rest of the session before this fix.
+
+    [Test]
+    public async Task BuildSnapshot_Skips_Vessel_With_NaN_Position_DoesNotPoisonOthers()
+    {
+        // AisStore.GetVessels filters null lat/lon, but a NaN slipping
+        // through (manually-crafted delta, future schema migration)
+        // used to propagate to JSInterop which throws "Cannot serialize
+        // NaN to JSON" and dumped the entire snapshot. The per-vessel
+        // finite gate skips the offender and keeps the rest.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0, name: "Real");
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:222", 47.5, 8.5, name: "BadOne");
+        // Manually corrupt the bad vessel's coords post-seed. AisStore's
+        // ConcurrentDictionary exposes the live AisVessel instance via
+        // GetVessels; we mutate it to simulate a NaN that slipped past
+        // the nullable filter.
+        var bad = store.GetVessels().First(v => v.Context.EndsWith("222"));
+        bad.Latitude = double.NaN;
+
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+        await svc.PushAsync(new NavigationData());
+
+        // Only the good vessel survives.
+        await Assert.That(js.Pushes[0].Length).IsEqualTo(1);
+        await Assert.That(js.Pushes[0][0].Context).IsEqualTo("vessels.urn:mrn:imo:mmsi:111");
+    }
+
+    [Test]
+    public async Task BuildSnapshot_Skips_Vessel_With_Infinity_Sog()
+    {
+        // Same defensive shape on SOG. NaN/Infinity in COG/SOG would
+        // flow into Cpa.Compute (which guards) but ALSO into the
+        // anonymous-payload write that JSInterop serialises - which
+        // doesn't.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0, name: "Real");
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:222", 47.5, 8.5, name: "BadSog");
+        var bad = store.GetVessels().First(v => v.Context.EndsWith("222"));
+        bad.SpeedOverGround = double.PositiveInfinity;
+
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+        await svc.PushAsync(new NavigationData());
+
+        await Assert.That(js.Pushes[0].Length).IsEqualTo(1);
+        await Assert.That(js.Pushes[0][0].Context).IsEqualTo("vessels.urn:mrn:imo:mmsi:111");
+    }
+
+    [Test]
+    public async Task PushAsync_OnInteropFailure_DoesNotCommitCache_NextTickRetries()
+    {
+        // Cache-commit ordering: previously the skip-when-unchanged
+        // cache (_lastPushed*) was written BEFORE the JS interop call.
+        // If the interop call threw, the next tick would skip
+        // (because the cache said "we already pushed this state") and
+        // the map would freeze on stale data until something else
+        // changed. Pin: a failed first push leaves the cache in the
+        // pre-push state so the next tick retries.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);
+        var js = new ThrowOnceAisJs();
+        var svc = NewService(store, js);
+        var nav = new NavigationData();
+        nav.ApplyPosition(47.0, 8.0);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 5.0);
+
+        // First push: throws inside Update. The outer catch swallows.
+        await svc.PushAsync(nav);
+        await Assert.That(js.SuccessfulPushes).IsEqualTo(0);
+
+        // Second push: identical inputs. If the cache had committed,
+        // the skip-optimisation would short-circuit to 0 calls. With
+        // the deferred commit, the real push runs.
+        await svc.PushAsync(nav);
+        await Assert.That(js.SuccessfulPushes).IsEqualTo(1)
+            .Because("a failed push must NOT poison the skip cache");
+    }
+
+    [Test]
+    public async Task PushAsync_NonJsException_IsCaught_DoesNotPropagate()
+    {
+        // Outer catch was previously narrowed to JSException; an
+        // InvalidOperationException from a stale Leaflet handle (the
+        // radar-HUD regression) propagated past, tripped Blazor's
+        // renderer error UI, and emptied the chart. Pin that the
+        // catch is broad enough to keep the page functional.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111", 47.0, 8.0);
+        var js = new ThrowAlwaysNonJsAisJs();
+        var svc = NewService(store, js);
+
+        // Must not throw out. The handled-and-recovered diagnostic
+        // goes to Console.WriteLine; this assertion just pins the
+        // no-throw contract.
+        await svc.PushAsync(new NavigationData());
+        await Assert.That(js.AttemptedPushes).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task ThreatToWireString_ContractIsStable()
+    {
+        // Pin the C#/JS contract: aisLayer.js reads
+        //   case 'danger': ... case 'warning': ... default: none
+        // so any rename here silently breaks the chart-overlay
+        // classifier on the JS side. Test reads the static helper
+        // (internal-visible to tests via InternalsVisibleTo) so a
+        // rename of the underlying enum case still surfaces here at
+        // compile time.
+        await Assert.That(AisPushService.ThreatToWireString(
+            OnaPlotter.Utilities.Cpa.Threat.Danger)).IsEqualTo("danger");
+        await Assert.That(AisPushService.ThreatToWireString(
+            OnaPlotter.Utilities.Cpa.Threat.Warning)).IsEqualTo("warning");
+        await Assert.That(AisPushService.ThreatToWireString(
+            OnaPlotter.Utilities.Cpa.Threat.None)).IsEqualTo("none");
+    }
+
+    private sealed class ThrowOnceAisJs : IMapAisJs
+    {
+        public int AttemptedPushes;
+        public int SuccessfulPushes;
+
+        public Task UpdateAisTargetsAsync(AisVesselPayload[] vessels)
+        {
+            AttemptedPushes++;
+            if (AttemptedPushes == 1)
+                throw new Microsoft.JSInterop.JSException("simulated transient JS-side failure");
+            SuccessfulPushes++;
+            return Task.CompletedTask;
+        }
+
+        public Task SetAtonsAsync(object[] atons) => Task.CompletedTask;
+        public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
+        public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
+        public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
+        public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
+        public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
+    }
+
+    private sealed class ThrowAlwaysNonJsAisJs : IMapAisJs
+    {
+        public int AttemptedPushes;
+
+        public Task UpdateAisTargetsAsync(AisVesselPayload[] vessels)
+        {
+            AttemptedPushes++;
+            // InvalidOperationException is the canonical "Leaflet
+            // handle stale" shape on the radar-HUD path the helm
+            // hit. Throwing it through here pins that the outer
+            // catch is broad enough to not let it escape.
+            throw new InvalidOperationException("simulated stale Leaflet handle");
+        }
+
+        public Task SetAtonsAsync(object[] atons) => Task.CompletedTask;
+        public Task SetAtonsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetAisLabelsVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetOwnMmsiAsync(string mmsi) => Task.CompletedTask;
+        public Task SetOwnCallsignAsync(string callsign) => Task.CompletedTask;
+        public Task SetHarborModeAsync(bool enabled) => Task.CompletedTask;
+        public Task<bool> FocusVesselAsync(string context) => Task.FromResult(false);
+        public Task SetGuardZoneVisibleAsync(bool visible) => Task.CompletedTask;
+        public Task SetGuardZoneWarningRingVisibleAsync(bool visible) => Task.CompletedTask;
     }
 
     [Test]

@@ -66,20 +66,41 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
 
     private readonly Dictionary<string, DateTime> _lowSpeedSince = [];
 
+    /// <summary>SOG ceiling (m/s) above which a self-reported "moored"
+    /// navigation state is treated as a lie / stale and we fall through
+    /// to the SOG-dwell heuristic. 2× <see cref="MooredSpeedThresholdMs"/>
+    /// (~2 kn) is generous enough that a real moored boat swinging at
+    /// anchor still passes, but blocks a 4 kn craft from claiming the
+    /// CPA exemption by broadcasting <c>navigation.state = "moored"</c>.
+    /// Without this gate the AIS-spoof flagged in code review let any
+    /// transmitter exempt itself from the collision klaxon.</summary>
+    public const double MooredNavStateMaxSogMs = MooredSpeedThresholdMs * 2.0;
+
     public bool IsMoored(AisVessel v, DateTime now)
     {
-        // Authoritative SK signal trumps the heuristic when published.
+        // Authoritative SK signal trumps the heuristic when published,
+        // but only when the reported SOG is plausibly stationary - see
+        // MooredNavStateMaxSogMs.
         var navState = v.NavigationState;
         if (navState is not null)
         {
             if (_mooredStates.Contains(navState))
             {
-                // Reset the dwell ring so a re-classification back to
-                // underway via heuristic doesn't carry stale dwell data.
-                _lowSpeedSince.Remove(v.Context);
-                return true;
+                bool plausiblyStationary =
+                    v.SpeedOverGround is null
+                    || v.SpeedOverGround.Value <= MooredNavStateMaxSogMs;
+                if (plausiblyStationary)
+                {
+                    // Reset the dwell ring so a re-classification back to
+                    // underway via heuristic doesn't carry stale dwell data.
+                    _lowSpeedSince.Remove(v.Context);
+                    return true;
+                }
+                // Spoof / stale signal: fall through. The heuristic at
+                // the bottom of this method will see SOG above the
+                // moored-threshold and correctly return false.
             }
-            if (_underwayStates.Contains(navState))
+            else if (_underwayStates.Contains(navState))
             {
                 _lowSpeedSince.Remove(v.Context);
                 return false;

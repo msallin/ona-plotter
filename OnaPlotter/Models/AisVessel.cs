@@ -254,15 +254,18 @@ public sealed class AisVessel
                 }
 
             case "buddy":
-                bool newBuddy = rawValue switch
-                {
-                    bool b => b,
-                    JsonElement bEl => bEl.ValueKind == JsonValueKind.True,
-                    _ => false
-                };
-                if (newBuddy == IsBuddy) return false;
-                IsBuddy = newBuddy;
-                return true;
+                // Locked to the REST seed - the wire-side `buddy` delta
+                // path is intentionally dropped. Without this gate any
+                // AIS context could publish `buddy: true` for itself
+                // and exempt the corresponding vessel from the CPA
+                // klaxon (an AIS transmitter is uniquely positioned to
+                // forge its own deltas, since the SK server trusts the
+                // MMSI it receives). The trusted source of truth is
+                // sbender9/signalk-buddylist-plugin's REST API, which
+                // <see cref="OnaPlotter.Services.AisStore.UpdateBuddies"/>
+                // pulls at startup and on demand. Returning false here
+                // drops the delta without bumping the AisStore version.
+                return false;
 
             default:
                 return false;

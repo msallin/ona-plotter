@@ -154,16 +154,84 @@ public class MooredVesselTrackerTests
     }
 
     [Test]
-    public async Task NavState_Anchored_MooredImmediately_RegardlessOfSpeed()
+    public async Task NavState_Anchored_MooredAtPlausiblyStationarySpeed()
     {
-        // SK navigation.state = "anchored" (and friends) is authoritative
-        // even when SOG is high (anchor-drag scenarios) - the AIS
-        // broadcast is the ground truth.
+        // SK navigation.state = "anchored" is authoritative when the
+        // reported SOG is plausibly stationary - covers a swinging-at-
+        // anchor scenario where SOG is non-zero but well under
+        // MooredNavStateMaxSogMs (~2 kn). High-SOG anchor-drag is
+        // handled by the spoof gate below; this test pins the normal-
+        // anchorage path where the AIS broadcast IS the ground truth.
         var t = new MooredVesselTracker();
-        var v = Vessel("ctx1", sogMs: 5.0);          // would be "moving" by heuristic
+        var v = Vessel("ctx1", sogMs: 0.3);          // ~0.6 kn swing
         v.NavigationState = "anchored";
 
         await Assert.That(t.IsMoored(v, DateTime.UtcNow)).IsTrue();
+    }
+
+    [Test]
+    public async Task NavState_Moored_HighSogIsTreatedAsLie_FallsThroughToHeuristic()
+    {
+        // Spoof / stale-navState guard. A vessel claiming
+        // navigation.state = "moored" while actually moving at 4 kn is
+        // either lying (AIS-spoof - the review's flagged blocker) or
+        // hasn't updated its navState since leaving the dock. Either
+        // way, granting the CPA-alarm exemption is unsafe. The fix
+        // requires SOG below MooredNavStateMaxSogMs (~2 kn) before the
+        // explicit signal is honored; above that, fall through to the
+        // SOG heuristic which (correctly) returns false.
+        var t = new MooredVesselTracker();
+        var v = Vessel("spoofer", sogMs: 2.0);       // ~4 kn, well above the gate
+        v.NavigationState = "moored";
+
+        await Assert.That(t.IsMoored(v, DateTime.UtcNow)).IsFalse()
+            .Because("a 4-kn vessel claiming 'moored' must NOT be exempted from CPA");
+    }
+
+    [Test]
+    public async Task NavState_Anchored_HighSogIsTreatedAsLie_FallsThroughToHeuristic()
+    {
+        // Same spoof guard for "anchored". Genuine anchor-drag is at
+        // sub-kn drift speeds; a vessel reporting "anchored" + 4 kn
+        // SOG is the stale-after-leaving case, not a drag emergency.
+        var t = new MooredVesselTracker();
+        var v = Vessel("liar", sogMs: 2.0);
+        v.NavigationState = "anchored";
+
+        await Assert.That(t.IsMoored(v, DateTime.UtcNow)).IsFalse();
+    }
+
+    [Test]
+    public async Task NavState_Moored_NullSog_TrustsTheSignal()
+    {
+        // SOG missing entirely (rare but possible on a freshly-joined
+        // AIS context that's only published static data). The spoof
+        // gate doesn't have evidence to reject the signal, so it
+        // trusts the explicit navState. Pinned because the inverse -
+        // returning false on null SOG - would silently un-trust every
+        // moored AIS contact during the static-only seconds after
+        // they first appear.
+        var t = new MooredVesselTracker();
+        var v = Vessel("ctx", sogMs: null);
+        v.NavigationState = "moored";
+
+        await Assert.That(t.IsMoored(v, DateTime.UtcNow)).IsTrue();
+    }
+
+    [Test]
+    public async Task NavState_Moored_BoundaryAtSpoofGate()
+    {
+        // Right at the cap (MooredNavStateMaxSogMs ~ 2*MooredSpeedThresholdMs)
+        // the navState is still trusted (uses '<='). Just above, the
+        // spoof gate kicks in.
+        var t = new MooredVesselTracker();
+        var atCap = Vessel("at-cap", sogMs: MooredVesselTracker.MooredNavStateMaxSogMs);
+        atCap.NavigationState = "moored";
+        await Assert.That(t.IsMoored(atCap, DateTime.UtcNow)).IsTrue();
+
+        var aboveCap = Vessel("above", sogMs: MooredVesselTracker.MooredNavStateMaxSogMs + 0.001);
+        aboveCap.NavigationState = "moored";
+        await Assert.That(t.IsMoored(aboveCap, DateTime.UtcNow)).IsFalse();
     }
 
     [Test]
@@ -248,8 +316,11 @@ public class MooredVesselTrackerTests
         // AisVessel.Apply lower-cases nav.state on ingest so capitalised
         // server payloads ("Anchored", "AT ANCHOR") still match. Pin
         // both ends together via the Apply path.
+        // SOG kept plausibly stationary so the spoof gate trusts the
+        // navState - the lowercase contract is what's under test, not
+        // the spoof gate (covered separately).
         var t = new MooredVesselTracker();
-        var v = new AisVessel("ctx1") { SpeedOverGround = 3.0 };
+        var v = new AisVessel("ctx1") { SpeedOverGround = 0.3 };
         v.Apply("navigation.state", System.Text.Json.JsonSerializer.SerializeToElement("Anchored"));
 
         await Assert.That(v.NavigationState).IsEqualTo("anchored");
