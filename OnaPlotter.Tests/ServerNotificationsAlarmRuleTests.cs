@@ -92,6 +92,53 @@ public class ServerNotificationsAlarmRuleTests
     }
 
     [Test]
+    public async Task SanitiseUrnMmsi_Sanitised_Path_Form()
+    {
+        // CpaAlarmRule.SanitisePerTargetPath turns "vessels.urn:mrn:imo:mmsi:N"
+        // into "urn_mrn_imo_mmsi_N" so the suffix can't extend the
+        // notification path. The default-message humaniser then leaks
+        // that 30-char id into the banner; pin that the rewriter
+        // produces a helm-readable "MMSI N" instead.
+        var sanitised = ServerNotificationsAlarmRule.SanitiseUrnMmsi(
+            "collision urn_mrn_imo_mmsi_338546948");
+        await Assert.That(sanitised).IsEqualTo("collision MMSI 338546948");
+    }
+
+    [Test]
+    public async Task SanitiseUrnMmsi_Raw_Colon_Form()
+    {
+        // A publisher emitting the message with the original SK
+        // context shape (colons, not underscores) goes through the
+        // same rewrite.
+        var sanitised = ServerNotificationsAlarmRule.SanitiseUrnMmsi(
+            "Collision risk for urn:mrn:imo:mmsi:211234567 within 0.3 nm");
+        await Assert.That(sanitised).IsEqualTo("Collision risk for MMSI 211234567 within 0.3 nm");
+    }
+
+    [Test]
+    public async Task SanitiseUrnMmsi_NoUrn_Passes_Through()
+    {
+        // Non-vessel notifications (depth, anchor, MOB) don't carry
+        // an MMSI - the rewriter must leave them untouched.
+        var sanitised = ServerNotificationsAlarmRule.SanitiseUrnMmsi(
+            "below transducer 1.8 m");
+        await Assert.That(sanitised).IsEqualTo("below transducer 1.8 m");
+    }
+
+    [Test]
+    public async Task SanitiseUrnMmsi_Multiple_Targets()
+    {
+        // A future server-side bridge that lists multiple targets in
+        // one message body should rewrite both. The current rule
+        // raises one alarm per target so this is a future-proofing
+        // case rather than a live-traffic shape, but it costs nothing
+        // to handle correctly here.
+        var sanitised = ServerNotificationsAlarmRule.SanitiseUrnMmsi(
+            "collision urn_mrn_imo_mmsi_111 and urn_mrn_imo_mmsi_222");
+        await Assert.That(sanitised).IsEqualTo("collision MMSI 111 and MMSI 222");
+    }
+
+    [Test]
     public async Task DeriveTitleAndDefault_CourseProvider_ArrivalCircleEntered()
     {
         // signalk-course-data publishes the arrival cue under

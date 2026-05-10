@@ -104,6 +104,15 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
     {
         var (title, defaultMsg) = DeriveTitleAndDefault(n.Path);
         var message = !string.IsNullOrEmpty(n.Message) ? n.Message : defaultMsg;
+        // SignalK vessel contexts come through the path as
+        // urn_mrn_imo_mmsi_<digits> (the v2 publisher's
+        // SanitisePerTargetPath scrubs colons to underscores so the
+        // suffix can't extend the path namespace). The humanised
+        // default-message fallback or a server-published message
+        // that re-uses the same id leaves that URN fragment in the
+        // banner; rewrite to "MMSI <digits>" so the helm reads a
+        // recognisable identifier instead of a 30-char garbage id.
+        message = SanitiseUrnMmsi(message);
         // Build the acknowledger only when (a) we have an API client
         // wired (production DI; absent in some legacy test ctors) and
         // (b) the server actually gave us an id to address. The
@@ -252,4 +261,90 @@ public sealed class ServerNotificationsAlarmRule : IAlarmRule
         }
         return sb.ToString();
     }
+
+    /// <summary>Rewrite SignalK vessel-context URN fragments in a
+    /// banner-bound message to a helm-readable "MMSI &lt;digits&gt;"
+    /// form. The publisher path-sanitiser turns
+    /// <c>vessels.urn:mrn:imo:mmsi:338546948</c> into
+    /// <c>urn_mrn_imo_mmsi_338546948</c> so the suffix can't extend
+    /// the notifications path namespace; that sanitisation also
+    /// shows up in the humanised default message ("collision
+    /// urn_mrn_imo_mmsi_338546948") and sometimes in upstream
+    /// publisher messages too. The accepted shapes here cover both:
+    ///   - <c>urn_mrn_imo_mmsi_NNN</c> (sanitised path tail)
+    ///   - <c>urn:mrn:imo:mmsi:NNN</c> (raw context, in case a
+    ///     publisher emits the message body with the original colons)
+    /// In each case the URN fragment is replaced by <c>MMSI NNN</c>.
+    /// Falls through unchanged when no MMSI fragment is present so
+    /// non-vessel notifications (depth, anchor, MOB) don't get
+    /// rewritten. No regex - a hand-rolled scan keeps the WASM
+    /// startup cost down and the matching narrow.</summary>
+    internal static string SanitiseUrnMmsi(string message)
+    {
+        if (string.IsNullOrEmpty(message)) return message;
+        // Fast pre-check: bail without an allocation when the message
+        // doesn't even contain "mmsi". The common-case banner (depth,
+        // anchor, MOB) skips the rebuild entirely.
+        if (message.IndexOf("mmsi", StringComparison.OrdinalIgnoreCase) < 0)
+            return message;
+
+        // Pattern length: "urn" + sep + "mrn" + sep + "imo" + sep
+        // + "mmsi" + sep = 17. The MMSI digits follow.
+        const int prefixLen = 17;
+
+        var sb = new System.Text.StringBuilder(message.Length);
+        int i = 0;
+        while (i < message.Length)
+        {
+            int matchStart = FindUrnMmsiStart(message, i);
+            if (matchStart < 0)
+            {
+                sb.Append(message, i, message.Length - i);
+                break;
+            }
+            if (matchStart > i) sb.Append(message, i, matchStart - i);
+            int digitsStart = matchStart + prefixLen;
+            int digitsEnd = digitsStart;
+            while (digitsEnd < message.Length && char.IsDigit(message[digitsEnd]))
+                digitsEnd++;
+            if (digitsEnd == digitsStart)
+            {
+                // "urn_mrn_imo_mmsi_" with no digits after - emit the
+                // matched text verbatim so we don't lose data.
+                sb.Append(message, matchStart, prefixLen);
+            }
+            else
+            {
+                sb.Append("MMSI ");
+                sb.Append(message, digitsStart, digitsEnd - digitsStart);
+            }
+            i = digitsEnd;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>Find the start index of a urn[:_]mrn[:_]imo[:_]mmsi[:_]
+    /// pattern at or after <paramref name="from"/>. Returns -1 when
+    /// no match before end-of-string.</summary>
+    private static int FindUrnMmsiStart(string s, int from)
+    {
+        const int prefixLen = 17;   // "urn?mrn?imo?mmsi?"
+        int idx = from;
+        while (true)
+        {
+            int u = s.IndexOf("urn", idx, StringComparison.OrdinalIgnoreCase);
+            if (u < 0 || u + prefixLen > s.Length) return -1;
+            // Require: urn[:_]mrn[:_]imo[:_]mmsi[:_]
+            if (IsSep(s[u + 3])
+                && s.AsSpan(u + 4, 3).Equals("mrn", StringComparison.OrdinalIgnoreCase) && IsSep(s[u + 7])
+                && s.AsSpan(u + 8, 3).Equals("imo", StringComparison.OrdinalIgnoreCase) && IsSep(s[u + 11])
+                && s.AsSpan(u + 12, 4).Equals("mmsi", StringComparison.OrdinalIgnoreCase) && IsSep(s[u + 16]))
+            {
+                return u;
+            }
+            idx = u + 1;
+        }
+    }
+
+    private static bool IsSep(char c) => c == ':' || c == '_';
 }

@@ -818,7 +818,15 @@
 //             feedback while keeping the HUD readout smoothed. The
 //             legacy preferMagneticCourse.v1 boolean is migrated to
 //             the new cogReadoutSource.v1 string on first load.
-const CACHE_NAME = 'ona-plotter-v86';
+// v86 -> v87: Server-notification banner cleanup. CPA collision
+//             alarms surfaced their target as the sanitised SK
+//             context fragment ("urn_mrn_imo_mmsi_338546948") in the
+//             banner body. The bridge rule now rewrites that
+//             fragment (in either underscore or colon form) to the
+//             helm-readable "MMSI 338546948" before rendering. Non-
+//             vessel notifications (depth, anchor, MOB) pass
+//             through untouched.
+const CACHE_NAME = 'ona-plotter-v87';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
