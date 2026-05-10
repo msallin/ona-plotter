@@ -6230,6 +6230,10 @@ html.night-mode-global body {
 .legend-ais-commercial { background: var(--map-ais-commercial); }
 .legend-buddy      { background: var(--map-buddy); }
 .legend-danger     { background: var(--map-danger); }
+/* CPA warning amber - matches the outer-ring crossing-line colour
+   pushed via colors.guardWarn in JS. Distinct from --map-danger so
+   the two legend swatches are visually separated. */
+.legend-cpa-warn   { background: var(--sev-warn); }
 .legend-sart       { background: var(--sev-danger); }
 .legend-radar      { background: transparent;
                      border: 2px solid var(--map-radar); }
