@@ -163,30 +163,26 @@ public sealed class MapFrameBuilder
             PrevLon = bLon;
         }
 
-        // Course line (boat -> WP + leg line + XTE tick). Clear-flag
-        // fires on the tick that transitions from "active course" to
-        // "no course"; after that nothing until course reappears.
+        // Course line (boat -> WP + arrival ring). Clear-flag fires on
+        // the tick that transitions from "active course" to "no course";
+        // after that nothing until course reappears.
+        //
+        // The XTE perpendicular tick visual was dropped per helm
+        // feedback - the line drew silently from the boat to the side
+        // of the active leg, was the same colour family as CPA + MOB
+        // overlays, and helms reading the chart asked "what's the fat
+        // red line?" because there was no AIS target / X / pin at the
+        // end. The XTE classifier (Xte.Classify), the alarm rule, and
+        // the HUD pill all stay - only the perpendicular bar on the
+        // chart is gone.
         FrameCourseLine? course = null;
         bool clearCourse = false;
         var wpLat = data.CourseNextPointLatitude;
         var wpLon = data.CourseNextPointLongitude;
         if (wpLat is not null && wpLon is not null && bLat is not null && bLon is not null)
         {
-            // XTE band is classified C#-side (tested in XteTests) so the
-            // JS overlay and any future XTE indicator share the same
-            // thresholds + give-way behaviour.
-            string xteSeverity = Xte.Classify(data.CrossTrackError) switch
-            {
-                Xte.Severity.OffCourse => "offCourse",
-                Xte.Severity.Drifting => "drifting",
-                _ => "onLine"
-            };
             course = new FrameCourseLine(
                 wpLat.Value, wpLon.Value,
-                data.CoursePreviousPointLatitude,
-                data.CoursePreviousPointLongitude,
-                data.CrossTrackError,
-                xteSeverity,
                 ArrivalRadiusMeters);
             CourseLineDrawn = true;
         }
@@ -249,9 +245,6 @@ public readonly record struct FramePos(
 
 public readonly record struct FrameCourseLine(
     double WpLat, double WpLon,
-    double? PrevLat, double? PrevLon,
-    double? Xte,
-    string XteSeverity,
     /// <summary>Helm-configured waypoint arrival radius in metres. Drives
     /// the visible circle around the destination so the helm sees what
     /// distance counts as "arrived" without checking Settings. 0 (or
