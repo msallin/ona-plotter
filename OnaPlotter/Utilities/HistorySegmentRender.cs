@@ -23,11 +23,18 @@ public static class HistorySegmentRender
     /// drives the styling (dimmed dashed grey vs solid magenta), and
     /// <c>Tooltip</c> is the pre-formatted hover string. Leaflet
     /// renders the tooltip as HTML so the formatter only emits plain
-    /// text + <c>&lt;br&gt;</c>; no quotes that need escaping.</summary>
+    /// text + <c>&lt;br&gt;</c>; no quotes that need escaping.
+    /// <para><c>Depths</c> is the parallel per-point depth array (m,
+    /// nullable element when a TrackPoint had no depth sample). JS-
+    /// side mousemove handlers index into this with the nearest-
+    /// coordinate index to render "Depth here: X m" on hover; a
+    /// segment whose underlying samples carried no depth at all gets
+    /// a null array so JS can skip the per-point lookup entirely.</para></summary>
     public sealed record SegmentPayload(
         double[][] Coords,
         bool IsStationary,
-        string Tooltip);
+        string Tooltip,
+        double?[]? Depths);
 
     /// <summary>Slice each segment's points out of the chronological
     /// <paramref name="points"/> array and pair them with the
@@ -58,12 +65,22 @@ public static class HistorySegmentRender
             int end = cursor;     // exclusive
             if (end - start < 2) continue;
             var coords = new double[end - start][];
+            // Per-point depths are emitted only when the segment has
+            // at least one depth sample - a null array signals "no
+            // depth on this trip" to the JS mousemove handler so it
+            // can skip the per-point lookup. Saves both the bridge
+            // crossing and the per-tick math on no-transducer boats.
+            double?[]? depths = s.DepthAvgM is null ? null : new double?[end - start];
             for (int i = start; i < end; i++)
+            {
                 coords[i - start] = [points[i].Latitude, points[i].Longitude];
+                if (depths is not null) depths[i - start] = points[i].Depth;
+            }
             output.Add(new SegmentPayload(
                 Coords: coords,
                 IsStationary: s.IsStationary,
-                Tooltip: BuildTooltip(s, tz)));
+                Tooltip: BuildTooltip(s, tz),
+                Depths: depths));
         }
         return output;
     }
@@ -103,6 +120,14 @@ public static class HistorySegmentRender
         string windLine = s.WindSpeedAvgMs is null
             ? string.Empty
             : $"<br>TWS avg: {Format.Speed(s.WindSpeedAvgMs)} kn";
-        return $"<b>Moving</b> · {duration} · {nm} nm<br>{when}{sogLine}{windLine}";
+        // Depth aggregates: helm reads "did this leg ever shoal?"
+        // off this single line. Min before max so the leg's
+        // shallowest moment (closest to grounding) is the eye-catch
+        // - what the helm cares about most when planning a return
+        // trip over the same route.
+        string depthLine = s.DepthAvgM is null
+            ? string.Empty
+            : $"<br>Depth: {Format.Depth(s.DepthAvgM)} avg / {Format.Depth(s.DepthMinM)} min / {Format.Depth(s.DepthMaxM)} max m";
+        return $"<b>Moving</b> · {duration} · {nm} nm<br>{when}{sogLine}{windLine}{depthLine}";
     }
 }

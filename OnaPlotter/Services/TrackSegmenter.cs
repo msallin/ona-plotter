@@ -278,12 +278,14 @@ public static class TrackSegmenter
                 points[i].Latitude, points[i].Longitude);
         }
 
-        // Aggregate SOG + TWS over samples that carry the value. A
-        // null aggregate means "no samples in this segment had it" -
-        // the UI renders that as "—" rather than "0".
+        // Aggregate SOG + TWS + depth over samples that carry the
+        // value. A null aggregate means "no samples in this segment
+        // had it" - the UI renders that as "—" rather than "0".
         double sogSum = 0; int sogCount = 0;
         double sogMax = double.MinValue, sogMin = double.MaxValue;
         double twsSum = 0; int twsCount = 0;
+        double depthSum = 0; int depthCount = 0;
+        double depthMax = double.MinValue, depthMin = double.MaxValue;
         for (int i = startIdx; i <= endIdx; i++)
         {
             if (points[i].SpeedOverGround is double sog)
@@ -298,12 +300,22 @@ public static class TrackSegmenter
                 twsSum += tws;
                 twsCount++;
             }
+            if (points[i].Depth is double depth)
+            {
+                depthSum += depth;
+                depthCount++;
+                if (depth > depthMax) depthMax = depth;
+                if (depth < depthMin) depthMin = depth;
+            }
         }
 
         double? sogAvg = sogCount > 0 ? sogSum / sogCount : null;
         double? sogHi = sogCount > 0 ? sogMax : null;
         double? sogLo = sogCount > 0 ? sogMin : null;
         double? twsAvg = twsCount > 0 ? twsSum / twsCount : null;
+        double? depthAvg = depthCount > 0 ? depthSum / depthCount : null;
+        double? depthHi = depthCount > 0 ? depthMax : null;
+        double? depthLo = depthCount > 0 ? depthMin : null;
 
         return new TrackSegment(
             StartUtc: first.Timestamp,
@@ -318,6 +330,9 @@ public static class TrackSegmenter
             SogMinMs: sogLo,
             WindSpeedAvgMs: twsAvg,
             IsStationary: isStationary,
-            PointCount: endIdx - startIdx + 1);
+            PointCount: endIdx - startIdx + 1,
+            DepthAvgM: depthAvg,
+            DepthMaxM: depthHi,
+            DepthMinM: depthLo);
     }
 }

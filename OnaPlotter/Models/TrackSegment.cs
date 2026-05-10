@@ -39,6 +39,15 @@ namespace OnaPlotter.Models;
 /// way). Drives the History-page colouring and the table-view filter.</param>
 /// <param name="PointCount">Number of underlying samples. Mostly for
 /// debugging: a segment with one point is suspect.</param>
+/// <param name="DepthAvgM">Mean depth over samples whose
+/// <c>environment.depth.belowTransducer</c> was present. Null when
+/// no depth samples landed (boat without a transducer; or out-of-
+/// range readings the SK driver dropped).</param>
+/// <param name="DepthMaxM">Maximum (deepest) depth sample.</param>
+/// <param name="DepthMinM">Minimum (shallowest) depth sample.
+/// For a moving segment this is the closest-to-grounding moment of
+/// the leg; the helm uses it to confirm the passage stayed clear of
+/// charted minimums.</param>
 public sealed record TrackSegment(
     DateTime StartUtc,
     DateTime EndUtc,
@@ -52,7 +61,10 @@ public sealed record TrackSegment(
     double? SogMinMs,
     double? WindSpeedAvgMs,
     bool IsStationary,
-    int PointCount)
+    int PointCount,
+    double? DepthAvgM = null,
+    double? DepthMaxM = null,
+    double? DepthMinM = null)
 {
     /// <summary>Wall-clock duration. Computed; kept off the parameter
     /// list because <c>StartUtc</c> + <c>EndUtc</c> already carry it.</summary>

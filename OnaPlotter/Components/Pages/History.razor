@@ -1366,6 +1366,45 @@
                     var bounds = null;
                     var movingCount = 0;
                     var ref_ = window._historyDotNet;
+
+                    // Per-segment hover follower: when the helm
+                    // hovers a moving polyline, append a 'Depth here:
+                    // X m' line to the static tooltip showing the
+                    // depth at the closest underlying TrackPoint.
+                    // Linear scan over Coords is fine for typical
+                    // multi-hour tracks (low thousands of points);
+                    // ring-radii / k-d-tree shaving is overkill for
+                    // a hover-rate event. Skipped when s.Depths is
+                    // null (segment has no depth samples) so no-
+                    // transducer boats pay no per-tick cost.
+                    function attachDepthHover(s, layer) {{
+                        if (!s.Depths) return;
+                        layer.on('mousemove', function(ev) {{
+                            var ll = ev.latlng;
+                            var coords = s.Coords;
+                            var bestIdx = 0;
+                            var bestDist = Infinity;
+                            for (var i = 0; i < coords.length; i++) {{
+                                var dLat = coords[i][0] - ll.lat;
+                                var dLon = coords[i][1] - ll.lng;
+                                var d = dLat * dLat + dLon * dLon;
+                                if (d < bestDist) {{ bestDist = d; bestIdx = i; }}
+                            }}
+                            var depth = s.Depths[bestIdx];
+                            var content = s.Tooltip;
+                            if (depth !== null && depth !== undefined) {{
+                                content += '<br>Depth here: ' + depth.toFixed(1) + ' m';
+                            }}
+                            layer.setTooltipContent(content);
+                        }});
+                        // Restore the static tooltip on mouseout so a
+                        // re-hover doesn't carry over the previous
+                        // hover's depth row until the mouse moves.
+                        layer.on('mouseout', function() {{
+                            layer.setTooltipContent(s.Tooltip);
+                        }});
+                    }}
+
                     segs.forEach(function(s, idx) {{
                         var leafletObj;
                         if (s.IsStationary) {{
@@ -1394,6 +1433,7 @@
                                 leafletObj = L.polyline(s.Coords, statStyle)
                                     .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
                                     .addTo(m);
+                                attachDepthHover(s, leafletObj);
                                 var b = leafletObj.getBounds();
                                 bounds = bounds ? bounds.extend(b) : b;
                             }}
@@ -1412,6 +1452,7 @@
                             leafletObj = L.polyline(s.Coords, moveStyle)
                                 .bindTooltip(s.Tooltip, {{ sticky: true, direction: 'top' }})
                                 .addTo(m);
+                            attachDepthHover(s, leafletObj);
                             var b = leafletObj.getBounds();
                             bounds = bounds ? bounds.extend(b) : b;
                         }}

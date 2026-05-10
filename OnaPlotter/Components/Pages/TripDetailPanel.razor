@@ -51,6 +51,26 @@
                 <span class="trip-stat-label">Avg TWS</span>
                 <span class="trip-stat-value">@(Segment.WindSpeedAvgMs is null ? "—" : Format.Speed(Segment.WindSpeedAvgMs)) <span class="trip-stat-unit">kn</span></span>
             </div>
+            @* Depth aggregates only render when the leg's underlying
+               samples carried at least one environment.depth.belowTransducer
+               reading. No-transducer boats / dry-dock segments fall
+               back to the all-stat-row "—" placeholder via the same
+               null guard. Min before Max because the helm reading
+               this card cares most about the SHALLOWEST moment of
+               the leg (closest to grounding); avg sits first as the
+               typical "what was depth like for this trip" answer. *@
+            <div class="trip-stat">
+                <span class="trip-stat-label">Avg Depth</span>
+                <span class="trip-stat-value">@(Segment.DepthAvgM is null ? "—" : Format.Depth(Segment.DepthAvgM)) <span class="trip-stat-unit">m</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Min Depth</span>
+                <span class="trip-stat-value">@(Segment.DepthMinM is null ? "—" : Format.Depth(Segment.DepthMinM)) <span class="trip-stat-unit">m</span></span>
+            </div>
+            <div class="trip-stat">
+                <span class="trip-stat-label">Max Depth</span>
+                <span class="trip-stat-value">@(Segment.DepthMaxM is null ? "—" : Format.Depth(Segment.DepthMaxM)) <span class="trip-stat-unit">m</span></span>
+            </div>
             <div class="trip-stat">
                 <span class="trip-stat-label">Points</span>
                 <span class="trip-stat-value">@Segment.PointCount.ToString(CultureInfo.InvariantCulture)</span>

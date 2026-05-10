@@ -972,7 +972,13 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v96';
+// v96 -> v97: History page gains depth aggregates + per-point
+//             hover. TrackSegment now carries DepthAvg/Min/Max so
+//             the trip-detail panel shows them alongside SOG, and
+//             the on-map polyline tooltip shows the same line plus
+//             a live "Depth here: X m" appended on mousemove from
+//             the closest underlying TrackPoint.
+const CACHE_NAME = 'ona-plotter-v97';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

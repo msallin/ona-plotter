@@ -206,7 +206,7 @@ public class OnaJsonContextTests
         // catches the rename at CI time before it reaches a helm.
         var payload = new List<OnaPlotter.Utilities.HistorySegmentRender.SegmentPayload>
         {
-            new(new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.6 } }, IsStationary: false, Tooltip: "Trip A"),
+            new(new[] { new[] { 47.4, 8.5 }, new[] { 47.5, 8.6 } }, IsStationary: false, Tooltip: "Trip A", Depths: null),
         };
         var json = JsonSerializer.Serialize(payload, OnaJsonContext.Default.ListSegmentPayload);
 
