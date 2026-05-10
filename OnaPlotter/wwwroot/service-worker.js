@@ -758,7 +758,23 @@
 //             rendered the casualty as a regular grey dot instead
 //             of the pulsing red MOB icon. One-line fix to forward
 //             all seven args.
-const CACHE_NAME = 'ona-plotter-v80';
+// v80 -> v81: Restore the active-MOB visual style + close three
+//             safety gaps. (1) Active MOB waypoints now render the
+//             alarm-radius circle, dashed boat <-> casualty line,
+//             live midpoint bearing/distance label, pinned at-pin
+//             "MOB HH:MM:SS / T+12m / lat/lon" label, and a rich
+//             popup with GO (pan + zoom in) / Share / own-MMSI -
+//             matching the legacy mobLayer style the helm trained
+//             on. (2) Edit + Delete refused on MOB waypoints from
+//             the popup UI AND the C# JSInvokable trust boundary
+//             (popup buttons hidden; C# returns a helm-facing toast
+//             on JSInvoke). (3) The race-window-zombie ClearAsync
+//             bug: when the helm clears while the notification POST
+//             is in flight, the loop now records a ClearRequested
+//             flag, lets the POST complete, and fires DELETE on the
+//             auto-assigned serverId so the server's WS echo can't
+//             re-arm the alarm.
+const CACHE_NAME = 'ona-plotter-v81';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

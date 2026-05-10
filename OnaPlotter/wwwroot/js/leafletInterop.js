@@ -634,7 +634,16 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
             else measureLayerMod.addMeasurePoint(lat, lon);
         },
     };
-    waypointLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
+    waypointLayerMod.init(map, {
+        colors: MapColors,
+        getDotNetRef: () => dotNetRef,
+        ...editModeDeps,
+        // Helm's own MMSI for the MOB popup's MMSI row - read at
+        // popup-open time so a delayed self-context resolution still
+        // surfaces the right value. Value comes from setOwnMmsi
+        // (called by SignalkClient when the boat identifies itself).
+        getOwnMmsi: () => ownMmsi,
+    });
     noteLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
     regionLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef, ...editModeDeps });
     aisLayerMod.init(map, {
@@ -1197,6 +1206,11 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     // skips when no measurement is active or none of the points is
     // vessel-anchored.
     measureLayerMod.setBoatPosition(lat, lon);
+
+    // Push into waypointLayer.js so the boat<->MOB line + midpoint
+    // bearing/distance label re-anchor while a MOB is active. No-op
+    // when no MOB waypoint is on the chart.
+    waypointLayerMod.setBoatPosition(lat, lon);
 }
 
 // Pending points buffer for batched track updates.

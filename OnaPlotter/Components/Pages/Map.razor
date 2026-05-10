@@ -849,6 +849,16 @@
     {
         if (string.IsNullOrEmpty(wp.Id)) return;
         string label = wp.Name ?? wp.Id;
+        // MOB waypoints are persistent history per the safety contract;
+        // see DeleteWaypoint in Map.razor.cs for the same guard. The
+        // LayersPanel button should ideally hide on MOB rows, but the
+        // panel's row template doesn't know about IsMob today - the
+        // refusal here is the trust boundary.
+        if (wp.IsMob)
+        {
+            Toasts.Warning($"MOB waypoint '{label}' cannot be deleted (persistent history)");
+            return;
+        }
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(wp.Id); }
         catch (Exception ex) { Toasts.LogException(ex, $"Delete waypoint '{label}'"); return; }

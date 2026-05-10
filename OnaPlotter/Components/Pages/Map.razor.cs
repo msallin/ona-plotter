@@ -150,8 +150,20 @@ public partial class Map
         // Resolve a helm-readable label up front so the failure toasts
         // can name the waypoint that didn't delete; helm bulk-deleting
         // shouldn't have to guess which one threw.
-        string label = loadedWaypoints.FirstOrDefault(w => w.Id == id)?.Name
-            ?? id;
+        var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
+        string label = wp?.Name ?? id;
+
+        // MOB waypoints are persistent history per the safety contract
+        // (cleared MOBs flip isActive=false but stay on the chart so
+        // the helm can revisit "where the casualty was"). Delete is
+        // refused with a helm-facing toast; the popup also hides the
+        // Delete button when isMob, but the JSInvokable is the trust
+        // boundary - a stale UI shouldn't bypass the contract.
+        if (wp?.IsMob == true)
+        {
+            Toasts.Warning($"MOB waypoint '{label}' cannot be deleted (persistent history)");
+            return;
+        }
 
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(id); }
@@ -200,6 +212,19 @@ public partial class Map
     {
         var wp = loadedWaypoints.FirstOrDefault(w => w.Id == id);
         if (wp is null) { Toasts.Warning("Waypoint not found"); return Task.CompletedTask; }
+        // MOB waypoints are immutable: editing rewrites feature.properties
+        // through the simpler 4-arg UpdateAsync overload, which silently
+        // strips isMob/isActive/mobAlarmId. That breaks cross-plotter
+        // correlation AND the chart icon. Preserving the metadata on
+        // every edit path was an option but invites a future regression
+        // every time someone touches the Edit flow; refusing is the
+        // safer contract. The popup hides the Edit button on MOB
+        // waypoints but the JSInvokable is the trust boundary.
+        if (wp.IsMob)
+        {
+            Toasts.Warning($"MOB waypoint '{wp.Name ?? id}' cannot be edited (correlation preserved)");
+            return Task.CompletedTask;
+        }
         OpenWaypointEditDialog(wp);
         StateHasChanged();
         return Task.CompletedTask;

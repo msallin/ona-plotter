@@ -476,7 +476,35 @@ public sealed class MobService : IMobService, IDisposable
             ? FindMobWaypoint(id, matchedLocalId)
             : null;
 
-        if (matchedLocalId is not null)
+        // PARA-003: race-window zombie. When the helm clears while
+        // the notification POST is still in flight, the loop hasn't
+        // recorded a serverId yet (hasServerSide=false). If we
+        // cancelled the loop now, the in-flight POST may still land
+        // server-side: the server creates the notification and the
+        // WS echo arrives at notifications.mob.<serverId> with no
+        // matching pending entry - ReconcileMobPath returns early
+        // and the server-twin sits in _store.Active forever (mobActive
+        // flips back to TRUE after the helm thought they cleared it).
+        // Mitigation: stamp ClearRequested on the pending raise + let
+        // the loop run. The loop's success branch sees the flag,
+        // fires DELETE on the just-assigned serverId, and exits. We
+        // still drop the local synthetic + the chart waypoint NOW so
+        // the helm's UX is "clear was instantaneous"; the server-side
+        // cleanup happens in the background.
+        bool deferredClear = matchedLocalId is not null && !hasServerSide;
+        if (deferredClear)
+        {
+            // Stamp the flag in-place; the loop reads it after each
+            // RaiseMobAsync call. Persist so a reload mid-race
+            // resumes the cleanup. DON'T CancelAndDropPending here -
+            // that would kill the loop before it can DELETE.
+            if (_pending.TryGetValue(matchedLocalId!, out var liveDeferred))
+            {
+                liveDeferred.Raise = liveDeferred.Raise with { ClearRequested = true };
+                await PersistPendingAsync(ct).ConfigureAwait(false);
+            }
+        }
+        else if (matchedLocalId is not null)
         {
             CancelAndDropPending(matchedLocalId);
         }
@@ -516,6 +544,9 @@ public sealed class MobService : IMobService, IDisposable
         // entry to clear. Calling DELETE /<localId> would 404 (the
         // server never saw that id) and the call wastes a round-
         // trip + can confuse a future observer in the server log.
+        // Also skip in the deferred-clear case: the retry loop's
+        // success branch will issue DELETE on the assigned serverId
+        // once the in-flight POST returns.
         if (matchedLocalId is not null && !hasServerSide)
         {
             return true;
@@ -743,6 +774,18 @@ public sealed class MobService : IMobService, IDisposable
         int attempt = pending.AttemptCount;
         while (!ct.IsCancellationRequested)
         {
+            // Honor a deferred clear that landed between iterations.
+            // If the helm cleared while the previous POST was failing,
+            // there's no point retrying - we have no serverId to
+            // DELETE and the local synthetic is already gone.
+            if (_pending.TryGetValue(pending.LocalId, out var liveTop)
+                && liveTop.Raise.ClearRequested
+                && liveTop.Raise.ServerId is null)
+            {
+                CancelAndDropPending(pending.LocalId);
+                return;
+            }
+
             // Pace by the backoff table on retries. First attempt
             // (attempt == 0) skips the wait so the helm sees the
             // POST go out immediately - the visual / chime are
@@ -787,6 +830,26 @@ public sealed class MobService : IMobService, IDisposable
                 {
                     live.Raise = live.Raise with { ServerId = result.Value, AttemptCount = attempt };
                     await PersistPendingAsync(ct).ConfigureAwait(false);
+
+                    // PARA-003: helm cleared while this POST was in
+                    // flight. The server has now created a notification
+                    // we need to DELETE before its WS echo lands and
+                    // re-arms the alarm. Local synthetic + chart
+                    // waypoint were already deactivated by ClearAsync
+                    // (deferred-clear branch); only the server-side
+                    // cleanup is left. Best-effort: a failed DELETE
+                    // logs but the local UX has already cleared.
+                    if (live.Raise.ClearRequested)
+                    {
+                        try { _ = _api.ClearAsync(result.Value, CancellationToken.None); }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex,
+                                "[mob] deferred-clear DELETE for {ServerId} threw", result.Value);
+                        }
+                        CancelAndDropPending(pending.LocalId);
+                        return;
+                    }
 
                     // Update the paired MOB waypoint's mobAlarmId
                     // from the localId to the server's id so OTHER
@@ -992,7 +1055,14 @@ public sealed class MobService : IMobService, IDisposable
 /// notification. Stored here so <c>ClearAsync</c> can flip the
 /// waypoint's <c>isActive</c> flag without re-resolving the id;
 /// also lets the server-id update path PUT the same waypoint
-/// once the notification's server-assigned id arrives.</para></summary>
+/// once the notification's server-assigned id arrives.</para>
+/// <para><see cref="ClearRequested"/> handles the race where the
+/// helm clears a MOB while the notification POST is in flight. The
+/// retry-loop's success branch checks this flag right after
+/// recording the server-assigned id and immediately fires DELETE
+/// against that id, preventing the server's WS echo of the just-
+/// created notification from re-arming the alarm. Persisted so a
+/// reload mid-race resumes the cleanup on the next session.</para></summary>
 public sealed record PendingRaise(
     string LocalId,
     string? Message,
@@ -1000,4 +1070,5 @@ public sealed record PendingRaise(
     double? Longitude,
     int AttemptCount,
     string? ServerId = null,
-    string? WaypointId = null);
+    string? WaypointId = null,
+    bool ClearRequested = false);

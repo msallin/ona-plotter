@@ -646,6 +646,17 @@
 
     private async Task DeleteWaypoint(string id, string? name)
     {
+        // MOB waypoints are persistent history per the safety contract
+        // (see MobService XMLdoc + Map.razor.cs::DeleteWaypoint for the
+        // companion guards). Refuse with a helm-facing toast; the
+        // Resources row template should ideally hide Delete on MOB
+        // rows, but the refusal is the trust boundary.
+        var wp = waypoints.FirstOrDefault(w => w.Id == id);
+        if (wp?.IsMob == true)
+        {
+            Toasts.Warning($"MOB waypoint '{NameOrId(name, id)}' cannot be deleted (persistent history)");
+            return;
+        }
         if (!await Confirm($"Delete waypoint '{NameOrId(name, id)}'?")) return;
         ApiResult r;
         try { r = await WaypointApi.DeleteAsync(id); }
@@ -1060,6 +1071,15 @@
 
     private async Task EditWaypointName(SignalkWaypoint wp)
     {
+        // MOB waypoints are immutable - editing through the simpler
+        // UpdateAsync overload would strip isMob/isActive/mobAlarmId
+        // and break cross-plotter correlation. Same guard as
+        // Map.razor.cs::WaypointEdit.
+        if (wp.IsMob)
+        {
+            Toasts.Warning($"MOB waypoint '{NameOrId(wp.Name, wp.Id)}' cannot be renamed (correlation preserved)");
+            return;
+        }
         // Themed in-app prompt via ConfirmationService. Replaced the
         // earlier window.prompt(): the native dialog is blocked in
         // some MDM profiles and in PWA standalone display mode on

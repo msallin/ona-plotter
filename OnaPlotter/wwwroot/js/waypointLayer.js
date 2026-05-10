@@ -4,10 +4,21 @@
 // while the visible marker stays 6 px to keep the chart legible.
 // Hover shows a name + coordinates tooltip; click opens a popup
 // with name + Delete (two-step confirm).
+//
+// MOB waypoints (isMob=true) are a specialty: the active variant
+// renders with a pulsing red icon plus an alarm-radius circle, a
+// dashed boat<->casualty line, a live midpoint bearing/distance
+// label, a pinned at-pin "MOB HH:MM:SS / T+12m / lat / lon" label,
+// and a rich popup with GO (pan + zoom in) / Share / MMSI. Cleared
+// MOBs (isActive=false) keep the solid red icon as persistent
+// history but lose the overlays. Edit + Delete are refused on MOB
+// waypoints from both the popup (UI hides the buttons) and the
+// JSInvokable trust boundary in C#.
 
 import { MarkerLayer } from './markerLayer.js';
 import { esc, wireDeleteConfirm } from './popupHelpers.js';
-import { latLonDms } from './format.js';
+import { latLonDms, latDms, lonDms, mobElapsed } from './format.js';
+import { haversineMeters, bearingDeg, NM_PER_METER } from './geoMath.js';
 
 const waypointMarkers = new MarkerLayer();
 let mapRef = null;
@@ -15,6 +26,7 @@ let colors = null;
 let getDotNetRef = null;
 let getEditModeFlags = null;
 let editModeAddPoint = null;
+let getOwnMmsi = null;
 
 export function init(map, deps) {
     mapRef = map;
@@ -22,6 +34,7 @@ export function init(map, deps) {
     getDotNetRef = deps.getDotNetRef;
     getEditModeFlags = deps.getEditModeFlags;
     editModeAddPoint = deps.editModeAddPoint;
+    getOwnMmsi = deps.getOwnMmsi ?? null;
     waypointMarkers.setMap(map);
 }
 
@@ -127,6 +140,238 @@ function getMobIcon(isActive) {
     });
 }
 
+// Active-MOB overlays. Keyed by waypoint id so a future multi-MOB
+// scenario (two casualties, helm raises both) doesn't cross-wire
+// circles + lines. Today the helm tap-rate + the two-tap arm pattern
+// keeps this at zero or one entry, but the map shape is forward-
+// compatible. Each entry holds:
+//   { lat, lon, createdAt: Date, circle, line, midLabel, pinLabel }
+const _activeMobOverlays = new Map();
+
+// Latest own-boat position. Pushed from the leafletInterop mux on
+// every updatePosition tick so the boat<->MOB line + label can
+// refresh without the module reaching back into mux state. Cached
+// here so a freshly-raised MOB picks up the most recent fix on
+// first render even when the boat isn't moving.
+let _selfLat = 0, _selfLon = 0;
+
+// T+ counter ticks every 10 s. Single shared interval, started on
+// first active-MOB add and stopped on last remove. 10 s gives a
+// near-live readout without flooding the redraw loop; helm field-
+// feedback was that 30 s felt sluggish during the active rescue
+// window.
+let _mobTickHandle = null;
+
+function ensureMobTick() {
+    if (_mobTickHandle != null) return;
+    _mobTickHandle = setInterval(refreshAllMobLabels, 10_000);
+}
+
+function stopMobTickIfIdle() {
+    if (_mobTickHandle == null) return;
+    if (_activeMobOverlays.size > 0) return;
+    clearInterval(_mobTickHandle);
+    _mobTickHandle = null;
+}
+
+function refreshAllMobLabels() {
+    for (const [id, ov] of _activeMobOverlays) {
+        if (ov.pinLabel) ov.pinLabel.setContent(buildMobPinLabelHtml(ov));
+    }
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function formatElapsed(createdAt) {
+    if (!createdAt) return '';
+    return mobElapsed((Date.now() - createdAt.getTime()) / 1000);
+}
+
+function buildMobPinLabelHtml(ov) {
+    const { lat, lon, createdAt } = ov;
+    const hh = pad2(createdAt.getHours());
+    const mm = pad2(createdAt.getMinutes());
+    const ss = pad2(createdAt.getSeconds());
+    const elapsed = formatElapsed(createdAt);
+    return `<strong>MOB ${hh}:${mm}:${ss}</strong> <span class="mob-elapsed">${elapsed}</span><br>` +
+           latLonDms(lat, lon);
+}
+
+// Rich MOB popup: time + T+ + position + own-MMSI + GO + Share. No
+// Edit / Delete buttons - MOB waypoints are immutable per the safety
+// contract (cleared MOBs flip isActive=false but stay on the chart;
+// edit would strip the MOB metadata; both refusals are also enforced
+// at the C# JSInvokable trust boundary).
+function buildMobPopupHtml(ov) {
+    const { lat, lon, createdAt } = ov;
+    const hh = pad2(createdAt.getHours());
+    const mm = pad2(createdAt.getMinutes());
+    const ss = pad2(createdAt.getSeconds());
+    const elapsed = formatElapsed(createdAt);
+    const mmsi = getOwnMmsi ? getOwnMmsi() : null;
+    const mmsiRow = mmsi
+        ? `<tr><td>MMSI</td><td>${esc(String(mmsi))}</td></tr>`
+        : '';
+    return `
+        <div class="mob-popup-body">
+            <div class="mob-popup-title">MOB <span class="mob-popup-elapsed">${elapsed}</span></div>
+            <table class="mob-popup-table">
+                <tr><td>Time</td><td>${hh}:${mm}:${ss}</td></tr>
+                <tr><td>Lat</td><td>${esc(latDms(lat))}</td></tr>
+                <tr><td>Lon</td><td>${esc(lonDms(lon))}</td></tr>
+                ${mmsiRow}
+            </table>
+            <div class="mob-popup-actions">
+                <button class="mob-popup-go-btn" type="button" data-ona-mob-go="1">GO</button>
+                <button class="mob-popup-share-btn" type="button" data-ona-mob-share="1">Share</button>
+            </div>
+        </div>`;
+}
+
+function wireMobPopupActions(id, ov) {
+    return (ev) => {
+        const el = ev.popup.getElement();
+        if (!el) return;
+        const goBtn = el.querySelector('[data-ona-mob-go]');
+        const shareBtn = el.querySelector('[data-ona-mob-share]');
+        if (goBtn && !goBtn._wired) {
+            goBtn._wired = true;
+            goBtn.addEventListener('click', () => {
+                if (!mapRef) return;
+                // GO = pan + zoom-in to the casualty so the helm
+                // sees the marker centred. setView lets us bump
+                // the zoom (clamped) without hijacking the helm's
+                // manual zoom when no MOB is up. Distinct from
+                // the regular waypoint Go (which fires the autopilot
+                // navigate-to JSInvokable); for a casualty we want
+                // the helm to drive manually, not have the autopilot
+                // take over.
+                const targetZoom = Math.max(mapRef.getZoom(), 15);
+                mapRef.setView([ov.lat, ov.lon], targetZoom);
+            });
+        }
+        if (shareBtn && !shareBtn._wired) {
+            shareBtn._wired = true;
+            shareBtn.addEventListener('click', () => {
+                const ref = getDotNetRef ? getDotNetRef() : null;
+                if (!ref) return;
+                ref.invokeMethodAsync('WaypointShare', id).catch(() => {});
+            });
+        }
+    };
+}
+
+function parseCreatedAt(iso) {
+    if (iso) {
+        const d = new Date(iso);
+        if (!Number.isNaN(d.getTime())) return d;
+    }
+    return new Date();
+}
+
+function buildActiveMobOverlays(id, lat, lon, createdAtIso, marker) {
+    const overlay = {
+        lat, lon,
+        createdAt: parseCreatedAt(createdAtIso),
+        circle: null,
+        line: null,
+        midLabel: null,
+        pinLabel: null,
+        marker,
+    };
+    // Alarm-radius circle: 50 m red ring around the casualty. Visual
+    // anchor for "the helm should manoeuvre back to within this
+    // radius"; matches the legacy mobLayer geometry.
+    overlay.circle = L.circle([lat, lon], {
+        radius: 50, color: colors.mob, fillColor: colors.mob,
+        fillOpacity: 0.15, weight: 2,
+    }).addTo(mapRef);
+    // Dashed boat -> casualty line. Re-anchored on every boat fix
+    // via setBoatPosition below. No-op until the first fix lands.
+    overlay.line = L.polyline([[_selfLat, _selfLon], [lat, lon]], {
+        color: colors.mob, weight: 2, dashArray: '4,4',
+    }).addTo(mapRef);
+    // Midpoint label: starts as plain "MOB" and switches to live
+    // bearing / distance once a boat fix arrives. Used during the
+    // return manoeuvre so the helm sees the closing geometry while
+    // looking at the chart instead of a separate compass / range
+    // readout.
+    overlay.midLabel = L.tooltip({
+        permanent: true, direction: 'center', className: 'mob-tooltip',
+    })
+        .setLatLng([(_selfLat + lat) / 2, (_selfLon + lon) / 2])
+        .setContent('MOB')
+        .addTo(mapRef);
+    // At-pin label: time-of-drop + T+ elapsed + lat / lon. Helm-
+    // feedback wanted this pinned to the chart (not in a toast at
+    // the corner) so they can read the casualty fix straight off
+    // the map while talking on the VHF mic. T+ ticks live via the
+    // shared 10 s interval below.
+    overlay.pinLabel = L.tooltip({
+        permanent: true, direction: 'right', offset: [12, 0],
+        className: 'mob-point-label',
+    })
+        .setLatLng([lat, lon])
+        .setContent(buildMobPinLabelHtml(overlay))
+        .addTo(mapRef);
+    // Bind the rich theme-styled popup. Function form so each open
+    // re-renders the T+ elapsed counter against the live clock
+    // instead of baking a stale snapshot at marker-creation time.
+    marker.bindPopup(() => buildMobPopupHtml(overlay), {
+        className: 'mob-popup',
+        maxWidth: 280,
+        autoPan: true,
+        autoPanPadding: [24, 24],
+        keepInView: true,
+    });
+    marker.on('popupopen', wireMobPopupActions(id, overlay));
+    _activeMobOverlays.set(id, overlay);
+    ensureMobTick();
+    // If we already have a boat fix cached (raised mid-session),
+    // run one immediate refresh so the line + midpoint label show
+    // the closing geometry without waiting for the next tick.
+    if (_selfLat !== 0 || _selfLon !== 0) {
+        refreshMobGeometry(overlay);
+    }
+}
+
+function refreshMobGeometry(ov) {
+    const dist = haversineMeters(_selfLat, _selfLon, ov.lat, ov.lon) * NM_PER_METER;
+    const brg = bearingDeg(_selfLat, _selfLon, ov.lat, ov.lon);
+    if (ov.line) ov.line.setLatLngs([[_selfLat, _selfLon], [ov.lat, ov.lon]]);
+    if (ov.midLabel) {
+        ov.midLabel.setLatLng([(_selfLat + ov.lat) / 2, (_selfLon + ov.lon) / 2]);
+        ov.midLabel.setContent(`${brg.toFixed(0)}&deg; / ${dist.toFixed(2)} nm`);
+    }
+}
+
+function tearDownMobOverlays(id) {
+    const ov = _activeMobOverlays.get(id);
+    if (!ov) return;
+    if (mapRef) {
+        if (ov.circle) mapRef.removeLayer(ov.circle);
+        if (ov.line) mapRef.removeLayer(ov.line);
+        if (ov.midLabel) mapRef.removeLayer(ov.midLabel);
+        if (ov.pinLabel) mapRef.removeLayer(ov.pinLabel);
+    }
+    _activeMobOverlays.delete(id);
+    stopMobTickIfIdle();
+}
+
+// Mux pushes the latest own-boat position. While any active MOB
+// overlay is on the chart, the dashed line + midpoint bearing /
+// distance label re-anchor on the boat end so the helm sees their
+// progress back to the casualty live. No-op when no active MOB is
+// on the chart - cheap to call per tick.
+export function setBoatPosition(lat, lon) {
+    _selfLat = lat;
+    _selfLon = lon;
+    if (_activeMobOverlays.size === 0) return;
+    for (const ov of _activeMobOverlays.values()) {
+        refreshMobGeometry(ov);
+    }
+}
+
 export function addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isActive) {
     if (!mapRef || waypointMarkers.has(id)) return;
     // MOB waypoints render with the pulsing red icon (active) or the
@@ -141,7 +386,25 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isAct
             icon: getMobIcon(!!isActive),
             zIndexOffset: 2000,    // above other waypoints + AIS markers
         });
-        wireWaypointInteractions(marker, id, lat, lon, name, createdAtIso, true, isActive);
+        // Hover tooltip is the same shape as a regular waypoint
+        // (name + coords) so the at-a-glance read is consistent
+        // when the helm hovers a MOB pin.
+        marker.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
+            permanent: false, direction: 'right', offset: [10, 0],
+            className: 'bearing-tooltip',
+        });
+        if (isActive) {
+            // Active MOB: rich overlays + custom popup with GO /
+            // Share / MMSI (no Edit, no Delete - safety contract).
+            buildActiveMobOverlays(id, lat, lon, createdAtIso, marker);
+        } else {
+            // Cleared MOB: solid red icon + bare popup. Edit / Delete
+            // refused at the C# JSInvokable trust boundary, but we
+            // also hide the buttons here so the helm doesn't see an
+            // affordance they can't use. Show GO + Share so the helm
+            // can revisit a past casualty position.
+            wireWaypointInteractions(marker, id, lat, lon, name, createdAtIso, /*isMob*/ true);
+        }
         marker.addTo(mapRef);
         waypointMarkers.set(id, marker);
         return;
@@ -157,7 +420,7 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isAct
     const hit = L.circleMarker([lat, lon], {
         radius: 22, opacity: 0, fillOpacity: 0, weight: 0, interactive: true
     });
-    wireWaypointInteractions(hit, id, lat, lon, name, createdAtIso, false, false);
+    wireWaypointInteractions(hit, id, lat, lon, name, createdAtIso, /*isMob*/ false);
     // Group + add-to-map so remove/clear takes both layers down
     // together. MarkerLayer.remove -> map.removeLayer(group) which
     // removes its children.
@@ -166,34 +429,57 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isAct
 }
 
 /**
- * Bind tooltip + popup + click handler to a waypoint's tap target.
- * For regular waypoints the target is the invisible 22 px hit
- * buffer (visible marker stays non-interactive); for MOB the
- * divIcon marker itself receives the events (its 20 px square
- * already meets the touch-target floor and adding a separate hit
- * circle on top of the pulsing icon would intercept the visual).
+ * Bind tooltip + popup + click handler to a non-active-MOB waypoint
+ * tap target. For regular waypoints the target is the invisible
+ * 22 px hit buffer (visible marker stays non-interactive); for a
+ * cleared MOB the divIcon marker itself receives the events.
+ *
+ * When isMob is true, the popup omits the Edit + Delete buttons
+ * (the safety contract refuses both at the C# trust boundary; the
+ * UI hides them so the helm doesn't see an affordance they can't
+ * use). Active MOBs use buildActiveMobOverlays + buildMobPopupHtml
+ * directly and don't go through this path.
  */
-function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMob, isActive) {
-    // Tooltip on hover (quick identification); popup on click (full
-    // name + Delete). Same pattern as notes/regions so the tap-to-act
-    // affordance is consistent across user-placed objects.
-    //
-    // Coordinates accompany the name: F5 precision gives ~1 m
-    // resolution which is what a helm reading coords off a chart
-    // actually needs, without pretending to a decimal of longitude
-    // that GPS jitter already eats. Hemisphere letters (N/S, E/W)
-    // keep the reading unambiguous when the waypoint is near the
-    // equator or the prime meridian.
+function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMob) {
     target.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
-    target.bindPopup(buildWaypointPopupHtml(id, name, lat, lon, createdAtIso), {
-        className: 'note-popup',
-        maxWidth: 320,
-        autoClose: true,
-        closeButton: false,
-    });
+    if (isMob) {
+        // Cleared-MOB popup: name + coords + Go / Share (no Edit /
+        // Delete). Reuses the regular waypoint popup CSS classes so
+        // the visual is consistent.
+        const safeName = esc(name || id.substring(0, 8));
+        const coords = latLonDms(lat, lon, ', ');
+        const created = formatCreatedAt(createdAtIso);
+        target.bindPopup(`
+            <div class="note-popup-inner waypoint-popup-inner">
+                <div class="note-popup-title">${safeName}</div>
+                <div class="note-popup-meta">
+                    <div><span class="note-popup-meta-label">Coords:</span> <code>${esc(coords)}</code></div>
+                    <div><span class="note-popup-meta-label">Created:</span> ${esc(created)}</div>
+                    <div><span class="note-popup-meta-label">Status:</span> <em>cleared MOB</em></div>
+                </div>
+                <div class="note-popup-actions">
+                    <button class="waypoint-go-btn map-btn" type="button"
+                            title="Navigate to this waypoint">Go</button>
+                    <button class="waypoint-share-btn map-btn" type="button"
+                            title="Share this waypoint via system share or copy to clipboard">Share</button>
+                </div>
+            </div>`, {
+            className: 'note-popup',
+            maxWidth: 320,
+            autoClose: true,
+            closeButton: false,
+        });
+    } else {
+        target.bindPopup(buildWaypointPopupHtml(id, name, lat, lon, createdAtIso), {
+            className: 'note-popup',
+            maxWidth: 320,
+            autoClose: true,
+            closeButton: false,
+        });
+    }
     target.on('click', (ev) => {
         // During edit modes, swallow the click and forward the
         // waypoint's location to whatever the user is plotting -
@@ -220,22 +506,34 @@ function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMo
         // C# WaypointFocus JSInvokable stays for the layers-panel
         // path; it just isn't wired from the popup any more.
         wireSimpleClick(ev.popup, '.waypoint-go-btn', 'WaypointGoTo', id);
-        wireSimpleClick(ev.popup, '.waypoint-edit-btn', 'WaypointEdit', id);
         wireSimpleClick(ev.popup, '.waypoint-share-btn', 'WaypointShare', id);
-        wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id, getDotNetRef);
+        if (!isMob) {
+            // Edit + Delete only on non-MOB waypoints. The C#
+            // JSInvokables also refuse on isMob, so this is purely
+            // a "don't show an unusable affordance" cue.
+            wireSimpleClick(ev.popup, '.waypoint-edit-btn', 'WaypointEdit', id);
+            wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id, getDotNetRef);
+        }
     });
 }
 
 export function removeWaypointMarker(id) {
     if (!mapRef) return;
+    // If this id had active-MOB overlays, tear them down too.
+    // Idempotent + cheap when the id wasn't an active MOB.
+    tearDownMobOverlays(id);
     waypointMarkers.remove(id);
 }
 
 export function dispose() {
+    if (_mobTickHandle != null) { clearInterval(_mobTickHandle); _mobTickHandle = null; }
+    _activeMobOverlays.clear();
+    _selfLat = 0; _selfLon = 0;
     waypointMarkers.clear();
     mapRef = null;
     colors = null;
     getDotNetRef = null;
     getEditModeFlags = null;
     editModeAddPoint = null;
+    getOwnMmsi = null;
 }
