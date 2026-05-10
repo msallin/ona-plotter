@@ -371,6 +371,161 @@ public class AisPushServiceTests
         await Assert.That(js.AttemptedPushes).IsEqualTo(1);
     }
 
+    // --- Threat-band integration pins (m7 from the PR-265 follow-up) -
+    // The three-band classification is unit-tested at the helper
+    // level (CpaTests.ClassifyThreat_*); these tests pin that the
+    // plumbing through BuildSnapshot ends up writing the right
+    // wire-string into the JS-bound payload. Cheap insurance against
+    // a future plumbing regression that swaps Cpa.ClassifyThreat for
+    // an inline implementation.
+
+    [Test]
+    public async Task BuildSnapshot_DangerBand_GeometryProducesDangerWireString()
+    {
+        // Target ~0.3 nm north of own boat, head-on closing at 5 m/s
+        // each. Default guard zone 0.5 nm, outer ring 1.0 nm. Current
+        // dist 0.3 < 0.5 -> Danger band.
+        const double ownLat = 47.0, ownLon = 8.0;
+        // 0.3 nm = 555.6 m. dLat = 555.6 / 111320 = 0.00499 deg.
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
+            ownLat + 555.6 / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+
+        var nav = new NavigationData();
+        nav.ApplyPosition(ownLat, ownLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);   // due north
+        nav.Apply("navigation.speedOverGround", 5.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(nav);
+
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("danger");
+    }
+
+    [Test]
+    public async Task BuildSnapshot_WarningBand_GeometryProducesWarningWireString()
+    {
+        // Target ~0.7 nm north (between guard zone 0.5 and outer
+        // ring 1.0), head-on closing -> Warning band.
+        const double ownLat = 47.0, ownLon = 8.0;
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
+            ownLat + (0.7 * 1852) / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+
+        var nav = new NavigationData();
+        nav.ApplyPosition(ownLat, ownLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 5.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(nav);
+
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("warning");
+    }
+
+    [Test]
+    public async Task BuildSnapshot_NoneBand_FarVesselProducesNoneWireString()
+    {
+        // Target ~3 nm north - well outside the outer ring (1 nm at
+        // default 0.5 nm guard zone) - even with closing geometry,
+        // None.
+        const double ownLat = 47.0, ownLon = 8.0;
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
+            ownLat + (3.0 * 1852) / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+
+        var nav = new NavigationData();
+        nav.ApplyPosition(ownLat, ownLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 5.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(nav);
+
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("none");
+    }
+
+    [Test]
+    public async Task BuildSnapshot_BuddyVessel_ProducesNoneWireString_EvenInDangerBand()
+    {
+        // Same Danger geometry as the band test above, but the
+        // vessel is on the buddy list. ClassifyThreat short-circuits
+        // to None when isBuddy=true, regardless of distance.
+        const double ownLat = 47.0, ownLon = 8.0;
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
+            ownLat + 555.6 / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+        store.UpdateBuddies(new[] { "vessels.urn:mrn:imo:mmsi:111" });
+
+        var nav = new NavigationData();
+        nav.ApplyPosition(ownLat, ownLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 5.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(nav);
+
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("none");
+    }
+
+    [Test]
+    public async Task BuildSnapshot_NonThreatVessel_HasNullColregsLabels()
+    {
+        // PR-265 made COLREGS lazy: only computed when threat is
+        // Warning or Danger. Pin that the lazy path means popups for
+        // non-threats see null labels (the JS popup then suppresses
+        // the COLREGS row entirely - correct, since the rules apply
+        // to closing encounters).
+        const double ownLat = 47.0, ownLon = 8.0;
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
+            ownLat + (3.0 * 1852) / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+
+        var nav = new NavigationData();
+        nav.ApplyPosition(ownLat, ownLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 5.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(nav);
+
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("none");
+        await Assert.That(js.Pushes[0][0].ColregsLabel).IsNull();
+        await Assert.That(js.Pushes[0][0].ColregsRole).IsNull();
+    }
+
+    [Test]
+    public async Task BuildSnapshot_ThreatVessel_PopulatesColregsLabels()
+    {
+        // The complementary pin: a vessel in the Danger band gets
+        // COLREGS labels populated. This exercises the lazy-COLREGS
+        // path AND the head-on geometry classifier.
+        const double ownLat = 47.0, ownLon = 8.0;
+        var store = new AisStore();
+        SeedVessel(store, "vessels.urn:mrn:imo:mmsi:111",
+            ownLat + 555.6 / 111320.0, ownLon, sog: 5.0, cog: Math.PI);
+
+        var nav = new NavigationData();
+        nav.ApplyPosition(ownLat, ownLon);
+        nav.Apply("navigation.courseOverGroundTrue", 0.0);
+        nav.Apply("navigation.speedOverGround", 5.0);
+        var js = new FakeAisJs();
+        var svc = NewService(store, js);
+
+        await svc.PushAsync(nav);
+
+        await Assert.That(js.Pushes[0][0].CpaThreat).IsEqualTo("danger");
+        await Assert.That(js.Pushes[0][0].ColregsLabel).IsNotNull();
+        // Role can legitimately be null for indeterminate categories;
+        // we just pin that the label landed (the head-on case maps
+        // to "Head-on" - both vessels give way).
+    }
+
     [Test]
     public async Task ThreatToWireString_ContractIsStable()
     {

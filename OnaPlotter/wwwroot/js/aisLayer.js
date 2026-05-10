@@ -678,7 +678,9 @@ export function updateAisTargets(vessels) {
             ? { cpa: v.cpaNm, tcpa: v.tcpaMin }
             : null;
         // CPA threat band is also computed C#-side (Cpa.ClassifyThreat)
-        // using the helm's guard-zone radius / lookahead / warning factor.
+        // using the helm's guard-zone radius / lookahead / current
+        // distance / outer-ring multiplier (constant 2× via
+        // Cpa.OuterRingMultiplier, pushed here from setGuardZone).
         // Three buckets: "danger" (red ring + red crossing line),
         // "warning" (amber crossing line, advisory), "none" (no overlay).
         // Buddies are exempted on the C# side so we don't re-check here.

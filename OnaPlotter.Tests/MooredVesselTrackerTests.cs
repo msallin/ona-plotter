@@ -120,6 +120,43 @@ public class MooredVesselTrackerTests
     }
 
     [Test]
+    public async Task CleanupVessels_PartialEnumerationFault_LeavesTrackerStateIntact()
+    {
+        // The hot-path Cleanup overload builds a HashSet of active
+        // contexts by enumerating activeVessels. If that enumeration
+        // tears (ConcurrentDictionary "collection was modified", or a
+        // custom IEnumerable faulting), a partial active set would
+        // cause RemoveExcept to drop EVERY vessel that wasn't
+        // enumerated yet - an over-cleanup that resets the SOG-dwell
+        // ring on still-moored vessels. Pin: enumeration fault is
+        // caught and the tick's cleanup is abandoned; tracker state
+        // is unchanged.
+        var t = new MooredVesselTracker();
+        // Track ctx1 + ctx2 first.
+        t.IsMoored(Vessel("ctx1", 0.1), DateTime.UtcNow);
+        t.IsMoored(Vessel("ctx2", 0.1), DateTime.UtcNow);
+        await Assert.That(t.TrackedCount).IsEqualTo(2);
+
+        // Custom IEnumerable that yields one vessel then throws.
+        // Without the try/catch in Cleanup the partial 'active' set
+        // would be {ctx1}, RemoveExcept would drop ctx2.
+        t.Cleanup(new YieldOneThenThrow());
+
+        await Assert.That(t.TrackedCount).IsEqualTo(2)
+            .Because("a fault mid-enumeration must not over-cleanup the tracker");
+    }
+
+    private sealed class YieldOneThenThrow : IEnumerable<AisVessel>
+    {
+        public IEnumerator<AisVessel> GetEnumerator()
+        {
+            yield return new AisVessel("ctx1") { SpeedOverGround = 0.1, Latitude = 47, Longitude = 8 };
+            throw new InvalidOperationException("simulated mid-enumeration fault");
+        }
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [Test]
     public async Task CleanupVessels_NoTrackedDwellers_IsNoOpNoEnumeration()
     {
         // The hot-path optimisation: when nothing is tracked, the

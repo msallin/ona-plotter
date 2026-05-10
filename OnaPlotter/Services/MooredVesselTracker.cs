@@ -115,9 +115,15 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
             _lowSpeedSince.Remove(key);
             return false;
         }
-        if (!_lowSpeedSince.TryGetValue(key, out var since))
+        // Single dict lookup via CollectionsMarshal: returns a ref to
+        // the slot, with `exists` indicating whether the key was
+        // already present. Saves a TryGetValue + indexer-set roundtrip
+        // on the first-tick path. Pi 5 doesn't notice; tidier shape.
+        ref var since = ref System.Runtime.InteropServices.CollectionsMarshal
+            .GetValueRefOrAddDefault(_lowSpeedSince, key, out bool exists);
+        if (!exists)
         {
-            _lowSpeedSince[key] = now;
+            since = now;
             return false;
         }
         return (now - since).TotalSeconds >= MooredHoldSeconds;
@@ -136,7 +142,26 @@ public sealed class MooredVesselTracker : IMooredVesselTracker
         // tracked do we materialise a context set to do O(1) lookups.
         if (_lowSpeedSince.Count == 0) return;
         var active = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var v in activeVessels) active.Add(v.Context);
+        try
+        {
+            foreach (var v in activeVessels) active.Add(v.Context);
+        }
+        catch (Exception ex)
+        {
+            // The enumeration tore - rare, but possible if the
+            // upstream collection gets mutated mid-walk (Concurrent-
+            // Dictionary throws "collection was modified" in that
+            // case) or if a future caller hands us a custom
+            // IEnumerable whose enumerator faults. A partial `active`
+            // set would cause RemoveExcept to drop EVERY tracked
+            // vessel that wasn't enumerated yet - an over-cleanup
+            // that re-starts the SOG-dwell ring on a vessel that
+            // genuinely is still moored. Abandon this tick's cleanup
+            // and try again next tick; the tracker state is left
+            // consistent.
+            Console.WriteLine($"[moored] Cleanup enumeration faulted, skipping tick: {ex.GetType().Name}: {ex.Message}");
+            return;
+        }
         RemoveExcept(active.Contains);
     }
 

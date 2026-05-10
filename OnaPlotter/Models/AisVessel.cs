@@ -72,6 +72,14 @@ public sealed class AisVessel
 
     public DateTime LastSeen { get; set; }
 
+    /// <summary>One-shot guard for the wire-side `buddy` delta drop
+    /// log. Per-vessel field so one offender doesn't suppress the
+    /// log for other contexts; first hit per vessel logs, subsequent
+    /// drops are silent. Reset only on object destruction (a vessel
+    /// that disappears from AIS range and re-enters gets a fresh
+    /// log entry, which is what we want for forensics).</summary>
+    private bool _buddyDropLogged;
+
     public AisVessel(string context)
     {
         Context = context;
@@ -265,6 +273,19 @@ public sealed class AisVessel
                 // <see cref="OnaPlotter.Services.AisStore.UpdateBuddies"/>
                 // pulls at startup and on demand. Returning false here
                 // drops the delta without bumping the AisStore version.
+                //
+                // Observability: one-shot warn log per context the
+                // first time we see the path so a hostile AIS source
+                // spamming `buddy: true` leaves a trail in the SK
+                // server log. Subsequent attempts on the same context
+                // are silent to avoid log flooding.
+                if (!_buddyDropLogged)
+                {
+                    _buddyDropLogged = true;
+                    Console.WriteLine(
+                        $"[ais] dropped wire-side `buddy` delta for {Context}" +
+                        $" (REST seed only; further drops on this context silent)");
+                }
                 return false;
 
             default:

@@ -54,21 +54,31 @@ public sealed class CpaAlarmRule : IAlarmRule
     /// the <c>vessels.</c> prefix from a SK context and replaces every
     /// non-path-safe character with '_' so the resulting suffix can't
     /// extend the path hierarchy (an AIS URN with a stray '.' would
-    /// otherwise let an attacker collide with another notification).</summary>
+    /// otherwise let an attacker collide with another notification).
+    /// Single string allocation via <see cref="string.Create{TState}(int, TState, System.Buffers.SpanAction{char, TState})"/>;
+    /// previously a StringBuilder allocation per call, which is cold
+    /// path (only on alarm publish) but tidier this way.</summary>
     private static string SanitisePerTargetPath(string prefix, string targetKey)
     {
-        var suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
-            ? targetKey["vessels.".Length..]
-            : targetKey;
-        var sb = new System.Text.StringBuilder(suffix.Length);
-        foreach (var c in suffix)
-        {
-            if (char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-')
-                sb.Append(c);
-            else
-                sb.Append('_');
-        }
-        return $"{prefix}.{sb.ToString()}";
+        ReadOnlySpan<char> suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
+            ? targetKey.AsSpan("vessels.".Length)
+            : targetKey.AsSpan();
+        // prefix + '.' + sanitised suffix - exact length known up front.
+        int totalLen = prefix.Length + 1 + suffix.Length;
+        return string.Create(totalLen, (prefix, targetKey, suffix.Length, suffixStart: targetKey.Length - suffix.Length),
+            static (span, state) =>
+            {
+                var (p, k, suffixLen, suffixStart) = state;
+                p.AsSpan().CopyTo(span);
+                span[p.Length] = '.';
+                var dest = span[(p.Length + 1)..];
+                var src = k.AsSpan(suffixStart, suffixLen);
+                for (int i = 0; i < src.Length; i++)
+                {
+                    char c = src[i];
+                    dest[i] = (char.IsAsciiLetterOrDigit(c) || c == '_' || c == '-') ? c : '_';
+                }
+            });
     }
 
     // Shared moored-vessel tracker. Was previously instantiated locally

@@ -578,24 +578,49 @@ public sealed class SignalkClient : IAsyncDisposable
     // rebroadcast on a real change to one of these two flags.
     private bool _cachedPreferMagneticHeading;
     private bool _cachedPreferMagneticCourse;
+    /// <summary>Re-entrancy guard for the
+    /// OnSettingsChanged -> OnDataChanged -> (downstream listener) ->
+    /// _settings.SetXxxAsync -> OnSettingsChanged path. The diff cache
+    /// converges in one re-entrant hop (the pref values agree on the
+    /// second pass), so without the guard a legitimate flip
+    /// rebroadcasts OnDataChanged twice instead of once. Subtle - not
+    /// a stack overflow, but an unnecessary double cascade through
+    /// every HUD + alarm rule.</summary>
+    private bool _inOnSettingsChanged;
 
     private void OnSettingsChangedSync()
     {
-        bool magHeading = _settings.PreferMagneticHeading;
-        bool magCourse = _settings.PreferMagneticCourse;
-        if (magHeading == _cachedPreferMagneticHeading
-            && magCourse == _cachedPreferMagneticCourse)
+        if (_inOnSettingsChanged)
         {
-            // No relevant change - skip the OnDataChanged cascade.
+            // Re-entered. Refresh the cache so the outer pass's diff
+            // comparison reflects the current settings, then bail.
+            _cachedPreferMagneticHeading = _settings.PreferMagneticHeading;
+            _cachedPreferMagneticCourse = _settings.PreferMagneticCourse;
             return;
         }
-        _cachedPreferMagneticHeading = magHeading;
-        _cachedPreferMagneticCourse = magCourse;
-        ApplyHeadingPreferenceFromSettings();
-        // HUDs re-derive Heading / CourseOverGround on next render; a
-        // nudge wakes any component that isn't also listening to
-        // OnSettingsChanged directly.
-        OnDataChanged?.Invoke();
+        _inOnSettingsChanged = true;
+        try
+        {
+            bool magHeading = _settings.PreferMagneticHeading;
+            bool magCourse = _settings.PreferMagneticCourse;
+            if (magHeading == _cachedPreferMagneticHeading
+                && magCourse == _cachedPreferMagneticCourse)
+            {
+                // No relevant change - skip the OnDataChanged cascade.
+                return;
+            }
+            _cachedPreferMagneticHeading = magHeading;
+            _cachedPreferMagneticCourse = magCourse;
+            ApplyHeadingPreferenceFromSettings();
+            // HUDs re-derive Heading / CourseOverGround on next render; a
+            // nudge wakes any component that isn't also listening to
+            // OnSettingsChanged directly.
+            OnDataChanged?.Invoke();
+        }
+        finally
+        {
+            _inOnSettingsChanged = false;
+        }
     }
 
     private void ApplyHeadingPreferenceFromSettings()
