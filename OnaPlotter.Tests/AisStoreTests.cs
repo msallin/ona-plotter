@@ -183,15 +183,39 @@ public class AisStoreTests
     }
 
     [Test]
-    public async Task AisVessel_BuddyPathApplied()
+    public async Task AisVessel_BuddyDelta_FromWire_IsIgnored_NotTrustedSource()
     {
+        // Spoof guard. A wire-side `buddy: true` delta would let any
+        // AIS context exempt itself from the CPA klaxon - an AIS
+        // transmitter is uniquely positioned to forge its own deltas
+        // (the SK server trusts the MMSI it receives). The trusted
+        // source for the buddy flag is the REST seed of the
+        // sbender9/signalk-buddylist-plugin, which lands here via
+        // <see cref="AisStore.UpdateBuddies"/>; deltas on the `buddy`
+        // path are silently dropped to close the spoof vector.
         var store = new AisStore();
         var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
         store.Apply("vessels.urn:mrn:imo:mmsi:666", "navigation.position", pos);
 
-        // Live update via the delta stream: the plugin pushes buddy=true.
         var buddyTrue = JsonSerializer.SerializeToElement(true);
         store.Apply("vessels.urn:mrn:imo:mmsi:666", "buddy", buddyTrue);
+
+        await Assert.That(store.GetVessels()[0].IsBuddy).IsFalse()
+            .Because("wire-side buddy deltas must NOT toggle IsBuddy - REST seed only");
+    }
+
+    [Test]
+    public async Task AisVessel_BuddyFlag_HonouredFromRestSeed()
+    {
+        // Same context but the buddy flag comes from UpdateBuddies
+        // (the trusted REST seed). This MUST flip the flag - the
+        // existing buddy-list flow can't be a casualty of the spoof
+        // fix.
+        var store = new AisStore();
+        var pos = JsonSerializer.SerializeToElement(new { latitude = 47.0, longitude = 8.0 });
+        store.Apply("vessels.urn:mrn:imo:mmsi:666", "navigation.position", pos);
+
+        store.UpdateBuddies(new[] { "vessels.urn:mrn:imo:mmsi:666" });
 
         await Assert.That(store.GetVessels()[0].IsBuddy).IsTrue();
     }

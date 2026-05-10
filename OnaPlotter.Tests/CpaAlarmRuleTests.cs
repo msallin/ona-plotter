@@ -254,9 +254,58 @@ public class CpaAlarmRuleTests
         // Threat inside CPA radius but TCPA way beyond lookahead.
         // 80 nm distant (~ 148 km), closing at 5+5 = 10 m/s -> TCPA ~ 247 min.
         // Default GuardZoneLookaheadMinutes = 10. Must not fire.
+        // (The current-distance gate ALSO rejects this case at 80 nm
+        // > outerRing of 1 nm; the lookahead pin is exercised
+        // separately in CurrentDistanceGate_RejectsFarVesselsEvenWithCloseProjectedCpa
+        // below.)
         var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
         var threat = ThreatNorthOf(metresNorth: 148_000, speedMs: 5);
         await Assert.That(rule.Check(Ctx(OwnShipUnderway(), [threat], new FakeSettings()))).IsNull();
+    }
+
+    [Test]
+    public async Task CurrentDistanceGate_RejectsFarVesselsEvenWithCloseProjectedCpa()
+    {
+        // PR #264 alignment fix: alarm rule now consumes the same
+        // Cpa.ClassifyThreat output as the chart-overlay classifier.
+        // The current-distance ring (2× guard zone) is what stops a
+        // far-away vessel with a marginal closing track from firing
+        // the audible klaxon while the chart-overlay says "no
+        // threat". Helm-feedback (paraphrased): "the X is gone but
+        // the alarm still rings".
+        //
+        // Geometry: vessel 3 nm north, closing south at 5 m/s,
+        // projected CPA = 0 (head-on). Outer ring = 2 × 0.5 nm = 1 nm,
+        // current dist = 3 nm > outer ring -> threat None -> no alarm.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var nav = OwnShipUnderway();
+        // 3 nm = 5556 m. Threat heading south, own heading north,
+        // closing speed 10 m/s -> TCPA ~9.3 min (just inside the
+        // 10 min default lookahead). The OLD alarm gate would have
+        // fired - inside CPA limit AND inside TCPA limit. The NEW
+        // gate rejects on current distance.
+        var farThreat = ThreatNorthOf(metresNorth: 5556, speedMs: 5);
+        await Assert.That(rule.Check(Ctx(nav, [farThreat], new FakeSettings()))).IsNull()
+            .Because("vessels currently outside the outer ring (2× guard zone) " +
+                     "must not fire the klaxon - chart-overlay agrees.");
+    }
+
+    [Test]
+    public async Task CurrentDistanceGate_FiresInOuterRing_WhenProjectedCpaInsideGuardZone()
+    {
+        // The complementary case: a vessel currently in the warning
+        // band (between guard zone and 2× guard zone) with a closing
+        // track that would breach the guard zone DOES fire the
+        // alarm. Pinned so a future "be even more conservative"
+        // change doesn't accidentally suppress real Warning-band
+        // hits.
+        var rule = new CpaAlarmRule(new OnaPlotter.Services.MooredVesselTracker());
+        var nav = OwnShipUnderway();
+        // ~0.7 nm north (~1296 m): inside outer ring (1.0 nm at
+        // default 0.5 nm guard zone), outside guard zone.
+        // Closing at 10 m/s -> TCPA ~2 min, CPA ~0 -> Warning band.
+        var threat = ThreatNorthOf(metresNorth: 1296, speedMs: 5);
+        await Assert.That(rule.Check(Ctx(nav, [threat], new FakeSettings()))).IsNotNull();
     }
 
     [Test]

@@ -841,7 +841,28 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
-const CACHE_NAME = 'ona-plotter-v89';
+// v89 -> v90: CPA blocker fixes from the post-PR-263 code review.
+//             Closes six gaps surfaced by the focused review:
+//             (1) CpaAlarmRule + chart-overlay now share a single
+//             classifier (Cpa.ClassifyThreat with current-distance
+//             gate) so the audible klaxon and the chart marker can
+//             no longer disagree (the "X gone but alarm rings"
+//             pattern); (2) MooredVesselTracker adds a SOG sanity
+//             gate so a vessel claiming navigation.state="moored"
+//             at 4 kn no longer self-exempts from CPA - the
+//             ramming-spoof vector; (3) AisVessel drops the wire-
+//             side `buddy` delta path so an AIS context can't
+//             flag itself as a friend; (4) AisPushService.BuildSnapshot
+//             gains per-vessel IsFinite checks + try/catch so one
+//             corrupt record can't poison the whole tick; (5)
+//             PushAsync defers cache commit until after a successful
+//             push and broadens its catch from JSException to
+//             Exception so a stale Leaflet handle no longer empties
+//             the chart for the rest of the session; (6) C# pins
+//             the "danger"/"warning"/"none" wire string contract
+//             so any rename fails at compile time before reaching
+//             the JS overlay.
+const CACHE_NAME = 'ona-plotter-v90';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

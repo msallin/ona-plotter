@@ -146,27 +146,44 @@ public class AisVesselFuzzTests
     [Test]
     public async Task Buddy_StringValue_DoesNotFlipFlag()
     {
-        // A plugin emitting buddy as "true" (string) instead of true
-        // (bool) would previously have been treated as truthy in JS but
-        // the .NET side must be strict: we need the actual bool. String
-        // "true" should leave IsBuddy false.
+        // Pre-spoof-fix this test pinned that a plugin emitting
+        // buddy as the string "true" wasn't treated as truthy. The
+        // wire-side path is now dropped entirely (any value on the
+        // 'buddy' path is ignored), so this test still passes but
+        // for the broader reason - see Buddy_WireSide_*Delta tests
+        // below for the explicit pin.
         var v = new AisVessel("vessels.urn:mrn:imo:mmsi:121");
         v.Apply("buddy", J("true"));
         await Assert.That(v.IsBuddy).IsFalse();
     }
 
     [Test]
-    public async Task Buddy_TogglesFromTrueToFalse_ReportsChange()
+    public async Task Buddy_WireSide_TrueDelta_IsDropped()
     {
-        // The AisStore version counter relies on Apply returning true
-        // when IsBuddy flips, so the snapshot cache invalidates and
-        // the buddy star disappears from the map marker.
+        // Spoof gate: a wire-side `buddy: true` delta lets any AIS
+        // context claim friend-status and exempt itself from the CPA
+        // klaxon (the AIS transmitter is uniquely positioned to forge
+        // its own deltas; SK trusts the MMSI it receives). Apply must
+        // return false (no recognised side-effect, no version bump)
+        // and IsBuddy must stay false.
         var v = new AisVessel("vessels.urn:mrn:imo:mmsi:131");
-        var set = v.Apply("buddy", J(true));
-        await Assert.That(set).IsTrue();
-        await Assert.That(v.IsBuddy).IsTrue();
-        var clear = v.Apply("buddy", J(false));
-        await Assert.That(clear).IsTrue();
+        var ret = v.Apply("buddy", J(true));
+        await Assert.That(ret).IsFalse()
+            .Because("buddy delta is dropped silently - no version bump");
         await Assert.That(v.IsBuddy).IsFalse();
+    }
+
+    [Test]
+    public async Task Buddy_WireSide_FalseDelta_IsDropped_DoesNotResetRestSeededFlag()
+    {
+        // The inverse spoof: an AIS context that's currently flagged
+        // as buddy via the REST seed could be wire-side reset by a
+        // `buddy: false` delta, kicking it off the buddy list. Same
+        // gate dropping that path keeps the REST-seeded state
+        // authoritative.
+        var v = new AisVessel("vessels.urn:mrn:imo:mmsi:131") { IsBuddy = true };
+        var ret = v.Apply("buddy", J(false));
+        await Assert.That(ret).IsFalse();
+        await Assert.That(v.IsBuddy).IsTrue();
     }
 }

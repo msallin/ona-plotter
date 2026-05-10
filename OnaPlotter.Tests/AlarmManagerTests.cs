@@ -153,9 +153,16 @@ public class AlarmManagerTests
     public async Task CpaInsideGuardZone_FiresCpa()
     {
         var (mgr, clock, settings, _) = NewMgr();
-        // Own at origin, going north at 5 kn. Target 1/60 deg north going south at 5 kn.
+        // Own at origin, going north at 5 kn. Target 0.4 nm north going
+        // south at 5 kn (inside the 0.5 nm default guard zone -> Danger
+        // band). Previously this test placed the target at exactly 1 nm
+        // (1/60 deg lat) which sits right at the outer-ring boundary;
+        // with the PR #264 current-distance gate (alarm rule shares the
+        // chart-overlay's Cpa.ClassifyThreat), 1 nm is on the wrong side
+        // and the alarm would not fire. 0.4 nm is comfortably inside
+        // the guard zone and exercises the same head-on geometry.
         var data = Nav(lat: 0, lon: 0, cogRad: 0, sogMs: 2.57);   // ~5 kn
-        var target = Vessel("vessels.ctx1", 1.0/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
+        var target = Vessel("vessels.ctx1", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
 
         mgr.Evaluate(data, [target], settings);
 
@@ -169,7 +176,9 @@ public class AlarmManagerTests
     {
         var (mgr, clock, settings, _) = NewMgr();
         var data = Nav(lat: 0, lon: 0, cogRad: 0, sogMs: 2.57);
-        var buddy = Vessel("vessels.friend", 1.0/60.0, 0, cogRad: Math.PI, sogMs: 2.57, buddy: true);
+        // 0.4 nm inside guard zone (see CpaInsideGuardZone_FiresCpa
+        // for why we don't use 1/60 = 1 nm).
+        var buddy = Vessel("vessels.friend", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57, buddy: true);
 
         mgr.Evaluate(data, [buddy], settings);
 
@@ -181,9 +190,10 @@ public class AlarmManagerTests
     {
         var (mgr, clock, settings, _) = NewMgr();
         var data = Nav(lat: 0, lon: 0, cogRad: 0, sogMs: 2.57);
-        // Nearly-stopped vessel on our bow. Advance the clock past the
-        // moored-hold window so the tracker tags it as moored.
-        var moored = Vessel("vessels.harbourtug", 1.0/60.0, 0, cogRad: 0, sogMs: 0.1);
+        // Nearly-stopped vessel on our bow at 0.4 nm (inside guard zone).
+        // Advance the clock past the moored-hold window so the tracker
+        // tags it as moored.
+        var moored = Vessel("vessels.harbourtug", 0.4/60.0, 0, cogRad: 0, sogMs: 0.1);
 
         mgr.Evaluate(data, [moored], settings);       // seen slow (t=0)
         clock.Now = clock.Now.AddSeconds(5); mgr.Evaluate(data, [moored], settings);
@@ -204,8 +214,9 @@ public class AlarmManagerTests
     {
         var (mgr, clock, settings, _) = NewMgr();
         var data = Nav(lat: 0, lon: 0, cogRad: 0, sogMs: 2.57);
-        var a = Vessel("vessels.a", 1.0/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
-        var b = Vessel("vessels.b", 1.0/60.0, 0.0001, cogRad: Math.PI, sogMs: 2.57);
+        // 0.4 nm inside guard zone.
+        var a = Vessel("vessels.a", 0.4/60.0, 0, cogRad: Math.PI, sogMs: 2.57);
+        var b = Vessel("vessels.b", 0.4/60.0, 0.0001, cogRad: Math.PI, sogMs: 2.57);
 
         mgr.Evaluate(data, [a], settings);
         await Assert.That(mgr.ActiveAlarm!.TargetKey).IsEqualTo("vessels.a");
