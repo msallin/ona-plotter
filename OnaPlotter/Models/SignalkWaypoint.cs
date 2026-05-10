@@ -41,4 +41,59 @@ public sealed class SignalkWaypoint
 
     [JsonIgnore]
     public double? Longitude { get; set; }
+
+    /// <summary>Convenience projection of <see cref="GeoJsonProperties.IsMob"/>.
+    /// Populated by <c>WaypointApi.GetAllAsync</c> and
+    /// <c>ResourceStore.HandleWaypointDelta</c> when the underlying
+    /// <c>feature.properties.isMob</c> field is true. The chart and
+    /// the layers panel use this flag to render the MOB icon +
+    /// pulse instead of a regular dot.</summary>
+    [JsonIgnore]
+    public bool IsMob { get; set; }
+
+    /// <summary>True while the MOB alarm is still active for this
+    /// waypoint. Source: <see cref="GeoJsonProperties.IsMobActive"/>.
+    /// Drives the chart marker's pulsing animation; helm-dismiss of
+    /// the MOB flips this to false but the waypoint stays so the
+    /// helm has a persistent history of past MOBs.</summary>
+    [JsonIgnore]
+    public bool IsMobActive { get; set; }
+
+    /// <summary>SignalK <c>notifications.mob.&lt;id&gt;</c> id this
+    /// waypoint correlates with. Source:
+    /// <see cref="GeoJsonProperties.MobAlarmId"/>. Used by
+    /// <c>MobService.ClearAsync</c> to find the right waypoint when
+    /// the helm dismisses an alarm.</summary>
+    [JsonIgnore]
+    public string? MobAlarmId { get; set; }
+}
+
+/// <summary>Helpers for the post-deserialise field lift from
+/// <see cref="GeoJsonFeature.Properties"/> onto the flat
+/// <see cref="SignalkWaypoint"/> projections. Centralised here so
+/// the REST path (<c>WaypointApi.GetAllAsync</c>) and the WS path
+/// (<c>ResourceStore.HandleWaypointDelta</c>) can never drift on
+/// what they lift - a future fourth MOB field added to
+/// <see cref="GeoJsonProperties"/> only needs one edit here.</summary>
+public static class SignalkWaypointExtensions
+{
+    /// <summary>Lift description + MOB metadata out of
+    /// <see cref="GeoJsonFeature.Properties"/> onto the flat
+    /// <see cref="SignalkWaypoint"/> projection fields. Treats an
+    /// empty description as null so the popup-Edit textarea shows
+    /// its placeholder rather than an empty input. Idempotent and
+    /// safe to call after either deserialise path.</summary>
+    public static void LiftFromFeatureProperties(this SignalkWaypoint wp)
+    {
+        var props = wp.Feature?.Properties;
+        // Description: empty string is the absent-description value
+        // GeoJsonBuilder.FeatureBody emits on Create; treat it as null
+        // so the textarea placeholder ("Description (optional)")
+        // surfaces instead of an empty input.
+        var desc = props?.Description;
+        wp.Description = string.IsNullOrEmpty(desc) ? null : desc;
+        wp.IsMob = props?.IsMob == true;
+        wp.IsMobActive = props?.IsMobActive == true;
+        wp.MobAlarmId = props?.MobAlarmId;
+    }
 }

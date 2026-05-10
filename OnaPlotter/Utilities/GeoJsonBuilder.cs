@@ -29,30 +29,46 @@ internal static class GeoJsonBuilder
     /// entirely so existing servers / clients see no change in
     /// shape.</para>
     /// </summary>
-    public static object FeatureBody(string name, object geometry, string? description = null, DateTime? createdAt = null)
+    public static object FeatureBody(string name, object geometry, string? description = null, DateTime? createdAt = null,
+        bool? isMob = null, bool? isActive = null, string? mobAlarmId = null)
     {
-        var feature = new
-        {
-            type = "Feature",
-            geometry,
-            properties = new
+        // MOB metadata rides INSIDE feature.properties only. The
+        // post-deserialise lift in WaypointApi.GetAllAsync +
+        // ResourceStore.HandleWaypointDelta reads from there; nothing
+        // reads a top-level copy. Conditional emit so non-MOB waypoints
+        // don't carry empty MOB keys on the wire.
+        var feature = (isMob is null && isActive is null && mobAlarmId is null)
+            ? (object)new
             {
-                name,
-                description = description ?? "",
-            },
-        };
-        // Two record shapes (with-createdAt vs without) so JSON output
-        // doesn't carry a literal "createdAt": null. Anonymous objects
-        // are the simplest way to keep the System.Text.Json output
-        // stable without standing up named record types.
+                type = "Feature",
+                geometry,
+                properties = new
+                {
+                    name,
+                    description = description ?? "",
+                },
+            }
+            : new
+            {
+                type = "Feature",
+                geometry,
+                properties = new
+                {
+                    name,
+                    description = description ?? "",
+                    isMob,
+                    isActive,
+                    mobAlarmId,
+                },
+            };
+        // Two top-level shapes (with-createdAt + without) so JSON
+        // output doesn't carry literal "createdAt": null. Anonymous
+        // objects keep System.Text.Json output stable without standing
+        // up named record types.
         if (createdAt is DateTime t)
         {
-            return new
-            {
-                name,
-                feature,
-                createdAt = t.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
-            };
+            string createdAtIso = t.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            return new { name, feature, createdAt = createdAtIso };
         }
         return new { name, feature };
     }

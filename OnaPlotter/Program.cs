@@ -186,18 +186,26 @@ builder.Services.AddSingleton<OnaPlotter.Services.Mob.ResolvedPositionStore>();
 // MainLayout's subscription to ServerNotificationStore.OnPathChanged
 // (no separate callback needed - the store fires synchronously
 // from inside Apply / Clear).
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService, OnaPlotter.Services.Mob.MobService>();
-
-// Drives the MOB chart marker from store changes. Singleton so the
-// subscription survives page navigation and the marker reappears
-// when the Map remounts. The factory thunk for OwnMmsi reads the
-// SignalkClient.OwnMmsi at the moment setMob fires (not at
-// construction time) so a delayed self-context resolution still
-// makes the helm vessel's MMSI land in the popup.
-builder.Services.AddSingleton<OnaPlotter.Services.Mob.MobChartRenderer>(sp =>
-    new OnaPlotter.Services.Mob.MobChartRenderer(
+// MobService factory wires every collaborator the safety pipeline
+// needs: notifications API for the alarm side, resource APIs for the
+// paired MOB waypoint, the resolved-position cache for reload
+// recovery, and the toast service for helm-visible failure surface.
+// The toast delegate is the helm's only cue that the persistent chart
+// pin failed to land while the audible alarm is firing - without it
+// the helm sees "MOB dropped" + audio and assumes everything saved
+// even if the resource POST 500s.
+builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService>(sp =>
+    new OnaPlotter.Services.Mob.MobService(
+        sp.GetRequiredService<INotificationsApi>(),
         sp.GetRequiredService<OnaPlotter.Services.ServerNotifications.ServerNotificationStore>(),
-        () => sp.GetRequiredService<SignalkClient>().OwnMmsi));
+        sp.GetRequiredService<IKeyValueStore>(),
+        sp.GetRequiredService<OnaPlotter.Services.Mob.ResolvedPositionStore>(),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetService<ILogger<OnaPlotter.Services.Mob.MobService>>(),
+        sp.GetRequiredService<IWaypointApi>(),
+        sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>(),
+        toastWarning: msg => sp.GetRequiredService<IToastService>().Warning(msg)));
+
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
 // isn't installed; the map surfaces that as a toast rather than failing

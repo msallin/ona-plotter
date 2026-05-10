@@ -66,12 +66,6 @@ public sealed class MapControlsJs : IMapControlsJs
     public Task ApplyFrameAsync(object frame)
         => InvokeSafe("applyFrame", frame);
 
-    public Task SetMobAsync(double lat, double lon, string? createdAtIso, string? selfMmsi)
-        => InvokeSafe("setMob", lat, lon, createdAtIso, selfMmsi);
-
-    public Task ClearMobAsync()
-        => InvokeSafe("clearMob");
-
     public Task ClearCurrentArrowAsync()
         => InvokeSafe("clearCurrentArrow");
 

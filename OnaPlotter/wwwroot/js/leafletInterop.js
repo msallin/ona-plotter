@@ -12,7 +12,6 @@ import { enableRadarOverlay, disableRadarOverlay,
          tearDownAllRadarOverlays } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
-import * as mobLayerMod from './mobLayer.js';
 import * as laylineLayerMod from './laylineLayer.js';
 import * as atonLayerMod from './atonLayer.js';
 import * as marinePoiLayerMod from './marinePoiLayer.js';
@@ -325,12 +324,15 @@ let serverTrackLayer = null;
 
 // Layline state lives in laylineLayer.js.
 
-// MOB state lives in mobLayer.js.
-
 // Anchor watch state lives in anchorLayer.js.
 
+// MOB rendering: dropped as a separate layer; MOBs are now waypoints
+// with isMob=true / isActive flags carried via the resource API. The
+// pulsing-red icon variant lives in waypointLayer.js so the chart
+// surface for any user-placed point sits in one module.
+
 // Own-vessel state lives in the layer modules now (aisLayer for CPA,
-// anchorLayer / mobLayer / measureLayer for their own geometry).
+// anchorLayer / measureLayer for their own geometry).
 // boatMarker still stashes its data on _onaSelfData for popup rendering.
 
 // HTML-escape untrusted strings for popup content. Module-level
@@ -462,8 +464,6 @@ let selfIcon = null;
 // chart's own-boat is logically a separate concern from AIS targets;
 // keeping the helpers small + duplicated avoids a tight coupling
 // between the modules just to share three SVG templates.
-
-// mobIcon moved into mobLayer.js (sole user).
 
 function rotateMarker(marker, rad) {
     if (rad == null) return;
@@ -602,7 +602,6 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
     // unchanged.
     weatherLayerMod.init(map);
     anchorLayerMod.init(map, { colors: MapColors });
-    mobLayerMod.init(map, { colors: MapColors, getDotNetRef: () => dotNetRef });
     laylineLayerMod.init(map, { colors: MapColors });
     atonLayerMod.init(map);
     marinePoiLayerMod.init(map);
@@ -1191,10 +1190,6 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         applyMapRotation(headingRad * DEG);
     }
 
-    // Push the new boat fix into mobLayer.js so the boat<->MOB line
-    // and bearing/distance label re-anchor when a MOB is active.
-    mobLayerMod.setBoatPosition(lat, lon);
-
     // (Anchor-watch alarm-state evaluation moved into anchorLayerMod.setBoatPosition above.)
 
     // Push the new boat fix into measureLayer.js so vessel-anchored
@@ -1290,13 +1285,6 @@ export const setAisLabelsVisible = (enabled) =>
 export const setMeasureMode = (active) => measureLayerMod.setMeasureMode(active);
 export function clearMeasure() { return measureLayerMod.clearMeasure(); }
 export const measureFromVesselTo = (lat, lon) => measureLayerMod.measureFromVesselTo(lat, lon);
-
-// --- MOB ---
-
-// Implementation in mobLayer.js; mux re-exports the C# entries.
-export const setMob = (lat, lon, createdAtIso, selfMmsi) =>
-    mobLayerMod.setMob(lat, lon, createdAtIso, selfMmsi);
-export const clearMob = () => mobLayerMod.clearMob();
 
 // --- Anchor Watch ---
 // Implementation in anchorLayer.js; mux re-exports the C# entries.
@@ -2568,7 +2556,6 @@ export function dispose() {
     chartLayers.clear();
     routeLayers.clear();
     aisLayerMod.dispose();
-    mobLayerMod.dispose();
     anchorLayerMod.dispose();
     measureLayerMod.dispose();
     activeRouteLayerMod.dispose();

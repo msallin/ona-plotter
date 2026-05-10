@@ -44,14 +44,18 @@ public sealed class MapResourceController
     {
         // Waypoints have nullable lat/lon on the model; guard each
         // even though GetAllAsync usually filters position-less rows
-        // out before they reach us.
+        // out before they reach us. MOB flags drive the JS pulsing-
+        // red icon (active) / solid red icon (cleared, persistent
+        // history) variants; non-MOB waypoints render as the plain
+        // dot regardless of how they got here.
         foreach (var wp in waypoints)
         {
             if (wp.Latitude is double lat && wp.Longitude is double lon)
             {
                 await _resourceJs.AddWaypointMarkerAsync(
                     wp.Id, lat, lon, wp.Name,
-                    wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+                    wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    wp.IsMob, wp.IsMobActive);
             }
         }
         // Notes use a bare position (not a GeoJSON Feature);
@@ -112,7 +116,12 @@ public sealed class MapResourceController
         await _resourceJs.RemoveWaypointMarkerAsync(wp.Id);
         await _resourceJs.AddWaypointMarkerAsync(
             wp.Id, lat, lon, wp.Name,
-            wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture));
+            wp.CreatedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+            // MOB metadata: drives the JS-side pulsing red icon
+            // when isMob && isActive, plain red icon when isMob &&
+            // !isActive (cleared MOB - persistent history), regular
+            // dot when !isMob.
+            wp.IsMob, wp.IsMobActive);
     }
 
     /// <summary>Re-render a note marker after a store delta. Skipped

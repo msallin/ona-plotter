@@ -229,28 +229,6 @@ public partial class Map
         await ShareService.ShareJsonAsync(title, json);
     }
 
-    /// <summary>MOB popup-side Share: serialise the casualty fix as
-    /// a one-off waypoint feature (same shape WaypointShare uses)
-    /// and route through <see cref="ShareService"/>. The helm reading
-    /// the MOB position into the VHF mic gets a one-tap "now share
-    /// the same coords with the rescue coordinator on WhatsApp /
-    /// SMS / mail" affordance. createdAtIso plumbs through so a
-    /// shared casualty note carries the same timestamp every plotter
-    /// in the area shows.</summary>
-    [JSInvokable]
-    public async Task MobShare(double lat, double lon, string? createdAtIso)
-    {
-        var feature = new GeoJsonShareWaypointFeature(
-            "Feature",
-            new GeoJsonPointGeometry("Point", [lon, lat]),
-            new GeoJsonShareWaypointProperties(
-                Name: "MOB",
-                CreatedAt: createdAtIso));
-        string json = System.Text.Json.JsonSerializer.Serialize(
-            feature, OnaGeoJsonContext.Default.GeoJsonShareWaypointFeature);
-        await ShareService.ShareJsonAsync("MOB", json, errorContext: "MOB share");
-    }
-
     // ---- Note (create, save, delete, focus, show/hide) ---------------
     private bool noteDialogVisible;
     private string newNoteTitle = "";

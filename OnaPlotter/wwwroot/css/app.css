@@ -2213,18 +2213,21 @@ html:fullscreen .hud-stack-br {
     border-color: var(--sk-border);
 }
 
-/* MOB pulsing marker */
-.mob-icon .mob-pulse {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--sev-danger);
-    animation: mob-ping 1.2s ease-out infinite;
-}
-
-@keyframes mob-ping {
-    0% { transform: scale(1); opacity: 1; }
-    100% { transform: scale(2.5); opacity: 0; }
+/* Cleared MOB (persistent history): same red dot, no pulse. The
+   waypoint layer adds .mob-icon-inactive when the alarm has been
+   acknowledged so the casualty stays visible on the chart but no
+   longer competes for attention with active MOBs. The dot keeps the
+   sev-danger colour so the helm can still spot historical MOBs at a
+   glance. */
+.mob-icon-inactive .mob-pulse,
+.mob-pulse-inactive {
+    animation: none;
+    /* Solid filled circle stand-in for the dropped ping animation -
+       without animation the pulse div was a blank 20 px square; this
+       restores a visible red dot. Same diameter as the active
+       variant so the layer-toggle visual size doesn't jump. */
+    opacity: 1;
+    transform: none;
 }
 
 /* Night mode button */

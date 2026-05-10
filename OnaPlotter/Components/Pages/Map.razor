@@ -34,7 +34,6 @@
 @inject IKeyValueStore Kv
 @inject IRouteDraftStore RouteDraftStore
 @inject OnaPlotter.Services.Mob.IMobService MobService
-@inject OnaPlotter.Services.Mob.MobChartRenderer MobChartRenderer
 @inject OnaPlotter.Services.ShareService ShareService
 @inject OnaPlotter.Services.INavigationAverages Avg
 @inject OnaPlotter.Services.ServerNotifications.ServerNotificationStore NotificationStore
@@ -1376,15 +1375,6 @@
         // bottom-centre range scale while the route HUD card sits
         // in that slot. Other wrappers stay in their current order.
         _controlsJs = new OnaPlotter.Services.Js.MapControlsJs(module);
-        // (MobChartRenderer.AttachJs moved AFTER initMap below -
-        //  attaching it here meant the renderer's first ResyncRender
-        //  fired before mobLayerMod.init(map, ...) ran inside initMap,
-        //  so the bridge SetMobAsync lined up against a still-null
-        //  mapRef in mobLayer.js and silently skipped the marker
-        //  draw. The helm flagged "navigate Chart -> Dashboard ->
-        //  Chart and the marker disappears" with logs showing exactly
-        //  this race: [mob-renderer] SetMobAsync fired, [mob-js]
-        //  setMob saw mapRef=NULL and bailed.)
         _activeRouteSync = new OnaPlotter.Services.Map.ActiveRouteSync(
             _routeJs,
             _controlsJs,
@@ -1473,13 +1463,6 @@
         await module.InvokeVoidAsync("initMap", "mapDiv", lat, lon, zoom, dotNetRef,
             ClientCaps.IsSlowClient);
         mapInitialized = true;
-
-        // Hand the JS bridge to the MOB chart renderer AFTER
-        // initMap has run (initMap is what wires up mobLayer.mapRef).
-        // The renderer's first ResyncRender pushes setMob through the
-        // bridge; if mapRef is still null the marker silently drops.
-        // Order is load-bearing: AttachJs strictly post-initMap.
-        MobChartRenderer.AttachJs(_controlsJs);
 
         // Tell the JS side where the SignalK server lives so its
         // origin-bound URLs (flag images today; future direct hits
@@ -3724,9 +3707,9 @@
     // only after the user has already armed + confirmed.
 
     /// <summary>Re-entry guard for the MOB drop / clear path. A slow
-    /// JS interop or chime playback shouldn't let a second tap fire
-    /// SetMobAsync / ClearMobAsync before the first finished - helm
-    /// would see two MOB markers or a clear-then-set race.</summary>
+    /// JS interop on the alarm pipeline shouldn't let a second tap
+    /// fire RaiseAsync / ClearAllAsync before the first finished -
+    /// helm would see two MOB notifications or a clear-then-set race.</summary>
     private bool _mobOpInFlight;
 
     private async Task ToggleMob()
@@ -3750,11 +3733,13 @@
                     Toasts.Warning("MOB raised without a GPS fix - use VHF and handheld");
                 }
                 // Local-first via MobService: the synthetic enters
-                // the alarm pipeline immediately; the chart marker
-                // is driven by MobChartRenderer subscribing to the
-                // same store; the REST POST happens in the
-                // background and reconciles the WS echo into a
-                // single canonical entry.
+                // the alarm pipeline immediately and a paired waypoint
+                // (isMob=true, isActive=true) gets posted in the
+                // background. The chart marker comes from the waypoint
+                // layer's MOB-icon variant - same path as any other
+                // user-placed waypoint, just with the pulsing-red
+                // styling. The REST POST for the notification reconciles
+                // the WS echo into a single canonical entry.
                 // mobActive flips automatically via the store-derived
                 // computed property the moment the synthetic lands.
                 // Default message lives on MobService so a single
@@ -4307,15 +4292,6 @@
         _resourceJs?.MarkDisposed();
         _controlsJs?.MarkDisposed();
         _editJs?.MarkDisposed();
-        // Hand the MOB chart renderer (singleton) back to the
-        // null-bridge state so a future page re-mount goes through
-        // the AttachJs path, which invalidates the dedup cache and
-        // re-paints the marker. Without this DetachJs call the
-        // renderer kept its old _js reference (pointing at a now-
-        // disposed module) and the helm flagged "navigate to
-        // dashboard and back -> chart is empty even though MOB is
-        // active".
-        MobChartRenderer.DetachJs();
         if (aisTimer is not null) await aisTimer.DisposeAsync();
         // Cancel any in-flight Overpass debounce / fetch so a
         // straggler doesn't try to push markers into a torn-down

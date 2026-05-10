@@ -17,8 +17,15 @@ public interface IMapResourceJs
     /// straight through after a non-null gate. <paramref name="createdAtIso"/>
     /// renders in the popup as the "Created" line; null = dash
     /// (waypoints from peer SignalK clients or pre-feature
-    /// OnaPlotter versions don't carry the field).</summary>
-    Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name, string? createdAtIso);
+    /// OnaPlotter versions don't carry the field).
+    /// <para><paramref name="isMob"/> stamps the marker as a Man-
+    /// Overboard pin: the JS layer renders it with the pulsing red
+    /// icon + the "MOB" overlay instead of the regular waypoint
+    /// dot. <paramref name="isActive"/> controls whether the
+    /// pulse is animating; cleared MOBs (isActive=false) keep the
+    /// red icon but stop pulsing.</para></summary>
+    Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name,
+        string? createdAtIso, bool isMob, bool isActive);
 
     /// <summary>Remove a previously-drawn waypoint pin.</summary>
     Task RemoveWaypointMarkerAsync(string id);

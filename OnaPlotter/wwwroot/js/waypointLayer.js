@@ -101,8 +101,51 @@ function wireSimpleClick(popup, selector, dotNetMethod, id) {
     });
 }
 
-export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
+// MOB icons. Reused across every MOB waypoint (small fixed set):
+//   _mobActiveIcon  - pulsing red, the active alarm
+//   _mobInactiveIcon - solid red, a cleared MOB (persistent history)
+// The .mob-icon + .mob-pulse classes carry the CSS animation; the
+// inactive variant adds a class that suppresses the pulse keyframe
+// but keeps the colour.
+let _mobActiveIcon = null;
+let _mobInactiveIcon = null;
+
+function getMobIcon(isActive) {
+    if (isActive) {
+        return _mobActiveIcon ??= L.divIcon({
+            className: 'mob-icon',
+            html: '<div class="mob-pulse"></div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+        });
+    }
+    return _mobInactiveIcon ??= L.divIcon({
+        className: 'mob-icon mob-icon-inactive',
+        html: '<div class="mob-pulse mob-pulse-inactive"></div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+    });
+}
+
+export function addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isActive) {
     if (!mapRef || waypointMarkers.has(id)) return;
+    // MOB waypoints render with the pulsing red icon (active) or the
+    // solid red icon (cleared - persistent history). Non-MOB
+    // waypoints keep the regular dot. The MOB icon is interactive on
+    // the icon itself (no separate hit buffer) because the divIcon's
+    // visible square already meets the 44 px touch target; for the
+    // regular waypoint we keep the 6 px dot + 22 px invisible buffer
+    // pattern.
+    if (isMob) {
+        const marker = L.marker([lat, lon], {
+            icon: getMobIcon(!!isActive),
+            zIndexOffset: 2000,    // above other waypoints + AIS markers
+        });
+        wireWaypointInteractions(marker, id, lat, lon, name, createdAtIso, true, isActive);
+        marker.addTo(mapRef);
+        waypointMarkers.set(id, marker);
+        return;
+    }
     const marker = L.circleMarker([lat, lon], {
         radius: 6, color: colors.waypoint, fillColor: colors.waypoint, fillOpacity: 1, weight: 2,
         interactive: false,
@@ -114,6 +157,23 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
     const hit = L.circleMarker([lat, lon], {
         radius: 22, opacity: 0, fillOpacity: 0, weight: 0, interactive: true
     });
+    wireWaypointInteractions(hit, id, lat, lon, name, createdAtIso, false, false);
+    // Group + add-to-map so remove/clear takes both layers down
+    // together. MarkerLayer.remove -> map.removeLayer(group) which
+    // removes its children.
+    const group = L.layerGroup([marker, hit]).addTo(mapRef);
+    waypointMarkers.set(id, group);
+}
+
+/**
+ * Bind tooltip + popup + click handler to a waypoint's tap target.
+ * For regular waypoints the target is the invisible 22 px hit
+ * buffer (visible marker stays non-interactive); for MOB the
+ * divIcon marker itself receives the events (its 20 px square
+ * already meets the touch-target floor and adding a separate hit
+ * circle on top of the pulsing icon would intercept the visual).
+ */
+function wireWaypointInteractions(target, id, lat, lon, name, createdAtIso, isMob, isActive) {
     // Tooltip on hover (quick identification); popup on click (full
     // name + Delete). Same pattern as notes/regions so the tap-to-act
     // affordance is consistent across user-placed objects.
@@ -124,26 +184,24 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
     // that GPS jitter already eats. Hemisphere letters (N/S, E/W)
     // keep the reading unambiguous when the waypoint is near the
     // equator or the prime meridian.
-    // Events fire on the hit buffer; the visible marker is non-
-    // interactive so the two don't double-handle.
-    hit.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
+    target.bindTooltip(formatWaypointTooltip(name, id, lat, lon), {
         permanent: false, direction: 'right', offset: [10, 0],
         className: 'bearing-tooltip'
     });
-    hit.bindPopup(buildWaypointPopupHtml(id, name, lat, lon, createdAtIso), {
+    target.bindPopup(buildWaypointPopupHtml(id, name, lat, lon, createdAtIso), {
         className: 'note-popup',
         maxWidth: 320,
         autoClose: true,
         closeButton: false,
     });
-    hit.on('click', (ev) => {
+    target.on('click', (ev) => {
         // During edit modes, swallow the click and forward the
         // waypoint's location to whatever the user is plotting -
         // matches the note marker's edit-mode behaviour.
         const flags = getEditModeFlags();
         if (flags.routeEdit || flags.polygonEdit || flags.measure) {
             L.DomEvent.stopPropagation(ev);
-            const ll = ev.latlng || marker.getLatLng();
+            const ll = ev.latlng || target.getLatLng();
             // A click ON a marker is unambiguous: the helm tapped a
             // specific waypoint. Edit-mode dispatch follows the
             // historical priority (route -> polygon -> measure); the
@@ -153,10 +211,10 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
             if (flags.routeEdit)         editModeAddPoint('route', ll.lat, ll.lng);
             else if (flags.polygonEdit)  editModeAddPoint('polygon', ll.lat, ll.lng);
             else                         editModeAddPoint('measure', ll.lat, ll.lng);
-            hit.closePopup();
+            target.closePopup();
         }
     });
-    hit.on('popupopen', (ev) => {
+    target.on('popupopen', (ev) => {
         // No .waypoint-focus-btn binding - the button was removed
         // per helm field-feedback (see buildPopupHtml). The
         // C# WaypointFocus JSInvokable stays for the layers-panel
@@ -166,11 +224,6 @@ export function addWaypointMarker(id, lat, lon, name, createdAtIso) {
         wireSimpleClick(ev.popup, '.waypoint-share-btn', 'WaypointShare', id);
         wireDeleteConfirm(ev.popup, '.waypoint-delete-btn', 'DeleteWaypoint', id, getDotNetRef);
     });
-    // Group + add-to-map so remove/clear takes both layers down
-    // together. MarkerLayer.remove -> map.removeLayer(group) which
-    // removes its children.
-    const group = L.layerGroup([marker, hit]).addTo(mapRef);
-    waypointMarkers.set(id, group);
 }
 
 export function removeWaypointMarker(id) {

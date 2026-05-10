@@ -12,7 +12,7 @@ public class MapResourceControllerTests
 {
     private sealed class FakeResourceJs : IMapResourceJs
     {
-        public List<(string id, double? lat, double? lon, string? name, string? createdAtIso)> Waypoints { get; } = [];
+        public List<(string id, double? lat, double? lon, string? name, string? createdAtIso, bool isMob, bool isActive)> Waypoints { get; } = [];
         public List<string> WaypointRemoves { get; } = [];
         public List<(string id, double lat, double lon, string? title, string? desc, string? createdAtIso)> Notes { get; } = [];
         public List<string> NoteRemoves { get; } = [];
@@ -28,9 +28,10 @@ public class MapResourceControllerTests
         public List<(double lat, double lon, double r)> CirclePreviews { get; } = [];
         public int CirclePreviewClears { get; private set; }
 
-        public Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name, string? createdAtIso)
+        public Task AddWaypointMarkerAsync(string id, double? lat, double? lon, string? name,
+            string? createdAtIso, bool isMob, bool isActive)
         {
-            Waypoints.Add((id, lat, lon, name, createdAtIso));
+            Waypoints.Add((id, lat, lon, name, createdAtIso, isMob, isActive));
             return Task.CompletedTask;
         }
 

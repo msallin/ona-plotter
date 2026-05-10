@@ -16,10 +16,11 @@ public class MapResourceJsTests
         var fake = new RecordingJsRef();
         var sut = new MapResourceJs(fake);
 
-        await sut.AddWaypointMarkerAsync("w1", 54.5, 11.2, "Buoy A", "2026-04-25T12:00:00Z");
+        await sut.AddWaypointMarkerAsync("w1", 54.5, 11.2, "Buoy A", "2026-04-25T12:00:00Z",
+            isMob: false, isActive: false);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("addWaypointMarker");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(5);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(7);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo("w1");
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(11.2);
@@ -28,6 +29,10 @@ public class MapResourceJsTests
         // position so a future shape change shows up here, not at
         // runtime as a misplaced popup field.
         await Assert.That(fake.Calls[0].args[4]).IsEqualTo("2026-04-25T12:00:00Z");
+        // Last two slots are the MOB flags. Non-MOB waypoints carry
+        // false/false; the JS layer renders them as the regular dot.
+        await Assert.That((bool)fake.Calls[0].args[5]!).IsFalse();
+        await Assert.That((bool)fake.Calls[0].args[6]!).IsFalse();
     }
 
     [Test]
@@ -40,12 +45,31 @@ public class MapResourceJsTests
         double? lat = 54.5;
         double? lon = 11.2;
 
-        await sut.AddWaypointMarkerAsync("w1", lat, lon, null, createdAtIso: null);
+        await sut.AddWaypointMarkerAsync("w1", lat, lon, null, createdAtIso: null,
+            isMob: false, isActive: false);
 
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(54.5);
         await Assert.That(fake.Calls[0].args[2]).IsEqualTo(11.2);
         await Assert.That(fake.Calls[0].args[3]).IsNull();
         await Assert.That(fake.Calls[0].args[4]).IsNull();
+    }
+
+    [Test]
+    public async Task AddWaypointMarkerAsync_ForwardsMobFlags_When_Active()
+    {
+        // MOB waypoint composition: MobService stamps these flags on the
+        // waypoint resource when the helm hits the MOB button. The JS
+        // layer reads them to render the pulsing red icon (active) or
+        // the solid red icon (cleared - persistent history).
+        var fake = new RecordingJsRef();
+        var sut = new MapResourceJs(fake);
+
+        await sut.AddWaypointMarkerAsync("mob1", 54.5, 11.2, "MOB: 12:34:56",
+            createdAtIso: "2026-05-09T12:34:56Z",
+            isMob: true, isActive: true);
+
+        await Assert.That((bool)fake.Calls[0].args[5]!).IsTrue();
+        await Assert.That((bool)fake.Calls[0].args[6]!).IsTrue();
     }
 
     [Test]
@@ -221,7 +245,7 @@ public class MapResourceJsTests
         var sut = new MapResourceJs(fake);
 
         sut.MarkDisposed();
-        await sut.AddWaypointMarkerAsync("w", 0, 0, null, null);
+        await sut.AddWaypointMarkerAsync("w", 0, 0, null, null, isMob: false, isActive: false);
         await sut.RemoveWaypointMarkerAsync("w");
         await sut.AddNoteMarkerAsync("n", 0, 0, null, null, null);
         await sut.ClearNotesAsync();
@@ -261,6 +285,6 @@ public class MapResourceJsTests
         var sut = new MapResourceJs(fake);
 
         await Assert.ThrowsAsync<JSException>(() =>
-            sut.AddWaypointMarkerAsync("w", 0, 0, null, null));
+            sut.AddWaypointMarkerAsync("w", 0, 0, null, null, isMob: false, isActive: false));
     }
 }

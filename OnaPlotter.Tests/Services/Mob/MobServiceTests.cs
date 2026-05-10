@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Time.Testing;
+using OnaPlotter.Models;
 using OnaPlotter.Services;
 using OnaPlotter.Services.Api;
 using OnaPlotter.Services.Mob;
@@ -61,6 +62,69 @@ public class MobServiceTests
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
         var svc = new MobService(api, store, kv, positions, clock);
         return new Fixture(svc, api, store, kv, clock);
+    }
+
+    /// <summary>Fixture overload that wires a fake waypoint API.
+    /// Exercises the MOB-as-waypoint composition added in the
+    /// MOB-as-waypoint refactor: every RaiseAsync also pins a paired
+    /// waypoint with isMob/isActive metadata, and ClearAsync flips
+    /// the waypoint to isActive=false. The waypoint API is the
+    /// observable side; the resource store is left null (its only
+    /// MobService consumer is FindMobWaypoint, which short-circuits
+    /// to null when the store is missing - tests of the pending-raise
+    /// fast path don't need the store).</summary>
+    private static (Fixture f, FakeWaypointApi waypoints) NewFixtureWithWaypoints(
+        TimeZoneInfo? localTimeZone = null)
+    {
+        var api = new FakeNotificationsApi();
+        var store = new ServerNotificationStore();
+        var kv = new InMemoryKv();
+        var positions = new ResolvedPositionStore(kv);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
+        // Pin a non-UTC local zone by default so the local-vs-UTC
+        // contract on the MOB waypoint name (helm watch, not UTC)
+        // is observable from tests. CET (UTC+02:00 in May / DST) is
+        // the codebase author's home zone and a recognisable +02
+        // offset.
+        clock.SetLocalTimeZone(localTimeZone ?? TimeZoneInfo.CreateCustomTimeZone(
+            "Test+02", TimeSpan.FromHours(2), "Test+02", "Test+02"));
+        var waypoints = new FakeWaypointApi();
+        var svc = new MobService(api, store, kv, positions, clock,
+            logger: null, waypoints: waypoints, resources: null);
+        return (new Fixture(svc, api, store, kv, clock), waypoints);
+    }
+
+    private static (Fixture f, FakeWaypointApi waypoints, FakeWaypointReader reader) NewFixtureWithWaypointsAndReader()
+    {
+        var api = new FakeNotificationsApi();
+        var store = new ServerNotificationStore();
+        var kv = new InMemoryKv();
+        var positions = new ResolvedPositionStore(kv);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
+        clock.SetLocalTimeZone(TimeZoneInfo.CreateCustomTimeZone(
+            "Test+02", TimeSpan.FromHours(2), "Test+02", "Test+02"));
+        var waypoints = new FakeWaypointApi();
+        var reader = new FakeWaypointReader();
+        var svc = new MobService(api, store, kv, positions, clock,
+            logger: null, waypoints: waypoints, resources: reader);
+        return (new Fixture(svc, api, store, kv, clock), waypoints, reader);
+    }
+
+    /// <summary>Spin-wait until <paramref name="waypoints"/> has
+    /// recorded at least <paramref name="target"/> CreateAsync calls.
+    /// CreateMobWaypointAsync is fired-and-forgotten from RaiseAsync
+    /// so the test can return before the POST lands; the wait gives
+    /// the background continuation a deterministic observation window
+    /// without a wall-clock sleep.</summary>
+    private static async Task WaitForWaypointCreateAsync(
+        FakeWaypointApi waypoints, int target,
+        TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(2));
+        while (waypoints.CreateCalls.Count < target && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
     }
 
     /// <summary>Awaits the background retry loop for a localId. Used
@@ -185,6 +249,391 @@ public class MobServiceTests
 
         await Assert.That(f.Api.RaiseMobCalls.Count).IsEqualTo(1);
         await Assert.That(f.Api.RaiseMobCalls[0]).IsEqualTo("Crew overboard portside");
+    }
+
+    [Test]
+    public async Task RaiseAsync_With_Waypoint_Api_Creates_Mob_Waypoint()
+    {
+        // MOB-as-waypoint composition: RaiseAsync must pair every
+        // notification with a waypoint carrying isMob=true,
+        // isActive=true, mobAlarmId=<localId>. The helm sees the
+        // pulsing-red icon variant of the waypoint and any plotter
+        // observing the corresponding notifications.mob.* delta can
+        // correlate it via mobAlarmId.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            f.Api.SuspendRaise = true;   // keep the notification POST parked
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+
+            await Assert.That(waypoints.CreateCalls.Count).IsEqualTo(1);
+            var call = waypoints.CreateCalls[0];
+            await Assert.That(call.Latitude).IsEqualTo(47.5);
+            await Assert.That(call.Longitude).IsEqualTo(8.5);
+            await Assert.That(call.IsMob).IsTrue();
+            await Assert.That(call.IsActive).IsTrue();
+            await Assert.That(call.MobAlarmId).IsEqualTo(localId);
+            // Name uses local time (helm watch), not UTC. Fixture
+            // clock is UTC 12:00:00 with a UTC+02 local zone -> the
+            // helm sees 14:00:00. This pin guards the helm-vs-UTC
+            // contract; a refactor that swapped to DateTime.UtcNow
+            // would render "MOB: 12:00:00" and fail here.
+            await Assert.That(call.Name).IsEqualTo("MOB: 14:00:00");
+            // Description is intentionally null - the casualty
+            // position rides in geometry; duplicating it in a free-
+            // text field would leak PII into log + support-bundle
+            // surfaces and inflate the wire payload.
+            await Assert.That(call.Description).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task RaiseAsync_Mob_Waypoint_Name_Honours_Different_TimeZone()
+    {
+        // Cross-tz pin for the local-vs-UTC contract: a UTC+09 helm
+        // (e.g. cruising in Japan) must see "MOB: 21:00:00" given
+        // the fixture's UTC 12:00:00 clock. Flushes a regression
+        // where the formatter uses GetUtcNow / DateTime.UtcNow,
+        // which would always render 12:00:00 regardless of zone.
+        var jpZone = TimeZoneInfo.CreateCustomTimeZone(
+            "Test+09", TimeSpan.FromHours(9), "Test+09", "Test+09");
+        var (f, waypoints) = NewFixtureWithWaypoints(jpZone);
+        using (f)
+        {
+            f.Api.SuspendRaise = true;
+
+            await f.Service.RaiseAsync("MOB", 35.0, 139.0);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+
+            await Assert.That(waypoints.CreateCalls[0].Name).IsEqualTo("MOB: 21:00:00");
+        }
+    }
+
+    [Test]
+    public async Task RaiseAsync_Without_Position_Skips_Waypoint_Create()
+    {
+        // Helm flagged that hitting MOB without a GPS fix must still
+        // raise the alarm (banner + audio) - the chart marker has no
+        // coords to draw against and that's acceptable. The waypoint
+        // is similarly skipped: a SK waypoint requires lat/lon, so a
+        // null-coord raise stays notification-only.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            f.Api.SuspendRaise = true;
+
+            var localId = await f.Service.RaiseAsync("MOB", latitude: null, longitude: null);
+
+            // Give the fire-and-forget continuation a beat to NOT run.
+            await Task.Delay(50);
+            await Assert.That(waypoints.CreateCalls.Count).IsEqualTo(0);
+            // Notification side still landed - alarm pipeline armed.
+            var entry = f.Store.Active.First(n => n.Path == MobPathPrefix + localId);
+            await Assert.That(entry.Latitude).IsNull();
+        }
+    }
+
+    [Test]
+    public async Task RaiseAsync_With_5Arg_Ctor_Stores_Notification_Without_Throw()
+    {
+        // Legacy ctor compat (5-arg, no waypoint API): existing
+        // callers / older test ctors must not regress when the
+        // optional waypoint dep is absent. Notification side must
+        // still operate normally - the test name reflects what's
+        // observable here (5-arg ctor + notification storage),
+        // not the no-call-recorded contract that needs a fake
+        // waypoint API to assert (covered by RaiseAsync_With_Waypoint_Api_Creates_Mob_Waypoint
+        // for the inverse).
+        using var f = NewFixture();
+        f.Api.SuspendRaise = true;
+
+        var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+
+        var entry = f.Store.Active.First(n => n.Path == MobPathPrefix + localId);
+        await Assert.That(entry.Latitude).IsEqualTo(47.5);
+    }
+
+    [Test]
+    public async Task RaiseAsync_Notification_Side_Survives_Waypoint_Create_Failure()
+    {
+        // Best-effort waypoint contract: a waypoint POST failure
+        // (offline, server reject, schema drift) must NOT abort the
+        // alarm pipeline. Helm-critical guarantee: the audible alarm
+        // and banner ALWAYS fire even when the resource API is down.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            waypoints.NextCreateResult = ApiResult<string>.Fail("simulated network error");
+            f.Api.SuspendRaise = true;
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+
+            // Notification synthetic landed in the store regardless
+            // of the failed waypoint POST.
+            var entry = f.Store.Active.First(n => n.Path == MobPathPrefix + localId);
+            await Assert.That(entry.Latitude).IsEqualTo(47.5);
+            await Assert.That(entry.State).IsEqualTo("emergency");
+        }
+    }
+
+    [Test]
+    public async Task RaiseAsync_Failed_Waypoint_Create_Surfaces_Toast_Warning()
+    {
+        // OPS-002: the helm has no chart-pin signal beyond the toast,
+        // so a failed waypoint POST that only logs and dissolves into
+        // the WASM console is invisible. Pin that the toast delegate
+        // is invoked with a helm-readable message.
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
+        var api = new FakeNotificationsApi();
+        var store = new ServerNotificationStore();
+        var kv = new InMemoryKv();
+        var positions = new ResolvedPositionStore(kv);
+        var waypoints = new FakeWaypointApi();
+        var toasts = new List<string>();
+        using var svc = new MobService(api, store, kv, positions, clock,
+            logger: null, waypoints: waypoints, resources: null,
+            toastWarning: msg => toasts.Add(msg));
+        waypoints.NextCreateResult = ApiResult<string>.Fail("server 500");
+        api.SuspendRaise = true;
+
+        await svc.RaiseAsync("MOB", 47.5, 8.5);
+        await WaitForWaypointCreateAsync(waypoints, target: 1);
+        // Spin briefly for the toast continuation to land.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+        while (toasts.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
+
+        await Assert.That(toasts.Count).IsEqualTo(1);
+        await Assert.That(toasts[0]).Contains("MOB chart pin failed");
+        await Assert.That(toasts[0]).Contains("server 500");
+    }
+
+    [Test]
+    public async Task RaiseAsync_With_Distinct_ServerId_Updates_Mob_Waypoint_AlarmId()
+    {
+        // TEST-002: cross-plotter correlation contract. After the
+        // notification REST returns a serverId different from the
+        // localId, the paired waypoint's mobAlarmId must be rewritten
+        // so OTHER plotters seeing notifications.mob.<serverId> can
+        // find the waypoint via FindMobWaypoint's MobAlarmId scan.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            f.Api.NextServerId = "srv-distinct";
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+            await AwaitRaiseLoopAsync(f.Service, localId);
+            // The Update is fire-and-forgotten from the retry loop's
+            // success path; spin briefly until it lands.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+            while (waypoints.UpdateCalls.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+
+            await Assert.That(waypoints.UpdateCalls.Count).IsEqualTo(1);
+            var update = waypoints.UpdateCalls[0];
+            await Assert.That(update.IsMob).IsTrue();
+            await Assert.That(update.IsActive).IsTrue();   // still active until clear
+            await Assert.That(update.MobAlarmId).IsEqualTo("srv-distinct");
+        }
+    }
+
+    // RaiseAsync_With_ServerId_Equal_To_LocalId_Skips_AlarmId_Update
+    // was attempted but pulled: the FakeNotificationsApi cannot echo
+    // the helm's localId (it's generated inside RaiseAsync after the
+    // test sets up NextServerId), so there's no clean way to drive
+    // the equal-id branch from the public test surface. The skip-
+    // when-equal contract is enforced at the call site
+    // (`!string.Equals(result.Value, pending.LocalId, StringComparison.Ordinal)`)
+    // and verified by the inverse test
+    // (Distinct_ServerId_Updates_Mob_Waypoint_AlarmId) which would
+    // misfire if the inequality check inverted.
+
+    [Test]
+    public async Task RaiseAsync_Survives_UpdateMobAlarmId_Throw()
+    {
+        // TEST-007: a transient PUT failure on the mobAlarmId update
+        // must NOT crash the retry loop. The notification side has
+        // already succeeded; the cross-plotter correlation is a nice-
+        // to-have, not a precondition for the helm-side alarm clearing.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            f.Api.NextServerId = "srv-distinct";
+            // First Update throws; second succeeds (none expected here
+            // - we just need the loop to survive the throw).
+            waypoints.NextUpdateThrow = new InvalidOperationException("simulated PUT crash");
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+            await AwaitRaiseLoopAsync(f.Service, localId);
+
+            // Notification side committed its serverId -> the loop
+            // ran cleanly past the throw.
+            var pending = f.Service.GetPendingForTest(localId);
+            await Assert.That(pending?.ServerId).IsEqualTo("srv-distinct");
+        }
+    }
+
+    [Test]
+    public async Task ClearAsync_Flips_Mob_Waypoint_To_Inactive_Without_Deleting()
+    {
+        // TEST-001 (BLOCKER from the safety contract): cleared MOBs
+        // MUST NOT be deleted - they stay on the chart as a permanent
+        // history. A regression that swapped UpdateAsync(isActive=false)
+        // for DeleteAsync would silently erase casualty fixes from
+        // the chart and pass every other test in this suite.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            f.Api.NextServerId = "srv-clear-test";
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+            await AwaitRaiseLoopAsync(f.Service, localId);
+            // Drop any UpdateMobAlarmId calls that fire during
+            // serverId reconcile so the assertion isolates the
+            // deactivate PUT.
+            int updatesBeforeClear = waypoints.UpdateCalls.Count;
+
+            var cleared = await f.Service.ClearAsync(localId);
+            // Spin briefly for the fire-and-forget SetMobInactive PUT.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+            while (waypoints.UpdateCalls.Count == updatesBeforeClear && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+
+            await Assert.That(cleared).IsTrue();
+            await Assert.That(waypoints.UpdateCalls.Count).IsGreaterThan(updatesBeforeClear);
+            var deactivate = waypoints.UpdateCalls[^1];   // last call
+            await Assert.That(deactivate.IsMob).IsTrue();
+            await Assert.That(deactivate.IsActive).IsFalse();   // <-- safety contract
+            // Hard guarantee: NO delete call ever fires for MOB
+            // waypoints, regardless of state transitions.
+            await Assert.That(waypoints.DeleteCalls.Count).IsEqualTo(0);
+        }
+    }
+
+    [Test]
+    public async Task ClearAsync_Survives_Update_Throw_On_Deactivate()
+    {
+        // TEST-007: deactivate PUT failure must NOT abort the
+        // notification-side clear. Helm-critical: a stuck PUT cannot
+        // keep the audible alarm armed; ClearAsync still returns
+        // success and the alarm pipeline still tears down.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            f.Api.NextServerId = "srv-clear-throw";
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            await WaitForWaypointCreateAsync(waypoints, target: 1);
+            await AwaitRaiseLoopAsync(f.Service, localId);
+            // Arm the next update to throw (the deactivate PUT).
+            waypoints.NextUpdateThrow = new InvalidOperationException("simulated PUT crash");
+
+            var cleared = await f.Service.ClearAsync(localId);
+
+            // Notification side cleared cleanly despite the waypoint
+            // throw - the helm's audible alarm goes silent.
+            await Assert.That(cleared).IsTrue();
+            await Assert.That(f.Store.Active.Any(n => n.Path == MobPathPrefix + localId)).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task ClearAsync_From_ResourceCache_Falls_Back_To_Scan_By_MobAlarmId()
+    {
+        // TEST-003: post-reload clear path. The pending entry has
+        // been retired (previous session) and only the resource cache
+        // survived. FindMobWaypoint's tier-3 scan walks the cache by
+        // MobAlarmId. A regression here (typo in IsMob guard, wrong
+        // field comparison) would never deactivate the chart marker
+        // for a cleared-after-reload MOB.
+        var (f, waypoints, reader) = NewFixtureWithWaypointsAndReader();
+        using (f)
+        {
+            // Pre-seed the reader with a MOB waypoint as if reconciled
+            // from the server in a previous session. No pending entry
+            // for it - simulating the post-reload state.
+            reader.WaypointsList.Add(new SignalkWaypoint
+            {
+                Id = "wp-cached",
+                Name = "MOB: 14:00:00",
+                Latitude = 47.5,
+                Longitude = 8.5,
+                IsMob = true,
+                IsMobActive = true,
+                MobAlarmId = "previous-session-id",
+            });
+            // Also seed a non-MOB waypoint that happens to share the
+            // alarm id (defensive: scan must skip non-MOB rows).
+            reader.WaypointsList.Add(new SignalkWaypoint
+            {
+                Id = "wp-decoy",
+                Name = "Decoy",
+                Latitude = 47.6,
+                Longitude = 8.6,
+                IsMob = false,
+                MobAlarmId = "previous-session-id",
+            });
+            // Apply a server-twin notification at the canonical path
+            // so ClearAsync has something to clear.
+            f.Store.Apply("notifications.mob.previous-session-id", "emergency", "MOB",
+                id: "previous-session-id",
+                status: new NotificationStatus(false, false, false, true, true),
+                latitude: 47.5, longitude: 8.5);
+
+            var cleared = await f.Service.ClearAsync("previous-session-id");
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+            while (waypoints.UpdateCalls.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+
+            await Assert.That(cleared).IsTrue();
+            await Assert.That(waypoints.UpdateCalls.Count).IsEqualTo(1);
+            // Scan picked the right waypoint - the MOB one, not the
+            // decoy. Pinning by Id catches a regression where the
+            // !IsMob guard inverts.
+            await Assert.That(waypoints.UpdateCalls[0].Waypoint.Id).IsEqualTo("wp-cached");
+            await Assert.That(waypoints.UpdateCalls[0].IsActive).IsFalse();
+        }
+    }
+
+    [Test]
+    public async Task ClearAsync_During_Waypoint_Create_Doesnt_Stamp_Stale_State()
+    {
+        // TEST-006: helm clears MOB before the waypoint POST returns.
+        // The CTS threaded into CreateMobWaypointAsync via live.Cts
+        // unwinds the gated FakeWaypointApi.CreateAsync cleanly when
+        // ClearAsync's CancelAndDropPending fires - no leaked Task
+        // hanging the test runner. Pin both the unwind and the
+        // notification-side clear.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            waypoints.CreateGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.Api.SuspendRaise = true;
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            // Wait for the create call to ENTER the gate - race
+            // window is now open.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+            while (waypoints.CreateCalls.Count == 0 && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+            await Assert.That(waypoints.CreateCalls.Count).IsEqualTo(1);
+
+            // Helm clears NOW. Cancellation propagates into the
+            // gated CreateAsync's WaitAsync(ct), unwinds via OCE.
+            // No need to TrySetResult on the gate after - the
+            // cancellation already drained the wait.
+            var cleared = await f.Service.ClearAsync(localId);
+            await Assert.That(cleared).IsTrue();
+            await Task.Delay(50);
+
+            // Notification side cleared cleanly.
+            await Assert.That(f.Store.Active.Any(n => n.Path == MobPathPrefix + localId)).IsFalse();
+        }
     }
 
     [Test]
@@ -508,11 +957,12 @@ public class MobServiceTests
         // field from the /mob POST body, so the WS echo and the
         // /notifications GET both arrive with position=null. On
         // a clean restart (no persisted PendingRaise to fall back
-        // on), the chart marker disappeared because MobChartRenderer
-        // bails on null lat/lon. The resolved-position cache,
-        // written by reconcile in the previous session, is the
-        // recovery path: when ListActiveAsync's server twin lacks
-        // position, MobService merges in the cached coords.
+        // on), downstream consumers needing coords (the alarm rule's
+        // banner, the resolved-position store, the audit log) had no
+        // position available. The resolved-position cache, written by
+        // reconcile in the previous session, is the recovery path:
+        // when ListActiveAsync's server twin lacks position,
+        // MobService merges in the cached coords.
         using var f = NewFixture();
         // Pre-seed the KV with a resolved-position cache as if a
         // previous session had already raised + reconciled this MOB.
@@ -890,6 +1340,120 @@ public class MobServiceTests
             {
                 FailClearCount--;
                 return Task.FromResult(ApiResult.Fail("network"));
+            }
+            return Task.FromResult(ApiResult.Ok);
+        }
+    }
+
+    /// <summary>List-backed <see cref="IWaypointReader"/> fake. Tests
+    /// can pre-seed the cache to drive FindMobWaypoint's scan-fallback
+    /// branch, or leave it empty to exercise the in-memory + pending
+    /// fast paths.</summary>
+    private sealed class FakeWaypointReader : OnaPlotter.Services.Resources.IWaypointReader
+    {
+        public List<SignalkWaypoint> WaypointsList { get; } = [];
+        public IReadOnlyList<SignalkWaypoint> Waypoints => WaypointsList;
+        public SignalkWaypoint? GetWaypoint(string id) =>
+            WaypointsList.FirstOrDefault(w => w.Id == id);
+    }
+
+    /// <summary>Records every waypoint API call so MOB-composition
+    /// tests can verify what MobService posted. Returns success by
+    /// default; <see cref="NextCreateResult"/> overrides the outcome
+    /// of the next CreateAsync (used by the resource-failure test to
+    /// prove the notification path still fires when the waypoint POST
+    /// fails). <see cref="NextUpdateThrow"/> arms a one-shot exception
+    /// for the next UpdateAsync call, draining after firing once.
+    /// <see cref="CreateGate"/> parks CreateAsync until released, so
+    /// tests can drive the helm-clears-during-create race deterministically.
+    /// Lightweight: only the verbs MobService actually calls are
+    /// implemented.</summary>
+    private sealed class FakeWaypointApi : IWaypointApi
+    {
+        public sealed record CreateCall(
+            string Name, double Latitude, double Longitude,
+            string? Description, bool? IsMob, bool? IsActive, string? MobAlarmId);
+
+        public sealed record UpdateCall(
+            SignalkWaypoint Waypoint, string Name, string? Description,
+            bool? IsMob, bool? IsActive, string? MobAlarmId);
+
+        public List<CreateCall> CreateCalls { get; } = [];
+        public List<UpdateCall> UpdateCalls { get; } = [];
+        public List<string> DeleteCalls { get; } = [];
+
+        /// <summary>Override for the next CreateAsync result.
+        /// Resets to null after the call so the failure stays
+        /// scoped.</summary>
+        public ApiResult<string>? NextCreateResult { get; set; }
+
+        /// <summary>Server-assigned id returned on success when
+        /// <see cref="NextCreateResult"/> is null. Tests can vary
+        /// this to pin a specific waypoint id through the
+        /// composition.</summary>
+        public string NextCreateId { get; set; } = "wp-id-1";
+
+        /// <summary>One-shot exception arming for the next UpdateAsync
+        /// call. Drains after firing once. Used to drive the
+        /// "PUT throws" failure path without leaving the fake in a
+        /// permanently-throwing state.</summary>
+        public Exception? NextUpdateThrow { get; set; }
+
+        /// <summary>Optional gate on CreateAsync. When set, the call
+        /// records itself in <see cref="CreateCalls"/>, then awaits
+        /// the gate's Task before returning. Lets tests open and
+        /// close the helm-clears-during-create race window
+        /// deterministically.</summary>
+        public TaskCompletionSource? CreateGate { get; set; }
+
+        public Task<List<SignalkWaypoint>> GetAllAsync(CancellationToken ct = default)
+            => Task.FromResult(new List<SignalkWaypoint>());
+
+        public Task<ApiResult<string>> CreateAsync(
+            string name, double lat, double lon, string? description = null,
+            CancellationToken ct = default)
+            => CreateAsync(name, lat, lon, description, null, null, null, ct);
+
+        public async Task<ApiResult<string>> CreateAsync(
+            string name, double lat, double lon, string? description,
+            bool? isMob, bool? isActive, string? mobAlarmId,
+            CancellationToken ct = default)
+        {
+            CreateCalls.Add(new CreateCall(name, lat, lon, description, isMob, isActive, mobAlarmId));
+            if (CreateGate is { } gate)
+            {
+                try { await gate.Task.WaitAsync(ct); }
+                catch (OperationCanceledException) { return ApiResult<string>.Fail("cancelled"); }
+            }
+            if (NextCreateResult is { } result)
+            {
+                NextCreateResult = null;
+                return result;
+            }
+            return ApiResult<string>.Ok(NextCreateId);
+        }
+
+        public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default)
+        {
+            DeleteCalls.Add(id);
+            return Task.FromResult(ApiResult.Ok);
+        }
+
+        public Task<ApiResult> UpdateAsync(
+            SignalkWaypoint waypoint, string name, string? description = null,
+            CancellationToken ct = default)
+            => UpdateAsync(waypoint, name, description, null, null, null, ct);
+
+        public Task<ApiResult> UpdateAsync(
+            SignalkWaypoint waypoint, string name, string? description,
+            bool? isMob, bool? isActive, string? mobAlarmId,
+            CancellationToken ct = default)
+        {
+            UpdateCalls.Add(new UpdateCall(waypoint, name, description, isMob, isActive, mobAlarmId));
+            if (NextUpdateThrow is { } ex)
+            {
+                NextUpdateThrow = null;
+                throw ex;
             }
             return Task.FromResult(ApiResult.Ok);
         }

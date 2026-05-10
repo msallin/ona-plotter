@@ -94,20 +94,6 @@ public interface IMapControlsJs
     /// crossing per tick instead of N individual interop calls.</summary>
     Task ApplyFrameAsync(object frame);
 
-    /// <summary>Drop a Man-Overboard pin at the given lat/lon and play
-    /// the two-tone confirmation chime. <paramref name="createdAtIso"/>
-    /// is the SignalK-stamped ISO-8601 raise time the chart-marker
-    /// label should show; null falls back to the local clock so
-    /// pre-v2 servers and synthetic locally-raised entries still
-    /// render a timestamp. <paramref name="selfMmsi"/> is the
-    /// helm vessel's MMSI - shown in the marker's popup so a
-    /// helm reading the casualty fix off the chart can also read
-    /// it onto the VHF mic without going to a separate page.</summary>
-    Task SetMobAsync(double lat, double lon, string? createdAtIso, string? selfMmsi);
-
-    /// <summary>Clear the Man-Overboard pin.</summary>
-    Task ClearMobAsync();
-
     /// <summary>Drop the current-arrow overlay (tide / set+drift
     /// indicator). Cleared explicitly on dispose; the per-tick draw
     /// rides on <see cref="ApplyFrameAsync"/>.</summary>

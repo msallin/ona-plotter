@@ -240,6 +240,50 @@ public class ResourceStoreTests
     }
 
     [Test]
+    public async Task Delta_Lifts_Mob_Metadata_From_Feature_Properties()
+    {
+        // MOB-as-waypoint composition contract: the WS-delta path must
+        // lift isMob/isActive/mobAlarmId from feature.properties onto
+        // the flat SignalkWaypoint projection so MobService and the
+        // chart-marker layer can read them without walking the GeoJSON
+        // tree. A regression in the helper (typo, dropped field) would
+        // render a real MOB as a regular dot after a reconnect.
+        var store = new ResourceStore(
+            new FakeRouteApi(), new FakeWaypointApi(), new FakeNoteApi(), new FakeRegionApi(),
+            NewStubClient(), NullLogger<ResourceStore>.Instance);
+
+        var doc = """{"name":"MOB: 14:32:07","feature":{"type":"Feature","geometry":{"type":"Point","coordinates":[8.5,47.5]},"properties":{"isMob":true,"isActive":true,"mobAlarmId":"alarm-id-abc"}}}""";
+        store.HandleResourceDelta("waypoints", "mob1", JsonDocument.Parse(doc).RootElement);
+
+        var wp = store.GetWaypoint("mob1");
+        await Assert.That(wp).IsNotNull();
+        await Assert.That(wp!.IsMob).IsTrue();
+        await Assert.That(wp.IsMobActive).IsTrue();
+        await Assert.That(wp.MobAlarmId).IsEqualTo("alarm-id-abc");
+    }
+
+    [Test]
+    public async Task Delta_NonMob_Waypoint_Has_False_Mob_Flags()
+    {
+        // Pin the absent-key default contract: a regular waypoint
+        // (no MOB block in feature.properties) lifts to false / null,
+        // not to a "fail-safe-true" that would render every legacy
+        // waypoint as a MOB.
+        var store = new ResourceStore(
+            new FakeRouteApi(), new FakeWaypointApi(), new FakeNoteApi(), new FakeRegionApi(),
+            NewStubClient(), NullLogger<ResourceStore>.Instance);
+
+        var doc = """{"name":"Buoy","feature":{"type":"Feature","geometry":{"type":"Point","coordinates":[8.5,47.5]},"properties":{"description":""}}}""";
+        store.HandleResourceDelta("waypoints", "buoy1", JsonDocument.Parse(doc).RootElement);
+
+        var wp = store.GetWaypoint("buoy1");
+        await Assert.That(wp).IsNotNull();
+        await Assert.That(wp!.IsMob).IsFalse();
+        await Assert.That(wp.IsMobActive).IsFalse();
+        await Assert.That(wp.MobAlarmId).IsNull();
+    }
+
+    [Test]
     public async Task RefreshAllAsync_Per_Type_Failure_Degrades_Gracefully()
     {
         // One API fetch failure shouldn't take the others down.

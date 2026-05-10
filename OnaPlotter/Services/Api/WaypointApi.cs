@@ -34,14 +34,11 @@ public sealed class WaypointApi : IWaypointApi
                     wp.Longitude = latLon.Value.Longitude;
                 }
             }
-            // Lift the description out of the GeoJSON properties block
-            // into a flat field so the popup-Edit dialog can pre-fill
-            // it. Empty string is the absent-description value
-            // GeoJsonBuilder.FeatureBody emits on Create; treat it as
-            // null so the textarea placeholder ("Description (optional)")
-            // surfaces instead of an empty input.
-            var desc = wp.Feature?.Properties?.Description;
-            wp.Description = string.IsNullOrEmpty(desc) ? null : desc;
+            // Lift description + MOB metadata onto the flat
+            // SignalkWaypoint projection fields. Helper lives on the
+            // model so the WS-delta path in ResourceStore stays in
+            // lockstep with this REST path.
+            wp.LiftFromFeatureProperties();
             waypoints.Add(wp);
         }
         return waypoints;
@@ -49,6 +46,17 @@ public sealed class WaypointApi : IWaypointApi
 
     public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon,
         string? description = null, CancellationToken ct = default)
+        => CreateAsync(name, lat, lon, description, null, null, null, ct);
+
+    /// <summary>Create overload that also stamps the MOB metadata
+    /// fields (<c>isMob</c> / <c>isActive</c> / <c>mobAlarmId</c>)
+    /// when present. Call from <c>MobService.RaiseAsync</c> so the
+    /// resulting waypoint renders with the pulsing MOB icon and
+    /// correlates with the SignalK notification id. Non-MOB
+    /// callers use the simpler 4-arg overload above.</summary>
+    public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon,
+        string? description, bool? isMob, bool? isActive, string? mobAlarmId,
+        CancellationToken ct = default)
     {
         // Shared GeoJSON envelope builder: SignalK core + peer
         // clients refuse feature documents without a `properties`
@@ -60,7 +68,9 @@ public sealed class WaypointApi : IWaypointApi
         // approach as SignalkNote - relies on resources-fs round-
         // tripping arbitrary top-level body fields.
         var body = GeoJsonBuilder.FeatureBody(
-            name, GeoJsonBuilder.Point(lat, lon), description, createdAt: DateTime.UtcNow);
+            name, GeoJsonBuilder.Point(lat, lon), description,
+            createdAt: DateTime.UtcNow,
+            isMob: isMob, isActive: isActive, mobAlarmId: mobAlarmId);
         var url = _baseUrl.Combine(SignalKUrls.WaypointsPath);
         return ResourceHttp.PostCreateAsync(_http, url, body, ct);
     }
@@ -69,6 +79,15 @@ public sealed class WaypointApi : IWaypointApi
         ResourceHttp.DeleteAsync(_http, _baseUrl.Combine(SignalKUrls.Waypoint(id)), ct);
 
     public Task<ApiResult> UpdateAsync(SignalkWaypoint wp, string name, string? description = null, CancellationToken ct = default)
+        => UpdateAsync(wp, name, description, null, null, null, ct);
+
+    /// <summary>Update overload that also writes MOB metadata. Pass
+    /// the existing waypoint's flags through verbatim when editing
+    /// a non-MOB waypoint (the simpler overload above does this);
+    /// pass <c>isActive: false</c> from <c>MobService.ClearAsync</c>
+    /// to deactivate without deleting.</summary>
+    public Task<ApiResult> UpdateAsync(SignalkWaypoint wp, string name, string? description,
+        bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(wp.Id)) return Task.FromResult(ApiResult.Fail("waypoint id required"));
         if (wp.Latitude is not double lat || wp.Longitude is not double lon)
@@ -78,7 +97,9 @@ public sealed class WaypointApi : IWaypointApi
         // round-trips from the existing waypoint so an Edit doesn't
         // reset the "first pinned" timestamp.
         var body = GeoJsonBuilder.FeatureBody(
-            name, GeoJsonBuilder.Point(lat, lon), description, createdAt: wp.CreatedAt);
+            name, GeoJsonBuilder.Point(lat, lon), description,
+            createdAt: wp.CreatedAt,
+            isMob: isMob, isActive: isActive, mobAlarmId: mobAlarmId);
         var url = _baseUrl.Combine(SignalKUrls.Waypoint(wp.Id));
         return ResourceHttp.PutAsync(_http, url, body, ct);
     }

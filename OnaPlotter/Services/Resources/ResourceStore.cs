@@ -41,7 +41,7 @@ namespace OnaPlotter.Services.Resources;
 /// dispatches WS deltas to the right cache, and orchestrates REST
 /// reconcile across all four in parallel.</para>
 /// </summary>
-public sealed class ResourceStore : IAsyncDisposable
+public sealed class ResourceStore : IAsyncDisposable, IWaypointReader
 {
     private readonly IRouteApi _routesApi;
     private readonly IWaypointApi _waypointsApi;
@@ -387,8 +387,9 @@ public sealed class ResourceStore : IAsyncDisposable
                     wp.Longitude = latLon.Value.Longitude;
                 }
             }
-            var desc = wp.Feature?.Properties?.Description;
-            wp.Description = string.IsNullOrEmpty(desc) ? null : desc;
+            // Lift description + MOB metadata via the shared helper so
+            // delta + REST paths can never drift.
+            wp.LiftFromFeatureProperties();
             _waypointCache.Apply(id, wp);
         }
         catch (JsonException ex)

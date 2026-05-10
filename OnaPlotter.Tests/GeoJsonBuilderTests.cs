@@ -249,4 +249,104 @@ public class GeoJsonBuilderTests
         var json = Serialize(body);
         await Assert.That(json).Contains("\"description\":\"\"");
     }
+
+    [Test]
+    public async Task FeatureBody_WithMobMetadata_EmitsKeysInsideProperties()
+    {
+        // MOB-as-waypoint composition: isMob/isActive/mobAlarmId must
+        // ride INSIDE feature.properties so the post-deserialise lift
+        // in WaypointApi.GetAllAsync + ResourceStore.HandleWaypointDelta
+        // (both read from feature.properties) round-trips.
+        var body = GeoJsonBuilder.FeatureBody(
+            "MOB: 14:32:07",
+            GeoJsonBuilder.Point(47.5, 8.5),
+            description: null,
+            isMob: true, isActive: true, mobAlarmId: "alarm-id-abc");
+        var json = Serialize(body);
+
+        // Keys land inside the properties block, NOT at the top-level
+        // (the top-level dual-emit was speculative dead emission and
+        // got dropped during the refactor cleanup).
+        await Assert.That(json).Contains("\"properties\":");
+        await Assert.That(json).Contains("\"isMob\":true");
+        await Assert.That(json).Contains("\"isActive\":true");
+        await Assert.That(json).Contains("\"mobAlarmId\":\"alarm-id-abc\"");
+    }
+
+    [Test]
+    public async Task FeatureBody_WithoutMobMetadata_OmitsAllMobKeys()
+    {
+        // Non-MOB waypoint must NOT carry empty/null MOB keys -
+        // every regular waypoint POST would otherwise inflate with
+        // four extra fields, and feature.properties would render the
+        // MOB icon if a future deserialiser interpreted "isMob":null
+        // truthily.
+        var body = GeoJsonBuilder.FeatureBody(
+            "Regular WP",
+            GeoJsonBuilder.Point(47.5, 8.5),
+            description: "harbour buoy");
+        var json = Serialize(body);
+
+        await Assert.That(json).DoesNotContain("isMob");
+        await Assert.That(json).DoesNotContain("isActive");
+        await Assert.That(json).DoesNotContain("mobAlarmId");
+    }
+
+    [Test]
+    public async Task FeatureBody_WithMobMetadata_DoesNotEmitMobKeysAtTopLevel()
+    {
+        // Pin SKEP-001 fix: the top-level isMob/isActive/mobAlarmId
+        // emission was dead (no reader) and got removed. A regression
+        // re-adding it would inflate every MOB waypoint's wire payload.
+        var body = GeoJsonBuilder.FeatureBody(
+            "MOB: 14:32:07",
+            GeoJsonBuilder.Point(47.5, 8.5),
+            description: null,
+            isMob: true, isActive: false, mobAlarmId: "alarm-id-xyz");
+        var json = Serialize(body);
+
+        // Find the substring START of feature.properties; everything
+        // before it is "top-level". A naive Contains check catches
+        // the "key appears anywhere" case but we want "key appears
+        // ONLY inside feature.properties" - count the occurrences.
+        int isMobOccurrences = CountOccurrences(json, "\"isMob\":");
+        int isActiveOccurrences = CountOccurrences(json, "\"isActive\":");
+        int alarmIdOccurrences = CountOccurrences(json, "\"mobAlarmId\":");
+
+        await Assert.That(isMobOccurrences).IsEqualTo(1);
+        await Assert.That(isActiveOccurrences).IsEqualTo(1);
+        await Assert.That(alarmIdOccurrences).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task FeatureBody_WithMobMetadata_AndCreatedAt_EmitsBothBlocks()
+    {
+        // Combo case: a MOB raise carries a createdAt at the top-
+        // level (resources-fs round-trips arbitrary fields) AND the
+        // MOB triple inside properties.
+        var when = new DateTime(2026, 5, 9, 14, 32, 7, DateTimeKind.Utc);
+        var body = GeoJsonBuilder.FeatureBody(
+            "MOB: 14:32:07",
+            GeoJsonBuilder.Point(47.5, 8.5),
+            description: null,
+            createdAt: when,
+            isMob: true, isActive: true, mobAlarmId: "alarm-combo");
+        var json = Serialize(body);
+
+        await Assert.That(json).Contains("\"createdAt\":\"2026-05-09T14:32:07");
+        await Assert.That(json).Contains("\"isMob\":true");
+        await Assert.That(json).Contains("\"mobAlarmId\":\"alarm-combo\"");
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.IndexOf(needle, idx, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            idx += needle.Length;
+        }
+        return count;
+    }
 }

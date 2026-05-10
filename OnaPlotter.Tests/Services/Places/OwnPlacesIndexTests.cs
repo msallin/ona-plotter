@@ -107,9 +107,15 @@ public class OwnPlacesIndexTests
         { LoadCount++; return Task.FromResult(Waypoints.ToList()); }
         public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon, string? description = null, CancellationToken ct = default)
             => Task.FromResult(ApiResult<string>.Ok(""));
+        public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon, string? description,
+            bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default)
+            => Task.FromResult(ApiResult<string>.Ok(""));
         public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default)
             => Task.FromResult(ApiResult.Ok);
         public Task<ApiResult> UpdateAsync(SignalkWaypoint waypoint, string newName, string? newDescription = null, CancellationToken ct = default)
+            => Task.FromResult(ApiResult.Ok);
+        public Task<ApiResult> UpdateAsync(SignalkWaypoint waypoint, string newName, string? newDescription,
+            bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default)
             => Task.FromResult(ApiResult.Ok);
     }
 
@@ -255,9 +261,15 @@ public class OwnPlacesIndexTests
         }
         public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon, string? description = null, CancellationToken ct = default)
             => Task.FromResult(ApiResult<string>.Ok(""));
+        public Task<ApiResult<string>> CreateAsync(string name, double lat, double lon, string? description,
+            bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default)
+            => Task.FromResult(ApiResult<string>.Ok(""));
         public Task<ApiResult> DeleteAsync(string id, CancellationToken ct = default)
             => Task.FromResult(ApiResult.Ok);
         public Task<ApiResult> UpdateAsync(SignalkWaypoint waypoint, string newName, string? newDescription = null, CancellationToken ct = default)
+            => Task.FromResult(ApiResult.Ok);
+        public Task<ApiResult> UpdateAsync(SignalkWaypoint waypoint, string newName, string? newDescription,
+            bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default)
             => Task.FromResult(ApiResult.Ok);
     }
 

@@ -58,6 +58,9 @@ internal static class ResourceContentEquality
             && a.Latitude == b.Latitude
             && a.Longitude == b.Longitude
             && a.CreatedAt == b.CreatedAt
+            && a.IsMob == b.IsMob
+            && a.IsMobActive == b.IsMobActive
+            && a.MobAlarmId == b.MobAlarmId
             && FeatureEquals(a.Feature, b.Feature);
     }
 
@@ -111,7 +114,10 @@ internal static class ResourceContentEquality
         if (a is null || b is null) return false;
         return a.Name == b.Name
             && a.Description == b.Description
-            && a.IsHazard == b.IsHazard;
+            && a.IsHazard == b.IsHazard
+            && a.IsMob == b.IsMob
+            && a.IsMobActive == b.IsMobActive
+            && a.MobAlarmId == b.MobAlarmId;
     }
 
     private static bool PositionEquals(NotePosition? a, NotePosition? b)

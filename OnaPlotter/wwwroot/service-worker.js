@@ -731,6 +731,15 @@
 // v76 -> v77: Doubled the auth-status poll cadence: 2s -> 4s while
 //             the not-logged-in chip is up, 1min -> 2min when it's
 //             not. Halves the auth-probe HTTP traffic at no UX cost.
+// v77 -> v78: MOB-as-waypoint refactor. The MOB button now drops a
+//             waypoint with isMob=true / isActive=true / mobAlarmId=
+//             <notification-id> instead of a dedicated mob-layer
+//             marker. Cleared MOBs flip to isActive=false rather
+//             than getting deleted, so the chart keeps a persistent
+//             MOB history. mobLayer.js is gone; waypointLayer.js
+//             carries the pulsing-red icon variant. APP_SHELL
+//             precache invalidates so the freshly-loaded page picks
+//             up the new wiring.
 const CACHE_NAME = 'ona-plotter-v78';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
