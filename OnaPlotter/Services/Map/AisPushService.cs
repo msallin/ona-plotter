@@ -254,6 +254,18 @@ public sealed class AisPushService
             string? sartCat = AisSart.CategoryFromAny(v.Mmsi, v.Context);
             string? glyphCategory = AisPalette.ShipTypeCategory(v.ShipType);
 
+            // Current distance from own ship to this target. Used to
+            // gate the threat classifier - vessels currently outside the
+            // outer (warning) ring don't draw a crossing line even if
+            // their projected CPA would otherwise place them in the
+            // band. Helms reported far-away vessels with marginal
+            // closing tracks as visual noise on the chart.
+            double currentDistNm = ownComplete
+                ? GeoMath.HaversineMeters(
+                    ownLat!.Value, ownLon!.Value,
+                    v.Latitude!.Value, v.Longitude!.Value) / 1852.0
+                : double.PositiveInfinity;  // own state missing -> no threat
+
             // CPA threat band (none / warning / danger) is computed
             // here against the helm's guard-zone settings. JS used to
             // redo this thresholding inline; lifting it up means
@@ -264,9 +276,9 @@ public sealed class AisPushService
             // what the visible guard-zone rings show.
             var threat = Cpa.ClassifyThreat(
                 cpaNm, tcpaMin,
+                currentDistNm,
                 effectiveCpaRadiusNm,
                 _settings.GuardZoneLookaheadMinutes,
-                _settings.GuardZoneWarningFactor,
                 v.IsBuddy);
             string cpaThreat = threat switch
             {

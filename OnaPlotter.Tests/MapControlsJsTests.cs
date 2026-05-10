@@ -72,18 +72,23 @@ public class MapControlsJsTests
     }
 
     [Test]
-    public async Task SetGuardZoneAsync_PassesAllThreeArgs()
+    public async Task SetGuardZoneAsync_PassesRadiusAndLookahead()
     {
+        // Outer (warning) ring multiplier was previously the third arg
+        // (the helm-configurable warning factor). Removed - the visible
+        // warning ring is now hardcoded at 2× the inner radius via
+        // Cpa.OuterRingMultiplier, so the JS side doesn't need the
+        // value passed in. This test pins the new two-arg shape so a
+        // future "let's add it back" change shows up here.
         var fake = new RecordingJsRef();
         var sut = new MapControlsJs(fake);
 
-        await sut.SetGuardZoneAsync(0.5, 6.0, 0.7);
+        await sut.SetGuardZoneAsync(0.5, 6.0);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setGuardZone");
-        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(3);
+        await Assert.That(fake.Calls[0].args.Length).IsEqualTo(2);
         await Assert.That(fake.Calls[0].args[0]).IsEqualTo(0.5);
         await Assert.That(fake.Calls[0].args[1]).IsEqualTo(6.0);
-        await Assert.That(fake.Calls[0].args[2]).IsEqualTo(0.7);
     }
 
     [Test]

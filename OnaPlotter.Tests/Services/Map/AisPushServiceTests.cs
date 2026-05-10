@@ -198,7 +198,6 @@ public class AisPushServiceTests
         {
             CpaAlarmThreshold = 0.5,
             GuardZoneLookaheadMinutes = 30.0,
-            GuardZoneWarningFactor = 2.0,
         };
         var svc = NewService(store, js, settings);
 

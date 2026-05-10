@@ -108,9 +108,9 @@ public interface IMapDisplaySettings
     /// for a cleaner chart, or both rings for full context).
     /// Defaults to true so existing installs gain the new advisory
     /// ring without an opt-in step. Has no effect when the inner
-    /// ring is hidden, when harbor mode is active, or when
-    /// <c>GuardZoneWarningFactor &lt;= 1</c> (warning band collapsed
-    /// onto the danger band - nothing to draw).</summary>
+    /// ring is hidden or when harbor mode is active. The ring radius
+    /// itself is always 2× the helm-configured guard zone (see
+    /// <c>Cpa.OuterRingMultiplier</c>).</summary>
     bool GuardZoneWarningRingVisible { get; }
 
     /// <summary>RainViewer weather overlay opacity, 0.05..0.95

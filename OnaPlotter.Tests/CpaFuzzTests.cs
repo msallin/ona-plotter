@@ -245,65 +245,97 @@ public class CpaFuzzTests
         {
             double cpa = rng.NextDouble() * 5.0;
             double tcpa = rng.NextDouble() * 30.0;
+            double currentDist = rng.NextDouble() * 5.0;
             double radius = rng.NextDouble() * 2.0 + 0.1;
             double look = rng.NextDouble() * 30.0 + 1.0;
-            double factor = rng.NextDouble() * 2.0 + 1.0;
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, radius, look, factor, isBuddy: true);
+            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: true);
             await Assert.That(t).IsEqualTo(Cpa.Threat.None);
         }
     }
 
     [Test]
-    public async Task ClassifyThreat_DangerImpliesInsideRadiusAndLookahead()
+    public async Task ClassifyThreat_DangerImpliesInsideGuardZoneAndLookahead()
     {
-        // If the result is Danger, the inputs must satisfy the strict
-        // band: cpa < radius AND tcpa < lookahead. Pinning this catches
-        // a regression where someone widens the band accidentally
-        // (e.g. by replacing < with <=, or using radius * factor for
-        // the danger band by mistake).
+        // If the result is Danger, the inputs must satisfy: vessel is
+        // CURRENTLY within the guard zone, the projected CPA is also
+        // within the guard zone (so it's actually closing), and the
+        // TCPA is inside the lookahead. Catches a regression where
+        // someone widens the band accidentally (e.g. replacing <= with
+        // <, or accidentally using outer-ring radius for the danger
+        // gate).
         var rng = new Random(Seed ^ 6);
         for (int i = 0; i < 1000; i++)
         {
             double cpa = rng.NextDouble() * 5.0;
             double tcpa = rng.NextDouble() * 30.0 + 0.01;       // > 0 to avoid the early-exit
+            double currentDist = rng.NextDouble() * 5.0;
             double radius = rng.NextDouble() * 2.0 + 0.1;
             double look = rng.NextDouble() * 30.0 + 1.0;
-            double factor = rng.NextDouble() * 2.0 + 1.0;
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, radius, look, factor, isBuddy: false);
+            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: false);
             if (t == Cpa.Threat.Danger)
             {
-                await Assert.That(cpa).IsLessThan(radius);
-                await Assert.That(tcpa).IsLessThan(look);
+                await Assert.That(cpa).IsLessThanOrEqualTo(radius);
+                await Assert.That(tcpa).IsLessThanOrEqualTo(look);
+                await Assert.That(currentDist).IsLessThanOrEqualTo(radius);
             }
         }
     }
 
     [Test]
-    public async Task ClassifyThreat_NoneOutsideAmberBand()
+    public async Task ClassifyThreat_WarningImpliesInsideOuterRing()
     {
-        // Symmetric: if the result is None (and not buddy), then the
-        // inputs are OUTSIDE the amber band on at least one axis.
+        // Warning fires only when the vessel is in the outer ring
+        // (between guard zone and 2× guard zone). A vessel currently
+        // outside the outer ring should NEVER classify Warning regardless
+        // of how close its projected CPA looks - that's the user-driven
+        // change that triggered this whole pass.
         var rng = new Random(Seed ^ 7);
-        int sawNone = 0;
+        int sawWarning = 0;
         for (int i = 0; i < 1000; i++)
         {
             double cpa = rng.NextDouble() * 5.0;
             double tcpa = rng.NextDouble() * 30.0 + 0.01;
+            double currentDist = rng.NextDouble() * 5.0;
             double radius = rng.NextDouble() * 2.0 + 0.1;
             double look = rng.NextDouble() * 30.0 + 1.0;
-            double factor = rng.NextDouble() * 2.0 + 1.0;
 
-            var t = Cpa.ClassifyThreat(cpa, tcpa, radius, look, factor, isBuddy: false);
-            if (t == Cpa.Threat.None)
+            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: false);
+            if (t == Cpa.Threat.Warning)
             {
-                sawNone++;
-                bool outsideAmber = !(cpa < radius * factor && tcpa < look * factor);
-                await Assert.That(outsideAmber).IsTrue();
+                sawWarning++;
+                await Assert.That(currentDist).IsGreaterThan(radius);
+                await Assert.That(currentDist).IsLessThanOrEqualTo(radius * Cpa.OuterRingMultiplier);
             }
         }
-        await Assert.That(sawNone).IsGreaterThan(50);
+        await Assert.That(sawWarning).IsGreaterThan(20);
+    }
+
+    [Test]
+    public async Task ClassifyThreat_NoneOutsideOuterRing()
+    {
+        // Symmetric: if currentDistance is outside the outer ring (>
+        // 2× guard zone), the result is always None even if a closing
+        // CPA would otherwise put it in the band. This is the
+        // anti-clutter contract.
+        var rng = new Random(Seed ^ 8);
+        int checks = 0;
+        for (int i = 0; i < 1000; i++)
+        {
+            double cpa = rng.NextDouble() * 0.5;       // small cpa so otherwise eligible
+            double tcpa = rng.NextDouble() * 5.0 + 0.5; // small tcpa so otherwise eligible
+            double radius = rng.NextDouble() * 1.0 + 0.5;
+            double look = rng.NextDouble() * 20.0 + 5.0;
+            // Force currentDist outside the outer ring.
+            double currentDist = radius * Cpa.OuterRingMultiplier
+                                 + 0.1 + rng.NextDouble() * 5.0;
+
+            var t = Cpa.ClassifyThreat(cpa, tcpa, currentDist, radius, look, isBuddy: false);
+            await Assert.That(t).IsEqualTo(Cpa.Threat.None);
+            checks++;
+        }
+        await Assert.That(checks).IsGreaterThan(900);
     }
 
     [Test]
@@ -312,13 +344,13 @@ public class CpaFuzzTests
         // tcpa <= 0 means "CPA is in the past" - the rule must say
         // None, not Warning, regardless of cpa value. Mirror of the
         // null-cpa case.
-        await Assert.That(Cpa.ClassifyThreat(0.1, null,  0.5, 10.0, 2.0, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, null,  0.3, 0.5, 10.0, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(null, 5.0,  0.5, 10.0, 2.0, false))
+        await Assert.That(Cpa.ClassifyThreat(null, 5.0,  0.3, 0.5, 10.0, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0,   0.5, 10.0, 2.0, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0,   0.3, 0.5, 10.0, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, -5.0,  0.5, 10.0, 2.0, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, -5.0,  0.3, 0.5, 10.0, false))
             .IsEqualTo(Cpa.Threat.None);
     }
 }

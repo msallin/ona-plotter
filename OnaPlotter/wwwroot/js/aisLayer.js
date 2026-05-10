@@ -35,18 +35,17 @@ const aisVectors = {};
 // VECTOR_MINUTES" - without it the line just trails off and the
 // helm has to mentally extrapolate the endpoint.
 const aisVectorTips = {};
-const aisCpaOwnLines = {};
+// CPA overlay state per vessel context. The line goes from the
+// target's CURRENT position to its projected position at TCPA;
+// the X marker sits at the projected end with the click-tooltip
+// carrying the {name / cpa nm / tcpa min} label. Own-side mirror
+// (own line + own X) was previously drawn too but helms read the
+// two X marks as duplicates - dropped to keep one X per threat.
 const aisCpaTgtLines = {};
-// X markers at the closest-approach endpoints. Rendering each
-// CPA point as a small "×" rather than a midpoint label means the
-// helm can SEE the meeting point on the chart - the previous
-// label hid it. The label is now a tooltip BOUND to the target's
-// X so it sits above without obscuring the point itself.
 const aisCpaTgtX = {};
-const aisCpaOwnX = {};
-// Last-seen severity per target so we can detect first-detection
-// transitions and run the 2-second auto-hide on warning-state
-// labels (danger labels stay permanent, see CpaLabelMode below).
+// Last-seen severity per target. Currently only consulted by
+// removeCpaOverlay to drop the entry on de-classification; future
+// uses (transition-driven UI) can hang off the same map.
 const aisCpaLastSeverity = {};
 const aisTrailHistory = {};
 const aisTrailLines = {};
@@ -150,7 +149,11 @@ let guardZoneRingLabel = null;
 let guardZoneWarningRingLabel = null;
 let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThreshold
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
-let guardZoneWarningFactor = 2.0;  // default matches IAppSettings.GuardZoneWarningFactor
+// Outer (warning) ring multiplier. Hardcoded at 2× the inner radius
+// to match Utilities/Cpa.OuterRingMultiplier. Was a helm-configurable
+// "warning factor" - removed because the visible ring already implied
+// 2× and helms read the second knob as confusing.
+const OUTER_RING_MULT = 2.0;
 // Visibility toggle from the Misc layers section. The ring still
 // drives the CPA / TCPA alarm pipeline regardless - this is a pure
 // rendering flag. Default true preserves the previous always-visible
@@ -232,7 +235,7 @@ export function setBoatPosition(lat, lon, cogRad, sogMs) {
         guardZoneRingLabel.setLatLng([lat + latDeg, lon]);
     }
     if (guardZoneWarningRingLabel) {
-        const warnNm = guardZoneRadiusNm * Math.max(1.0, guardZoneWarningFactor);
+        const warnNm = guardZoneRadiusNm * OUTER_RING_MULT;
         const latDeg = (warnNm * 1852) / 111320;
         guardZoneWarningRingLabel.setLatLng([lat + latDeg, lon]);
     }
@@ -992,69 +995,37 @@ export function updateAisTargets(vessels) {
         // amongst the moving vessels still gets a visible crossing line.
         if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
             const tcpaSec = cpaInfo.tcpa * 60;
-            const ownCpa = destPoint(selfLat, selfLon, selfCogRad, selfSogMs * tcpaSec);
             const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
             const lineColor = isDangerEff ? colors.mob : colors.guardWarn;
 
-            // CPA lines: less prominent than they used to be (weight
-            // 1.2 + smaller dash + lower opacity) so the helm's eye
-            // tracks the X markers + label rather than the lines
-            // themselves. The lines still anchor "from boat to where
-            // we'll be at CPA" so the geometry is readable, but they
-            // shouldn't dominate the chart when other vessels around
-            // are not in collision territory.
-            updateCpaLine(aisCpaOwnLines, v.context, [selfLat, selfLon], ownCpa, lineColor);
+            // CPA line: from the target's CURRENT position to its
+            // projected position at TCPA. The line + the X at the end
+            // of the line tell the helm "this vessel is going there at
+            // that pace". The own-side mirror of this (own line + own
+            // X) was previously also drawn but helms read the two X
+            // marks as duplicates and only the target X was clickable;
+            // dropped to one X per threat. Helm can already see their
+            // own boat + its COG vector, so a third "where I'll be at
+            // CPA" marker was redundant.
             updateCpaLine(aisCpaTgtLines, v.context, [v.lat, v.lon], tgtCpa, lineColor);
 
-            // X markers at each closest-approach endpoint. The
-            // previous design put the label at the midpoint between
-            // the two CPA points, which hid the actual approach
-            // points (helm couldn't see WHERE the boats would be
-            // closest). Two small "×" glyphs render as crosses on
-            // the chart; the target's X carries the tooltip with
-            // the label so it sits ABOVE the cross rather than over
-            // it.
+            // Single X marker at the target's projected CPA position.
+            // The label rides ON the X via Leaflet tooltip. Compact
+            // format (no spaces around units) - helm reads "0.42nm
+            // in 5min" as one phrase. "T -N′" (prime symbol) reads as
+            // "Time minus N minutes" in countdown-clock convention.
             const cpaName = v.displayName || v.name || v.mmsi || 'Unknown';
-            // Compact format (no spaces around units) - focus-group
-            // readback. Helm reads "0.42nm in 5min" as one phrase.
-            // "T -N′" (prime symbol) reads as "Time minus N
-            // minutes" in countdown-clock convention, which is the
-            // CPA semantics the helm needs at a glance. Compact
-            // form vs the verbose "in N min"; the apostrophe-style
-            // glyph (U+2032 prime) avoids ambiguity with the unit
-            // "m" which on a chart may be metres.
             const labelText = `<strong>${esc(cpaName)}</strong><br>${cpaInfo.cpa.toFixed(2)}nm  T -${cpaInfo.tcpa.toFixed(0)}′`;
             const severity = isDangerEff ? 'danger' : 'warn';
-            updateCpaXMarker(aisCpaOwnX, v.context, ownCpa, severity, /*withTooltip*/false, null, null);
             updateCpaXMarker(aisCpaTgtX, v.context, tgtCpa, severity, /*withTooltip*/true, labelText, v.context);
 
-            // Auto-hide the label on warning state. Danger labels
-            // stay permanent (the helm needs to see the collision
-            // info without hovering); warning labels show on first
-            // detection for 2 s then fade to "tap / hover the X to
-            // re-show", which keeps the chart less cluttered when
-            // multiple low-priority targets are in view simultaneously.
-            const prevSeverity = aisCpaLastSeverity[v.context];
+            // Label visibility: danger labels are permanent (helm must
+            // see the collision info without hovering); warning labels
+            // show only on hover/click. Helm-feedback round: the older
+            // "first-tick auto-pop for 2 s then close" was read as
+            // visual noise - the helm gets the warning chevron colour
+            // pre-attentively and clicks the X when they want detail.
             aisCpaLastSeverity[v.context] = severity;
-            if (severity === 'warn' && prevSeverity !== 'warn') {
-                // First-tick of a warn - pop the tooltip briefly.
-                const m = aisCpaTgtX[v.context];
-                if (m) {
-                    m.openTooltip();
-                    setTimeout(() => {
-                        // Defensive: target may have aged out, severity
-                        // may have escalated to danger (now permanent),
-                        // or the helm may be hovering the X right now
-                        // (Leaflet's hover-tooltip behavior re-opens
-                        // it). closeTooltip is idempotent on already-
-                        // closed; non-permanent permits hover re-open.
-                        if (aisCpaLastSeverity[v.context] === 'warn'
-                            && aisCpaTgtX[v.context] === m) {
-                            m.closeTooltip();
-                        }
-                    }, 2000);
-                }
-            }
         } else {
             removeCpaOverlay(v.context);
         }
@@ -1200,10 +1171,8 @@ function updateCpaXMarker(store, ctx, latlon, severity, withTooltip, labelText, 
 }
 
 function removeCpaOverlay(ctx) {
-    if (aisCpaOwnLines[ctx]) { mapRef.removeLayer(aisCpaOwnLines[ctx]); delete aisCpaOwnLines[ctx]; }
     if (aisCpaTgtLines[ctx]) { mapRef.removeLayer(aisCpaTgtLines[ctx]); delete aisCpaTgtLines[ctx]; }
     if (aisCpaTgtX[ctx])     { mapRef.removeLayer(aisCpaTgtX[ctx]);     delete aisCpaTgtX[ctx]; }
-    if (aisCpaOwnX[ctx])     { mapRef.removeLayer(aisCpaOwnX[ctx]);     delete aisCpaOwnX[ctx]; }
     delete aisCpaLastSeverity[ctx];
 }
 
@@ -1248,17 +1217,15 @@ export function focusVessel(context) {
 
 /**
  * Updates collision thresholds used to colour AIS targets and draw
- * the crossing-situation lines. A target whose CPA/TCPA is inside
- * the raw guard zone gets a red line; a target inside
- * guardZone*warningFactor gets amber. Pass warningFactor <= 1 to
- * disable the amber band.
+ * the crossing-situation lines. A target whose current distance is
+ * inside the raw guard zone gets a red line; a target between the
+ * guard zone and 2× guard zone (the outer ring) gets amber. The 2×
+ * multiplier is hardcoded as OUTER_RING_MULT - the threat
+ * classification itself is decided C#-side (Utilities/Cpa.cs).
  */
-export function setGuardZone(radiusNm, lookaheadMin, warningFactor) {
+export function setGuardZone(radiusNm, lookaheadMin) {
     guardZoneRadiusNm = radiusNm;
     guardZoneLookaheadMin = lookaheadMin;
-    if (typeof warningFactor === 'number' && warningFactor > 1) {
-        guardZoneWarningFactor = warningFactor;
-    }
     drawGuardZone();
 }
 
@@ -1472,12 +1439,7 @@ function drawGuardZone() {
         if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
         return;
     }
-    const warnRadiusM = radiusM * Math.max(1.0, guardZoneWarningFactor);
-    if (warnRadiusM <= radiusM + 0.5) {
-        if (guardZoneWarningRing)      { mapRef.removeLayer(guardZoneWarningRing);      guardZoneWarningRing = null; }
-        if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
-        return;
-    }
+    const warnRadiusM = radiusM * OUTER_RING_MULT;
     if (!guardZoneWarningRing) {
         guardZoneWarningRing = L.circle([selfLat, selfLon], {
             radius: warnRadiusM,
@@ -1494,7 +1456,7 @@ function drawGuardZone() {
     }
     guardZoneWarningRingLabel = placeRingLabel(
         guardZoneWarningRingLabel, warnRadiusM,
-        rangeRingLabel(guardZoneRadiusNm * Math.max(1.0, guardZoneWarningFactor)),
+        rangeRingLabel(guardZoneRadiusNm * OUTER_RING_MULT),
         'guard-ring-label-warn');
 }
 
@@ -1502,10 +1464,8 @@ export function dispose() {
     for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
     for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
     for (const ctx of Object.keys(aisVectorTips)) delete aisVectorTips[ctx];
-    for (const ctx of Object.keys(aisCpaOwnLines)) delete aisCpaOwnLines[ctx];
     for (const ctx of Object.keys(aisCpaTgtLines)) delete aisCpaTgtLines[ctx];
     for (const ctx of Object.keys(aisCpaTgtX)) delete aisCpaTgtX[ctx];
-    for (const ctx of Object.keys(aisCpaOwnX)) delete aisCpaOwnX[ctx];
     for (const ctx of Object.keys(aisCpaLastSeverity)) delete aisCpaLastSeverity[ctx];
     for (const ctx of Object.keys(aisTrailLines)) delete aisTrailLines[ctx];
     for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];

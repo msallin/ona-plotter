@@ -1263,27 +1263,6 @@ public class AppSettingsServiceTests
     }
 
     [Test]
-    public async Task SetGuardZoneWarningFactor_RoundTrips()
-    {
-        // The guard-zone warning factor drives the warn-vs-danger CPA
-        // boundary. Persisted as F2 - pin both the format and the
-        // round-trip so a refactor that swaps to G3 (introducing
-        // exponential notation) doesn't quietly invalidate every
-        // helm's existing setting.
-        var kv = new InMemoryKv();
-        var svc = new AppSettingsService(kv);
-        await svc.InitializeAsync();
-        await svc.SetGuardZoneWarningFactorAsync(1.75);
-
-        var stored = await kv.GetAsync("guardZoneWarningFactor");
-        await Assert.That(stored).IsEqualTo("1.75");
-
-        var svc2 = new AppSettingsService(kv);
-        await svc2.InitializeAsync();
-        await Assert.That(svc2.GuardZoneWarningFactor).IsEqualTo(1.75);
-    }
-
-    [Test]
     public async Task SetWindShiftAlarmThreshold_RoundTrips()
     {
         var kv = new InMemoryKv();
