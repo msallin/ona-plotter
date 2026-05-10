@@ -16,11 +16,13 @@ public class AnchorTideAlarmRuleTests
         double? heightNow = null,
         double? heightLow = null,
         DateTime? timeLow = null,
-        double? signalkDraft = null)
+        double? signalkDraft = null,
+        double? depthBelowKeel = null)
     {
         var nav = new NavigationData();
         if (anchored) nav.ApplyAnchorPosition(47.4, 8.5);
         if (depth is not null) nav.Apply("environment.depth.belowTransducer", depth);
+        if (depthBelowKeel is not null) nav.Apply("environment.depth.belowKeel", depthBelowKeel);
         if (heightNow is not null) nav.Apply("environment.tide.heightNow", heightNow);
         if (heightLow is not null) nav.Apply("environment.tide.heightLow", heightLow);
         if (timeLow is not null)
@@ -313,5 +315,124 @@ public class AnchorTideAlarmRuleTests
             heightNow: 2.0, heightLow: 1.0, timeLow: now.AddHours(2),
             signalkDraft: 1.0);
         await Assert.That(rule.Check(Ctx(nav, settings, now))).IsNull();
+    }
+
+    // --- belowKeel preferred path (clean math, no draft needed) ---
+
+    [Test]
+    public async Task BelowKeelPath_ThinClearance_Warns()
+    {
+        // When environment.depth.belowKeel is published, the rule
+        // skips draft + transducer-offset bookkeeping entirely:
+        // clearance_at_LW = belowKeel - drop. Pin the literal
+        // result so a future formula refactor can't drift the math.
+        // 2.0m under keel now, tide drops 1.5m -> 0.5m at LW.
+        // Margin 1m -> 0.5m < 1m -> Warn. Draft NOT supplied; the
+        // belowKeel path explicitly doesn't need it.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
+        var nav = BuildNav(anchored: true,
+            depthBelowKeel: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2));
+
+        var alarm = rule.Check(Ctx(nav, settings, now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+        await Assert.That(alarm.Message).Contains("0.5m under keel");
+    }
+
+    [Test]
+    public async Task BelowKeelPath_GroundingExpected_Dangers()
+    {
+        // belowKeel 1.0m, drop 1.5m -> -0.5m at LW. Keel touches by 0.5m.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true,
+            depthBelowKeel: 1.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(3));
+
+        var alarm = rule.Check(Ctx(nav, new FakeSettings(), now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Danger);
+        await Assert.That(alarm.Message).Contains("touches");
+        await Assert.That(alarm.Message).Contains("0.5m short");
+    }
+
+    [Test]
+    public async Task BelowKeelPath_NoDraftNeeded()
+    {
+        // Pin the contract that draft is optional when belowKeel is
+        // present. The belowTransducer fallback DOES require draft;
+        // this test guards against a future refactor that might
+        // accidentally tighten the belowKeel branch the same way.
+        // belowKeel 1.7m, drop 1.0m -> clearance 0.7m, margin 1.0m -> Warn.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
+        var nav = BuildNav(anchored: true,
+            depthBelowKeel: 1.7,
+            heightNow: 2.0, heightLow: 1.0, timeLow: now.AddHours(3));
+        // Note: signalkDraft NOT passed.
+
+        var alarm = rule.Check(Ctx(nav, settings, now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+    }
+
+    [Test]
+    public async Task BelowKeelPath_PreferredOverBelowTransducer()
+    {
+        // When BOTH paths are published, belowKeel wins (clean math).
+        // Set up a scenario where the two formulas would disagree:
+        // belowKeel = 2.0 -> clearance 0.5m -> Warn under margin 1m.
+        // belowTransducer = 4.0 + draft 1.0 -> clearance 2.5m -> NO alarm.
+        // The rule must pick belowKeel and Warn.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
+        var nav = BuildNav(anchored: true,
+            depth: 4.0,
+            depthBelowKeel: 2.0,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
+            signalkDraft: 1.0);
+
+        var alarm = rule.Check(Ctx(nav, settings, now));
+
+        await Assert.That(alarm).IsNotNull();
+        await Assert.That(alarm!.Severity).IsEqualTo(AlarmSeverity.Warn);
+        await Assert.That(alarm.Message).Contains("0.5m under keel");
+    }
+
+    [Test]
+    public async Task BelowKeelPath_SafeClearance_NoAlarm()
+    {
+        // belowKeel 5m, drop 1m -> 4m clearance, well above margin.
+        // The rule must stay silent.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true,
+            depthBelowKeel: 5.0,
+            heightNow: 2.0, heightLow: 1.0, timeLow: now.AddHours(3));
+
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
+    }
+
+    [Test]
+    public async Task NoDepthAtAll_NoAlarm()
+    {
+        // Neither belowKeel nor belowTransducer is published. The
+        // rule must stay quiet rather than emit a phantom alarm
+        // off zero depth.
+        var rule = new AnchorTideAlarmRule();
+        var now = DateTime.UtcNow;
+        var nav = BuildNav(anchored: true,
+            heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
+            signalkDraft: 1.5);
+        // No depth, no depthBelowKeel.
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
     }
 }

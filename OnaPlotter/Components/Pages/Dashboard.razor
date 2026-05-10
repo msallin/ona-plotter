@@ -63,8 +63,17 @@
             <div class="card dash-card-primary">
                 <div class="card-body text-center">
                     <h6 class="card-subtitle mb-1 text-muted">Depth</h6>
-                    <p class="card-text metric-xl @Format.DepthClass(Data.Depth)">
-                        @Format.Depth(Data.Depth)<span class="dash-unit">m</span>
+                    @* Prefer environment.depth.belowKeel ("metres
+                       under keel" - the helm-relevant safety reading)
+                       and fall back to belowTransducer when the bus
+                       doesn't publish belowKeel. Same selection logic
+                       as the corner HUD on the Map page so both
+                       surfaces show the same number. *@
+                    @{
+                        var dashDepth = Data.DepthBelowKeel ?? Data.Depth;
+                    }
+                    <p class="card-text metric-xl @Format.DepthClass(dashDepth)">
+                        @Format.Depth(dashDepth)<span class="dash-unit">m</span>
                     </p>
                 </div>
             </div>

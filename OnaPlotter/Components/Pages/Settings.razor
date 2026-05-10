@@ -838,11 +838,19 @@
                         Safety margin &gt; 0 (currently @AppSettings.AnchorTideSafetyMargin.ToString("F1") m)
                     </li>
                     <li>
-                        <span class="@(SignalkClient.Data.Depth is not null ? "check-ok" : "check-bad")">
-                            @(SignalkClient.Data.Depth is not null ? "✓" : "✗")
+                        @* ANCHOR-TIDE prefers belowKeel (clean math)
+                           and falls back to belowTransducer + draft.
+                           Either path is enough to satisfy this
+                           prerequisite, so check the same pair. *@
+                        @{
+                            var liveDepth = SignalkClient.Data.DepthBelowKeel
+                                            ?? SignalkClient.Data.Depth;
+                        }
+                        <span class="@(liveDepth is not null ? "check-ok" : "check-bad")">
+                            @(liveDepth is not null ? "✓" : "✗")
                         </span>
                         Live depth from SignalK
-                        @if (SignalkClient.Data.Depth is not null) { <span>(@SignalkClient.Data.Depth.Value.ToString("F1") m)</span> }
+                        @if (liveDepth is not null) { <span>(@liveDepth.Value.ToString("F1") m)</span> }
                         else { <span class="text-muted">&mdash; needs a depth sounder feeding the bus</span> }
                     </li>
                     <li>

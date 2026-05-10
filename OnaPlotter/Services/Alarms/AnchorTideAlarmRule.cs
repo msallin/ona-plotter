@@ -4,19 +4,29 @@ namespace OnaPlotter.Services.Alarms;
 
 /// <summary>
 /// ANCHOR TIDE: warns when the boat is anchored and the next low-water
-/// prediction plus the boat's draft says it's likely to touch bottom.
-/// Needs both an active anchor (SignalK anchor-alarm plugin) AND a
-/// tide plugin publishing <c>environment.tide.heightNow</c> +
-/// <c>heightLow</c> + <c>timeLow</c>. Goes silent when either is
-/// missing - there's no reasonable fallback without tide data.
+/// prediction says the keel is likely to touch bottom. Needs both an
+/// active anchor (SignalK anchor-alarm plugin) AND a tide plugin
+/// publishing <c>environment.tide.heightNow</c> + <c>heightLow</c> +
+/// <c>timeLow</c>. Goes silent when either is missing - there's no
+/// reasonable fallback without tide data.
 ///
-/// <para>Math: current under-keel depth at anchor time - (nowHeight -
-/// lowHeight) = predicted depth at LW. If that's less than the user's
-/// draft + safety margin, we alarm. "Depth" here comes from
-/// <c>environment.depth.belowTransducer</c>, which for most boats is
-/// close enough to under-keel for the alarm threshold; serious
-/// absolute accuracy would need the boat's transducer offset, which
-/// SignalK supports but most plugins don't populate.</para>
+/// <para>Depth source preference:</para>
+/// <list type="number">
+///   <item><b>belowKeel</b> (preferred): if the bus publishes
+///   <c>environment.depth.belowKeel</c>, the math collapses to
+///   <c>clearance_at_LW = belowKeel - drop</c>. No draft / transducer-
+///   offset bookkeeping needed - the instrument has already done it
+///   and the value labelled "metres under keel" in the message is
+///   literally that.</item>
+///   <item><b>belowTransducer + draft</b> (fallback): when only
+///   <c>environment.depth.belowTransducer</c> + <c>design.draft</c>
+///   are on the bus, we approximate
+///   <c>clearance_at_LW = belowTransducer - drop - draft</c>. This is
+///   conservative by the (unmodelled) transducer-to-waterline offset,
+///   which is always non-negative - the rule alarms slightly earlier
+///   than physical reality. The threshold's safety margin absorbs
+///   that bias.</item>
+/// </list>
 ///
 /// <para>Severity: Warn when LW clearance is below the margin but
 /// still positive; Danger when the keel will touch.</para>
@@ -67,7 +77,6 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
             return null;
         }
         if (_dismissedForThisAnchoring) return null;
-        if (d.Depth is not double depthNow) return null;
         if (d.TideHeightNow is not double heightNow) return null;
         if (d.TideHeightLow is not double heightLow) return null;
         if (d.TideTimeLow is not DateTime timeLow) return null;
@@ -77,18 +86,38 @@ public sealed class AnchorTideAlarmRule : IAlarmRule
         if (hoursToLw <= 0 || hoursToLw > LookaheadHours) return null;
 
         // Tidal change we expect between now and LW (positive = tide
-        // falling). Multiplied by 1 m of depth per 1 m of tide drop.
+        // falling). 1 m of tide drop = 1 m less water under the boat.
         double drop = heightNow - heightLow;
         if (drop <= 0) return null;                // tide still rising
 
-        // Draft comes from SignalK (design.draft.current / .maximum)
-        // only - "don't re-enter what the bus already knows". The
-        // tide-aware anchor alarm stays dormant when draft is absent
-        // rather than run on a stale client-side default.
-        if (ctx.Data.DraftFromSignalK is not double draft) return null;
         double margin = ctx.Settings.AnchorTideSafetyMargin;
-        double predictedDepth = depthNow - drop;
-        double clearance = predictedDepth - draft;  // metres between keel and bottom at LW
+
+        // Depth-source preference: belowKeel wins (clean formula, no
+        // draft / transducer offset needed). When belowKeel is absent
+        // we fall back to belowTransducer - draft, which is conservative
+        // by the unmodelled transducer-to-waterline offset (always >= 0,
+        // so the rule alarms slightly earlier than physical reality on
+        // installs that only publish belowTransducer).
+        double clearance;
+        if (d.DepthBelowKeel is double belowKeel)
+        {
+            // Predicted under-keel clearance at LW = current under-keel
+            // depth minus the water-surface drop the boat will sink with.
+            clearance = belowKeel - drop;
+        }
+        else if (d.Depth is double belowTransducer
+                 && ctx.Data.DraftFromSignalK is double draft)
+        {
+            // Fallback: belowTransducer minus drop minus draft.
+            // Conservative by the (unmodelled) transducer offset.
+            clearance = belowTransducer - drop - draft;
+        }
+        else
+        {
+            // Neither path has enough data. The rule stays dormant
+            // rather than guessing - a quiet alarm beats a wrong one.
+            return null;
+        }
 
         // No alarm if we still have the safety margin.
         if (clearance >= margin) return null;
