@@ -27,13 +27,6 @@ public interface IAlarmThresholds
     /// TCPA falls within this window trigger the CPA alarm.</summary>
     double GuardZoneLookaheadMinutes { get; }
 
-    /// <summary>Multiplier for the advisory (amber) warning band
-    /// around the guard zone. A factor of 2.0 draws the warning ring
-    /// at 2x the alarm radius and within 2x the lookahead; targets
-    /// inside that band get amber crossing lines but no audible
-    /// alarm.</summary>
-    double GuardZoneWarningFactor { get; }
-
     /// <summary>Wind-shift alarm threshold (degrees). Triggers when
     /// the running mean wind direction has shifted by more than this
     /// amount over <see cref="WindShiftLookbackMinutes"/>.</summary>
@@ -109,7 +102,6 @@ public interface IAlarmThresholds
     Task SetDepthAlarmThresholdAsync(double value);
     Task SetCpaAlarmThresholdAsync(double value);
     Task SetGuardZoneLookaheadMinutesAsync(double value);
-    Task SetGuardZoneWarningFactorAsync(double value);
     Task SetWindShiftAlarmThresholdAsync(double value);
     Task SetWindShiftLookbackMinutesAsync(double value);
     Task SetWindShiftMinTrueWindSpeedAsync(double value);

@@ -55,10 +55,10 @@ public interface IMapControlsJs
     Task SetNightModeAsync(bool enabled);
 
     /// <summary>Configure the CPA guard zone ring around own boat.
-    /// Radius is in nautical miles, lookahead in minutes; warning
-    /// factor is the ratio at which the inner amber ring sits relative
-    /// to the outer red ring.</summary>
-    Task SetGuardZoneAsync(double radiusNm, double lookaheadMin, double warningFactor);
+    /// Radius is in nautical miles (the inner red ring), lookahead in
+    /// minutes. The amber outer ring is always 2× the inner radius
+    /// (see <c>Cpa.OuterRingMultiplier</c>).</summary>
+    Task SetGuardZoneAsync(double radiusNm, double lookaheadMin);
 
     /// <summary>Configure how far ahead the COG vectors project, in
     /// minutes. Two distinct values so the helm can shorten target

@@ -1284,8 +1284,8 @@ export function flushTrackPoints() {
 // Implementation in aisLayer.js; mux re-exports the C# entries.
 export const updateAisTargets = (vessels) => aisLayerMod.updateAisTargets(vessels);
 export const focusVessel = (context) => aisLayerMod.focusVessel(context);
-export const setGuardZone = (radiusNm, lookaheadMin, warningFactor) =>
-    aisLayerMod.setGuardZone(radiusNm, lookaheadMin, warningFactor);
+export const setGuardZone = (radiusNm, lookaheadMin) =>
+    aisLayerMod.setGuardZone(radiusNm, lookaheadMin);
 export const setGuardZoneVisible = (visible) =>
     aisLayerMod.setGuardZoneVisible(visible);
 export const setGuardZoneWarningRingVisible = (visible) =>

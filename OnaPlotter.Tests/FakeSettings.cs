@@ -48,7 +48,6 @@ internal sealed class FakeSettings : IAppSettings
     public double DepthAlarmThreshold { get; set; } = 3.0;
     public double CpaAlarmThreshold { get; set; } = 0.5;
     public double GuardZoneLookaheadMinutes { get; set; } = 10.0;
-    public double GuardZoneWarningFactor { get; set; } = 2.0;
     public double WindShiftAlarmThreshold { get; set; } = 15.0;
     public double WindShiftLookbackMinutes { get; set; } = 5.0;
     public double WindShiftMinTrueWindSpeed { get; set; } = 3.0;
@@ -175,7 +174,6 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetDepthAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetCpaAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetGuardZoneLookaheadMinutesAsync(double v) => Task.CompletedTask;
-    public Task SetGuardZoneWarningFactorAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftAlarmThresholdAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftLookbackMinutesAsync(double v) => Task.CompletedTask;
     public Task SetWindShiftMinTrueWindSpeedAsync(double v) { WindShiftMinTrueWindSpeed = v; return Task.CompletedTask; }

@@ -120,7 +120,6 @@ public sealed class AppSettingsService : IAppSettings
     public double DepthAlarmThreshold { get; private set; } = 2.0;
     public double CpaAlarmThreshold { get; private set; } = 0.5;
     public double GuardZoneLookaheadMinutes { get; private set; } = 10.0;
-    public double GuardZoneWarningFactor { get; private set; } = 2.0;
     public double WindShiftAlarmThreshold { get; private set; } = 30.0;
     public double WindShiftLookbackMinutes { get; private set; } = 10.0;
     public double WindShiftMinTrueWindSpeed { get; private set; } = 5.0;
@@ -384,7 +383,11 @@ public sealed class AppSettingsService : IAppSettings
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 2.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
-            GuardZoneWarningFactor = await LoadDouble("guardZoneWarningFactor", 2.0);
+            // guardZoneWarningFactor removed: outer ring is now hardcoded
+            // at 2× the guard-zone radius (Cpa.OuterRingMultiplier). Any
+            // previously-stored "guardZoneWarningFactor" key is silently
+            // ignored on load - dropping a localStorage key has no
+            // migration cost, the next save just leaves it stale.
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 30.0);
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 10.0);
             WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 5.0);
@@ -827,13 +830,6 @@ public sealed class AppSettingsService : IAppSettings
     {
         GuardZoneLookaheadMinutes = value;
         await Save("guardZoneLookaheadMinutes", value.ToString("F1", CultureInfo.InvariantCulture));
-        OnSettingsChanged?.Invoke();
-    }
-
-    public async Task SetGuardZoneWarningFactorAsync(double value)
-    {
-        GuardZoneWarningFactor = value;
-        await Save("guardZoneWarningFactor", value.ToString("F2", CultureInfo.InvariantCulture));
         OnSettingsChanged?.Invoke();
     }
 

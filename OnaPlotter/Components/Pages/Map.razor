@@ -1839,8 +1839,7 @@
             SignalkClient.Data.AnchorMaxRadius);
         await _controlsJs.SetGuardZoneAsync(
             radiusNm,
-            Settings.GuardZoneLookaheadMinutes,
-            Settings.GuardZoneWarningFactor);
+            Settings.GuardZoneLookaheadMinutes);
     }
 
     // Per-push diff-caches. OnSettingsChanged fires for ANY setting
@@ -1848,7 +1847,7 @@
     // handler unconditionally fired 6+ JS interop calls per fire,
     // turning a single helm toggle into a fan-out of redundant pushes.
     // Each push now gates on its own snapshot of the inputs it consumes.
-    private (double Cpa, double LookaheadMin, double WarningFactor,
+    private (double Cpa, double LookaheadMin,
         bool AnchorActive, double? AnchorMaxRadius) _cachedGuardZone;
     private (double OwnCog, double AisCog) _cachedCogVector;
     private (bool Enabled, int Count) _cachedRadarRangeRings;
@@ -1867,7 +1866,6 @@
         var guardZoneNow = (
             Settings.CpaAlarmThreshold,
             Settings.GuardZoneLookaheadMinutes,
-            Settings.GuardZoneWarningFactor,
             SignalkClient.Data.AnchorActive,
             SignalkClient.Data.AnchorMaxRadius);
         if (!guardZoneNow.Equals(_cachedGuardZone))

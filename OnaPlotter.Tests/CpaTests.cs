@@ -133,72 +133,139 @@ public class CpaTests
         await Assert.That(r.Value.TcpaMin).IsLessThan(11);
     }
 
-    // Threat classification: maps a CPA result onto the Helm's three-band
-    // visual model (none / warning / danger). Buddies always collapse to
-    // None so a friend nearby can't paint the chart red.
-    private const double Radius = 0.5;       // nm
-    private const double Lookahead = 10.0;   // min
-    private const double WarnFactor = 2.0;
+    // Threat classification: maps a CPA result onto the helm's three-band
+    // visual model (none / warning / danger). Severity is decided by the
+    // target's CURRENT distance from own ship - a vessel currently
+    // outside the outer ring gets None even if its projected CPA looks
+    // like it'd close (helms read those long crossings as visual noise
+    // and asked for the gate). Buddies always collapse to None so a
+    // friend nearby can't paint the chart red.
+    private const double Radius = 0.5;        // nm (inner / guard ring)
+    private const double Lookahead = 10.0;    // min
+    // Outer ring is hardcoded at 2× the inner radius
+    // (Cpa.OuterRingMultiplier = 2.0). Tests reference 2*Radius
+    // explicitly so a refactor that changes the multiplier triggers
+    // a deliberate re-read here.
+    private const double OuterRing = 2.0 * Radius;
 
     [Test]
     public async Task Threat_None_WhenBuddy()
     {
         var t = Cpa.ClassifyThreat(cpaNm: 0.1, tcpaMin: 1.0,
-            Radius, Lookahead, WarnFactor, isBuddy: true);
+            currentDistanceNm: 0.1,
+            Radius, Lookahead, isBuddy: true);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
     public async Task Threat_None_WhenCpaNull()
     {
-        var t = Cpa.ClassifyThreat(null, 1.0, Radius, Lookahead, WarnFactor, false);
+        var t = Cpa.ClassifyThreat(null, 1.0, currentDistanceNm: 0.3,
+            Radius, Lookahead, false);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
     public async Task Threat_None_WhenTcpaNullOrNonPositive()
     {
-        await Assert.That(Cpa.ClassifyThreat(0.1, null, Radius, Lookahead, WarnFactor, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, null, 0.3, Radius, Lookahead, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0, Radius, Lookahead, WarnFactor, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, 0.0, 0.3, Radius, Lookahead, false))
             .IsEqualTo(Cpa.Threat.None);
-        await Assert.That(Cpa.ClassifyThreat(0.1, -1.0, Radius, Lookahead, WarnFactor, false))
+        await Assert.That(Cpa.ClassifyThreat(0.1, -1.0, 0.3, Radius, Lookahead, false))
             .IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
-    public async Task Threat_Danger_WhenInsideBothGuardZoneAndLookahead()
+    public async Task Threat_None_WhenTcpaBeyondLookahead()
     {
-        var t = Cpa.ClassifyThreat(0.1, 5.0, Radius, Lookahead, WarnFactor, false);
-        await Assert.That(t).IsEqualTo(Cpa.Threat.Danger);
-    }
-
-    [Test]
-    public async Task Threat_Warning_WhenInsideAdvisoryBandOnly()
-    {
-        // 0.6 nm > 0.5 (radius) but < 1.0 (radius * factor)
-        // 12 min > 10 (lookahead) but < 20 (lookahead * factor)
-        var t = Cpa.ClassifyThreat(0.6, 12.0, Radius, Lookahead, WarnFactor, false);
-        await Assert.That(t).IsEqualTo(Cpa.Threat.Warning);
-    }
-
-    [Test]
-    public async Task Threat_None_WhenOutsideAdvisoryBand()
-    {
-        var t = Cpa.ClassifyThreat(2.5, 30.0, Radius, Lookahead, WarnFactor, false);
+        // Vessel will close inside guard zone but not within the
+        // lookahead window. Sleep first.
+        var t = Cpa.ClassifyThreat(0.1, tcpaMin: 30.0,
+            currentDistanceNm: 0.3,
+            Radius, Lookahead, false);
         await Assert.That(t).IsEqualTo(Cpa.Threat.None);
     }
 
     [Test]
-    public async Task Threat_DangerEdge_AtJustInsideGuardZone()
+    public async Task Threat_None_WhenCpaWontReachGuardZone()
     {
-        // Exactly on the boundary should NOT fire (strict < per code) - a
-        // helm setting "0.5 nm" expects 0.5 to mean "ok" still.
-        var t1 = Cpa.ClassifyThreat(0.5, 5.0, Radius, Lookahead, WarnFactor, false);
-        await Assert.That(t1).IsEqualTo(Cpa.Threat.Warning);
+        // 1.5 nm projected miss is outside the guard zone - the vessel
+        // won't actually close. Pin this to stop a parallel-course
+        // 1.5 nm pass from drawing a crossing line.
+        var t = Cpa.ClassifyThreat(cpaNm: 1.5, tcpaMin: 5.0,
+            currentDistanceNm: 0.3,
+            Radius, Lookahead, false);
+        await Assert.That(t).IsEqualTo(Cpa.Threat.None);
+    }
 
-        var t2 = Cpa.ClassifyThreat(0.49999, 5.0, Radius, Lookahead, WarnFactor, false);
-        await Assert.That(t2).IsEqualTo(Cpa.Threat.Danger);
+    [Test]
+    public async Task Threat_Danger_WhenCurrentlyInsideGuardZone()
+    {
+        // Target inside the inner ring AND projected to close further:
+        // red overlay.
+        var t = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: 0.3,
+            Radius, Lookahead, false);
+        await Assert.That(t).IsEqualTo(Cpa.Threat.Danger);
+    }
+
+    [Test]
+    public async Task Threat_Warning_WhenCurrentlyInOuterRing()
+    {
+        // Target between guard zone and 2× guard zone, projected to
+        // close inside guard zone within lookahead: amber overlay.
+        var t = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: 0.7,   // > 0.5 (Radius), < 1.0 (OuterRing)
+            Radius, Lookahead, false);
+        await Assert.That(t).IsEqualTo(Cpa.Threat.Warning);
+    }
+
+    [Test]
+    public async Task Threat_None_WhenCurrentlyOutsideOuterRing()
+    {
+        // Target 5 nm out with a closing track that would otherwise
+        // qualify - the live-data complaint that drove this gate. The
+        // long crossing line clutters the chart even though physically
+        // accurate; helms wanted the chart to stay quiet until the
+        // target is within the outer ring.
+        var t = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: 5.0,
+            Radius, Lookahead, false);
+        await Assert.That(t).IsEqualTo(Cpa.Threat.None);
+    }
+
+    [Test]
+    public async Task Threat_DangerEdge_AtGuardZoneBoundary()
+    {
+        // Exactly on the inner boundary should be Danger (uses <=).
+        // A helm setting "0.5 nm" expects 0.5 to mean "still inside".
+        var atBoundary = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: Radius,
+            Radius, Lookahead, false);
+        await Assert.That(atBoundary).IsEqualTo(Cpa.Threat.Danger);
+
+        // Just outside the inner ring -> Warning band.
+        var justOutside = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: Radius + 0.0001,
+            Radius, Lookahead, false);
+        await Assert.That(justOutside).IsEqualTo(Cpa.Threat.Warning);
+    }
+
+    [Test]
+    public async Task Threat_NoneEdge_AtOuterRingBoundary()
+    {
+        // Exactly on the outer boundary -> Warning (uses <=).
+        var atBoundary = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: OuterRing,
+            Radius, Lookahead, false);
+        await Assert.That(atBoundary).IsEqualTo(Cpa.Threat.Warning);
+
+        // Just outside -> None.
+        var justOutside = Cpa.ClassifyThreat(0.1, 5.0,
+            currentDistanceNm: OuterRing + 0.0001,
+            Radius, Lookahead, false);
+        await Assert.That(justOutside).IsEqualTo(Cpa.Threat.None);
     }
 
     // ===== EffectiveRadiusNm =====

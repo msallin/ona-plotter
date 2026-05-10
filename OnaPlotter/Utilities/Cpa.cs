@@ -189,28 +189,67 @@ public static class Cpa
     /// </summary>
     public enum Threat { None, Warning, Danger }
 
+    /// <summary>Outer (warning-band) ring multiplier. Hardcoded at 2× the
+    /// helm-configured guard-zone radius. Previously a settings-exposed
+    /// "warning factor" with default 2.0; helms reported the second knob
+    /// as confusing (the visible warning ring already implied 2×) and the
+    /// factor's only realistic value was always 2 anyway. The amber ring
+    /// now tracks the guard zone deterministically.</summary>
+    public const double OuterRingMultiplier = 2.0;
+
     /// <summary>
     /// Maps a CPA result to a <see cref="Threat"/> level using the helm's
-    /// configured guard-zone radius and lookahead. Buddies are exempted by
-    /// the caller passing <paramref name="isBuddy"/> = true so a friend
-    /// sailing close never paints the chart red.
+    /// configured guard-zone radius + lookahead PLUS the vessel's CURRENT
+    /// distance from own ship. The current-distance gate is what stops a
+    /// vessel 5 nm away with a marginal closing track from drawing a long
+    /// crossing line across the chart - helms read those as visual noise
+    /// because the ship is well outside the displayed guard ring.
+    ///
+    /// <para>Severity is decided by the CURRENT distance ring:</para>
+    /// <list type="bullet">
+    ///   <item><b>Danger</b>: target is already inside the guard zone
+    ///   AND the CPA math says it'll get closer.</item>
+    ///   <item><b>Warning</b>: target is between the guard zone and
+    ///   2× guard zone (the "outer ring") AND the CPA math says it'll
+    ///   reach inside the guard zone within the lookahead window.</item>
+    ///   <item><b>None</b>: target outside the outer ring, CPA is in the
+    ///   past, target is not closing, target won't reach inside the
+    ///   guard zone, or the lookahead has already elapsed.</item>
+    /// </list>
+    ///
+    /// <para>Buddies are exempted by the caller passing <paramref name="isBuddy"/>
+    /// = true so a friend sailing close never paints the chart red.</para>
     /// </summary>
-    /// <param name="cpaNm">CPA distance, nautical miles. Null = no CPA.</param>
+    /// <param name="cpaNm">Projected CPA distance, nautical miles. Null = no CPA.</param>
     /// <param name="tcpaMin">TCPA time, minutes. Null or non-positive = no closing.</param>
-    /// <param name="guardZoneRadiusNm">Helm-configured red-band radius.</param>
-    /// <param name="lookaheadMin">Helm-configured red-band lookahead.</param>
-    /// <param name="warningFactor">Multiplier on radius+lookahead for the amber band (typically 2.0).</param>
+    /// <param name="currentDistanceNm">Current distance from own ship to the
+    /// target, nautical miles. The ring-membership gate.</param>
+    /// <param name="guardZoneRadiusNm">Helm-configured guard-zone radius
+    /// (<see cref="EffectiveRadiusNm"/> output).</param>
+    /// <param name="lookaheadMin">Helm-configured lookahead window. CPA
+    /// further out than this is treated as None even if a future approach
+    /// would otherwise classify - sleep first.</param>
     /// <param name="isBuddy">If true the result is always <see cref="Threat.None"/>.</param>
     public static Threat ClassifyThreat(
         double? cpaNm, double? tcpaMin,
+        double currentDistanceNm,
         double guardZoneRadiusNm, double lookaheadMin,
-        double warningFactor, bool isBuddy)
+        bool isBuddy)
     {
         if (isBuddy) return Threat.None;
         if (cpaNm is null || tcpaMin is null || tcpaMin <= 0) return Threat.None;
-        if (cpaNm < guardZoneRadiusNm && tcpaMin < lookaheadMin) return Threat.Danger;
-        if (cpaNm < guardZoneRadiusNm * warningFactor
-            && tcpaMin < lookaheadMin * warningFactor) return Threat.Warning;
-        return Threat.None;
+        if (tcpaMin > lookaheadMin) return Threat.None;
+        // The vessel must actually reach inside the guard zone to count.
+        // A parallel-course pass at 1.5 nm with 1.5 nm cpa shouldn't draw
+        // a crossing line - they're just sailing alongside.
+        if (cpaNm > guardZoneRadiusNm) return Threat.None;
+        // Current-distance ring gate. The outer ring is hardcoded at 2×
+        // guard zone (matches the visible warning-band circle).
+        double outerRingNm = guardZoneRadiusNm * OuterRingMultiplier;
+        if (currentDistanceNm > outerRingNm) return Threat.None;
+
+        return currentDistanceNm <= guardZoneRadiusNm
+            ? Threat.Danger
+            : Threat.Warning;
     }
 }
