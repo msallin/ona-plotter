@@ -1,25 +1,26 @@
 // Course line overlay drawn on every position update when the helm is
-// navigating an active course. Three layers:
+// navigating an active course. Two layers + a destination affordance:
 //   * bearing line (boat -> next WP, dashed)
 //   * leg line (last reached WP -> next WP, kept null in current
 //     build; helm reported the original "where I started" stroke as
 //     visual noise so it's torn down on every redraw rather than
 //     populated)
-//   * XTE perpendicular tick at boat position, coloured by severity
+//   * pulse marker + helm-configured arrival-radius ring at the
+//     destination
 //
-// Severity bands are classified C#-side (Utilities/Xte.cs +
-// XteTests) so the legend, alarm pipeline and this overlay share a
-// single set of band thresholds. A single edit in :root cascades to
-// the legend and the tick.
-
-import { RAD, bearingDeg, destPoint } from './geoMath.js';
+// The XTE perpendicular tick was previously rendered here too -
+// dropped per helm feedback. The bar painted silently from the boat
+// to the side of the active leg, used the same red as CPA + MOB
+// overlays, and helms reading the chart asked "what's the fat red
+// line?" because there was no AIS target / X / pin at the end. The
+// XTE classifier (Utilities/Xte.cs), the alarm rule and the HUD
+// pill all stay - only the chart-overlay bar is gone.
 
 let mapRef = null;
 let colors = null;
 
 let courseLineLeg = null;
 let courseLineBearing = null;
-let courseLineXte = null;
 // Pulsing marker at the destination waypoint. Drawn here (not just
 // in activeRouteLayer.js) so the "Navigate Here" flow - which
 // drops a course destination but never creates a route - still
@@ -49,9 +50,9 @@ export function init(map, deps) {
     colors = deps.colors;
 }
 
-// Draw/update course line: bearing line + XTE tick + arrival-radius
-// ring around the destination.
-export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity, arrivalRadiusMeters) {
+// Draw/update course line: bearing line + arrival-radius ring around
+// the destination + destination pulse.
+export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters) {
     if (!mapRef) return;
 
     // Tear down any leftover leg line from a previous build that
@@ -71,33 +72,6 @@ export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, 
         courseLineBearing = L.polyline(brgCoords, {
             color: colors.bearing, weight: 2, opacity: 0.7, dashArray: '6,4'
         }).addTo(mapRef);
-    }
-
-    // XTE perpendicular tick at boat position.
-    if (xteMeters != null && prevLat != null && prevLon != null) {
-        const absXte = Math.abs(xteMeters);
-        const xteColor = xteSeverity === 'offCourse' ? colors.mob
-            : xteSeverity === 'drifting' ? colors.guardWarn
-            : colors.anchorOk;
-        // Perpendicular to the leg bearing.
-        const legBrg = bearingDeg(prevLat, prevLon, wpLat, wpLon) * RAD;
-        const perpBrg = xteMeters > 0 ? legBrg + Math.PI / 2 : legBrg - Math.PI / 2;
-        // Visual length: actual XTE capped at 200m for display.
-        const tickLen = Math.min(absXte, 200);
-        const tickEnd = destPoint(selfLat, selfLon, perpBrg, tickLen);
-        const xteCoords = [[selfLat, selfLon], tickEnd];
-
-        if (courseLineXte) {
-            courseLineXte.setLatLngs(xteCoords);
-            courseLineXte.setStyle({ color: xteColor });
-        } else {
-            courseLineXte = L.polyline(xteCoords, {
-                color: xteColor, weight: 3, opacity: 0.9
-            }).addTo(mapRef);
-        }
-    } else if (courseLineXte) {
-        mapRef.removeLayer(courseLineXte);
-        courseLineXte = null;
     }
 
     // Pulse marker at the destination. Skipped when the active-
@@ -164,7 +138,6 @@ export function setCoursePulseSuppressed(suppress) {
 export function clearCourseLine() {
     if (courseLineLeg && mapRef) { mapRef.removeLayer(courseLineLeg); courseLineLeg = null; }
     if (courseLineBearing && mapRef) { mapRef.removeLayer(courseLineBearing); courseLineBearing = null; }
-    if (courseLineXte && mapRef) { mapRef.removeLayer(courseLineXte); courseLineXte = null; }
     if (courseLinePulse && mapRef) { mapRef.removeLayer(courseLinePulse); courseLinePulse = null; }
     if (courseLineArrivalRing && mapRef) { mapRef.removeLayer(courseLineArrivalRing); courseLineArrivalRing = null; }
 }
@@ -181,9 +154,6 @@ export function setStoppingDim(stopping) {
     if (courseLineBearing) {
         try { courseLineBearing.setStyle({ opacity }); } catch (_) { }
     }
-    if (courseLineXte) {
-        try { courseLineXte.setStyle({ opacity }); } catch (_) { }
-    }
     if (courseLinePulse) {
         try { courseLinePulse.setOpacity(opacity); } catch (_) { }
     }
@@ -195,7 +165,6 @@ export function setStoppingDim(stopping) {
 export function dispose() {
     courseLineLeg = null;
     courseLineBearing = null;
-    courseLineXte = null;
     courseLinePulse = null;
     courseLineArrivalRing = null;
     mapRef = null;

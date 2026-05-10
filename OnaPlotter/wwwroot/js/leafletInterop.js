@@ -1060,14 +1060,14 @@ export function applyFrame(frame) {
         const selfLat = frame.pos ? frame.pos.lat : null;
         const selfLon = frame.pos ? frame.pos.lon : null;
         // While editing the active route, suppress the course-line
-        // overlay (leg + bearing + XTE tick). The user is actively
-        // moving waypoints so the course-line would point at stale
-        // geometry; we already cleared the active polyline + next-
-        // waypoint marker via setActiveOverlayHidden(true). Re-emerges
-        // when the C# side calls setActiveOverlayHidden(false) on
-        // edit cancel / save.
+        // overlay (bearing + arrival ring + destination pulse). The
+        // user is actively moving waypoints so the course-line would
+        // point at stale geometry; we already cleared the active
+        // polyline + next-waypoint marker via
+        // setActiveOverlayHidden(true). Re-emerges when the C# side
+        // calls setActiveOverlayHidden(false) on edit cancel / save.
         if (selfLat != null && selfLon != null && !activeRouteLayerMod.isOverlayHidden()) {
-            setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.prevLat, c.prevLon, c.xte, c.xteSeverity, c.arrivalRadiusMeters);
+            setCourseLine(selfLat, selfLon, c.wpLat, c.wpLon, c.arrivalRadiusMeters);
         }
     } else if (frame.clearCourse) {
         clearCourseLine();
@@ -2122,8 +2122,8 @@ export const setActiveRoute = (coords, wpIdx, routeId, routeName) =>
     activeRouteLayerMod.setActiveRoute(coords, wpIdx, routeId, routeName);
 export const clearActiveRoute = () => activeRouteLayerMod.clearActiveRoute();
 export const setActiveOverlayHidden = (hidden) => activeRouteLayerMod.setActiveOverlayHidden(hidden);
-export function setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity, arrivalRadiusMeters) {
-    return courseLineLayerMod.setCourseLine(selfLat, selfLon, wpLat, wpLon, prevLat, prevLon, xteMeters, xteSeverity, arrivalRadiusMeters);
+export function setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters) {
+    return courseLineLayerMod.setCourseLine(selfLat, selfLon, wpLat, wpLon, arrivalRadiusMeters);
 }
 export function clearCourseLine() { return courseLineLayerMod.clearCourseLine(); }
 

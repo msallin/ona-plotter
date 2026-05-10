@@ -6234,12 +6234,6 @@ html.night-mode-global body {
    pushed via colors.guardWarn in JS. Distinct from --map-danger so
    the two legend swatches are visually separated. */
 .legend-cpa-warn   { background: var(--sev-warn); }
-/* XTE off-course tick - rendered on the chart as a fat red solid
-   line. The swatch shows the offCourse colour (severity worst case)
-   so the helm associates "red bar perpendicular to the route" with
-   "you're way off". Green/amber variants are described in the legend
-   text rather than three swatches to avoid clutter. */
-.legend-xte-tick   { background: var(--sev-danger); }
 .legend-sart       { background: var(--sev-danger); }
 .legend-radar      { background: transparent;
                      border: 2px solid var(--map-radar); }

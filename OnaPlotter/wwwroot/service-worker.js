@@ -841,6 +841,19 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
+// v95 -> v96: XTE perpendicular tick visual indicator dropped. Helm
+//             feedback (re-confirmed via openplotter.local live data
+//             trace): the fat red bar drawn from own-boat to the
+//             side of the active leg used the same red as CPA + MOB
+//             overlays and read as a collision warning despite being
+//             a navigation-aid. Helm asked to remove it. Other XTE
+//             machinery (Xte.Classify thresholds + tests, XTE alarm
+//             rule, HUD readout pill) all stay intact - only the
+//             chart-overlay bar is gone. courseLineLayer.js reduced
+//             to bearing-line + arrival-ring + destination pulse;
+//             setCourseLine signature shrinks from 9 args to 5;
+//             FrameCourseLine drops PrevLat/PrevLon/Xte/XteSeverity.
+//             Reverts the legend entry from one rev ago.
 // v94 -> v95: Legend now describes the XTE off-course tick. The
 //             fat red line drawn from own-boat perpendicular to the
 //             active route leg (cap 200 m visual length) was a real
@@ -959,7 +972,7 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v95';
+const CACHE_NAME = 'ona-plotter-v96';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
