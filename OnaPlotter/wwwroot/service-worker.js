@@ -826,7 +826,22 @@
 //             helm-readable "MMSI 338546948" before rendering. Non-
 //             vessel notifications (depth, anchor, MOB) pass
 //             through untouched.
-const CACHE_NAME = 'ona-plotter-v87';
+// v87 -> v88: Offline-resilient MOB waypoint create. The previous
+//             fire-and-forget POST left the chart pin permanently
+//             lost when the helm hit MOB while offline (alarm fired
+//             via the local synthetic but no resource ever reached
+//             the server). MobService now generates a client-side
+//             Guid for the waypoint id and PUTs to /resources/
+//             waypoints/{id} - SK v2 resources-api accepts PUT-on-
+//             not-yet-existing as create, so a retry that lands
+//             after the server already received the first attempt
+//             just overwrites in place rather than minting a
+//             duplicate pin. The create runs as a self-retrying
+//             loop (1s/2s/5s/10s/30s/60s, same shape as the
+//             notification retry); state is persisted on the
+//             pending-raise record so a reload mid-retry resumes
+//             the loop on the next session.
+const CACHE_NAME = 'ona-plotter-v88';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

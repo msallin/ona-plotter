@@ -103,4 +103,24 @@ public sealed class WaypointApi : IWaypointApi
         var url = _baseUrl.Combine(SignalKUrls.Waypoint(wp.Id));
         return ResourceHttp.PutAsync(_http, url, body, ct);
     }
+
+    public Task<ApiResult> PutWithIdAsync(string id, string name, double lat, double lon,
+        string? description, bool? isMob, bool? isActive, string? mobAlarmId,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(id)) return Task.FromResult(ApiResult.Fail("waypoint id required"));
+        // Same body builder as Create / Update; SK v2 resources-api
+        // accepts PUT on a not-yet-existing id and creates the
+        // resource at that id (idempotent: a retry just overwrites).
+        // CreatedAt is stamped here (rather than carried from an
+        // existing instance) because the caller is the helm raising
+        // a fresh MOB - there's no prior server-side resource to
+        // preserve a timestamp from.
+        var body = GeoJsonBuilder.FeatureBody(
+            name, GeoJsonBuilder.Point(lat, lon), description,
+            createdAt: DateTime.UtcNow,
+            isMob: isMob, isActive: isActive, mobAlarmId: mobAlarmId);
+        var url = _baseUrl.Combine(SignalKUrls.Waypoint(id));
+        return ResourceHttp.PutAsync(_http, url, body, ct);
+    }
 }

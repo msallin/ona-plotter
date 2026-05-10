@@ -38,4 +38,19 @@ public interface IWaypointApi
     /// MOB history that survives reload + reconnect.</summary>
     Task<ApiResult> UpdateAsync(SignalkWaypoint waypoint, string name, string? description,
         bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default);
+
+    /// <summary>Idempotent create-or-update: PUT
+    /// <c>/resources/waypoints/{id}</c> with the supplied id. Used
+    /// by <c>MobService</c>'s offline-resilient MOB-waypoint pipeline
+    /// so a network outage at the moment the helm hits MOB doesn't
+    /// permanently lose the chart pin: the client-generated id makes
+    /// every retry overwrite the same resource instead of creating a
+    /// new one (POST <c>/resources/waypoints</c> would mint a fresh
+    /// id per retry, leaving duplicate pins after each reconnect).
+    /// Same body shape as the MOB-aware
+    /// <see cref="CreateAsync(string, double, double, string?, bool?, bool?, string?, CancellationToken)"/>
+    /// so the metadata round-trips identically.</summary>
+    Task<ApiResult> PutWithIdAsync(string id, string name, double lat, double lon,
+        string? description, bool? isMob, bool? isActive, string? mobAlarmId,
+        CancellationToken ct = default);
 }

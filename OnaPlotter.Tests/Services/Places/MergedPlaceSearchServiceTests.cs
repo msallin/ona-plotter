@@ -62,6 +62,10 @@ public class MergedPlaceSearchServiceTests
         public Task<ApiResult> UpdateAsync(SignalkWaypoint waypoint, string newName, string? newDescription,
             bool? isMob, bool? isActive, string? mobAlarmId, CancellationToken ct = default) =>
             Task.FromResult(ApiResult.Ok);
+        public Task<ApiResult> PutWithIdAsync(string id, string name, double lat, double lon,
+            string? description, bool? isMob, bool? isActive, string? mobAlarmId,
+            CancellationToken ct = default) =>
+            Task.FromResult(ApiResult.Ok);
     }
     private sealed class FakeNoteApi : INoteApi
     {

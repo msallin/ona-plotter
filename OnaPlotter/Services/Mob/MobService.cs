@@ -35,21 +35,23 @@ namespace OnaPlotter.Services.Mob;
 /// queue is replayed and the server's active list is pulled to
 /// recover MOBs raised before this plotter was around.</para>
 ///
-/// <para><b>Offline limitation - paired waypoint</b>: the persistent
+/// <para><b>Offline-resilient paired waypoint</b>: the persistent
 /// MOB chart pin (the waypoint composed alongside the notification)
-/// is fire-and-forget without retry. An offline raise produces the
-/// alarm banner + audio normally, but if the resource POST fails
-/// the chart shows nothing for that MOB and there is no replay
-/// queue to retry on the next session. The notification side
-/// reconciles correctly on reconnect; the waypoint side does not.
-/// Adding a waypoint retry queue is non-trivial because
-/// signalk-server's POST <c>/resources/waypoints</c> generates a
-/// fresh id per call - a naive retry produces duplicates. The
-/// notification side avoids this because the retry loop captures
-/// the assigned id on success and exits; the waypoint side would
-/// need the same shape (idempotency-key support on the server) or
-/// a tombstone-and-resync pattern. Documented for now; revisit if
-/// a helm reports an offline-MOB-with-no-pin in the field.</para>
+/// runs through its own retry loop using the same backoff schedule
+/// as the notification side. The waypoint id is generated client-
+/// side as a Guid and the PUT goes to
+/// <c>/resources/waypoints/{id}</c> - SK v2 resources-api accepts
+/// PUT-on-not-yet-existing as create, so a retry that lands after
+/// the server already received the first attempt just overwrites
+/// in place rather than minting a duplicate pin (POST
+/// <c>/resources/waypoints</c> would mint a fresh id per call,
+/// leaving N duplicate pins after N retries). The pending-raise
+/// record carries <see cref="PendingRaise.WaypointPostPending"/> +
+/// <see cref="PendingRaise.WaypointId"/> so a reload mid-retry
+/// resumes the loop on the next session via
+/// <see cref="InitializeAsync"/>. Helm sees one toast on the first
+/// failure ("MOB chart pin queued (offline)...") and no further
+/// noise; the chart marker appears as soon as the PUT lands.</para>
 /// </summary>
 public sealed class MobService : IMobService, IDisposable
 {
@@ -232,92 +234,164 @@ public sealed class MobService : IMobService, IDisposable
         return localId;
     }
 
-    /// <summary>Create the MOB-paired waypoint. Best-effort: a
-    /// failure logs but doesn't propagate - the notification + audio
-    /// alarm pipeline is independent. On success, stamps the
-    /// resulting waypoint id onto the pending-raise record so
-    /// <see cref="ClearAsync"/> can find the same waypoint to flip
-    /// its <c>isActive</c> flag. Returns the freshly-created in-memory
-    /// <see cref="SignalkWaypoint"/> on success, or null on any
-    /// failure (POST 500, exception, no waypoints DI). The retry-loop
-    /// awaits the returned task before firing the cross-plotter
-    /// mobAlarmId update so the order is deterministic.</summary>
+    /// <summary>Create the MOB-paired waypoint. Self-retrying with
+    /// the same backoff schedule as the notification side so an
+    /// offline raise doesn't lose the chart pin: when the network
+    /// returns the loop's next iteration succeeds and the marker
+    /// appears (no need for the helm to manually re-raise).
+    ///
+    /// <para>Idempotency: client-generates the waypoint id (a Guid
+    /// distinct from the localId, scoped to the resource namespace)
+    /// up front and PUTs to <c>/resources/waypoints/{id}</c>; SK v2
+    /// resources-api accepts PUT-on-not-yet-existing as create, so a
+    /// retry that lands after the server already received the first
+    /// attempt just overwrites in place rather than minting a duplicate
+    /// pin. Persisted on <see cref="PendingRaise.WaypointId"/> +
+    /// <see cref="PendingRaise.WaypointPostPending"/> so a reload
+    /// mid-retry resumes the loop on the next session via
+    /// <see cref="InitializeAsync"/>.</para>
+    ///
+    /// <para>Returns the in-memory <see cref="SignalkWaypoint"/> once
+    /// the PUT lands; null on cancellation or no-waypoints DI.</para></summary>
     private async Task<SignalkWaypoint?> CreateMobWaypointAsync(string localId, double lat, double lon, CancellationToken ct = default)
     {
         if (_waypoints is null) return null;
-        try
+
+        // Resolve / persist the waypoint id + name up front so a
+        // cancel mid-retry leaves a replayable record. On the first
+        // call we generate a fresh Guid; on InitializeAsync replay
+        // the values are already populated and we re-use them.
+        string waypointId;
+        string name;
+        if (_pending.TryGetValue(localId, out var live0)
+            && live0.Raise.WaypointId is { Length: > 0 } existingId
+            && live0.Raise.WaypointName is { Length: > 0 } existingName)
         {
+            // Replay path: keep the same id (idempotent PUT) and
+            // the same helm-time-of-drop name so the chart label
+            // matches what the helm originally saw.
+            waypointId = existingId;
+            name = existingName;
+        }
+        else
+        {
+            waypointId = Guid.NewGuid().ToString();
             // Local time (helm clock) so the helm reads "MOB: 14:32:07"
-            // matching their watch, not UTC. The resource carries a
-            // UTC createdAt for portability across plotters. Routed
-            // via TimeProvider.GetLocalNow() so the name reflects the
-            // provider's zone (lets unit tests pin a non-UTC offset).
-            // We take .DateTime (the wall-clock face at the offset),
-            // NOT .LocalDateTime (which would reinterpret via the
-            // system clock's zone and mask test-pinned offsets).
-            var name = FormattableString.Invariant(
+            // matching their watch. Routed via TimeProvider.GetLocalNow()
+            // so unit tests can pin a non-UTC offset; .DateTime gives
+            // the wall-clock face at the offset (not reinterpreted via
+            // the system clock).
+            name = FormattableString.Invariant(
                 $"MOB: {_time.GetLocalNow().DateTime:HH:mm:ss}");
-            // Description is intentionally null: the casualty
-            // position rides in feature.geometry already (chart marker
-            // + popup Coords row), so duplicating it here would inflate
-            // the wire payload + leak the casualty fix into a free-text
-            // field that downstream tools (logs, support bundles) might
-            // surface unredacted. Geometry is the canonical source.
-            var createdAt = _time.GetUtcNow().UtcDateTime;
-            var result = await _waypoints.CreateAsync(
-                name, lat, lon, description: null,
-                isMob: true, isActive: true, mobAlarmId: localId, ct: ct);
-            if (!result.Success || string.IsNullOrEmpty(result.Value))
+        }
+
+        // Stamp the id + WaypointPostPending on the pending raise
+        // BEFORE the first PUT attempt so a process crash between
+        // here and a successful response doesn't lose the id - the
+        // next session's replay re-uses the same id and idempotent-
+        // PUTs over the (possibly already-created) server resource.
+        if (_pending.TryGetValue(localId, out var liveSeed))
+        {
+            liveSeed.Raise = liveSeed.Raise with
             {
-                _logger.LogWarning(
-                    "[mob] waypoint create failed for {LocalId}: {Error}",
-                    localId, result.Error ?? "(no body)");
-                _toastWarning?.Invoke($"MOB chart pin failed to save: {result.Error ?? "server unreachable"} - alarm still active");
+                WaypointId = waypointId,
+                WaypointName = name,
+                WaypointPostPending = true,
+            };
+            await PersistPendingAsync(CancellationToken.None);
+        }
+
+        // Build the in-memory wp once - same instance returned on
+        // success and stamped on live.CreatedWaypoint so ClearAsync's
+        // tier-1 fast path finds it without a cache lookup.
+        var wp = new OnaPlotter.Models.SignalkWaypoint
+        {
+            Id = waypointId,
+            Name = name,
+            Description = null,
+            Latitude = lat,
+            Longitude = lon,
+            CreatedAt = _time.GetUtcNow().UtcDateTime,
+            IsMob = true,
+            IsMobActive = true,
+            MobAlarmId = localId,
+        };
+
+        // Backoff loop. Same schedule as RunRaiseLoopCoreAsync so the
+        // helm sees the alarm + chart pin land at consistent moments
+        // when offline-raise reconnects (1s, 2s, 5s, 10s, 30s, then
+        // 60s steady-state). First attempt is immediate.
+        int attempt = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            // Honour helm-clear-while-still-creating: if ClearAsync
+            // marked ClearRequested, we don't need to bother the
+            // server with this PUT - the deferred-clear path will
+            // wipe both sides. Bailing here also keeps the server
+            // history clean for an offline-MOB the helm aborted
+            // before reconnect.
+            if (_pending.TryGetValue(localId, out var liveCheck)
+                && liveCheck.Raise.ClearRequested)
+            {
                 return null;
             }
-            _logger.LogInformation(
-                "[mob] waypoint created {WaypointId} for {LocalId}",
-                result.Value, localId);
-            var wp = new OnaPlotter.Models.SignalkWaypoint
+
+            if (attempt > 0)
             {
-                Id = result.Value,
-                Name = name,
-                Description = null,
-                Latitude = lat,
-                Longitude = lon,
-                CreatedAt = createdAt,
-                IsMob = true,
-                IsMobActive = true,
-                MobAlarmId = localId,
-            };
-            // Stash on the pending-raise record so a subsequent
-            // ClearAsync via FindMobWaypoint's tier-1 fast path can
-            // see the same in-memory wp. The PendingRaise may already
-            // be gone (helm cleared MOB while this POST was in flight);
-            // the returned task value still flows back to the retry-
-            // loop's success branch via live.CreateTask awaiting.
-            if (_pending.TryGetValue(localId, out var live))
-            {
-                live.Raise = live.Raise with { WaypointId = result.Value };
-                live.CreatedWaypoint = wp;
-                await PersistPendingAsync(CancellationToken.None);
+                int idx = Math.Min(attempt - 1, BackoffSchedule.Length - 1);
+                try { await Task.Delay(BackoffSchedule[idx], _time, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { return null; }
             }
-            return wp;
+
+            ApiResult result;
+            try
+            {
+                result = await _waypoints.PutWithIdAsync(
+                    waypointId, name, lat, lon, description: null,
+                    isMob: true, isActive: true, mobAlarmId: localId, ct: ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "[mob] waypoint PUT threw for {WpId}; will retry", waypointId);
+                attempt++;
+                continue;
+            }
+
+            if (result.Success)
+            {
+                _logger.LogInformation(
+                    "[mob] waypoint pinned {WaypointId} for {LocalId} (attempt {Attempt})",
+                    waypointId, localId, attempt);
+                if (_pending.TryGetValue(localId, out var liveOk))
+                {
+                    liveOk.Raise = liveOk.Raise with { WaypointPostPending = false };
+                    liveOk.CreatedWaypoint = wp;
+                    await PersistPendingAsync(CancellationToken.None);
+                }
+                return wp;
+            }
+
+            // Failure: log every attempt at warning level, but only
+            // toast once (on the first attempt) so a long offline
+            // window doesn't spam the helm with "still trying" toasts.
+            // The retry continues silently; on success the info-log
+            // confirms the pin landed.
+            _logger.LogWarning(
+                "[mob] waypoint PUT failed for {WpId} (attempt {Attempt}): {Error}",
+                waypointId, attempt, result.Error ?? "(no body)");
+            if (attempt == 0)
+            {
+                _toastWarning?.Invoke(
+                    $"MOB chart pin queued (offline): {result.Error ?? "server unreachable"} - alarm still active, will retry");
+            }
+            attempt++;
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            // Service.Dispose / ClearAsync teardown: not a failure,
-            // just drop the in-flight POST without warning the helm
-            // (the alarm pipeline cleanup owns the user-facing
-            // signalling for cancel).
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[mob] waypoint create threw for {LocalId}", localId);
-            _toastWarning?.Invoke($"MOB chart pin failed to save: {ex.Message} - alarm still active");
-            return null;
-        }
+        return null;
     }
 
     /// <summary>Update the MOB waypoint's <c>mobAlarmId</c> from the
@@ -605,6 +679,19 @@ public sealed class MobService : IMobService, IDisposable
                 p.Latitude, p.Longitude);
             var live = new LivePending(p, new CancellationTokenSource());
             _pending[p.LocalId] = live;
+
+            // Resume the waypoint-create loop too if the previous
+            // session left WaypointPostPending set (offline raise
+            // didn't reach the server before the page closed). The
+            // PUT is idempotent on the persisted WaypointId, so a
+            // reload-after-network-restored converges to a single
+            // server resource without duplicating pins.
+            if (_waypoints is not null
+                && p.WaypointPostPending
+                && p.Latitude is double rLat && p.Longitude is double rLon)
+            {
+                live.CreateTask = CreateMobWaypointAsync(p.LocalId, rLat, rLon, live.Cts.Token);
+            }
             live.Loop = Task.Run(() => RunRaiseLoopAsync(p, live.Cts.Token));
         }
         // Each Apply above fires OnPathChanged; the alarm pipeline
@@ -1071,4 +1158,6 @@ public sealed record PendingRaise(
     int AttemptCount,
     string? ServerId = null,
     string? WaypointId = null,
-    bool ClearRequested = false);
+    bool ClearRequested = false,
+    bool WaypointPostPending = false,
+    string? WaypointName = null);

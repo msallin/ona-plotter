@@ -405,9 +405,66 @@ public class MobServiceTests
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
         while (toasts.Count == 0 && DateTime.UtcNow < deadline) await Task.Delay(10);
 
+        // The retry-loop wording reflects the new offline-resilient
+        // behaviour: the create is queued for retry rather than
+        // outright failing on the first attempt. Helm sees one toast
+        // (suppressed on subsequent attempts to avoid spam) carrying
+        // the underlying error so they know the network is the
+        // problem, not the alarm pipeline.
         await Assert.That(toasts.Count).IsEqualTo(1);
-        await Assert.That(toasts[0]).Contains("MOB chart pin failed");
+        await Assert.That(toasts[0]).Contains("MOB chart pin queued");
         await Assert.That(toasts[0]).Contains("server 500");
+    }
+
+    [Test]
+    public async Task RaiseAsync_Offline_Then_Online_Eventually_Persists_Waypoint()
+    {
+        // Helm-flagged scenario: helm presses MOB while offline; the
+        // toast confirms the alarm + the queued state, then the
+        // network returns and the chart pin appears without the helm
+        // having to re-raise. Pin the contract: first PUT fails
+        // (simulating offline), second succeeds (network back), the
+        // pending raise's WaypointPostPending flips back to false,
+        // and live.CreatedWaypoint is populated.
+        var (f, waypoints) = NewFixtureWithWaypoints();
+        using (f)
+        {
+            waypoints.NextCreateResult = ApiResult<string>.Fail("offline");
+            f.Api.SuspendRaise = true;   // notification side parked - irrelevant to this test
+
+            var localId = await f.Service.RaiseAsync("MOB", 47.5, 8.5);
+            // Wait for the first attempt (which fails) to record.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+            while (waypoints.PutCalls.Count < 1 && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+            await Assert.That(waypoints.PutCalls.Count).IsGreaterThanOrEqualTo(1);
+
+            // Network returns: subsequent PUTs succeed (NextCreateResult
+            // already drained on the first call). Advance the clock past
+            // the first backoff slot (1 s) so the loop's next iteration
+            // fires immediately.
+            f.Clock.Advance(TimeSpan.FromSeconds(2));
+
+            // Spin until the loop's success path flips
+            // WaypointPostPending back to false.
+            deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+            while (DateTime.UtcNow < deadline)
+            {
+                var pending = f.Service.GetPendingForTest(localId);
+                if (pending is { WaypointPostPending: false }) break;
+                await Task.Delay(10);
+            }
+
+            var pendingFinal = f.Service.GetPendingForTest(localId);
+            await Assert.That(pendingFinal).IsNotNull();
+            await Assert.That(pendingFinal!.WaypointPostPending).IsFalse();
+            // Both attempts went out against the SAME client-generated
+            // waypoint id - retries must be idempotent on the server
+            // side, not duplicating pins.
+            await Assert.That(waypoints.PutCalls.Count).IsGreaterThanOrEqualTo(2);
+            await Assert.That(waypoints.PutCalls[0].Id)
+                .IsEqualTo(waypoints.PutCalls[^1].Id);
+        }
     }
 
     [Test]
@@ -1456,6 +1513,44 @@ public class MobServiceTests
                 throw ex;
             }
             return Task.FromResult(ApiResult.Ok);
+        }
+
+        // PUT-with-id: the MOB-pipeline create path. Records the same
+        // CreateCall shape so existing assertions on CreateCalls keep
+        // working after the production switch from POST to idempotent
+        // PUT-with-client-id. CreateGate gates this method too so the
+        // race-during-create test still arms its window via the same
+        // knob. NextCreateResult drives a one-shot failure per the
+        // toast / retry tests.
+        public sealed record PutCall(
+            string Id, string Name, double Latitude, double Longitude,
+            string? Description, bool? IsMob, bool? IsActive, string? MobAlarmId);
+        public List<PutCall> PutCalls { get; } = [];
+
+        public async Task<ApiResult> PutWithIdAsync(
+            string id, string name, double lat, double lon,
+            string? description, bool? isMob, bool? isActive, string? mobAlarmId,
+            CancellationToken ct = default)
+        {
+            PutCalls.Add(new PutCall(id, name, lat, lon, description, isMob, isActive, mobAlarmId));
+            // Mirror onto CreateCalls too so the existing
+            // composition tests (which assert "MobService called
+            // create with isMob=true" via CreateCalls) keep working
+            // after the production switch from POST CreateAsync to
+            // PUT-with-id. The id is captured in PutCalls when a
+            // test specifically wants to pin it.
+            CreateCalls.Add(new CreateCall(name, lat, lon, description, isMob, isActive, mobAlarmId));
+            if (CreateGate is { } gate)
+            {
+                try { await gate.Task.WaitAsync(ct); }
+                catch (OperationCanceledException) { return ApiResult.Fail("cancelled"); }
+            }
+            if (NextCreateResult is { } result)
+            {
+                NextCreateResult = null;
+                return result.Success ? ApiResult.Ok : ApiResult.Fail(result.Error ?? "fail");
+            }
+            return ApiResult.Ok;
         }
     }
 }
