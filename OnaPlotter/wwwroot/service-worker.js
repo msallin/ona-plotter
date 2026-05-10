@@ -841,6 +841,14 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
+// v93 -> v94: Legend now describes the CPA crossing-line + X overlay
+//             explicitly. The previous "CPA danger" entry only
+//             mentioned the marker color and didn't explain the line
+//             from target -> projected CPA position; helms reading
+//             the legend asked "what's the fat red line?" because it
+//             wasn't called out. Added a new "CPA warning" entry
+//             (amber, outer-ring band) so the two-band classifier is
+//             discoverable from the legend alone.
 // v92 -> v93: AP HUD Rudder row: degree sign now matches the
 //             DRIFT / HDG err style (same colour and size as the
 //             digit, no inline left-margin gap). Was rendering as
@@ -941,7 +949,7 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v93';
+const CACHE_NAME = 'ona-plotter-v94';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

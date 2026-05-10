@@ -45,7 +45,25 @@
             <li>
                 <span class="legend-swatch legend-danger"></span>
                 <span class="legend-name">CPA danger</span>
-                <span class="legend-desc">On a collision track with own-boat.</span>
+                <span class="legend-desc">
+                    Red line + X overlay drawn from the AIS target's current
+                    position to where it will be at the closest-approach
+                    moment (TCPA). Painted when the target is currently
+                    inside your guard zone AND its projected CPA is also
+                    inside it. Tap the X for vessel name, CPA distance,
+                    and time-to-encounter.
+                </span>
+            </li>
+            <li>
+                <span class="legend-swatch legend-cpa-warn"></span>
+                <span class="legend-name">CPA warning</span>
+                <span class="legend-desc">
+                    Same shape as CPA danger but amber: target is currently
+                    in the outer ring (between your guard zone and 2× guard
+                    zone) with a closing track that would breach the guard
+                    zone within the lookahead window. Label hidden until
+                    you tap the X.
+                </span>
             </li>
             <li>
                 <span class="legend-swatch legend-sart"></span>
