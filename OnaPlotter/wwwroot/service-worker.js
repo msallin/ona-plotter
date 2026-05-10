@@ -740,7 +740,15 @@
 //             carries the pulsing-red icon variant. APP_SHELL
 //             precache invalidates so the freshly-loaded page picks
 //             up the new wiring.
-const CACHE_NAME = 'ona-plotter-v78';
+// v78 -> v79: Prefer environment.depth.belowKeel for HUD + Dashboard
+//             + ANCHOR-TIDE math. When the bus publishes belowKeel
+//             the LW-clearance math collapses to belowKeel - drop
+//             (no draft / transducer-offset bookkeeping); installs
+//             that only publish belowTransducer keep the previous
+//             conservative formula. Display value + threshold tint
+//             on the depth HUD card now show "metres under keel"
+//             when available.
+const CACHE_NAME = 'ona-plotter-v79';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

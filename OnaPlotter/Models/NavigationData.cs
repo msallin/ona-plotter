@@ -12,7 +12,21 @@ public sealed class NavigationData
     public double? SpeedOverGround { get; private set; }
     public double? Latitude { get; private set; }
     public double? Longitude { get; private set; }
+    /// <summary>Reading from <c>environment.depth.belowTransducer</c>
+    /// (metres from the transducer to the seabed). Kept alongside
+    /// <see cref="DepthBelowKeel"/> so consumers that need water-column
+    /// depth (e.g. anchor-radius heuristic) still have it available
+    /// even on installs that publish belowKeel as well.</summary>
     public double? Depth { get; private set; }
+
+    /// <summary>Reading from <c>environment.depth.belowKeel</c>
+    /// (metres from the keel bottom to the seabed). The helm-relevant
+    /// "how much water under the boat" number. Null when the bus
+    /// doesn't publish it; consumers fall back to <see cref="Depth"/>.
+    /// Used directly by the HUD when present and by
+    /// <c>AnchorTideAlarmRule</c> for the clean LW-clearance math
+    /// (no draft / transducer-offset bookkeeping required).</summary>
+    public double? DepthBelowKeel { get; private set; }
 
     // --- Per-field freshness timestamps ---
     // Safety-critical fields carry a UTC update time so HUDs can badge
@@ -303,6 +317,15 @@ public sealed class NavigationData
                     break;
                 case "environment.depth.belowTransducer":
                     Depth = value;
+                    DepthUpdatedUtc = _now();
+                    break;
+                case "environment.depth.belowKeel":
+                    DepthBelowKeel = value;
+                    // belowKeel updates also refresh the freshness
+                    // timestamp the HUD reads. Otherwise a tab where
+                    // the helm has only belowKeel (no belowTransducer
+                    // on the bus) would show a fresh number badged
+                    // "stale" because DepthUpdatedUtc never advanced.
                     DepthUpdatedUtc = _now();
                     break;
                 case "design.draft.current":

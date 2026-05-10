@@ -115,6 +115,13 @@ public sealed class SignalkClient : IAsyncDisposable
     private static readonly string[] SelfFastTierPaths =
     [
         "environment.depth.belowTransducer",
+        // belowKeel is the helm-relevant reading ("metres under the
+        // keel") and the clean input for the ANCHOR-TIDE prediction
+        // (clearance_at_LW = belowKeel - drop, no draft / transducer
+        // offset arithmetic). When the bus publishes it the HUD +
+        // tide alarm prefer it; we keep belowTransducer subscribed too
+        // so installs that only publish that path keep working.
+        "environment.depth.belowKeel",
         Utilities.SkPaths.Environment.Wind.AngleApparent,
         Utilities.SkPaths.Environment.Wind.SpeedApparent,
         Utilities.SkPaths.Environment.Wind.AngleTrueWater,
