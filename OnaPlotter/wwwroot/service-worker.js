@@ -798,7 +798,18 @@
 //             (HUD ring, APPROACH alarm, auto-advance) keep using
 //             the SK delta so a peer plotter changing the value
 //             mid-passage still propagates.
-const CACHE_NAME = 'ona-plotter-v84';
+// v84 -> v85: Anchor radius UI polish. The legacy permanent
+//             "RADIUS NOT SET" tooltip on the dropped-but-unarmed
+//             marker is gone (helm-flagged as visual noise once
+//             the AnchorEditPanel SetRadius dialog took over the
+//             instruction surface; amber pulse + dashed ring keep
+//             carrying the visual cue). The SetRadius dialog now
+//             gains a Close button when opened standalone from the
+//             anchor-watch HUD card so the helm has a way out of
+//             an accidental "Adjust" tap; the Drop -> SetRadius
+//             continuation still has no Close button (helm has
+//             already committed to setting one).
+const CACHE_NAME = 'ona-plotter-v85';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

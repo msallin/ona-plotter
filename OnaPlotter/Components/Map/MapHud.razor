@@ -1177,8 +1177,8 @@
             // legacy JS-only manual fallback was removed (plugin
             // v2.0.0+ is required), so AnchorActive + MaxRadius is
             // the only path. Drop / pre-arm states show the chart
-            // marker's amber-pulse + "RADIUS NOT SET" tooltip
-            // instead.
+            // marker's amber-pulse + the AnchorEditPanel SetRadius
+            // dialog instead.
             Visible: Data.AnchorActive && Data.AnchorMaxRadius is not null,
             Dragging: AnchorDragging,
             CurrentRadius: Data.AnchorCurrentRadius,

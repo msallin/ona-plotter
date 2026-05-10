@@ -14,7 +14,8 @@
        Card visibility is gated by Snapshot.Visible (= AnchorActive
        AND MaxRadius set on the parent), so the dropped-but-not-armed
        intermediate state never shows the card - the chart marker's
-       amber-pulse + "RADIUS NOT SET" tooltip carry that state. *@
+       amber-pulse + the AnchorEditPanel SetRadius dialog carry that
+       state. *@
     var canAdjust = OnAdjust.HasDelegate;
     <div class="hud-panel hud-card anchor-panel @(Snapshot.Dragging ? "anchor-alarm" : "") @(canAdjust ? "anchor-panel-tappable" : "")"
          @onclick="@(canAdjust ? OnAdjust : default)"

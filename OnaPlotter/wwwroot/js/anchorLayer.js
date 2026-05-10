@@ -101,12 +101,13 @@ export function clearAnchor() {
 }
 
 // Visually mark the anchor as "drop committed but radius not yet set"
-// (v2.0.0+ two-step flow's intermediate state). Pulses the marker +
-// switches the circle to a heavier dash + binds a "RADIUS NOT SET"
-// tooltip so the helm SEES on the chart that step 2 is pending.
-// Without this, the chart looks identical to a fully-armed anchor and
-// the helm walks away thinking they're done - the field-study
-// finding from Margaret + Jordan.
+// (v2.0.0+ two-step flow's intermediate state). Switches the marker
+// to amber + the circle to a heavier dash so the chart visibly
+// distinguishes "still in step 2" from a fully-armed anchor; the
+// AnchorEditPanel SetRadius dialog itself is the helm-facing
+// instruction surface. The legacy permanent "RADIUS NOT SET"
+// tooltip was helm-flagged as visual noise once the dialog took
+// over the same role, so it's gone.
 //
 // Idempotent: safe to call with the same value, safe to call when no
 // anchor is set (the toggles fall through to no-op).
@@ -125,12 +126,6 @@ export function setAnchorIncomplete(incomplete) {
             color: '#f59e0b', fillColor: '#f59e0b',
             fillOpacity: 0.04, weight: 1.5, dashArray: '2,8'
         });
-        if (!anchorMarker.getTooltip()) {
-            anchorMarker.bindTooltip('RADIUS NOT SET', {
-                permanent: true, direction: 'right', offset: [10, 0],
-                className: 'anchor-incomplete-tooltip'
-            });
-        }
     } else {
         // Restore the fully-armed look. setBoatPosition will replace
         // the colour on the next tick based on inside/outside the
@@ -141,7 +136,6 @@ export function setAnchorIncomplete(incomplete) {
             color: colors.anchorOk, fillColor: colors.anchorOk,
             fillOpacity: 0.06, weight: 2, dashArray: '6,4'
         });
-        if (anchorMarker.getTooltip()) anchorMarker.unbindTooltip();
     }
 }
 

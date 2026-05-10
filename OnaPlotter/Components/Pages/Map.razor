@@ -219,6 +219,7 @@
                          Busy="@anchorEditBusy"
                          AutoPreviewRadius="@AutoRadiusPreview()"
                          AutoBreakdown="@AutoRadiusBreakdown()"
+                         ShowCloseButton="@_anchorPanelStandalone"
                          OnDrop="OnAnchorPanelDrop"
                          OnPreviewRadius="OnAnchorPanelPreviewRadius"
                          OnSetRadius="OnAnchorPanelSet"
@@ -3853,6 +3854,12 @@
         OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.Drop;
     private int anchorEditInitialRadius;
     private bool anchorEditBusy;
+    /// <summary>True when the panel was opened standalone (helm tapped
+    /// "Adjust" on the anchor-watch HUD card) rather than as the
+    /// Drop -> SetRadius continuation. Drives whether the panel
+    /// renders a Close button in SetRadius mode - standalone opens
+    /// need an exit; the post-Drop continuation does not.</summary>
+    private bool _anchorPanelStandalone;
 
     /// <summary>Eyebrow text the panel renders above its title. Mode-
     /// switched: Drop shows a static reminder; SetRadius shows the
@@ -3889,6 +3896,10 @@
         anchorEditInitialRadius = OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
         anchorEditBusy = false;
         _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.Drop;
+        // Drop-mode Close is always rendered; the SetRadius-mode
+        // Close (which reads ShowCloseButton) is suppressed here so
+        // the post-Drop continuation doesn't offer a half-way exit.
+        _anchorPanelStandalone = false;
         anchorEditMode = true;
     }
 
@@ -4048,6 +4059,10 @@
             : OnaPlotter.Components.Map.AnchorEditPanel.UnseededInitialRadius;
         anchorEditBusy = false;
         _anchorPanelMode = OnaPlotter.Components.Map.AnchorEditPanel.AnchorPanelMode.SetRadius;
+        // Standalone open: helm tapped Adjust on the anchor-watch
+        // HUD card. Show the Close button so they can back out
+        // without committing a new radius.
+        _anchorPanelStandalone = true;
         anchorEditMode = true;
     }
 

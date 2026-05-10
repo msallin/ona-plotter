@@ -26,11 +26,15 @@
        now" model.
      - Tapping Set commits via OnSetRadius(effective). Parent does
        PUT navigation.anchor.maxRadius and closes the panel.
-     - There is no Cancel/Close in SetRadius mode. Helm escapes by
-       raising via the bottom-bar Anchor button (arm-then-confirm).
+     - Close button visibility is parent-driven via ShowCloseButton:
+       hidden during the two-step Drop->SetRadius continuation
+       (helm committed to setting a radius and shouldn't bail
+       half-way), shown when the panel was opened standalone from
+       the anchor-watch HUD card to adjust an already-armed radius
+       (helm needs a way to back out of an accidental open).
 
-   Drop mode keeps a Close button as the only escape - helm tapped
-   Anchor accidentally and needs a way out before the drop.
+   Drop mode always shows a Close button - helm tapped Anchor
+   accidentally and needs a way out before the drop.
 
    AutoPreviewRadius parameter: the parent's continuously-recomputed
    "what would Auto commit right now?" value. Renders inline on the
@@ -85,9 +89,7 @@
         @* Set commits the picked value via PUT maxRadius. Disabled
            when nothing effective has been picked (Auto picked but
            AutoPreviewRadius hasn't landed yet) or while a previous
-           PUT is still in flight. The helm exits without committing
-           by raising via the bottom-bar Anchor button (anchor-as-
-           dedicated-raise gesture); there is no Close in this mode. *@
+           PUT is still in flight. *@
         <button class="map-btn active anchor-edit-set"
                 type="button"
                 @onclick="OnSetClicked"
@@ -95,6 +97,21 @@
                 title="@(EffectiveRadius is int er ? $"Set alarm radius to {er} m" : "Pick a chip first")">
             @(Busy ? "Setting..." : "Set")
         </button>
+        @* Close: shown only when the panel was opened standalone
+           (helm tapped "Adjust" on the anchor-watch HUD card) so
+           there's a way out of an accidental open without committing
+           a new radius. Hidden during the Drop->SetRadius two-step
+           continuation: at that point the helm has already committed
+           to setting one, and bailing here would leave the anchor
+           dropped without a radius (the plugin's Incomplete Anchor
+           Alarm guards that, but a Close affordance there reads as
+           "this is a normal exit" which it isn't). *@
+        @if (ShowCloseButton)
+        {
+            <button class="map-btn" type="button"
+                    @onclick="OnCancelClicked" disabled="@Busy"
+                    title="Close without changing the alarm radius">Close</button>
+        }
     }
     else
     {
@@ -189,10 +206,20 @@
     /// the panel on success.</summary>
     [Parameter] public EventCallback<int> OnSetRadius { get; set; }
 
-    /// <summary>Cancel: parent closes the panel. Drop mode only -
-    /// SetRadius has no Close, the helm escapes by raising the
-    /// anchor.</summary>
+    /// <summary>Cancel: parent closes the panel. Wired for both the
+    /// Drop-mode Close button and the SetRadius-mode Close button
+    /// (the latter only renders when <see cref="ShowCloseButton"/>
+    /// is true).</summary>
     [Parameter] public EventCallback OnCancel { get; set; }
+
+    /// <summary>Whether to render a Close button in
+    /// <see cref="AnchorPanelMode.SetRadius"/>. Drop mode always
+    /// shows one (parameter unread). Parent passes <c>true</c> when
+    /// the panel was opened standalone (e.g. anchor-watch HUD's
+    /// "Adjust" tap) so the helm can back out of an accidental open;
+    /// passes <c>false</c> during the Drop -> SetRadius continuation
+    /// where the helm has already committed to setting a radius.</summary>
+    [Parameter] public bool ShowCloseButton { get; set; }
 
     /// <summary>Helm-tunable anchor-radius presets (metres). 150 m
     /// dropped from the v1 set on field-study feedback - 5:1 scope
