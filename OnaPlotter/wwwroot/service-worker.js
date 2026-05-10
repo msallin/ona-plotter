@@ -841,6 +841,11 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
+// v92 -> v93: AP HUD Rudder row: degree sign now matches the
+//             DRIFT / HDG err style (same colour and size as the
+//             digit, no inline left-margin gap). Was rendering as
+//             "+4.0 °" with a small gray degree while the rest of
+//             the column showed "0°" tight.
 // v91 -> v92: CPA call-graph follow-ups (round 2). Closes the
 //             remaining Minor + Nit findings from the post-PR-264
 //             review:
@@ -936,7 +941,7 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v92';
+const CACHE_NAME = 'ona-plotter-v93';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

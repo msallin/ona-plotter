@@ -604,7 +604,13 @@
                     {
                         <div class="hud-extra-row" title="Rudder angle, negative = port">
                             <span class="hud-extra-k">Rudder</span>
-                            <span class="hud-extra-v">@FormatRudder(rud)<span class="hud-unit">&deg;</span></span>
+                            @* Bare &deg; (no .hud-unit wrapper) matches the
+                               Drift / HDG err style: same colour + size as the
+                               digit, no inline left-margin gap. The wrapper
+                               here was rendering "+4.0 °" with a small gray
+                               degree sign while the rest of the column showed
+                               "0°" tight. *@
+                            <span class="hud-extra-v">@FormatRudder(rud)&deg;</span>
                         </div>
                     }
                 }
