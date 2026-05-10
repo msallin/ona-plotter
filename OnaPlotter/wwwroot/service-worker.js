@@ -841,6 +841,16 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
+// v94 -> v95: Legend now describes the XTE off-course tick. The
+//             fat red line drawn from own-boat perpendicular to the
+//             active route leg (cap 200 m visual length) was a real
+//             helm-feedback gap - "what is this fat red line, I
+//             dont see it in the legend". Same fix shape as the
+//             CPA-overlay legend update one rev ago: the rendering
+//             was always there, the legend just didn't list it.
+//             Single swatch in the offCourse red since that's the
+//             worst case; the green/amber/red severity bands are
+//             described inline in the legend text.
 // v93 -> v94: Legend now describes the CPA crossing-line + X overlay
 //             explicitly. The previous "CPA danger" entry only
 //             mentioned the marker color and didn't explain the line
@@ -949,7 +959,7 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v94';
+const CACHE_NAME = 'ona-plotter-v95';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
