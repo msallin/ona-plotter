@@ -23,12 +23,21 @@
         <button class="map-btn route-action-btn"
                 @onclick="() => OnNavigate.InvokeAsync(wp)"
                 title="Navigate to this waypoint">Go</button>
-        <button class="map-btn route-action-btn"
-                @onclick="() => OnEdit.InvokeAsync(wp)"
-                title="Edit name + description">Edit</button>
-        <button class="map-btn route-action-btn route-action-danger"
-                @onclick="() => ConfirmDelete(wp)"
-                title="Delete waypoint">Delete</button>
+        @* MOB waypoints: Edit + Delete hidden so the helm can't
+           accidentally strip isMob/isActive/mobAlarmId or kill the
+           persistent-history pin during an active rescue. Pruning a
+           MOB entry is intentionally a Resources-page operation
+           (manage-history surface). The C# JSInvokables + handlers
+           also refuse on wp.IsMob as defense-in-depth. *@
+        @if (!wp.IsMob)
+        {
+            <button class="map-btn route-action-btn"
+                    @onclick="() => OnEdit.InvokeAsync(wp)"
+                    title="Edit name + description">Edit</button>
+            <button class="map-btn route-action-btn route-action-danger"
+                    @onclick="() => ConfirmDelete(wp)"
+                    title="Delete waypoint">Delete</button>
+        }
     </RowTemplate>
 </CrudSection>
 

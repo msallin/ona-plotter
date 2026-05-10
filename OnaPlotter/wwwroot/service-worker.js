@@ -774,7 +774,17 @@
 //             flag, lets the POST complete, and fires DELETE on the
 //             auto-assigned serverId so the server's WS echo can't
 //             re-arm the alarm.
-const CACHE_NAME = 'ona-plotter-v81';
+// v81 -> v82: MOB waypoint Edit + Delete affordances refined per
+//             helm-feedback. Edit hidden everywhere (popup,
+//             LayersPanel, Resources page) - editing strips MOB
+//             metadata via the simpler UpdateAsync overload and
+//             breaks cross-plotter correlation; Resources still
+//             has the C# refusal as defense. Delete still hidden
+//             from popup + LayersPanel (don't lose history during
+//             a rescue) but allowed from the Resources page (the
+//             manage-history surface; explicit pruning of test /
+//             obsolete MOB entries belongs there).
+const CACHE_NAME = 'ona-plotter-v82';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
