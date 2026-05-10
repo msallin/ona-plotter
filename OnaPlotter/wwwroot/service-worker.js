@@ -748,7 +748,17 @@
 //             conservative formula. Display value + threshold tint
 //             on the depth HUD card now show "metres under keel"
 //             when available.
-const CACHE_NAME = 'ona-plotter-v79';
+// v79 -> v80: Fix MOB icon not rendering after the as-waypoint
+//             refactor: leafletInterop.js's addWaypointMarker mux
+//             only forwarded 5 args, silently dropping the new
+//             isMob / isActive flags before they reached
+//             waypointLayer.js. The C# side wired them through
+//             correctly all the way to the JS module entry, so the
+//             POST + metadata round-tripped fine, but the chart
+//             rendered the casualty as a regular grey dot instead
+//             of the pulsing red MOB icon. One-line fix to forward
+//             all seven args.
+const CACHE_NAME = 'ona-plotter-v80';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

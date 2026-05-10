@@ -2250,8 +2250,8 @@ export function getMapCenter() {
 
 // --- Waypoint / Note / Region markers ---
 // Implementations in waypointLayer.js, noteLayer.js, regionLayer.js.
-export const addWaypointMarker = (id, lat, lon, name, createdAtIso) =>
-    waypointLayerMod.addWaypointMarker(id, lat, lon, name, createdAtIso);
+export const addWaypointMarker = (id, lat, lon, name, createdAtIso, isMob, isActive) =>
+    waypointLayerMod.addWaypointMarker(id, lat, lon, name, createdAtIso, isMob, isActive);
 export const removeWaypointMarker = (id) => waypointLayerMod.removeWaypointMarker(id);
 
 export const addNoteMarker = (id, lat, lon, title, description, createdAtIso) =>
