@@ -181,8 +181,8 @@ public class TrackApiTests
     {
         // Every path the rich query asks for present in `values`,
         // every cell populated. The TrackPoint should carry SOG, COG,
-        // heading, TWS, TWA - all from the per-row column indices the
-        // server reported via the `values` array.
+        // heading, TWS, TWA, depth - all from the per-row column
+        // indices the server reported via the `values` array.
         string body = """
         {
             "context": "vessels.urn:mrn:imo:mmsi:123",
@@ -192,11 +192,12 @@ public class TrackApiTests
                 {"path":"navigation.courseOverGroundTrue","method":"average"},
                 {"path":"navigation.headingTrue","method":"average"},
                 {"path":"environment.wind.speedTrue","method":"average"},
-                {"path":"environment.wind.angleTrueWater","method":"average"}
+                {"path":"environment.wind.angleTrueWater","method":"average"},
+                {"path":"environment.depth.belowTransducer","method":"average"}
             ],
             "data": [
-                ["2026-04-23T14:00:00Z", [-76.82, 24.60], 2.5, 1.5708, 1.5707, 5.0, 0.7],
-                ["2026-04-23T14:00:30Z", [-76.83, 24.61], 3.1, 1.5710, 1.5709, 6.0, 0.8]
+                ["2026-04-23T14:00:00Z", [-76.82, 24.60], 2.5, 1.5708, 1.5707, 5.0, 0.7, 12.4],
+                ["2026-04-23T14:00:30Z", [-76.83, 24.61], 3.1, 1.5710, 1.5709, 6.0, 0.8, 11.9]
             ]
         }
         """;
@@ -213,6 +214,7 @@ public class TrackApiTests
         await Assert.That(p.Heading).IsEqualTo(1.5707);
         await Assert.That(p.WindSpeedTrue).IsEqualTo(5.0);
         await Assert.That(p.WindAngleTrue).IsEqualTo(0.7);
+        await Assert.That(p.Depth).IsEqualTo(12.4);
         await Assert.That(p.Timestamp.ToString("o")).Contains("2026-04-23T14:00:00");
     }
 
@@ -424,7 +426,10 @@ public class TrackApiTests
         // just position. A regression that drops sog from `paths`
         // would yield a fast/silent fallback to position-only and
         // the segmenter would have to rely on inter-sample distance
-        // for every classification (loss of fidelity).
+        // for every classification (loss of fidelity). Depth pinned
+        // here because the trip-detail panel + on-map hover both
+        // surface recorded depth; if the path silently disappears
+        // from the GET the panel goes null without any compile error.
         string? capturedQuery = null;
         string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
         var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
@@ -435,6 +440,7 @@ public class TrackApiTests
         await Assert.That(capturedQuery!).Contains("navigation.position");
         await Assert.That(capturedQuery).Contains("navigation.speedOverGround");
         await Assert.That(capturedQuery).Contains("environment.wind.speedTrue");
+        await Assert.That(capturedQuery).Contains("environment.depth.belowTransducer");
     }
 
     [Test]

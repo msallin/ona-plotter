@@ -22,6 +22,7 @@ public sealed class TrackApi : ITrackApi
         OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue,
         OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue,
         OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater,
+        OnaPlotter.Utilities.SkPaths.Environment.Depth.BelowTransducer,
     ];
 
     public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
@@ -197,7 +198,7 @@ public sealed class TrackApi : ITrackApi
         // can reorder; can omit paths the provider doesn't have. -1
         // means "this path was not in the response", and the parser
         // falls back to null for the corresponding TrackPoint field.
-        int posIdx = -1, sogIdx = -1, cogIdx = -1, hdgIdx = -1, twsIdx = -1, twaIdx = -1;
+        int posIdx = -1, sogIdx = -1, cogIdx = -1, hdgIdx = -1, twsIdx = -1, twaIdx = -1, depthIdx = -1;
         int colNum = 0;
         foreach (var v in values.EnumerateArray())
         {
@@ -214,6 +215,7 @@ public sealed class TrackApi : ITrackApi
                     case OnaPlotter.Utilities.SkPaths.Navigation.HeadingTrue: hdgIdx = colNum; break;
                     case OnaPlotter.Utilities.SkPaths.Environment.Wind.SpeedTrue: twsIdx = colNum; break;
                     case OnaPlotter.Utilities.SkPaths.Environment.Wind.AngleTrueWater: twaIdx = colNum; break;
+                    case OnaPlotter.Utilities.SkPaths.Environment.Depth.BelowTransducer: depthIdx = colNum; break;
                 }
             }
             colNum++;
@@ -252,7 +254,8 @@ public sealed class TrackApi : ITrackApi
                 WindAngleApparent: null,        // not fetched - the AWS/AWA sensors give no useful history at 30 s grain
                 WindSpeedApparent: null,
                 WindAngleTrue: TryGetNumber(entry, twaIdx),
-                WindSpeedTrue: TryGetNumber(entry, twsIdx)));
+                WindSpeedTrue: TryGetNumber(entry, twsIdx),
+                Depth: TryGetNumber(entry, depthIdx)));
         }
         return points.Count == 0 ? null : [.. points];
     }

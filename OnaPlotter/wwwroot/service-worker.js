@@ -978,7 +978,15 @@
 //             the on-map polyline tooltip shows the same line plus
 //             a live "Depth here: X m" appended on mousemove from
 //             the closest underlying TrackPoint.
-const CACHE_NAME = 'ona-plotter-v97';
+// v97 -> v98: TrackApi.RichPaths was missing
+//             environment.depth.belowTransducer, so the History
+//             GET never asked for depth and every TrackPoint came
+//             back with Depth=null. The v97 panel + hover code was
+//             already wired to render the values; the bug was a
+//             column away from the path-set declaration. Fixed
+//             RichPaths + the column-index switch + the parser to
+//             carry depth through, pinned with a unit test.
+const CACHE_NAME = 'ona-plotter-v98';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

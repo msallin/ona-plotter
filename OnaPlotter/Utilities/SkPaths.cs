@@ -87,5 +87,17 @@ public static class SkPaths
             public const string SpeedTrue = "environment.wind.speedTrue";
             public const string DirectionTrue = "environment.wind.directionTrue";
         }
+
+        public static class Depth
+        {
+            /// <summary>Depth of water under the transducer (m). The
+            /// SK driver subtracts the transducer mounting offset from
+            /// the raw echo so this is the metres of water clear of
+            /// the sensor face; downstream consumers add the helm-
+            /// configured draft to get clearance under the keel.
+            /// History API consumes this so the trip-detail panel +
+            /// the on-map polyline hover can show recorded depth.</summary>
+            public const string BelowTransducer = "environment.depth.belowTransducer";
+        }
     }
 }
