@@ -416,6 +416,36 @@ public class CpaTests
     }
 
     [Test]
+    public async Task EffectiveRadius_UnderwayCorrupt_RecoversToDefault()
+    {
+        // Storage corruption / schema migration / hand-edited
+        // localStorage can land underwayNm as NaN, +/- Infinity,
+        // 0, or negative. Without the fall-back the chip classifier
+        // sees `cpaNm < NaN` = false on every vessel and the CPA
+        // alarm + threat ring go DARK with no helm-visible signal -
+        // a silent safety regression. Pin every corruption shape
+        // returns the spec default (0.5 nm = DefaultCpaThresholdNm)
+        // so a future change that drops the guard fails this test
+        // before it reaches the helm.
+        const double Default = 0.5;
+        await Assert.That(Cpa.EffectiveRadiusNm(double.NaN, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(Default);
+        await Assert.That(Cpa.EffectiveRadiusNm(double.PositiveInfinity, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(Default);
+        await Assert.That(Cpa.EffectiveRadiusNm(double.NegativeInfinity, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(Default);
+        await Assert.That(Cpa.EffectiveRadiusNm(0.0, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(Default);
+        await Assert.That(Cpa.EffectiveRadiusNm(-0.5, anchorActive: false, anchorMaxRadiusM: null))
+            .IsEqualTo(Default);
+        // Same shapes but anchored - the recovery still happens
+        // BEFORE the anchor-narrowing decision, so a corrupt
+        // underway value can't poison the anchor branch either.
+        await Assert.That(Cpa.EffectiveRadiusNm(double.NaN, anchorActive: true, anchorMaxRadiusM: 5000.0))
+            .IsEqualTo(Default);
+    }
+
+    [Test]
     public async Task EffectiveRadius_AnchorActiveButRadiusMissing_FallsBackToUnderway()
     {
         // SK anchoralarm-plugin race: anchor.position arrives a tick

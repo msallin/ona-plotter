@@ -169,6 +169,13 @@ public static class Cpa
         return Compute(own.Value, lat2, lon2, cog2Rad, sog2Ms);
     }
 
+    /// <summary>Default CPA threshold used when storage corruption / a
+    /// schema migration leaves the helm-configured value as NaN or
+    /// non-positive. Matches IAppSettings's default-on-fresh-install
+    /// (0.5 nm) so a recovery from a bad localStorage entry doesn't
+    /// silently disable CPA classification entirely.</summary>
+    private const double DefaultCpaThresholdNm = 0.5;
+
     /// <summary>
     /// Effective CPA radius (nautical miles) given the helm's underway
     /// threshold + anchor state. When the SignalK anchoralarm plugin is
@@ -190,13 +197,6 @@ public static class Cpa
     /// <param name="anchorMaxRadiusM">SK-published max swing radius in
     /// metres (<c>NavigationData.AnchorMaxRadius</c>); null when the
     /// plugin hasn't pushed a value yet.</param>
-    /// <summary>Default CPA threshold used when storage corruption / a
-    /// schema migration leaves the helm-configured value as NaN or
-    /// non-positive. Matches IAppSettings's default-on-fresh-install
-    /// (0.5 nm) so a recovery from a bad localStorage entry doesn't
-    /// silently disable CPA classification entirely.</summary>
-    private const double DefaultCpaThresholdNm = 0.5;
-
     public static double EffectiveRadiusNm(
         double underwayNm, bool anchorActive, double? anchorMaxRadiusM)
     {

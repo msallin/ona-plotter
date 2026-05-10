@@ -237,7 +237,11 @@ public sealed class AisPushService
             // NaN to JSON". The whole tick bailed and the map froze on
             // stale data. Skip the offender and keep the rest of the
             // snapshot.
-            if (!TryGuardFiniteInputs(v, out double vLat, out double vLon)) continue;
+            if (!TryGuardFiniteInputs(v, out double vLat, out double vLon))
+            {
+                LogSkippedFiniteCheck(v, now);
+                continue;
+            }
 
             try
             {
@@ -256,10 +260,12 @@ public sealed class AisPushService
                 // poison the whole snapshot - log it once and move on.
                 // The outer try/catch in PushAsync would otherwise
                 // discard every other vessel in the same tick. Includes
-                // context so a recurring offender is identifiable in
-                // the SK server log.
+                // context + the inputs that fed the failing branch so
+                // a recurring offender is reconstructable from the SK
+                // server log alone.
                 Console.WriteLine(
-                    $"[ais] BuildSnapshot skipped {v.Context}: {ex.GetType().Name}: {ex.Message}");
+                    $"[ais] BuildSnapshot skipped {v.Context}: {ex.GetType().Name}: {ex.Message}" +
+                    $" (lat={v.Latitude} lon={v.Longitude} cog={v.CourseOverGround} sog={v.SpeedOverGround})");
             }
         }
         // If any vessel was skipped, shrink to the live count so the
@@ -289,6 +295,28 @@ public sealed class AisPushService
         lat = vLat;
         lon = vLon;
         return true;
+    }
+
+    /// <summary>One-per-minute cap on the most recent finite-check
+    /// skip log. Without the cap, a vessel that's spamming non-finite
+    /// deltas every tick would flood the SK server log at 3 lines/sec
+    /// per vessel. The cap is shared across vessels - so a recurring
+    /// offender will eventually show up but won't drown out other
+    /// signal in the log.</summary>
+    private DateTime _lastSkipFiniteLogUtc = DateTime.MinValue;
+    private static readonly TimeSpan SkipLogInterval = TimeSpan.FromMinutes(1);
+
+    private void LogSkippedFiniteCheck(AisVessel v, DateTime nowUtc)
+    {
+        if ((nowUtc - _lastSkipFiniteLogUtc) < SkipLogInterval) return;
+        _lastSkipFiniteLogUtc = nowUtc;
+        // Includes the actual inputs so an operator reading the SK
+        // log can reconstruct what the AIS payload looked like
+        // without needing to reproduce the bug live.
+        Console.WriteLine(
+            $"[ais] BuildSnapshot finite-check skipped {v.Context}:" +
+            $" lat={v.Latitude} lon={v.Longitude} cog={v.CourseOverGround} sog={v.SpeedOverGround}" +
+            $" (rate-limited to one log/min)");
     }
 
     private static OwnContext? TryBuildOwnContext(NavigationData ownship, string ownVesselType)

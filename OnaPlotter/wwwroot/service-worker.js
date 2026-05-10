@@ -841,6 +841,44 @@
 //             notification retry); state is persisted on the
 //             pending-raise record so a reload mid-retry resumes
 //             the loop on the next session.
+// v91 -> v92: CPA call-graph follow-ups (round 2). Closes the
+//             remaining Minor + Nit findings from the post-PR-264
+//             review:
+//             * EffectiveRadiusNm corruption-recovery (NaN /
+//               Infinity / non-positive underwayNm) is now pinned.
+//             * MooredVesselTracker.Cleanup catches a torn enumerator
+//               instead of over-cleaning (a partial active set used
+//               to drop still-moored vessels).
+//             * AisPushService.BuildSnapshot threat-band integration
+//               tests pin "danger"/"warning"/"none" wire strings end-
+//               to-end, including the lazy-COLREGS contract for
+//               non-threats.
+//             * Per-vessel finite-check skip now logs lat/lon/cog/
+//               sog (rate-limited to one log/min) so a recurring
+//               offender is reconstructable from the SK server log.
+//               Per-vessel try/catch path adds the same context.
+//             * SignalkClient.OnSettingsChangedSync gains an explicit
+//               re-entrancy guard - a downstream OnDataChanged
+//               listener that flips a heading-pref setting no longer
+//               causes a double-cascade through every HUD + alarm.
+//             * SanitisePerTargetPath uses string.Create for one
+//               allocation instead of StringBuilder.
+//             * Cpa.cs XML doc structure cleaned up (nested summary
+//               that confused IntelliSense routing).
+//             * MooredVesselTracker.IsMoored uses
+//               CollectionsMarshal.GetValueRefOrAddDefault for one
+//               dict lookup on the slow path instead of TryGetValue
+//               + indexer-set roundtrip.
+//             * aisLayer.js stale "warning factor" comment updated
+//               to reference the C#-pushed OuterRingMultiplier.
+//             * AisVessel.Apply("buddy", ...) now logs once per
+//               context the first time the wire-side spoof attempt
+//               is dropped, leaving a forensic trail without
+//               flooding the log.
+//             Note: m3 (narrow IAisPushSettings) deferred -
+//             ISP-style sub-interfaces already exist; a per-consumer
+//             slice would add a new abstraction without shrinking
+//             the shared FakeSettings test fixture.
 // v90 -> v91: CPA call-graph architecture follow-ups from the
 //             post-PR-264 review. Closes the highest-impact non-
 //             blocker findings:
@@ -898,7 +936,7 @@
 //             the "danger"/"warning"/"none" wire string contract
 //             so any rename fails at compile time before reaching
 //             the JS overlay.
-const CACHE_NAME = 'ona-plotter-v91';
+const CACHE_NAME = 'ona-plotter-v92';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
