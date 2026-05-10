@@ -180,7 +180,33 @@ public sealed class AppSettingsService : IAppSettings
     public int RadarRangeRingsCount { get; private set; } = 4;
 
     public bool PreferMagneticHeading { get; private set; } = false;
-    public bool PreferMagneticCourse { get; private set; } = false;
+
+    /// <summary>Helm-picked source for the HUD numerical COG
+    /// readout. Persisted as <c>cogReadoutSource.v1</c>. The legacy
+    /// <see cref="PreferMagneticCourse"/> boolean derives from this
+    /// (true when the pick is a Magnetic variant) so the existing
+    /// reader chain (NavigationData.CourseOverGround, alarm rules)
+    /// keeps working without touching every read site.</summary>
+    public string CogReadoutSource { get; private set; } =
+        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+
+    /// <summary>Helm-picked source for the on-map own-COG vector.
+    /// Independent of <see cref="CogReadoutSource"/>: a helm doing
+    /// close-quarter manoeuvres can pick a realtime variant for the
+    /// vector while keeping the HUD readout smoothed.</summary>
+    public string OwnCogVectorSource { get; private set; } =
+        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+
+    /// <summary>Back-compat boolean derived from the True/Magnetic
+    /// axis of <see cref="CogReadoutSource"/>. Kept as a property so
+    /// existing readers (NavigationData, AlarmContext, SignalkClient
+    /// cache) don't need to change. The setter
+    /// <see cref="SetPreferMagneticCourseAsync"/> now flips
+    /// <see cref="CogReadoutSource"/>'s True/Magnetic axis while
+    /// preserving the smoothed/realtime axis.</summary>
+    public bool PreferMagneticCourse =>
+        OnaPlotter.Utilities.CogSourceResolver.IsMagnetic(
+            OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource));
     public bool AutoAdvanceWaypoints { get; private set; } = true;
     /// <summary>Helm-configured arrival-circle radius (metres) sent
     /// to the SignalK v2 Course API on Set-Destination /
@@ -398,7 +424,23 @@ public sealed class AppSettingsService : IAppSettings
             RadarRangeRingsCount = (int)Math.Clamp(
                 await LoadDouble("radarRangeRingsCount.v1", 4.0), 1.0, 8.0);
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
-            PreferMagneticCourse = await LoadBool("preferMagneticCourse.v1", false);
+            // CogReadoutSource replaces the legacy preferMagneticCourse.v1
+            // boolean. On first load after the upgrade, migrate the old
+            // bool -> the smoothed variant of the same axis (matches
+            // the helm's prior experience: HUD always ran on smoothed
+            // COG via Avg.CogMean30Sec). LoadString swallows the
+            // JSException raised in private-browsing mode so the
+            // migration probe is safe on storage-disabled clients.
+            var legacyMagCourse = await LoadString("preferMagneticCourse.v1");
+            var migratedDefault = bool.TryParse(legacyMagCourse, out var lmc) && lmc
+                ? "magneticSmoothed"
+                : OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+            CogReadoutSource = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
+                OnaPlotter.Utilities.CogSourceResolver.Parse(
+                    await LoadString("cogReadoutSource.v1") ?? migratedDefault));
+            OwnCogVectorSource = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
+                OnaPlotter.Utilities.CogSourceResolver.Parse(
+                    await LoadString("ownCogVectorSource.v1") ?? migratedDefault));
             AutoAdvanceWaypoints = await LoadBool("autoAdvanceWaypoints.v1", true);
             // Clamp the arrival circle to a sensible boating range:
             // 5 m is too tight for GPS jitter to settle below; 1000 m
@@ -960,10 +1002,44 @@ public sealed class AppSettingsService : IAppSettings
         OnSettingsChanged?.Invoke();
     }
 
+    /// <summary>Back-compat setter: flips the True/Magnetic axis of
+    /// <see cref="CogReadoutSource"/> while preserving the picked
+    /// smoothed/realtime variant. Existing callers (legacy migrations,
+    /// page-side toggles that haven't been moved to the four-way
+    /// dropdown yet) keep working without writes to the retired
+    /// <c>preferMagneticCourse.v1</c> key.</summary>
     public async Task SetPreferMagneticCourseAsync(bool value)
     {
-        PreferMagneticCourse = value;
-        await Save("preferMagneticCourse.v1", value ? "true" : "false");
+        var current = OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource);
+        var smoothed = OnaPlotter.Utilities.CogSourceResolver.IsSmoothed(current);
+        var next = (value, smoothed) switch
+        {
+            (true,  true)  => OnaPlotter.Utilities.CogSource.MagneticSmoothed,
+            (true,  false) => OnaPlotter.Utilities.CogSource.MagneticRealtime,
+            (false, true)  => OnaPlotter.Utilities.CogSource.TrueSmoothed,
+            (false, false) => OnaPlotter.Utilities.CogSource.TrueRealtime,
+        };
+        await SetCogReadoutSourceAsync(OnaPlotter.Utilities.CogSourceResolver.ToSetting(next));
+    }
+
+    public async Task SetCogReadoutSourceAsync(string value)
+    {
+        // Round-trip through the parser so an unknown / corrupted
+        // value falls back to the safe default rather than poisoning
+        // the persisted setting.
+        var canonical = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
+            OnaPlotter.Utilities.CogSourceResolver.Parse(value));
+        CogReadoutSource = canonical;
+        await Save("cogReadoutSource.v1", canonical);
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetOwnCogVectorSourceAsync(string value)
+    {
+        var canonical = OnaPlotter.Utilities.CogSourceResolver.ToSetting(
+            OnaPlotter.Utilities.CogSourceResolver.Parse(value));
+        OwnCogVectorSource = canonical;
+        await Save("ownCogVectorSource.v1", canonical);
         OnSettingsChanged?.Invoke();
     }
 

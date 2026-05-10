@@ -809,7 +809,16 @@
 //             an accidental "Adjust" tap; the Drop -> SetRadius
 //             continuation still has no Close button (helm has
 //             already committed to setting one).
-const CACHE_NAME = 'ona-plotter-v85';
+// v85 -> v86: COG source split + smoothed/realtime axis. The
+//             "Course Over Ground source" setting becomes a four-
+//             option dropdown (True / Magnetic crossed with
+//             smoothed / realtime); a new "Own COG vector source"
+//             dropdown drives the on-map COG vector independently
+//             so the helm can pick realtime for immediate steering
+//             feedback while keeping the HUD readout smoothed. The
+//             legacy preferMagneticCourse.v1 boolean is migrated to
+//             the new cogReadoutSource.v1 string on first load.
+const CACHE_NAME = 'ona-plotter-v86';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

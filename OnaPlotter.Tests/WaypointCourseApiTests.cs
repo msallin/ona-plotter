@@ -22,12 +22,16 @@ public class WaypointCourseApiTests
         public string SailingMode => "cruise";
         public string OwnVesselType => "power";
         public double ArrivalCircleMeters { get; }
+        public string CogReadoutSource => "trueSmoothed";
+        public string OwnCogVectorSource => "trueSmoothed";
         public Task SetPreferMagneticHeadingAsync(bool value) => Task.CompletedTask;
         public Task SetPreferMagneticCourseAsync(bool value) => Task.CompletedTask;
         public Task SetAutoAdvanceWaypointsAsync(bool value) => Task.CompletedTask;
         public Task SetSailingModeAsync(string value) => Task.CompletedTask;
         public Task SetOwnVesselTypeAsync(string value) => Task.CompletedTask;
         public Task SetArrivalCircleMetersAsync(double value) => Task.CompletedTask;
+        public Task SetCogReadoutSourceAsync(string value) => Task.CompletedTask;
+        public Task SetOwnCogVectorSourceAsync(string value) => Task.CompletedTask;
     }
 
     [Test]

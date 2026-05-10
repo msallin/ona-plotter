@@ -76,6 +76,7 @@
             ExpandAllHud="Settings.ExpandAllHud"
             BigType="Settings.BigType"
             TideVisible="Settings.TideVisible"
+            CogReadoutSource="@Settings.CogReadoutSource"
             Polar="Polar"
             WaypointArrivalRadiusMeters="@(Data.CourseArrivalCircleMeters ?? 0.0)"
             CourseStopping="@(_activeRouteSync?.CourseStopPending ?? false)"
@@ -2330,22 +2331,38 @@
             // a local default the autopilot would not agree with.
             _frameBuilder.ArrivalRadiusMeters =
                 Data.CourseArrivalCircleMeters ?? 0.0;
-            // Smoothed values for the boat icon + COG vector: helm
-            // picks the orientation source (HDG vs COG, true vs mag)
-            // via Settings; we resolve it through the chain so a
-            // missing field falls back to the next-best published
-            // alternative. COG + SOG fall back to live during the
-            // 30s warmup window so the chart isn't empty on first
-            // mount.
+            // Helm picks two COG sources independently: one for the
+            // HUD numerical readout, one for the on-map COG vector
+            // line. The vector source flows through the frame builder
+            // here; the readout source is read by the HUD card
+            // directly. Each axis-pair (smoothed vs realtime, true
+            // vs magnetic) falls back through the chain in
+            // CogSourceResolver so a missing SK path doesn't blank
+            // the chart.
             var orientationSource = OnaPlotter.Utilities.ShipOrientationResolver.Parse(
                 Settings.ShipOrientationSource);
-            double? smoothedCog = Avg.CogMean30Sec ?? Data.CourseOverGround;
+            var vectorSource = OnaPlotter.Utilities.CogSourceResolver.Parse(
+                Settings.OwnCogVectorSource);
+            double? vectorCog = OnaPlotter.Utilities.CogSourceResolver.Resolve(
+                vectorSource, Data,
+                smoothedTrue: Avg.CogTrueMean30Sec,
+                smoothedMagnetic: Avg.CogMagneticMean30Sec);
             double? smoothedSog = Avg.SogMean30Sec ?? Data.SpeedOverGround;
+            // Boat-icon orientation has its own source (Heading vs
+            // COG); when the helm picks a COG variant the smoothed
+            // buffer matching the picked axis feeds in so the icon
+            // doesn't twitch with every wave.
+            double? orientationSmoothedCog = orientationSource switch
+            {
+                OnaPlotter.Utilities.ShipOrientationSource.CogTrue => Avg.CogTrueMean30Sec,
+                OnaPlotter.Utilities.ShipOrientationSource.CogMagnetic => Avg.CogMagneticMean30Sec,
+                _ => null,
+            };
             double? orientation = OnaPlotter.Utilities.ShipOrientationResolver.Resolve(
-                orientationSource, Data, smoothedCog: Avg.CogMean30Sec);
+                orientationSource, Data, smoothedCog: orientationSmoothedCog);
             var frame = _frameBuilder.Build(Data,
                 orientationOverride: orientation,
-                cogOverride: smoothedCog,
+                cogOverride: vectorCog,
                 sogOverride: smoothedSog);
             if (_controlsJs is not null) await _controlsJs.ApplyFrameAsync(frame);
 

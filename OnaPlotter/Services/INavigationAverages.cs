@@ -57,8 +57,21 @@ public interface INavigationAverages
     double? VmgMean1Min { get; }
     /// <summary>30-second circular mean COG (radians, [-π, +π]).
     /// Null when SOG has been below the stationary threshold for
-    /// the entire window (direction is meaningless when not moving).</summary>
+    /// the entire window (direction is meaningless when not moving).
+    /// Resolves true vs magnetic the same way
+    /// <see cref="OnaPlotter.Models.NavigationData.CourseOverGround"/>
+    /// does (driven by <c>PreferMagneticCourse</c>).</summary>
     double? CogMean30Sec { get; }
+    /// <summary>30-second circular mean of <c>navigation.courseOverGroundTrue</c>
+    /// in radians. Independent of the helm's true-vs-magnetic pick
+    /// so the helm's CogReadoutSource / OwnCogVectorSource can mix
+    /// "true smoothed" and "magnetic smoothed" without one buffer
+    /// poisoning the other when the pick changes mid-passage.</summary>
+    double? CogTrueMean30Sec { get; }
+    /// <summary>30-second circular mean of
+    /// <c>navigation.courseOverGroundMagnetic</c> in radians. See
+    /// <see cref="CogTrueMean30Sec"/> for the per-axis rationale.</summary>
+    double? CogMagneticMean30Sec { get; }
     /// <summary>30-second circular mean apparent wind angle (rad,
     /// bow-relative).</summary>
     double? AwaMean30Sec { get; }

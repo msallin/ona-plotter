@@ -84,6 +84,10 @@ internal sealed class FakeSettings : IAppSettings
     public bool PreferMagneticCourse { get; set; } = false;
     public bool AutoAdvanceWaypoints { get; set; } = true;
     public double ArrivalCircleMeters { get; set; } = 50.0;
+    public string CogReadoutSource { get; set; } =
+        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+    public string OwnCogVectorSource { get; set; } =
+        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
     public bool MarinePoiOverlayVisible { get; set; } = true;
     public bool MarinePoiFuelEnabled { get; set; } = false;
     public bool MarinePoiMarinaEnabled { get; set; } = false;
@@ -195,6 +199,8 @@ internal sealed class FakeSettings : IAppSettings
     public Task SetAisCogVectorMinutesAsync(double v) { AisCogVectorMinutes = v; return Task.CompletedTask; }
     public Task SetPreferMagneticHeadingAsync(bool v) { PreferMagneticHeading = v; return Task.CompletedTask; }
     public Task SetPreferMagneticCourseAsync(bool v) { PreferMagneticCourse = v; return Task.CompletedTask; }
+    public Task SetCogReadoutSourceAsync(string v) { CogReadoutSource = v; return Task.CompletedTask; }
+    public Task SetOwnCogVectorSourceAsync(string v) { OwnCogVectorSource = v; return Task.CompletedTask; }
     public Task SetAutoAdvanceWaypointsAsync(bool v) { AutoAdvanceWaypoints = v; return Task.CompletedTask; }
     public Task SetArrivalCircleMetersAsync(double v) { ArrivalCircleMeters = v; return Task.CompletedTask; }
     public Task SetMarinePoiOverlayVisibleAsync(bool v) { MarinePoiOverlayVisible = v; return Task.CompletedTask; }

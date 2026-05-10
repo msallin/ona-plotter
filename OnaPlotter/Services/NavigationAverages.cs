@@ -33,6 +33,15 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     public RollingScalarSeries Sog { get; }
     public RollingScalarSeries Vmg { get; }
     public RollingDirectionSeries Cog { get; }
+    /// <summary>Per-axis COG buffers. Sample directly off the raw
+    /// <c>CourseOverGroundTrue</c> / <c>CourseOverGroundMagnetic</c>
+    /// fields so the helm's CogReadoutSource / OwnCogVectorSource
+    /// pick can mix true-smoothed and magnetic-smoothed without one
+    /// buffer's pre-flip samples poisoning the other after a pick
+    /// change. The legacy combined <see cref="Cog"/> buffer is kept
+    /// for the back-compat <see cref="CogMean30Sec"/> path.</summary>
+    public RollingDirectionSeries CogTrue { get; }
+    public RollingDirectionSeries CogMagnetic { get; }
 
     public NavigationAverages(SignalkClient client, TimeProvider? time = null)
     {
@@ -52,6 +61,11 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
         Sog = new RollingScalarSeries(TimeSpan.FromMinutes(5), _time);
         Vmg = new RollingScalarSeries(TimeSpan.FromMinutes(5), _time);
         Cog = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
+        // Per-axis: same retention as the combined buffer; sampled
+        // off the raw True / Magnetic fields independently of the
+        // helm's PreferMagneticCourse pick.
+        CogTrue = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
+        CogMagnetic = new RollingDirectionSeries(TimeSpan.FromMinutes(5), _time);
 
         // Bow-relative wind angles (AWA / TWA): 5 min retention so
         // they share the boat-motion lifetime; the HUD pulls a 30 s
@@ -77,6 +91,8 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
     public double? SogMean30Sec => Sog.Mean(TimeSpan.FromSeconds(30));
     public double? VmgMean1Min => Vmg.Mean(TimeSpan.FromMinutes(1));
     public double? CogMean30Sec => Cog.Mean(TimeSpan.FromSeconds(30));
+    public double? CogTrueMean30Sec => CogTrue.Mean(TimeSpan.FromSeconds(30));
+    public double? CogMagneticMean30Sec => CogMagnetic.Mean(TimeSpan.FromSeconds(30));
     public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
     public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
 
@@ -101,12 +117,12 @@ public sealed class NavigationAverages : INavigationAverages, IDisposable
             // COG only contributes when actually moving - zero-weight
             // sample below the stationary threshold so the buffer
             // entry exists (for warmup coverage) but doesn't pull
-            // the mean toward the GPS-noise direction.
-            if (d.CourseOverGround is double cog)
-            {
-                var weight = sog >= StationarySogMs ? 1.0 : 0.0;
-                Cog.Add(cog, weight);
-            }
+            // the mean toward the GPS-noise direction. Same weight
+            // applied to all three buffers (combined + per-axis).
+            var weight = sog >= StationarySogMs ? 1.0 : 0.0;
+            if (d.CourseOverGround is double cog) Cog.Add(cog, weight);
+            if (d.CourseOverGroundTrue is double cogTrue) CogTrue.Add(cogTrue, weight);
+            if (d.CourseOverGroundMagnetic is double cogMag) CogMagnetic.Add(cogMag, weight);
         }
         if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
     }

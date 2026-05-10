@@ -39,8 +39,8 @@
         </div>
         <div class="hud-label" style="margin-top:4px;">COG</div>
         <div class="hud-value"
-             title="@(Avg.CogMean30Sec is not null ? "30s mean COG" : "Live COG (smoothed value pending; skipped while stationary)")">
-            @Format.Degrees(Avg.CogMean30Sec ?? Data.CourseOverGround)<span class="hud-unit">&deg;</span>
+             title="@CogReadoutTooltip">
+            @Format.Degrees(CogReadoutValue)<span class="hud-unit">&deg;</span>
         </div>
         @* lat/lon stays on a single horizontal line. Stacking them was
            used to keep the card narrow, but it cramped SOG/COG - the
@@ -850,6 +850,35 @@
     /// row + extras only render when both the data is published AND
     /// the helm hasn't decided to hide it.</summary>
     [Parameter] public bool TideVisible { get; set; } = true;
+
+    /// <summary>Helm-picked source for the HUD numerical COG readout.
+    /// One of <c>"trueSmoothed"</c> / <c>"trueRealtime"</c> /
+    /// <c>"magneticSmoothed"</c> / <c>"magneticRealtime"</c>;
+    /// <see cref="OnaPlotter.Utilities.CogSourceResolver"/> parses
+    /// + falls back to a published axis when the picked one isn't
+    /// on the wire.</summary>
+    [Parameter] public string CogReadoutSource { get; set; } =
+        OnaPlotter.Utilities.CogSourceResolver.DefaultSetting;
+
+    private double? CogReadoutValue => OnaPlotter.Utilities.CogSourceResolver.Resolve(
+        OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource),
+        Data,
+        smoothedTrue: Avg.CogTrueMean30Sec,
+        smoothedMagnetic: Avg.CogMagneticMean30Sec);
+
+    private string CogReadoutTooltip
+    {
+        get
+        {
+            var src = OnaPlotter.Utilities.CogSourceResolver.Parse(CogReadoutSource);
+            var smoothed = OnaPlotter.Utilities.CogSourceResolver.IsSmoothed(src);
+            var mag = OnaPlotter.Utilities.CogSourceResolver.IsMagnetic(src);
+            var axisLabel = mag ? "magnetic" : "true";
+            return smoothed
+                ? $"30 s mean COG ({axisLabel})"
+                : $"Live COG ({axisLabel})";
+        }
+    }
 
     // Single source of truth for "is this corner showing its extras".
     // Global toggle wins over per-corner click state; that way enabling

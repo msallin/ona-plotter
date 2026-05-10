@@ -36,6 +36,8 @@ public class MapHudTests
         public RollingScalarSeries Sog { get; } = new(TimeSpan.FromMinutes(5));
         public RollingScalarSeries Vmg { get; } = new(TimeSpan.FromMinutes(5));
         public RollingDirectionSeries Cog { get; } = new(TimeSpan.FromMinutes(5));
+        public RollingDirectionSeries CogTrue { get; } = new(TimeSpan.FromMinutes(5));
+        public RollingDirectionSeries CogMagnetic { get; } = new(TimeSpan.FromMinutes(5));
         public double? TwsMean1Min => null;
         public double? TwsMean10Min => null;
         public double? AwsMean1Min => null;
@@ -43,6 +45,8 @@ public class MapHudTests
         public double? SogMean30Sec => null;
         public double? VmgMean1Min => null;
         public double? CogMean30Sec => null;
+        public double? CogTrueMean30Sec => null;
+        public double? CogMagneticMean30Sec => null;
         public double? AwaMean30Sec => null;
         public double? TwaMean30Sec => null;
     }

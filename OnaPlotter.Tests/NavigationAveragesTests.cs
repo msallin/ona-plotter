@@ -75,6 +75,8 @@ public class NavigationAveragesTests
         public OnaPlotter.Utilities.RollingScalarSeries Sog { get; }
         public OnaPlotter.Utilities.RollingScalarSeries Vmg { get; }
         public OnaPlotter.Utilities.RollingDirectionSeries Cog { get; }
+        public OnaPlotter.Utilities.RollingDirectionSeries CogTrue { get; }
+        public OnaPlotter.Utilities.RollingDirectionSeries CogMagnetic { get; }
 
         public TestNavigationAverages(TimeProvider time)
         {
@@ -87,6 +89,8 @@ public class NavigationAveragesTests
             Sog = new(TimeSpan.FromMinutes(5), time);
             Vmg = new(TimeSpan.FromMinutes(5), time);
             Cog = new(TimeSpan.FromMinutes(5), time);
+            CogTrue = new(TimeSpan.FromMinutes(5), time);
+            CogMagnetic = new(TimeSpan.FromMinutes(5), time);
         }
 
         public double? TwsMean1Min => Tws.Mean(TimeSpan.FromMinutes(1));
@@ -96,6 +100,8 @@ public class NavigationAveragesTests
         public double? SogMean30Sec => Sog.Mean(TimeSpan.FromSeconds(30));
         public double? VmgMean1Min => Vmg.Mean(TimeSpan.FromMinutes(1));
         public double? CogMean30Sec => Cog.Mean(TimeSpan.FromSeconds(30));
+        public double? CogTrueMean30Sec => CogTrue.Mean(TimeSpan.FromSeconds(30));
+        public double? CogMagneticMean30Sec => CogMagnetic.Mean(TimeSpan.FromSeconds(30));
         public double? AwaMean30Sec => Awa.Mean(TimeSpan.FromSeconds(30));
         public double? TwaMean30Sec => Twa.Mean(TimeSpan.FromSeconds(30));
 
@@ -113,11 +119,10 @@ public class NavigationAveragesTests
             if (d.SpeedOverGround is double sog)
             {
                 Sog.Add(sog);
-                if (d.CourseOverGround is double cog)
-                {
-                    var weight = sog >= NavigationAverages.StationarySogMs ? 1.0 : 0.0;
-                    Cog.Add(cog, weight);
-                }
+                var weight = sog >= NavigationAverages.StationarySogMs ? 1.0 : 0.0;
+                if (d.CourseOverGround is double cog) Cog.Add(cog, weight);
+                if (d.CourseOverGroundTrue is double cogT) CogTrue.Add(cogT, weight);
+                if (d.CourseOverGroundMagnetic is double cogM) CogMagnetic.Add(cogM, weight);
             }
             if (d.CourseNextPointVmg is double vmg) Vmg.Add(vmg);
         }

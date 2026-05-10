@@ -382,22 +382,21 @@
     <div class="col-sm-6">
         <div class="card">
             <div class="card-body">
-                <label class="form-label">Course Over Ground source</label>
-                <div class="btn-group w-100" role="group" aria-label="COG reference">
-                    <input type="radio" class="btn-check" id="cog-true" name="cog-ref"
-                           checked="@(!AppSettings.PreferMagneticCourse)"
-                           @onchange="() => OnCogPrefChanged(false)" />
-                    <label class="btn btn-outline-secondary btn-sm" for="cog-true">True</label>
-                    <input type="radio" class="btn-check" id="cog-mag" name="cog-ref"
-                           checked="@AppSettings.PreferMagneticCourse"
-                           @onchange="() => OnCogPrefChanged(true)" />
-                    <label class="btn btn-outline-secondary btn-sm" for="cog-mag">Magnetic</label>
-                </div>
+                <label class="form-label" for="cog-readout-source">Course Over Ground source</label>
+                <select class="form-select form-select-sm" id="cog-readout-source"
+                        value="@AppSettings.CogReadoutSource"
+                        @onchange="OnCogReadoutSourceChanged">
+                    <option value="trueSmoothed">COG (True) - smoothed</option>
+                    <option value="trueRealtime">COG (True) - realtime</option>
+                    <option value="magneticSmoothed">COG (Magnetic) - smoothed</option>
+                    <option value="magneticRealtime">COG (Magnetic) - realtime</option>
+                </select>
                 <small class="text-muted d-block mt-1">
-                    <code>navigation.courseOverGroundTrue</code> vs
-                    <code>navigation.courseOverGroundMagnetic</code>.
-                    Independent of Heading so a true-GPS + magnetic-compass
-                    boat can show the HUD on a single reference.
+                    Drives the HUD numerical COG readout.
+                    <em>Smoothed</em> = 30 s rolling mean weighted by motion
+                    (steady number to read while underway);
+                    <em>realtime</em> = raw <code>navigation.courseOverGround*</code>
+                    delta (immediate response, twitches in chop).
                     <span class="d-block">
                         Live: True =
                         @(SignalkClient.Data.CourseOverGroundTrue is double ct
@@ -406,6 +405,29 @@
                         @(SignalkClient.Data.CourseOverGroundMagnetic is double cm
                             ? (cm * 180.0 / System.Math.PI).ToString("F0") + "\u00B0" : "-")
                     </span>
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-sm-6">
+        <div class="card">
+            <div class="card-body">
+                <label class="form-label" for="own-cog-vector-source">Own COG vector source</label>
+                <select class="form-select form-select-sm" id="own-cog-vector-source"
+                        value="@AppSettings.OwnCogVectorSource"
+                        @onchange="OnOwnCogVectorSourceChanged">
+                    <option value="trueSmoothed">COG (True) - smoothed</option>
+                    <option value="trueRealtime">COG (True) - realtime</option>
+                    <option value="magneticSmoothed">COG (Magnetic) - smoothed</option>
+                    <option value="magneticRealtime">COG (Magnetic) - realtime</option>
+                </select>
+                <small class="text-muted d-block mt-1">
+                    Drives the on-map COG vector (the line extending forward
+                    from the boat icon). Independent of the readout source so
+                    a helm doing close-quarter manoeuvres can pick a realtime
+                    variant for the chart vector while keeping the HUD readout
+                    smoothed.
                 </small>
             </div>
         </div>
@@ -1609,6 +1631,20 @@
 
     private async Task OnCogPrefChanged(bool magnetic)
         => await AppSettings.SetPreferMagneticCourseAsync(magnetic);
+
+    private async Task OnCogReadoutSourceChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? string.Empty;
+        // Service-side parser canonicalises unknown values, so the
+        // dropdown can pass the raw string through unchecked.
+        await AppSettings.SetCogReadoutSourceAsync(raw);
+    }
+
+    private async Task OnOwnCogVectorSourceChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? string.Empty;
+        await AppSettings.SetOwnCogVectorSourceAsync(raw);
+    }
 
     private async Task OnShipOrientationSourceChanged(ChangeEventArgs e)
     {
