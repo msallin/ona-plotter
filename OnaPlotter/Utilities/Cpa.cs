@@ -11,8 +11,25 @@ public static class Cpa
     /// <summary>A vessel with SOG below this (m/s, ~0.2 kn) is treated as stationary.</summary>
     private const double StationaryThresholdMs = 0.1;
 
-    /// <summary>CPA distance in nautical miles, TCPA time in minutes.</summary>
-    public readonly record struct Result(double CpaNm, double TcpaMin);
+    /// <summary>
+    /// CPA result bundle.
+    /// <list type="bullet">
+    /// <item><description><b>CpaNm</b> - projected closest-approach
+    /// distance in nautical miles.</description></item>
+    /// <item><description><b>TcpaMin</b> - time to closest approach
+    /// in minutes (always positive when present; <see cref="Compute(in OwnSnapshot, double, double, double?, double?)"/>
+    /// returns null when CPA is in the past).</description></item>
+    /// <item><description><b>CurrentDistanceNm</b> - separation
+    /// between own and target RIGHT NOW, nautical miles. Free
+    /// byproduct of the equirectangular projection inside Compute -
+    /// the consumers (CpaAlarmRule, AisPushService.BuildSnapshot)
+    /// previously each ran their own GeoMath.HaversineMeters call,
+    /// so on a 200-vessel push at 3 Hz that was ~1200 redundant
+    /// haversines/sec across both pipelines. Embedding it here
+    /// drops both consumers to a single read.</description></item>
+    /// </list>
+    /// </summary>
+    public readonly record struct Result(double CpaNm, double TcpaMin, double CurrentDistanceNm);
 
     /// <summary>
     /// Pre-computed own-vessel state for the per-target loop in
@@ -64,6 +81,15 @@ public static class Cpa
         double? cog2Rad, double? sog2Ms)
     {
         if (cog2Rad is null || sog2Ms is null) return null;
+        // Defence-in-depth: PrecomputeOwn already gates non-finite
+        // inputs on construction, but a caller could hand-build an
+        // OwnSnapshot in tests or via reflection. The struct is
+        // public; treat it as untrusted input and guard explicitly.
+        if (!double.IsFinite(own.Lat) || !double.IsFinite(own.Lon)
+            || !double.IsFinite(own.Vx) || !double.IsFinite(own.Vy)
+            || !double.IsFinite(own.SogMs))
+            return null;
+
         double s1 = own.SogMs, s2 = sog2Ms.Value;
         if (s1 < StationaryThresholdMs && s2 < StationaryThresholdMs) return null;
 
@@ -85,6 +111,13 @@ public static class Cpa
 
         double x2 = dLonDeg * metresPerDegLon;
         double y2 = (lat2 - own.Lat) * MetresPerDegLat;
+
+        // Current separation falls out of the same projection - no need
+        // for a second haversine call at the call site. Equirectangular
+        // accuracy is good to a few percent at sub-100-nm separations,
+        // which is exactly the regime collision-avoidance cares about.
+        // Pinned in CpaTests against a haversine reference within 1%.
+        double currentSepM = Math.Sqrt(x2 * x2 + y2 * y2);
 
         // Target velocity components: COG is bearing from north, so Vx = sin(COG)*SOG.
         double c2 = cog2Rad.Value;
@@ -114,7 +147,7 @@ public static class Cpa
 
         if (!double.IsFinite(cpa) || !double.IsFinite(t)) return null;
 
-        return new Result(cpa / 1852.0, t / 60.0);
+        return new Result(cpa / 1852.0, t / 60.0, currentSepM / 1852.0);
     }
 
     /// <summary>

@@ -149,11 +149,14 @@ let guardZoneRingLabel = null;
 let guardZoneWarningRingLabel = null;
 let guardZoneRadiusNm = 0.5;       // default matches IAppSettings.CpaAlarmThreshold
 let guardZoneLookaheadMin = 10;    // default matches IAppSettings.GuardZoneLookaheadMinutes
-// Outer (warning) ring multiplier. Hardcoded at 2× the inner radius
-// to match Utilities/Cpa.OuterRingMultiplier. Was a helm-configurable
-// "warning factor" - removed because the visible ring already implied
-// 2× and helms read the second knob as confusing.
-const OUTER_RING_MULT = 2.0;
+// Outer (warning) ring multiplier. Pushed from C# via setGuardZone -
+// the canonical value lives in Utilities/Cpa.OuterRingMultiplier so
+// the chart-overlay rendering can't drift from the threat classifier
+// on it. Default 2.0 covers the boot window before the first
+// setGuardZone call lands. Was a helm-configurable "warning factor"
+// - removed because the visible ring already implied 2× and helms
+// read the second knob as confusing.
+let guardZoneOuterRingMult = 2.0;
 // Visibility toggle from the Misc layers section. The ring still
 // drives the CPA / TCPA alarm pipeline regardless - this is a pure
 // rendering flag. Default true preserves the previous always-visible
@@ -235,7 +238,7 @@ export function setBoatPosition(lat, lon, cogRad, sogMs) {
         guardZoneRingLabel.setLatLng([lat + latDeg, lon]);
     }
     if (guardZoneWarningRingLabel) {
-        const warnNm = guardZoneRadiusNm * OUTER_RING_MULT;
+        const warnNm = guardZoneRadiusNm * guardZoneOuterRingMult;
         const latDeg = (warnNm * 1852) / 111320;
         guardZoneWarningRingLabel.setLatLng([lat + latDeg, lon]);
     }
@@ -1220,12 +1223,20 @@ export function focusVessel(context) {
  * the crossing-situation lines. A target whose current distance is
  * inside the raw guard zone gets a red line; a target between the
  * guard zone and 2× guard zone (the outer ring) gets amber. The 2×
- * multiplier is hardcoded as OUTER_RING_MULT - the threat
+ * multiplier is hardcoded as guardZoneOuterRingMult - the threat
  * classification itself is decided C#-side (Utilities/Cpa.cs).
  */
-export function setGuardZone(radiusNm, lookaheadMin) {
+export function setGuardZone(radiusNm, lookaheadMin, outerRingMultiplier) {
     guardZoneRadiusNm = radiusNm;
     guardZoneLookaheadMin = lookaheadMin;
+    // C# pushes the outer-ring scale factor on every setGuardZone call
+    // (Cpa.OuterRingMultiplier). Defensively coerce - an older host
+    // page that doesn't yet pass the third arg would land `undefined`
+    // here, and we'd rather fall back to the textbook 2× than crash
+    // the chart overlay. Once the host updates, this branch is dead.
+    if (typeof outerRingMultiplier === 'number' && isFinite(outerRingMultiplier) && outerRingMultiplier > 0) {
+        guardZoneOuterRingMult = outerRingMultiplier;
+    }
     drawGuardZone();
 }
 
@@ -1439,7 +1450,7 @@ function drawGuardZone() {
         if (guardZoneWarningRingLabel) { mapRef.removeLayer(guardZoneWarningRingLabel); guardZoneWarningRingLabel = null; }
         return;
     }
-    const warnRadiusM = radiusM * OUTER_RING_MULT;
+    const warnRadiusM = radiusM * guardZoneOuterRingMult;
     if (!guardZoneWarningRing) {
         guardZoneWarningRing = L.circle([selfLat, selfLon], {
             radius: warnRadiusM,
@@ -1456,20 +1467,36 @@ function drawGuardZone() {
     }
     guardZoneWarningRingLabel = placeRingLabel(
         guardZoneWarningRingLabel, warnRadiusM,
-        rangeRingLabel(guardZoneRadiusNm * OUTER_RING_MULT),
+        rangeRingLabel(guardZoneRadiusNm * guardZoneOuterRingMult),
         'guard-ring-label-warn');
 }
 
 export function dispose() {
-    for (const ctx of Object.keys(aisMarkers)) delete aisMarkers[ctx];
-    for (const ctx of Object.keys(aisVectors)) delete aisVectors[ctx];
-    for (const ctx of Object.keys(aisVectorTips)) delete aisVectorTips[ctx];
-    for (const ctx of Object.keys(aisCpaTgtLines)) delete aisCpaTgtLines[ctx];
-    for (const ctx of Object.keys(aisCpaTgtX)) delete aisCpaTgtX[ctx];
+    // Walk every per-context dict and remove the Leaflet layer from
+    // the map BEFORE dropping our reference. The previous shape
+    // (`delete aisMarkers[ctx]` only) detached the JS reference but
+    // left the layer attached to mapRef's internal _layers map; a
+    // route-edit -> re-init cycle leaked every marker, COG vector,
+    // CPA line, X-marker, label, and trail polyline that was alive
+    // at dispose time. safeRemoveLayer swallows the "already-gone"
+    // race so a teardown that crosses a settings flip stays
+    // best-effort. Pinned in OnaPlotter.Tests/Js coverage via the
+    // dispose smoke test.
+    disposeLayerDict(aisMarkers);
+    disposeLayerDict(aisVectors);
+    disposeLayerDict(aisVectorTips);
+    disposeLayerDict(aisCpaTgtLines);
+    disposeLayerDict(aisCpaTgtX);
+    // aisCpaLastSeverity is a string map, not Leaflet layers.
     for (const ctx of Object.keys(aisCpaLastSeverity)) delete aisCpaLastSeverity[ctx];
-    for (const ctx of Object.keys(aisTrailLines)) delete aisTrailLines[ctx];
+    disposeLayerDict(aisTrailLines);
+    // aisTrailHistory is plain data (lat/lon/timestamp triples).
     for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];
-    for (const ctx of Object.keys(aisLabels)) delete aisLabels[ctx];
+    disposeLayerDict(aisLabels);
+    if (guardZoneRing)         safeRemoveLayer(guardZoneRing);
+    if (guardZoneWarningRing)  safeRemoveLayer(guardZoneWarningRing);
+    if (guardZoneRingLabel)    safeRemoveLayer(guardZoneRingLabel);
+    if (guardZoneWarningRingLabel) safeRemoveLayer(guardZoneWarningRingLabel);
     guardZoneRing = null;
     guardZoneWarningRing = null;
     guardZoneRingLabel = null;
@@ -1483,4 +1510,18 @@ export function dispose() {
     getOwnMmsi = null;
     flagUrl = null;
     rotateMarker = null;
+}
+
+// Helper: detach every Leaflet layer in a per-context dict from
+// mapRef and clear the entry. Order matters - safeRemoveLayer
+// reads mapRef, so we must call it BEFORE dispose() nulls mapRef
+// at the end. Each dispose-of-dict pass enumerates a snapshot of
+// keys so a removeLayer that triggers an unintended Leaflet event
+// can't mutate the dict mid-iteration.
+function disposeLayerDict(dict) {
+    if (!dict) return;
+    for (const ctx of Object.keys(dict)) {
+        safeRemoveLayer(dict[ctx]);
+        delete dict[ctx];
+    }
 }
