@@ -784,7 +784,11 @@
 //             a rescue) but allowed from the Resources page (the
 //             manage-history surface; explicit pruning of test /
 //             obsolete MOB entries belongs there).
-const CACHE_NAME = 'ona-plotter-v82';
+// v82 -> v83: History page TripDetailPanel gains a Position section.
+//             Trip (moving) segments show start + end lat/lon as
+//             DMS-with-hemisphere; stationary segments show one
+//             arithmetic-mean position over the segment's points.
+const CACHE_NAME = 'ona-plotter-v83';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

@@ -98,6 +98,40 @@
                 </div>
             </div>
         </div>
+
+        @* Position section.
+           - Trip (moving): start + end lat/lon so the helm can read the
+             beginning + ending fix without going to the map.
+           - Stationary: a single position rendered as the arithmetic
+             mean of every sample lat/lon. The boat dwells in a small
+             cluster (anchor / berth / drift); arithmetic mean is the
+             right summary because the spread is metres, well clear of
+             antimeridian / pole edge cases that would need a vector
+             average. *@
+        <div class="trip-window-section">
+            <div class="trip-section-title">Position</div>
+            <div class="trip-window-row">
+                @if (Segment.IsStationary)
+                {
+                    var pos = AveragePosition;
+                    <div>
+                        <span class="trip-stat-label">Avg</span>
+                        <span><code>@(pos is null ? "—" : Format.LatLonDms(pos.Value.Lat, pos.Value.Lon))</code></span>
+                    </div>
+                }
+                else
+                {
+                    <div>
+                        <span class="trip-stat-label">Start</span>
+                        <span><code>@Format.LatLonDms(Segment.StartLat, Segment.StartLon)</code></span>
+                    </div>
+                    <div>
+                        <span class="trip-stat-label">End</span>
+                        <span><code>@Format.LatLonDms(Segment.EndLat, Segment.EndLon)</code></span>
+                    </div>
+                }
+            </div>
+        </div>
     </div>
 
     <div class="history-trip-detail-actions">
@@ -148,12 +182,37 @@
     private List<HeadingBucket>? HeadingBuckets => _headingBuckets ??= BuildHeadingBuckets();
     private List<HeadingBucket>? _headingBuckets;
 
+    /// <summary>Arithmetic-mean position over the segment's
+    /// <see cref="Points"/>. Used by the stationary-segment Position
+    /// row as the single representative fix. Null when no points are
+    /// available (the panel opened before the points slice loaded);
+    /// the markup renders a dash in that case. The mean is the right
+    /// summary for a stationary cluster: the spread is metres, well
+    /// clear of antimeridian / pole edge cases that would need a
+    /// proper vector average. Cached so a re-render of the panel
+    /// (helm scrolls / resizes) doesn't re-walk the points list.</summary>
+    private (double Lat, double Lon)? AveragePosition => _averagePosition ??= ComputeAveragePosition();
+    private (double Lat, double Lon)? _averagePosition;
+
     protected override void OnParametersSet()
     {
-        // Drop the cache when the parent swaps the segment under us
+        // Drop caches when the parent swaps the segment under us
         // (helm clicks a different row while the panel is open). The
-        // ?? assignment in the property handles re-build lazily.
+        // ?? assignments in the properties handle re-build lazily.
         _headingBuckets = null;
+        _averagePosition = null;
+    }
+
+    private (double Lat, double Lon)? ComputeAveragePosition()
+    {
+        if (Points.Count == 0) return null;
+        double sumLat = 0, sumLon = 0;
+        foreach (var p in Points)
+        {
+            sumLat += p.Latitude;
+            sumLon += p.Longitude;
+        }
+        return (sumLat / Points.Count, sumLon / Points.Count);
     }
 
     private List<HeadingBucket> BuildHeadingBuckets()
