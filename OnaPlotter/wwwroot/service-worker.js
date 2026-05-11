@@ -1028,7 +1028,15 @@
 //              double-init no longer duplicates retry loops.
 //              Drops the duplicate GET on Map mount that the helm
 //              saw inside the reload hang.
-const CACHE_NAME = 'ona-plotter-v101';
+// v101 -> v102: Map server-track history fetch now uses the slim
+//               MapTrack path set (position + SOG only). The renderer
+//               colours by speed bucket and ignores COG / heading /
+//               wind / depth, so the rich-fetch shape was paying for
+//               ~5 extra columns per row on every map reload (server-
+//               side join, JSON serialise, C# parse, then discard).
+//               History + Stats pages keep the Rich set since their
+//               segmenter + trip-detail panel consume those fields.
+const CACHE_NAME = 'ona-plotter-v102';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

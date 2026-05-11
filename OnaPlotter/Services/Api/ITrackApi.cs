@@ -65,7 +65,31 @@ public interface ITrackApi
         string? timespan,
         string resolution = "30s",
         TrackBbox? bbox = null,
+        TrackFetchPathSet pathSet = TrackFetchPathSet.Rich,
         CancellationToken ct = default);
+}
+
+/// <summary>Which SignalK paths the history fetch should request.
+/// The server returns one column per requested path; everything that
+/// isn't asked for stays off the wire AND off the parser. Pick
+/// whichever variant covers what the caller actually consumes - the
+/// Map's server-track overlay only colours by SOG, while the History
+/// + Stats pages need COG / heading / wind too.</summary>
+public enum TrackFetchPathSet
+{
+    /// <summary>Position + SOG only. Used by the Map's server-track
+    /// overlay (<c>ServerTrackController</c>) where the JS renderer
+    /// colours each segment by speed bucket. Cuts the request payload
+    /// + the server response by ~4 columns per row on a busy harbour
+    /// fetch and stops the parser from materialising fields the caller
+    /// discards.</summary>
+    MapTrack,
+    /// <summary>Position + SOG + COG + heading + true wind speed +
+    /// true wind angle. Used by the History page (segmenter, trip
+    /// detail panel) and the Stats page (wind avg per segment).
+    /// Default so an unsuspecting new caller gets the full shape
+    /// rather than a half-populated <see cref="TrackPoint"/>.</summary>
+    Rich,
 }
 
 // TrackBbox is now in OnaPlotter.Models (see TrackBbox.cs).
