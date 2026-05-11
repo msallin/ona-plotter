@@ -177,6 +177,100 @@ public class TrackApiTests
     // -----------------------------------------------------------------
 
     [Test]
+    public async Task RichFetch_Default_Request_Includes_All_Rich_Paths()
+    {
+        // Pin the wire shape of the default (Rich) fetch. Stats /
+        // History / TripDetailPanel rely on every column the rich
+        // set asks for; a regression that drops one would silently
+        // null the corresponding TrackPoint field and the segmenter
+        // / trip-detail bucket would have no data to bucket.
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"}],"data":[["2026-04-23T14:00:00Z",[-76,24]]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(from: null, to: null, timespan: "1h");
+
+        await Assert.That(capturedQuery).IsNotNull();
+        // URL-decode for readability - paths come back comma-joined
+        // and Uri.EscapeDataString turns commas into %2C.
+        string decoded = System.Uri.UnescapeDataString(capturedQuery!);
+        await Assert.That(decoded).Contains("navigation.position");
+        await Assert.That(decoded).Contains("navigation.speedOverGround");
+        await Assert.That(decoded).Contains("navigation.courseOverGroundTrue");
+        await Assert.That(decoded).Contains("navigation.headingTrue");
+        await Assert.That(decoded).Contains("environment.wind.speedTrue");
+        await Assert.That(decoded).Contains("environment.wind.angleTrueWater");
+        await Assert.That(decoded).Contains("environment.depth.belowTransducer");
+    }
+
+    [Test]
+    public async Task MapTrack_PathSet_Trims_Request_To_Position_And_Sog()
+    {
+        // Pin the map-overlay path-set: only position + SOG go on
+        // the wire. Helms flagged the original fetch as overshooting
+        // ("the call takes all paths as argument on the map, while we
+        // only need position and speed"). A regression that quietly
+        // widens this shape would re-introduce ~5 columns of
+        // server-side join + JSON-round-trip waste on every reload.
+        string? capturedQuery = null;
+        string body = """{"values":[{"path":"navigation.position","method":"first"},{"path":"navigation.speedOverGround","method":"average"}],"data":[["2026-04-23T14:00:00Z",[-76,24],2.5]]}""";
+        var api = HistoryApi(body, req => { capturedQuery = req.RequestUri?.Query; });
+
+        await api.GetServerTrackPointsAsync(
+            from: null, to: null, timespan: "1h",
+            pathSet: TrackFetchPathSet.MapTrack);
+
+        await Assert.That(capturedQuery).IsNotNull();
+        string decoded = System.Uri.UnescapeDataString(capturedQuery!);
+        // The slim shape MUST include position + SOG.
+        await Assert.That(decoded).Contains("navigation.position");
+        await Assert.That(decoded).Contains("navigation.speedOverGround");
+        // And MUST NOT carry any of the rich-only paths.
+        await Assert.That(decoded).DoesNotContain("courseOverGroundTrue");
+        await Assert.That(decoded).DoesNotContain("headingTrue");
+        await Assert.That(decoded).DoesNotContain("wind.speedTrue");
+        await Assert.That(decoded).DoesNotContain("wind.angleTrueWater");
+        await Assert.That(decoded).DoesNotContain("depth.belowTransducer");
+    }
+
+    [Test]
+    public async Task MapTrack_PathSet_Parser_Populates_Position_And_Sog_Only()
+    {
+        // Round-trip pin: when MapTrack mode is paired with a
+        // matching server response (position + SOG columns), the
+        // resulting TrackPoint carries lat/lon/sog AND the rich-only
+        // fields stay null. Backstops the assumption that the parser
+        // remains tolerant of a subset response shape.
+        string body = """
+        {
+            "values": [
+                {"path":"navigation.position","method":"first"},
+                {"path":"navigation.speedOverGround","method":"average"}
+            ],
+            "data": [
+                ["2026-04-23T14:00:00Z", [-76.82, 24.60], 3.0]
+            ]
+        }
+        """;
+        var pts = await HistoryApi(body)
+            .GetServerTrackPointsAsync(
+                from: null, to: null, timespan: "1h",
+                pathSet: TrackFetchPathSet.MapTrack);
+
+        await Assert.That(pts).IsNotNull();
+        await Assert.That(pts!.Length).IsEqualTo(1);
+        var p = pts[0];
+        await Assert.That(p.Latitude).IsEqualTo(24.60);
+        await Assert.That(p.Longitude).IsEqualTo(-76.82);
+        await Assert.That(p.SpeedOverGround).IsEqualTo(3.0);
+        await Assert.That(p.CourseOverGround).IsNull();
+        await Assert.That(p.Heading).IsNull();
+        await Assert.That(p.WindSpeedTrue).IsNull();
+        await Assert.That(p.WindAngleTrue).IsNull();
+        await Assert.That(p.Depth).IsNull();
+    }
+
+    [Test]
     public async Task RichFetch_ParsesAllSupportedColumns()
     {
         // Every path the rich query asks for present in `values`,

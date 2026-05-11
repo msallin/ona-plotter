@@ -47,7 +47,7 @@ public class ServerTrackControllerTests
 
     private sealed class FakeTrackApi : ITrackApi
     {
-        public List<(string span, string resolution)> Calls { get; } = [];
+        public List<(string span, string resolution, TrackFetchPathSet pathSet)> Calls { get; } = [];
         public OnaPlotter.Models.TrackPoint[]? Result { get; set; } =
         [
             new OnaPlotter.Models.TrackPoint(
@@ -65,17 +65,19 @@ public class ServerTrackControllerTests
         ];
 
         // The light position-only fetch isn't exercised by
-        // ServerTrackController (it switched to the rich fetch so the
-        // map polyline can be SOG-coloured like the local trail).
-        // Unused but required by the interface.
+        // ServerTrackController (it switched to the multi-path fetch
+        // so the map polyline can be SOG-coloured like the local
+        // trail). Unused but required by the interface.
         public Task<double[][]?> GetServerTrackAsync(string timespan = "1d", string resolution = "1m", CancellationToken ct = default)
             => Task.FromResult<double[][]?>(null);
 
         public Task<OnaPlotter.Models.TrackPoint[]?> GetServerTrackPointsAsync(
             DateTimeOffset? from, DateTimeOffset? to, string? timespan,
-            string resolution = "30s", OnaPlotter.Models.TrackBbox? bbox = null, CancellationToken ct = default)
+            string resolution = "30s", OnaPlotter.Models.TrackBbox? bbox = null,
+            TrackFetchPathSet pathSet = TrackFetchPathSet.Rich,
+            CancellationToken ct = default)
         {
-            Calls.Add((timespan ?? "1d", resolution));
+            Calls.Add((timespan ?? "1d", resolution, pathSet));
             return Task.FromResult(Result);
         }
     }
@@ -101,6 +103,23 @@ public class ServerTrackControllerTests
         await Assert.That(api.Calls[0].span).IsEqualTo("1d");
         await Assert.That(js.ServerSets.Count).IsEqualTo(1);
         await Assert.That(ctrl.Visible).IsTrue();
+    }
+
+    [Test]
+    public async Task ServerTrack_RequestsOnly_MapTrack_PathSet()
+    {
+        // Map's server-track overlay colours by speed bucket and
+        // ignores COG / heading / wind / depth. Pin that the
+        // controller asks for the trimmed shape so a future
+        // regression that swaps in TrackFetchPathSet.Rich for "let's
+        // be safe" fattens the request URL + parser cost again -
+        // helm field-reported the original rich-fetch as wasteful.
+        var (ctrl, _, api, _) = New();
+
+        await ctrl.ToggleAsync(true);
+
+        await Assert.That(api.Calls.Count).IsEqualTo(1);
+        await Assert.That(api.Calls[0].pathSet).IsEqualTo(TrackFetchPathSet.MapTrack);
     }
 
     [Test]

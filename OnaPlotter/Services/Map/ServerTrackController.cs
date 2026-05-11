@@ -147,14 +147,19 @@ public sealed class ServerTrackController
     private async Task ReloadAsync()
     {
         string apiSpan = _duration == "all" ? "P36500D" : _duration;
+        // MapTrack path set: position + SOG only. The renderer below
+        // colours by speed bucket; the rich-fetch shape carried COG /
+        // heading / wind / depth that the Map overlay parses and then
+        // throws away. Trimming the request keeps the server response
+        // ~5 columns lighter per row on a busy harbour reload and
+        // saves the per-row parse cost for fields we never look at.
         var points = await _trackApi.GetServerTrackPointsAsync(
-            from: null, to: null, timespan: apiSpan, resolution: _resolution);
+            from: null, to: null, timespan: apiSpan, resolution: _resolution,
+            pathSet: TrackFetchPathSet.MapTrack);
         if (points is not null && points.Length > 0)
         {
             // Project to [lat, lon, sogMs] triples for the JS speed-
-            // colour renderer. The rich fetch returns extra paths
-            // (heading, wind, etc) that the Map overlay doesn't need;
-            // we drop them here to keep the interop payload small.
+            // colour renderer.
             var triples = new double[points.Length][];
             for (int i = 0; i < points.Length; i++)
             {

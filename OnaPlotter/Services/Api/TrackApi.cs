@@ -25,6 +25,26 @@ public sealed class TrackApi : ITrackApi
         OnaPlotter.Utilities.SkPaths.Environment.Depth.BelowTransducer,
     ];
 
+    /// <summary>Slim path set for the Map's server-track overlay:
+    /// position + SOG only. The JS renderer colours by speed bucket
+    /// and ignores every other field, so the wider <see cref="RichPaths"/>
+    /// shape was pure waste on every map reload - extra columns the
+    /// server materialised, JSON-serialised and this side parsed +
+    /// discarded. The parser handles a subset response cleanly
+    /// (missing columns map to null TrackPoint fields), so this is a
+    /// strict request-side trim.</summary>
+    private static readonly string[] MapTrackPaths =
+    [
+        OnaPlotter.Utilities.SkPaths.Navigation.Position,
+        OnaPlotter.Utilities.SkPaths.Navigation.SpeedOverGround,
+    ];
+
+    private static string[] PathsFor(TrackFetchPathSet pathSet) => pathSet switch
+    {
+        TrackFetchPathSet.MapTrack => MapTrackPaths,
+        _ => RichPaths,
+    };
+
     public TrackApi(HttpClient http, ISignalKBaseUrl baseUrl)
     {
         _http = http;
@@ -117,10 +137,11 @@ public sealed class TrackApi : ITrackApi
         string? timespan,
         string resolution = "30s",
         TrackBbox? bbox = null,
+        TrackFetchPathSet pathSet = TrackFetchPathSet.Rich,
         CancellationToken ct = default)
     {
         string resExpr = string.IsNullOrWhiteSpace(resolution) ? "30s" : resolution;
-        string pathsParam = string.Join(',', RichPaths);
+        string pathsParam = string.Join(',', PathsFor(pathSet));
 
         string url = _baseUrl.Combine(SignalKUrls.HistoryValuesPath)
             + $"?paths={Uri.EscapeDataString(pathsParam)}"
