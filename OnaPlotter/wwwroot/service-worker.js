@@ -1036,7 +1036,15 @@
 //               side join, JSON serialise, C# parse, then discard).
 //               History + Stats pages keep the Rich set since their
 //               segmenter + trip-detail panel consume those fields.
-const CACHE_NAME = 'ona-plotter-v102';
+// v102 -> v103: ServerTrackController no longer flips the Ship-track
+//               toggle OFF when the history fetch comes back empty
+//               or null. The auto-disable read as "the app decided
+//               I didn't want this layer" - helm field-reported.
+//               Empty / failed result now just clears the JS
+//               polyline and surfaces the "no history" info; the
+//               toggle stays where the helm put it. Subsequent
+//               duration / resolution changes re-fetch as before.
+const CACHE_NAME = 'ona-plotter-v103';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
