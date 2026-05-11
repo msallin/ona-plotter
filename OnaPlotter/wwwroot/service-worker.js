@@ -986,7 +986,16 @@
 //             column away from the path-set declaration. Fixed
 //             RichPaths + the column-index switch + the parser to
 //             carry depth through, pinned with a unit test.
-const CACHE_NAME = 'ona-plotter-v98';
+// v98 -> v99: Not-logged-in chip now uses the SK admin's new
+//             `redirect` hash-query param (signalk-server PR #2647)
+//             so the helm lands back on the OnaPlotter page they
+//             tapped the chip from. Drops target=_blank: same-tab
+//             navigation is the only way the redirect actually
+//             returns the user; new-tab would leave a duplicate
+//             OnaPlotter tab open. Cross-origin standalone
+//             configurations fall back to the bare login URL +
+//             the existing visibilitychange handler.
+const CACHE_NAME = 'ona-plotter-v99';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

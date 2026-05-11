@@ -142,17 +142,20 @@
                the next poll. Visible only when the server has
                security ENABLED and status != "loggedIn"; a no-auth
                dev / homelab server hides the chip
-               (authenticationRequired=false). Tap opens the SK
-               admin UI on the SERVER ORIGIN (not the plugin mount)
-               so installs hosted under /signalk-onaplotter/ get the
-               right URL; on return the visibilitychange handler
-               picks up the new cookie. *@
+               (authenticationRequired=false). Tap navigates to the
+               SK admin login on the SERVER ORIGIN with the current
+               OnaPlotter URL passed as the `redirect` hash-query
+               param (signalk-server PR #2647); the admin Login
+               component honours it and returns the helm to the
+               same OnaPlotter page after sign-in. Cross-origin
+               (standalone mode) falls back to the bare login URL +
+               the existing visibilitychange handler picks up the
+               cookie when the helm switches back manually. *@
             @if (_loginStatus is { ShouldShowLoginWarning: true })
             {
                 <a class="auth-warning-chip"
-                   href="@(SkBaseUrl.BaseUrl + SkAdminLoginPath)"
-                   target="_blank" rel="noopener noreferrer"
-                   title="Not signed in to the SK server: saves and edits will fail. Tap to open the admin login; the chip clears when you switch back to this tab.">
+                   href="@SkAdminLoginUrl.Build(SkBaseUrl.BaseUrl, Nav.Uri)"
+                   title="Not signed in to the SK server: saves and edits will fail. Tap to sign in; you'll land back on this page.">
                     <span aria-hidden="true">⚠</span>
                     Not logged in
                 </a>
@@ -606,13 +609,6 @@
         TimeSpan.FromSeconds(4);
     private static readonly TimeSpan AuthPollIntervalWarningHidden =
         TimeSpan.FromMinutes(2);
-    /// <summary>Browser origin used to build the
-    /// <c>/skServer/login</c> link in the not-logged-in chip.
-    /// Captured once at OnInitialized; the chip's href is built
-    /// against this so a same-origin SK install (the common case)
-    /// gets a relative-ish link the helm can open in a new tab.</summary>
-    private string _baseUri = "";
-    private const string SkAdminLoginPath = "/admin/#/login";
 
     private string ConnectionClass => SignalkClient.IsConnected
         ? (SignalkClient.IsDataStale ? "stale" : "")
@@ -677,12 +673,6 @@
 
         // Periodically check for stale data (every 2 seconds).
         staleCheckTimer = new System.Threading.Timer(_ => _ = CheckStaleAsync(), null, 2000, 2000);
-
-        // Capture the SK admin link target once. NavigationManager.BaseUri
-        // is the page origin (e.g. https://openplotter.local/) - the SK
-        // admin lives at /admin/#/login on the same origin in the typical
-        // signalk-server install.
-        _baseUri = Nav.BaseUri.TrimEnd('/');
 
         // Probe login status. One-shot at app start, then on a
         // dynamic cadence that the probe itself re-tunes:
