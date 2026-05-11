@@ -1507,34 +1507,78 @@
             _frameBuilder.PrevLon = points[^1].Longitude;
         }
 
-        // Load available charts and routes from SignalK server. Any of these
-        // endpoints can 404 or time out (SignalK unreachable, plugin not
-        // installed, webapp running standalone for dev). Degrade gracefully
-        // - the map itself is still usable without these.
-        // Parallelise the seven REST seed calls. Sequential they add
-        // ~700 ms on a 100 ms-RTT link (cold connection) before the map
-        // is interactive; Task.WhenAll issues them concurrently so the
-        // longest single call dominates. SafeLoad swallows per-call
-        // failures so one bad endpoint can't take the rest down.
-        var chartsTask   = SafeLoad(() => ChartApi.GetAllAsync(),   "charts");
-        var routesTask   = SafeLoad(() => RouteApi.GetAllAsync(),   "routes");
-        var waypointsTask= SafeLoad(() => WaypointApi.GetAllAsync(),"waypoints");
-        var notesTask    = SafeLoad(() => NoteApi.GetAllAsync(),    "notes");
-        var regionsTask  = SafeLoad(() => RegionApi.GetAllAsync(),  "regions");
-        var radarsTask   = SafeLoad(() => RadarApi.GetAllAsync(),   "radars");
-        var buddiesTask  = BuddyListApi.GetAllAsync();
-        await Task.WhenAll(chartsTask, routesTask, waypointsTask,
-            notesTask, regionsTask, radarsTask, buddiesTask);
+        // Wire ResourceStore subscriptions BEFORE we read the
+        // snapshot below so a delta / startup-load completion that
+        // lands between the read and the subscribe doesn't fall on
+        // the floor. The per-id handlers go through the batch-drain
+        // pattern (DrainPendingRouteChangesAsync etc.) so a Replace
+        // that fires 50+ Changed events still coalesces to one
+        // drain pass.
+        ResourceStore.OnRouteChanged += HandleRouteChangedFromStore;
+        ResourceStore.OnRouteRemoved += HandleRouteRemovedFromStore;
+        ResourceStore.OnWaypointChanged += HandleWaypointChangedFromStore;
+        ResourceStore.OnWaypointRemoved += HandleWaypointRemovedFromStore;
+        ResourceStore.OnNoteChanged += HandleNoteChangedFromStore;
+        ResourceStore.OnNoteRemoved += HandleNoteRemovedFromStore;
+        ResourceStore.OnRegionChanged += HandleRegionChangedFromStore;
+        ResourceStore.OnRegionRemoved += HandleRegionRemovedFromStore;
 
-        availableCharts   = chartsTask.Result   ?? [];
-        ReSortAvailableCharts();
-        availableRoutes   = routesTask.Result   ?? [];
-        loadedWaypoints   = waypointsTask.Result ?? [];
-        loadedNotes       = notesTask.Result     ?? [];
-        loadedRegions     = regionsTask.Result   ?? [];
-        // Mirror into the singleton store; same reasoning as the
-        // regular-refresh path (HazardousRegionAlarmRule reads here).
+        // Resources (routes / waypoints / notes / regions) come from
+        // ResourceStore. The store is populated at app startup
+        // (Program.cs kicks RefreshAllAsync) and kept fresh via SK
+        // resources.* deltas + reconnect reconcile, so reading the
+        // snapshot here avoids the duplicate REST round-trip the
+        // Map used to issue on every mount. Cold-start cases where
+        // the startup-load hasn't completed yet land an empty
+        // snapshot; the per-id Changed events fired during the
+        // store's bulk Replace then drop the markers in via
+        // ApplyWaypointChangedFromStoreAsync etc. a moment later
+        // (idempotent JS-side: AddWaypointMarker returns early when
+        // the id is already on the map).
+        availableRoutes = [.. ResourceStore.Routes];
+        loadedWaypoints = [.. ResourceStore.Waypoints];
+        loadedNotes     = [.. ResourceStore.Notes];
+        loadedRegions   = [.. ResourceStore.Regions];
+        // Mirror regions into the singleton store; the
+        // HazardousRegionAlarmRule reads from there.
         RegionStore.SetRegions(loadedRegions);
+
+        PrecomputeRouteBounds();
+        RebuildFilteredLayers();
+        StateHasChanged();
+
+        // First-paint barrier. Everything above is the chart shell
+        // + the resource snapshot the helm sees on reload. The
+        // bootstrap below (marker pushes, charts/radars/buddies
+        // fetch, settings restore, layer pushes) used to stack 96+
+        // microtasks behind a single timer-fire and pin the main
+        // thread for ~2.5 s on a throttled / slow client. Yielding
+        // here gives the browser a chance to paint the shell
+        // before the heavy fan-out runs; each subsequent Task.Yield
+        // breaks the next batch into its own timer-fire so the
+        // helm sees progressive paint instead of one giant hang.
+        await Task.Yield();
+
+        // Batch-push markers via the resource controller. The page
+        // still owns loadedWaypoints / loadedNotes / loadedRegions
+        // because the CRUD flows on Map.razor.cs need them; the
+        // controller is the rendering facade.
+        await _resources!.DrawAllAsync(loadedWaypoints, loadedNotes, loadedRegions);
+
+        await Task.Yield();
+
+        // Charts / radars / buddies are NOT in ResourceStore - they
+        // come from their own SignalK endpoints, so we still fetch
+        // them here. Parallel WhenAll keeps the wall-clock to the
+        // longest single round-trip. SafeLoad swallows per-call
+        // failures so one bad endpoint can't take the rest down.
+        var chartsTask  = SafeLoad(() => ChartApi.GetAllAsync(),  "charts");
+        var radarsTask  = SafeLoad(() => RadarApi.GetAllAsync(),  "radars");
+        var buddiesTask = BuddyListApi.GetAllAsync();
+        await Task.WhenAll(chartsTask, radarsTask, buddiesTask);
+
+        availableCharts = chartsTask.Result ?? [];
+        ReSortAvailableCharts();
         // Radar device discovery. Empty list when no radar-provider
         // plugin is installed, which is the common case; the Layers
         // panel hides the section entirely in that state.
@@ -1550,23 +1594,19 @@
             loadedBuddies = buddies;
             AisStore.UpdateBuddies(buddies.Select(b => $"vessels.{b.Urn}"));
         }
-        PrecomputeRouteBounds();
-        RebuildFilteredLayers();
         StateHasChanged();
 
-        // Batch-push markers via the resource controller. The page
-        // still owns loadedWaypoints / loadedNotes / loadedRegions
-        // because the CRUD flows on Map.razor.cs need them; the
-        // controller is the rendering facade.
-        await _resources!.DrawAllAsync(loadedWaypoints, loadedNotes, loadedRegions);
-
         // Restore persisted settings (including enabled charts/routes) before
-        // applying defaults so user choices survive a reload.
+        // applying defaults so user choices survive a reload. Settings
+        // init is idempotent (Program.cs runs it once at startup) so
+        // this call is essentially free after the first paint.
         await Settings.InitializeAsync();
 
         // Wake lock is managed globally from MainLayout now (used to be
         // per-Map-page, but that let the screen sleep when the helm
         // switched to Wind / History mid-watch). No-op here.
+
+        await Task.Yield();
 
         // Re-enable charts the user had turned on before navigating
         // away / reloading. Snapshot the persisted set FIRST - if we
@@ -1670,20 +1710,12 @@
         SignalkClient.OnDataChanged += HandleDataChanged;
         SignalkClient.OnConnectionChanged += HandleConnectionChanged;
 
-        // Live multi-plotter sync via ResourceStore. Each event fires
-        // when SK broadcasts a resources.<type>.<id> delta OR when the
-        // store completes a REST reconcile (initial load /
-        // reconnect-edge). Routes get an in-place polyline update;
-        // waypoints / notes / regions remove-then-add their marker
-        // (single-point geometry, no flicker concern).
-        ResourceStore.OnRouteChanged += HandleRouteChangedFromStore;
-        ResourceStore.OnRouteRemoved += HandleRouteRemovedFromStore;
-        ResourceStore.OnWaypointChanged += HandleWaypointChangedFromStore;
-        ResourceStore.OnWaypointRemoved += HandleWaypointRemovedFromStore;
-        ResourceStore.OnNoteChanged += HandleNoteChangedFromStore;
-        ResourceStore.OnNoteRemoved += HandleNoteRemovedFromStore;
-        ResourceStore.OnRegionChanged += HandleRegionChangedFromStore;
-        ResourceStore.OnRegionRemoved += HandleRegionRemovedFromStore;
+        // ResourceStore subscriptions (per-id delta + REST reconcile)
+        // moved up to fire BEFORE we read the snapshot from the
+        // store, so a Replace that lands during page mount doesn't
+        // fall on the floor. See the snapshot block earlier in this
+        // method.
+
         // SignalkClient is a singleton so on a page reload the WS
         // can already be connected by the time the Map mounts. The
         // OnConnectionChanged subscription above only fires on
@@ -1698,6 +1730,8 @@
             HandleConnectionChanged();
         }
         KickInitialDataSyncAfterSubscribe();
+
+        await Task.Yield();
 
         aisTimer = new System.Threading.Timer(_ => _ = PushAisTargets(), null, AisPushInitialDelayMs, AisPushIntervalMs);
         // AtoNs are static enough not to need a timer - push on

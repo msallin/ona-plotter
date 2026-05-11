@@ -995,7 +995,24 @@
 //             OnaPlotter tab open. Cross-origin standalone
 //             configurations fall back to the bare login URL +
 //             the existing visibilitychange handler.
-const CACHE_NAME = 'ona-plotter-v99';
+// v99 -> v100: Map reload hang fix. Trace under 4x CPU throttle
+//             showed a single 2.5 s main-thread block on reload:
+//             96 microtasks (insertMarkup x276 in blazor.webassembly.js)
+//             stacked behind one timer-fire because the Map's
+//             OnAfterRenderAsync ran the whole bootstrap in one
+//             async chain. Two fixes: (a) the route / waypoint /
+//             note / region REST fetches are dropped from the
+//             Map - those resources are already loaded into
+//             ResourceStore at app startup (Program.cs) and kept
+//             fresh by SK deltas, so the Map just snapshots from
+//             the store on mount; (b) Task.Yield breaks split
+//             the remaining bootstrap (marker push, charts /
+//             radars / buddies fetch, settings restore, AIS
+//             timer, marine POI, deep-link) into 4 separate
+//             timer-fires so the browser paints the chart shell
+//             before each heavy batch instead of hanging until
+//             the whole bootstrap completes.
+const CACHE_NAME = 'ona-plotter-v100';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
