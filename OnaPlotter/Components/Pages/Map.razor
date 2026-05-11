@@ -1293,21 +1293,14 @@
 
     private async void HandleConnectionChanged()
     {
+        // Connection-state UI only - the chip + the chart-bound
+        // banner colour depend on this re-render. MOB cross-reload
+        // recovery used to live here too but now owns its own
+        // OnConnectionChanged subscription inside MobService, so
+        // the reconcile runs regardless of which page the helm is
+        // on (Map.razor is not safety-critical infrastructure).
         try { await InvokeAsync(StateHasChanged); }
         catch (ObjectDisposedException) { }
-        // On reconnect: replay any persisted pending MOB raises
-        // (offline-emit recovery) + pull the active notification
-        // list (cross-reload recovery). Best-effort; an error here
-        // gets logged and ignored - the helm still has the
-        // synthetic local entry on the chart.
-        if (SignalkClient.IsConnected)
-        {
-            try { await MobService.InitializeAsync(); }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[mob] InitializeAsync: {ex.Message}");
-            }
-        }
     }
 
     // Anchor state: server-driven only (signalk-anchoralarm-plugin
@@ -1716,19 +1709,14 @@
         // fall on the floor. See the snapshot block earlier in this
         // method.
 
-        // SignalkClient is a singleton so on a page reload the WS
-        // can already be connected by the time the Map mounts. The
-        // OnConnectionChanged subscription above only fires on
-        // state CHANGES, not on the current state, so the MOB
-        // recovery path (HandleConnectionChanged -> MobService.
-        // InitializeAsync -> GET /notifications) never runs after
-        // a reload of an already-live tab. Kick it manually here
-        // when the connection is already up; the change handler
-        // still covers the cold-start path.
-        if (SignalkClient.IsConnected)
-        {
-            HandleConnectionChanged();
-        }
+        // MOB cross-reload recovery is owned by MobService itself
+        // (kicked once at Program.cs startup + re-runs on every WS
+        // reconnect edge via the service's internal subscription).
+        // No manual kick needed here - the previous routing through
+        // this page's HandleConnectionChanged meant MOB recovery
+        // only ran if the helm happened to be on the chart page, a
+        // safety regression that the startup-kick path fixes.
+
         KickInitialDataSyncAfterSubscribe();
 
         await Task.Yield();

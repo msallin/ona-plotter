@@ -204,7 +204,14 @@ builder.Services.AddSingleton<OnaPlotter.Services.Mob.IMobService>(sp =>
         sp.GetService<ILogger<OnaPlotter.Services.Mob.MobService>>(),
         sp.GetRequiredService<IWaypointApi>(),
         sp.GetRequiredService<OnaPlotter.Services.Resources.ResourceStore>(),
-        toastWarning: msg => sp.GetRequiredService<IToastService>().Warning(msg)));
+        toastWarning: msg => sp.GetRequiredService<IToastService>().Warning(msg),
+        // SignalkClient lets MobService subscribe to OnConnectionChanged
+        // itself so reconnect-edge reconcile (cross-plotter MOB raised
+        // during a disconnect window) runs regardless of which page
+        // the helm is on. Previously routed through Map.razor's
+        // HandleConnectionChanged, which meant the recovery only fired
+        // if the helm happened to be on the chart page.
+        signalk: sp.GetRequiredService<SignalkClient>()));
 
 builder.Services.AddSingleton<IAutopilotApi, AutopilotApi>();
 // Optional: signalk-anchoralarm-plugin. Endpoint 404s when the plugin
@@ -377,6 +384,22 @@ _ = signalkClient.StartAsync();
 // Initial REST reconcile fires in the background; pages poll
 // IsLoaded or subscribe to OnReloaded.
 _ = resourceStore.RefreshAllAsync(cause: "startup");
+
+// MOB pipeline: load any persisted pending raises from localStorage
+// (offline-emit recovery), spawn the retry-loop tasks, and pull the
+// server's active notification list so a MOB raised on another
+// plotter lands on this plotter's banner immediately. Owning the
+// kick here (rather than from Map.razor's OnAfterRenderAsync) means
+// MOB recovery runs even when the helm reloads on Wind / Settings /
+// History instead of the chart page - a safety regression in the
+// previous wiring. The internal OnConnectionChanged subscription
+// inside MobService re-runs the reconcile portion on every WS
+// reconnect edge. Fire-and-forget: an early-startup REST 401 (auth
+// token not yet loaded) just silently no-ops and the connect-edge
+// reconcile that fires once the WS connects with the real token
+// picks up the actual list.
+var mobService = host.Services.GetRequiredService<OnaPlotter.Services.Mob.IMobService>();
+_ = mobService.InitializeAsync();
 
 // Activate the cross-plotter alarm publisher. Resolving the singleton
 // runs the constructor which subscribes to IAlarmManager.OnAlarmsChanged;

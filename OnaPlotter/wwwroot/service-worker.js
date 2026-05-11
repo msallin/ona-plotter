@@ -1012,7 +1012,23 @@
 //             timer-fires so the browser paints the chart shell
 //             before each heavy batch instead of hanging until
 //             the whole bootstrap completes.
-const CACHE_NAME = 'ona-plotter-v100';
+// v100 -> v101: MOB cross-reload recovery decoupled from Map.razor.
+//              Previously routed through Map's HandleConnectionChanged
+//              so the GET /notifications recovery ran only when the
+//              helm landed on the chart page after reload (a safety
+//              regression - reloading on Wind / Settings / History
+//              meant another plotter's MOB never reached this banner
+//              until the helm opened the chart). MobService now takes
+//              SignalkClient and owns its own OnConnectionChanged
+//              subscription, kicked once at Program.cs startup; the
+//              reconcile re-fires on every WS reconnect edge
+//              regardless of page mount. InitializeAsync is split
+//              into idempotent session-init (load persisted pending)
+//              + repeatable reconcile (REST GET active list) so
+//              double-init no longer duplicates retry loops.
+//              Drops the duplicate GET on Map mount that the helm
+//              saw inside the reload hang.
+const CACHE_NAME = 'ona-plotter-v101';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

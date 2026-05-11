@@ -1127,6 +1127,126 @@ public class MobServiceTests
     }
 
     // ------------------------------------------------------------
+    // Reconnect-edge reconcile (WS-driven)
+    // ------------------------------------------------------------
+
+    /// <summary>Stub SignalkClient with no-op deps. Exposes the
+    /// connection-state surface the MobService consumes
+    /// (<c>IsConnected</c> + <c>OnConnectionChanged</c>); the test
+    /// pairs <see cref="SignalkClient.MarkConnectionOpened"/> /
+    /// <see cref="SignalkClient.MarkConnectionClosed"/> with
+    /// <see cref="SignalkClient.RaiseConnectionChanged"/> to drive
+    /// reconcile flows deterministically without standing up a WS.</summary>
+    private static SignalkClient NewStubSignalkClient() =>
+        new SignalkClient(
+            baseUrl: new OnaPlotter.Tests.Services.Resources.FakeBaseUrl(),
+            logger: Microsoft.Extensions.Logging.Abstractions.NullLogger<SignalkClient>.Instance,
+            track: new OnaPlotter.Services.TrackBuffer(),
+            ais: new OnaPlotter.Services.AisStore(),
+            http: new HttpClient(),
+            settings: new FakeSettings(),
+            serverNotifs: new ServerNotificationStore(),
+            atons: new OnaPlotter.Services.AtonStore(),
+            time: TimeProvider.System);
+
+    /// <summary>Fixture overload that wires a stub SignalkClient so
+    /// the connection-edge handler inside MobService is reachable.
+    /// Tests that exercise the reconnect reconcile path use this
+    /// helper instead of <see cref="NewFixture"/>.</summary>
+    private static (Fixture f, SignalkClient signalk) NewFixtureWithSignalk()
+    {
+        var api = new FakeNotificationsApi();
+        var store = new ServerNotificationStore();
+        var kv = new InMemoryKv();
+        var positions = new ResolvedPositionStore(kv);
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 5, 3, 12, 0, 0, TimeSpan.Zero));
+        var signalk = NewStubSignalkClient();
+        var svc = new MobService(api, store, kv, positions, clock,
+            logger: null, waypoints: null, resources: null,
+            toastWarning: null, signalk: signalk);
+        return (new Fixture(svc, api, store, kv, clock), signalk);
+    }
+
+    [Test]
+    public async Task ReconnectEdge_Pulls_Server_List_Without_Page_Mount()
+    {
+        // Safety scenario: helm reloads OnaPlotter while a MOB is
+        // active on another plotter and lands on a non-Map page
+        // (Wind, Settings, History). Previous wiring routed the
+        // recovery through Map.razor's HandleConnectionChanged so
+        // the helm only saw the banner once they navigated to
+        // /map. After the refactor MobService owns its own
+        // OnConnectionChanged subscription so the GET /notifications
+        // fires regardless of which page mounted.
+        var (f, signalk) = NewFixtureWithSignalk();
+        using var _f = f;
+
+        // Initial state: no MOBs on the server. Startup-init runs
+        // here just like Program.cs would; ListReturn is empty so
+        // nothing lands in the store.
+        await f.Service.InitializeAsync();
+        await Assert.That(f.Store.Active.Any(n => n.Path.StartsWith(MobPathPrefix))).IsFalse();
+
+        // Another plotter raises a MOB during the helm's offline
+        // window. The server's list now returns it; OnaPlotter's
+        // local store is still empty because no delta arrived
+        // (WS was down).
+        f.Api.ListReturn = new Dictionary<string, ServerNotificationEnvelope>
+        {
+            ["uuid-recon"] = new(
+                Context: "vessels.self",
+                Path: "notifications.mob.uuid-recon",
+                Value: new ServerNotificationDto(
+                    Id: "uuid-recon", State: "emergency", Message: "MOB on plotter B",
+                    Method: ["visual", "sound"],
+                    Status: new NotificationStatusDto(false, false, false, true, true),
+                    Position: new NotificationPositionDto(47.5, 8.5),
+                    CreatedAt: DateTime.UtcNow)),
+        };
+
+        // WS reconnects. SignalkClient flips IsConnected false->true
+        // and fires OnConnectionChanged; MobService's internal
+        // handler detects the edge and kicks ReconcileFromServerAsync.
+        // The Mark*+Raise pair mirrors the production WS-loop site.
+        signalk.MarkConnectionOpened();
+        signalk.RaiseConnectionChanged();
+        await Assert.That(f.Service.LastReconcileTask).IsNotNull();
+        await f.Service.LastReconcileTask!;
+
+        // MOB now in the local store; banner + chart marker can fire.
+        var entry = f.Store.Active.FirstOrDefault(n => n.Path == MobPathPrefix + "uuid-recon");
+        await Assert.That(entry).IsNotNull();
+        await Assert.That(entry!.Latitude).IsEqualTo(47.5);
+    }
+
+    [Test]
+    public async Task ReconnectEdge_Only_Fires_On_Disconnected_To_Connected_Transition()
+    {
+        // Edge guard pin: the disconnect side of OnConnectionChanged
+        // must NOT re-pull. A WS that bounces every few seconds
+        // would otherwise hammer the /notifications endpoint at
+        // every drop. Mirrors ResourceStore's _wasConnected edge
+        // tracking.
+        var (f, signalk) = NewFixtureWithSignalk();
+        using var _f = f;
+
+        // Drive a full bounce: connect -> disconnect. Each step
+        // calls Mark*+Raise to mirror production.
+        signalk.MarkConnectionOpened();
+        signalk.RaiseConnectionChanged();
+        var firstReconcile = f.Service.LastReconcileTask;
+        await Assert.That(firstReconcile).IsNotNull();
+        await firstReconcile!;
+
+        signalk.MarkConnectionClosed();
+        signalk.RaiseConnectionChanged();
+
+        // The disconnect raise must not have replaced LastReconcileTask;
+        // it should still point at the first reconcile (completed).
+        await Assert.That(f.Service.LastReconcileTask).IsSameReferenceAs(firstReconcile);
+    }
+
+    // ------------------------------------------------------------
     // Clear paths (single + all)
     // ------------------------------------------------------------
 

@@ -128,6 +128,34 @@ public sealed class MobService : IMobService, IDisposable
 
     private bool _disposed;
 
+    /// <summary>Optional WS client. When wired, the service subscribes
+    /// to <see cref="SignalkClient.OnConnectionChanged"/> so a reconnect
+    /// edge triggers <see cref="ReconcileFromServerAsync"/> automatically
+    /// (cross-plotter MOB raised during a disconnect window lands on
+    /// this plotter's banner without the helm having to navigate to the
+    /// Map page). Null in legacy test ctors that don't exercise the
+    /// connection-edge path; production DI always wires it.</summary>
+    private readonly SignalkClient? _signalk;
+    private bool _wasConnected;
+
+    /// <summary>Last reconcile-on-reconnect Task (or null if none has
+    /// fired yet). Exposed internally so tests can <c>await</c> the
+    /// reconcile to completion before asserting on the post-reconcile
+    /// store state. Production never reads this - the fire-and-forget
+    /// runs on its own.</summary>
+    internal Task? LastReconcileTask { get; private set; }
+
+    /// <summary>Idempotency guard for <see cref="LoadSessionStateAsync"/>.
+    /// Set to true the first time <see cref="InitializeAsync"/> kicks
+    /// the session-init block; subsequent calls (e.g. the connect-edge
+    /// reconcile, a manual replay from a test, or a stray re-init from
+    /// a page mount under the old wiring) skip the persisted-pending
+    /// reload + retry-loop spawn to avoid duplicating the in-flight
+    /// retry tasks. The reconcile-from-server portion is NOT guarded:
+    /// every connect-edge re-pulls so notifications raised during the
+    /// disconnect window land on the local store.</summary>
+    private bool _sessionLoaded;
+
     public MobService(
         INotificationsApi api,
         ServerNotificationStore store,
@@ -137,7 +165,8 @@ public sealed class MobService : IMobService, IDisposable
         ILogger<MobService>? logger = null,
         OnaPlotter.Services.Api.IWaypointApi? waypoints = null,
         OnaPlotter.Services.Resources.IWaypointReader? resources = null,
-        Action<string>? toastWarning = null)
+        Action<string>? toastWarning = null,
+        SignalkClient? signalk = null)
     {
         _api = api ?? throw new ArgumentNullException(nameof(api));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -154,6 +183,7 @@ public sealed class MobService : IMobService, IDisposable
         _waypoints = waypoints;
         _resources = resources;
         _toastWarning = toastWarning;
+        _signalk = signalk;
 
         // Reconciliation: when any notifications.mob.* path mutates in
         // the store - WS echo from the server, our own synthetic, or
@@ -165,6 +195,44 @@ public sealed class MobService : IMobService, IDisposable
         // the synthetic path triggers banner + audio without a
         // dedicated callback.
         _store.OnPathChanged += ReconcileMobPath;
+
+        // Wire WS connection-edge reconcile when the SignalkClient is
+        // available. Previous wiring routed this through Map.razor's
+        // HandleConnectionChanged, which meant MOB cross-reload recovery
+        // only ran when the helm landed on the chart page. Owning it
+        // here decouples MOB safety from page lifecycle - a reload on
+        // Wind / Settings / History still recovers an in-flight MOB.
+        if (_signalk is not null)
+        {
+            _wasConnected = _signalk.IsConnected;
+            _signalk.OnConnectionChanged += HandleConnectionChanged;
+        }
+    }
+
+    /// <summary>WS reconnect-edge handler. Tracks the
+    /// disconnected→connected transition because <see
+    /// cref="SignalkClient.OnConnectionChanged"/> fires on both edges
+    /// and only the connect-up edge needs to re-pull the server's
+    /// active notification list. Fires the reconcile in the background
+    /// so the SignalkClient's connect-up dispatch isn't stalled on a
+    /// slow REST + localStorage round-trip.</summary>
+    private void HandleConnectionChanged()
+    {
+        if (_signalk is null || _disposed) return;
+        bool nowConnected = _signalk.IsConnected;
+        bool transitionedToConnected = !_wasConnected && nowConnected;
+        _wasConnected = nowConnected;
+        if (!transitionedToConnected) return;
+        LastReconcileTask = ReconcileOnReconnectAsync();
+    }
+
+    private async Task ReconcileOnReconnectAsync()
+    {
+        try { await ReconcileFromServerAsync(CancellationToken.None); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[mob] reconcile-on-reconnect failed");
+        }
     }
 
     /// <inheritdoc/>
@@ -659,6 +727,40 @@ public sealed class MobService : IMobService, IDisposable
     /// <inheritdoc/>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
+        // Two-phase: the session-init block is idempotent (load
+        // persisted pending raises + spawn retry loops) and runs
+        // exactly once per service instance; the reconcile-from-
+        // server block is repeatable and runs on every call, since
+        // each call should produce a fresh snapshot of the server's
+        // active notification list.
+        //
+        // Splitting matters because the internal connection-edge
+        // handler calls only ReconcileFromServerAsync. Without the
+        // split, re-running the persisted-pending replay would
+        // overwrite each LivePending entry in _pending, orphan the
+        // previous CancellationTokenSource (never disposed), and
+        // double the retry-loop POST traffic - one orphaned loop +
+        // one fresh loop both retrying the same MOB.
+        await LoadSessionStateAsync(ct).ConfigureAwait(false);
+        await ReconcileFromServerAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Session-init: load any persisted MOB raises from
+    /// localStorage and (re-)start the retry-loop + waypoint-create
+    /// tasks for each. Idempotent - the <see cref="_sessionLoaded"/>
+    /// guard makes the second + N-th call a no-op. Called from
+    /// <see cref="InitializeAsync"/>.</summary>
+    private async Task LoadSessionStateAsync(CancellationToken ct)
+    {
+        // Set the gate synchronously BEFORE the first await so a
+        // second concurrent caller (e.g. the connect-edge handler
+        // firing while the startup call is still hitting localStorage)
+        // sees the flag set and falls through without spawning a
+        // parallel reload. Blazor WASM is single-threaded so this is
+        // atomic from the consumer's perspective.
+        if (_sessionLoaded) return;
+        _sessionLoaded = true;
+
         // Recover persisted pending raises. The retry loop picks up
         // from the saved attempt counter so a reload mid-retry
         // doesn't restart the backoff at 1 s.
@@ -697,7 +799,16 @@ public sealed class MobService : IMobService, IDisposable
         // Each Apply above fires OnPathChanged; the alarm pipeline
         // subscriber wakes itself N times (cheap; coalesced at the
         // next render tick).
+    }
 
+    /// <summary>Repeatable reconcile: pull the server's active
+    /// notification list and apply every MOB entry to the local
+    /// store. Runs on every <see cref="InitializeAsync"/> call AND
+    /// every WS reconnect edge so notifications raised pre-load or
+    /// during a disconnect window land on the local banner without
+    /// requiring the helm to navigate to a specific page.</summary>
+    private async Task ReconcileFromServerAsync(CancellationToken ct)
+    {
         // Pull the server's active list so any MOB raised pre-load
         // (this plotter just booted; another plotter's emit) lands
         // on the local store. Silently best-effort: a 4xx / network
@@ -747,7 +858,7 @@ public sealed class MobService : IMobService, IDisposable
             if (!IsValidLatLon(lat, lon))
             {
                 _logger.LogWarning(
-                    "[mob] InitializeAsync recovered out-of-range coords for {Id}: lat={Lat} lon={Lon}; dropping",
+                    "[mob] reconcile recovered out-of-range coords for {Id}: lat={Lat} lon={Lon}; dropping",
                     dto.Id, lat, lon);
                 lat = null;
                 lon = null;
@@ -1054,6 +1165,10 @@ public sealed class MobService : IMobService, IDisposable
         if (_disposed) return;
         _disposed = true;
         _store.OnPathChanged -= ReconcileMobPath;
+        if (_signalk is not null)
+        {
+            _signalk.OnConnectionChanged -= HandleConnectionChanged;
+        }
         foreach (var live in _pending.Values)
         {
             try { live.Cts.Cancel(); } catch { /* best-effort */ }

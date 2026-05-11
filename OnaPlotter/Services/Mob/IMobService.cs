@@ -61,11 +61,16 @@ public interface IMobService
     /// after the helm cleared it.</summary>
     Task ClearAllAsync(CancellationToken ct = default);
 
-    /// <summary>Replays any pending POSTs from the persisted queue
-    /// (offline-emit recovery) and pulls the server's active
-    /// notification list (cross-reload recovery). Called once after
-    /// SignalkClient declares the connection up. Safe to call
-    /// repeatedly: pending posts ride their existing backoff and
-    /// the list call is just a refresh of the server-known set.</summary>
+    /// <summary>Two-phase init: load any persisted pending MOB raises
+    /// from localStorage + spawn their retry-loop tasks (session-init,
+    /// runs exactly once per service instance), then pull the server's
+    /// active notification list and apply MOB entries to the local
+    /// store (reconcile, repeatable). Called once from
+    /// <c>Program.cs</c> at app startup; the service's internal
+    /// <see cref="OnaPlotter.Services.SignalkClient.OnConnectionChanged"/>
+    /// subscription re-runs only the reconcile portion on every WS
+    /// reconnect edge. Safe to call repeatedly - the session-init
+    /// portion is gated by an internal flag so the retry-loop tasks
+    /// are never duplicated.</summary>
     Task InitializeAsync(CancellationToken ct = default);
 }
