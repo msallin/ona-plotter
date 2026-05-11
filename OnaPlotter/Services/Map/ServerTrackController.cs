@@ -170,7 +170,15 @@ public sealed class ServerTrackController
         }
         else
         {
-            _visible = false;
+            // Empty result OR transport failure (TrackApi returns null
+            // on HttpRequestException / non-2xx / parse failure).
+            // Leave _visible true so the helm's checkbox stays checked
+            // - the previous behaviour flipped it off, which read as
+            // "the app decided I didn't want this layer" and made the
+            // helm re-check the box to try again. Clearing the JS
+            // polyline + surfacing the info hint is enough; the next
+            // duration / resolution change or RefreshAsync tick will
+            // re-fetch automatically because _visible stayed true.
             await _overlaysJs.ClearServerTrackAsync();
             _emptyResultInfo("No history points returned for the selected duration.");
         }

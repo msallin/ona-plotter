@@ -7,7 +7,9 @@ namespace OnaPlotter.Tests.Services.Map;
 /// <summary>
 /// Pins the server-track interop contract: fetch + push on enable
 /// or duration change, no re-fetch on within-bounds toggle, "all"
-/// maps to a 100-year ISO duration, empty result auto-disables.
+/// maps to a 100-year ISO duration, empty / null result clears the
+/// JS polyline + surfaces the "no history" hint but keeps the
+/// helm's toggle ON.
 /// </summary>
 public class ServerTrackControllerTests
 {
@@ -185,20 +187,62 @@ public class ServerTrackControllerTests
     }
 
     [Test]
-    public async Task Empty_Result_Auto_Disables_And_Surfaces_Info()
+    public async Task Empty_Result_Surfaces_Info_And_Keeps_Toggle_On()
     {
-        // Helm enabled the layer for a span with no history; the
-        // controller drops the visible flag, clears the JS layer, and
-        // tells the helm so the silent failure is visible.
+        // Helm enabled the layer for a span with no history. The
+        // controller clears the JS polyline (no points to draw) and
+        // surfaces the "no history" hint, but Visible STAYS TRUE so
+        // the Layers-panel checkbox doesn't flip back off behind the
+        // helm's back. The old auto-disable read as "the app decided
+        // I didn't want this layer" and forced a re-check just to
+        // try a different duration / resolution.
         var (ctrl, js, api, infos) = New();
         api.Result = [];
 
         await ctrl.ToggleAsync(true);
 
-        await Assert.That(ctrl.Visible).IsFalse();
+        await Assert.That(ctrl.Visible).IsTrue()
+            .Because("empty result must NOT flip the toggle off");
         await Assert.That(js.Clears).IsEqualTo(1);
         await Assert.That(infos.Count).IsEqualTo(1);
         await Assert.That(infos[0]).Contains("No history points");
+    }
+
+    [Test]
+    public async Task Null_Result_From_Transport_Failure_Keeps_Toggle_On()
+    {
+        // TrackApi returns null on HttpRequestException / non-2xx /
+        // parse failure. Same treatment as the empty case: surface
+        // the hint, clear the polyline, but keep Visible = true so
+        // the helm's intent is preserved.
+        var (ctrl, js, api, infos) = New();
+        api.Result = null;
+
+        await ctrl.ToggleAsync(true);
+
+        await Assert.That(ctrl.Visible).IsTrue()
+            .Because("transport failure must NOT flip the toggle off");
+        await Assert.That(js.Clears).IsEqualTo(1);
+        await Assert.That(infos.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Subsequent_Duration_Change_After_Empty_Refetches()
+    {
+        // Empty result on first toggle keeps Visible=true. When the
+        // helm then picks a different duration the controller MUST
+        // re-fetch (the previous bug auto-disabled, so the duration
+        // change at line `if (_visible) await ReloadAsync();` was a
+        // no-op and the helm had to re-check the box manually).
+        var (ctrl, _, api, _) = New();
+        api.Result = [];
+        await ctrl.ToggleAsync(true);
+        await Assert.That(api.Calls.Count).IsEqualTo(1);
+
+        await ctrl.SetDurationAsync("7d");
+
+        await Assert.That(api.Calls.Count).IsEqualTo(2)
+            .Because("Visible stayed true, so the duration change must re-fetch");
     }
 
     [Test]
