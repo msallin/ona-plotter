@@ -175,4 +175,32 @@ public class NotificationsApiTests
 
         await Assert.That(r.Success).IsFalse();
     }
+
+    [Test]
+    public async Task Acknowledge_400_With_SkV2_ErrorEnvelope_SurfacesServerMessage()
+    {
+        // signalk-server's notifications router rejects ack on an
+        // already-acked or non-acknowledgeable alarm with HTTP 400 +
+        // the SK v2 standard envelope:
+        //   {"state":"FAILED","statusCode":400,"message":"Alarm already acknowledged!"}
+        // Without `message` parsing in ReadErrorAsync the helm saw a
+        // bare "HTTP 400" in the log; with it, the server's exact
+        // diagnostic surfaces. Pin both shape AND that the StatusCode
+        // makes it to the ApiResult (the benign-rejection helper in
+        // SignalKNotificationAcknowledger keys on it).
+        var http = ApiTestHelpers.MockClient(req =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"state":"FAILED","statusCode":400,"message":"Alarm already acknowledged!"}""",
+                    System.Text.Encoding.UTF8, "application/json")
+            });
+        var api = new NotificationsApi(http, ApiTestHelpers.FixedBaseUrl());
+
+        var r = await api.AcknowledgeAsync("dup-ack");
+
+        await Assert.That(r.Success).IsFalse();
+        await Assert.That(r.Error).IsEqualTo("Alarm already acknowledged!");
+        await Assert.That(r.StatusCode).IsEqualTo(400);
+    }
 }
