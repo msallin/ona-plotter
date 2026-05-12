@@ -1123,7 +1123,21 @@
 //               checkbox modal generically so future multi-pick
 //               flows reuse the same dialog. 18 new tests pin the
 //               GPX shape + the multi-choose state machine.
-const CACHE_NAME = 'ona-plotter-v107';
+// v107 -> v108: Notification ack: HTTP 400 with "Alarm already
+//                acknowledged!" / "Alarm cannot be acknowledged!"
+//                is now logged at Info level (Console.WriteLine,
+//                not Console.Error) so errorRelayBoot doesn't pipe
+//                a benign multi-plotter ack race to the SK server
+//                error log. Helm-reported regression: "I get an
+//                error when I ack the anchor alarm". The local
+//                dismiss already took effect; the server insists
+//                the alarm was already acked (by this plotter on a
+//                double-tap or by another plotter on the same boat).
+//                Also: ResourceHttp.ReadErrorAsync now extracts the
+//                SK v2 standard error envelope's `message` field, so
+//                non-benign 400s surface the server's actual reason
+//                instead of a bare "HTTP 400".
+const CACHE_NAME = 'ona-plotter-v108';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

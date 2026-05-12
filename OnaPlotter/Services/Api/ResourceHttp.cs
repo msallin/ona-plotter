@@ -158,10 +158,18 @@ internal static class ResourceHttp
     }
 
     /// <summary>
-    /// Extracts the server's error string from a non-2xx body. SK
-    /// v2 uses the <c>{"error": "..."}</c> envelope (also present
-    /// on radar-control rejections); older endpoints send a bare
-    /// text body. Both are tolerated; null when nothing readable.
+    /// Extracts the server's error string from a non-2xx body. Two
+    /// JSON shapes tolerated:
+    /// <list type="bullet">
+    ///   <item><c>{"error": "..."}</c> - SK v2 radar-control rejections
+    ///   and older custom endpoints.</item>
+    ///   <item><c>{"state": "FAILED", "statusCode": ..., "message": "..."}</c>
+    ///   - the SK v2 standard error envelope used by the notifications,
+    ///   resources, and course routers. Without this branch the helm
+    ///   sees a bare "HTTP 400" in the log when the server already
+    ///   spelled the failure out (e.g. "Alarm already acknowledged!").</item>
+    /// </list>
+    /// Bare text bodies are accepted as-is. Null when nothing readable.
     /// </summary>
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage response, CancellationToken ct)
     {
@@ -172,11 +180,20 @@ internal static class ResourceHttp
             try
             {
                 using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                    doc.RootElement.TryGetProperty("error", out var e) &&
-                    e.ValueKind == JsonValueKind.String)
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
                 {
-                    return e.GetString();
+                    if (doc.RootElement.TryGetProperty("error", out var e) &&
+                        e.ValueKind == JsonValueKind.String)
+                    {
+                        return e.GetString();
+                    }
+                    // SK v2 standard error envelope: try `message`
+                    // when `error` isn't present.
+                    if (doc.RootElement.TryGetProperty("message", out var m) &&
+                        m.ValueKind == JsonValueKind.String)
+                    {
+                        return m.GetString();
+                    }
                 }
             }
             catch (JsonException)

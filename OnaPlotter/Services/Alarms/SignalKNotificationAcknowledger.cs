@@ -56,8 +56,22 @@ public sealed record SignalKNotificationAcknowledger : IAlarmAcknowledger
             var r = await _api.AcknowledgeAsync(_id);
             if (!r.Success)
             {
-                Console.Error.WriteLine(
-                    $"[ack] notification {_id} non-success: {r.Error ?? "(no body)"}");
+                if (IsBenignAckRejection(r))
+                {
+                    // Server already considers this notification acked
+                    // (another plotter beat us to it, or the local
+                    // double-tap landed twice). Log at Info-level so
+                    // errorRelayBoot doesn't pipe it to the SK server
+                    // error log - the local dismiss already happened
+                    // and the end state matches the helm's intent.
+                    Console.WriteLine(
+                        $"[ack] notification {_id} already acked server-side: {r.Error}");
+                }
+                else
+                {
+                    Console.Error.WriteLine(
+                        $"[ack] notification {_id} non-success: {r.Error ?? "(no body)"}");
+                }
             }
         }
         catch (Exception ex)
@@ -70,6 +84,30 @@ public sealed record SignalKNotificationAcknowledger : IAlarmAcknowledger
             Console.Error.WriteLine(
                 $"[ack] notification {_id} threw {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>Recognises the two server-side 400s that mean "this
+    /// ack was a duplicate, not a real failure": <em>Alarm already
+    /// acknowledged!</em> and <em>Alarm cannot be acknowledged!</em>.
+    /// Both happen in normal multi-plotter operation where the helm
+    /// taps Dismiss on plotter A, plotter A POSTs the ack, the SK
+    /// server emits the acked delta, and plotter B sees the alarm
+    /// AND its own un-acked snapshot and tries to ack too. The cross-
+    /// plotter race used to surface as a red error line in the helm's
+    /// SK log every time; helms reported "I get an error when I ack
+    /// the anchor alarm" on otherwise-working hardware. Pattern match
+    /// the server messages from signalk-server's alarm.ts so a benign
+    /// race stays quiet.</summary>
+    internal static bool IsBenignAckRejection(ApiResult r)
+    {
+        if (r.StatusCode != 400) return false;
+        if (string.IsNullOrEmpty(r.Error)) return false;
+        // The two messages from
+        // SignalK/signalk-server src/api/notifications/alarm.ts:
+        //   if (!canAcknowledge) throw new Error('Alarm cannot be acknowledged!')
+        //   if (acknowledged)    throw new Error('Alarm already acknowledged!')
+        return r.Error.Contains("already acknowledged", StringComparison.OrdinalIgnoreCase)
+            || r.Error.Contains("cannot be acknowledged", StringComparison.OrdinalIgnoreCase);
     }
 
     // Equality on (api-instance + id + canAcknowledge) means two
