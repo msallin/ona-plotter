@@ -909,8 +909,14 @@ public sealed class MobService : IMobService, IDisposable
         // coords, falls through to the cleanup branch, and clears
         // the synthetic + pending in one pass. Returning here keeps
         // us off the redundant double-cleanup path.
-        var serverEntry = _store.Active.FirstOrDefault(n =>
-            string.Equals(n.Path, path, StringComparison.Ordinal));
+        // Direct O(1) lookup against the path-keyed store dictionary
+        // instead of materialising a fresh snapshot of every active
+        // notification per ReconcileMobPath fire. The reconcile runs
+        // on every notifications.mob.* mutation - synthetic apply,
+        // server WS echo, clear, plus its own re-fire of OnPathChanged
+        // inside the Apply below - so the snapshot allocation was per-
+        // dispatcher-tick during the MOB-active window.
+        ServerNotification? serverEntry = _store.TryGet(path, out var found) ? found : null;
         if (serverEntry is not null
             && serverEntry.Latitude is null
             && serverEntry.Longitude is null
@@ -1092,7 +1098,11 @@ public sealed class MobService : IMobService, IDisposable
                     // isn't, the upcoming WS echo will trigger
                     // ReconcileMobPath cleanly.
                     var serverPath = MobPathPrefix + result.Value;
-                    if (_store.Active.Any(n => n.Path == serverPath))
+                    // O(1) Contains against the store's path dictionary
+                    // instead of allocating an Active snapshot + linear
+                    // walk; same lookup result, no per-retry-success
+                    // allocation while a live MOB is in flight.
+                    if (_store.Contains(serverPath))
                     {
                         _store.Clear(MobPathPrefix + pending.LocalId);
                         CancelAndDropPending(pending.LocalId);

@@ -1765,6 +1765,13 @@ public sealed class SignalkClient : IAsyncDisposable
     /// threaded so a mid-enumeration mutation isn't possible, but
     /// handing out a copy keeps callers from accidentally relying on
     /// live-update semantics.
+    /// <para><b>Cold-path:</b> the per-call HashSet allocation is fine
+    /// because the only consumer is the RawStream debug page's
+    /// chip-list render, called once per user navigation to /rawstream
+    /// (and then re-evaluated only when the user explicitly refreshes).
+    /// Do NOT wire this into a per-tick / per-delta path - if a future
+    /// caller needs the set on the hot path, cache the result with
+    /// invalidation on <see cref="SubscribeExtraPathAsync"/> mutation.</para>
     /// </summary>
     public IReadOnlyCollection<string> SubscribedPaths
     {

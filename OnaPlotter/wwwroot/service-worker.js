@@ -1044,7 +1044,33 @@
 //               polyline and surfaces the "no history" info; the
 //               toggle stays where the helm put it. Subsequent
 //               duration / resolution changes re-fetch as before.
-const CACHE_NAME = 'ona-plotter-v103';
+// v103 -> v104: Performance Hawk review follow-ups.
+//               (PERF-001) BuildVesselList in Map.razor now caches
+//               the result keyed on AisStore.Version + own-ship
+//               state + threshold settings, so a render with
+//               unchanged inputs returns the same list reference.
+//               COLREGS classification gated behind the same Cpa
+//               threat-band check AisPushService uses - on a
+//               200-vessel harbour the per-render Colregs.Classify
+//               count drops from N to ~5% of N.
+//               (PERF-002) Per-id drain handlers (route / waypoint /
+//               note / region Changed) build an id->index hint
+//               dictionary once per batch so each Apply is O(1)
+//               instead of O(M) via List.FindIndex. 90-route
+//               reconnect storm drops from O(N*M) to O(N+M).
+//               (PERF-003) Removed handlers gain the same coalesce-
+//               and-drain pattern that the Changed side already
+//               had. Batched RemoveAll (HashSet membership) + one
+//               RebuildFilteredLayers + (for regions) one
+//               RegionStore.SetRegions per batch, instead of per id.
+//               (PERF-004) ServerNotificationStore.TryGet / Contains
+//               replace _store.Active.FirstOrDefault / Any in
+//               MobService - no more per-mutation allocation of an
+//               Active snapshot during a live MOB window.
+//               (PERF-005) SubscribedPaths is documented as cold-
+//               path / debug-only so a future caller doesn't wire
+//               it into the hot path.
+const CACHE_NAME = 'ona-plotter-v104';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

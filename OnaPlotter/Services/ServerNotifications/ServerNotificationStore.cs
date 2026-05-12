@@ -82,6 +82,23 @@ public sealed class ServerNotificationStore
     /// <see cref="Active"/>.Count when you only need the count.</summary>
     public int Count => _byPath.Count;
 
+    /// <summary>O(1) lookup for the entry at <paramref name="path"/>.
+    /// Returns false (and a default <paramref name="entry"/>) when the
+    /// path is not armed. Avoids the <see cref="Active"/> snapshot
+    /// allocation that <c>MobService.ReconcileMobPath</c> + the MOB
+    /// retry-loop's "is this path still active?" probe used to pay on
+    /// every notifications.mob.* mutation (synthetic apply, server WS
+    /// echo, clear, plus the reconcile re-firing OnPathChanged). Same
+    /// dictionary the writers use; the contract is "the entry visible
+    /// inside an OnPathChanged handler is the one just applied".</summary>
+    public bool TryGet(string path, out ServerNotification entry)
+        => _byPath.TryGetValue(path, out entry!);
+
+    /// <summary>Cheaper-than-<see cref="TryGet"/> existence probe when
+    /// the caller only needs "is this path armed?". Used by the MOB
+    /// retry-loop's post-POST reconcile check.</summary>
+    public bool Contains(string path) => _byPath.ContainsKey(path);
+
     /// <summary>Apply a notification delta. Pass a non-null state to
     /// arm; pass null OR "normal"/"cleared" to clear. Re-arming an
     /// already-active path with a different message updates the entry

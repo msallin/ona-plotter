@@ -1047,11 +1047,39 @@
     private Task OnToggleRouteCallback((SignalkRoute route, bool enabled) t) =>
         ToggleRoute(t.route, t.enabled);
 
+    /// <summary>Cached <see cref="BuildVesselList"/> result. The markup
+    /// binding fires on every render of the Map page while the Layers
+    /// panel is open, so without a cache the helm pays an O(N) build
+    /// + per-vessel CPA classify on every HandleDataChanged tick. The
+    /// cache key fingerprints every input the build consumes; a miss
+    /// rebuilds, a hit returns the same reference (Blazor's diff
+    /// short-circuits the LayersPanel re-render too).</summary>
+    private IReadOnlyList<VesselListEntry>? _vesselListCache;
+    private VesselListCacheKey _vesselListCacheKey;
+
+    /// <summary>Fingerprint of every value <see cref="BuildVesselList"/>
+    /// reads. <c>AisVersion</c> increments whenever any vessel in
+    /// <see cref="AisStore"/> mutates (delta, prune); the rest cover
+    /// own-ship state and the helm-tunable thresholds that drive the
+    /// CPA / threat / COLREGS gate. Equality is by-value (record struct)
+    /// so the cache check is one CPU op per field.</summary>
+    private readonly record struct VesselListCacheKey(
+        int AisVersion,
+        double? OwnLat, double? OwnLon, double? OwnCog, double? OwnSog,
+        bool AnchorActive, double? AnchorMaxRadius,
+        double CpaAlarmThreshold, double GuardZoneLookaheadMinutes);
+
     /// <summary>
     /// Snapshot of every known AIS vessel sorted by threat: vessels with a
     /// valid TCPA first (ascending), then the rest by raw distance. Built on
     /// demand from <see cref="AisStore"/> so the layers panel always reflects
     /// the latest fixes without subscribing to AIS updates directly.
+    /// <para>Cached by <see cref="_vesselListCacheKey"/>: a re-render of the
+    /// page where own-ship + AIS store version + threshold settings are
+    /// unchanged returns the previous list reference unchanged. The COLREGS
+    /// per-vessel classify is gated on the same threat band <see cref="AisPushService.ComputeVesselThreat"/>
+    /// uses (in / outside the guard zone + lookahead), so non-converging
+    /// vessels skip the per-vessel Colregs.Classify trig.</para>
     /// </summary>
     private IReadOnlyList<VesselListEntry> BuildVesselList()
     {
@@ -1062,6 +1090,21 @@
         var ownLon = Data.Longitude;
         var ownCog = Data.CourseOverGround;
         var ownSog = Data.SpeedOverGround;
+        bool anchorActive = Data.AnchorActive;
+        double? anchorMaxRadius = Data.AnchorMaxRadius;
+        double cpaAlarmThreshold = Settings.CpaAlarmThreshold;
+        double lookaheadMin = Settings.GuardZoneLookaheadMinutes;
+
+        var key = new VesselListCacheKey(
+            AisVersion: AisStore.Version,
+            OwnLat: ownLat, OwnLon: ownLon, OwnCog: ownCog, OwnSog: ownSog,
+            AnchorActive: anchorActive, AnchorMaxRadius: anchorMaxRadius,
+            CpaAlarmThreshold: cpaAlarmThreshold,
+            GuardZoneLookaheadMinutes: lookaheadMin);
+        if (_vesselListCache is { } cached && _vesselListCacheKey == key)
+        {
+            return cached;
+        }
 
         // Pre-compute own-ship sin/cos of COG ONCE for the per-vessel
         // CPA pass below. Skips the trig + null-checks N times per
@@ -1070,6 +1113,14 @@
         var ownSnap = (ownLat is not null && ownLon is not null)
             ? Cpa.PrecomputeOwn(ownLat.Value, ownLon.Value, ownCog, ownSog)
             : null;
+
+        // Effective CPA threshold + lookahead drive the same threat
+        // band the chart-side ComputeVesselThreat uses. COLREGS for a
+        // vessel outside this band has no helm-actionable meaning - the
+        // rules apply to closing encounters. Hoisted out of the per-
+        // vessel loop because both inputs are own-ship-invariant.
+        double effectiveCpaRadiusNm = Cpa.EffectiveRadiusNm(
+            cpaAlarmThreshold, anchorActive, anchorMaxRadius);
 
         var entries = new List<VesselListEntry>(vessels.Length);
         foreach (var v in vessels)
@@ -1094,12 +1145,24 @@
                         v.CourseOverGround, v.SpeedOverGround)
                     : null;
 
-                if (ownCog is not null && ownSog is not null
+                // Threat-gate COLREGS: only classify vessels actually
+                // in a closing encounter inside the guard zone. On a
+                // 200-vessel harbour the typical hit rate is < 5%, so
+                // the gate drops ~190 of 200 Colregs.Classify calls
+                // per render of the LayersPanel.
+                if (cpa is { } c
+                    && ownCog is not null && ownSog is not null
                     && v.CourseOverGround is not null && v.SpeedOverGround is not null)
                 {
-                    colregs = Colregs.Classify(
-                        ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
-                        v.Latitude.Value, v.Longitude.Value, v.CourseOverGround.Value, v.SpeedOverGround.Value);
+                    var threat = Cpa.ClassifyThreat(
+                        c.CpaNm, c.TcpaMin, c.CurrentDistanceNm,
+                        effectiveCpaRadiusNm, lookaheadMin, v.IsBuddy);
+                    if (threat != Cpa.Threat.None)
+                    {
+                        colregs = Colregs.Classify(
+                            ownLat.Value, ownLon.Value, ownCog.Value, ownSog.Value,
+                            v.Latitude.Value, v.Longitude.Value, v.CourseOverGround.Value, v.SpeedOverGround.Value);
+                    }
                 }
             }
 
@@ -1135,6 +1198,8 @@
             if (bHas) return 1;
             return (a.DistanceNm ?? double.MaxValue).CompareTo(b.DistanceNm ?? double.MaxValue);
         });
+        _vesselListCacheKey = key;
+        _vesselListCache = entries;
         return entries;
     }
 
@@ -3427,42 +3492,89 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    // Coalesce route Removed events the same way the Changed handler
+    // does. A reconnect-edge reconcile or a multi-delete from another
+    // plotter can fire N Removed events in one dispatcher tick; without
+    // this drain each id paid an O(M) RemoveAll + RebuildFilteredLayers
+    // (which iterates routes/waypoints/notes/regions/charts) so N
+    // removals were O(N*M). With the drain it's O(M+N): one batched
+    // RemoveAll against a HashSet + a single filter rebuild.
+    private readonly HashSet<string> _pendingRouteRemovals = new(StringComparer.Ordinal);
+    private bool _routeRemoveFlushScheduled;
+
     private void HandleRouteRemovedFromStore(string id)
     {
-        _ = ApplyRouteRemovedFromStoreAsync(id);
+        _pendingRouteRemovals.Add(id);
+        if (_routeRemoveFlushScheduled) return;
+        _routeRemoveFlushScheduled = true;
+        _ = DrainPendingRouteRemovalsAsync();
     }
 
-    private async Task ApplyRouteRemovedFromStoreAsync(string id)
+    private async Task DrainPendingRouteRemovalsAsync()
     {
-        if (!mapInitialized || _routeJs is null) return;
-
-        int removed = availableRoutes.RemoveAll(r => r.Id == id);
-        routeCoordsCache.Remove(id);
-        enabledRoutes.Remove(id);
-        await _routeJs.RemoveRouteAsync(id);
-        if (removed > 0)
+        try
         {
-            // availableRoutes.Count went down - flush the filter cache
-            // and topbar-search index so the Layers panel + search
-            // dropdown stop showing the deleted route.
-            lastFilterKey = default;
-            RebuildFilteredLayers();
-            OwnPlacesIndex.Invalidate();
-        }
+            await Task.Yield();
+            while (_pendingRouteRemovals.Count > 0)
+            {
+                if (!mapInitialized || _routeJs is null)
+                {
+                    _pendingRouteRemovals.Clear();
+                    return;
+                }
+                // Snapshot the batch + clear pending so events arriving
+                // during the per-id JS awaits queue onto the next pass
+                // instead of mutating mid-drain.
+                var batch = _pendingRouteRemovals.ToArray();
+                _pendingRouteRemovals.Clear();
+                var removedSet = new HashSet<string>(batch, StringComparer.Ordinal);
 
-        // If the deleted route was active, deactivate. ActiveRouteSync's
-        // next pass would also catch this when nextPoint goes null, but
-        // doing it explicitly prevents a window where the overlay
-        // points at a no-longer-existent destination.
-        if (_activeRouteSync is not null
-            && Data.ActiveRouteHref is { } href
-            && OnaPlotter.Services.Api.SignalKUrls.ExtractRouteId(href) == id)
+                // One batched RemoveAll over availableRoutes (O(M+N)
+                // versus N * O(M) per-id). Same single pass clears the
+                // parsed-coords cache + the enabled-routes set.
+                int removed = availableRoutes.RemoveAll(r => removedSet.Contains(r.Id));
+                foreach (var id in batch)
+                {
+                    routeCoordsCache.Remove(id);
+                    enabledRoutes.Remove(id);
+                    try { await _routeJs.RemoveRouteAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Drop route {id}");
+                    }
+                }
+
+                if (removed > 0)
+                {
+                    // Single rebuild + invalidate at the end of the
+                    // batch - both are independent of WHICH route
+                    // went away, only that the list changed.
+                    lastFilterKey = default;
+                    RebuildFilteredLayers();
+                    OwnPlacesIndex.Invalidate();
+                }
+
+                // Active-route deactivation. If the currently-active
+                // route is among the removed ids, kick the
+                // ActiveRouteSync once - the overlay would otherwise
+                // point at a no-longer-existent destination until the
+                // next nextPoint-null tick.
+                if (_activeRouteSync is not null
+                    && Data.ActiveRouteHref is { } href
+                    && OnaPlotter.Services.Api.SignalKUrls.ExtractRouteId(href) is string activeId
+                    && removedSet.Contains(activeId))
+                {
+                    try { await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true); }
+                    catch { /* deactivate-on-delete is best-effort */ }
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally
         {
-            try { await _activeRouteSync.SyncAsync(Data, enabledRoutes, availableRoutes, force: true); }
-            catch { /* deactivate-on-delete is best-effort */ }
+            _routeRemoveFlushScheduled = false;
         }
-
-        await InvokeAsync(StateHasChanged);
     }
 
     // --- Waypoint / Note / Region store-event handlers ----------------
@@ -3560,20 +3672,58 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleWaypointRemovedFromStore(string id) => _ = ApplyWaypointRemovedFromStoreAsync(id);
+    // Coalesce waypoint Removed events; same pattern + reasoning as
+    // the route Removed drain above.
+    private readonly HashSet<string> _pendingWaypointRemovals = new(StringComparer.Ordinal);
+    private bool _waypointRemoveFlushScheduled;
 
-    private async Task ApplyWaypointRemovedFromStoreAsync(string id)
+    private void HandleWaypointRemovedFromStore(string id)
     {
-        if (!mapInitialized || _resources is null) return;
-        int removed = loadedWaypoints.RemoveAll(w => w.Id == id);
-        await _resources.DropWaypointAsync(id);
-        if (removed > 0)
+        _pendingWaypointRemovals.Add(id);
+        if (_waypointRemoveFlushScheduled) return;
+        _waypointRemoveFlushScheduled = true;
+        _ = DrainPendingWaypointRemovalsAsync();
+    }
+
+    private async Task DrainPendingWaypointRemovalsAsync()
+    {
+        try
         {
-            lastFilterKey = default;
-            RebuildFilteredLayers();
-            OwnPlacesIndex.Invalidate();
+            await Task.Yield();
+            while (_pendingWaypointRemovals.Count > 0)
+            {
+                if (!mapInitialized || _resources is null)
+                {
+                    _pendingWaypointRemovals.Clear();
+                    return;
+                }
+                var batch = _pendingWaypointRemovals.ToArray();
+                _pendingWaypointRemovals.Clear();
+                var removedSet = new HashSet<string>(batch, StringComparer.Ordinal);
+
+                int removed = loadedWaypoints.RemoveAll(w => removedSet.Contains(w.Id));
+                foreach (var id in batch)
+                {
+                    try { await _resources.DropWaypointAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Drop waypoint {id}");
+                    }
+                }
+
+                if (removed > 0)
+                {
+                    lastFilterKey = default;
+                    RebuildFilteredLayers();
+                    OwnPlacesIndex.Invalidate();
+                }
+                await InvokeAsync(StateHasChanged);
+            }
         }
-        await InvokeAsync(StateHasChanged);
+        finally
+        {
+            _waypointRemoveFlushScheduled = false;
+        }
     }
 
     // Same coalesce-and-drain shape as the waypoint handler above.
@@ -3649,20 +3799,58 @@
         await InvokeAsync(StateHasChanged);
     }
 
-    private void HandleNoteRemovedFromStore(string id) => _ = ApplyNoteRemovedFromStoreAsync(id);
+    // Coalesce note Removed events; same pattern + reasoning as the
+    // route / waypoint Removed drains above.
+    private readonly HashSet<string> _pendingNoteRemovals = new(StringComparer.Ordinal);
+    private bool _noteRemoveFlushScheduled;
 
-    private async Task ApplyNoteRemovedFromStoreAsync(string id)
+    private void HandleNoteRemovedFromStore(string id)
     {
-        if (!mapInitialized || _resources is null) return;
-        int removed = loadedNotes.RemoveAll(n => n.Id == id);
-        await _resources.DropNoteAsync(id);
-        if (removed > 0)
+        _pendingNoteRemovals.Add(id);
+        if (_noteRemoveFlushScheduled) return;
+        _noteRemoveFlushScheduled = true;
+        _ = DrainPendingNoteRemovalsAsync();
+    }
+
+    private async Task DrainPendingNoteRemovalsAsync()
+    {
+        try
         {
-            lastFilterKey = default;
-            RebuildFilteredLayers();
-            OwnPlacesIndex.Invalidate();
+            await Task.Yield();
+            while (_pendingNoteRemovals.Count > 0)
+            {
+                if (!mapInitialized || _resources is null)
+                {
+                    _pendingNoteRemovals.Clear();
+                    return;
+                }
+                var batch = _pendingNoteRemovals.ToArray();
+                _pendingNoteRemovals.Clear();
+                var removedSet = new HashSet<string>(batch, StringComparer.Ordinal);
+
+                int removed = loadedNotes.RemoveAll(n => removedSet.Contains(n.Id));
+                foreach (var id in batch)
+                {
+                    try { await _resources.DropNoteAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Drop note {id}");
+                    }
+                }
+
+                if (removed > 0)
+                {
+                    lastFilterKey = default;
+                    RebuildFilteredLayers();
+                    OwnPlacesIndex.Invalidate();
+                }
+                await InvokeAsync(StateHasChanged);
+            }
         }
-        await InvokeAsync(StateHasChanged);
+        finally
+        {
+            _noteRemoveFlushScheduled = false;
+        }
     }
 
     // Coalesce region Changed events. Hoists RegionStore.SetRegions
@@ -3749,15 +3937,62 @@
         return true;
     }
 
-    private void HandleRegionRemovedFromStore(string id) => _ = ApplyRegionRemovedFromStoreAsync(id);
+    // Coalesce region Removed events. This drain is the most valuable
+    // of the four because every region Removed used to call
+    // RegionStore.SetRegions(loadedRegions) inline - that fires
+    // HazardousRegionAlarmRule re-evaluation against every other
+    // region every time. With the drain SetRegions runs ONCE at the
+    // end of the batch.
+    private readonly HashSet<string> _pendingRegionRemovals = new(StringComparer.Ordinal);
+    private bool _regionRemoveFlushScheduled;
 
-    private async Task ApplyRegionRemovedFromStoreAsync(string id)
+    private void HandleRegionRemovedFromStore(string id)
     {
-        if (!mapInitialized || _resources is null) return;
-        loadedRegions.RemoveAll(r => r.Id == id);
-        RegionStore.SetRegions(loadedRegions);
-        await _resources.DropRegionAsync(id);
-        await InvokeAsync(StateHasChanged);
+        _pendingRegionRemovals.Add(id);
+        if (_regionRemoveFlushScheduled) return;
+        _regionRemoveFlushScheduled = true;
+        _ = DrainPendingRegionRemovalsAsync();
+    }
+
+    private async Task DrainPendingRegionRemovalsAsync()
+    {
+        try
+        {
+            await Task.Yield();
+            while (_pendingRegionRemovals.Count > 0)
+            {
+                if (!mapInitialized || _resources is null)
+                {
+                    _pendingRegionRemovals.Clear();
+                    return;
+                }
+                var batch = _pendingRegionRemovals.ToArray();
+                _pendingRegionRemovals.Clear();
+                var removedSet = new HashSet<string>(batch, StringComparer.Ordinal);
+
+                int removed = loadedRegions.RemoveAll(r => removedSet.Contains(r.Id));
+                foreach (var id in batch)
+                {
+                    try { await _resources.DropRegionAsync(id); }
+                    catch (Exception ex)
+                    {
+                        Toasts.LogException(ex, $"Drop region {id}");
+                    }
+                }
+                if (removed > 0)
+                {
+                    // Single SetRegions push at the end of the batch -
+                    // the HazardousRegionAlarmRule only needs the
+                    // final state, not N intermediate snapshots.
+                    RegionStore.SetRegions(loadedRegions);
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        finally
+        {
+            _regionRemoveFlushScheduled = false;
+        }
     }
 
     // ServerTrackController owns the server-track state + interop;
