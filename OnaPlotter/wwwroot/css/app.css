@@ -262,9 +262,13 @@
        Two-stroke instrument edge: a 1 px inner highlight (white at 6 %)
        sits under a 1 px outer stroke (black at 50 %) so the card reads
        crisply over both bright satellite tiles and dark night charts.
-       The 16 px feathered halo replaces the old backdrop-filter blur:
-       the blur cost real GPU on iPad in sun and read as 2014 glass. */
-    --hud-card-bg:         rgba(14, 17, 23, 0.92);
+       --hud-card-bg is fully opaque so the compositor can skip painting
+       the chart tiles directly under the card (occlusion culling - one
+       of the wins behind the contain:paint rule on .hud-card below).
+       The halo token stays defined for the topbar search dropdown and
+       the range-scale chip which still use it; .hud-card itself drops
+       it so the card's paint can be contained. */
+    --hud-card-bg:         #0E1117;
     --hud-card-stroke-in:  rgba(255, 255, 255, 0.06);
     --hud-card-stroke-out: rgba(0, 0, 0, 0.5);
     --hud-card-radius: 8px;
@@ -460,12 +464,15 @@
        stayed near-black (rgba(14,17,23,0.92)) and read as a row of
        "dark stickers stuck on a white app". Flip the card surface,
        strokes, halo and ink to a white-on-dark mirror so they look
-       like the rest of the chrome. The cards still sit OVER chart
-       tiles so the white surface keeps a translucent alpha for
-       legibility on a busy chart, and the outer stroke flips from
-       black-50% to slate-900-40% so the silhouette holds against
-       both white land and blue water. */
-    --hud-card-bg:         rgba(255, 255, 255, 0.92);
+       like the rest of the chrome. Surface is fully opaque so the
+       compositor occludes the chart tiles directly under the card
+       (the previous 8 % translucency was deliberately faint anyway -
+       the helm test couldn't tell the difference, and the perf win
+       from layer occlusion + contain:paint on .hud-card is real on
+       a 4x-throttled trace). The outer stroke flips from black-50%
+       to slate-900-40% so the silhouette holds against both white
+       land and blue water. */
+    --hud-card-bg:         #ffffff;
     --hud-card-stroke-in:  rgba(15, 23, 42, 0.06);
     --hud-card-stroke-out: rgba(15, 23, 42, 0.40);
     --hud-card-halo:       0 0 16px rgba(15, 23, 42, 0.18);
@@ -540,7 +547,7 @@
         /* Snap HUD card tokens back to the dark defaults too -
            the system-mode-OS-dark branch must mirror the original
            :root values, not the light-flipped ones from above. */
-        --hud-card-bg:         rgba(14, 17, 23, 0.92);
+        --hud-card-bg:         #0E1117;
         --hud-card-stroke-in:  rgba(255, 255, 255, 0.06);
         --hud-card-stroke-out: rgba(0, 0, 0, 0.5);
         --hud-card-halo:       0 0 16px rgba(0, 0, 0, 0.4);
@@ -1422,14 +1429,18 @@ article.content:has(.history-page) {
    the corner razor markup; .hud-card is the new alias for new code
    paths and child components. Both render the same instrument shell -
    no blur (GPU + sun-glare cost wasn't worth it), two-stroke edge,
-   16 px feathered halo, all driven by tokens. */
+   no feathered halo (dropped for the contain:paint win below; the
+   topbar dropdown and range-scale chip still use the halo token).
+   All other surface bits stay driven by tokens. */
 .hud-panel,
 .hud-card {
     background: var(--hud-card-bg);
     border: 1px solid var(--hud-card-stroke-in);
-    box-shadow:
-        0 0 0 1px var(--hud-card-stroke-out),
-        var(--hud-card-halo);
+    /* Just the 1 px outer stroke - no halo here. The halo painted
+       outside the padding box and was the only reason contain:paint
+       below would have clipped a visible bit; with it gone the box-
+       shadow stays inside the contained area. */
+    box-shadow: 0 0 0 1px var(--hud-card-stroke-out);
     border-radius: var(--hud-card-radius);
     padding: var(--hud-card-pad-y) var(--hud-card-pad-x);
     color: var(--hud-ink);
@@ -1438,18 +1449,24 @@ article.content:has(.history-page) {
     pointer-events: none;
     user-select: none;
     transition: padding var(--hud-dur-short) var(--hud-ease-spring);
-    /* Layout + style containment. The HUD numbers tick on every
-       SignalK frame (SOG, COG, wind, depth, etc.); without containment
-       each digit change participates in the document-wide layout /
-       style invalidation that also covers the map viewport. A 41 s
-       4x-throttled DevTools trace measured 1593 UpdateLayoutTree and
-       813 Layout events during steady browsing - mostly HUD churn.
-       contain:layout isolates each card's box from its siblings and
-       the map below; contain:style scopes counter / quote resets.
-       Paint is intentionally NOT contained: the cards' halo box-
-       shadow (var(--hud-card-halo)) paints outside the card's
-       padding box and contain:paint would clip it. */
-    contain: layout style;
+    /* Full containment: layout + style + paint.
+       The HUD numbers tick on every SignalK frame (SOG, COG, wind,
+       depth, etc.); without containment each digit change participates
+       in the document-wide layout / style / paint invalidation that
+       also covers the map viewport. A 41 s 4x-throttled DevTools
+       trace measured 1593 UpdateLayoutTree and 813 Layout events
+       during steady browsing - mostly HUD churn.
+       - contain:layout isolates each card's box from its siblings and
+         the map below.
+       - contain:style scopes counter / quote resets so a card's style
+         recalc doesn't propagate out.
+       - contain:paint clips paint to the padding box AND strongly
+         hints the browser to promote the card to its own GPU
+         compositor layer - so a digit change becomes a layer redraw
+         instead of repainting the chart tiles underneath. Safe now
+         that --hud-card-halo is no longer in the box-shadow chain
+         (would otherwise have been clipped). */
+    contain: layout style paint;
 }
 /* Click-to-expand cards (the four corner cards) get a pointer cursor.
    pointer-events: auto is already on every .hud-stack > .hud-card
@@ -3884,9 +3901,12 @@ main:has(.alarm-banner-stack) .snooze-chips {
    / -halo / --hud-ink) so the panel reads as a sibling of the
    on-chart HUD cards, not a different visual species. Helm flagged
    the previous --panel-bg-derived style as "very transparent" in
-   dark / night themes - the HUD-card surface is consistently
-   opaque (92%) AND carries the two-stroke instrument edge that
-   distinguishes a helm-grade overlay from generic chrome. */
+   dark / night themes - the HUD-card surface is fully opaque AND
+   carries the two-stroke instrument edge that distinguishes a helm-
+   grade overlay from generic chrome. The halo is preserved here
+   (unlike .hud-card itself, which dropped it for contain:paint)
+   because the dropdown floats over the topbar, not over the map,
+   so contain:paint isn't the goal - readable lift is. */
 .topbar-search-dropdown {
     position: absolute;
     top: calc(100% + 4px);
@@ -3895,7 +3915,7 @@ main:has(.alarm-banner-stack) .snooze-chips {
     margin: 0;
     padding: 4px 0;
     list-style: none;
-    background: var(--hud-card-bg, rgba(14, 17, 23, 0.92));
+    background: var(--hud-card-bg, #0E1117);
     border: 1px solid var(--hud-card-stroke-in, rgba(255, 255, 255, 0.06));
     border-radius: var(--hud-card-radius, 8px);
     /* Two-stroke instrument edge + feathered halo, mirroring .hud-card
