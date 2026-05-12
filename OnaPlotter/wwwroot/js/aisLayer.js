@@ -1093,13 +1093,25 @@ export function updateAisTargets(vessels) {
 function updateAisTrail(ctx, lat, lon, now) {
     const hist = aisTrailHistory[ctx] ||= [];
     const last = hist[hist.length - 1];
-    if (!last || last.lat !== lat || last.lon !== lon) hist.push({ lat, lon, t: now });
+    const pushed = !last || last.lat !== lat || last.lon !== lon;
+    if (pushed) hist.push({ lat, lon, t: now });
 
     // Drop points older than the trail window.
     const cutoff = now - AIS_TRAIL_SECONDS * 1000;
-    while (hist.length > 0 && hist[0].t < cutoff) hist.shift();
+    let dropped = 0;
+    while (hist.length > 0 && hist[0].t < cutoff) { hist.shift(); dropped++; }
 
     if (hist.length < 2) return;
+
+    // Geometry unchanged this tick (vessel stationary, no expiry):
+    // skip the .map() allocation AND the setLatLngs call. Leaflet's
+    // setLatLngs re-projects every point and rebuilds the SVG path
+    // even when values match - on a 200-vessel harbour where most
+    // targets are stationary between deltas, this skips hundreds of
+    // wasted reprojections per second. The line itself is unchanged
+    // visually so the helm sees no difference.
+    if (!pushed && dropped === 0) return;
+
     const coords = hist.map(p => [p.lat, p.lon]);
     let line = aisTrailLines[ctx];
     if (!line) {
