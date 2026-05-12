@@ -1983,9 +1983,15 @@ html:fullscreen .hud-stack-br {
     gap: 2px;
     pointer-events: auto;
     touch-action: manipulation;
-    background: rgba(10, 12, 18, 0.9);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    /* Fully opaque pill - the previous rgba(.., 0.9) + blur(12 px)
+       was glassy chrome that cost real GPU on iPad in sun. The
+       bottom control bar is always visible while the helm is on
+       the map page, so backdrop-filter ran every frame; dropping
+       it removes a per-frame blur sample of the chart pixels
+       underneath. The bar reads as a solid dark pill now, which
+       is also more readable in direct sunlight than the glassy
+       version was. */
+    background: #0A0C12;
     border: 1px solid rgba(255,255,255,0.06);
     border-radius: 14px;
     padding: 4px;
@@ -2002,7 +2008,10 @@ html:fullscreen .hud-stack-br {
    OR theme-system on a light OS). Collapses what was previously
    three duplicated selectors per rule into one. */
 .theme-effective-light .map-controls {
-    background: rgba(255, 255, 255, 0.92);
+    /* Fully opaque to match the dark-theme drop of backdrop-filter
+       on the bar above; the 8% translucency was inherited from the
+       glassy era and isn't perceptible against the helm's eye. */
+    background: #ffffff;
     border-color: rgba(15, 23, 42, 0.10);
     box-shadow: 0 10px 28px rgba(15, 23, 42, 0.20),
                 0 2px 4px rgba(15, 23, 42, 0.10);
@@ -2146,9 +2155,12 @@ html:fullscreen .hud-stack-br {
     line-height: 1.2;
     min-height: 32px;
     box-sizing: border-box;
-    background: rgba(30, 34, 44, 0.9);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
+    /* Opaque - dropping the 0.9 alpha + blur(6 px) that the legacy
+       glassy-button era leaned on. .map-btn is used by the route
+       edit bar, dialogs, and context-menu rows, all of which paint
+       continuously while open; each instance was a per-frame
+       backdrop-filter sample that's now gone. */
+    background: rgb(30, 34, 44);
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     color: rgba(255,255,255,0.85);
@@ -2346,8 +2358,12 @@ html:fullscreen .hud-stack-br {
     color: var(--panel-text) !important;
     border-radius: 10px !important;
     box-shadow: var(--panel-shadow) !important;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
+    /* No backdrop-filter - the panel-bg-strong token + the panel
+       drop shadow already define a readable surface, and popups
+       open on every vessel / waypoint tap. Each open popup was a
+       blur(8 px) sample of the chart pixels behind, paid every
+       frame while the popup was visible. The glassy effect wasn't
+       carrying its weight on iPad in sun. */
 }
 .leaflet-popup-tip {
     background: var(--panel-bg-strong) !important;
@@ -3190,8 +3206,15 @@ html, body {
     font-size: 0.9rem;
     text-align: center;
     animation: alarm-flash 2.5s ease-in-out infinite;
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
+    /* No backdrop-filter. The combo of opacity-flash animation +
+       blur(6 px) was a known perf trap: the browser may re-rasterise
+       the blurred backdrop on every opacity frame. Alarms run for
+       the duration of an emergency (collision, anchor drag, deadman)
+       which is the worst possible time for the helm's tablet to
+       drain its battery. The severity-coloured backgrounds below
+       (.alarm-danger, .alarm-warn) are also flipped to fully opaque
+       so they punch through the chart cleanly without needing the
+       blur to mask the chart underneath. */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3488,13 +3511,19 @@ html, body {
    tints. Solid-ish ink + bold text colour + the existing flash
    keep them obviously alarm-state without being a wall of red. */
 .alarm-danger {
-    background: rgba(239, 68, 68, 0.8);
+    /* Opaque red instead of rgba(.., 0.8) - alarms must be eye-
+       catching, and the previous translucency let chart pixels
+       bleed through and desaturate the colour. Also lets the
+       compositor occlusion-skip the chart tiles directly under
+       the banner. */
+    background: #ef4444;
     color: #fff;
     border-bottom: 2px solid #ef4444;
 }
 
 .alarm-warn {
-    background: rgba(245, 158, 11, 0.8);
+    /* Opaque amber - same reasoning as .alarm-danger above. */
+    background: #f59e0b;
     color: #1a1a1a;
     border-bottom: 2px solid #f59e0b;
 }
