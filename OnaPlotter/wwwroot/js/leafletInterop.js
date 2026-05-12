@@ -2537,26 +2537,37 @@ export function setMapOrientation(mode) {
 
 function applyMapRotation(deg) {
     if (!map) return;
+    // Skip imperceptible changes. In course-up mode updatePosition
+    // calls this on every fix (~1 Hz on policy=ideal); without a guard,
+    // every fix rebuilt the counter-rotation stylesheet AND ran a full
+    // map.invalidateSize() - which fires `move` on every layer and
+    // reprojects them all, the heaviest single per-tick cost when
+    // course-up is active. 1° is well below what the helm can see at
+    // typical zoom levels and below the COG jitter from the SK feed.
+    if (Math.abs(deg - currentRotationDeg) < 1) return;
     currentRotationDeg = deg;
     const container = map.getContainer();
     container.style.transform = deg === 0 ? '' : `rotate(${-deg}deg)`;
     container.style.transformOrigin = 'center center';
-    // Counter-rotate labels/tooltips so they stay upright.
-    const style = document.getElementById('map-rotation-style');
+    // Counter-rotate labels / tooltips so they stay upright. Drives a
+    // CSS custom property on <html>; the actual transform rule lives
+    // in app.css gated on the data-map-rotated attribute so a deg=0
+    // state doesn't create a stacking context on every tooltip. The
+    // previous shape rebuilt a <style> element's textContent on every
+    // call, which forced a full CSS reparse for what is a single-
+    // number update.
+    const root = document.documentElement;
     if (deg === 0) {
-        if (style) style.remove();
+        delete root.dataset.mapRotated;
+        root.style.removeProperty('--map-rot');
     } else {
-        const css = `.leaflet-tooltip, .leaflet-popup, .ais-label, .vector-label, .route-wp-tooltip, .bearing-tooltip { transform: rotate(${deg}deg) !important; }`;
-        if (style) {
-            style.textContent = css;
-        } else {
-            const el = document.createElement('style');
-            el.id = 'map-rotation-style';
-            el.textContent = css;
-            document.head.appendChild(el);
-        }
+        root.style.setProperty('--map-rot', `${deg}deg`);
+        root.dataset.mapRotated = '1';
     }
-    // Invalidate map size after rotation.
+    // Invalidate map size after rotation. CSS rotate(...) changes the
+    // container's effective bounding box (non-90° angles), so Leaflet
+    // needs to recompute. Paid only on the change path now, not on
+    // every sub-degree COG wobble.
     map.invalidateSize();
 }
 

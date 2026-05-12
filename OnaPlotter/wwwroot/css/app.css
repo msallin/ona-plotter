@@ -2594,6 +2594,25 @@ html:fullscreen .hud-stack-br {
 }
 .vector-label::before { display: none !important; }
 
+/* Map-rotation counter-transform for tooltips / popups / labels.
+   When the map container is rotated (course-up / head-up modes,
+   leafletInterop.applyMapRotation) every overlay needs the inverse
+   rotation so the text reads upright. JS toggles
+   `<html data-map-rotated="1">` and writes the angle into the
+   `--map-rot` custom property; the rule is scoped on the attribute
+   so a 0° state doesn't create a transform stacking context on
+   every tooltip element. Single CSS update per rotation; no
+   stylesheet reparse the way the previous JS-built <style> block
+   forced. */
+html[data-map-rotated="1"] .leaflet-tooltip,
+html[data-map-rotated="1"] .leaflet-popup,
+html[data-map-rotated="1"] .ais-label,
+html[data-map-rotated="1"] .vector-label,
+html[data-map-rotated="1"] .route-wp-tooltip,
+html[data-map-rotated="1"] .bearing-tooltip {
+    transform: rotate(var(--map-rot, 0deg)) !important;
+}
+
 .mob-tooltip {
     background: rgba(239, 68, 68, 0.85) !important;
     border: none !important;
