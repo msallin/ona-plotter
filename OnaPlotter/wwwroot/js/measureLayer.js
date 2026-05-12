@@ -53,7 +53,15 @@ export function setBoatPosition(lat, lon) {
     selfLat = lat;
     selfLon = lon;
     if (measureActive && measurePoints.length > 0 && hasVesselMeasurePoint()) {
-        redrawMeasure();
+        // Geometry-only incremental update instead of a full
+        // redrawMeasure teardown. Fires every position fix (~1 Hz),
+        // so the previous full rebuild was N marker create/destroy +
+        // 2N polyline create/destroy + N tooltip create/destroy +
+        // N marker event-listener re-bind per second on a vessel-
+        // anchored ruler. The geometry-only path moves each vessel
+        // marker via setLatLng and refreshes segment geometry + the
+        // running-total tooltips without recreating any DOM.
+        redrawMeasureLive();
     }
 }
 
@@ -183,6 +191,23 @@ function bindMeasureMarker(marker, idx) {
         // reflect the new geometry.
         redrawMeasure();
     });
+}
+
+// Boat-position-driven incremental redraw. Updates every vessel-
+// anchored marker's position to the new own-boat coords, then
+// refreshes every segment + running-total tooltip downstream. Used
+// by setBoatPosition so a vessel-anchored ruler stays live as the
+// boat moves without the per-tick teardown of redrawMeasure.
+function redrawMeasureLive() {
+    if (!mapRef || measurePoints.length < 2) return;
+    for (let i = 0; i < measurePoints.length; i++) {
+        const p = measurePoints[i];
+        const marker = measureMarkers[i];
+        if (p.vessel && marker) {
+            marker.setLatLng([selfLat, selfLon]);
+        }
+    }
+    updateMeasureSegmentsAround(-1);
 }
 
 // Update the geometry + tooltips of segments that touch point `idx`,
