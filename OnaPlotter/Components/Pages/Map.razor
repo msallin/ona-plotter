@@ -50,9 +50,7 @@
 
 <PageTitle>Map</PageTitle>
 
-<div class="map-container @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode"
-     @onpointerdown="TouchDeadman"
-     @onkeydown="TouchDeadman">
+<div class="map-container @(Settings.BigType ? "big-type" : "") @((routeEditMode || polygonEditMode) ? "editing" : "") mode-@Settings.SailingMode">
     <div id="mapDiv"></div>
 
     @* Zoom buttons moved into the app-level topbar (MainLayout.razor)
@@ -590,6 +588,12 @@
     private const double MinCurrentDriftMs = 0.05;
 
     private IJSObjectReference? module;
+    // Separate module reference for the document-level deadman listener
+    // (see wwwroot/js/deadman.js). Kept distinct from `module` so a
+    // per-page leafletInterop reload (helm navigates away + back) can
+    // reuse this without needing to re-attach, and so dispose can detach
+    // BEFORE disposing the main module.
+    private IJSObjectReference? deadmanModule;
     private DotNetObjectReference<Map>? dotNetRef;
     private bool follow;
     private bool nightMode;
@@ -1354,6 +1358,15 @@
         {
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leafletInterop.js");
         dotNetRef = DotNetObjectReference.Create(this);
+
+        // Attach the document-level deadman listener (replaces the
+        // per-event @onpointerdown / @onkeydown Razor handlers that
+        // marshalled every input through blazor.webassembly.js's
+        // onGlobalEvent). The JS module coalesces to one upcall per
+        // ~5 s; the alarm rule runs on a 3 s tick and fires after
+        // minutes, so the precision loss is invisible.
+        deadmanModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/deadman.js");
+        await deadmanModule.InvokeVoidAsync("attachDeadman", dotNetRef, nameof(OnDeadmanTouch));
 
         // Hand the loaded module to the radar overlay host so the
         // manager can drive it. Wired here (not in DI) because the
@@ -3681,11 +3694,17 @@
             await _controlsJs.SetNightModeAsync(nightMode);
     }
 
-    // Deadman refresh. Wired to pointerdown + keydown at the map-container
-    // level; any pointer or key event resets the inactivity timer. Keeping
-    // it sync (no await) so it never slows down input handling; the
-    // tracker is a lock-free field write.
-    private void TouchDeadman() => DeadmanTracker.Touch();
+    // Deadman refresh. Invoked from wwwroot/js/deadman.js's document-
+    // level pointerdown / keydown listener, coalesced to one upcall per
+    // ~5 s so a noisy interaction burst doesn't marshal each event into
+    // WASM. The previous Razor @onpointerdown / @onkeydown wiring
+    // pushed every event through blazor.webassembly.js's onGlobalEvent;
+    // a 41 s 4x-throttled trace measured 1.67 s of WASM time spent in
+    // that path during steady click-around. Keeping the C# side as a
+    // lock-free field write so the JSInvokable round-trip is the only
+    // cost.
+    [JSInvokable]
+    public void OnDeadmanTouch() => DeadmanTracker.Touch();
 
     // Auto-night plumbing. Dormant unless the user opts in via Settings
     // AND the server publishes environment.sun as one of
@@ -4367,6 +4386,18 @@
         if (routeStatsTimer is not null) await routeStatsTimer.DisposeAsync();
         if (polygonStatsTimer is not null) await polygonStatsTimer.DisposeAsync();
         if (touchCoachmarkTimer is not null) await touchCoachmarkTimer.DisposeAsync();
+        // Detach the deadman listener BEFORE disposing dotNetRef so a
+        // queued coalesced upcall doesn't race the dispose and surface
+        // as a Blazor invocation error in the browser console.
+        if (deadmanModule is not null)
+        {
+            try
+            {
+                await deadmanModule.InvokeVoidAsync("detachDeadman");
+                await deadmanModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+        }
         if (module is not null)
         {
             // Bare interop: MarkDisposed above already gates the typed
