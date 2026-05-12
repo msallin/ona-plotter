@@ -98,9 +98,15 @@ const flagSettledCache = new Map();
 let flagPlaceholderSeq = 0;
 
 /** Re-insert key=>value to bump it to most-recent in Map's
- *  insertion-order iteration. No-op when the key isn't present. */
-function lruBump(map, key) {
+ *  insertion-order iteration. No-op when the key isn't present.
+ *  Skips the delete+set when the cache isn't near its cap - the
+ *  delete+set pair triggers V8 internal-bucket rebalancing on the
+ *  Map, which on hot paths (per-vessel cache reads at 200×0.33 Hz
+ *  for vessel-name + flag lookups) adds up. Once we're within 75 %
+ *  of the cap the eviction order matters again. */
+function lruBump(map, key, max) {
     if (!map.has(key)) return;
+    if (max !== undefined && map.size < max * 0.75) return;
     const v = map.get(key);
     map.delete(key);
     map.set(key, v);
@@ -354,7 +360,7 @@ function getFlagDataUri(mmsi) {
     if (!mmsi) return Promise.resolve(null);
     let p = flagPromiseCache.get(mmsi);
     if (p) {
-        lruBump(flagPromiseCache, mmsi);
+        lruBump(flagPromiseCache, mmsi, FLAG_CACHE_MAX);
         return p;
     }
     p = (async () => {
@@ -391,7 +397,7 @@ function flagImgHtml(mmsi) {
         // Reading counts as "use" - bump the LRU position so a
         // helm cycling through the same handful of buddies doesn't
         // get them evicted by passing traffic.
-        lruBump(flagSettledCache, mmsi);
+        lruBump(flagSettledCache, mmsi, FLAG_CACHE_MAX);
         if (!settled) return '';   // negative-cached
         return `<img class="ais-popup-flag" src="${settled}" alt="">`;
     }
@@ -419,9 +425,15 @@ function flagImgHtml(mmsi) {
 function vesselNameCacheGet(mmsi) {
     if (!vesselNameCache.has(mmsi)) return undefined;
     const v = vesselNameCache.get(mmsi);
-    // Promote: re-insert at the end so a recently-used entry isn't next to evict.
-    vesselNameCache.delete(mmsi);
-    vesselNameCache.set(mmsi, v);
+    // Promote: re-insert at the end so a recently-used entry isn't next
+    // to evict. Skip the delete+set when we're nowhere near the cap -
+    // the rebalance is a measurable cost when 200 vessels poll this
+    // every tick on a busy harbour. Once size approaches the cap the
+    // eviction order matters and the promote re-engages.
+    if (vesselNameCache.size >= VESSEL_NAME_CACHE_MAX * 0.75) {
+        vesselNameCache.delete(mmsi);
+        vesselNameCache.set(mmsi, v);
+    }
     return v;
 }
 
@@ -665,6 +677,12 @@ export function updateAisTargets(vessels) {
     // because alarms run on the C# side off the delta stream, not
     // off the JS marker state.
     if (isSlowClient && mapRef.dragging && mapRef.dragging._moving) return;
+    // Hoist the wall-clock read out of the per-vessel loop. updateAisTrail
+    // used to call Date.now() once per vessel (~200/tick); now it
+    // receives the same `tickNow` for every vessel in the snapshot,
+    // which also keeps trail-cutoff semantics consistent across the
+    // pass (no drift between the first and last vessel's cutoff).
+    const tickNow = Date.now();
     const seen = new Set();
 
     for (const v of vessels) {
@@ -802,7 +820,17 @@ export function updateAisTargets(vessels) {
         // tint on the chevron). Adds a .cpa-pulse class to the marker
         // element, which the CSS drives via ::after. SART gets its own
         // pulse so we skip it here to avoid double-pulsing.
-        if (!isSart && el) el.classList.toggle('cpa-pulse', isDangerEff);
+        // Short-circuit when the desired state matches what we last
+        // wrote - classList.toggle is NOT a no-op when the state
+        // already matches; V8 invalidates the element's classList
+        // cache on every call. With 200 vessels at 0.33 Hz that's
+        // ~66 wasted DOM mutations per second on the steady state
+        // where no vessel's CPA bucket changed.
+        const wantPulse = !isSart && isDangerEff;
+        if (el && marker._lastPulse !== wantPulse) {
+            el.classList.toggle('cpa-pulse', wantPulse);
+            marker._lastPulse = wantPulse;
+        }
 
         // Vessel staleness. Anything not heard from in >30 s is
         // geometrically stale - its rendered position is a guess,
@@ -917,7 +945,7 @@ export function updateAisTargets(vessels) {
 
         // Trail: last AIS_TRAIL_SECONDS of positions, drawn as a fading line.
         // We only push when the position actually changes to avoid empty ticks.
-        updateAisTrail(v.context, v.lat, v.lon);
+        updateAisTrail(v.context, v.lat, v.lon, tickNow);
 
         // Course vector. Drawn for any vessel with a known COG and a
         // non-trivial SOG (vectorEnd returns null below the 0.1 m/s
@@ -1050,8 +1078,7 @@ export function updateAisTargets(vessels) {
     }
 }
 
-function updateAisTrail(ctx, lat, lon) {
-    const now = Date.now();
+function updateAisTrail(ctx, lat, lon, now) {
     const hist = aisTrailHistory[ctx] ||= [];
     const last = hist[hist.length - 1];
     if (!last || last.lat !== lat || last.lon !== lon) hist.push({ lat, lon, t: now });

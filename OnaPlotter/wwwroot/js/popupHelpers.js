@@ -16,13 +16,19 @@
  *  escape `"` and `'` so attr="..." and attr='...' are both safe to drop
  *  esc()'s output into. The extra escapes are inert in text-node contexts
  *  (`&quot;` / `&#39;` render as `"` / `'` to the user). */
+const _escMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const _escRe = /[&<>"']/g;
 export function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    // Order matters: replace the textContent-serialized result, which
-    // already encodes `&` as `&amp;`. Touching `&` again would
-    // double-encode (`&amp;quot;`), so we stop at the quote characters.
-    return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    if (s == null) return '';
+    // Pure regex replace - no DOM round-trip. The previous implementation
+    // built a fresh <div>, wrote textContent (which encoded &/<>) then
+    // ran two .replace() passes for "/'. At ~10 esc() calls per AIS popup
+    // build that was ~10 document.createElement allocations + 10 DOM
+    // text-serialization passes per open. This shape is monomorphic
+    // (one string in, one string out), stays in V8 string-internalised
+    // territory, and produces byte-identical output for the same set of
+    // five HTML-significant chars.
+    return String(s).replace(_escRe, ch => _escMap[ch]);
 }
 
 /**
