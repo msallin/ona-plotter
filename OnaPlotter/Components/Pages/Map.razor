@@ -728,12 +728,46 @@
     // null means "no refresh has fired yet this session".
     private DateTimeOffset? _lastServerTrackRefreshUtc;
     /// <summary>How long between auto-refresh fetches of the
-    /// server track while it's visible. 60 s matches helm field-
-    /// test expectation: at typical sailing speeds (4 - 7 kn) a
-    /// minute of run is roughly 100 - 200 m of trail, plenty of
-    /// resolution to see the recent leg without burning a fetch
-    /// every few seconds.</summary>
-    private const int ServerTrackRefreshIntervalSeconds = 60;
+    /// server track while it's visible. 300 s = 5 min cuts the
+    /// per-hour load on the SK server's history plugin from 60
+    /// fetches/hour to 12; for typical cruising motion that's
+    /// plenty of catch-up freshness, and the local in-memory
+    /// trail (capped at <see cref="LocalTrailRenderWindowSeconds"/>
+    /// of recent points) covers the gap visually. Helms doing
+    /// tactical / racing work can prefer 60-120 s; that's a
+    /// future setting if the helm requests it.</summary>
+    private const int ServerTrackRefreshIntervalSeconds = 300;
+
+    /// <summary>Cap on how far back the local in-memory trail
+    /// polyline draws at seed time. ~1.3x the refresh interval so
+    /// there's a small overlap window during refresh latency to
+    /// avoid a visible gap. Anything older comes from the server-
+    /// side track polyline; drawing the local trail past this
+    /// window is just visual duplication of the server's data.
+    /// <para>The cap applies to the seed only (mount + toggle-on
+    /// + threshold-cross re-seed); per-tick segments emitted by
+    /// <see cref="OnaPlotter.Utilities.MapFrameBuilder"/> continue
+    /// to grow the trail naturally up to the JS-side 1000-segment
+    /// cap (~83 min). The seed cap minimises the helm's "I see
+    /// the same path drawn twice on cold start" experience without
+    /// constraining the live trail's growth thereafter.</para></summary>
+    private const int LocalTrailRenderWindowSeconds =
+        (int)(ServerTrackRefreshIntervalSeconds * 1.3);
+
+    /// <summary>Resilience threshold: after this many consecutive
+    /// server-track refreshes have come back empty / failed, the
+    /// local trail re-seeds with the full <see cref="TrackBuffer"/>
+    /// snapshot instead of the recent window so the helm sees more
+    /// than just <see cref="LocalTrailRenderWindowSeconds"/> of
+    /// trail when the history endpoint is unreachable. A single
+    /// success after expansion contracts back to the window.</summary>
+    private const int ServerTrackFailureExpandThreshold = 3;
+
+    /// <summary>Consecutive failed / empty server-track refreshes.
+    /// Reset to 0 on every successful refresh that returns actual
+    /// data. Drives the expand/contract re-seed of the local trail
+    /// via <see cref="UpdateServerTrackFailureCount"/>.</summary>
+    private int _consecutiveServerTrackFailures;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     // Radar overlay state (device list, capabilities cache, enabled
@@ -1555,33 +1589,32 @@
         // last setting was on (default true). The controller fetches
         // the server-side history + pushes asynchronously; we don't
         // await so the rest of the page bootstrap (chart load, route
-        // fetch) doesn't block on a slow history endpoint.
+        // fetch) doesn't block on a slow history endpoint. The
+        // continuation feeds UpdateServerTrackFailureCount so a
+        // cold-start with an unreachable history endpoint counts
+        // toward the local-trail expand threshold instead of
+        // silently dropping the bool result.
         if (Settings.ServerTrackVisible && _serverTrack is not null)
-            _ = _serverTrack.ToggleAsync(true);
+            _ = RunBootstrapServerTrackAsync();
 
         // Seed the in-memory local trail polyline from the
         // TrackBuffer ring. The local layer is the "live cursor"
         // half of the unified ship-track toggle - it fills the
         // window between server-track refetches with the most
-        // recent fixes. PrevLat / PrevLon are always seeded so
-        // toggling the layer on later starts the trail from the
-        // correct previous fix without a one-tick gap.
+        // recent fixes. ReseedLocalTrailAsync trims to the recent
+        // ~LocalTrailRenderWindowSeconds so the visible polyline
+        // doesn't overlap the server-track window any more than
+        // necessary at cold start (the server fetch fired above
+        // covers the deeper history). PrevLat / PrevLon are always
+        // seeded from the buffer tail so toggling the layer on
+        // later starts the trail from the correct previous fix
+        // without a one-tick gap.
         var points = TrackBuffer.GetSnapshot();
         if (points.Length > 0)
         {
             if (Settings.ServerTrackVisible)
             {
-                // Group consecutive same-bucket points into runs on
-                // the C# side so the JS layer only has to create one
-                // L.polyline per run (instead of walking the points,
-                // bucketing per point, and emitting a polyline at every
-                // transition - the JS version previously did the same
-                // grouping inline).
-                var jsPoints = points
-                    .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
-                    .ToArray();
-                var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
-                await _overlaysJs.SetColoredTrackAsync(runs);
+                await ReseedLocalTrailAsync();
             }
             _frameBuilder.PrevLat = points[^1].Latitude;
             _frameBuilder.PrevLon = points[^1].Longitude;
@@ -2608,10 +2641,26 @@
             // disconnects on its own). Awaiting it here would block
             // the per-tick frame-emit on a server round-trip -
             // the helm shouldn't see the position update halt while
-            // history fetches.
-            _ = _serverTrack!.RefreshAsync();
+            // history fetches. The continuation feeds the failure
+            // counter so the local trail can expand / contract its
+            // render window across the failure threshold.
+            _ = RunPeriodicServerTrackRefreshAsync();
         }
         return Task.CompletedTask;
+    }
+
+    private async Task RunPeriodicServerTrackRefreshAsync()
+    {
+        if (_serverTrack is null) return;
+        bool got = await _serverTrack.RefreshAsync();
+        UpdateServerTrackFailureCount(got);
+    }
+
+    private async Task RunBootstrapServerTrackAsync()
+    {
+        if (_serverTrack is null) return;
+        bool got = await _serverTrack.ToggleAsync(true);
+        UpdateServerTrackFailureCount(got);
     }
 
     // Shared moored-vessel classifier (singleton DI). Same instance the
@@ -2721,35 +2770,28 @@
 
     /// <summary>Helm flipped the unified "Ship track" toggle. Persist,
     /// delegate the server-side fetch / clear to
-    /// <see cref="OnaPlotter.Services.Map.ServerTrackController.ToggleAsync"/>,
-    /// AND seed / tear down the local in-memory trail in lock-step:
-    /// the local layer is the live cursor that fills the window
-    /// between server-track refetches, so it should only render
-    /// when the master toggle is on. Seed from
-    /// <see cref="TrackBuffer"/> so the helm sees the current ~83
-    /// min of in-memory history immediately on enable; per-tick
-    /// segment emissions take over from there (gated by
-    /// <see cref="OnaPlotter.Utilities.MapFrameBuilder.SuppressLocalTrack"/>).
-    /// </summary>
+    /// <see cref="OnaPlotter.Services.Map.ServerTrackController.ToggleAsync"/>
+    /// (its bool result feeds the failure counter so the local trail
+    /// can expand its render window when the server is unhappy), AND
+    /// seed / tear down the local in-memory trail in lock-step: the
+    /// local layer is the live cursor that fills the window between
+    /// server-track refetches, so it should only render when the
+    /// master toggle is on.</summary>
     private async Task OnToggleServerTrack(bool enabled)
     {
         await Settings.SetServerTrackVisibleAsync(enabled);
-        if (_serverTrack is not null) await _serverTrack.ToggleAsync(enabled);
+        if (_serverTrack is not null)
+        {
+            bool got = await _serverTrack.ToggleAsync(enabled);
+            if (enabled) UpdateServerTrackFailureCount(got);
+        }
 
         // Local-trail side of the unified toggle. The JS overlay
         // module owns the polyline; an empty seed clears it.
         if (_overlaysJs is null) return;
         if (enabled)
         {
-            var points = TrackBuffer.GetSnapshot();
-            if (points.Length > 0)
-            {
-                var jsPoints = points
-                    .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
-                    .ToArray();
-                var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
-                await _overlaysJs.SetColoredTrackAsync(runs);
-            }
+            await ReseedLocalTrailAsync();
         }
         else
         {
@@ -2757,20 +2799,118 @@
         }
     }
 
+    /// <summary>(Re-)seed the local in-memory trail polyline. Pulls
+    /// the recent window from <see cref="TrackBuffer"/> per
+    /// <see cref="FilterLocalTrailWindow"/> and pushes it to the JS
+    /// layer as a single batched coloured-track payload. Called at
+    /// page mount, on toggle-on, and on every failure-threshold
+    /// cross (expand or contract). Quietly clears the polyline
+    /// when the buffer / filtered window is empty so a transition
+    /// to "no data" doesn't leave a stale trail on the chart.</summary>
+    private async Task ReseedLocalTrailAsync()
+    {
+        if (_overlaysJs is null) return;
+        var points = TrackBuffer.GetSnapshot();
+        var window = FilterLocalTrailWindow(points);
+        if (window.Length == 0)
+        {
+            await _overlaysJs.SetColoredTrackAsync(System.Array.Empty<OnaPlotter.Utilities.TrackPolylineRun>());
+            return;
+        }
+        var jsPoints = new double[window.Length][];
+        for (int i = 0; i < window.Length; i++)
+        {
+            jsPoints[i] = new[] { window[i].Latitude, window[i].Longitude, window[i].SpeedOverGround ?? 0 };
+        }
+        var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
+        await _overlaysJs.SetColoredTrackAsync(runs);
+    }
+
+    /// <summary>Trim a <see cref="TrackBuffer"/> snapshot to the
+    /// recent <see cref="LocalTrailRenderWindowSeconds"/> window in
+    /// the normal case; return the full snapshot in resilience mode
+    /// (consecutive server failures hit the threshold).
+    /// <para>Walks the snapshot once from oldest to newest looking
+    /// for the cutoff boundary; the buffer is already chronologically
+    /// ordered (oldest first) per <see cref="TrackBuffer.GetSnapshot"/>
+    /// so binary-search complexity isn't warranted at 1000-point
+    /// scale.</para></summary>
+    private OnaPlotter.Models.TrackPoint[] FilterLocalTrailWindow(
+        OnaPlotter.Models.TrackPoint[] points)
+    {
+        if (points.Length == 0) return points;
+        // Resilience: server has been failing for N consecutive
+        // refreshes - draw every point we have so the helm sees more
+        // than just the gap-fill window when the history endpoint is
+        // unreachable. UpdateServerTrackFailureCount triggers a
+        // re-seed when the threshold flips so the chart catches up.
+        if (_consecutiveServerTrackFailures >= ServerTrackFailureExpandThreshold)
+            return points;
+
+        var cutoff = Time.GetUtcNow().UtcDateTime
+            - TimeSpan.FromSeconds(LocalTrailRenderWindowSeconds);
+        int firstInWindow = points.Length;
+        for (int i = 0; i < points.Length; i++)
+        {
+            if (points[i].Timestamp >= cutoff)
+            {
+                firstInWindow = i;
+                break;
+            }
+        }
+        if (firstInWindow >= points.Length) return [];
+        if (firstInWindow == 0) return points;
+        var trimmed = new OnaPlotter.Models.TrackPoint[points.Length - firstInWindow];
+        Array.Copy(points, firstInWindow, trimmed, 0, trimmed.Length);
+        return trimmed;
+    }
+
+    /// <summary>Process a server-track fetch result. Resets the
+    /// failure counter on success; increments on failure / empty.
+    /// When the counter crosses
+    /// <see cref="ServerTrackFailureExpandThreshold"/> in either
+    /// direction, kick a local-trail re-seed so the visible window
+    /// expands (on threshold cross up) or contracts (on threshold
+    /// cross down) to match the new resilience state.</summary>
+    private void UpdateServerTrackFailureCount(bool got)
+    {
+        bool wasExpanded = _consecutiveServerTrackFailures >= ServerTrackFailureExpandThreshold;
+        _consecutiveServerTrackFailures = got ? 0 : _consecutiveServerTrackFailures + 1;
+        bool isExpanded = _consecutiveServerTrackFailures >= ServerTrackFailureExpandThreshold;
+        if (wasExpanded != isExpanded)
+        {
+            // Fire-and-forget: the re-seed is a JS-interop call that
+            // shouldn't block the periodic-refresh continuation. If
+            // the page is mid-tear-down the overlay module ref is
+            // null and ReseedLocalTrailAsync no-ops safely.
+            _ = ReseedLocalTrailAsync();
+        }
+    }
+
     /// <summary>Helm picked a new Ship-track window from the dropdown.
     /// Persist + delegate; controller re-fetches when the layer is
-    /// visible.</summary>
+    /// visible. The bool result feeds the failure counter so a
+    /// helm-initiated reload that yields no data nudges the local
+    /// trail expansion logic same as the periodic refresh path.</summary>
     private async Task OnServerTrackDurationChanged(string duration)
     {
         await Settings.SetServerTrackDurationAsync(duration);
-        if (_serverTrack is not null) await _serverTrack.SetDurationAsync(duration);
+        if (_serverTrack is not null)
+        {
+            bool got = await _serverTrack.SetDurationAsync(duration);
+            if (_serverTrack.Visible) UpdateServerTrackFailureCount(got);
+        }
     }
 
     /// <summary>Helm picked a new Ship-track resolution.</summary>
     private async Task OnServerTrackResolutionChanged(string resolution)
     {
         await Settings.SetServerTrackResolutionAsync(resolution);
-        if (_serverTrack is not null) await _serverTrack.SetResolutionAsync(resolution);
+        if (_serverTrack is not null)
+        {
+            bool got = await _serverTrack.SetResolutionAsync(resolution);
+            if (_serverTrack.Visible) UpdateServerTrackFailureCount(got);
+        }
     }
 
     /// <summary>Helm flipped Ship-track "within current view".</summary>

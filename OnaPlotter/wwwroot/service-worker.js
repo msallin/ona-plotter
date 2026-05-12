@@ -1088,7 +1088,28 @@
 //               unified "live + catch-up" model. Settings key
 //               localTrackVisible.v1 is retired (left orphan in
 //               localStorage).
-const CACHE_NAME = 'ona-plotter-v105';
+// v105 -> v106: Slow down the server-track refresh + trim the local
+//               trail seed window. Refresh interval 60 s -> 300 s
+//               (5 min) cuts the per-hour load on the SK history
+//               plugin from 60 fetches/hr to 12 - plenty of catch-
+//               up freshness for cruising motion, the local in-
+//               memory trail covers the gap visually. Local trail
+//               seed now trims to the most recent ~390 s
+//               (LocalTrailRenderWindowSeconds = refresh x 1.3)
+//               instead of the full TrackBuffer so the visible
+//               polyline doesn't redundantly overlap the server
+//               window at cold start. Resilience: after 3
+//               consecutive server-track refreshes come back empty
+//               / failed the local trail re-seeds with the full
+//               buffer so a sustained history-endpoint outage
+//               doesn't leave the helm with only 6 min of trail.
+//               First success after expansion contracts back. The
+//               bool result threads through
+//               ServerTrackController.{Toggle,Refresh,Set*}Async
+//               (Task<bool> now) so the failure counter sees every
+//               fetch outcome, not just the periodic one. 9 new
+//               tests pin the bool contract.
+const CACHE_NAME = 'ona-plotter-v106';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

@@ -226,6 +226,109 @@ public class ServerTrackControllerTests
         await Assert.That(infos.Count).IsEqualTo(1);
     }
 
+    // -----------------------------------------------------------------
+    // Bool-result contract: ToggleAsync / RefreshAsync / Set*Async
+    // return true iff the resulting polyline has actual server data.
+    // The Map page uses this signal to drive its consecutive-failure
+    // counter (expands the local in-memory trail render window when
+    // the server has been quiet for several refreshes in a row).
+    // -----------------------------------------------------------------
+
+    [Test]
+    public async Task ToggleAsync_True_Returns_True_When_Server_Has_Points()
+    {
+        var (ctrl, _, _, _) = New();
+        bool got = await ctrl.ToggleAsync(true);
+        await Assert.That(got).IsTrue();
+    }
+
+    [Test]
+    public async Task ToggleAsync_True_Returns_False_When_Server_Empty()
+    {
+        var (ctrl, _, api, _) = New();
+        api.Result = [];
+        bool got = await ctrl.ToggleAsync(true);
+        await Assert.That(got).IsFalse()
+            .Because("empty server response counts as a failure for the local-trail expand counter");
+    }
+
+    [Test]
+    public async Task ToggleAsync_True_Returns_False_When_Server_Transport_Failed()
+    {
+        var (ctrl, _, api, _) = New();
+        api.Result = null;
+        bool got = await ctrl.ToggleAsync(true);
+        await Assert.That(got).IsFalse();
+    }
+
+    [Test]
+    public async Task ToggleAsync_False_Returns_True()
+    {
+        // Disable is always a clean state-change. The Map page treats
+        // this as "no failure" (UpdateServerTrackFailureCount only
+        // runs on the enable path), but the bool surface should still
+        // reflect "this call succeeded".
+        var (ctrl, _, _, _) = New();
+        bool got = await ctrl.ToggleAsync(false);
+        await Assert.That(got).IsTrue();
+    }
+
+    [Test]
+    public async Task RefreshAsync_Returns_True_When_Visible_And_Points_Land()
+    {
+        var (ctrl, _, _, _) = New();
+        await ctrl.ToggleAsync(true);
+        bool got = await ctrl.RefreshAsync();
+        await Assert.That(got).IsTrue();
+    }
+
+    [Test]
+    public async Task RefreshAsync_Returns_False_When_Visible_But_Empty()
+    {
+        var (ctrl, _, api, _) = New();
+        await ctrl.ToggleAsync(true);
+        api.Result = [];
+        bool got = await ctrl.RefreshAsync();
+        await Assert.That(got).IsFalse();
+    }
+
+    [Test]
+    public async Task RefreshAsync_Returns_True_When_Hidden()
+    {
+        // No-op path: a refresh on an invisible polyline is not a
+        // failure, just a skipped HTTP round-trip. Returning true
+        // keeps the failure counter from incrementing for state the
+        // helm has explicitly switched off.
+        var (ctrl, _, _, _) = New();
+        bool got = await ctrl.RefreshAsync();
+        await Assert.That(got).IsTrue();
+    }
+
+    [Test]
+    public async Task SetDurationAsync_Returns_Bool_From_Reload()
+    {
+        var (ctrl, _, api, _) = New();
+        await ctrl.ToggleAsync(true);
+        api.Result = [];
+        bool got = await ctrl.SetDurationAsync("7d");
+        await Assert.That(got).IsFalse();
+    }
+
+    [Test]
+    public async Task SetDurationAsync_NoChange_Returns_True_Without_Refetch()
+    {
+        // Helm picks the same duration again: the controller short-
+        // circuits without firing the HTTP round-trip. The bool result
+        // is true because no failure happened (and no fetch happened).
+        var (ctrl, _, api, _) = New();
+        await ctrl.ToggleAsync(true);
+        int callsBefore = api.Calls.Count;
+        bool got = await ctrl.SetDurationAsync(ctrl.Duration);
+        await Assert.That(got).IsTrue();
+        await Assert.That(api.Calls.Count).IsEqualTo(callsBefore)
+            .Because("unchanged duration must not re-fetch");
+    }
+
     [Test]
     public async Task Subsequent_Duration_Change_After_Empty_Refetches()
     {

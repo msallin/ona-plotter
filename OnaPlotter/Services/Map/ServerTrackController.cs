@@ -75,49 +75,66 @@ public sealed class ServerTrackController
 
     /// <summary>Toggle the server-track layer. Enabling triggers a
     /// fetch + push for the current duration; disabling clears the
-    /// JS-side polyline.</summary>
-    public async Task ToggleAsync(bool enabled)
+    /// JS-side polyline. Returns true when the resulting state
+    /// reflects a successful fetch (enable path: server returned
+    /// points) or a clean clear (disable path); false when the
+    /// enable-path fetch returned nothing OR the underlying HTTP /
+    /// parse failed (both surface as ClearServerTrackAsync today).
+    /// The bool drives the Map page's consecutive-failure counter
+    /// so the local in-memory trail can expand its render window
+    /// during sustained server-history outages.</summary>
+    public async Task<bool> ToggleAsync(bool enabled)
     {
         _visible = enabled;
         if (enabled)
         {
-            await ReloadAsync();
+            return await ReloadAsync();
         }
         else
         {
             await _overlaysJs.ClearServerTrackAsync();
+            return true;
         }
     }
 
     /// <summary>Helm changed the duration dropdown; re-fetch when the
-    /// layer is currently visible.</summary>
-    public async Task SetDurationAsync(string duration)
+    /// layer is currently visible. The bool result mirrors
+    /// <see cref="ToggleAsync"/>'s semantics so a helm-initiated
+    /// reload that yields no data also nudges the Map page's
+    /// failure counter.</summary>
+    public async Task<bool> SetDurationAsync(string duration)
     {
-        if (string.Equals(duration, _duration, StringComparison.Ordinal)) return;
+        if (string.Equals(duration, _duration, StringComparison.Ordinal)) return true;
         _duration = duration;
-        if (_visible) await ReloadAsync();
+        if (_visible) return await ReloadAsync();
+        return true;
     }
 
     /// <summary>Helm changed the resolution dropdown; re-fetch when
     /// the layer is currently visible. Same no-op-on-unchanged guard
     /// as <see cref="SetDurationAsync"/>: a re-render on an unrelated
     /// state change shouldn't fire a fresh request.</summary>
-    public async Task SetResolutionAsync(string resolution)
+    public async Task<bool> SetResolutionAsync(string resolution)
     {
-        if (string.Equals(resolution, _resolution, StringComparison.Ordinal)) return;
+        if (string.Equals(resolution, _resolution, StringComparison.Ordinal)) return true;
         _resolution = resolution;
-        if (_visible) await ReloadAsync();
+        if (_visible) return await ReloadAsync();
+        return true;
     }
 
     /// <summary>
     /// Force a fresh fetch with the current duration / resolution.
-    /// Used by the Map page's route-active 60 s refresher so the
-    /// helm sees server-side history catching up to the active leg
-    /// without having to toggle the layer manually. No-op when the
-    /// layer is hidden - a refresh on an invisible polyline would
-    /// just burn an HTTP round-trip.
+    /// Used by the Map page's periodic refresher so the helm sees
+    /// server-side history catching up to the live track without
+    /// having to toggle the layer manually. Returns true when the
+    /// fetch lands actual data; the Map page resets / increments
+    /// its consecutive-failure counter from this signal and expands
+    /// the local-trail render window when the server has been
+    /// unhappy for several refreshes in a row. No-op (returns true)
+    /// when the layer is hidden - a refresh on an invisible
+    /// polyline would just burn an HTTP round-trip.
     /// </summary>
-    public Task RefreshAsync() => _visible ? ReloadAsync() : Task.CompletedTask;
+    public Task<bool> RefreshAsync() => _visible ? ReloadAsync() : Task.FromResult(true);
 
     /// <summary>Helm flipped the within-current-view toggle. No
     /// re-fetch: the JS module owns the cached coord array and
@@ -144,7 +161,7 @@ public sealed class ServerTrackController
     /// render respects the toggle if it was on before the duration
     /// change.
     /// </summary>
-    private async Task ReloadAsync()
+    private async Task<bool> ReloadAsync()
     {
         string apiSpan = _duration == "all" ? "P36500D" : _duration;
         // MapTrack path set: position + SOG only. The renderer below
@@ -167,6 +184,7 @@ public sealed class ServerTrackController
                               points[i].SpeedOverGround ?? 0];
             }
             await _overlaysJs.SetServerTrackAsync(triples, _withinBounds);
+            return true;
         }
         else
         {
@@ -181,6 +199,7 @@ public sealed class ServerTrackController
             // re-fetch automatically because _visible stayed true.
             await _overlaysJs.ClearServerTrackAsync();
             _emptyResultInfo("No history points returned for the selected duration.");
+            return false;
         }
     }
 }
