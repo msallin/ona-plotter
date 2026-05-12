@@ -101,8 +101,6 @@
                     OnToggleShipLines="OnToggleShipLines"
                     LaylinesVisible="LaylinesVisible"
                     OnToggleLaylines="OnToggleLaylines"
-                    LocalTrackVisible="LocalTrackVisible"
-                    OnToggleLocalTrack="OnToggleLocalTrack"
                     GuardZoneVisible="GuardZoneVisible"
                     OnToggleGuardZone="OnToggleGuardZoneVisible"
                     ServerTrackVisible="ServerTrackVisible"
@@ -214,8 +212,6 @@
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
-    [Parameter] public bool LocalTrackVisible { get; set; } = true;
-    [Parameter] public EventCallback<bool> OnToggleLocalTrack { get; set; }
     [Parameter] public bool ServerTrackVisible { get; set; }
     [Parameter] public bool WeatherOverlayVisible { get; set; }
     [Parameter] public int WeatherOverlayOpacityPercent { get; set; } = 50;

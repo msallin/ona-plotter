@@ -1070,7 +1070,25 @@
 //               (PERF-005) SubscribedPaths is documented as cold-
 //               path / debug-only so a future caller doesn't wire
 //               it into the hot path.
-const CACHE_NAME = 'ona-plotter-v104';
+// v104 -> v105: Unify "Show local trail" + "Ship track" into one
+//               toggle. Helm-feedback: the two were always shown
+//               together (the local trail's only purpose is to fill
+//               the window between server-track refetches, a perf
+//               trick to avoid hammering /history/values every
+//               second), so having separate toggles was confusing.
+//               Now one "Ship track" checkbox gates both layers in
+//               lock-step. ToggleServerTrack seeds the local
+//               polyline from TrackBuffer + delegates the server
+//               fetch to ServerTrackController; per-tick segments
+//               keep filling the cursor between fetches. The
+//               periodic 60 s server-track refresh runs whenever
+//               the layer is visible (previously gated on active-
+//               route too). The route-suppress latch is gone;
+//               local + server can overlap by design - that's the
+//               unified "live + catch-up" model. Settings key
+//               localTrackVisible.v1 is retired (left orphan in
+//               localStorage).
+const CACHE_NAME = 'ona-plotter-v105';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

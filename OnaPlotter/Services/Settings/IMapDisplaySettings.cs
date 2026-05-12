@@ -51,18 +51,15 @@ public interface IMapDisplaySettings
     /// is active.</para></summary>
     bool ShipLinesVisible { get; }
 
-    /// <summary>Local SOG-coloured own-ship trail (the rolling
-    /// ~83 min polyline, in-memory only). Companion to
-    /// <see cref="ShipLinesVisible"/> for the trail layer; helms
-    /// who want a clean chart (racing) or who keep the server-side
-    /// history layer on can hide the local trail without losing the
-    /// COG vector + current arrow. Defaults to true.</summary>
-    bool LocalTrackVisible { get; }
-
-    /// <summary>Server-side ship-track layer visible. Persisted so a
-    /// helm who decluttered last session doesn't see the trail come
-    /// back on the next reload. Defaults to true: a fresh helm gets
-    /// the long trail-of-record on the chart out of the box.</summary>
+    /// <summary>Ship-track visibility. Master gate for BOTH the
+    /// local in-memory SOG-coloured trail AND the SignalK history
+    /// polyline: the local trail is the "live cursor" that fills
+    /// the window between server-track refetches, the server track
+    /// is the periodic catch-up. Helm-feedback consolidated the two
+    /// toggles into one because the local trail had no value on its
+    /// own (a perf optimisation to avoid hammering /history/values
+    /// every second). Defaults to true so a fresh helm gets the
+    /// trail-of-record on the chart out of the box.</summary>
     bool ServerTrackVisible { get; }
 
     /// <summary>Server-side ship-track helm-picked window: <c>1h</c>,
@@ -226,7 +223,6 @@ public interface IMapDisplaySettings
     Task SetFollowBoatAsync(bool value);
     Task SetLaylinesVisibleAsync(bool value);
     Task SetShipLinesVisibleAsync(bool value);
-    Task SetLocalTrackVisibleAsync(bool value);
     Task SetServerTrackVisibleAsync(bool value);
     Task SetServerTrackDurationAsync(string value);
     Task SetServerTrackResolutionAsync(string value);

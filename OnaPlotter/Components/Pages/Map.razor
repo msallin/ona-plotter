@@ -498,8 +498,6 @@
                      OnToggleShipLines="OnToggleShipLines"
                      LaylinesVisible="Settings.LaylinesVisible"
                      OnToggleLaylines="OnToggleLaylinesPersist"
-                     LocalTrackVisible="Settings.LocalTrackVisible"
-                     OnToggleLocalTrack="OnToggleLocalTrack"
                      ServerTrackVisible="@(_serverTrack?.Visible ?? false)"
                      ServerTrackDuration="@(_serverTrack?.Duration ?? "1d")"
                      ServerTrackResolution="@(_serverTrack?.Resolution ?? "1m")"
@@ -720,23 +718,22 @@
     // (_weather / _serverTrack); markup binds against their Visible /
     // Duration / WithinBounds properties.
     //
-    // Route-active server-track refresher state. When a route is
-    // active AND the server-track layer is visible, the server-side
-    // polyline becomes the trail-of-record and the local in-memory
-    // trail is suppressed (cleared once + future segments dropped at
-    // MapFrameBuilder.SuppressLocalTrack). _lastServerTrackRefreshUtc
-    // gates the 60 s refresh cadence; null means "no active refresh
-    // window currently". _localTrackSuppressedForRoute is a
-    // per-transition latch so we only clear the local trail once on
-    // activation, not every tick.
+    // Periodic server-track refresher state. Runs whenever the
+    // unified ship-track layer is visible: the local in-memory
+    // trail is the "live cursor" filling the gap between fetches,
+    // and a periodic refetch pulls the server's authoritative
+    // catch-up forward. Without the cadence the helm would see
+    // their server-side trail freeze at page-mount time;
+    // overlapping the local trail covers the gap visually.
+    // null means "no refresh has fired yet this session".
     private DateTimeOffset? _lastServerTrackRefreshUtc;
-    private bool _localTrackSuppressedForRoute;
-    /// <summary>How long between auto-refresh fetches of the server
-    /// track while a route is active. 60 s matches helm field-test
-    /// expectation: at typical sailing speeds (4 - 7 kn) a minute of
-    /// run is roughly 100 - 200 m of trail, plenty of resolution to
-    /// see the recent leg without burning a fetch every few seconds.</summary>
-    private const int RouteServerTrackRefreshIntervalSeconds = 60;
+    /// <summary>How long between auto-refresh fetches of the
+    /// server track while it's visible. 60 s matches helm field-
+    /// test expectation: at typical sailing speeds (4 - 7 kn) a
+    /// minute of run is roughly 100 - 200 m of trail, plenty of
+    /// resolution to see the recent leg without burning a fetch
+    /// every few seconds.</summary>
+    private const int ServerTrackRefreshIntervalSeconds = 60;
     private List<SignalkChart> availableCharts = [];
     private List<SignalkRoute> availableRoutes = [];
     // Radar overlay state (device list, capabilities cache, enabled
@@ -1554,22 +1551,25 @@
         // pushes "" and existing relative URLs keep working.
         await _controlsJs.SetSignalKBaseUrlAsync(SkBaseUrl.BaseUrl);
 
-        // Auto-enable the server-side ship track if the helm's last
-        // setting was on (default true). The controller fetches +
-        // pushes asynchronously; we don't await so the rest of the
-        // page bootstrap (chart load, route fetch) doesn't block on
-        // a slow history endpoint.
+        // Auto-enable the unified ship-track layer if the helm's
+        // last setting was on (default true). The controller fetches
+        // the server-side history + pushes asynchronously; we don't
+        // await so the rest of the page bootstrap (chart load, route
+        // fetch) doesn't block on a slow history endpoint.
         if (Settings.ServerTrackVisible && _serverTrack is not null)
             _ = _serverTrack.ToggleAsync(true);
 
-        // Load existing track as speed-colored segments. Skipped when
-        // the helm has the local-trail toggle off; we still seed
-        // PrevLat / PrevLon so a re-enable later starts the trail
-        // from the correct previous fix without a one-tick gap.
+        // Seed the in-memory local trail polyline from the
+        // TrackBuffer ring. The local layer is the "live cursor"
+        // half of the unified ship-track toggle - it fills the
+        // window between server-track refetches with the most
+        // recent fixes. PrevLat / PrevLon are always seeded so
+        // toggling the layer on later starts the trail from the
+        // correct previous fix without a one-tick gap.
         var points = TrackBuffer.GetSnapshot();
         if (points.Length > 0)
         {
-            if (Settings.LocalTrackVisible)
+            if (Settings.ServerTrackVisible)
             {
                 // Group consecutive same-bucket points into runs on
                 // the C# side so the JS layer only has to create one
@@ -2553,57 +2553,54 @@
     }
 
     /// <summary>
-    /// Per-tick steward for the route-active server-track refresher.
-    /// Runs after <c>_activeRouteSync.SyncAsync</c> so the active-
-    /// course state has settled for the current frame.
+    /// Per-tick steward for the unified ship-track layer. Runs
+    /// after <c>_activeRouteSync.SyncAsync</c> so the active-course
+    /// state has settled for the current frame.
     ///
-    /// Three jobs:
-    /// 1. Activation transition (route + server-track go from "off"
-    ///    to "on"): clear the local trail polyline, reset PrevLat /
-    ///    PrevLon so the next post-route fix doesn't bridge across
-    ///    the pre-route position, latch the suppression flag.
-    /// 2. Deactivation transition: drop the suppression flag so the
-    ///    next per-tick segment-emit pushes again.
-    /// 3. While both still active: every 60 s, kick the server-track
-    ///    controller to refetch so the trail catches up to the
-    ///    active leg without manual intervention.
+    /// Two jobs:
+    /// 1. Drive <see cref="OnaPlotter.Utilities.MapFrameBuilder.SuppressLocalTrack"/>
+    ///    from the ship-track visibility flag - the local in-memory
+    ///    trail and the server polyline are joined at the hip after
+    ///    the unification (one toggle gates both), so the per-tick
+    ///    segment emit is suppressed when the layer is off.
+    /// 2. While the layer is on, refetch the server-side track every
+    ///    60 s. The local trail is the "live cursor" that fills the
+    ///    window between refetches; the periodic refresh pulls the
+    ///    server's authoritative version forward so the helm sees
+    ///    the recent leg catch up without manual intervention. Runs
+    ///    irrespective of active-route state (the previous
+    ///    implementation gated this on a route+ship-track combo and
+    ///    additionally cleared the local trail on activation; the
+    ///    overlap is now intentional, mirrors the user mental model
+    ///    of "live + catch-up" sharing a polyline).
     /// </summary>
-    private async Task SyncRouteActiveServerTrackAsync()
+    private Task SyncRouteActiveServerTrackAsync()
     {
-        bool routeAndServerTrack = Data.HasActiveCourse
-            && (_serverTrack?.Visible ?? false);
+        bool serverTrackVisible = _serverTrack?.Visible ?? false;
+        _frameBuilder.SuppressLocalTrack = !serverTrackVisible;
 
-        if (routeAndServerTrack && !_localTrackSuppressedForRoute)
+        // Reset the refresh stamp when the layer goes from visible
+        // to hidden so a re-enable starts with a fresh cadence
+        // window (otherwise a long hidden period would make the
+        // next on-toggle fire an extra refresh on top of the
+        // ToggleAsync-driven fetch).
+        if (!serverTrackVisible)
         {
-            // Activation transition: drop the local in-memory trail
-            // (clearLayers via empty-seed) and reset Prev so the
-            // local trail picks up cleanly when the route ends.
-            if (_overlaysJs is not null)
-                await _overlaysJs.SetColoredTrackAsync(System.Array.Empty<OnaPlotter.Utilities.TrackPolylineRun>());
-            _frameBuilder.PrevLat = null;
-            _frameBuilder.PrevLon = null;
-            _localTrackSuppressedForRoute = true;
-            _lastServerTrackRefreshUtc = Time.GetUtcNow();
-        }
-        else if (!routeAndServerTrack && _localTrackSuppressedForRoute)
-        {
-            // Deactivation transition: drop the latch + null the
-            // refresh stamp so the next activation triggers a clean
-            // start.
-            _localTrackSuppressedForRoute = false;
             _lastServerTrackRefreshUtc = null;
+            return Task.CompletedTask;
         }
-        // Suppression has two sources: the route-active latch above
-        // and the helm's "Show local trail" toggle. ORing them keeps
-        // the frame builder ignorant of which path turned the trail
-        // off; the toggle handler below clears the existing JS layer
-        // on its own when the helm flips it.
-        _frameBuilder.SuppressLocalTrack =
-            _localTrackSuppressedForRoute || !Settings.LocalTrackVisible;
 
-        if (routeAndServerTrack
-            && _lastServerTrackRefreshUtc is DateTimeOffset last
-            && (Time.GetUtcNow() - last).TotalSeconds >= RouteServerTrackRefreshIntervalSeconds)
+        // First-tick seed: ToggleAsync already fetched once, so
+        // start the cadence clock now rather than firing a second
+        // immediate refetch.
+        if (_lastServerTrackRefreshUtc is null)
+        {
+            _lastServerTrackRefreshUtc = Time.GetUtcNow();
+            return Task.CompletedTask;
+        }
+
+        var elapsed = (Time.GetUtcNow() - _lastServerTrackRefreshUtc.Value).TotalSeconds;
+        if (elapsed >= ServerTrackRefreshIntervalSeconds)
         {
             _lastServerTrackRefreshUtc = Time.GetUtcNow();
             // Fire-and-forget: the controller's RefreshAsync is
@@ -2614,6 +2611,7 @@
             // history fetches.
             _ = _serverTrack!.RefreshAsync();
         }
+        return Task.CompletedTask;
     }
 
     // Shared moored-vessel classifier (singleton DI). Same instance the
@@ -2721,13 +2719,42 @@
             await _controlsJs.ClearLaylinesAsync();
     }
 
-    /// <summary>Helm flipped the "Ship track" visibility toggle.
-    /// Persist + delegate to the controller; the controller does the
-    /// fetch / clear interop.</summary>
+    /// <summary>Helm flipped the unified "Ship track" toggle. Persist,
+    /// delegate the server-side fetch / clear to
+    /// <see cref="OnaPlotter.Services.Map.ServerTrackController.ToggleAsync"/>,
+    /// AND seed / tear down the local in-memory trail in lock-step:
+    /// the local layer is the live cursor that fills the window
+    /// between server-track refetches, so it should only render
+    /// when the master toggle is on. Seed from
+    /// <see cref="TrackBuffer"/> so the helm sees the current ~83
+    /// min of in-memory history immediately on enable; per-tick
+    /// segment emissions take over from there (gated by
+    /// <see cref="OnaPlotter.Utilities.MapFrameBuilder.SuppressLocalTrack"/>).
+    /// </summary>
     private async Task OnToggleServerTrack(bool enabled)
     {
         await Settings.SetServerTrackVisibleAsync(enabled);
         if (_serverTrack is not null) await _serverTrack.ToggleAsync(enabled);
+
+        // Local-trail side of the unified toggle. The JS overlay
+        // module owns the polyline; an empty seed clears it.
+        if (_overlaysJs is null) return;
+        if (enabled)
+        {
+            var points = TrackBuffer.GetSnapshot();
+            if (points.Length > 0)
+            {
+                var jsPoints = points
+                    .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
+                    .ToArray();
+                var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
+                await _overlaysJs.SetColoredTrackAsync(runs);
+            }
+        }
+        else
+        {
+            await _overlaysJs.SetColoredTrackAsync(System.Array.Empty<OnaPlotter.Utilities.TrackPolylineRun>());
+        }
     }
 
     /// <summary>Helm picked a new Ship-track window from the dropdown.
@@ -2751,35 +2778,6 @@
     {
         await Settings.SetServerTrackWithinBoundsAsync(enabled);
         if (_serverTrack is not null) await _serverTrack.SetWithinBoundsAsync(enabled);
-    }
-
-    /// <summary>Helm flipped the "Show local trail" toggle. Persists,
-    /// then either tears the JS layer down (off) or re-seeds it from
-    /// the in-memory <see cref="TrackBuffer"/> (on) so the helm sees
-    /// the current ~83 min of history immediately, not "starting from
-    /// the next fix". The per-tick suppression flag drives future
-    /// segment emissions either way (see SyncRouteActiveServerTrackAsync).
-    /// </summary>
-    private async Task OnToggleLocalTrack(bool enabled)
-    {
-        await Settings.SetLocalTrackVisibleAsync(enabled);
-        if (_overlaysJs is null) return;
-        if (enabled)
-        {
-            var points = TrackBuffer.GetSnapshot();
-            if (points.Length > 0)
-            {
-                var jsPoints = points
-                    .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
-                    .ToArray();
-                var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
-                await _overlaysJs.SetColoredTrackAsync(runs);
-            }
-        }
-        else
-        {
-            await _overlaysJs.SetColoredTrackAsync([]);
-        }
     }
 
     /// <summary>

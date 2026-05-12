@@ -37,14 +37,6 @@
             <div class="chart-desc">Port + stbd close-hauled tacks (sailing)</div>
         </div>
     </label>
-    <label class="chart-item">
-        <input type="checkbox" checked="@LocalTrackVisible"
-               @onchange="(e) => OnToggleLocalTrack.InvokeAsync((bool)(e.Value ?? false))" />
-        <div class="chart-item-body">
-            <div class="chart-name">Show local trail</div>
-            <div class="chart-desc">Recent SOG-coloured track (in memory)</div>
-        </div>
-    </label>
     @* Guard zone ring: amber CPA-radius circle drawn around own
        boat. Lives here (rather than Misc) because it's an own-ship
        indicator and the helm flips it to declutter the area
@@ -137,8 +129,6 @@
     [Parameter] public EventCallback<bool> OnToggleShipLines { get; set; }
     [Parameter] public bool LaylinesVisible { get; set; }
     [Parameter] public EventCallback<bool> OnToggleLaylines { get; set; }
-    [Parameter] public bool LocalTrackVisible { get; set; } = true;
-    [Parameter] public EventCallback<bool> OnToggleLocalTrack { get; set; }
     [Parameter] public bool GuardZoneVisible { get; set; } = true;
     [Parameter] public EventCallback<bool> OnToggleGuardZone { get; set; }
 

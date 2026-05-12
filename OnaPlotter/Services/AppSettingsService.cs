@@ -41,11 +41,11 @@ public sealed class AppSettingsService : IAppSettings
     /// (COG vector, tidal current arrow, laylines). Default true so
     /// existing installs see the lines they always saw.</summary>
     public bool ShipLinesVisible { get; private set; } = true;
-    /// <summary>Local SOG-coloured trail visible. Default true; helm
-    /// can hide via Layers > Own ship.</summary>
-    public bool LocalTrackVisible { get; private set; } = true;
 
-    /// <summary>Server-side ship-track layer visible. Default true.</summary>
+    /// <summary>Master ship-track visibility (gates BOTH the local
+    /// in-memory SOG trail AND the SignalK history polyline; see
+    /// <see cref="IMapDisplaySettings.ServerTrackVisible"/> for the
+    /// unification rationale). Default true.</summary>
     public bool ServerTrackVisible { get; private set; } = true;
     /// <summary>Helm-picked window (1h..7d / all). Default "all".</summary>
     public string ServerTrackDuration { get; private set; } = "all";
@@ -333,7 +333,10 @@ public sealed class AppSettingsService : IAppSettings
             FollowBoat = await LoadBool("followBoat", true);
             LaylinesVisible = await LoadBool("laylinesVisible", false);
             ShipLinesVisible = await LoadBool("shipLinesVisible.v1", true);
-            LocalTrackVisible = await LoadBool("localTrackVisible.v1", true);
+            // localTrackVisible.v1 was retired; the unified ship-track
+            // toggle (serverTrackVisible.v1) now gates both layers.
+            // Legacy localStorage entries from previous versions stay
+            // orphaned; we never read them again.
             ServerTrackVisible = await LoadBool("serverTrackVisible.v1", true);
             ServerTrackDuration = NormalizeServerTrackDuration(
                 await LoadString("serverTrackDuration.v1"));
@@ -640,12 +643,6 @@ public sealed class AppSettingsService : IAppSettings
     {
         ShipLinesVisible = value;
         await Save("shipLinesVisible.v1", value ? "true" : "false");
-    }
-
-    public async Task SetLocalTrackVisibleAsync(bool value)
-    {
-        LocalTrackVisible = value;
-        await Save("localTrackVisible.v1", value ? "true" : "false");
     }
 
     public async Task SetServerTrackVisibleAsync(bool value)

@@ -60,14 +60,12 @@ public sealed class MapFrameBuilder
     // Settings.WaypointArrivalRadiusMeters.
     public double ArrivalRadiusMeters { get; set; }
 
-    // True while an active route + visible server-track combo is
-    // managing the on-chart trail. The page sets this on the route-
-    // activation transition so per-tick segment emission is skipped:
-    // the SOG-coloured server polyline is the source of truth, and
-    // the local trail would just overlap it. PrevLat/PrevLon are
-    // also reset on the transition so when the route ends the local
-    // trail picks up cleanly from the current fix instead of drawing
-    // a long bridge segment from the pre-route position.
+    // True when the unified ship-track layer is hidden. The page
+    // sets this from <c>!Settings.ServerTrackVisible</c> on every
+    // tick - when the helm toggles the layer off, per-tick local
+    // segment emission stops too (the local trail is the live
+    // cursor that fills the gap between server-track refetches;
+    // both halves of the unified toggle go dark together).
     public bool SuppressLocalTrack { get; set; }
 
     // Previous own-boat position; null before first fix. Build()
