@@ -726,6 +726,10 @@ export function initMap(elementId, lat, lon, zoom, dotNetObjRef, slowClient) {
 
     // featureGroup (not layerGroup) so zoomToTrack can call getBounds() on it.
     trackLayer = L.featureGroup().addTo(map);
+    // Reset the segment counter for the new layer instance. A previous
+    // page mount may have left it non-zero before the dispose path
+    // re-entered init (route mode -> back to normal flips the lot).
+    trackSegmentCount = 0;
     boatMarker = L.marker([lat, lon], { icon: selfIcon, zIndexOffset: 1000 }).addTo(map);
     // Bind an empty popup and rebuild its content on every open so the
     // numbers match the current NavigationData snapshot rather than a
@@ -1233,9 +1237,19 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
 // Pending points buffer for batched track updates.
 let pendingTrackPoints = [];
 
+// Live count of polylines in trackLayer. Maintained in parallel with
+// addTo / removeLayer / clearLayers so the cap-check below doesn't
+// have to materialise trackLayer.getLayers() (which walks the layer
+// group's internal _layers map every time). flushTrackPoints fires
+// every 5 s under MapFrameBuilder's TrackEmitIntervalMs gate, so the
+// per-call saving is small but the getLayers() allocation is pure
+// overhead the counter eliminates.
+let trackSegmentCount = 0;
+
 export function setColoredTrack(points) {
     if (!trackLayer) return;
     trackLayer.clearLayers();
+    trackSegmentCount = 0;
     if (points.length < 2) return;
 
     // Group consecutive segments by speed bucket, emit one polyline per run.
@@ -1250,6 +1264,7 @@ export function setColoredTrack(points) {
             // Flush current run.
             runCoords.push(coord); // Bridge point.
             L.polyline(runCoords, { color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8 }).addTo(trackLayer);
+            trackSegmentCount++;
             runBucket = b;
             runCoords = [coord];
         } else {
@@ -1259,6 +1274,7 @@ export function setColoredTrack(points) {
     // Flush last run.
     if (runCoords.length >= 2) {
         L.polyline(runCoords, { color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8 }).addTo(trackLayer);
+        trackSegmentCount++;
     }
 }
 
@@ -1284,16 +1300,20 @@ export function flushTrackPoints() {
         L.polyline([[pLat, pLon], [lat, lon]], {
             color: speedColor(sogMs), weight: 2.5, opacity: 0.8
         }).addTo(trackLayer);
+        trackSegmentCount++;
     }
     pendingTrackPoints = [];
 
-    // Prune oldest segments to prevent unbounded DOM growth.
-    const layers = trackLayer.getLayers();
-    if (layers.length > MAX_TRACK_SEGMENTS) {
-        const excess = layers.length - MAX_TRACK_SEGMENTS;
+    // Prune oldest segments to prevent unbounded DOM growth. The
+    // counter short-circuits the common steady-state case where we're
+    // still under the cap - no getLayers() allocation needed.
+    if (trackSegmentCount > MAX_TRACK_SEGMENTS) {
+        const layers = trackLayer.getLayers();
+        const excess = trackSegmentCount - MAX_TRACK_SEGMENTS;
         for (let i = 0; i < excess; i++) {
             trackLayer.removeLayer(layers[i]);
         }
+        trackSegmentCount -= excess;
     }
 }
 
