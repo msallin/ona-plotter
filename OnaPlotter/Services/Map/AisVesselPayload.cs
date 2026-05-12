@@ -92,4 +92,22 @@ public sealed class AisVesselPayload
     /// destPoint() that produced VectorEndLat / Lon.</summary>
     [JsonPropertyName("cpaPointLat")] public double? CpaPointLat { get; set; }
     [JsonPropertyName("cpaPointLon")] public double? CpaPointLon { get; set; }
+
+    /// <summary>
+    /// Fresh trail coords for this vessel as <c>[[lat,lon], ...]</c>,
+    /// or <c>null</c> when the trail didn't change since the last
+    /// push (JS leaves the existing polyline alone) or is too short
+    /// to draw. Owned C# side by <see cref="AisTrailBuffer"/>; the
+    /// JS layer used to keep a per-vessel rolling window of its own
+    /// (<c>aisLayer.aisTrailHistory</c>) and rebuild the coord array
+    /// every tick - that state + the per-tick allocator pressure is
+    /// gone now.
+    ///
+    /// <para>Wire-format: nested arrays (one per point) rather than a
+    /// flat <c>Float64Array</c>. Easier to read JS-side; the wire cost
+    /// difference is small in practice because most vessels are
+    /// stationary between deltas and thus have <c>null</c> here on
+    /// most ticks.</para>
+    /// </summary>
+    [JsonPropertyName("trail")] public double[][]? Trail { get; set; }
 }

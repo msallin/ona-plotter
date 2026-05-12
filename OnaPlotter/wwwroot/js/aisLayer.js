@@ -54,15 +54,13 @@ const aisCpaTgtX = {};
 // removeCpaOverlay to drop the entry on de-classification; future
 // uses (transition-driven UI) can hang off the same map.
 const aisCpaLastSeverity = {};
-const aisTrailHistory = {};
+// Trail history (per-vessel sliding window of recent positions) lives
+// in C# now (Services/Map/AisTrailBuffer + AisPushService.FillPayload).
+// JS only keeps the rendered polyline reference; the C# side ships
+// fresh coords on v.trail when it changed, otherwise we leave the
+// existing line alone.
 const aisTrailLines = {};
 const aisLabels = {};
-// AIS trail window. Bumped 60 s -> 5 min so the helm can read the
-// vessel's recent track shape (turning, accelerating, drifting),
-// not just a 60 s smudge. 5 min still drops fast enough that a
-// vessel passing through stale AIS coverage doesn't accumulate a
-// permanent ghost line.
-const AIS_TRAIL_SECONDS = 300;
 
 // Best-effort external-lookup cache for vessels whose SignalK feed
 // hasn't yet delivered a static-data AIS message (message 5 / 24).
@@ -690,12 +688,6 @@ export function updateAisTargets(vessels) {
     // because alarms run on the C# side off the delta stream, not
     // off the JS marker state.
     if (isSlowClient && mapRef.dragging && mapRef.dragging._moving) return;
-    // Hoist the wall-clock read out of the per-vessel loop. updateAisTrail
-    // used to call Date.now() once per vessel (~200/tick); now it
-    // receives the same `tickNow` for every vessel in the snapshot,
-    // which also keeps trail-cutoff semantics consistent across the
-    // pass (no drift between the first and last vessel's cutoff).
-    const tickNow = Date.now();
     const seen = new Set();
 
     for (const v of vessels) {
@@ -956,9 +948,12 @@ export function updateAisTargets(vessels) {
             resolveVesselName(v.context, v.mmsi);
         }
 
-        // Trail: last AIS_TRAIL_SECONDS of positions, drawn as a fading line.
-        // We only push when the position actually changes to avoid empty ticks.
-        updateAisTrail(v.context, v.lat, v.lon, tickNow);
+        // Trail: rendered as a slate dashed polyline of recent
+        // positions. The sliding-window state lives in C#
+        // (AisTrailBuffer); the payload carries fresh coords on
+        // v.trail only when the buffer changed since the last push.
+        // Absent v.trail = "leave the existing polyline alone".
+        if (v.trail !== undefined) updateAisTrail(v.context, v.trail);
 
         // Course vector. Drawn for any vessel with a known COG and a
         // non-trivial SOG (vectorEnd returns null below the 0.1 m/s
@@ -1110,30 +1105,19 @@ export function updateAisTargets(vessels) {
     }
 }
 
-function updateAisTrail(ctx, lat, lon, now) {
-    const hist = aisTrailHistory[ctx] ||= [];
-    const last = hist[hist.length - 1];
-    const pushed = !last || last.lat !== lat || last.lon !== lon;
-    if (pushed) hist.push({ lat, lon, t: now });
-
-    // Drop points older than the trail window.
-    const cutoff = now - AIS_TRAIL_SECONDS * 1000;
-    let dropped = 0;
-    while (hist.length > 0 && hist[0].t < cutoff) { hist.shift(); dropped++; }
-
-    if (hist.length < 2) return;
-
-    // Geometry unchanged this tick (vessel stationary, no expiry):
-    // skip the .map() allocation AND the setLatLngs call. Leaflet's
-    // setLatLngs re-projects every point and rebuilds the SVG path
-    // even when values match - on a 200-vessel harbour where most
-    // targets are stationary between deltas, this skips hundreds of
-    // wasted reprojections per second. The line itself is unchanged
-    // visually so the helm sees no difference.
-    if (!pushed && dropped === 0) return;
-
-    const coords = hist.map(p => [p.lat, p.lon]);
+// Apply a fresh trail to the per-vessel polyline. Trail data is owned
+// by AisTrailBuffer on the C# side; this function is invoked only when
+// the payload carries a non-undefined `v.trail` (the C# side gates on
+// AisTrailBuffer.ConsumeDirty so unchanged trails skip the wire). A
+// null `coords` means "trail dropped below the 2-point minimum / aged
+// out" - remove the existing polyline; a 2+ point array means "update
+// or create the polyline with these coords".
+function updateAisTrail(ctx, coords) {
     let line = aisTrailLines[ctx];
+    if (!coords || coords.length < 2) {
+        if (line) { mapRef.removeLayer(line); delete aisTrailLines[ctx]; }
+        return;
+    }
     if (!line) {
         // Dashed slate line: distinguishes the historical trail from
         // the SOLID forward COG vector that points where the vessel
@@ -1151,7 +1135,6 @@ function updateAisTrail(ctx, lat, lon, now) {
 
 function removeAisTrail(ctx) {
     if (aisTrailLines[ctx]) { mapRef.removeLayer(aisTrailLines[ctx]); delete aisTrailLines[ctx]; }
-    delete aisTrailHistory[ctx];
 }
 
 function updateCpaLine(store, ctx, from, to, color) {
@@ -1574,8 +1557,6 @@ export function dispose() {
     // aisCpaLastSeverity is a string map, not Leaflet layers.
     for (const ctx of Object.keys(aisCpaLastSeverity)) delete aisCpaLastSeverity[ctx];
     disposeLayerDict(aisTrailLines);
-    // aisTrailHistory is plain data (lat/lon/timestamp triples).
-    for (const ctx of Object.keys(aisTrailHistory)) delete aisTrailHistory[ctx];
     disposeLayerDict(aisLabels);
     if (guardZoneRing)         safeRemoveLayer(guardZoneRing);
     if (guardZoneWarningRing)  safeRemoveLayer(guardZoneWarningRing);

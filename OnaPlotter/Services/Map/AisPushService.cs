@@ -31,6 +31,14 @@ public sealed class AisPushService
     private readonly IMooredVesselTracker _mooredTracker;
     private readonly IAppSettings _settings;
     private readonly TimeProvider _time;
+    /// <summary>Per-vessel trail sliding window. Owns what
+    /// <c>aisLayer.aisTrailHistory</c> used to store JS-side. Lives
+    /// across pushes so the buffer state survives the every-Nth-tick
+    /// skip-optimisation; <see cref="FillPayload"/> emits coords on
+    /// the per-vessel <see cref="AisVesselPayload.Trail"/> field only
+    /// when the buffer reports a content change since the last
+    /// emission, gated by <see cref="AisTrailBuffer.ConsumeDirty"/>.</summary>
+    private readonly AisTrailBuffer _trailBuffer = new();
 
     /// <summary>Last AisStore.Version we pushed at. -1 forces an
     /// initial push so the JS layer is never starved on first tick.</summary>
@@ -256,7 +264,7 @@ public sealed class AisPushService
                     effectiveCpaRadiusNm, lookaheadMin);
 
                 AisVesselPayload p = AcquirePoolSlot(written);
-                FillPayload(p, v, vLat, vLon, in threat, now, aisCogVectorMinutes);
+                FillPayload(p, v, vLat, vLon, in threat, now, aisCogVectorMinutes, _trailBuffer);
                 result[written++] = p;
             }
             catch (Exception ex)
@@ -276,13 +284,18 @@ public sealed class AisPushService
         }
         // If any vessel was skipped, shrink to the live count so the
         // JS side doesn't see trailing default-initialised slots.
-        if (written != result.Length)
-        {
-            var trimmed = new AisVesselPayload[written];
-            Array.Copy(result, trimmed, written);
-            return trimmed;
-        }
-        return result;
+        AisVesselPayload[] snapshot = written != result.Length
+            ? result.AsSpan(0, written).ToArray()
+            : result;
+
+        // Trail stale-sweep. Drop any context in the buffer that
+        // isn't in the snapshot we're about to emit - matches what
+        // the JS-side `for (const ctx of aisMarkers.keys()) ...
+        // removeAisTrail(ctx)` loop did. Allocates a HashSet only
+        // when there's actual stale content; in steady-state harbour
+        // traffic the live set dominates the cached set.
+        _trailBuffer.RetainOnly(snapshot.Select(p => p.Context!));
+        return snapshot;
     }
 
     /// <summary>Returns true with the unwrapped finite lat/lon when
@@ -421,7 +434,8 @@ public sealed class AisPushService
     /// keeps the JIT and V8 happy.</summary>
     private static void FillPayload(
         AisVesselPayload p, AisVessel v, double vLat, double vLon,
-        in VesselThreat threat, DateTime nowUtc, double aisCogVectorMinutes)
+        in VesselThreat threat, DateTime nowUtc, double aisCogVectorMinutes,
+        AisTrailBuffer trailBuffer)
     {
         // Display name resolution: name -> mmsi -> null, with buddy
         // star prefix. Lifted out of JS so the chart label and any
@@ -511,6 +525,35 @@ public sealed class AisPushService
         {
             p.CpaPointLat = null;
             p.CpaPointLon = null;
+        }
+
+        // Trail update. Push the current fix into the per-vessel
+        // sliding window; emit coords on the payload only when the
+        // buffer signals a content change since the last emission.
+        // - Same-position dedup happens inside the buffer.
+        // - Age-trim runs there too, so a vessel whose trail expired
+        //   between pushes flips dirty on the next push and JS
+        //   receives the shortened (or null) trail.
+        // - Stale vessels (not in `visible`) are forgotten in the
+        //   loop's RetainOnly call after BuildSnapshot returns.
+        bool trailChanged = trailBuffer.Push(v.Context ?? string.Empty, vLat, vLon, nowUtc);
+        if (trailChanged && trailBuffer.ConsumeDirty(v.Context ?? string.Empty))
+        {
+            // GetCoords returns null when the trail is too short
+            // (< 2 points) - JS reads null as "remove the existing
+            // polyline if any". Distinct from "not present in the
+            // payload" (which JS reads as "leave the existing trail
+            // alone").
+            p.Trail = trailBuffer.GetCoords(v.Context ?? string.Empty);
+        }
+        else
+        {
+            // The pooled payload may carry a stale Trail reference
+            // from the previous snapshot for the same context. Clear
+            // it so JS doesn't re-apply yesterday's trail to today's
+            // marker; the JS reads `v.trail` as "treat as null when
+            // absent, update only when present".
+            p.Trail = null;
         }
     }
 
