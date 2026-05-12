@@ -39,6 +39,21 @@ function makePolygonVertexIcon(num) {
     });
 }
 
+// rAF-coalesced redraw used by the drag handler. Mirrors the pattern
+// in routeEditLayer.scheduleRedrawEditLine - drag fires at ~60 Hz
+// during a vertex move and each redrawPolygonShape re-projects every
+// vertex of the polygon. The rAF gate collapses multiple drag events
+// per frame into one redraw. Non-drag callers stay direct.
+let _redrawPolygonShapeScheduled = false;
+function scheduleRedrawPolygonShape() {
+    if (_redrawPolygonShapeScheduled) return;
+    _redrawPolygonShapeScheduled = true;
+    requestAnimationFrame(() => {
+        _redrawPolygonShapeScheduled = false;
+        redrawPolygonShape();
+    });
+}
+
 function redrawPolygonShape() {
     if (!polygonEditLayer) return;
     // Remove stale shapes; recreate the right one for the current count.
@@ -98,7 +113,7 @@ function bindPolygonVertex(marker, idx) {
     marker.on('drag', (e) => {
         const ll = e.target.getLatLng();
         polygonEditCoords[idx] = [ll.lat, ll.lng];
-        redrawPolygonShape();
+        scheduleRedrawPolygonShape();
         if (ghostLine && origLL) {
             ghostLine.setLatLngs([origLL, ll]);
             const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);

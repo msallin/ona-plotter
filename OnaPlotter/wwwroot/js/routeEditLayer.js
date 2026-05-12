@@ -55,6 +55,26 @@ function makeEditWpIcon(num) {
     });
 }
 
+// rAF-coalesced redraw used by the drag handler below. Marker drag
+// fires at touch/pointer-move rate (~60 Hz on a desktop, often higher
+// under iPad gesture refinement); calling redrawEditLine directly
+// from every drag re-projected every waypoint of the polyline AND
+// the wider hit-overlay polyline at 60 Hz. The rAF gate collapses
+// multiple drag events between frames into a single redraw on the
+// next paint, which is the highest useful update rate anyway.
+// Non-drag callers (insertVertex, rebuildMarkers, addWaypoint,
+// removeWaypoint, reverseRoute) keep calling redrawEditLine directly
+// because they're user-discrete events that want immediate paint.
+let _redrawEditLineScheduled = false;
+function scheduleRedrawEditLine() {
+    if (_redrawEditLineScheduled) return;
+    _redrawEditLineScheduled = true;
+    requestAnimationFrame(() => {
+        _redrawEditLineScheduled = false;
+        redrawEditLine();
+    });
+}
+
 function redrawEditLine() {
     if (!routeEditLine && routeEditCoords.length >= 2) {
         routeEditLine = L.polyline(routeEditCoords, {
@@ -180,7 +200,7 @@ function bindEditMarker(marker, idx) {
     marker.on('drag', (e) => {
         const ll = e.target.getLatLng();
         routeEditCoords[idx] = [ll.lat, ll.lng];
-        redrawEditLine();
+        scheduleRedrawEditLine();
         if (ghostLine && origLL) {
             ghostLine.setLatLngs([origLL, ll]);
             const dm = haversineMeters(origLL.lat, origLL.lng, ll.lat, ll.lng);
