@@ -1011,9 +1011,35 @@
             [FormatGpx, FormatGeoJson]);
         if (picked is null) return;
 
+        // Two-step flow for GPX: after the format pick, ask which
+        // optional per-trkpt extensions to include. The three fields
+        // (speed / course / depth) all sit under the Garmin
+        // TrackPointExtension v2 namespace which OpenCPN, SeaPilot,
+        // Navionics, B&G and Garmin devices all read by convention.
+        // GeoJSON skips this step - its per-feature properties bag
+        // already carries the segment-level aggregates, and per-point
+        // extras would bloat the trip Feature without standard
+        // consumers reading them.
+        GpxTrackPointOptions gpxOptions = GpxTrackPointOptions.None;
+        if (picked == FormatGpx)
+        {
+            const string OptSpeed = "Speed";
+            const string OptCourse = "Course";
+            const string OptDepth = "Depth";
+            var fields = await Confirmations.MultiChooseAsync(
+                "Include which per-point fields in the GPX?",
+                [OptSpeed, OptCourse, OptDepth],
+                defaults: [OptSpeed, OptCourse, OptDepth]);
+            if (fields is null) return;
+            gpxOptions = new GpxTrackPointOptions(
+                Speed: fields.Contains(OptSpeed),
+                Course: fields.Contains(OptCourse),
+                Depth: fields.Contains(OptDepth));
+        }
+
         string suggested = $"Trip {s.StartUtc.ToLocalTime():yyyy-MM-dd HH-mm}";
         string? content = picked == FormatGpx
-            ? ResourceExporter.TripGpx(suggested, pts)
+            ? ResourceExporter.TripGpx(suggested, pts, gpxOptions)
             : ResourceExporter.TripGeoJson(suggested, s, pts);
         if (content is null)
         {

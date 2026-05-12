@@ -243,6 +243,179 @@ public class ResourceExporterTests
     }
 
     [Test]
+    public async Task TripGpx_DefaultOptions_DoesNotDeclareTrackPointExtensionNs()
+    {
+        // Bare export (no caller-supplied options) keeps the existing
+        // backward-compatible shape: no gpxtpx namespace declaration,
+        // no per-trkpt <extensions> wrapper. A consumer reading the
+        // previous-version GPX would see byte-identical output for
+        // the same TrackPoint stream.
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, 5.0, 1.5708, null, null, null, null, null, 12.4),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, 5.1, 1.5710, null, null, null, null, null, 12.0),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts);
+
+        await Assert.That(gpx).IsNotNull();
+        await Assert.That(gpx).DoesNotContain("xmlns:gpxtpx");
+        await Assert.That(gpx).DoesNotContain("<extensions>");
+        await Assert.That(gpx).DoesNotContain("TrackPointExtension");
+    }
+
+    [Test]
+    public async Task TripGpx_SpeedOption_EmitsGpxtpxSpeedInMeterspersecond()
+    {
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, 5.0, null, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, 7.25, null, null, null, null, null, null, null),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts, new GpxTrackPointOptions(Speed: true));
+
+        await Assert.That(gpx).IsNotNull();
+        await Assert.That(gpx).Contains("xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v2\"");
+        // Two decimals; both points present.
+        await Assert.That(gpx).Contains(">5.00</");
+        await Assert.That(gpx).Contains(">7.25</");
+        await Assert.That(gpx).Contains(":TrackPointExtension");
+        // Course / depth weren't asked for: must NOT appear.
+        await Assert.That(gpx).DoesNotContain(":course>");
+        await Assert.That(gpx).DoesNotContain(":depth>");
+    }
+
+    [Test]
+    public async Task TripGpx_CourseOption_ConvertsRadiansToDegreesAndWraps()
+    {
+        // CourseOverGround on TrackPoint is radians (SignalK convention).
+        // <gpxtpx:course> is degrees-true [0..360). 0 rad -> 0.0 deg;
+        // pi -> 180.0; -pi/2 -> wraps to 270.0; 2pi -> wraps to 0.
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, null, 0.0, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, null, Math.PI, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(2),  47.6, 8.7, null, -Math.PI / 2, null, null, null, null, null, null),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts, new GpxTrackPointOptions(Course: true));
+
+        await Assert.That(gpx).IsNotNull();
+        await Assert.That(gpx).Contains(">0.0</");
+        await Assert.That(gpx).Contains(">180.0</");
+        await Assert.That(gpx).Contains(">270.0</");
+        await Assert.That(gpx).Contains(":course>");
+        await Assert.That(gpx).DoesNotContain(":speed>");
+        await Assert.That(gpx).DoesNotContain(":depth>");
+    }
+
+    [Test]
+    public async Task TripGpx_DepthOption_EmitsGpxtpxDepthInMetres()
+    {
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, null, null, null, null, null, null, null, 12.4),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, null, null, null, null, null, null, null, 11.95),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts, new GpxTrackPointOptions(Depth: true));
+
+        await Assert.That(gpx).IsNotNull();
+        await Assert.That(gpx).Contains(":depth>12.40</");
+        await Assert.That(gpx).Contains(":depth>11.95</");
+        await Assert.That(gpx).DoesNotContain(":speed>");
+        await Assert.That(gpx).DoesNotContain(":course>");
+    }
+
+    [Test]
+    public async Task TripGpx_AllOptions_EmitsAllThreeUnderOneTrackPointExtension()
+    {
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, 5.0, 0.0,     null, null, null, null, null, 12.0),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, 7.0, Math.PI, null, null, null, null, null, 8.0),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts, GpxTrackPointOptions.All);
+
+        await Assert.That(gpx).IsNotNull();
+        // Per the gpxtpx convention all three fields nest inside a
+        // single TrackPointExtension element per trkpt.
+        await Assert.That(gpx).Contains(":TrackPointExtension");
+        await Assert.That(gpx).Contains(":speed>");
+        await Assert.That(gpx).Contains(":course>");
+        await Assert.That(gpx).Contains(":depth>");
+    }
+
+    [Test]
+    public async Task TripGpx_AllOptions_SkipsFieldsPerPointWhenSourceIsNull()
+    {
+        // First point has SOG only; second has depth only. The per-
+        // point extension should carry just the present field; the
+        // other elements must NOT be emitted with placeholder /
+        // sentinel values - downstream consumers would treat 0 as
+        // a real reading.
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, 5.0,  null, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, null, null, null, null, null, null, null, 8.0),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts, GpxTrackPointOptions.All);
+
+        await Assert.That(gpx).IsNotNull();
+        await Assert.That(gpx).Contains(":speed>5.00</");
+        await Assert.That(gpx).Contains(":depth>8.00</");
+        // Neither point has COG; the element must be absent entirely.
+        await Assert.That(gpx).DoesNotContain(":course>");
+    }
+
+    [Test]
+    public async Task TripGpx_AllOptions_OmitsExtensionsWrapperWhenPointHasNoFields()
+    {
+        // Point with every option field null shouldn't produce an
+        // empty <extensions><TrackPointExtension/></extensions> tree -
+        // the wrapper is skipped at source so the file stays as
+        // small as the data warrants.
+        var t0 = new DateTime(2026, 4, 30, 12, 0, 0, DateTimeKind.Utc);
+        var pts = new[]
+        {
+            new TrackPoint(t0,                47.4, 8.5, null, null, null, null, null, null, null, null),
+            new TrackPoint(t0.AddMinutes(1),  47.5, 8.6, null, null, null, null, null, null, null, null),
+        };
+
+        var gpx = ResourceExporter.TripGpx("T", pts, GpxTrackPointOptions.All);
+
+        await Assert.That(gpx).IsNotNull();
+        // The gpxtpx namespace IS declared (caller asked for it) but
+        // no per-trkpt extension content is present.
+        await Assert.That(gpx).Contains("xmlns:gpxtpx");
+        await Assert.That(gpx).DoesNotContain("<extensions>");
+        await Assert.That(gpx).DoesNotContain(":TrackPointExtension");
+    }
+
+    [Test]
+    public async Task GpxTrackPointOptions_None_AndAll_HaveExpectedFlags()
+    {
+        await Assert.That(GpxTrackPointOptions.None.Any).IsFalse();
+        await Assert.That(GpxTrackPointOptions.None.Speed).IsFalse();
+        await Assert.That(GpxTrackPointOptions.None.Course).IsFalse();
+        await Assert.That(GpxTrackPointOptions.None.Depth).IsFalse();
+
+        await Assert.That(GpxTrackPointOptions.All.Any).IsTrue();
+        await Assert.That(GpxTrackPointOptions.All.Speed).IsTrue();
+        await Assert.That(GpxTrackPointOptions.All.Course).IsTrue();
+        await Assert.That(GpxTrackPointOptions.All.Depth).IsTrue();
+    }
+
+    [Test]
     public async Task TripGpx_NullWhenFewerThanTwoPoints()
     {
         // Single fix isn't a track. Pin: caller-side UI shouldn't

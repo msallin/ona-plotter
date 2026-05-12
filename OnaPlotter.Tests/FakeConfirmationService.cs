@@ -27,10 +27,14 @@ internal sealed class FakeConfirmationService : IConfirmationService
     public bool IsPending => false;
     public bool IsTextPrompt { get; private set; }
     public bool IsChoice { get; private set; }
+    public bool IsMultiChoice { get; private set; }
     public IReadOnlyList<string> Options { get; private set; } = [];
+    public IReadOnlySet<string> MultiChoiceSelected { get; private set; } =
+        new HashSet<string>(StringComparer.Ordinal);
     public string TextValue { get; set; } = "";
     public void Resolve(bool ok) { /* tests resolve synchronously via AutoConfirm */ }
     public void Pick(string option) { /* tests resolve synchronously via AutoChooseValue */ }
+    public void ToggleMultiChoice(string option, bool value) { /* tests resolve via AutoMultiChooseValue */ }
 
     public Task<bool> ConfirmAsync(string message, bool destructive = true,
         string? confirmLabel = null, string? cancelLabel = null)
@@ -80,8 +84,39 @@ internal sealed class FakeConfirmationService : IConfirmationService
         CancelLabel = "Cancel";
         IsTextPrompt = false;
         IsChoice = true;
+        IsMultiChoice = false;
         Options = options;
         TextValue = "";
         return Task.FromResult(AutoConfirm ? AutoChooseValue : null);
+    }
+
+    /// <summary>Auto-answer for <see cref="MultiChooseAsync"/>. Tests
+    /// that exercise the multi-select flow set this to the set of
+    /// option labels that should come back as checked; AutoConfirm
+    /// gates this - false means return null (simulates Cancel)
+    /// regardless. Null defaults to the empty set (helm un-checked
+    /// everything before clicking Export).</summary>
+    public IReadOnlySet<string>? AutoMultiChooseValue { get; set; }
+
+    public Task<IReadOnlySet<string>?> MultiChooseAsync(string message,
+        IReadOnlyList<string> options,
+        IReadOnlyCollection<string> defaults,
+        string? confirmLabel = null)
+    {
+        CallCount++;
+        LastMessage = message;
+        Destructive = false;
+        ConfirmLabel = confirmLabel ?? "Export";
+        CancelLabel = "Cancel";
+        IsTextPrompt = false;
+        IsChoice = false;
+        IsMultiChoice = true;
+        Options = options;
+        MultiChoiceSelected = AutoMultiChooseValue
+            ?? new HashSet<string>(defaults ?? [], StringComparer.Ordinal);
+        TextValue = "";
+        return Task.FromResult(AutoConfirm
+            ? AutoMultiChooseValue ?? new HashSet<string>(defaults ?? [], StringComparer.Ordinal)
+            : null);
     }
 }

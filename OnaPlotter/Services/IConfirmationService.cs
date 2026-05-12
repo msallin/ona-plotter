@@ -45,6 +45,22 @@ public interface IConfirmationService
     /// <see cref="PromptAsync"/>.</summary>
     Task<string?> ChooseAsync(string message, IReadOnlyList<string> options);
 
+    /// <summary>Multi-select variant of <see cref="ChooseAsync"/>.
+    /// Shows the modal with a checkbox per entry in
+    /// <paramref name="options"/>, pre-checked per
+    /// <paramref name="defaults"/>, plus a confirm + Cancel button.
+    /// Resolves to the set of picked option strings on OK, or
+    /// <c>null</c> on Cancel / Escape / backdrop click.
+    /// <para>Used for the GPX export field picker (speed / course /
+    /// depth) where the helm wants to opt in / out per export. An
+    /// empty default set is honoured (everything starts unchecked);
+    /// passing options without a defaults entry treats that option
+    /// as unchecked.</para></summary>
+    Task<IReadOnlySet<string>?> MultiChooseAsync(string message,
+        IReadOnlyList<string> options,
+        IReadOnlyCollection<string> defaults,
+        string? confirmLabel = null);
+
     /// <summary>True when the pending prompt is a text-input prompt;
     /// the dialog renders an <c>&lt;input&gt;</c> in that mode.
     /// False for a yes/no confirmation.</summary>
@@ -55,11 +71,32 @@ public interface IConfirmationService
     /// + a Cancel. Mutually exclusive with <see cref="IsTextPrompt"/>.</summary>
     bool IsChoice { get; }
 
+    /// <summary>True when the pending prompt is a multi-select chooser
+    /// (<see cref="MultiChooseAsync"/>); the dialog renders a checkbox
+    /// per <see cref="Options"/> entry, pre-checked per
+    /// <see cref="MultiChoiceSelected"/>, plus a confirm + Cancel
+    /// button. Mutually exclusive with <see cref="IsTextPrompt"/> and
+    /// <see cref="IsChoice"/>.</summary>
+    bool IsMultiChoice { get; }
+
     /// <summary>The choices for an in-flight chooser prompt; empty
     /// when no chooser is pending. The dialog host iterates this to
     /// render one button per option and calls <see cref="Pick"/>
     /// when the user clicks one.</summary>
     IReadOnlyList<string> Options { get; }
+
+    /// <summary>Currently-checked entries for an in-flight multi-choose
+    /// prompt. The dialog two-way binds checkbox state through
+    /// <see cref="ToggleMultiChoice"/>; on Resolve(true) the set is
+    /// returned to the awaiting MultiChooseAsync caller.</summary>
+    IReadOnlySet<string> MultiChoiceSelected { get; }
+
+    /// <summary>Toggle (or set) one option's check state during a
+    /// pending <see cref="MultiChooseAsync"/> prompt. Pass <paramref
+    /// name="value"/> = true to check, false to uncheck. No-op when
+    /// no multi-choose is pending OR the option is not in
+    /// <see cref="Options"/>.</summary>
+    void ToggleMultiChoice(string option, bool value);
 
     /// <summary>Called by the modal host when the user clicks one of
     /// the chooser buttons. Resolves the pending

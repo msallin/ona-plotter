@@ -280,4 +280,152 @@ public class ConfirmationServiceTests
         svc.Pick("GPX");
         await Assert.That(svc.IsPending).IsFalse();
     }
+
+    // -----------------------------------------------------------------
+    // MultiChooseAsync: a checkbox-style picker for the GPX export
+    // field set. The dialog two-way binds checked state through
+    // ToggleMultiChoice; Resolve(true) snapshots the current set; null
+    // on Cancel. Tests below pin the state machine, the defaults
+    // intersect with options behaviour, and the toggle gating.
+    // -----------------------------------------------------------------
+
+    [Test]
+    public async Task MultiChooseAsync_Resolve_True_Returns_Currently_Checked_Set()
+    {
+        var svc = new ConfirmationService();
+        var task = svc.MultiChooseAsync(
+            "Pick fields", ["Speed", "Course", "Depth"],
+            defaults: ["Speed", "Course", "Depth"]);
+
+        await Assert.That(svc.IsPending).IsTrue();
+        await Assert.That(svc.IsMultiChoice).IsTrue();
+        await Assert.That(svc.IsChoice).IsFalse();
+        await Assert.That(svc.MultiChoiceSelected.Count).IsEqualTo(3);
+
+        svc.Resolve(true);
+        var result = await task;
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Count).IsEqualTo(3);
+        await Assert.That(result.Contains("Speed")).IsTrue();
+        await Assert.That(result.Contains("Course")).IsTrue();
+        await Assert.That(result.Contains("Depth")).IsTrue();
+        await Assert.That(svc.IsMultiChoice).IsFalse();
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_Resolve_False_Returns_Null()
+    {
+        var svc = new ConfirmationService();
+        var task = svc.MultiChooseAsync(
+            "Pick", ["A", "B"], defaults: ["A"]);
+        svc.Resolve(false);
+        await Assert.That(await task).IsNull();
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_Toggle_Adds_And_Removes_From_Selected_Set()
+    {
+        var svc = new ConfirmationService();
+        var task = svc.MultiChooseAsync(
+            "Pick", ["Speed", "Course", "Depth"],
+            defaults: ["Speed"]);
+
+        // Default seeded one option only.
+        await Assert.That(svc.MultiChoiceSelected.Contains("Speed")).IsTrue();
+        await Assert.That(svc.MultiChoiceSelected.Contains("Course")).IsFalse();
+
+        svc.ToggleMultiChoice("Course", true);
+        await Assert.That(svc.MultiChoiceSelected.Contains("Course")).IsTrue();
+
+        svc.ToggleMultiChoice("Speed", false);
+        await Assert.That(svc.MultiChoiceSelected.Contains("Speed")).IsFalse();
+
+        svc.Resolve(true);
+        var result = await task;
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Count).IsEqualTo(1);
+        await Assert.That(result.Contains("Course")).IsTrue();
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_Defaults_Intersect_With_Options()
+    {
+        // A defaults entry that's NOT in options must NOT be smuggled
+        // into the resolved set. Defensive: a caller-supplied stale
+        // default key shouldn't be able to poison the return value.
+        var svc = new ConfirmationService();
+        var task = svc.MultiChooseAsync(
+            "Pick", ["Speed", "Course"],
+            defaults: ["Speed", "NotAnOption"]);
+
+        await Assert.That(svc.MultiChoiceSelected.Count).IsEqualTo(1);
+        await Assert.That(svc.MultiChoiceSelected.Contains("Speed")).IsTrue();
+        await Assert.That(svc.MultiChoiceSelected.Contains("NotAnOption")).IsFalse();
+
+        svc.Resolve(true);
+        var result = await task;
+        await Assert.That(result!.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_All_Unchecked_OK_Returns_Empty_Set_Not_Null()
+    {
+        // Empty set after Resolve(true) is distinct from null
+        // (= Cancel). A helm explicitly un-checking every option and
+        // clicking Export should land an empty set so the caller can
+        // proceed with the bare-bones export shape.
+        var svc = new ConfirmationService();
+        var task = svc.MultiChooseAsync(
+            "Pick", ["A", "B"], defaults: []);
+
+        svc.Resolve(true);
+        var result = await task;
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_EmptyOptions_Returns_Empty_Set_Synchronously()
+    {
+        // Degenerate caller: no options to pick from. Don't open an
+        // empty dialog that the helm has to dismiss; resolve to the
+        // empty set so the awaiting code short-circuits cleanly.
+        var svc = new ConfirmationService();
+        var result = await svc.MultiChooseAsync(
+            "Pick", [], defaults: []);
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Count).IsEqualTo(0);
+        await Assert.That(svc.IsPending).IsFalse();
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_Toggle_Unknown_Option_IsNoOp()
+    {
+        // Defensive: the dialog host two-way-binds against the
+        // current Options list. A stale render that toggles a
+        // non-option key must not leak into the resolved set.
+        var svc = new ConfirmationService();
+        var task = svc.MultiChooseAsync(
+            "Pick", ["A"], defaults: []);
+
+        svc.ToggleMultiChoice("Z", true);
+        await Assert.That(svc.MultiChoiceSelected.Contains("Z")).IsFalse();
+
+        svc.Resolve(true);
+        var result = await task;
+        await Assert.That(result!.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task MultiChooseAsync_Cancels_Other_Pending_Prompts()
+    {
+        var svc = new ConfirmationService();
+        var first = svc.ConfirmAsync("Old?");
+        var second = svc.MultiChooseAsync(
+            "New", ["A"], defaults: ["A"]);
+        await Assert.That(first.IsCompleted).IsTrue();
+        await Assert.That(await first).IsFalse();
+        svc.Resolve(true);
+        await Assert.That((await second)!.Count).IsEqualTo(1);
+    }
 }

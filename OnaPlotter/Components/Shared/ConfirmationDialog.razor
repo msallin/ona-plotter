@@ -8,14 +8,18 @@
    `ChooseAsync(...)` is shown through this one dialog. Gated on
    Confirm.IsPending so the DOM footprint is zero when idle.
 
-   Three modes:
-     - ConfirmAsync: yes/no question; no input shown.
-     - PromptAsync:  message + text input (editable, pre-filled with
-                     the caller's initial value). Enter commits, Esc
-                     cancels.
-     - ChooseAsync:  message + one button per option + Cancel. Esc
-                     cancels. No primary palette since none of the N
-                     options is the default; helm picks deliberately.
+   Four modes:
+     - ConfirmAsync:      yes/no question; no input shown.
+     - PromptAsync:       message + text input (editable, pre-filled
+                          with the caller's initial value). Enter
+                          commits, Esc cancels.
+     - ChooseAsync:       message + one button per option + Cancel.
+                          Esc cancels. No primary palette since none
+                          of the N options is the default; helm picks
+                          deliberately.
+     - MultiChooseAsync:  message + checkbox per option + Export +
+                          Cancel. Picks the set of checked options
+                          on Export; null on Cancel/Esc.
    Enter-to-submit on the input lets the helm rename things without
    reaching for the OK button, same muscle memory as window.prompt. *@
 
@@ -43,11 +47,32 @@
                    spellcheck="false"
                    aria-label="Prompt value" />
         }
+        @if (Confirm.IsMultiChoice)
+        {
+            @* One checkbox per option. Two-way binds through the
+               service's ToggleMultiChoice so the dialog stays
+               stateless and a re-render reflects the seeded
+               defaults. *@
+            <div class="confirm-multichoice"
+                 role="group"
+                 aria-label="Export options">
+                @foreach (var opt in Confirm.Options)
+                {
+                    var isChecked = Confirm.MultiChoiceSelected.Contains(opt);
+                    <label class="confirm-multichoice-item">
+                        <input type="checkbox"
+                               checked="@isChecked"
+                               @onchange="(e) => Confirm.ToggleMultiChoice(opt, (bool)(e.Value ?? false))" />
+                        <span>@opt</span>
+                    </label>
+                }
+            </div>
+        }
         <div class="confirm-actions">
             <button type="button"
                     class="btn confirm-btn confirm-btn-cancel"
                     @onclick="OnCancel"
-                    autofocus="@(!Confirm.IsTextPrompt && !Confirm.IsChoice)">
+                    autofocus="@(!Confirm.IsTextPrompt && !Confirm.IsChoice && !Confirm.IsMultiChoice)">
                 @(string.IsNullOrEmpty(Confirm.CancelLabel) ? "Cancel" : Confirm.CancelLabel)
             </button>
             @if (Confirm.IsChoice)
@@ -68,6 +93,10 @@
             }
             else
             {
+                @* Confirm / Prompt / MultiChoose all share the same
+                   primary action button. MultiChoose drives its
+                   payload through Confirm.MultiChoiceSelected which
+                   is captured at Resolve(true) time. *@
                 <button type="button"
                         class="btn confirm-btn @(Confirm.Destructive ? "confirm-btn-danger" : "confirm-btn-primary")"
                         @onclick="OnOk">

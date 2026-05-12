@@ -1109,7 +1109,21 @@
 //               (Task<bool> now) so the failure counter sees every
 //               fetch outcome, not just the periodic one. 9 new
 //               tests pin the bool contract.
-const CACHE_NAME = 'ona-plotter-v106';
+// v106 -> v107: GPX trip export gains optional per-trkpt extensions
+//               (speed / course / depth) under the Garmin
+//               TrackPointExtension v2 namespace - the de-facto
+//               standard read by OpenCPN, SeaPilot, Navionics, B&G
+//               and Garmin devices. After the helm picks GPX on the
+//               History trip Export button, a checkbox multi-select
+//               opens with all three pre-checked; un-check any to
+//               omit. The bare position+time shape stays
+//               byte-identical for a None-options call so a previous
+//               consumer reads new exports unchanged. New
+//               IConfirmationService.MultiChooseAsync surfaces the
+//               checkbox modal generically so future multi-pick
+//               flows reuse the same dialog. 18 new tests pin the
+//               GPX shape + the multi-choose state machine.
+const CACHE_NAME = 'ona-plotter-v107';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

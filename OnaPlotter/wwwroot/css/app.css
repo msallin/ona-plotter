@@ -9787,6 +9787,29 @@ html[data-slow-client="1"] * {
     border-color: var(--sk-accent-dim);
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
 }
+.confirm-multichoice {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0;
+    padding-left: 4px;
+}
+.confirm-multichoice-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    color: var(--sk-text);
+    font-size: 0.95rem;
+}
+.confirm-multichoice-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--sk-accent);
+}
 .confirm-actions {
     display: flex;
     gap: 8px;

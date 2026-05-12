@@ -39,12 +39,23 @@ namespace OnaPlotter.Utilities;
 public static class ResourceExporter
 {
     private static readonly XNamespace Gpx = "http://www.topografix.com/GPX/1/1";
+    /// <summary>Garmin TrackPointExtension v2 namespace. The de-facto
+    /// standard for per-trkpt speed / course / depth: OpenCPN,
+    /// SeaPilot, Navionics, B&amp;G H-series chartplotters and Garmin
+    /// devices all read this convention without configuration. Emitted
+    /// from <see cref="TripGpx"/> when the caller opts the matching
+    /// fields in via <see cref="GpxTrackPointOptions"/>.</summary>
+    private static readonly XNamespace GpxTpx =
+        "http://www.garmin.com/xmlschemas/TrackPointExtension/v2";
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     // 6 decimals = ~11 cm at the equator. More than enough for a
     // helm passing a passage to a friend; fewer would lose the
     // anchor circle's centre when round-tripped.
     private const string LatLonFormat = "F6";
+    // Radians (the internal NavigationData / SignalK unit) -> degrees
+    // for the gpxtpx <course> element (degrees-true convention).
+    private const double RadToDeg = 180.0 / Math.PI;
 
     // GeoJSON Feature shapes serialise via OnaGeoJsonContext (source-
     // gen, WriteIndented=true). The earlier shared `PrettyJson` options
@@ -160,15 +171,26 @@ public static class ResourceExporter
     /// <c>&lt;time&gt;</c>; standard GPX-aware tools read this back as
     /// a track and can replay it. Returns null when the slice has
     /// fewer than two points (a single fix isn't a track).
+    /// <para>Optional per-trkpt extensions (speed / course / depth) are
+    /// emitted via the Garmin TrackPointExtension v2 namespace when the
+    /// caller opts them in through <paramref name="options"/>. Each
+    /// field skips per-point when the underlying
+    /// <see cref="TrackPoint"/> field is null, so a partial recording
+    /// (e.g. no depth sensor on board) emits speed + course only.</para>
     /// </summary>
     /// <param name="name">Track name. Caller passes "Trip yyyy-MM-dd"
     /// or whatever the helm typed.</param>
     /// <param name="points">Chronological points to write. Caller is
     /// responsible for slicing the larger TrackPoint array down to
     /// the segment's window.</param>
-    public static string? TripGpx(string name, IReadOnlyList<TrackPoint> points)
+    /// <param name="options">Optional per-trkpt extensions to emit.
+    /// Defaults to <see cref="GpxTrackPointOptions.None"/> for a bare
+    /// position + time export.</param>
+    public static string? TripGpx(string name, IReadOnlyList<TrackPoint> points,
+        GpxTrackPointOptions? options = null)
     {
         if (points is null || points.Count < 2) return null;
+        options ??= GpxTrackPointOptions.None;
         var trk = new XElement(Gpx + "trk");
         if (!string.IsNullOrEmpty(name))
             trk.Add(new XElement(Gpx + "name", name));
@@ -184,10 +206,57 @@ public static class ResourceExporter
             // the canonical Z-suffixed form.
             pt.Add(new XElement(Gpx + "time",
                 p.Timestamp.ToString("o", Inv)));
+            if (options.Any)
+            {
+                var ext = BuildTrackPointExtension(p, options);
+                if (ext is not null) pt.Add(new XElement(Gpx + "extensions", ext));
+            }
             seg.Add(pt);
         }
         trk.Add(seg);
-        return WrapGpx(trk);
+        return WrapGpx(trk, withTrackPointExtensionNs: options.Any);
+    }
+
+    /// <summary>Build the per-trkpt
+    /// <c>&lt;gpxtpx:TrackPointExtension&gt;</c> child element with
+    /// the subset of fields requested by <paramref name="opts"/> AND
+    /// present on the point. Returns null when no requested field has
+    /// a value (the caller skips emitting the wrapping
+    /// <c>&lt;extensions&gt;</c> in that case so silent rows stay bare).</summary>
+    private static XElement? BuildTrackPointExtension(
+        TrackPoint p, GpxTrackPointOptions opts)
+    {
+        var tpe = new XElement(GpxTpx + "TrackPointExtension");
+        bool any = false;
+        if (opts.Speed && p.SpeedOverGround is double sog)
+        {
+            // m/s, two decimals. The gpxtpx convention is m/s -
+            // consumers (OpenCPN etc.) re-format to knots / kph at
+            // render time.
+            tpe.Add(new XElement(GpxTpx + "speed", sog.ToString("F2", Inv)));
+            any = true;
+        }
+        if (opts.Course && p.CourseOverGround is double cogRad)
+        {
+            // gpxtpx <course> is degrees-true [0..360). TrackPoint
+            // carries SK's radians; convert + wrap so a value that
+            // round-tripped past 2π doesn't emit a degree value
+            // outside the expected range.
+            double cogDeg = (cogRad * RadToDeg) % 360.0;
+            if (cogDeg < 0) cogDeg += 360.0;
+            tpe.Add(new XElement(GpxTpx + "course", cogDeg.ToString("F1", Inv)));
+            any = true;
+        }
+        if (opts.Depth && p.Depth is double depthM)
+        {
+            // Metres, two decimals. Depth is depth-below-transducer
+            // as recorded by SignalK; consumers don't get to know the
+            // transducer offset, but for "is the bottom getting close"
+            // this is the data the helm cares about.
+            tpe.Add(new XElement(GpxTpx + "depth", depthM.ToString("F2", Inv)));
+            any = true;
+        }
+        return any ? tpe : null;
     }
 
     /// <summary>GeoJSON Feature export of a single trip: a LineString
@@ -280,13 +349,20 @@ public static class ResourceExporter
     /// document envelope. Same shape as
     /// <see cref="Services.GpxService.Export"/> emits; a re-import
     /// through that path round-trips losslessly.</summary>
-    private static string WrapGpx(XElement child)
+    private static string WrapGpx(XElement child, bool withTrackPointExtensionNs = false)
     {
         var gpx = new XElement(Gpx + "gpx",
             new XAttribute("version", "1.1"),
             new XAttribute("creator", "OnaPlotter"),
-            new XAttribute(XNamespace.Xmlns + "xsi", "http://www.w3.org/2001/XMLSchema-instance"),
-            child);
+            new XAttribute(XNamespace.Xmlns + "xsi", "http://www.w3.org/2001/XMLSchema-instance"));
+        // Declare gpxtpx only when the document actually uses it -
+        // a bare position+time export shouldn't ship an unused
+        // namespace declaration cluttering the root element.
+        if (withTrackPointExtensionNs)
+        {
+            gpx.Add(new XAttribute(XNamespace.Xmlns + "gpxtpx", GpxTpx.NamespaceName));
+        }
+        gpx.Add(child);
         var doc = new XDocument(new XDeclaration("1.0", "utf-8", null), gpx);
         return doc.ToString();
     }
@@ -345,4 +421,51 @@ public static class ResourceExporter
     // GeoJsonNameDescProperties) replaced the earlier private helpers
     // that returned `object` and let the reflection serializer pick
     // the shape. See OnaPlotter/Models/GeoJsonDtos.cs.
+}
+
+/// <summary>Opt-in toggles for per-trkpt extensions emitted by
+/// <see cref="ResourceExporter.TripGpx"/>. All flags default to false
+/// so the bare <c>lat / lon / time</c> shape is what callers get if
+/// they don't ask for anything else.
+///
+/// <para>The three supported fields are written under the Garmin
+/// <c>TrackPointExtension</c> v2 namespace, which OpenCPN, SeaPilot,
+/// Navionics, B&amp;G H-series and Garmin devices all read by
+/// convention. Wind angle / speed and compass heading are not in
+/// the standard extension set, so they're not exposed here -
+/// callers needing those should use <see cref="ResourceExporter.TripGeoJson"/>
+/// which carries a free-form properties bag.</para></summary>
+/// <param name="Speed">Emit <c>&lt;gpxtpx:speed&gt;</c> in m/s
+/// from <see cref="OnaPlotter.Models.TrackPoint.SpeedOverGround"/>.
+/// Skipped per-point when SOG is null on the source row.</param>
+/// <param name="Course">Emit <c>&lt;gpxtpx:course&gt;</c> in
+/// degrees-true [0..360) from
+/// <see cref="OnaPlotter.Models.TrackPoint.CourseOverGround"/>
+/// (radians -&gt; degrees + wrap). Skipped per-point when COG is null.</param>
+/// <param name="Depth">Emit <c>&lt;gpxtpx:depth&gt;</c> in metres
+/// from <see cref="OnaPlotter.Models.TrackPoint.Depth"/> (depth-
+/// below-transducer per SignalK). Skipped per-point when depth is
+/// null.</param>
+public sealed record GpxTrackPointOptions(
+    bool Speed = false,
+    bool Course = false,
+    bool Depth = false)
+{
+    /// <summary>True when any field is enabled. The serialiser checks
+    /// this so a "all-false" options bag is indistinguishable from
+    /// <see cref="None"/> at runtime (no namespace declaration, no
+    /// per-point extension elements).</summary>
+    public bool Any => Speed || Course || Depth;
+
+    /// <summary>Sentinel for "bare export, no extensions". Same shape
+    /// as the default ctor; named so the call site reads clearly.</summary>
+    public static GpxTrackPointOptions None { get; } = new();
+
+    /// <summary>Sentinel for "everything we can". Used as the default
+    /// pre-checked state on the export prompt so the helm opts OUT of
+    /// fields they don't want rather than into ones they do (richer
+    /// export by default; the file is just as round-trip-readable
+    /// even if the consumer ignores extensions).</summary>
+    public static GpxTrackPointOptions All { get; } =
+        new(Speed: true, Course: true, Depth: true);
 }

@@ -29,6 +29,8 @@ public sealed class ConfirmationService : IConfirmationService
     private TaskCompletionSource<bool>? _pendingConfirm;
     private TaskCompletionSource<string?>? _pendingPrompt;
     private TaskCompletionSource<string?>? _pendingChoose;
+    private TaskCompletionSource<IReadOnlySet<string>?>? _pendingMultiChoose;
+    private HashSet<string> _multiChoiceSelected = new(StringComparer.Ordinal);
 
     public event Action? OnChanged;
 
@@ -38,12 +40,15 @@ public sealed class ConfirmationService : IConfirmationService
     public string? CancelLabel { get; private set; }
     public bool IsTextPrompt { get; private set; }
     public bool IsChoice { get; private set; }
+    public bool IsMultiChoice { get; private set; }
     public IReadOnlyList<string> Options { get; private set; } = [];
+    public IReadOnlySet<string> MultiChoiceSelected => _multiChoiceSelected;
     public string TextValue { get; set; } = "";
     public bool IsPending =>
         _pendingConfirm is not null
         || _pendingPrompt is not null
-        || _pendingChoose is not null;
+        || _pendingChoose is not null
+        || _pendingMultiChoose is not null;
 
     public Task<bool> ConfirmAsync(string message, bool destructive = true,
         string? confirmLabel = null, string? cancelLabel = null)
@@ -59,6 +64,9 @@ public sealed class ConfirmationService : IConfirmationService
         ConfirmLabel = confirmLabel;
         CancelLabel = cancelLabel;
         IsTextPrompt = false;
+        IsChoice = false;
+        IsMultiChoice = false;
+        Options = [];
         TextValue = "";
         OnChanged?.Invoke();
         return _pendingConfirm.Task;
@@ -80,6 +88,7 @@ public sealed class ConfirmationService : IConfirmationService
         CancelLabel = cancelLabel ?? "Cancel";
         IsTextPrompt = true;
         IsChoice = false;
+        IsMultiChoice = false;
         Options = [];
         TextValue = initialValue;
         OnChanged?.Invoke();
@@ -106,6 +115,7 @@ public sealed class ConfirmationService : IConfirmationService
         CancelLabel = "Cancel";
         IsTextPrompt = false;
         IsChoice = true;
+        IsMultiChoice = false;
         Options = options;
         TextValue = "";
         OnChanged?.Invoke();
@@ -127,21 +137,94 @@ public sealed class ConfirmationService : IConfirmationService
         choose.TrySetResult(option);
     }
 
+    public Task<IReadOnlySet<string>?> MultiChooseAsync(string message,
+        IReadOnlyList<string> options,
+        IReadOnlyCollection<string> defaults,
+        string? confirmLabel = null)
+    {
+        CancelPending();
+        if (options is null || options.Count == 0)
+        {
+            // No options to pick from = degenerate caller. Resolve
+            // synchronously with the empty set so the awaiting code
+            // can short-circuit without a dismiss tap.
+            return Task.FromResult<IReadOnlySet<string>?>(new HashSet<string>(StringComparer.Ordinal));
+        }
+        _pendingMultiChoose = new TaskCompletionSource<IReadOnlySet<string>?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Message = message;
+        Destructive = false;
+        ConfirmLabel = confirmLabel ?? "Export";
+        CancelLabel = "Cancel";
+        IsTextPrompt = false;
+        IsChoice = false;
+        IsMultiChoice = true;
+        Options = options;
+        TextValue = "";
+        // Seed the checked set from defaults, intersected with options
+        // so a caller-supplied stray default doesn't pollute the
+        // resolved set. StringComparer.Ordinal because the options
+        // are stable enum-like labels, not free-form helm input.
+        var optionSet = new HashSet<string>(options, StringComparer.Ordinal);
+        _multiChoiceSelected = new HashSet<string>(StringComparer.Ordinal);
+        if (defaults is not null)
+        {
+            foreach (var d in defaults)
+            {
+                if (optionSet.Contains(d)) _multiChoiceSelected.Add(d);
+            }
+        }
+        OnChanged?.Invoke();
+        return _pendingMultiChoose.Task;
+    }
+
+    public void ToggleMultiChoice(string option, bool value)
+    {
+        if (_pendingMultiChoose is null) return;
+        // Validate against the current Options to keep the resolved
+        // set bounded; a host that two-way-binds against a stale
+        // option list shouldn't be able to leak a non-option string.
+        bool isOption = false;
+        for (int i = 0; i < Options.Count; i++)
+        {
+            if (string.Equals(Options[i], option, StringComparison.Ordinal))
+            {
+                isOption = true;
+                break;
+            }
+        }
+        if (!isOption) return;
+        if (value) _multiChoiceSelected.Add(option);
+        else _multiChoiceSelected.Remove(option);
+        OnChanged?.Invoke();
+    }
+
     public void Resolve(bool ok)
     {
         var confirm = _pendingConfirm;
         var prompt = _pendingPrompt;
         var choose = _pendingChoose;
+        var multi = _pendingMultiChoose;
         var value = TextValue;
+        // Snapshot the checked set before clearing it so the resolved
+        // task receives a stable read-only view.
+        IReadOnlySet<string>? multiResult = null;
+        if (multi is not null && ok)
+        {
+            multiResult = new HashSet<string>(_multiChoiceSelected, StringComparer.Ordinal);
+        }
         _pendingConfirm = null;
         _pendingPrompt = null;
         _pendingChoose = null;
+        _pendingMultiChoose = null;
         Message = "";
         ConfirmLabel = null;
         CancelLabel = null;
         IsTextPrompt = false;
         IsChoice = false;
+        IsMultiChoice = false;
         Options = [];
+        _multiChoiceSelected = new HashSet<string>(StringComparer.Ordinal);
         TextValue = "";
         // Reset state BEFORE firing OnChanged so a re-render sees the
         // cleared state immediately. Notify then resolve the task so
@@ -159,6 +242,10 @@ public sealed class ConfirmationService : IConfirmationService
         // Pick() handles the actual option-chosen path and clears the
         // TCS before this branch is reached.
         choose?.TrySetResult(null);
+        // Multi-choose: OK -> the captured snapshot above (may be the
+        // empty set when the helm un-checked every option, which is
+        // distinct from null = Cancel). Cancel always returns null.
+        multi?.TrySetResult(ok ? multiResult : null);
     }
 
     private void CancelPending()
@@ -166,11 +253,14 @@ public sealed class ConfirmationService : IConfirmationService
         var confirm = _pendingConfirm;
         var prompt = _pendingPrompt;
         var choose = _pendingChoose;
+        var multi = _pendingMultiChoose;
         _pendingConfirm = null;
         _pendingPrompt = null;
         _pendingChoose = null;
+        _pendingMultiChoose = null;
         confirm?.TrySetResult(false);
         prompt?.TrySetResult(null);
         choose?.TrySetResult(null);
+        multi?.TrySetResult(null);
     }
 }
