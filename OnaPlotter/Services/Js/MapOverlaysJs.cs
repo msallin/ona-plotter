@@ -1,4 +1,5 @@
 using Microsoft.JSInterop;
+using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Js;
 
@@ -42,8 +43,8 @@ public sealed class MapOverlaysJs : IMapOverlaysJs
     public Task ClearWeatherOverlayAsync()
         => InvokeSafe("clearWeatherOverlay");
 
-    public Task SetColoredTrackAsync(double[][] points)
-        => InvokeSafe("setColoredTrack", (object)points);
+    public Task SetColoredTrackAsync(TrackPolylineRun[] runs)
+        => InvokeSafe("setColoredTrack", (object)runs);
 
     public Task SetServerTrackAsync(double[][] coords, bool clipToBounds)
         => InvokeSafe("setServerTrack", (object)coords, clipToBounds);

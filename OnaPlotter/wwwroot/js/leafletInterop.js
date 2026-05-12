@@ -1247,34 +1247,26 @@ let pendingTrackPoints = [];
 // overhead the counter eliminates.
 let trackSegmentCount = 0;
 
-export function setColoredTrack(points) {
+export function setColoredTrack(runs) {
     if (!trackLayer) return;
     trackLayer.clearLayers();
     trackSegmentCount = 0;
-    if (points.length < 2) return;
+    if (!runs || runs.length === 0) return;
 
-    // Group consecutive segments by speed bucket, emit one polyline per run.
-    let runBucket = speedBucket(points[1][2]);
-    let runCoords = [[points[0][0], points[0][1]]];
-
-    for (let i = 1; i < points.length; i++) {
-        const b = speedBucket(points[i][2]);
-        const coord = [points[i][0], points[i][1]];
-
-        if (b !== runBucket) {
-            // Flush current run.
-            runCoords.push(coord); // Bridge point.
-            L.polyline(runCoords, { color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8 }).addTo(trackLayer);
-            trackSegmentCount++;
-            runBucket = b;
-            runCoords = [coord];
-        } else {
-            runCoords.push(coord);
-        }
-    }
-    // Flush last run.
-    if (runCoords.length >= 2) {
-        L.polyline(runCoords, { color: speedColor(SPEED_BUCKETS[runBucket]), weight: 2.5, opacity: 0.8 }).addTo(trackLayer);
+    // Bucket grouping happens on the C# side (TrackPolylineGrouping)
+    // so this loop is just a thin "create one Leaflet polyline per
+    // run" pass. Each run already shares a speed bucket; adjacent
+    // runs share a bridge coord so the boundary between buckets is
+    // visually continuous. The previous shape walked the per-point
+    // array bucketing as it went - duplicated in JS and recomputed
+    // on every seed call.
+    for (const run of runs) {
+        if (!run.coords || run.coords.length < 2) continue;
+        L.polyline(run.coords, {
+            color: speedColor(SPEED_BUCKETS[run.bucket]),
+            weight: 2.5,
+            opacity: 0.8,
+        }).addTo(trackLayer);
         trackSegmentCount++;
     }
 }

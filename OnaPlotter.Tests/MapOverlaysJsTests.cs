@@ -121,18 +121,25 @@ public class MapOverlaysJsTests
     }
 
     [Test]
-    public async Task SetColoredTrackAsync_PassesPointsAsSingleArg()
+    public async Task SetColoredTrackAsync_PassesRunsAsSingleArg()
     {
         var fake = new RecordingJsRef();
         var sut = new MapOverlaysJs(fake);
-        var points = new[] { new[] { 54.5, 11.2, 5.0 }, new[] { 54.6, 11.3, 4.5 } };
+        var runs = new[]
+        {
+            new OnaPlotter.Utilities.TrackPolylineRun
+            {
+                Bucket = 2,
+                Coords = [[54.5, 11.2], [54.6, 11.3]],
+            },
+        };
 
-        await sut.SetColoredTrackAsync(points);
+        await sut.SetColoredTrackAsync(runs);
 
         await Assert.That(fake.Calls[0].id).IsEqualTo("setColoredTrack");
         // Cast to (object) keeps the array as a single parameter.
         await Assert.That(fake.Calls[0].args.Length).IsEqualTo(1);
-        await Assert.That(fake.Calls[0].args[0]).IsSameReferenceAs(points);
+        await Assert.That(fake.Calls[0].args[0]).IsSameReferenceAs(runs);
     }
 
     [Test]
@@ -184,7 +191,7 @@ public class MapOverlaysJsTests
         await sut.RemoveChartLayerAsync("c");
         await sut.SetWeatherOverlayAsync("u", 1.0);
         await sut.ClearWeatherOverlayAsync();
-        await sut.SetColoredTrackAsync(Array.Empty<double[]>());
+        await sut.SetColoredTrackAsync(Array.Empty<OnaPlotter.Utilities.TrackPolylineRun>());
         await sut.ClearServerTrackAsync();
 
         await Assert.That(fake.Calls.Count).IsEqualTo(0);

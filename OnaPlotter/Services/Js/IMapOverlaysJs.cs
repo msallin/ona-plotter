@@ -1,3 +1,5 @@
+using OnaPlotter.Utilities;
+
 namespace OnaPlotter.Services.Js;
 
 /// <summary>
@@ -61,10 +63,13 @@ public interface IMapOverlaysJs
 
     // ---- Own-track speed-coloured polyline ---------------------------
 
-    /// <summary>Seed the speed-coloured own-track polyline from a
-    /// snapshot of <c>TrackBuffer</c> points. Each entry is
-    /// <c>[lat, lon, sogMs]</c>.</summary>
-    Task SetColoredTrackAsync(double[][] points);
+    /// <summary>Seed the speed-coloured own-track polyline from
+    /// pre-bucketed runs. Each run is one Leaflet polyline with a
+    /// single speed-bucket colour; adjacent runs share a bridge coord
+    /// so the boundary is continuous. C# (TrackPolylineGrouping) owns
+    /// the bucketing - JS just creates one polyline per run.
+    /// Pass an empty array to clear the layer.</summary>
+    Task SetColoredTrackAsync(TrackPolylineRun[] runs);
 
     // ---- Server-side track history -----------------------------------
 

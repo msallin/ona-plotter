@@ -39,7 +39,7 @@ public class WeatherOverlayControllerTests
             return Task.CompletedTask;
         }
 
-        public Task SetColoredTrackAsync(double[][] points) => Task.CompletedTask;
+        public Task SetColoredTrackAsync(OnaPlotter.Utilities.TrackPolylineRun[] runs) => Task.CompletedTask;
         public Task SetServerTrackAsync(double[][] coords, bool clipToBounds) => Task.CompletedTask;
         public Task SetServerTrackClipToBoundsAsync(bool enabled) => Task.CompletedTask;
         public Task ClearServerTrackAsync() => Task.CompletedTask;

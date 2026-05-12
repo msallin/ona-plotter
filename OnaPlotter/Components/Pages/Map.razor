@@ -1506,8 +1506,17 @@
         {
             if (Settings.LocalTrackVisible)
             {
-                var jsPoints = points.Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 }).ToArray();
-                await _overlaysJs.SetColoredTrackAsync(jsPoints);
+                // Group consecutive same-bucket points into runs on
+                // the C# side so the JS layer only has to create one
+                // L.polyline per run (instead of walking the points,
+                // bucketing per point, and emitting a polyline at every
+                // transition - the JS version previously did the same
+                // grouping inline).
+                var jsPoints = points
+                    .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
+                    .ToArray();
+                var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
+                await _overlaysJs.SetColoredTrackAsync(runs);
             }
             _frameBuilder.PrevLat = points[^1].Latitude;
             _frameBuilder.PrevLon = points[^1].Longitude;
@@ -2505,7 +2514,7 @@
             // (clearLayers via empty-seed) and reset Prev so the
             // local trail picks up cleanly when the route ends.
             if (_overlaysJs is not null)
-                await _overlaysJs.SetColoredTrackAsync([]);
+                await _overlaysJs.SetColoredTrackAsync(System.Array.Empty<OnaPlotter.Utilities.TrackPolylineRun>());
             _frameBuilder.PrevLat = null;
             _frameBuilder.PrevLon = null;
             _localTrackSuppressedForRoute = true;
@@ -2698,7 +2707,8 @@
                 var jsPoints = points
                     .Select(p => new[] { p.Latitude, p.Longitude, p.SpeedOverGround ?? 0 })
                     .ToArray();
-                await _overlaysJs.SetColoredTrackAsync(jsPoints);
+                var runs = OnaPlotter.Utilities.TrackPolylineGrouping.BucketRuns(jsPoints);
+                await _overlaysJs.SetColoredTrackAsync(runs);
             }
         }
         else
@@ -3309,9 +3319,20 @@
                 // next drain pass instead of mutating mid-iteration.
                 var batch = _pendingRouteChanges.ToArray();
                 _pendingRouteChanges.Clear();
+                // Pre-build an id->index map for this batch so each
+                // Apply does an O(1) lookup instead of an O(M) FindIndex
+                // against availableRoutes. Drained batches of 90+ ids
+                // on a reconnect storm used to be O(N*M); now O(N+M).
+                // Rebuilt per batch because the loop can iterate multiple
+                // times if Changed events queue while a previous batch
+                // is in flight, and availableRoutes can grow between
+                // batches via Add.
+                var indexById = new Dictionary<string, int>(availableRoutes.Count, StringComparer.Ordinal);
+                for (int i = 0; i < availableRoutes.Count; i++)
+                    indexById[availableRoutes[i].Id] = i;
                 foreach (var id in batch)
                 {
-                    try { await ApplyRouteChangedFromStoreAsync(id); }
+                    try { await ApplyRouteChangedFromStoreAsync(id, indexById); }
                     catch (Exception ex)
                     {
                         Toasts.LogException(ex, $"Apply route change {id}");
@@ -3325,7 +3346,7 @@
         }
     }
 
-    private async Task ApplyRouteChangedFromStoreAsync(string id)
+    private async Task ApplyRouteChangedFromStoreAsync(string id, Dictionary<string, int> indexHint)
     {
         if (!mapInitialized || _routeJs is null) return;
         var route = ResourceStore.GetRoute(id);
@@ -3333,8 +3354,21 @@
 
         // Mirror the change into the page-local list so any UI binding
         // that iterates availableRoutes (Layers panel, Resources page
-        // when re-opened) sees the new geometry / name.
-        var existingIndex = availableRoutes.FindIndex(r => r.Id == id);
+        // when re-opened) sees the new geometry / name. O(1) lookup
+        // via the drain-scoped index map with a defensive validation
+        // (a Removed handler racing between awaits could have shifted
+        // indices) and FindIndex fallback for the rare miss.
+        int existingIndex = -1;
+        if (indexHint.TryGetValue(id, out var hinted)
+            && hinted < availableRoutes.Count
+            && availableRoutes[hinted].Id == id)
+        {
+            existingIndex = hinted;
+        }
+        else
+        {
+            existingIndex = availableRoutes.FindIndex(r => r.Id == id);
+        }
         bool isNew = existingIndex < 0;
         if (existingIndex >= 0)
         {
@@ -3343,6 +3377,7 @@
         else
         {
             availableRoutes.Add(route);
+            indexHint[id] = availableRoutes.Count - 1;
         }
         // Adds change availableRoutes.Count, which is one of the keys
         // RebuildFilteredLayers caches against - flush + rebuild so
@@ -3468,9 +3503,15 @@
             {
                 var batch = _pendingWaypointChanges.ToArray();
                 _pendingWaypointChanges.Clear();
+                // Same per-batch index hint as the route drain. Drained
+                // batches of 200+ waypoints on a reconnect-edge reconcile
+                // used to be O(N*M); now O(N+M).
+                var indexById = new Dictionary<string, int>(loadedWaypoints.Count, StringComparer.Ordinal);
+                for (int i = 0; i < loadedWaypoints.Count; i++)
+                    indexById[loadedWaypoints[i].Id] = i;
                 foreach (var id in batch)
                 {
-                    try { await ApplyWaypointChangedFromStoreAsync(id); }
+                    try { await ApplyWaypointChangedFromStoreAsync(id, indexById); }
                     catch (Exception ex)
                     {
                         Toasts.LogException(ex, $"Apply waypoint change {id}");
@@ -3484,15 +3525,29 @@
         }
     }
 
-    private async Task ApplyWaypointChangedFromStoreAsync(string id)
+    private async Task ApplyWaypointChangedFromStoreAsync(string id, Dictionary<string, int> indexHint)
     {
         if (!mapInitialized || _resources is null) return;
         var wp = ResourceStore.GetWaypoint(id);
         if (wp is null) return;
-        var idx = loadedWaypoints.FindIndex(w => w.Id == id);
+        int idx;
+        if (indexHint.TryGetValue(id, out var hinted)
+            && hinted < loadedWaypoints.Count
+            && loadedWaypoints[hinted].Id == id)
+        {
+            idx = hinted;
+        }
+        else
+        {
+            idx = loadedWaypoints.FindIndex(w => w.Id == id);
+        }
         bool isNew = idx < 0;
         if (idx >= 0) loadedWaypoints[idx] = wp;
-        else loadedWaypoints.Add(wp);
+        else
+        {
+            loadedWaypoints.Add(wp);
+            indexHint[id] = loadedWaypoints.Count - 1;
+        }
         await _resources.RedrawWaypointAsync(wp);
         if (isNew)
         {
@@ -3542,9 +3597,12 @@
             {
                 var batch = _pendingNoteChanges.ToArray();
                 _pendingNoteChanges.Clear();
+                var indexById = new Dictionary<string, int>(loadedNotes.Count, StringComparer.Ordinal);
+                for (int i = 0; i < loadedNotes.Count; i++)
+                    indexById[loadedNotes[i].Id] = i;
                 foreach (var id in batch)
                 {
-                    try { await ApplyNoteChangedFromStoreAsync(id); }
+                    try { await ApplyNoteChangedFromStoreAsync(id, indexById); }
                     catch (Exception ex)
                     {
                         Toasts.LogException(ex, $"Apply note change {id}");
@@ -3558,15 +3616,29 @@
         }
     }
 
-    private async Task ApplyNoteChangedFromStoreAsync(string id)
+    private async Task ApplyNoteChangedFromStoreAsync(string id, Dictionary<string, int> indexHint)
     {
         if (!mapInitialized || _resources is null) return;
         var note = ResourceStore.GetNote(id);
         if (note is null) return;
-        var idx = loadedNotes.FindIndex(n => n.Id == id);
+        int idx;
+        if (indexHint.TryGetValue(id, out var hinted)
+            && hinted < loadedNotes.Count
+            && loadedNotes[hinted].Id == id)
+        {
+            idx = hinted;
+        }
+        else
+        {
+            idx = loadedNotes.FindIndex(n => n.Id == id);
+        }
         bool isNew = idx < 0;
         if (idx >= 0) loadedNotes[idx] = note;
-        else loadedNotes.Add(note);
+        else
+        {
+            loadedNotes.Add(note);
+            indexHint[id] = loadedNotes.Count - 1;
+        }
         await _resources.RedrawNoteAsync(note);
         if (isNew)
         {
@@ -3620,11 +3692,14 @@
             {
                 var batch = _pendingRegionChanges.ToArray();
                 _pendingRegionChanges.Clear();
+                var indexById = new Dictionary<string, int>(loadedRegions.Count, StringComparer.Ordinal);
+                for (int i = 0; i < loadedRegions.Count; i++)
+                    indexById[loadedRegions[i].Id] = i;
                 foreach (var id in batch)
                 {
                     try
                     {
-                        if (await ApplyRegionChangedFromStoreAsync(id))
+                        if (await ApplyRegionChangedFromStoreAsync(id, indexById))
                             anyApplied = true;
                     }
                     catch (Exception ex)
@@ -3647,14 +3722,28 @@
         }
     }
 
-    private async Task<bool> ApplyRegionChangedFromStoreAsync(string id)
+    private async Task<bool> ApplyRegionChangedFromStoreAsync(string id, Dictionary<string, int> indexHint)
     {
         if (!mapInitialized || _resources is null) return false;
         var region = ResourceStore.GetRegion(id);
         if (region is null) return false;
-        var idx = loadedRegions.FindIndex(r => r.Id == id);
+        int idx;
+        if (indexHint.TryGetValue(id, out var hinted)
+            && hinted < loadedRegions.Count
+            && loadedRegions[hinted].Id == id)
+        {
+            idx = hinted;
+        }
+        else
+        {
+            idx = loadedRegions.FindIndex(r => r.Id == id);
+        }
         if (idx >= 0) loadedRegions[idx] = region;
-        else loadedRegions.Add(region);
+        else
+        {
+            loadedRegions.Add(region);
+            indexHint[id] = loadedRegions.Count - 1;
+        }
         await _resources.RedrawRegionAsync(region);
         await InvokeAsync(StateHasChanged);
         return true;
