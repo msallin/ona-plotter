@@ -236,24 +236,38 @@ export function init(map, deps) {
     }
 }
 
+// Cached north-offset (degrees of latitude) for each ring's label.
+// The labels sit `radius` metres north of the boat; deriving the
+// offset once per ring-radius change beats re-dividing on every
+// per-tick position update. setGuardZone / setGuardZoneOuterRingMult
+// invalidate these; drawGuardZone / drawGuardZoneWarning recompute.
+let _ringLabelDangerLatDeg = 0;
+let _ringLabelWarnLatDeg = 0;
+
 // Mux pushes the own-boat snapshot. CPA prediction needs SOG / COG
 // in addition to lat / lon, and the guard-zone rings (+ their
 // north-of-boat distance labels) chase the boat.
 export function setBoatPosition(lat, lon, cogRad, sogMs) {
-    selfLat = lat;
-    selfLon = lon;
+    // Cache the COG/SOG snapshot even when position didn't change
+    // (these can update independently between ticks - especially
+    // on a vessel parked at anchor whose heading wanders). Only
+    // the LatLng-bound visuals (rings + labels) get the position
+    // guard below.
     selfCogRad = cogRad;
     selfSogMs = sogMs;
+    if (selfLat === lat && selfLon === lon) return;
+    selfLat = lat;
+    selfLon = lon;
     if (guardZoneRing)        guardZoneRing.setLatLng([lat, lon]);
     if (guardZoneWarningRing) guardZoneWarningRing.setLatLng([lat, lon]);
+    // Labels reuse the precomputed lat-degree offsets so the per-tick
+    // path is one add + one setLatLng per visible label - no division,
+    // no fresh latDeg math each call.
     if (guardZoneRingLabel) {
-        const latDeg = (guardZoneRadiusNm * 1852) / 111320;
-        guardZoneRingLabel.setLatLng([lat + latDeg, lon]);
+        guardZoneRingLabel.setLatLng([lat + _ringLabelDangerLatDeg, lon]);
     }
     if (guardZoneWarningRingLabel) {
-        const warnNm = guardZoneRadiusNm * guardZoneOuterRingMult;
-        const latDeg = (warnNm * 1852) / 111320;
-        guardZoneWarningRingLabel.setLatLng([lat + latDeg, lon]);
+        guardZoneWarningRingLabel.setLatLng([lat + _ringLabelWarnLatDeg, lon]);
     }
 }
 
@@ -1406,8 +1420,16 @@ function placeRingLabel(existing, radiusM, text, extraClass) {
     // ~111 320 m per latitude degree at the equator; close enough at
     // the lat range a helm cruises through (sub-tenth-of-a-percent
     // error per degree). North-of-boat by exactly the ring's radius
-    // so the label sits where the helm expects to see it.
+    // so the label sits where the helm expects to see it. The caller
+    // (drawGuardZone / drawGuardZoneWarning) also stashes this lat
+    // offset into the module-level cache so setBoatPosition can re-
+    // position the label per tick without repeating the division.
     const latDeg = radiusM / 111320;
+    if (extraClass && extraClass.includes('guard-ring-label-danger')) {
+        _ringLabelDangerLatDeg = latDeg;
+    } else if (extraClass && extraClass.includes('guard-ring-label-warn')) {
+        _ringLabelWarnLatDeg = latDeg;
+    }
     const labelLat = selfLat + latDeg;
     const labelLng = selfLon;
     if (!existing) {
