@@ -130,6 +130,12 @@ public class RouteEditPanelTests
     public async Task Renders_Numbered_Rows_For_Each_Coord()
     {
         using var ctx = new Bunit.TestContext();
+        // Accept any JS invocation: OnAfterRenderAsync calls
+        // scrollElementToBottom on the items <ol> ref when Coords
+        // arrives non-empty (helm-feedback auto-scroll behaviour).
+        // Loose mode no-ops the call - we're testing markup, not
+        // JS side effects.
+        ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         var coords = new double[][]
         {
             new[] { 48.2144, 11.5753 },
@@ -159,6 +165,7 @@ public class RouteEditPanelTests
     public async Task Remove_Button_Fires_OnRemoveWaypoint_With_Index()
     {
         using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         int? removed = null;
         var coords = new double[][]
         {
@@ -178,11 +185,71 @@ public class RouteEditPanelTests
     }
 
     [Test]
+    public async Task ListHeader_Toggle_Collapses_And_Reveals_Items()
+    {
+        // Helm-feedback regression: a long waypoint list at the top-
+        // right corner crowds the HUD stack; the header must collapse
+        // to a small chip on tap so the chart underneath is usable
+        // again. Re-tap expands.
+        using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
+        var coords = new double[][]
+        {
+            new[] { 48.2, 11.5 },
+            new[] { 48.3, 11.6 },
+        };
+        var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
+
+        // Default state: expanded. Items list rendered.
+        await Assert.That(cut.FindAll(".route-edit-wp-row").Count).IsEqualTo(2);
+        await Assert.That(cut.Find(".route-edit-list").GetAttribute("class") ?? "")
+            .DoesNotContain("collapsed");
+        await Assert.That(cut.Find(".route-edit-list-header").GetAttribute("aria-expanded"))
+            .IsEqualTo("true");
+
+        // First tap collapses: items unmount, .collapsed class appears.
+        cut.Find(".route-edit-list-header").Click();
+        await Assert.That(cut.FindAll(".route-edit-wp-row").Count).IsEqualTo(0);
+        await Assert.That(cut.Find(".route-edit-list").GetAttribute("class") ?? "")
+            .Contains("collapsed");
+        await Assert.That(cut.Find(".route-edit-list-header").GetAttribute("aria-expanded"))
+            .IsEqualTo("false");
+
+        // Second tap re-expands.
+        cut.Find(".route-edit-list-header").Click();
+        await Assert.That(cut.FindAll(".route-edit-wp-row").Count).IsEqualTo(2);
+        await Assert.That(cut.Find(".route-edit-list").GetAttribute("class") ?? "")
+            .DoesNotContain("collapsed");
+    }
+
+    [Test]
+    public async Task Collapsed_Header_Still_Shows_Count()
+    {
+        // The header chip is the at-a-glance reference for "how many
+        // waypoints" while collapsed. Pin that the count remains
+        // visible in both states - otherwise the helm has to expand
+        // to check the running total.
+        using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
+        var coords = new double[][]
+        {
+            new[] { 48.2, 11.5 },
+            new[] { 48.3, 11.6 },
+            new[] { 48.4, 11.7 },
+            new[] { 48.5, 11.8 },
+        };
+        var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
+        cut.Find(".route-edit-list-header").Click();
+        await Assert.That(cut.Find(".route-edit-list-count").TextContent.Trim()).IsEqualTo("4");
+    }
+
+    [Test]
     public async Task Renders_Southern_Western_Hemisphere_Coords()
     {
         // Covers the SW quadrant - negative lat/lon should render with S/W
         // suffixes, not minus signs, and use absolute-value degrees.
         using var ctx = new Bunit.TestContext();
+        ctx.JSInterop.Mode = Bunit.JSRuntimeMode.Loose;
         var coords = new double[][] { new[] { -33.8688, -151.2093 } };
         var cut = ctx.RenderComponent<RouteEditPanel>(p => p.Add(x => x.Coords, coords));
 

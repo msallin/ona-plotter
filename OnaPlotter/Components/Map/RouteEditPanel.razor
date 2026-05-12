@@ -1,12 +1,19 @@
 @* Route-edit overlay: hint banner at the top, a numbered waypoint list
-   anchored top-left, and the control bar above the bottom controls.
+   anchored top-right, and the control bar above the bottom controls.
    Visible only while the parent is in edit mode.
 
    The list is a mirror of the JS routeEditCoords array; the parent
    polls getEditRouteCoords on a timer (same one that updates Stats)
    and re-renders this panel with the new Coords array. Per-row remove
    buttons round-trip through the parent back to JS so numbering stays
-   consistent. *@
+   consistent.
+
+   The list header is a clickable toggle that collapses the panel to
+   just the header chip. Helm-feedback: a long waypoint list at the
+   top-right corner shares screen real estate with the HUD-tr stack
+   (wind dial + speed + heading + ...). Collapsing reduces the route
+   panel to the count chip so the HUDs underneath stay visible while
+   the helm works on the map. Re-expand by tapping the header. *@
 
 <div class="route-edit-hint">
     Tap map to add waypoints. Drag waypoints to reposition.
@@ -14,28 +21,44 @@
 
 @if (Coords is { Length: > 0 })
 {
-    <div class="route-edit-list" aria-label="Route waypoints">
-        <div class="route-edit-list-header">
+    <div class="route-edit-list @(_collapsed ? "collapsed" : "")"
+         aria-label="Route waypoints">
+        <button type="button"
+                class="route-edit-list-header"
+                @onclick="ToggleCollapsed"
+                aria-expanded="@(!_collapsed ? "true" : "false")"
+                aria-controls="route-edit-list-items"
+                title="@(_collapsed ? "Show waypoints" : "Hide waypoints")">
+            <span class="route-edit-list-chevron">@(_collapsed ? "▸" : "▾")</span>
             <span>Waypoints</span>
             <span class="route-edit-list-count">@Coords.Length</span>
-        </div>
-        <ol class="route-edit-list-items">
-            @for (int i = 0; i < Coords.Length; i++)
-            {
-                var idx = i;
-                var c = Coords[idx];
-                <li class="route-edit-wp-row">
-                    <span class="route-edit-wp-badge">@(idx + 1)</span>
-                    <span class="route-edit-wp-coord">@FormatCoord(c)</span>
-                    <button class="route-edit-wp-remove"
-                            title="Remove waypoint @(idx + 1)"
-                            aria-label="Remove waypoint @(idx + 1)"
-                            @onclick="() => OnRemoveWaypoint.InvokeAsync(idx)">
-                        ×
-                    </button>
-                </li>
-            }
-        </ol>
+        </button>
+        @if (!_collapsed)
+        {
+            @* @ref grabs the <ol> so OnAfterRenderAsync can scroll the
+               newest entry into view after an Add. JS-side scrollIntoView
+               on the LAST <li> isn't a thing in Blazor without ref, and
+               scrollTop = scrollHeight is more direct anyway. *@
+            <ol class="route-edit-list-items"
+                id="route-edit-list-items"
+                @ref="_itemsRef">
+                @for (int i = 0; i < Coords.Length; i++)
+                {
+                    var idx = i;
+                    var c = Coords[idx];
+                    <li class="route-edit-wp-row">
+                        <span class="route-edit-wp-badge">@(idx + 1)</span>
+                        <span class="route-edit-wp-coord">@FormatCoord(c)</span>
+                        <button class="route-edit-wp-remove"
+                                title="Remove waypoint @(idx + 1)"
+                                aria-label="Remove waypoint @(idx + 1)"
+                                @onclick="() => OnRemoveWaypoint.InvokeAsync(idx)">
+                            ×
+                        </button>
+                    </li>
+                }
+            </ol>
+        }
     </div>
 }
 
@@ -96,6 +119,24 @@
 </div>
 
 @code {
+    [Inject] private Microsoft.JSInterop.IJSRuntime JS { get; set; } = default!;
+
+    /// <summary>Helm-toggled collapse state for the waypoint list.
+    /// Defaults to expanded; toggling sticks for the lifetime of the
+    /// edit session (the panel unmounts on Cancel / Save so a fresh
+    /// edit starts expanded again). The helm collapses when a long
+    /// list crowds the HUD-tr stack; re-expands to review or remove
+    /// waypoints.</summary>
+    private bool _collapsed;
+
+    /// <summary>Ref to the &lt;ol&gt; so we can auto-scroll the latest
+    /// waypoint into view when the parent appends a new entry. Without
+    /// this the helm tapping the map to add waypoint #15 doesn't see
+    /// it in the panel (the ol stays scrolled at the top) - they'd
+    /// have to manually scroll every time the list overflows.</summary>
+    private ElementReference _itemsRef;
+    private int _lastSeenCount;
+
     [Parameter] public string Name { get; set; } = "";
     [Parameter] public EventCallback<string> NameChanged { get; set; }
     [Parameter] public string Stats { get; set; } = "";
@@ -131,6 +172,28 @@
         // the parent owns the state.
         var newName = e.Value?.ToString() ?? "";
         await NameChanged.InvokeAsync(newName);
+    }
+
+    private void ToggleCollapsed() => _collapsed = !_collapsed;
+
+    /// <summary>Scroll the &lt;ol&gt; to the bottom after an Add so the
+    /// newest waypoint stays visible. Triggered when the parent
+    /// re-renders with a higher Coords.Length than last seen; skipped
+    /// when the list is collapsed (the ref isn't rendered) and on
+    /// equal-or-smaller counts (e.g. a Remove shouldn't auto-jump).</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        int count = Coords?.Length ?? 0;
+        if (!_collapsed && count > _lastSeenCount)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("scrollElementToBottom", _itemsRef);
+            }
+            catch (Microsoft.JSInterop.JSDisconnectedException) { }
+            catch (Microsoft.JSInterop.JSException) { /* helper not loaded yet; harmless */ }
+        }
+        _lastSeenCount = count;
     }
 
     // "48.2144° N, 11.5753° E" style. Keeps the panel scannable at a

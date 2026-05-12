@@ -164,6 +164,22 @@
                 }
             }
         };
+
+        // Tiny scroll-to-bottom helper used by the route-edit waypoint
+        // list when the parent appends a new entry. Lives here (inline
+        // global) rather than in a JS module so the route-edit panel
+        // doesn't pay an import round-trip on every mount. Defensive
+        // against missing element or detached node so a stale call
+        // doesn't throw out of Blazor's render path.
+        window.scrollElementToBottom = function (el) {
+            try {
+                if (el && typeof el.scrollTo === 'function') {
+                    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+                } else if (el) {
+                    el.scrollTop = el.scrollHeight;
+                }
+            } catch (_) { /* element gone / unmounted; harmless. */ }
+        };
     </script>
 </body>
 

@@ -7979,7 +7979,12 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     position: absolute;
     top: 130px;
     right: 10px;
-    z-index: var(--z-controls);
+    /* Sits above the expanded-HUD tier (--z-controls + 5 = 805) too,
+       so a helm who taps a HUD card to expand it while editing
+       doesn't suddenly find their waypoint list covered. The
+       expanded HUD is still helm-driven; the route panel is the
+       active interaction surface. */
+    z-index: calc(var(--z-controls) + 10);
     background: rgba(15, 17, 22, 0.92);
     -webkit-backdrop-filter: blur(6px);
     backdrop-filter: blur(6px);
@@ -7994,10 +7999,27 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     font-size: 0.78rem;
 }
 
+/* Collapsed state: only the header chip is visible. Removes the max-
+   height + width budget so the chip shrinks to its content; helm
+   re-expands by tapping the header. The HUD-tr stack behind the
+   panel is then visible at full strength while the helm pans / zooms
+   / adds waypoints. */
+.route-edit-list.collapsed {
+    max-height: none;
+    width: auto;
+    /* Right-align so the chip sits exactly where the header used to
+       end, not shifted left by the now-shrunk width. */
+    right: 10px;
+    left: auto;
+}
+
 .route-edit-list-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
+    /* Was justify-content: space-between with a fixed two-child layout;
+       the chevron + label + count now needs a left-aligned natural
+       flow so the count chip lands at the right via margin-left:auto. */
     padding: 6px 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     font-weight: 600;
@@ -8005,6 +8027,35 @@ main:has(.map-container.big-type) .alarm-hold-hint {
     letter-spacing: 0.02em;
     text-transform: uppercase;
     font-size: 0.72rem;
+    /* Make the header tappable: it's now a <button> so reset the
+       default browser styling. */
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    width: 100%;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.route-edit-list-header:hover { background: rgba(255, 255, 255, 0.03); }
+.route-edit-list-chevron {
+    flex: 0 0 auto;
+    font-size: 0.85rem;
+    line-height: 1;
+    color: #c4b5fd;
+}
+.route-edit-list.collapsed .route-edit-list-header {
+    /* Drop the bottom border when collapsed - no list below, so the
+       divider would float orphaned at the chip's bottom edge. */
+    border-bottom: 0;
+}
+.route-edit-list-header > span:nth-child(2) {
+    /* "Waypoints" label. Push the count chip to the right via
+       margin-left:auto on the count itself - cleaner than relying
+       on space-between which would also push the chevron. */
+    flex: 0 1 auto;
+}
+.route-edit-list-header .route-edit-list-count {
+    margin-left: auto;
 }
 
 .route-edit-list-count {

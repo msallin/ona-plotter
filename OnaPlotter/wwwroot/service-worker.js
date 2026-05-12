@@ -1149,7 +1149,21 @@
 //                Region default-name stamps now route through the
 //                injected TimeProvider so the helm's local clock + a
 //                test-time fake clock are honoured.
-const CACHE_NAME = 'ona-plotter-v109';
+// v109 -> v110: Route-edit waypoint list now collapsible. The list
+//                anchored top-right used to crowd the HUD-tr stack
+//                when it grew big - helm-reported as "route points
+//                behind the HUDs". Tap the header chip to collapse
+//                to a small count chip (HUDs underneath fully
+//                visible); tap again to re-expand. The expanded
+//                panel z-index also bumps above the expanded-HUD
+//                tier so a helm tapping a HUD card mid-edit doesn't
+//                see the route list disappear behind it. New
+//                window.scrollElementToBottom global helper auto-
+//                scrolls the list to the latest waypoint each time
+//                the parent appends one, so a long route is not
+//                stuck displaying the first few entries while the
+//                helm adds at the bottom.
+const CACHE_NAME = 'ona-plotter-v110';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
