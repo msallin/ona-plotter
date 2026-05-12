@@ -5,6 +5,12 @@ using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
+/// <summary>HTTP client for SignalK v2 route resources
+/// (<c>/signalk/v2/api/resources/routes</c>). CRUD + list / fetch
+/// for the route catalogue the helm sees on the Resources page and
+/// the Layers panel. PUT-with-client-id semantics (same pattern as
+/// MOB waypoint create) so an offline-then-retry sequence doesn't
+/// mint duplicates if both calls eventually reach the server.</summary>
 public sealed class RouteApi : IRouteApi
 {
     private readonly HttpClient _http;

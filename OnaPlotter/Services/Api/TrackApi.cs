@@ -4,6 +4,14 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
 
+/// <summary>HTTP client for the SignalK v2 History API
+/// (<c>/signalk/v2/api/history/values</c>). Implemented by
+/// signalk-parquet / signalk-to-influxdb2 (either is required for
+/// the History + Stats pages to show anything). Two fetch shapes:
+/// position-only (Map's server-track overlay) and rich multi-path
+/// with timestamps (History page segmenter + trip detail). The
+/// <see cref="TrackFetchPathSet"/> enum picks between the two so
+/// the Map's reload doesn't pull columns it discards.</summary>
 public sealed class TrackApi : ITrackApi
 {
     private readonly HttpClient _http;

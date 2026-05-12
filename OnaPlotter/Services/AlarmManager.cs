@@ -3,6 +3,26 @@ using OnaPlotter.Services.Json;
 
 namespace OnaPlotter.Services;
 
+/// <summary>
+/// Central alarm engine. Evaluates every registered <see cref="IAlarmRule"/>
+/// against the live <see cref="NavigationData"/> + AIS vessel set on a
+/// throttled cadence, ranks the resulting <see cref="AlarmInfo"/> set by
+/// severity / time-to-event / rule priority, and surfaces the top entry as
+/// <see cref="ActiveAlarm"/>. Owns the persistent snooze + dismiss-cooldown
+/// state so a quick re-trigger after a helm dismiss doesn't immediately
+/// re-fire and a re-mounted page picks up the snooze ledger unchanged.
+/// <para>
+/// Lifecycle: registered as a singleton in <c>Program.cs</c> and consumed
+/// by the alarm-bar UI + every page that drives <see cref="Evaluate"/>.
+/// <see cref="OnAlarmChanged"/> fires only when the active alarm's identity
+/// or severity changes (record-equality on <see cref="AlarmInfo"/>); idle
+/// ticks are free.
+/// </para>
+/// <para>Threading: Blazor WASM is single-threaded; all mutation runs on
+/// the renderer's synchronisation context. The snooze map is persisted
+/// via <see cref="IKeyValueStore"/> at every change so a reload mid-snooze
+/// is consistent.</para>
+/// </summary>
 public sealed class AlarmManager : IAlarmManager
 {
     /// <summary>Minimum wall-clock gap between evaluations, to avoid churning

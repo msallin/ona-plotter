@@ -67,7 +67,13 @@ public partial class Map
         // race with the in-flight save and reuse the wrong id.
         waypointEditId = null;
 
-        string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {DateTime.Now:HH:mm}" : newWaypointName;
+        // Default name carries a stamp in the helm's wall clock so two
+        // quick taps don't collide on the same label. Routed through
+        // the injected TimeProvider (Map.razor.cs declares Time at the
+        // bottom of Map.razor) instead of DateTime.Now so tests can
+        // pin the format with a fake clock and the timezone follows
+        // the helm's locale rather than the WASM host's UTC default.
+        string name = string.IsNullOrWhiteSpace(newWaypointName) ? $"WPT {Time.GetLocalNow():HH:mm}" : newWaypointName;
         string? description = string.IsNullOrWhiteSpace(newWaypointDescription) ? null : newWaypointDescription.Trim();
 
         if (editingId is not null)
@@ -295,7 +301,7 @@ public partial class Map
         // Reset BEFORE awaiting (see SaveWaypoint for the rationale).
         noteEditId = null;
 
-        string title = string.IsNullOrWhiteSpace(newNoteTitle) ? $"Note {DateTime.Now:HH:mm}" : newNoteTitle;
+        string title = string.IsNullOrWhiteSpace(newNoteTitle) ? $"Note {Time.GetLocalNow():HH:mm}" : newNoteTitle;
         string description = newNoteDescription ?? "";
 
         if (editingId is not null)
@@ -580,7 +586,7 @@ public partial class Map
         regionDialogVisible = false;
         await ClearCirclePreview();
         string title = string.IsNullOrWhiteSpace(newRegionTitle)
-            ? $"Region {DateTime.Now:HH:mm}"
+            ? $"Region {Time.GetLocalNow():HH:mm}"
             : newRegionTitle;
         string description = newRegionDescription ?? "";
         ApiResult<string> r;

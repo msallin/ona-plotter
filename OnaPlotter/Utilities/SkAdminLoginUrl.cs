@@ -2,12 +2,11 @@ namespace OnaPlotter.Utilities;
 
 /// <summary>
 /// Builds the SignalK admin "login" link with the optional
-/// <c>redirect</c> hash-query parameter that signalk-server v2.x
-/// honours via signalk/signalk-server PR #2647. The admin Login
-/// component reads <c>redirect</c> from the hash query
-/// (<c>/admin/#/login?redirect=/signalk-onaplotter/</c>) and, after
-/// a successful form login or OIDC round-trip, navigates the
-/// browser to the target path. This lets a webapp (OnaPlotter)
+/// <c>redirect</c> hash-query parameter the admin Login component
+/// honours. After a successful form login or OIDC round-trip the
+/// admin reads <c>redirect</c> from the hash query (e.g.
+/// <c>/admin/#/login?redirect=/signalk-onaplotter/</c>) and navigates
+/// the browser to that target path. This lets a webapp (OnaPlotter)
 /// delegate authentication to the SK admin and land the helm back
 /// on the same OnaPlotter page they came from, with the session
 /// cookie in place.

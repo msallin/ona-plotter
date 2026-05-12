@@ -3,6 +3,12 @@ using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
+/// <summary>Thin HTTP client for arbitrary SignalK v1
+/// <c>/signalk/v1/api/...</c> path reads. Used by one-off seed +
+/// recovery flows (e.g. Map.razor's anchor-tide bootstrap, the WS
+/// reconnect re-sync) where the live delta stream hasn't yet
+/// delivered a value the page needs to render. Returns the raw value
+/// JSON node so callers parse the path-specific shape themselves.</summary>
 public sealed class PathApi : IPathApi
 {
     private readonly HttpClient _http;

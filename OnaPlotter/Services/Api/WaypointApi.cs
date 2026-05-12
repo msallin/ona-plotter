@@ -3,6 +3,12 @@ using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
+/// <summary>HTTP client for SignalK v2 waypoint resources
+/// (<c>/signalk/v2/api/resources/waypoints</c>). CRUD + list / fetch
+/// for waypoints the helm sees on the Resources page; PUT-with-
+/// client-id create so the offline-resilient MOB / route-edit flows
+/// can retry without minting duplicates if the original POST
+/// eventually lands too.</summary>
 public sealed class WaypointApi : IWaypointApi
 {
     private readonly HttpClient _http;

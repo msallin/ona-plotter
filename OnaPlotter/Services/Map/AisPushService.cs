@@ -316,12 +316,13 @@ public sealed class AisPushService
         return true;
     }
 
-    /// <summary>One-per-minute cap on the most recent finite-check
-    /// skip log. Without the cap, a vessel that's spamming non-finite
-    /// deltas every tick would flood the SK server log at 3 lines/sec
-    /// per vessel. The cap is shared across vessels - so a recurring
-    /// offender will eventually show up but won't drown out other
-    /// signal in the log.</summary>
+    /// <summary>One-per-minute cap on finite-check skip logs across
+    /// the AisPushService instance. The Map page constructs a single
+    /// instance, so in practice the cap covers every vessel the push
+    /// pipeline touches - a vessel spamming non-finite deltas every
+    /// tick can't flood the log, and a recurring offender still shows
+    /// up once per minute. The field is per-instance, not static, so
+    /// the cap doesn't leak between AisPushService instances in tests.</summary>
     private DateTime _lastSkipFiniteLogUtc = DateTime.MinValue;
     private static readonly TimeSpan SkipLogInterval = TimeSpan.FromMinutes(1);
 

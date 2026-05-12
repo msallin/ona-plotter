@@ -5,6 +5,13 @@ using OnaPlotter.Models;
 
 namespace OnaPlotter.Services.Api;
 
+/// <summary>HTTP client for sbender9/signalk-buddylist-plugin's REST
+/// surface (<c>/plugins/signalk-buddylist-plugin/buddies</c>). Returns
+/// the helm's current buddy set as SignalK contexts so
+/// <see cref="OnaPlotter.Services.AisStore.UpdateBuddies"/> can stamp
+/// the IsBuddy flag on every tracked vessel. Best-effort: returns null
+/// when the plugin isn't installed or the request fails - the AIS
+/// pipeline continues with an empty buddy set.</summary>
 public sealed class BuddyListApi : IBuddyListApi
 {
     private readonly HttpClient _http;
