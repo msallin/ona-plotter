@@ -45,7 +45,8 @@ let isSlowClient = false;
 // IAppSettings.OwnCogVectorMinutes / AisCogVectorMinutes (10). C#
 // updates these via setCogVectorMinutes on init + on settings change;
 // vectorEnd / the own-boat label below read the live values. The
-// AIS layer has its own copy synced via aisLayerMod.setAisCogMinutes.
+// AIS layer no longer needs its own copy - C# precomputes the AIS
+// COG-vector endpoint per vessel via AisPushService.FillPayload.
 let ownCogMinutes = 10;
 
 // Master gate for own-ship informational lines on the chart: COG
@@ -1390,11 +1391,16 @@ export function setRadarRangeRings(enabled, count) {
  * length on the next render tick. Falls back to the previous value
  * when an arg is non-numeric.
  */
-export function setCogVectorMinutes(ownMin, aisMin) {
+export function setCogVectorMinutes(ownMin, _aisMin) {
     if (typeof ownMin === 'number' && isFinite(ownMin) && ownMin > 0) ownCogMinutes = ownMin;
-    if (typeof aisMin === 'number' && isFinite(aisMin) && aisMin > 0) {
-        aisLayerMod.setAisCogMinutes(aisMin);
-    }
+    // _aisMin is now consumed C#-side directly (AisPushService reads
+    // _settings.AisCogVectorMinutes per push and bakes the COG vector
+    // endpoint into each AisVesselPayload via GeoMath.VectorEnd). The
+    // parameter stays in the signature so the existing
+    // IMapControlsJs.SetCogVectorMinutesAsync(ownMin, aisMin) interop
+    // contract doesn't change; the underscore name signals "received
+    // but no longer needed on this side". A future cleanup can drop
+    // the second arg from the wire.
 }
 
 // --- Night Mode ---

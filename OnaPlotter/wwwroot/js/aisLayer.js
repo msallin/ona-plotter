@@ -14,7 +14,7 @@
 // Visual fields (ship-type palette, glyph category, SART category,
 // CPA threat band) are resolved on the C# side; JS just draws them.
 
-import { DEG, NM_PER_METER, haversineMeters, bearingDeg, destPoint, vectorEnd } from './geoMath.js';
+import { DEG, NM_PER_METER, haversineMeters, bearingDeg } from './geoMath.js';
 import { MS_TO_KNOTS, stalenessOpacity, rangeRingLabel } from './format.js';
 import { esc } from './popupHelpers.js';
 
@@ -199,14 +199,6 @@ let aisLabelsVisible = true;
 // internally so a single shared array is safe; eliminates ~200 fresh
 // 2-element allocations per push on a busy-harbour AIS update.
 const _scratchLatLng = [0, 0];
-
-// AIS-target COG-vector look-ahead in minutes. Default matches
-// IAppSettings.AisCogVectorMinutes (10). leafletInterop's
-// setCogVectorMinutes calls setAisCogMinutes below to update.
-let aisCogMinutes = 10;
-export function setAisCogMinutes(min) {
-    if (typeof min === 'number' && isFinite(min) && min > 0) aisCogMinutes = min;
-}
 
 export function init(map, deps) {
     mapRef = map;
@@ -988,7 +980,15 @@ export function updateAisTargets(vessels) {
         // without the alarm; the alarm is the marker's job.
         const vecColor = isRadar ? colors.radar
             : (v.buddy ? colors.buddy : (v.shipColor || '#e0c9a6'));
-        const end = vectorEnd(v.lat, v.lon, v.cogRad, v.sogMs, aisCogMinutes);
+        // Vector endpoint precomputed in C# (AisPushService.FillPayload
+        // -> GeoMath.VectorEnd) using the helm-configured
+        // AisCogVectorMinutes. Null means below the 0.1 m/s stationary
+        // threshold or COG / SOG missing - same semantics as the
+        // previous JS-side vectorEnd() returning null. Eliminates 200+
+        // destPoint() trig calls per AIS push from the JS hot path.
+        const end = (v.vectorEndLat != null && v.vectorEndLon != null)
+            ? [v.vectorEndLat, v.vectorEndLon]
+            : null;
         if (end) {
             let vec = aisVectors[v.context];
             if (!vec) {
@@ -1047,9 +1047,15 @@ export function updateAisTargets(vessels) {
         // circuits on Settings.HarborMode) so the helm hears nothing while
         // creeping past pontoon traffic, but a genuinely closing target
         // amongst the moving vessels still gets a visible crossing line.
-        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0) {
-            const tcpaSec = cpaInfo.tcpa * 60;
-            const tgtCpa = destPoint(v.lat, v.lon, v.cogRad, v.sogMs * tcpaSec);
+        if ((isDangerEff || isWarning) && cpaInfo && cpaInfo.tcpa > 0
+            && v.cpaPointLat != null && v.cpaPointLon != null) {
+            // CPA endpoint also precomputed in C# (AisPushService.FillPayload
+            // -> GeoMath.DestPoint) for threat-classified vessels. Same
+            // win as the COG vector endpoint above: 200+ destPoint() trig
+            // calls per push removed from the JS hot path. The
+            // (isDangerEff || isWarning) guard mirrors the C# gate -
+            // CpaPointLat / Lon is only populated when threat != None.
+            const tgtCpa = [v.cpaPointLat, v.cpaPointLon];
             const lineColor = isDangerEff ? colors.mob : colors.guardWarn;
 
             // CPA line: from the target's CURRENT position to its

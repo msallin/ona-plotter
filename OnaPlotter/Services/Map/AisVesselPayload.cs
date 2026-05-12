@@ -73,4 +73,23 @@ public sealed class AisVesselPayload
     /// <summary>Seconds since the last delta touched this vessel. JS
     /// uses it to fade stale markers (>30 s).</summary>
     [JsonPropertyName("ageSec")] public int AgeSec { get; set; }
+
+    /// <summary>COG-vector endpoint precomputed from current lat / lon +
+    /// CourseOverGround + SpeedOverGround * AisCogVectorMinutes. Lifted
+    /// out of JS so the per-tick vectorEnd() / destPoint() trig (two
+    /// asin/atan2 + four sin/cos per vessel) runs once in WASM per
+    /// snapshot push instead of 200+ times per tick in the JS hot
+    /// path. Null when SOG is below the 0.1 m/s stationary threshold
+    /// or COG / SOG are missing - JS treats null as "don't draw the
+    /// vector".</summary>
+    [JsonPropertyName("vectorEndLat")] public double? VectorEndLat { get; set; }
+    [JsonPropertyName("vectorEndLon")] public double? VectorEndLon { get; set; }
+
+    /// <summary>CPA endpoint precomputed for the vessel's projected
+    /// position at TCPA. Only populated when the CPA threat band is
+    /// Warning or Danger (the only states where the JS draws the
+    /// crossing-situation line); null otherwise. Same WASM-side
+    /// destPoint() that produced VectorEndLat / Lon.</summary>
+    [JsonPropertyName("cpaPointLat")] public double? CpaPointLat { get; set; }
+    [JsonPropertyName("cpaPointLon")] public double? CpaPointLon { get; set; }
 }

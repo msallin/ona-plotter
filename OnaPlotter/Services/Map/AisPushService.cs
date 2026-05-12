@@ -217,6 +217,12 @@ public sealed class AisPushService
         // returns a default VesselThreat (no closing encounter).
         OwnContext? ownCtx = TryBuildOwnContext(ownship, _settings.OwnVesselType);
 
+        // AIS COG-vector look-ahead in minutes. Hoist the settings
+        // read out of the per-vessel loop; FillPayload uses it to
+        // precompute VectorEndLat / Lon via GeoMath.VectorEnd so the
+        // JS layer never runs destPoint() trig per vessel per tick.
+        double aisCogVectorMinutes = _settings.AisCogVectorMinutes;
+
         // Hot path: 200+ vessels at ~3 Hz on a busy harbour push.
         // visible.Count is the upper bound; per-vessel guards below
         // (NaN/Infinity / try-catch) may skip entries, so we shrink
@@ -250,7 +256,7 @@ public sealed class AisPushService
                     effectiveCpaRadiusNm, lookaheadMin);
 
                 AisVesselPayload p = AcquirePoolSlot(written);
-                FillPayload(p, v, vLat, vLon, in threat, now);
+                FillPayload(p, v, vLat, vLon, in threat, now, aisCogVectorMinutes);
                 result[written++] = p;
             }
             catch (Exception ex)
@@ -415,7 +421,7 @@ public sealed class AisPushService
     /// keeps the JIT and V8 happy.</summary>
     private static void FillPayload(
         AisVesselPayload p, AisVessel v, double vLat, double vLon,
-        in VesselThreat threat, DateTime nowUtc)
+        in VesselThreat threat, DateTime nowUtc, double aisCogVectorMinutes)
     {
         // Display name resolution: name -> mmsi -> null, with buddy
         // star prefix. Lifted out of JS so the chart label and any
@@ -465,6 +471,47 @@ public sealed class AisPushService
         // distinguishes a live target from a ghost that hasn't
         // updated in minutes.
         p.AgeSec = (int)(nowUtc - v.LastSeen).TotalSeconds;
+
+        // Precompute the COG-vector endpoint here so the JS hot path
+        // doesn't run destPoint() per vessel per tick. GeoMath.VectorEnd
+        // returns null when COG / SOG missing or SOG < 0.1 m/s; the JS
+        // side treats null as "no vector drawn", matching what the
+        // previous JS-side vectorEnd() did on the same inputs.
+        var vec = GeoMath.VectorEnd(
+            vLat, vLon, v.CourseOverGround, v.SpeedOverGround,
+            aisCogVectorMinutes);
+        if (vec is { } v0)
+        {
+            p.VectorEndLat = v0.Lat;
+            p.VectorEndLon = v0.Lon;
+        }
+        else
+        {
+            p.VectorEndLat = null;
+            p.VectorEndLon = null;
+        }
+
+        // CPA endpoint - the target's projected position at TCPA, drawn
+        // by the JS layer as the far end of the crossing-situation
+        // line. Only populated when the JS would actually use it
+        // (threat is Warning or Danger). Otherwise null so JS can skip
+        // the line entirely. The math is `destPoint` over a great
+        // circle just like VectorEnd above, but with `sog * tcpaMin *
+        // 60` as the projected distance instead of `sog * minutes * 60`.
+        if (threat.Threat != Cpa.Threat.None
+            && threat.TcpaMin is double tcpaMin
+            && v.CourseOverGround is double cog
+            && v.SpeedOverGround is double sog)
+        {
+            var cpaPt = GeoMath.DestPoint(vLat, vLon, cog, sog * tcpaMin * 60.0);
+            p.CpaPointLat = cpaPt.Lat;
+            p.CpaPointLon = cpaPt.Lon;
+        }
+        else
+        {
+            p.CpaPointLat = null;
+            p.CpaPointLon = null;
+        }
     }
 
     /// <summary>Wire-string contract for the JS-side aisLayer.cpaThreat
