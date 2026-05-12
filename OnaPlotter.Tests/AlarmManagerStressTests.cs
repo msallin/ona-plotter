@@ -80,7 +80,7 @@ public class AlarmManagerStressTests
         // a stale-vessel bookkeeping dict that doesn't get cleaned up).
         var rules = BuildRules();
         var settings = new FakeSettings();
-        var clock = new MutableClock { Now = DateTime.UtcNow };
+        var clock = new MutableClock { Now = TestClock.FixedUtcNow };
         var mgr = NewManager(rules, clock);
 
         var ownNav = OwnNav(0.0, 0.0, cogRad: 0.0, sogMs: 3.0);
@@ -162,5 +162,5 @@ public class AlarmManagerStressTests
         return fleet;
     }
 
-    private sealed class MutableClock { public DateTime Now { get; set; } = DateTime.UtcNow; }
+    private sealed class MutableClock { public DateTime Now { get; set; } = TestClock.FixedUtcNow; }
 }

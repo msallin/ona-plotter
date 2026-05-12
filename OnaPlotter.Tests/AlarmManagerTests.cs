@@ -51,7 +51,7 @@ public class AlarmManagerTests
         return (mgr, clock, settings, fires);
     }
 
-    private sealed class MutableClock { public DateTime Now { get; set; } = DateTime.UtcNow; }
+    private sealed class MutableClock { public DateTime Now { get; set; } = TestClock.FixedUtcNow; }
 
     // --- depth ----------------------------------------------------------
 
@@ -1042,7 +1042,7 @@ public class AlarmManagerTests
         // mid-channel). Pin the JSON payload here so a serialiser
         // schema change (e.g. switching to camelCase) shows up.
         var kv = new InMemoryKv();
-        var future = DateTime.UtcNow.AddMinutes(20);
+        var future = TestClock.FixedUtcNow.AddMinutes(20);
         var json = System.Text.Json.JsonSerializer.Serialize(new[]
         {
             new SnoozedTarget("vessels.urn:mrn:imo:mmsi:111", "Ferry Roe", future),
@@ -1065,7 +1065,7 @@ public class AlarmManagerTests
         // dropped on hydration so a long-shutdown boat doesn't wake
         // up with stale silencers carrying over from yesterday.
         var kv = new InMemoryKv();
-        var past = DateTime.UtcNow.AddMinutes(-30);
+        var past = TestClock.FixedUtcNow.AddMinutes(-30);
         var json = System.Text.Json.JsonSerializer.Serialize(new[]
         {
             new SnoozedTarget("vessels.urn:mrn:imo:mmsi:222", "Old Ferry", past),

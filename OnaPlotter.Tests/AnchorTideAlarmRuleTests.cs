@@ -39,7 +39,7 @@ public class AnchorTideAlarmRuleTests
     public async Task NotAnchored_NoAlarm()
     {
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: false, depth: 3.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(3));
         await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
@@ -52,7 +52,7 @@ public class AnchorTideAlarmRuleTests
         // This is the default state for servers without a tide plugin.
         var rule = new AnchorTideAlarmRule();
         var nav = BuildNav(anchored: true, depth: 3.0);
-        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), DateTime.UtcNow))).IsNull();
+        await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), TestClock.FixedUtcNow))).IsNull();
     }
 
     [Test]
@@ -61,7 +61,7 @@ public class AnchorTideAlarmRuleTests
         // 8m depth now, tide drops 2m -> 6m at LW. Draft 1.5m, margin 1m.
         // Clearance 4.5m >> 1m margin. No alarm.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 8.0,
             heightNow: 2.5, heightLow: 0.5, timeLow: now.AddHours(3));
         await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
@@ -73,7 +73,7 @@ public class AnchorTideAlarmRuleTests
         // 3m depth now, tide drops 1.5m -> 1.5m at LW. Draft 0.8m, margin 1m.
         // Clearance 0.7m < margin 1m but > 0 -> Warn (not Danger).
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
         var nav = BuildNav(anchored: true, depth: 3.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
@@ -93,7 +93,7 @@ public class AnchorTideAlarmRuleTests
         // 2m depth now, tide drops 1.5m -> 0.5m at LW. Draft 1.5m.
         // Clearance -1m (keel below bottom by 1m) -> Danger.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
             signalkDraft: 1.5);
@@ -114,7 +114,7 @@ public class AnchorTideAlarmRuleTests
         // grounding risk. The dormancy hint in the HUD tells the user
         // to set vessel.json.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.3,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(3));
         // NB: no signalkDraft passed.
@@ -128,7 +128,7 @@ public class AnchorTideAlarmRuleTests
         // higher than current height - i.e. tide is rising into its
         // next low or we're already past it. No grounding risk.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 0.4, heightLow: 0.5, timeLow: now.AddHours(2));
         await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
@@ -140,7 +140,7 @@ public class AnchorTideAlarmRuleTests
         // LW is 10 hours away - beyond the 6h lookahead. Don't alarm
         // on things the user has time to wake up for.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(10));
         await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
@@ -151,7 +151,7 @@ public class AnchorTideAlarmRuleTests
     {
         // Stale tide data (timeLow already passed) shouldn't alarm.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(-1));
         await Assert.That(rule.Check(Ctx(nav, new FakeSettings(), now))).IsNull();
@@ -164,7 +164,7 @@ public class AnchorTideAlarmRuleTests
         // session, even if the predicted grounding is still imminent. The
         // manager's 30s cooldown is too short for a multi-hour prediction.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
             signalkDraft: 1.5);
@@ -185,7 +185,7 @@ public class AnchorTideAlarmRuleTests
         // Lift anchor and re-drop: the next anchoring starts fresh and
         // the rule is free to warn again.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var settings = new FakeSettings();
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(4),
@@ -217,7 +217,7 @@ public class AnchorTideAlarmRuleTests
         // it must stay quiet - doing the math against null would mean
         // emitting a phantom warn off zero clearance.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
             signalkDraft: 1.5);
@@ -231,7 +231,7 @@ public class AnchorTideAlarmRuleTests
         // Tide plugin half-published: heightLow + timeLow but no heightNow.
         // Without the current value we can't compute the drop.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 3.0,
             heightLow: 0.5, timeLow: now.AddHours(2),
             signalkDraft: 1.5);
@@ -242,7 +242,7 @@ public class AnchorTideAlarmRuleTests
     public async Task Anchored_NoTideHeightLow_NoAlarm()
     {
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 3.0,
             heightNow: 2.0, timeLow: now.AddHours(2),
             signalkDraft: 1.5);
@@ -253,7 +253,7 @@ public class AnchorTideAlarmRuleTests
     public async Task Anchored_NoTideTimeLow_NoAlarm()
     {
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 3.0,
             heightNow: 2.0, heightLow: 0.5,
             signalkDraft: 1.5);
@@ -271,7 +271,7 @@ public class AnchorTideAlarmRuleTests
         // could format both identically and lose the punchy "23 min"
         // form.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddMinutes(35),
             signalkDraft: 1.5);
@@ -291,7 +291,7 @@ public class AnchorTideAlarmRuleTests
         // "2h35" so the helm can compare against "do I have time to
         // sleep?". Pin both sides of the formatter.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true, depth: 2.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddMinutes(155),  // 2h35
             signalkDraft: 1.5);
@@ -308,7 +308,7 @@ public class AnchorTideAlarmRuleTests
         // (uses >=). A refactor that flipped to a strict > would
         // suddenly start nagging at the safe-margin boundary.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
         // 3m depth, 1m drop -> 2m at LW. 1m draft -> 1m clearance == margin.
         var nav = BuildNav(anchored: true, depth: 3.0,
@@ -330,7 +330,7 @@ public class AnchorTideAlarmRuleTests
         // Margin 1m -> 0.5m < 1m -> Warn. Draft NOT supplied; the
         // belowKeel path explicitly doesn't need it.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
         var nav = BuildNav(anchored: true,
             depthBelowKeel: 2.0,
@@ -348,7 +348,7 @@ public class AnchorTideAlarmRuleTests
     {
         // belowKeel 1.0m, drop 1.5m -> -0.5m at LW. Keel touches by 0.5m.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true,
             depthBelowKeel: 1.0,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(3));
@@ -370,7 +370,7 @@ public class AnchorTideAlarmRuleTests
         // accidentally tighten the belowKeel branch the same way.
         // belowKeel 1.7m, drop 1.0m -> clearance 0.7m, margin 1.0m -> Warn.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
         var nav = BuildNav(anchored: true,
             depthBelowKeel: 1.7,
@@ -392,7 +392,7 @@ public class AnchorTideAlarmRuleTests
         // belowTransducer = 4.0 + draft 1.0 -> clearance 2.5m -> NO alarm.
         // The rule must pick belowKeel and Warn.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var settings = new FakeSettings { AnchorTideSafetyMargin = 1.0 };
         var nav = BuildNav(anchored: true,
             depth: 4.0,
@@ -413,7 +413,7 @@ public class AnchorTideAlarmRuleTests
         // belowKeel 5m, drop 1m -> 4m clearance, well above margin.
         // The rule must stay silent.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true,
             depthBelowKeel: 5.0,
             heightNow: 2.0, heightLow: 1.0, timeLow: now.AddHours(3));
@@ -428,7 +428,7 @@ public class AnchorTideAlarmRuleTests
         // rule must stay quiet rather than emit a phantom alarm
         // off zero depth.
         var rule = new AnchorTideAlarmRule();
-        var now = DateTime.UtcNow;
+        var now = TestClock.FixedUtcNow;
         var nav = BuildNav(anchored: true,
             heightNow: 2.0, heightLow: 0.5, timeLow: now.AddHours(2),
             signalkDraft: 1.5);

@@ -45,9 +45,10 @@ const aisVectorTips = {};
 // CPA overlay state per vessel context. The line goes from the
 // target's CURRENT position to its projected position at TCPA;
 // the X marker sits at the projected end with the click-tooltip
-// carrying the {name / cpa nm / tcpa min} label. Own-side mirror
-// (own line + own X) was previously drawn too but helms read the
-// two X marks as duplicates - dropped to keep one X per threat.
+// carrying the {name / cpa nm / tcpa min} label. One X per threat -
+// own-side projection is omitted because the helm already sees
+// own-boat + its COG vector, so an extra "where I'll be at CPA"
+// marker would read as a duplicate.
 const aisCpaTgtLines = {};
 const aisCpaTgtX = {};
 // Last-seen severity per target. Currently only consulted by
@@ -1055,13 +1056,9 @@ export function updateAisTargets(vessels) {
 
             // CPA line: from the target's CURRENT position to its
             // projected position at TCPA. The line + the X at the end
-            // of the line tell the helm "this vessel is going there at
-            // that pace". The own-side mirror of this (own line + own
-            // X) was previously also drawn but helms read the two X
-            // marks as duplicates and only the target X was clickable;
-            // dropped to one X per threat. Helm can already see their
-            // own boat + its COG vector, so a third "where I'll be at
-            // CPA" marker was redundant.
+            // tell the helm "this vessel is going there at that pace".
+            // One X per threat - own-side projection is omitted because
+            // the helm already sees own-boat + its COG vector.
             updateCpaLine(aisCpaTgtLines, v.context, [v.lat, v.lon], tgtCpa, lineColor);
 
             // Single X marker at the target's projected CPA position.
@@ -1140,14 +1137,12 @@ function removeAisTrail(ctx) {
 function updateCpaLine(store, ctx, from, to, color) {
     let line = store[ctx];
     if (!line) {
-        // weight 0.8 + 2,7 dash + opacity 0.5: the line connects
-        // own boat to where own / target will be at TCPA, which on
-        // a 9-minute tcpa is HALF a nautical mile of dashed line
-        // running across the chart. Helm-feedback: it dominated the
-        // chart and the eye couldn't lock on the X marker at the
-        // end. Now reads as a faint trace of the geometry; the X
-        // and label carry the emphasis. Was 1.2 + 3,5 + 0.65 from
-        // PR #134; now further toned down per follow-up review.
+        // Faint thin dashed style: a 9-minute TCPA stretches HALF a
+        // nautical mile of line across the chart, so anything bolder
+        // would dominate the visual and pull the eye off the X
+        // marker at the end. weight 0.8 + dash 2,7 + opacity 0.5
+        // reads as a trace of the geometry; the X and its label
+        // carry the emphasis.
         line = L.polyline([from, to], {
             color, weight: 0.8, dashArray: '2,7', opacity: 0.5
         }).addTo(mapRef);
