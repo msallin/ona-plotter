@@ -29,7 +29,14 @@ let flagUrl = null;
 let rotateMarker = null;
 
 // Per-vessel rendered state. Keys are SignalK contexts.
-const aisMarkers = {};
+// aisMarkers is a Map (not a plain object) because the stale-sweep
+// loop at end-of-tick iterates over it. A Map yields its entries
+// without materialising an Object.keys() array; on a 200-vessel
+// harbour push that's one fewer N-string allocation per 3 s tick.
+// The sibling layer dicts below stay plain objects - they're never
+// iterated on the hot path, only key-accessed, so a Map gives no
+// measurable win.
+const aisMarkers = new Map();
 const aisVectors = {};
 // Tip-of-vector dot. Reads as "this is where the boat will be in
 // VECTOR_MINUTES" - without it the line just trails off and the
@@ -731,7 +738,7 @@ export function updateAisTargets(vessels) {
             ? getSartIcon(v.sartCategory)
             : (isRadar ? getRadarIcon(color) : getAisIcon(color, category));
 
-        let marker = aisMarkers[v.context];
+        let marker = aisMarkers.get(v.context);
         // Scratch tuple reused across vessels for setLatLng. L.marker's
         // ctor copies the values into its own LatLng so passing the
         // same array each call is safe; setLatLng accepts the array
@@ -752,7 +759,7 @@ export function updateAisTargets(vessels) {
             // afterwards but the cached ref is what we set, so the
             // identity check is safe.
             marker._lastIcon = icon;
-            aisMarkers[v.context] = marker;
+            aisMarkers.set(v.context, marker);
             // During route / polygon / measurement edit, a tap on a vessel
             // should behave like a tap on empty water: append a waypoint,
             // not open the vessel popup. Without this guard the click
@@ -1064,11 +1071,16 @@ export function updateAisTargets(vessels) {
         }
     }
 
-    // Remove stale markers.
-    for (const ctx of Object.keys(aisMarkers)) {
+    // Remove stale markers. Iterating the Map directly avoids the
+    // Object.keys() snapshot a plain-object dict would have required;
+    // Map iteration is safe under in-flight delete in V8 (the spec
+    // guarantees iteration sees entries that exist at iterator-step
+    // time, and our delete happens via Map.delete which is the
+    // approved mutation path).
+    for (const ctx of aisMarkers.keys()) {
         if (!seen.has(ctx)) {
-            mapRef.removeLayer(aisMarkers[ctx]);
-            delete aisMarkers[ctx];
+            mapRef.removeLayer(aisMarkers.get(ctx));
+            aisMarkers.delete(ctx);
             if (aisVectors[ctx]) { mapRef.removeLayer(aisVectors[ctx]); delete aisVectors[ctx]; }
             if (aisVectorTips[ctx]) { mapRef.removeLayer(aisVectorTips[ctx]); delete aisVectorTips[ctx]; }
             delete aisLabels[ctx];
@@ -1224,7 +1236,7 @@ function removeCpaOverlay(ctx) {
 function attachCpaXClick(marker, vesselContext) {
     marker.on('click', () => {
         marker.openTooltip();
-        const target = aisMarkers[vesselContext];
+        const target = aisMarkers.get(vesselContext);
         if (target && typeof target.openPopup === 'function') {
             target.openPopup();
         }
@@ -1237,7 +1249,7 @@ function attachCpaXClick(marker, vesselContext) {
  *  rendered). The C# caller uses the return value to toast + restore
  *  follow so the user isn't left wondering why the tap did nothing. */
 export function focusVessel(context) {
-    const marker = aisMarkers[context];
+    const marker = aisMarkers.get(context);
     if (!marker || !mapRef) return false;
     const ll = marker.getLatLng();
     mapRef.panTo(ll, { animate: true });
@@ -1315,7 +1327,7 @@ export function setAisLabelsVisible(enabled) {
     if (!mapRef) return;
     if (!aisLabelsVisible) {
         for (const ctx of Object.keys(aisLabels)) {
-            try { aisMarkers[ctx]?.unbindTooltip(); } catch (_) { /* marker gone */ }
+            try { aisMarkers.get(ctx)?.unbindTooltip(); } catch (_) { /* marker gone */ }
             delete aisLabels[ctx];
         }
     }
@@ -1339,7 +1351,7 @@ export function setHarborMode(enabled) {
         // re-evaluates COG / CPA per surviving vessel; nothing to
         // tear down here.
         for (const ctx of Object.keys(aisLabels)) {
-            try { aisMarkers[ctx]?.unbindTooltip(); } catch (_) { /* marker gone */ }
+            try { aisMarkers.get(ctx)?.unbindTooltip(); } catch (_) { /* marker gone */ }
             delete aisLabels[ctx];
         }
         if (guardZoneRing) {
@@ -1511,7 +1523,10 @@ export function dispose() {
     // race so a teardown that crosses a settings flip stays
     // best-effort. Pinned in OnaPlotter.Tests/Js coverage via the
     // dispose smoke test.
-    disposeLayerDict(aisMarkers);
+    // aisMarkers is a Map; inline the dispose since disposeLayerDict
+    // below walks Object.keys() and would treat a Map as empty.
+    for (const layer of aisMarkers.values()) safeRemoveLayer(layer);
+    aisMarkers.clear();
     disposeLayerDict(aisVectors);
     disposeLayerDict(aisVectorTips);
     disposeLayerDict(aisCpaTgtLines);
