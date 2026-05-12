@@ -1438,6 +1438,18 @@ article.content:has(.history-page) {
     pointer-events: none;
     user-select: none;
     transition: padding var(--hud-dur-short) var(--hud-ease-spring);
+    /* Layout + style containment. The HUD numbers tick on every
+       SignalK frame (SOG, COG, wind, depth, etc.); without containment
+       each digit change participates in the document-wide layout /
+       style invalidation that also covers the map viewport. A 41 s
+       4x-throttled DevTools trace measured 1593 UpdateLayoutTree and
+       813 Layout events during steady browsing - mostly HUD churn.
+       contain:layout isolates each card's box from its siblings and
+       the map below; contain:style scopes counter / quote resets.
+       Paint is intentionally NOT contained: the cards' halo box-
+       shadow (var(--hud-card-halo)) paints outside the card's
+       padding box and contain:paint would clip it. */
+    contain: layout style;
 }
 /* Click-to-expand cards (the four corner cards) get a pointer cursor.
    pointer-events: auto is already on every .hud-stack > .hud-card
