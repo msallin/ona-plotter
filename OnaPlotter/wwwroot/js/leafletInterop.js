@@ -1169,7 +1169,6 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
     }
 
     if (followBoat && Number.isFinite(lat) && Number.isFinite(lon)) {
-        suppressMoveEnd = true;
         // Shift the boat slightly above the geometric viewport centre
         // so more chart area is visible AHEAD of it (the helm's typical
         // task is "what's coming up?" not "where have I been?"). On
@@ -1188,8 +1187,26 @@ export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
         const boatPx = map.project([lat, lon], z);
         const newCenterPx = boatPx.add(L.point(0, size.y * 0.1));
         const newCenter = map.unproject(newCenterPx, z);
-        map.panTo(newCenter, { animate: true, duration: 0.5 });
-        setTimeout(() => { suppressMoveEnd = false; }, 600);
+        // animate:false on purpose. Position fixes arrive at the
+        // SignalkClient cadence (1 Hz on the default policy=ideal
+        // tier). The previous animate:true / duration:0.5 kept a
+        // Leaflet rAF easing loop hot for half of every tick, so
+        // on a low-end mobile the compositor was effectively always
+        // running (a 4x-throttled DevTools trace showed ~75 Hz
+        // composite + 38 Hz layout during steady follow-mode). With
+        // animate:false the pan is synchronous, moveend fires inline
+        // (suppressed below), the rAF loop stays idle between fixes,
+        // and the visual is "chart re-centres once per second" - not
+        // a regression on a slow tablet (frame-by-frame easing reads
+        // as jitter there anyway). User-initiated panTo/panBy/setView
+        // calls keep their animations - this is the only per-tick
+        // site, so isolated.
+        suppressMoveEnd = true;
+        try {
+            map.panTo(newCenter, { animate: false });
+        } finally {
+            suppressMoveEnd = false;
+        }
     }
 
     // Apply map rotation for course-up / head-up modes.
