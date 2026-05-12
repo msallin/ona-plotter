@@ -136,13 +136,12 @@ public sealed class SignalkClient : IAsyncDisposable
         // surface lives at navigation.course.*; the course-provider
         // plugin derives per-leg numbers under
         // navigation.course.calcValues.* (bearing, distance, TTG, VMG,
-        // XTE, route totals). SK Node Server >= 2.x has shipped the
-        // v2 surface as the default for years; the legacy v1 subtrees
-        // (navigation.courseGreatCircle.*, navigation.courseRhumbline.*)
-        // were dropped from the subscription list as part of the
-        // tech-debt pass. NavigationData.Apply's v1 case labels
-        // remain as a safety net for any plugin that still emits
-        // them.
+        // XTE, route totals). v2 is the only subscribed surface; the
+        // v1 subtrees (navigation.courseGreatCircle.*,
+        // navigation.courseRhumbline.*) are not requested.
+        // NavigationData.Apply still recognises the v1 case labels
+        // as a safety net for any plugin that pushes them outside the
+        // subscription list.
         Utilities.SkPaths.Navigation.Course.ActiveRoute,
         Utilities.SkPaths.Navigation.Course.ActiveRouteHref,
         Utilities.SkPaths.Navigation.Course.ActiveRouteName,
@@ -1386,10 +1385,8 @@ public sealed class SignalkClient : IAsyncDisposable
                 }
 
                 // Course next-point position (lat/lon object). SK v2
-                // built-in path; the legacy v1 courseGreatCircle /
-                // courseRhumbline variants were dropped in the
-                // tech-debt pass because the v2 surface has been
-                // default on SK Node Server for years.
+                // path; the v1 courseGreatCircle / courseRhumbline
+                // shapes are not subscribed.
                 if (val.Path == Utilities.SkPaths.Navigation.Course.NextPointPosition
                     && val.Value is JsonElement wpEl
                     && wpEl.ValueKind == JsonValueKind.Object)

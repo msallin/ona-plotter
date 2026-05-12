@@ -1163,7 +1163,19 @@
 //                the parent appends one, so a long route is not
 //                stuck displaying the first few entries while the
 //                helm adds at the bottom.
-const CACHE_NAME = 'ona-plotter-v110';
+// v110 -> v111: Maintainability review round - minors batch. C#
+//                source-side history-flavoured comments groomed
+//                across aisLayer.js + CpaAlarmRule + SignalkClient
+//                (the "Was X / now Y" / "PR #134" pattern); replaced
+//                with present-tense justification. Tests across
+//                AlarmManager + AlarmManagerStress + AnchorTideAlarmRule
+//                + AlarmManagerSnoozes now use a fixed deterministic
+//                clock seed (new TestClock.FixedUtcNow) instead of
+//                DateTime.UtcNow so the suite stays Repeatable across
+//                DST / leap-second flips. service-worker.js is the
+//                intentional changelog of the SW itself and was left
+//                untouched.
+const CACHE_NAME = 'ona-plotter-v111';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-

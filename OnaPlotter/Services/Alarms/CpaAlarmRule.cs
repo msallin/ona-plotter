@@ -55,9 +55,9 @@ public sealed class CpaAlarmRule : IAlarmRule
     /// non-path-safe character with '_' so the resulting suffix can't
     /// extend the path hierarchy (an AIS URN with a stray '.' would
     /// otherwise let an attacker collide with another notification).
-    /// Single string allocation via <see cref="string.Create{TState}(int, TState, System.Buffers.SpanAction{char, TState})"/>;
-    /// previously a StringBuilder allocation per call, which is cold
-    /// path (only on alarm publish) but tidier this way.</summary>
+    /// Single string allocation via <see cref="string.Create{TState}(int, TState, System.Buffers.SpanAction{char, TState})"/>
+    /// since the output length is known up front. Cold path (only on
+    /// alarm publish) but the alloc shape stays tidy.</summary>
     private static string SanitisePerTargetPath(string prefix, string targetKey)
     {
         ReadOnlySpan<char> suffix = targetKey.StartsWith("vessels.", StringComparison.Ordinal)
@@ -81,12 +81,11 @@ public sealed class CpaAlarmRule : IAlarmRule
             });
     }
 
-    // Shared moored-vessel tracker. Was previously instantiated locally
-    // here AND in Map.razor's PushAisTargets, so the two paths kept
-    // separate dwell counters and could disagree on whether a given
-    // vessel was moored. One registered service means alarm + harbour
-    // filter share a single source of truth and the SK navigation.state
-    // rules below only need to live in one place.
+    // Shared moored-vessel tracker. Registered as a singleton so the
+    // alarm rule + harbour filter agree on dwell counters and the SK
+    // navigation.state classification rules live in one place. A
+    // second instance would let two consumers disagree on whether a
+    // given vessel is moored.
     private readonly IMooredVesselTracker _moored;
     public CpaAlarmRule(IMooredVesselTracker moored) => _moored = moored;
 
