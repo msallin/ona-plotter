@@ -19,16 +19,14 @@ namespace OnaPlotter.Models;
 /// its TCPA. ANCHOR TIDE uses hours-to-LW. Null means time-irrelevant
 /// (latched wind-shift notification). Used by the manager to order
 /// same-severity alarms so the most time-critical one surfaces first.</param>
-/// <param name="Acknowledger">Opaque handle for cross-plotter ack on
-/// alarms that originate from a synchronisable transport (SignalK v2
-/// server notifications, today). Null on purely-local rules and on
-/// every alarm when the server is pre-2.21. AlarmManager.DismissAsync
-/// invokes <c>Acknowledger.AcknowledgeAsync()</c> after the local
-/// clear when present and <c>Acknowledger.CanAcknowledge</c> is true.
-/// Banner hides the Acknowledge button when null or CanAcknowledge=false.
-/// Replaced the previous flat NotificationId+CanAcknowledge pair so
-/// AlarmInfo stays transport-neutral; the SignalK v2 specifics live
-/// in the source-specific acknowledger implementation.</param>
+/// <param name="Acknowledger">Transport-neutral handle for cross-plotter
+/// ack on alarms that originate from a synchronisable source (today:
+/// SignalK v2 server notifications via <see cref="OnaPlotter.Services.Alarms.SignalKNotificationAcknowledger"/>).
+/// Null for purely-local rules and for every alarm when the server is
+/// pre-2.21. <c>AlarmManager.DismissAsync</c> invokes
+/// <c>Acknowledger.AcknowledgeAsync()</c> after the local clear when
+/// present and <c>Acknowledger.CanAcknowledge</c> is true; the banner
+/// hides the Acknowledge button otherwise.</param>
 public sealed record AlarmInfo(
     string Title,
     string Message,

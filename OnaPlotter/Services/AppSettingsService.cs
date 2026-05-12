@@ -386,11 +386,8 @@ public sealed class AppSettingsService : IAppSettings
             DepthAlarmThreshold = await LoadDouble("depthAlarmThreshold", 2.0);
             CpaAlarmThreshold = await LoadDouble("cpaAlarmThreshold", 0.5);
             GuardZoneLookaheadMinutes = await LoadDouble("guardZoneLookaheadMinutes", 10.0);
-            // guardZoneWarningFactor removed: outer ring is now hardcoded
-            // at 2× the guard-zone radius (Cpa.OuterRingMultiplier). Any
-            // previously-stored "guardZoneWarningFactor" key is silently
-            // ignored on load - dropping a localStorage key has no
-            // migration cost, the next save just leaves it stale.
+            // Outer ring is fixed at 2× the guard-zone radius via
+            // Cpa.OuterRingMultiplier; no per-helm knob.
             WindShiftAlarmThreshold = await LoadDouble("windShiftAlarmThreshold", 30.0);
             WindShiftLookbackMinutes = await LoadDouble("windShiftLookbackMinutes", 10.0);
             WindShiftMinTrueWindSpeed = await LoadDouble("windShiftMinTrueWindSpeed.v1", 5.0);
@@ -409,12 +406,9 @@ public sealed class AppSettingsService : IAppSettings
             // configured arrival circle SENT to the SK v2 Course API
             // on Set-Destination / Set-Active-Route requests. Read
             // sites for the EFFECTIVE circle (HUD ring, APPROACH
-            // alarm, auto-advance) keep reading
-            // navigation.course.arrivalCircle from the SK delta so
-            // a peer plotter or server-side change still propagates.
-            // The legacy key waypointArrivalRadiusMeters.v1 (which
-            // drove the client-side ring directly) was retired in an
-            // earlier refactor and is intentionally not migrated.
+            // alarm, auto-advance) read navigation.course.arrivalCircle
+            // from the SK delta so a peer plotter or server-side
+            // change still propagates.
             ServerSideApproachAlarms = await LoadBool("serverSideApproachAlarms.v1", true);
             ShowKeyboardHints = await LoadBool("showKeyboardHints.v1", false);
             ShowAutopilotHud = await LoadBool("showAutopilotHud.v1", false);

@@ -2,6 +2,13 @@ namespace OnaPlotter.Services.Api;
 
 using OnaPlotter.Services.Settings;
 
+/// <summary>HTTP client for the SignalK v2 Course API
+/// (<c>/signalk/v2/api/vessels/self/navigation/course/...</c>). Owns the
+/// active-route / destination / Navigate-Here verbs (Set Destination,
+/// Set Active Route, Advance, Reverse, Cancel). The
+/// <see cref="INavPreferences"/> dep threads the helm-configured
+/// arrival circle radius through every request so the server's
+/// arrival logic stays in sync with the plotter's HUD ring.</summary>
 public sealed class CourseApi : ICourseApi
 {
     private readonly HttpClient _http;

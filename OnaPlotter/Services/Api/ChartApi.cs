@@ -4,6 +4,12 @@ using OnaPlotter.Utilities;
 
 namespace OnaPlotter.Services.Api;
 
+/// <summary>HTTP client for the signalk-charts-plugin REST surface
+/// (<c>/signalk/v1/api/vessels/self/resources/charts</c> + the
+/// plugin's per-chart metadata endpoint). Surfaces the helm-visible
+/// chart catalogue (id, name, format, zoom range, tile URL) so the
+/// Settings -&gt; Charts page can list / toggle / order them. Read-only;
+/// chart installs happen via the SK admin UI, not here.</summary>
 public sealed class ChartApi : IChartApi
 {
     private readonly HttpClient _http;

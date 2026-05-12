@@ -1137,7 +1137,19 @@
 //                SK v2 standard error envelope's `message` field, so
 //                non-benign 400s surface the server's actual reason
 //                instead of a bare "HTTP 400".
-const CACHE_NAME = 'ona-plotter-v108';
+// v108 -> v109: Maintainability review round - nits batch. Doc-only
+//                + one-line code grooming. AlarmManager gains a class
+//                summary; AlarmInfo / AppSettingsService / SkAdminLoginUrl
+//                doc blocks lose PR-numbered changelog narrative;
+//                eight Services/Api/*Api.cs classes gain a one-line
+//                <summary> per the codebase convention; AisPushService
+//                LogSkippedFiniteCheck rationale rewritten so the
+//                "shared across vessels" phrasing matches the per-
+//                instance field shape; Map.razor.cs WPT / Note /
+//                Region default-name stamps now route through the
+//                injected TimeProvider so the helm's local clock + a
+//                test-time fake clock are honoured.
+const CACHE_NAME = 'ona-plotter-v109';
 const TILE_CACHE_NAME = 'ona-plotter-tiles-v1';
 // Cap on the tile cache. Approx 5000 tiles * ~40 kB = 200 MB which
 // is comfortable on iPad / desktop and fits one or two full route-
