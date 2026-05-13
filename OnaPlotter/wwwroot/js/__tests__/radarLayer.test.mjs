@@ -151,3 +151,72 @@ test('headingToSpokeOffset: quarter turn east is +N/4', () => {
     // would visibly fail.
     assert.equal(headingToSpokeOffset(Math.PI / 2, 2048), 512);
 });
+
+// --- computeSpokeIndex policy --------------------------------------------
+//
+// Pins the post-2026-05 default behaviour. Live boat at 192° true with
+// Mayara as the radar provider showed bearing-angle = ~0 (bow-relative)
+// on the wire instead of the spec's true-north reading, so spokes
+// painted bow-up regardless of actual heading and the only times the
+// picture looked correct were when the boat happened to point near
+// north. Default path now composes angle + heading and treats the wire
+// bearing as untrusted; the opt-in path stays available for installs
+// whose provider verifiably emits true-north.
+
+const { computeSpokeIndex } = _internal;
+
+test('computeSpokeIndex default: ignores wire bearing, uses angle + heading', () => {
+    // Boat pointing east (90deg) -> heading offset = spokes/4 = 512.
+    // A bow-relative angle 0 should index 512 (east on the north-up
+    // canvas) even though the wire claims bearing 0 (north). Default
+    // useWireBearing=false rejects the wire's claim.
+    const spoke = { angle: 0, bearing: 0 };
+    assert.equal(computeSpokeIndex(spoke, Math.PI / 2, 2048, false), 512);
+});
+
+test('computeSpokeIndex default: bearing absent on the wire still uses angle + heading', () => {
+    // Wire shape where bearing was never populated (undefined). Path
+    // must still compose - this is the SK-spec-compliant "angle only"
+    // shape and was already supported.
+    const spoke = { angle: 100 };
+    assert.equal(computeSpokeIndex(spoke, 0, 2048, false), 100);
+});
+
+test('computeSpokeIndex default: Mayara-style bearing=angle gets correct rotation', () => {
+    // Reproduces the live wire diagnostic from openplotter.local: every
+    // spoke carries bearing approximately equal to angle (radar HS is
+    // ~0). At the boat's true heading 192deg a wire angle of 0 must
+    // paint at the boat's heading offset (1092 on a 2048-spoke radar,
+    // i.e. round(192/360 * 2048) = round(1092.27)) so the spoke lands
+    // roughly true-south on the canvas. Pre-fix, the bearing-wins
+    // branch put it at 0 (paint due north) and the user saw the
+    // overlay rotated backwards on every heading.
+    const spoke = { angle: 0, bearing: 0 };
+    const heading192 = 192 * Math.PI / 180;
+    assert.equal(computeSpokeIndex(spoke, heading192, 2048, false), 1092);
+});
+
+test('computeSpokeIndex opt-in: useWireBearing=true reads bearing directly', () => {
+    // Helm has flipped the opt-in (provider verifiably emits
+    // true-north). Wire bearing 512 means due east; the painter
+    // indexes there regardless of the boat's heading.
+    const spoke = { angle: 0, bearing: 512 };
+    assert.equal(computeSpokeIndex(spoke, Math.PI, 2048, true), 512);
+});
+
+test('computeSpokeIndex opt-in: bearing absent on the wire falls back to angle + heading', () => {
+    // Even with useWireBearing on, a spoke that omits the bearing field
+    // must still paint correctly via the angle path. The provider can
+    // emit bearing inconsistently (e.g. only on every Nth spoke) and
+    // the overlay can't refuse to paint between them.
+    const spoke = { angle: 0 };
+    assert.equal(computeSpokeIndex(spoke, Math.PI / 2, 2048, true), 512);
+});
+
+test('computeSpokeIndex: negative compound index wraps to positive', () => {
+    // Defensive: a spoke with angle=10 and a slight-negative heading
+    // (e.g. a provider that sends headings as signed degrees and an
+    // ill-timed wrap) would otherwise hit a negative LUT index.
+    const spoke = { angle: 10 };
+    assert.equal(computeSpokeIndex(spoke, -Math.PI / 2, 2048, false), 1546);
+});

@@ -1811,6 +1811,12 @@
         await _controlsJs.SetRadarRangeRingsAsync(
             Settings.RadarRangeRingsEnabled,
             Settings.RadarRangeRingsCount);
+        // Radar bearing-source opt-in: push the persisted helm choice
+        // so any radar overlay that comes up later picks the correct
+        // spoke-index path on its first sweep. Without this an already-
+        // running overlay (e.g. on quick navigate-back) would stay on
+        // whatever value its enable-time cfg captured.
+        await _controlsJs.SetRadarUseWireBearingAsync(Settings.RadarUseWireBearing);
         // Push the persisted chart-display CSS filter once at init so
         // every chart layer added below picks it up. addChartLayer
         // re-applies the current filter on each layer creation, so
@@ -1998,6 +2004,7 @@
         bool AnchorActive, double? AnchorMaxRadius) _cachedGuardZone;
     private (double OwnCog, double AisCog) _cachedCogVector;
     private (bool Enabled, int Count) _cachedRadarRangeRings;
+    private bool _cachedRadarUseWireBearing;
     private bool _cachedAtonsVisible;
     private bool _cachedAisLabelsVisible;
     private bool _cachedGuardZoneWarningRingVisible;
@@ -2035,6 +2042,12 @@
             {
                 _cachedRadarRangeRings = rrNow;
                 _ = _controlsJs.SetRadarRangeRingsAsync(rrNow.RadarRangeRingsEnabled, rrNow.RadarRangeRingsCount);
+            }
+
+            if (Settings.RadarUseWireBearing != _cachedRadarUseWireBearing)
+            {
+                _cachedRadarUseWireBearing = Settings.RadarUseWireBearing;
+                _ = _controlsJs.SetRadarUseWireBearingAsync(Settings.RadarUseWireBearing);
             }
         }
         // Wake-lock toggles are handled by MainLayout's OnSettingsChanged

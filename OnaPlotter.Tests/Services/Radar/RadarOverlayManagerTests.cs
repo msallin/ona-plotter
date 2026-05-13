@@ -96,11 +96,12 @@ public class RadarOverlayManagerTests
         SpokeDataUrl = spokeUrl,
     };
 
-    private static (RadarOverlayManager mgr, FakeHost host, FakeRadarApi api) NewManager()
+    private static (RadarOverlayManager mgr, FakeHost host, FakeRadarApi api) NewManager(
+        FakeSettings? settings = null)
     {
         var host = new FakeHost();
         var api = new FakeRadarApi();
-        var mgr = new RadarOverlayManager(api, host, new FakeBaseUrl());
+        var mgr = new RadarOverlayManager(api, host, new FakeBaseUrl(), settings ?? new FakeSettings());
         return (mgr, host, api);
     }
 
@@ -118,6 +119,34 @@ public class RadarOverlayManagerTests
         await Assert.That(host.Started.Count).IsEqualTo(1);
         await Assert.That(host.Started[0].RadarId).IsEqualTo("r1");
         await Assert.That(mgr.EnabledRadarIds.Contains("r1")).IsTrue();
+    }
+
+    [Test]
+    public async Task Enable_Defaults_UseWireBearing_False()
+    {
+        // The helm-opt-in flag flows from IMapDisplaySettings through
+        // RadarOverlayManager into the host's start config. Default is
+        // off so non-conforming providers (Mayara without HS sensor)
+        // don't poison the overlay with bow-relative bearings on a
+        // fresh install.
+        var (mgr, host, _) = NewManager();
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+
+        await Assert.That(host.Started.Count).IsEqualTo(1);
+        await Assert.That(host.Started[0].UseWireBearing).IsFalse();
+    }
+
+    [Test]
+    public async Task Enable_Forwards_UseWireBearing_From_Settings()
+    {
+        // Helm has flipped the opt-in. New overlays start with the
+        // wire-bearing path active so a provider that does emit
+        // true-north bearings gets the slightly cheaper paint loop.
+        var settings = new FakeSettings { RadarUseWireBearing = true };
+        var (mgr, host, _) = NewManager(settings);
+        await mgr.OnRadarListUpdatedAsync([Radar("r1", "transmit")]);
+
+        await Assert.That(host.Started[0].UseWireBearing).IsTrue();
     }
 
     [Test]

@@ -519,6 +519,25 @@
                            @onchange="(e) => OnRadarRangeRingsCountChanged(e)" />
                 </div>
                 <small class="text-muted">Default 4 = quarter / half / three-quarter / full radar range.</small>
+                <hr />
+                <label class="form-label">Spoke bearing source</label>
+                <div class="form-check form-switch mb-2">
+                    <input type="checkbox" class="form-check-input" role="switch"
+                           id="radar-use-wire-bearing"
+                           checked="@AppSettings.RadarUseWireBearing"
+                           @onchange="OnRadarUseWireBearingChanged" />
+                    <label class="form-check-label" for="radar-use-wire-bearing">
+                        Trust the radar's <code>bearing</code> field as true-north (advanced)
+                    </label>
+                </div>
+                <small class="text-muted">
+                    Off (default): spoke direction is composed from the radar's bow-relative
+                    angle plus the boat's true heading. On: trust the wire's <code>bearing</code>
+                    as already true-north. Leave off unless your radar provider verifiably
+                    emits true-north bearings; some (e.g. Mayara without an HS sensor) fill the
+                    field with the radar's internal value, which paints spokes bow-up regardless
+                    of heading.
+                </small>
             </div>
         </div>
     </div>
@@ -1798,6 +1817,12 @@
         {
             await AppSettings.SetRadarRangeRingsCountAsync(val);
         }
+    }
+
+    private async Task OnRadarUseWireBearingChanged(ChangeEventArgs e)
+    {
+        bool enabled = e.Value is bool b && b;
+        await AppSettings.SetRadarUseWireBearingAsync(enabled);
     }
 
     private async Task OnAnchorTideMarginChanged(ChangeEventArgs e)

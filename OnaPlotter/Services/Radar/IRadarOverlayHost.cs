@@ -43,7 +43,13 @@ public sealed record RadarOverlayStartConfig(
     int MaxSpokeLength,
     int Range,
     RadarLegend? Legend,
-    double Opacity);
+    double Opacity,
+    /// <summary>Helm opt-in: trust the wire spoke's <c>bearing</c> field
+    /// as true-north-referenced. Default false because at least one
+    /// production provider (Mayara) fills bearing with the radar's
+    /// internal HS-corrected value rather than true-north, which paints
+    /// every spoke bow-up when no HS sensor is wired in.</summary>
+    bool UseWireBearing = false);
 
 /// <summary>Surfaced to the manager when starting an overlay fails;
 /// the manager translates this to a user-visible toast.</summary>

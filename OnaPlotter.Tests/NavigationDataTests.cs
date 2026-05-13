@@ -28,6 +28,42 @@ public class NavigationDataTests
     }
 
     [Test]
+    public async Task HeadingTrueResolved_PrefersHeadingTrue()
+    {
+        // Both true and magnetic published: true wins regardless of
+        // the helm's PreferMagneticHeading display toggle. Radar
+        // overlay geometry depends on a true-north reference because
+        // the chart is true-north Mercator.
+        var nav = new NavigationData { PreferMagneticHeading = true };
+        nav.Apply("navigation.headingTrue", JsonSerializer.SerializeToElement(3.27));
+        nav.Apply("navigation.headingMagnetic", JsonSerializer.SerializeToElement(3.40));
+        await Assert.That(nav.HeadingTrueResolved).IsEqualTo(3.27);
+    }
+
+    [Test]
+    public async Task HeadingTrueResolved_FallsBackToMagneticWhenTrueAbsent()
+    {
+        // Boat publishes only magnetic. Geometry consumers (radar
+        // overlay) need *something*; magnetic-without-variation
+        // rotates by the local variation but that beats "stuck
+        // pointing north" until the helm fixes their SK config.
+        var nav = new NavigationData();
+        nav.Apply("navigation.headingMagnetic", JsonSerializer.SerializeToElement(3.40));
+        await Assert.That(nav.HeadingTrueResolved).IsEqualTo(3.40);
+    }
+
+    [Test]
+    public async Task HeadingTrueResolved_NullWhenNeitherPublished()
+    {
+        // No heading at all: null lets consumers fall through to their
+        // own fallbacks (COG, then 0). The marker / radar overlay
+        // shouldn't lock to a stale value just because the radar
+        // wants something to rotate by.
+        var nav = new NavigationData();
+        await Assert.That(nav.HeadingTrueResolved).IsNull();
+    }
+
+    [Test]
     public async Task Apply_DesignDraftCurrent_SetsDraftFromSignalK()
     {
         // SignalK's design.draft.current is the "as loaded" draft,

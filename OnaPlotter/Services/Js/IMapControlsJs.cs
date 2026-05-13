@@ -51,6 +51,13 @@ public interface IMapControlsJs
     /// next render tick.</summary>
     Task SetRadarRangeRingsAsync(bool enabled, int count);
 
+    /// <summary>Push the helm's "Trust wire bearing" opt-in to every
+    /// active radar overlay so a live toggle takes effect on the next
+    /// sweep without needing the helm to disable + re-enable the
+    /// overlay. See <see cref="IMapDisplaySettings.RadarUseWireBearing"/>
+    /// for what the flag does.</summary>
+    Task SetRadarUseWireBearingAsync(bool value);
+
     /// <summary>Apply night-mode CSS filter to map tiles + UI chrome.</summary>
     Task SetNightModeAsync(bool enabled);
 

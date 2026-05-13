@@ -40,6 +40,7 @@ public sealed class JsRadarOverlayHost : IRadarOverlayHost
                 range = cfg.Range,
                 legend = cfg.Legend,
                 opacity = cfg.Opacity,
+                useWireBearing = cfg.UseWireBearing,
             });
         }
         catch (JSDisconnectedException)

@@ -9,6 +9,7 @@ import { MarkerLayer } from './markerLayer.js';
 import { enableRadarOverlay, disableRadarOverlay,
          setRadarRange, setBoatState as setRadarBoatState,
          setRangeRingsConfig as setRadarRangeRingsConfig,
+         setRadarUseWireBearing as setRadarUseWireBearingMod,
          tearDownAllRadarOverlays } from './radarLayer.js';
 import * as weatherLayerMod from './weatherLayer.js';
 import * as anchorLayerMod from './anchorLayer.js';
@@ -1052,7 +1053,7 @@ export function applyFrame(frame) {
     if (!map || !frame) return;
     if (frame.pos) {
         const p = frame.pos;
-        updatePosition(p.lat, p.lon, p.headingRad, p.cogRad, p.sogMs);
+        updatePosition(p.lat, p.lon, p.headingRad, p.cogRad, p.sogMs, p.headingTrueRad);
     }
     if (frame.track) {
         const t = frame.track;
@@ -1108,14 +1109,21 @@ export function setShipLinesVisible(enabled) {
     }
 }
 
-export function updatePosition(lat, lon, headingRad, cogRad, sogMs) {
+export function updatePosition(lat, lon, headingRad, cogRad, sogMs, headingTrueRad) {
     if (!map || !boatMarker) return;
 
     // Push own-boat state into any active radar overlay so its
     // canvas can be repositioned over the new lat/lon and painted
-    // heading-corrected. Falls back to COG when heading is absent;
-    // the radar layer itself tolerates undefined.
-    setRadarBoatState(lat, lon, headingRad ?? cogRad ?? 0);
+    // heading-corrected. The radar requires a TRUE-NORTH heading
+    // (chart is true-north Mercator, spoke index is composed against
+    // a north-up canvas); prefer the explicit true-north channel
+    // from C# (NavigationData.HeadingTrueResolved) over the helm-
+    // display-preferenced `headingRad` which can be magnetic.
+    // Fallbacks: explicit true -> display heading -> COG -> 0. The
+    // last two are best-effort for installs that don't publish a
+    // true-heading path; they may be off by magnetic variation /
+    // leeway but at least the spokes rotate with the boat.
+    setRadarBoatState(lat, lon, headingTrueRad ?? headingRad ?? cogRad ?? 0);
 
     // Stash the latest snapshot on the marker so popupopen can render
     // fresh numbers without a closed-over stale copy.
@@ -1351,6 +1359,16 @@ export const setAnchorIncomplete = (incomplete) => anchorLayerMod.setAnchorIncom
 export function startRadarOverlay(cfg) {
     if (!map) return;
     enableRadarOverlay({ map }, cfg);
+}
+
+/**
+ * Helm flipped the "Trust wire bearing" radar opt-in. Forwarded to
+ * the radar overlay so the next sweep picks up the new policy without
+ * needing to disable + re-enable the overlay. The setting is read by
+ * every active overlay; the next paint applies the new index path.
+ */
+export function setRadarUseWireBearing(value) {
+    setRadarUseWireBearingMod(!!value);
 }
 
 export function stopRadarOverlay(radarId) {

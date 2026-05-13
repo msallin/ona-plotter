@@ -110,6 +110,17 @@ public sealed class NavigationData
         ? HeadingMagnetic ?? HeadingTrue
         : HeadingTrue ?? HeadingMagnetic;
 
+    /// <summary>True-north heading in radians, independent of the helm's
+    /// <see cref="PreferMagneticHeading"/> display preference. Geometry
+    /// consumers (radar spoke overlay) must rotate against true-north
+    /// because the chart is true-north; the display-preference toggle
+    /// only affects the numbers printed on HUD cards. Falls through to
+    /// <see cref="HeadingMagnetic"/> when <see cref="HeadingTrue"/> isn't
+    /// published - off by magnetic variation, but "rotating off by a few
+    /// degrees" beats "stuck pointing north" on a boat that only reports
+    /// magnetic. Returns null when neither path is published.</summary>
+    public double? HeadingTrueResolved => HeadingTrue ?? HeadingMagnetic;
+
     /// <summary>Course-over-ground in radians, picking true or magnetic
     /// per <see cref="PreferMagneticCourse"/>. Same fallback rule as
     /// <see cref="Heading"/>.</summary>

@@ -77,6 +77,15 @@ const activeRadars = new Map();
 
 // Shared boat state (lat, lon, headingRad). Updated by setBoatState;
 // each active radar reads it at paint / reposition time.
+//
+// CRITICAL: `headingRad` here must be TRUE-NORTH (not magnetic). The
+// canvas is anchored to a true-north chart, and `_spokeIndex` adds
+// this value to the spoke's bow-relative `angle` to produce the
+// canvas index. Feeding a magnetic heading rotates every spoke by
+// the local magnetic variation. The C# side passes `HeadingTrueResolved`
+// (see NavigationData) rather than the helm's display-preference
+// `Heading`, so the radar stays aligned regardless of whether the
+// helm reads HUD values in true or magnetic.
 let boatState = { lat: null, lon: null, headingRad: 0 };
 
 // Range-ring overlay config. Helm-toggleable: when enabled, every
@@ -144,6 +153,22 @@ export function setRangeRingsConfig(enabled, count) {
  *                                      the sweep. Users who want
  *                                      pure-radar visibility can push
  *                                      to 1.0 via the layers UI.
+ * @param {boolean} [cfg.useWireBearing] Default false. When true, the
+ *                                      overlay trusts the wire spoke's
+ *                                      optional `bearing` field as
+ *                                      true-north. When false (default)
+ *                                      bearing is ignored and the spoke
+ *                                      index is always `angle + heading`
+ *                                      composed at paint time. Default
+ *                                      is off because at least one live
+ *                                      provider (Mayara) fills bearing
+ *                                      with the radar's internal HS-
+ *                                      corrected value rather than
+ *                                      true-north, which paints spokes
+ *                                      bow-up regardless of heading
+ *                                      whenever the radar has no HS
+ *                                      sensor wired in (the common
+ *                                      case on a recreational install).
  */
 export function enableRadarOverlay(deps, cfg) {
     if (activeRadars.has(cfg.radarId)) return;
@@ -180,6 +205,18 @@ export function tearDownAllRadarOverlays() {
         try { rec.destroy(); } catch (_) { /* already gone */ }
     }
     activeRadars.clear();
+}
+
+/**
+ * Helm flipped the "Trust wire bearing" opt-in. Updates every
+ * active overlay so the next sweep applies the new index path
+ * without needing a disable/re-enable round-trip. Newly-enabled
+ * overlays continue to pick up their initial value from the
+ * enableRadarOverlay cfg.
+ */
+export function setRadarUseWireBearing(value) {
+    const v = !!value;
+    for (const rec of activeRadars.values()) rec.useWireBearing = v;
 }
 
 /** Update the range value (metres) for a radar. Triggers a canvas
@@ -247,6 +284,13 @@ class RadarOverlay {
         this.maxSpokeLen = cfg.maxSpokeLength;
         this.range = cfg.range || 1000;
         this.opacity = cfg.opacity ?? 0.75;
+        // Off by default: wire `bearing` is provider-defined and at
+        // least one production provider (Mayara) populates it with the
+        // radar's HS-corrected value instead of true-north. Default
+        // path composes index from angle + boat-heading, which gives
+        // the correct paint as long as boatState.headingRad is true-
+        // north (see boatState comment above).
+        this.useWireBearing = !!cfg.useWireBearing;
 
         // Canvas side = maxSpokeLen, two range cells per pixel. For
         // a typical maxSpokeLen=1024 that's a 1024x1024 buffer = 4 MB
@@ -608,14 +652,11 @@ class RadarOverlay {
     }
 
     /** Map a spoke's wire angle/bearing onto our canvas's north-up
-     *  spoke index. Bearing (if present) wins since it's already
-     *  true-north-referenced; angle requires rotating by the boat's
-     *  current heading to compensate for the radar being bow-up.
-     *  Both paths funnel through wrapSpoke for the defensive modulo. */
+     *  spoke index. Pure decision delegated to computeSpokeIndex
+     *  so the policy can be unit-tested without a canvas/Leaflet
+     *  stub; see computeSpokeIndex below for the rules. */
     _spokeIndex(spoke) {
-        const n = this.spokes;
-        if (spoke.bearing != null) return wrapSpoke(spoke.bearing, n);
-        return wrapSpoke(spoke.angle + headingToSpokeOffset(boatState.headingRad, n), n);
+        return computeSpokeIndex(spoke, boatState.headingRad, this.spokes, this.useWireBearing);
     }
 
     setRange(range) {
@@ -858,6 +899,37 @@ function headingToSpokeOffset(headingRad, spokesPerRevolution) {
     return Math.round(headingRad * spokesPerRevolution / (2 * Math.PI));
 }
 
+/**
+ * Decide which spoke index on the north-up canvas to paint into.
+ *
+ * Default (useWireBearing=false): compose `angle + heading` from the
+ * spoke's bow-relative angle plus the boat's TRUE-NORTH heading. The
+ * wire's optional `bearing` field is ignored because at least one
+ * production provider (Mayara) fills it with the radar's internal
+ * HS-corrected value rather than true-north - paints every spoke
+ * bow-up when the radar has no heading sensor wired in.
+ *
+ * Opt-in (useWireBearing=true): trust the wire's `bearing` as
+ * true-north when present. For helms whose provider verifiably
+ * emits true-north bearings; saves one add per spoke at the cost
+ * of correctness on non-conforming providers.
+ *
+ * Both paths funnel through wrapSpoke for the defensive modulo.
+ *
+ * @param {{angle: number, bearing?: number}} spoke
+ * @param {number} headingRad   Boat heading (radians, 0..2pi from true north).
+ * @param {number} spokesPerRevolution
+ * @param {boolean} useWireBearing
+ */
+function computeSpokeIndex(spoke, headingRad, spokesPerRevolution, useWireBearing) {
+    if (useWireBearing && spoke.bearing != null) {
+        return wrapSpoke(spoke.bearing, spokesPerRevolution);
+    }
+    return wrapSpoke(
+        spoke.angle + headingToSpokeOffset(headingRad, spokesPerRevolution),
+        spokesPerRevolution);
+}
+
 /** Decide whether a legend entry should be rendered transparent.
  *  Drives the "drop sea-clutter" UX: typical recreational radar
  *  palettes paint low-intensity normal echoes (sea clutter, noise)
@@ -892,6 +964,7 @@ export const _internal = {
     shouldSuppressLowReturn,
     wrapSpoke,
     headingToSpokeOffset,
+    computeSpokeIndex,
 };
 
 // ---------------------------------------------------------------------

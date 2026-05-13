@@ -218,6 +218,23 @@ public interface IMapDisplaySettings
     /// chart turns into a bullseye.</summary>
     int RadarRangeRingsCount { get; }
 
+    /// <summary>When true, the radar overlay trusts the wire spoke's
+    /// optional <c>bearing</c> field as true-north-referenced and paints
+    /// it directly. When false (default), the wire bearing is ignored
+    /// and the spoke index is always composed from <c>angle</c> plus the
+    /// boat's true-north heading.
+    /// <para>Default false because the Signal K Radar API v3.1 spec
+    /// says <c>bearing</c> is true-north-referenced but at least one
+    /// production provider (Mayara) fills it with the radar's internal
+    /// HS-corrected value, which is typically ~0 when no heading sensor
+    /// is wired into the radar. Trusting that wire field then paints
+    /// every spoke bow-up regardless of actual heading, which looks
+    /// correct only when the boat happens to point near north. Helms
+    /// whose provider verifiably emits true-north bearings can flip
+    /// this on for a tiny CPU saving (one less add + one less LUT
+    /// lookup per spoke), but most should leave it off.</para></summary>
+    bool RadarUseWireBearing { get; }
+
     Task SetMapOrientationAsync(string value);
     Task SetShipOrientationSourceAsync(string value);
     Task SetFollowBoatAsync(bool value);
@@ -247,5 +264,6 @@ public interface IMapDisplaySettings
     Task SetAisCogVectorMinutesAsync(double value);
     Task SetRadarRangeRingsEnabledAsync(bool value);
     Task SetRadarRangeRingsCountAsync(int value);
+    Task SetRadarUseWireBearingAsync(bool value);
     Task SetTideVisibleAsync(bool value);
 }

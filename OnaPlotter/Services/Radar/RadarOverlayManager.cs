@@ -1,5 +1,6 @@
 using OnaPlotter.Models;
 using OnaPlotter.Services.Api;
+using OnaPlotter.Services.Settings;
 
 namespace OnaPlotter.Services.Radar;
 
@@ -29,6 +30,7 @@ public sealed class RadarOverlayManager
     private readonly IRadarApi _radarApi;
     private readonly IRadarOverlayHost _host;
     private readonly ISignalKBaseUrl _baseUrl;
+    private readonly IMapDisplaySettings _settings;
 
     // Session state. Public read-only views so the page (and bUnit)
     // can bind into the layers panel without re-implementing the
@@ -55,11 +57,13 @@ public sealed class RadarOverlayManager
     /// captured fake-host calls instead.</summary>
     public Action<string>? OnError { get; set; }
 
-    public RadarOverlayManager(IRadarApi radarApi, IRadarOverlayHost host, ISignalKBaseUrl baseUrl)
+    public RadarOverlayManager(IRadarApi radarApi, IRadarOverlayHost host,
+                               ISignalKBaseUrl baseUrl, IMapDisplaySettings settings)
     {
         _radarApi = radarApi;
         _host = host;
         _baseUrl = baseUrl;
+        _settings = settings;
     }
 
     /// <summary>Replace the known-radar list (called from the page on
@@ -180,7 +184,8 @@ public sealed class RadarOverlayManager
             // helm distance. Affects only the radar canvas; other
             // layers (charts, AIS, regions, routes) have their own
             // opacity settings and are unchanged.
-            Opacity: 0.50);
+            Opacity: 0.50,
+            UseWireBearing: _settings.RadarUseWireBearing);
 
         try
         {

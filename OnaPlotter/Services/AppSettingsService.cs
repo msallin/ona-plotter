@@ -177,6 +177,10 @@ public sealed class AppSettingsService : IAppSettings
     /// <summary>How many concentric range rings to draw. Default 4
     /// (quarter / half / three-quarter / full radar range).</summary>
     public int RadarRangeRingsCount { get; private set; } = 4;
+    /// <summary>Trust the wire spoke <c>bearing</c> field as true-north
+    /// (opt-in). Default false; see <see cref="IMapDisplaySettings.RadarUseWireBearing"/>
+    /// for why most installs should leave it off.</summary>
+    public bool RadarUseWireBearing { get; private set; } = false;
 
     public bool PreferMagneticHeading { get; private set; } = false;
 
@@ -423,6 +427,7 @@ public sealed class AppSettingsService : IAppSettings
             // the chart from turning into a bullseye.
             RadarRangeRingsCount = (int)Math.Clamp(
                 await LoadDouble("radarRangeRingsCount.v1", 4.0), 1.0, 8.0);
+            RadarUseWireBearing = await LoadBool("radarUseWireBearing.v1", false);
             PreferMagneticHeading = await LoadBool("preferMagneticHeading.v1", false);
             // CogReadoutSource replaces the legacy preferMagneticCourse.v1
             // boolean. On first load after the upgrade, migrate the old
@@ -979,6 +984,13 @@ public sealed class AppSettingsService : IAppSettings
         RadarRangeRingsCount = Math.Clamp(value, 1, 8);
         await Save("radarRangeRingsCount.v1",
             RadarRangeRingsCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        OnSettingsChanged?.Invoke();
+    }
+
+    public async Task SetRadarUseWireBearingAsync(bool value)
+    {
+        RadarUseWireBearing = value;
+        await Save("radarUseWireBearing.v1", value ? "true" : "false");
         OnSettingsChanged?.Invoke();
     }
 

@@ -119,7 +119,8 @@ public sealed class MapFrameBuilder
             ? new FramePos(bLat.Value, bLon.Value,
                            orientationOverride ?? data.Heading,
                            cogOverride ?? data.CourseOverGround,
-                           sogOverride ?? data.SpeedOverGround)
+                           sogOverride ?? data.SpeedOverGround,
+                           data.HeadingTrueResolved)
             : null;
 
         // Track segment: [lat, lon, sog, prevLat, prevLon]. Emitted
@@ -239,7 +240,14 @@ public readonly record struct FramePayload(
 
 public readonly record struct FramePos(
     double Lat, double Lon,
-    double? HeadingRad, double? CogRad, double? SogMs);
+    double? HeadingRad, double? CogRad, double? SogMs,
+    /// <summary>True-north heading in radians, independent of the helm's
+    /// PreferMagneticHeading display toggle. Fed to consumers whose
+    /// geometry is anchored to a true-north chart (radar spoke overlay).
+    /// Distinct from <see cref="HeadingRad"/> which follows the helm's
+    /// display preference and drives display-frame consumers (boat-icon
+    /// rotation today reuses that for parity with HUD readouts).</summary>
+    double? HeadingTrueRad);
 
 public readonly record struct FrameCourseLine(
     double WpLat, double WpLon,
